@@ -103,6 +103,63 @@ fallbacks) for inline images/maps.
   Restored content is closed off by one `RestoreBarRenderer` row and the lines themselves are left
   alone. Restoring 3,000 lines costs ~18 ms before the first frame. `restore:` is the third member of
   the `save:`/`logRoot:` family — **null by default, so no test and no snapshot owns one**.
+- **Coming back to the terminal leaves a bar where you were** (`AwayBarRenderer` + `TerminalFocusWatcher`,
+  Tui). Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
+  `RestoreBarRenderer` do: mark the *boundary*, never restyle the content. The signal is real terminal
+  focus reporting (`CSI ?1004h`) and **both halves of getting it are workarounds**, which is why they are
+  in one file. No released SharpConsoleUI asks for focus (verified against 2.5.18's string heap: `?2004`
+  is there, `?1004` is in no version), `IConsoleDriver` has no focus event, and `UnixStdinReader`
+  dispatches only key/paste/mouse. So we ask through `IConsoleDriver.WriteClipboardOsc52`, which is named
+  for its first customer and is really a verbatim raw write under the renderer's own `_consoleLock` — the
+  only public write serialised against frame painting — funnelled through one `EmitTerminalMode` so a
+  version that starts validating that payload is one line to fix. And focus-**in** is recognised in the
+  **Tab keypress** `AnsiInputParser.DispatchCsi` mistranslates it into (`:511` reads a trailing `I` as
+  Tab, right for `ESC [ 1;5 I` = Ctrl+Tab, wrong for the bare form). Tab is claimed through
+  `RegisterGlobalShortcut`'s **declining** overload, deliberately *not* through `MacroKeys.AppShortcuts`:
+  it declines nearly every Tab it sees, and listing it would tell F4's readers a key was gone that is not.
+  - **Telling that Tab from a real one is a question about time, and the comparison must be against the
+    input *before* it.** The disguised focus-in is itself a `KeyPressed`, raised before `InputCoordinator`
+    reaches the global shortcuts, so measuring from the latest timestamp finds a gap of zero on every
+    return and the feature never fires — a bug indistinguishable from the terminal not supporting `?1004`.
+    **The same trap bit the boundary**, one field over: that keypress had already moved `_awayPending` to
+    the end of a buffer full of unseen lines, so `_awayBoundary` keeps the value from the input before it.
+    `SimulateReturnFromAway` notes an input first for that reason — a seam that skipped it would read a
+    boundary the shipping path never reads.
+  - **Focus-out is not recoverable.** `ESC [ O` has no case and is dropped as an `UnknownSequenceEvent`,
+    so a departure cannot be timestamped; the boundary is the last input event instead, which is seconds
+    off. **Unix only** — the Windows branch is a `Console.ReadKey` loop with its own reassembly, so
+    `?1004` must not be enabled there — and inert headless, because a harness pressing Tab must get a Tab.
+  - **A bar off the fold is scrolled to** (`RevealAwayBar`), and without that the feature is invisible in
+    the case that matters most — the reported defect. Come back to more lines than the pane holds and the
+    bar is drawn far above the viewport, so *nothing on screen changes*; nothing else covers for it either,
+    because a window visible and at its live tail throughout an absence accrues no unread badge. A bar
+    already in view is left alone: scrolling a shallow absence would take a pane off its tail to reveal
+    what is already on it. `ScrollVerticalBy` and not `ScrollToTop` — it re-syncs metrics from the arranged
+    bounds before clamping (so a scroll straight after mutating content is not clamped against a stale
+    viewport) and detaches `AutoScroll` on the way up, which a jump that left it armed would have undone
+    on the next repaint.
+  - **A buffer index is not a viewport row, and conflating them is a bug this has already had.** The
+    panel's offset counts *display* rows and a buffer line wraps into as many as it needs, so in a narrow
+    pane scrolling to the index landed hundreds of rows adrift, in content from a previous session. The
+    height is **measured**, by the framework's own `MarkupControl.MeasureDOM` through a throwaway control
+    at the pane's `ViewportWidth`, so it wraps the way the real control will — and only the *tail* is
+    measured, from the bar to the newest line, then subtracted from the panel's authoritative
+    `TotalContentHeight`. Never re-derive wrapping by counting characters; word breaks, zero-width markup
+    tags and wide characters all change the answer.
+  - **Consumption is two conjuncts, and `Workspace.IsCaughtUp` is not one of them.** A pane bottom-anchors,
+    so it is already "visible and not scrolled back" the instant you return with two hundred unread lines
+    above the fold; clearing on it clears the bar before a word is read. It goes when the pane is at its
+    *live tail* and *one input* has landed since it was drawn. What makes the first mean anything is the
+    reveal: the pane was taken **off** its tail whenever the bar was not on screen, so arriving back at the
+    bottom is having read down through what you missed rather than never having left. The second is what
+    stops a shallow absence clearing in the frame it appears in. Insert and remove are mid-buffer, so each
+    costs one `RepaintPane`; affordable for the timestamp toggle's reason, bounded by a deliberate event
+    rather than by lines or frames.
+  - The bar is chrome: it never badges unread, never reaches the restore log (already free — that is fed
+    from the session's line handlers, not the append seam), and a trim that takes it drops the mark with
+    it. A window that gained nothing gets no bar.
+  - **`SimulateKey` used to discard a global shortcut's result** and swallow the key either way. Harmless
+    while every claim returned true; wrong the moment one declined, and it now honours the decline.
 - **Every server's MSSP report is kept, and the INFO screen reads it** (`MsspCache`, Core; `mssp.json`
   beside `config.json`, keyed by `host:port`; F5 ▸ `i`). Fourth of the `save:`/`logRoot:`/`restore:`
   family with **one deliberate difference**: the constructor parameter is null by default like the
@@ -191,7 +248,13 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
-  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`, `prefix-panel` (the ⌃B which-key
+  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
+  `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
+  *terminal* — the shallow absence, where the bar and everything below it are on screen at once and the
+  pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
+  has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
+  pane being "caught up" while nothing has been read, and the only one that would catch a scroll landing
+  at the wrong row), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the
