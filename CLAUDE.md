@@ -119,10 +119,23 @@ fallbacks) for inline images/maps.
   as of…" are three different screens. Report capture is bounded at the door
   (`MaxVariables`/`MaxValuesPerVariable`/`MaxValueLength`), not only at the renderer — a value only the
   screen trimmed would still be full size on disk and in memory on every later launch.
-- **`IAC DO MSSP` is sent on connect** (`TelnetSessionOptions.RequestOptions`, set by `WorldSession`'s
-  session factory). The library opens with `IAC WILL NAWS` and nothing else, so a server that supports
-  MSSP but waits to be asked is never asked — and the INFO screen would then report it as publishing
-  none, which is a claim about the server made out of our own silence.
+- **This client asks no server to enable an option the server has not offered, and that rule was bought
+  with a login** (`UnsolicitedNegotiationTests`, Core). `TelnetSession` used to write `IAC DO MSSP`
+  straight to the transport on connect — legal telnet (RFC 854 has either party initiating, and requires
+  a response even to a refusal), and the way to reach the many servers that support MSSP but never
+  volunteer it. **Refusing an option means consuming its three bytes, and a server that implements
+  neither leaves them in its line buffer, where they are prepended to the next line the client sends —
+  which is always the auto-login.** The server reads `\xFF\xFD\x46connect Name password`, redisplays its
+  connect screen and logs nobody in; the transcript shows the welcome screen twice, with no reason for it,
+  because the login line is deliberately not echoed or logged. Measured on a live game: with the request
+  the login line was never evaluated, without it the same line reached the game, and only the *first*
+  line after the request dies — which is why typing the login by hand always worked and the auto-login
+  never did. Two things follow. **We are not in a position to know which servers parse telnet properly**,
+  and the one that does not is exactly the one whose login we break. And **negotiation is the library's
+  to conduct**: TelnetNegotiationCore would never have sent that `DO` — its client-side MSSP answers a
+  server's `WILL` and initiates nothing (`MSSPProtocol.OnWillMSSPAsync`) — so a hand-written negotiation
+  byte, written around it to avoid `IAC` being escaped as data, is a negotiation nothing keeps state for.
+  The `RequestOptions` mechanism is deleted rather than left empty, so there is no seam to reach for.
 - **A launch connects nothing unless it is told to** (`StartupConnections.Resolve`, Core). A host on the
   command line wins outright; otherwise it is every character with `ConnectAtStartup` (F5's `at start`),
   in configuration order; otherwise none, and the client says which of the two empty states it is in.
@@ -667,13 +680,16 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `MsspParsingTests` now pins the fixed behaviour by name rather than the bugs. MSSP still has no
   payload size cap upstream — `SubnegotiationBuffer` guards GMCP, MSDP and CHARSET's TTABLE, but not
   this — so a hostile server can make a session buffer as much as it likes.
-- **MSSP is asked for, not waited for, and the client surfaces it** (`TelnetSessionOptions.RequestOptions`
-  / `MsspOption`; `MsspCache`; the F5 ▸ `i` INFO screen). The library's opening negotiation is
-  `IAC WILL NAWS` and nothing else, so MSSP is only ever reached if the server volunteers it — and a
-  great many servers that fully support MSSP answer `IAC DO MSSP` and volunteer nothing, which is why
-  the protocol's own reference client asks. `WorldSession`'s session factory therefore sets
-  `RequestOptions = [MsspOption]`. Do not "simplify" that away: without it the INFO screen is empty
-  against most of the servers that have the data.
+- **MSSP is waited for, never asked for, and the client surfaces what arrives** (`MsspCache`; the F5 ▸ `i`
+  INFO screen). The MSSP specification writes one handshake and only one: the server "should send
+  IAC WILL MSSP", the client answers `IAC DO MSSP` or `IAC DONT MSSP`. It says nothing about a client
+  opening with `DO` — crawlers do that on RFC 854's authority, not MSSP's — and this client used to, which
+  cost it the auto-login on any server whose telnet parser leaks an unknown option into its command
+  buffer (see the entry above; the mechanism is gone). The library's opening negotiation is
+  `IAC WILL NAWS` and nothing else, so MSSP is reached only when the server volunteers it, and the servers
+  that never do are exactly what the INFO screen's *dialled, publishes none* state is for. **Do not
+  re-add the ask** — not as an option, not per world: the cost lands on the login, silently, on the users
+  least able to diagnose it.
 - **Text encoding is CHARSET's answer, not a setting** (`SessionEncoding`, `TelnetSession.CurrentEncoding`).
   A world's `encoding` is `auto` by default — state the app's `CharsetOrder`, decode with whatever RFC
   2066 settles on — and naming one is an *override*: still offered at the head of the order so a

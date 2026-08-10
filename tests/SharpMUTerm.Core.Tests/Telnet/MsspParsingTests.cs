@@ -17,10 +17,11 @@ namespace SharpMUTerm.Core.Tests.Telnet;
 /// and say why.
 /// </para>
 /// <para>
-/// The session is built the way a world's is — <see cref="TelnetSessionOptions.RequestOptions"/>
-/// carrying <see cref="TelnetSessionOptions.MsspOption"/>, so the client asks rather than waits — and
-/// the scripted server answers only a client that asked. These are therefore the pins for the INFO
-/// screen's supply as much as for the model.
+/// The session is built the way a world's is, and the scripted server runs the handshake MSSP's own
+/// specification describes: it offers <c>IAC WILL MSSP</c>, and it answers only a client that replied
+/// <c>DO</c>. The client never opens with a <c>DO</c> of its own — see
+/// <see cref="UnsolicitedNegotiationTests"/> for the login that cost. These are therefore the pins for
+/// the INFO screen's supply as much as for the model.
 /// </para>
 /// </summary>
 public class MsspParsingTests
@@ -52,9 +53,7 @@ public class MsspParsingTests
     private static async Task<MsspData?> ReadFrom(ScriptedTransport transport, TimeSpan? patience = null)
     {
         var received = new TaskCompletionSource<MsspData>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var session = new TelnetSession(
-            transport,
-            options: new TelnetSessionOptions { RequestOptions = [TelnetSessionOptions.MsspOption] });
+        await using var session = new TelnetSession(transport);
         session.MsspReceived += (_, e) => received.TrySetResult(e.Data);
 
         await session.ConnectAsync();
