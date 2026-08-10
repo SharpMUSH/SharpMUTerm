@@ -33,6 +33,12 @@ internal static class Glyphs
     public const string Restored = "\uf1da"; // nf-fa-history
 
     /// <summary>
+    /// The bar marking where the reader was when they left the terminal — see <see cref="AwayBarRenderer"/>.
+    /// A struck-through eye, because what the rows below it have in common is that nobody was looking.
+    /// </summary>
+    public const string Away = "\uf070"; // nf-fa-eye_slash
+
+    /// <summary>
     /// The focused pane's marker, drawn on the active tab of the pane every workspace key acts on. Box
     /// drawing rather than a Nerd Font icon, deliberately: it is the one glyph here whose job is to be
     /// legible when nothing else is, so it must not be the character that degrades to a tofu box on a

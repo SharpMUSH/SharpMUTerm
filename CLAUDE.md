@@ -103,6 +103,74 @@ fallbacks) for inline images/maps.
   Restored content is closed off by one `RestoreBarRenderer` row and the lines themselves are left
   alone. Restoring 3,000 lines costs ~18 ms before the first frame. `restore:` is the third member of
   the `save:`/`logRoot:` family — **null by default, so no test and no snapshot owns one**.
+- **Coming back to the terminal leaves a bar where you were** (`AwayBarRenderer` + `TerminalFocusWatcher`,
+  Tui). Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
+  `RestoreBarRenderer` do: mark the *boundary*, never restyle the content. The signal is real terminal
+  focus reporting (`CSI ?1004h`) and **both halves of getting it are workarounds**, which is why they are
+  in one file. No released SharpConsoleUI asks for focus (verified against 2.5.18's string heap: `?2004`
+  is there, `?1004` is in no version), `IConsoleDriver` has no focus event, and `UnixStdinReader`
+  dispatches only key/paste/mouse. So we ask through `IConsoleDriver.WriteClipboardOsc52`, which is named
+  for its first customer and is really a verbatim raw write under the renderer's own `_consoleLock` — the
+  only public write serialised against frame painting — funnelled through one `EmitTerminalMode` so a
+  version that starts validating that payload is one line to fix. And focus-**in** is recognised as the
+  **bare Tab keypress that `AnsiInputParser.DispatchCsi` mistranslates it into** — `:511` reads a
+  trailing `I` as Tab, which is right for `ESC [ 1;5 I` = Ctrl+Tab and wrong for the bare form. Tab is
+  claimed through
+  `RegisterGlobalShortcut`'s **declining** overload, deliberately *not* through `MacroKeys.AppShortcuts`:
+  it declines nearly every Tab it sees, and listing it would tell F4's readers a key was gone that is not.
+  - **The watcher listens to the driver, so its `Input` runs on the driver's reader thread — and the app
+    marshals.** The framework's own key path does not run there (its driver handler only enqueues,
+    `ConsoleWindowSystem.cs:970-973`, and `InputCoordinator.ProcessInput` drains on the main loop), so
+    every other key handler here is on the UI thread and this one cannot be: a queued key arrives too
+    late to measure the gap in front of a focus-in Tab. `NoteInput` keeps its timestamps on the reader
+    thread; both subscriptions go through `OnUiThread`, because everything past them — pane buffers,
+    away marks, the controls they repaint — is the UI thread's. **Marshalling reorders, so the input is
+    numbered** (`InputCount`, carried by `Input`; `AwayMark.DrawnAfter` is the stamp): a note raised
+    before the return that drew a bar can be delivered after it, and would otherwise set `InputSince` on
+    a bar nobody has seen, retiring it to the keystroke that produced it.
+  - **Telling that Tab from a real one is a question about time, and the comparison must be against the
+    input *before* it.** The disguised focus-in is itself a `KeyPressed`, raised before `InputCoordinator`
+    reaches the global shortcuts, so measuring from the latest timestamp finds a gap of zero on every
+    return and the feature never fires — a bug indistinguishable from the terminal not supporting `?1004`.
+    **The same trap bit the boundary**, one field over: that keypress had already moved `_awayPending` to
+    the end of a buffer full of unseen lines, so `_awayBoundary` keeps the value from the input before it.
+    `SimulateReturnFromAway` notes an input first for that reason — a seam that skipped it would read a
+    boundary the shipping path never reads.
+  - **Focus-out is not recoverable.** `ESC [ O` has no case and is dropped as an `UnknownSequenceEvent`,
+    so a departure cannot be timestamped; the boundary is the last input event instead, which is seconds
+    off. **Unix only** — the Windows branch is a `Console.ReadKey` loop with its own reassembly, so
+    `?1004` must not be enabled there — and inert headless, because a harness pressing Tab must get a Tab.
+  - **A bar off the fold is scrolled to** (`RevealAwayBar`), and without that the feature is invisible in
+    the case that matters most — the reported defect. Come back to more lines than the pane holds and the
+    bar is drawn far above the viewport, so *nothing on screen changes*; nothing else covers for it either,
+    because a window visible and at its live tail throughout an absence accrues no unread badge. A bar
+    already in view is left alone: scrolling a shallow absence would take a pane off its tail to reveal
+    what is already on it. `ScrollVerticalBy` and not `ScrollToTop` — it re-syncs metrics from the arranged
+    bounds before clamping (so a scroll straight after mutating content is not clamped against a stale
+    viewport) and detaches `AutoScroll` on the way up, which a jump that left it armed would have undone
+    on the next repaint.
+  - **A buffer index is not a viewport row, and conflating them is a bug this has already had.** The
+    panel's offset counts *display* rows and a buffer line wraps into as many as it needs, so in a narrow
+    pane scrolling to the index landed hundreds of rows adrift, in content from a previous session. The
+    height is **measured**, by the framework's own `MarkupControl.MeasureDOM` through a throwaway control
+    at the pane's `ViewportWidth`, so it wraps the way the real control will — and only the *tail* is
+    measured, from the bar to the newest line, then subtracted from the panel's authoritative
+    `TotalContentHeight`. Never re-derive wrapping by counting characters; word breaks, zero-width markup
+    tags and wide characters all change the answer.
+  - **Consumption is two conjuncts, and `Workspace.IsCaughtUp` is not one of them.** A pane bottom-anchors,
+    so it is already "visible and not scrolled back" the instant you return with two hundred unread lines
+    above the fold; clearing on it clears the bar before a word is read. It goes when the pane is at its
+    *live tail* and *one input* has landed since it was drawn. What makes the first mean anything is the
+    reveal: the pane was taken **off** its tail whenever the bar was not on screen, so arriving back at the
+    bottom is having read down through what you missed rather than never having left. The second is what
+    stops a shallow absence clearing in the frame it appears in. Insert and remove are mid-buffer, so each
+    costs one `RepaintPane`; affordable for the timestamp toggle's reason, bounded by a deliberate event
+    rather than by lines or frames.
+  - The bar is chrome: it never badges unread, never reaches the restore log (already free — that is fed
+    from the session's line handlers, not the append seam), and a trim that takes it drops the mark with
+    it. A window that gained nothing gets no bar.
+  - **`SimulateKey` used to discard a global shortcut's result** and swallow the key either way. Harmless
+    while every claim returned true; wrong the moment one declined, and it now honours the decline.
 - **Every server's MSSP report is kept, and the INFO screen reads it** (`MsspCache`, Core; `mssp.json`
   beside `config.json`, keyed by `host:port`; F5 ▸ `i`). Fourth of the `save:`/`logRoot:`/`restore:`
   family with **one deliberate difference**: the constructor parameter is null by default like the
@@ -119,10 +187,23 @@ fallbacks) for inline images/maps.
   as of…" are three different screens. Report capture is bounded at the door
   (`MaxVariables`/`MaxValuesPerVariable`/`MaxValueLength`), not only at the renderer — a value only the
   screen trimmed would still be full size on disk and in memory on every later launch.
-- **`IAC DO MSSP` is sent on connect** (`TelnetSessionOptions.RequestOptions`, set by `WorldSession`'s
-  session factory). The library opens with `IAC WILL NAWS` and nothing else, so a server that supports
-  MSSP but waits to be asked is never asked — and the INFO screen would then report it as publishing
-  none, which is a claim about the server made out of our own silence.
+- **This client asks no server to enable an option the server has not offered, and that rule was bought
+  with a login** (`UnsolicitedNegotiationTests`, Core). `TelnetSession` used to write `IAC DO MSSP`
+  straight to the transport on connect — legal telnet (RFC 854 has either party initiating, and requires
+  a response even to a refusal), and the way to reach the many servers that support MSSP but never
+  volunteer it. **Refusing an option means consuming its three bytes, and a server that implements
+  neither leaves them in its line buffer, where they are prepended to the next line the client sends —
+  which is always the auto-login.** The server reads `\xFF\xFD\x46connect Name password`, redisplays its
+  connect screen and logs nobody in; the transcript shows the welcome screen twice, with no reason for it,
+  because the login line is deliberately not echoed or logged. Measured on a live game: with the request
+  the login line was never evaluated, without it the same line reached the game, and only the *first*
+  line after the request dies — which is why typing the login by hand always worked and the auto-login
+  never did. Two things follow. **We are not in a position to know which servers parse telnet properly**,
+  and the one that does not is exactly the one whose login we break. And **negotiation is the library's
+  to conduct**: TelnetNegotiationCore would never have sent that `DO` — its client-side MSSP answers a
+  server's `WILL` and initiates nothing (`MSSPProtocol.OnWillMSSPAsync`) — so a hand-written negotiation
+  byte, written around it to avoid `IAC` being escaped as data, is a negotiation nothing keeps state for.
+  The `RequestOptions` mechanism is deleted rather than left empty, so there is no seam to reach for.
 - **A launch connects nothing unless it is told to** (`StartupConnections.Resolve`, Core). A host on the
   command line wins outright; otherwise it is every character with `ConnectAtStartup` (F5's `at start`),
   in configuration order; otherwise none, and the client says which of the two empty states it is in.
@@ -191,7 +272,13 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
-  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`, `prefix-panel` (the ⌃B which-key
+  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
+  `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
+  *terminal* — the shallow absence, where the bar and everything below it are on screen at once and the
+  pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
+  has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
+  pane being "caught up" while nothing has been read, and the only one that would catch a scroll landing
+  at the wrong row), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the
@@ -228,9 +315,12 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `LogFolder` or a fake sink would have passed all along. It also let a pile of per-test
   `character.Logging = new LoggingSettings()` workarounds be deleted — with them gone the suite exercises
   the gate, and an unfixed build leaks seven files a run instead of three.
-- **The three `scroll*` views are the only ones with more output than a pane holds.** Every other view
-  fits, which is exactly why no snapshot caught the panes being unable to scroll at all. Reach for one
-  of these (or `LoadLongScene`) whenever a change touches the output area.
+- **Four views have more output than a pane holds** — `scrollback`, `scrollback-up`,
+  `freeze-scrollback` and `away-scrollback`. Name them, rather than saying "the `scroll*` views": the
+  prefix has now twice lagged behind the set it claimed to describe, and a reader looking for a
+  long-output view goes by the list. (`away` is the shallow one and fits.) Every other view fits too,
+  which is exactly why no snapshot caught the panes being unable to scroll at all. Reach for one of
+  these (or `LoadLongScene`) whenever a change touches the output area.
 - **Send the user the `.svg`.** For your *own* inspection render the `.html` — Chromium clips the
   bottom of a bare `.svg` through aspect-ratio scaling, which will make you chase a layout bug that
   isn't there.
@@ -667,13 +757,16 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `MsspParsingTests` now pins the fixed behaviour by name rather than the bugs. MSSP still has no
   payload size cap upstream — `SubnegotiationBuffer` guards GMCP, MSDP and CHARSET's TTABLE, but not
   this — so a hostile server can make a session buffer as much as it likes.
-- **MSSP is asked for, not waited for, and the client surfaces it** (`TelnetSessionOptions.RequestOptions`
-  / `MsspOption`; `MsspCache`; the F5 ▸ `i` INFO screen). The library's opening negotiation is
-  `IAC WILL NAWS` and nothing else, so MSSP is only ever reached if the server volunteers it — and a
-  great many servers that fully support MSSP answer `IAC DO MSSP` and volunteer nothing, which is why
-  the protocol's own reference client asks. `WorldSession`'s session factory therefore sets
-  `RequestOptions = [MsspOption]`. Do not "simplify" that away: without it the INFO screen is empty
-  against most of the servers that have the data.
+- **MSSP is waited for, never asked for, and the client surfaces what arrives** (`MsspCache`; the F5 ▸ `i`
+  INFO screen). The MSSP specification writes one handshake and only one: the server "should send
+  IAC WILL MSSP", the client answers `IAC DO MSSP` or `IAC DONT MSSP`. It says nothing about a client
+  opening with `DO` — crawlers do that on RFC 854's authority, not MSSP's — and this client used to, which
+  cost it the auto-login on any server whose telnet parser leaks an unknown option into its command
+  buffer (see the entry above; the mechanism is gone). The library's opening negotiation is
+  `IAC WILL NAWS` and nothing else, so MSSP is reached only when the server volunteers it, and the servers
+  that never do are exactly what the INFO screen's *dialled, publishes none* state is for. **Do not
+  re-add the ask** — not as an option, not per world: the cost lands on the login, silently, on the users
+  least able to diagnose it.
 - **Text encoding is CHARSET's answer, not a setting** (`SessionEncoding`, `TelnetSession.CurrentEncoding`).
   A world's `encoding` is `auto` by default — state the app's `CharsetOrder`, decode with whatever RFC
   2066 settles on — and naming one is an *override*: still offered at the head of the order so a

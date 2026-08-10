@@ -86,30 +86,6 @@ public sealed class TelnetSessionOptions
         ["SHARPMUTERM", "XTERM", "MTTS 2333"];
 
     /// <summary>
-    /// Telnet options to request outright on connect, by sending <c>IAC DO &lt;option&gt;</c>, rather
-    /// than waiting for the server to offer them.
-    /// <para>
-    /// <b>This exists because waiting does not work.</b> The MSSP specification says the server "should
-    /// send IAC WILL MSSP" when a client connects, and TelnetNegotiationCore is built on that reading:
-    /// its whole opening negotiation is <c>IAC WILL NAWS</c> and nothing else, so MSSP is only ever
-    /// reached if the server volunteers it. A great many servers that fully support MSSP do not
-    /// volunteer anything — they answer <c>IAC DO MSSP</c> and are otherwise silent, which is why the
-    /// protocol's own reference client (TinTin++'s <c>#session mssp</c>) asks rather than listens. A
-    /// client that only listens simply does not see those servers, and its INFO screen reports them as
-    /// publishing no MSSP — which is a different and wronger claim than "we never asked".
-    /// </para>
-    /// <para>
-    /// This is negotiation, not traffic: <c>IAC DO</c> is the client half of the option handshake, it
-    /// costs three bytes once per connection, and a server that does not implement the option answers
-    /// <c>IAC WONT</c> and is no worse off.
-    /// </para>
-    /// </summary>
-    public IReadOnlyList<byte> RequestOptions { get; init; } = [];
-
-    /// <summary>The MSSP telnet option, 70.</summary>
-    public const byte MsspOption = 70;
-
-    /// <summary>
     /// How long the connection may sit silent before a keepalive goes out, or null for none — a
     /// world's <see cref="SharpMUTerm.Core.Configuration.WorldDefinition.KeepaliveSeconds"/>, resolved
     /// by <see cref="ResolveKeepalive"/>.
@@ -411,8 +387,9 @@ public sealed class TelnetSession : ITelnetSession
         _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _readLoop = Task.Run(() => ReadLoopAsync(_loopCts.Token), CancellationToken.None);
 
-        // After the read loop is running, so a server that answers instantly is heard.
-        await RequestOptionsAsync(cancellationToken).ConfigureAwait(false);
+        // Nothing else goes out from here. The interpreter's own opening WILL NAWS offers an option of
+        // ours; what this client never sends is an IAC DO the server has not offered — see
+        // UnsolicitedNegotiationTests for the login that paid for the rule.
     }
 
     private Task<TelnetInterpreter> BuildInterpreterAsync()
@@ -470,23 +447,6 @@ public sealed class TelnetSession : ITelnetSession
         var seed = (Encoding)(_options.EncodingOverride ?? Fallback).Clone();
         InterpreterEncodingProperty.SetValue(interpreter, seed);
         _seeded = seed;
-    }
-
-    /// <summary>
-    /// Sends <c>IAC DO &lt;option&gt;</c> for each of <see cref="TelnetSessionOptions.RequestOptions"/>.
-    /// <para>
-    /// Written straight to the transport rather than through <see cref="SendAsync"/>, because that
-    /// escapes <c>IAC</c> as data — which is exactly right for a command line and exactly wrong for a
-    /// negotiation. This is the same door the interpreter's own negotiation output goes through.
-    /// </para>
-    /// </summary>
-    private async ValueTask RequestOptionsAsync(CancellationToken cancellationToken)
-    {
-        foreach (var option in _options.RequestOptions)
-        {
-            _logger.LogDebug("Requesting telnet option {Option}.", option);
-            await _transport.SendAsync(new byte[] { 255, 253, option }, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     /// <summary>

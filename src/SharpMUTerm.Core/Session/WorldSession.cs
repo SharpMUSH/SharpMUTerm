@@ -655,11 +655,18 @@ public sealed class WorldSession : IAsyncDisposable
     /// misbehaves, and it now reaches the client's diagnostics pipeline.
     /// </para>
     /// <para>
-    /// <b>MSSP is asked for rather than waited for</b> (<see cref="TelnetSessionOptions.RequestOptions"/>).
-    /// The library opens with <c>IAC WILL NAWS</c> and nothing else, so a server that supports MSSP but
-    /// waits to be asked — a great many of them — is never asked, and the INFO screen would report it as
-    /// publishing no MSSP. That is a claim about the server made out of our own silence. Three bytes,
-    /// once per connection, and a server without the option answers <c>IAC WONT</c>.
+    /// <b>MSSP is waited for and never asked for, and that is the fix to a bug this factory caused.</b>
+    /// It used to set <c>RequestOptions</c> so the session wrote <c>IAC DO MSSP</c> the moment it
+    /// connected, on the reasoning that a server which supports MSSP but waits to be asked is otherwise
+    /// never asked. The reasoning was sound and the cost was not: refusing an option means
+    /// <em>consuming</em> its three bytes, and a server that does not implement it and does not consume
+    /// them prepends them to the next line the client sends — which is always the auto-login. Measured
+    /// against a live game: with the request, the login line was never evaluated and the connect screen
+    /// came back instead; without it, the same line reached the game. The client is not in a position to
+    /// know which servers parse telnet properly, and the one that does not is exactly the one whose
+    /// login it breaks, silently. MSSP now arrives the way its own specification writes the handshake —
+    /// the server offers <c>IAC WILL MSSP</c>, the library answers <c>DO</c> — and the INFO screen's
+    /// "publishes none" covers the servers that never offer.
     /// </para>
     /// </summary>
     private ITelnetSession DefaultSessionFactory(ConnectionOptions options)
@@ -675,7 +682,6 @@ public sealed class WorldSession : IAsyncDisposable
                 CharsetOrder = order,
                 EncodingOverride = encodingOverride,
                 KeepaliveInterval = TelnetSessionOptions.ResolveKeepalive(World.KeepaliveSeconds),
-                RequestOptions = [TelnetSessionOptions.MsspOption],
             });
     }
 
