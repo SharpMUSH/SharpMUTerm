@@ -897,15 +897,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             var deep = string.Equals(view, "away-scrollback", StringComparison.OrdinalIgnoreCase);
             SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false)); // the reader is here
             LoadLongScene(MainWindowId, deep ? 40 : 4);
-            SimulateReturnFromAway(TimeSpan.FromMinutes(deep ? 143 : 12));
             SettleScroll();
-
-            if (deep)
-            {
-                SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
-                SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
-            }
-
+            SimulateReturnFromAway(TimeSpan.FromMinutes(deep ? 143 : 12));
             ReArmWholeFrame();
         }
 
@@ -2407,9 +2400,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         /// <summary>The bar's own index in the window's line buffer. Moves with an insert or a trim.</summary>
         public int Index;
 
-        /// <summary>Whether the bar has been inside the pane's viewport since it was drawn.</summary>
-        public bool Seen;
-
         /// <summary>Whether the reader has done anything at all since it was drawn.</summary>
         public bool InputSince;
     }
@@ -2481,9 +2471,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 _freezePoints[windowId] = freeze + 1;
             }
 
-            _awayMarks[windowId] = new AwayMark { Index = at };
+            var mark = new AwayMark { Index = at };
+            _awayMarks[windowId] = mark;
             RepaintPane(windowId);
+            RevealAwayBar(windowId, mark);
         }
+
+        // The scroll above takes panes off their live tail, and the status row's scrollback segment and
+        // the unread badges are both read off that fact.
+        SyncScrollbackState();
 
         // The reader is back and this is where they are now, so the next absence measures from here
         // rather than from the keystroke before the last one.
@@ -2494,18 +2490,124 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Clears every away bar the reader has now read past, which is three things at once and not one.
+    /// Puts a freshly drawn away bar on screen, by scrolling its pane so the bar sits at the top of the
+    /// viewport and the first line the reader has not seen is directly under it.
     /// <para>
-    /// The obvious test — <c>Workspace.IsCaughtUp</c> — does not survive contact: a pane bottom-anchors,
-    /// so it is already "visible and not scrolled back" the instant the reader returns, however many
-    /// hundred lines are above the fold. Clearing on it would clear the bar before a word of them had
-    /// been read.
+    /// <b>Without this the feature is invisible in the case it matters most.</b> Come back to more lines
+    /// than the pane holds and the bar is drawn far above the fold, so nothing on screen changes — and
+    /// nothing else covers for it either: while the reader is away the window is visible and at its live
+    /// tail, so <c>NoteActivity</c> counts none of those lines and no unread badge appears. A returning
+    /// reader got no signal whatsoever, which is indistinguishable from the terminal not reporting focus.
+    /// This was the reported defect.
     /// </para>
     /// <para>
-    /// So: the bar has been <em>inside the viewport</em> (which is what makes a deep absence keep its
-    /// bar until the reader scrolls up and finds it), the pane is at its <em>live tail</em>, and the
-    /// reader has <em>done something</em> since it was drawn (which is what stops a shallow absence —
-    /// a handful of lines, all on screen with the bar — clearing in the very frame it appears).
+    /// <b>A bar already in view is left exactly where it is.</b> A shallow absence puts the bar and
+    /// everything below it on screen at once, and scrolling then would take a pane off its live tail to
+    /// show something already visible — turning a glance into a gesture the reader has to undo.
+    /// </para>
+    /// <para>
+    /// <see cref="ScrollablePanelControl.ScrollVerticalBy"/> and not <c>ScrollToTop</c>: it re-syncs its
+    /// metrics from the arranged bounds before clamping, which is what makes a scroll immediately after
+    /// mutating the content land where it was asked to rather than against a stale viewport, and it
+    /// detaches <c>AutoScroll</c> on the way up — a jump that left auto-scroll armed would be undone by
+    /// the very next repaint.
+    /// </para>
+    /// </summary>
+    private void RevealAwayBar(string windowId, AwayMark mark)
+    {
+        if (_paneScrolls.GetValueOrDefault(windowId) is not { } panel
+            || !_lines.TryGetValue(windowId, out var buffer)
+            || panel.ViewportWidth <= 0
+            || panel.ViewportHeight <= 0)
+        {
+            return;
+        }
+
+        // A frozen window's live control starts at the freeze point; a bar above that is in the pinned
+        // half, which is on screen already and is not this control's to scroll to.
+        var origin = _freezePoints.TryGetValue(windowId, out var split) ? Math.Max(0, split) : 0;
+        if (mark.Index < origin)
+        {
+            return;
+        }
+
+        // A buffer index is NOT a viewport row, and conflating them is the defect this method was first
+        // written with: the panel's offset counts *display* rows, and a buffer line wraps into as many of
+        // them as it needs. In a narrow pane almost every line wraps, so scrolling to the index landed
+        // hundreds of rows adrift — far above what the reader missed, in content from a previous session.
+        //
+        // The height is therefore measured rather than computed, and measured by the framework's own
+        // layout so it wraps the way the real control will. Only the *tail* is measured — from the bar to
+        // the newest line, which is bounded by what arrived during the absence — and it is subtracted
+        // from the panel's own authoritative total, so nothing walks the whole scrollback.
+        var tailRows = MeasureRows(buffer, mark.Index, panel.ViewportWidth, _panes.GetValueOrDefault(windowId));
+        if (tailRows <= 0)
+        {
+            return;
+        }
+
+        var target = Math.Max(0, panel.TotalContentHeight - tailRows);
+        var delta = target - panel.VerticalScrollOffset;
+        if (delta < 0)
+        {
+            // Only ever upwards. A shallow absence leaves the bar and everything under it on screen
+            // already, and scrolling then would take a pane off its live tail to reveal something the
+            // reader can see — turning a glance into a gesture they have to undo.
+            panel.ScrollVerticalBy(delta);
+        }
+    }
+
+    /// <summary>
+    /// How many display rows a window's buffer occupies from <paramref name="from"/> to its end, at
+    /// <paramref name="width"/> cells, as the framework will wrap it.
+    /// <para>
+    /// Measured through a throwaway <see cref="MarkupControl"/> and its public <c>MeasureDOM</c> rather
+    /// than by counting characters here: word wrapping, markup tags that occupy no cells and wide
+    /// characters all change the answer, and a second implementation of that arithmetic would be a second
+    /// thing to keep in step with the renderer. The wrap setting is copied off the real pane control for
+    /// the same reason — measuring with a different one would measure a different control.
+    /// </para>
+    /// </summary>
+    private int MeasureRows(List<PaneLine> buffer, int from, int width, MarkupControl? like)
+    {
+        var start = Math.Clamp(from, 0, buffer.Count);
+        var markup = new List<string>(buffer.Count - start);
+        for (var i = start; i < buffer.Count; i++)
+        {
+            markup.Add(Compose(buffer[i]));
+        }
+
+        if (markup.Count == 0)
+        {
+            return 0;
+        }
+
+        var probe = new MarkupControl(markup);
+        if (like is not null)
+        {
+            probe.Wrap = like.Wrap;
+            probe.Padding = like.Padding;
+        }
+
+        // Unbounded height, tight width: exactly how a scroll viewport measures the child it will scroll.
+        return probe.MeasureDOM(new LayoutConstraints(width, width, 0, int.MaxValue)).Height;
+    }
+
+    /// <summary>
+    /// Clears every away bar the reader has now read past: the pane is back at its <em>live tail</em>,
+    /// and <em>one input</em> has landed since the bar was drawn.
+    /// <para>
+    /// The obvious test — <c>Workspace.IsCaughtUp</c> — does not survive contact, and this is not it. A
+    /// pane bottom-anchors, so it is "visible and not scrolled back" the instant the reader returns,
+    /// however many hundred lines are above the fold; clearing on that would clear the bar before a word
+    /// of them had been read. What makes "at the live tail" mean something here is that
+    /// <see cref="RevealAwayBar"/> has already taken the pane <em>off</em> its tail whenever the bar was
+    /// not on screen, so getting back to the bottom is the reader having come down through the lines
+    /// they missed rather than never having left it.
+    /// </para>
+    /// <para>
+    /// The input conjunct is what stops a shallow absence — a handful of lines, all on screen with the
+    /// bar, pane never moved — clearing in the very frame it appears.
     /// </para>
     /// </summary>
     private void ConsumeReadAwayBars()
@@ -2518,20 +2620,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            // A frozen window's live control starts at the freeze point, so the bar's row within that
-            // control is its buffer index less the split. A bar in the *frozen* half is pinned on screen
-            // above the divider and has been seen by construction.
-            var origin = _freezePoints.TryGetValue(windowId, out var split) ? Math.Max(0, split) : 0;
-            var row = mark.Index - origin;
-            var top = panel.VerticalScrollOffset;
-            if (row < 0 || (row >= top && row < top + panel.ViewportHeight))
-            {
-                mark.Seen = true;
-            }
-
             // AutoScroll is the framework's own "showing the live tail" bit — the same fact
             // SyncScrollbackState mirrors, rather than a second one kept in step with it.
-            if (mark.Seen && mark.InputSince && panel.AutoScroll)
+            if (mark.InputSince && panel.AutoScroll)
             {
                 RemoveAwayBar(windowId);
                 RepaintPane(windowId);

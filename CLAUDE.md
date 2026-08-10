@@ -129,13 +129,32 @@ fallbacks) for inline images/maps.
     so a departure cannot be timestamped; the boundary is the last input event instead, which is seconds
     off. **Unix only** — the Windows branch is a `Console.ReadKey` loop with its own reassembly, so
     `?1004` must not be enabled there — and inert headless, because a harness pressing Tab must get a Tab.
-  - **Consumption is three conjuncts, and `Workspace.IsCaughtUp` is not one of them.** A pane
-    bottom-anchors, so it is already "visible and not scrolled back" the instant you return with two
-    hundred unread lines above the fold; clearing on it clears the bar before a word is read. It goes when
-    the bar has been *inside the viewport*, the pane is at its *live tail*, and *one input* has landed
-    since it was drawn — the last of which is what stops a shallow absence clearing in the frame it
-    appears in. Insert and remove are mid-buffer, so each costs one `RepaintPane`; affordable for the
-    timestamp toggle's reason, bounded by a deliberate event rather than by lines or frames.
+  - **A bar off the fold is scrolled to** (`RevealAwayBar`), and without that the feature is invisible in
+    the case that matters most — the reported defect. Come back to more lines than the pane holds and the
+    bar is drawn far above the viewport, so *nothing on screen changes*; nothing else covers for it either,
+    because a window visible and at its live tail throughout an absence accrues no unread badge. A bar
+    already in view is left alone: scrolling a shallow absence would take a pane off its tail to reveal
+    what is already on it. `ScrollVerticalBy` and not `ScrollToTop` — it re-syncs metrics from the arranged
+    bounds before clamping (so a scroll straight after mutating content is not clamped against a stale
+    viewport) and detaches `AutoScroll` on the way up, which a jump that left it armed would have undone
+    on the next repaint.
+  - **A buffer index is not a viewport row, and conflating them is a bug this has already had.** The
+    panel's offset counts *display* rows and a buffer line wraps into as many as it needs, so in a narrow
+    pane scrolling to the index landed hundreds of rows adrift, in content from a previous session. The
+    height is **measured**, by the framework's own `MarkupControl.MeasureDOM` through a throwaway control
+    at the pane's `ViewportWidth`, so it wraps the way the real control will — and only the *tail* is
+    measured, from the bar to the newest line, then subtracted from the panel's authoritative
+    `TotalContentHeight`. Never re-derive wrapping by counting characters; word breaks, zero-width markup
+    tags and wide characters all change the answer.
+  - **Consumption is two conjuncts, and `Workspace.IsCaughtUp` is not one of them.** A pane bottom-anchors,
+    so it is already "visible and not scrolled back" the instant you return with two hundred unread lines
+    above the fold; clearing on it clears the bar before a word is read. It goes when the pane is at its
+    *live tail* and *one input* has landed since it was drawn. What makes the first mean anything is the
+    reveal: the pane was taken **off** its tail whenever the bar was not on screen, so arriving back at the
+    bottom is having read down through what you missed rather than never having left. The second is what
+    stops a shallow absence clearing in the frame it appears in. Insert and remove are mid-buffer, so each
+    costs one `RepaintPane`; affordable for the timestamp toggle's reason, bounded by a deliberate event
+    rather than by lines or frames.
   - The bar is chrome: it never badges unread, never reaches the restore log (already free — that is fed
     from the session's line handlers, not the append seam), and a trim that takes it drops the mark with
     it. A window that gained nothing gets no bar.
@@ -231,10 +250,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   the pair it is easy to conflate), `web`,
   `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
   `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
-  *terminal* — the shallow absence, where the bar and everything below it are on screen at once, and the
-  deep one, where more arrived than the pane holds and the reader has scrolled back to find it; the
-  second is the only frame that can show a bottom-anchored pane being "caught up" while nothing has been
-  read), `prefix-panel` (the ⌃B which-key
+  *terminal* — the shallow absence, where the bar and everything below it are on screen at once and the
+  pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
+  has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
+  pane being "caught up" while nothing has been read, and the only one that would catch a scroll landing
+  at the wrong row), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the

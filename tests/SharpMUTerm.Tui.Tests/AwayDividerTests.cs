@@ -127,12 +127,19 @@ public class AwayDividerTests
     }
 
     /// <summary>
-    /// The first consumption conjunct, and the one the obvious rule gets wrong. A bottom-anchored pane
-    /// is already "caught up" the instant the reader returns, however much is above the fold — so a bar
-    /// they have not scrolled up to must survive their typing.
+    /// The reported defect. Come back to more lines than the pane holds and the bar is drawn far above
+    /// the fold, so nothing on screen changes — and nothing else covers for it, because a window that is
+    /// visible and at its live tail throughout an absence accrues no unread badge either. The reader got
+    /// no signal at all, which is indistinguishable from the terminal not reporting focus.
+    /// <para>
+    /// This asserts on the <em>frame</em> and not on the scroll offset, because the offset is where the
+    /// second bug lived: a buffer index is not a viewport row, and a wrapped line occupies several rows,
+    /// so scrolling to the index landed hundreds of rows adrift in content from a previous session. Only
+    /// the painted frame can tell the two apart.
+    /// </para>
     /// </summary>
     [Test]
-    public async Task ADeepAbsenceKeepsItsBarUntilTheReaderGoesAndLooks()
+    public async Task ADeepAbsenceScrollsThePaneSoTheBarIsOnScreen()
     {
         var (app, session, _) = Bound();
         app.SimulateKey(Key(ConsoleKey.End));
@@ -141,23 +148,66 @@ public class AwayDividerTests
             session.PrintSystem($"*** while you were away {i}");
         }
 
-        app.SimulateReturnFromAway(TimeSpan.FromHours(2));
+        // A live app has painted frames by now, which is what gives the pane an arranged viewport to
+        // measure against. Without one there is nothing to scroll and nothing to scroll within.
         app.RenderWholeFrame();
 
-        app.SimulateKey(Key(ConsoleKey.End));
-        await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
+        app.SimulateReturnFromAway(TimeSpan.FromHours(2));
+        var frame = app.RenderWholeFrame();
 
-        // Now go and find it, then come back to the bottom: that is the gap being crossed.
-        for (var i = 0; i < 40; i++)
+        await Assert.That(frame).Contains(AwayBarRenderer.Label);
+    }
+
+    /// <summary>
+    /// And the scroll is what makes "back at the live tail" mean something: the pane has been taken off
+    /// its tail, so returning to the bottom is the reader having come down through what they missed
+    /// rather than never having left it.
+    /// </summary>
+    [Test]
+    public async Task ADeepAbsenceKeepsItsBarUntilTheReaderReadsDownToTheTail()
+    {
+        var (app, session, _) = Bound();
+        app.SimulateKey(Key(ConsoleKey.End));
+        for (var i = 0; i < 200; i++)
         {
-            app.SimulateKey(Key(ConsoleKey.PageUp));
+            session.PrintSystem($"*** while you were away {i}");
         }
 
         app.RenderWholeFrame();
+        app.SimulateReturnFromAway(TimeSpan.FromHours(2));
+        app.RenderWholeFrame();
+
+        // Typing where you landed does not clear it — you have read the top of what you missed, not all.
+        app.SimulateKey(Key(ConsoleKey.End));
+        await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
+
+        // ⌃End is the way back to live output, and arriving there is the gap being crossed.
         app.SimulateKey(Key(ConsoleKey.End, ctrl: true));
         app.RenderWholeFrame();
         app.SimulateKey(Key(ConsoleKey.End));
 
+        await Assert.That(app.AwayBarIndex(Main)).IsNull();
+    }
+
+    /// <summary>
+    /// A shallow absence must not be scrolled. The bar and everything under it are on screen already, so
+    /// moving the pane off its live tail would turn a glance into a gesture the reader has to undo.
+    /// </summary>
+    [Test]
+    public async Task AShallowAbsenceLeavesThePaneOnItsLiveTail()
+    {
+        var (app, session, _) = Bound();
+        app.SimulateKey(Key(ConsoleKey.End));
+        session.PrintSystem("*** while you were away");
+        app.RenderWholeFrame();
+
+        app.SimulateReturnFromAway(TimeSpan.FromMinutes(12));
+        var frame = app.RenderWholeFrame();
+
+        await Assert.That(frame).Contains(AwayBarRenderer.Label);
+
+        // Still at the tail, so one keystroke is all it takes to be done with it.
+        app.SimulateKey(Key(ConsoleKey.End));
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
 

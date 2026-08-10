@@ -159,25 +159,51 @@ Two things it must not do:
 
 A window with no lines at all gets no bar: there is no boundary to mark.
 
-### 4. Consumption
+### 4. Making sure you can see it
 
-The divider is cleared when you have read past it, and "read past it" needs care, because the
-obvious test does not survive contact. A bottom-anchored pane is *already* `IsCaughtUp` the instant
-you return — that predicate is "visible and not scrolled back" (`Workspace.cs:384`) and says nothing
-about how much arrived. Clearing on it would clear the divider before you had read a word of the two
-hundred lines above the fold.
+A bar drawn above the fold is not a feature. Come back to more lines than the pane holds and the
+divider is drawn far above the viewport, so **nothing on screen changes** — and nothing else covers
+for it, because a window that is visible and at its live tail throughout the absence accrues no
+unread badge either (`NoteActivity` counts only what arrives while *not* `IsCaughtUp`). The reader
+gets no signal whatsoever, which is indistinguishable from the terminal not reporting focus at all.
+This was the reported defect and it is the reason `RevealAwayBar` exists.
 
-The rule is therefore three conjuncts:
+On a return, each pane that gained a bar is scrolled so the bar sits at the top of its viewport and
+the first line you have not read is under it. A bar **already in view is left alone**: a shallow
+absence has the bar and everything below it on screen at once, and scrolling then would take a pane
+off its live tail to reveal what is already on it.
 
-1. the divider row has been **inside the viewport** — computable per frame from the panel's
-   `VerticalScrollOffset`, `ViewportHeight` and the row's index; and
-2. the pane is at its **live tail**; and
-3. at least **one input event** has landed since the bar was drawn.
+`ScrollVerticalBy` rather than `ScrollToTop`: it re-syncs its metrics from the arranged bounds before
+clamping — which is what makes a scroll immediately after mutating the content land where it was
+asked rather than against a stale viewport — and it detaches `AutoScroll` on the way up, where a jump
+that left auto-scroll armed would be undone by the very next repaint.
 
-Read together: you saw the marker, and you are now at the bottom, so you crossed the gap between
-them. (1) is what makes a deep absence keep its divider until you scroll up and find it. (3) is what
-stops a shallow absence — a handful of lines, all on screen with the marker — clearing in the very
-frame it appears.
+**A buffer index is not a viewport row.** The panel's offset counts *display* rows, and a buffer line
+wraps into as many of them as it needs; in a narrow pane almost every line wraps, so scrolling to the
+index lands hundreds of rows adrift. The tail height is therefore **measured**, through the
+framework's own `MarkupControl.MeasureDOM` on a throwaway control at the pane's `ViewportWidth`, so it
+wraps the way the real control will. Only the tail is measured — from the bar to the newest line,
+bounded by what arrived during the absence — and it is subtracted from the panel's authoritative
+`TotalContentHeight`, so nothing walks the whole scrollback. Re-deriving wrapping by counting
+characters would be a second implementation of the renderer's arithmetic to keep in step, and word
+breaks, zero-width markup tags and wide characters all change the answer.
+
+### 5. Consumption
+
+The divider is cleared when you have read past it, and "read past it" needs care, because the obvious
+test does not survive contact. A bottom-anchored pane is *already* `IsCaughtUp` the instant you
+return — that predicate is "visible and not scrolled back" (`Workspace.cs:384`) and says nothing
+about how much arrived.
+
+Two conjuncts:
+
+1. the pane is at its **live tail**; and
+2. at least **one input event** has landed since the bar was drawn.
+
+(1) means something only because of the reveal above: the pane was taken *off* its tail whenever the
+bar was not on screen, so arriving back at the bottom is you having come down through the lines you
+missed rather than never having left. (2) is what stops a shallow absence — a handful of lines, all
+on screen with the marker — clearing in the very frame it appears.
 
 Clearing is a removal from `_lines` and so costs the same single-window re-feed the insertion did.
 
@@ -191,11 +217,22 @@ because two boundaries in one pane cannot both be "where you left".
   through; a Tab outside it consumes and raises `Returned`; the disguised focus-in's own `KeyPressed`
   does not move the baseline it is about to be compared against; nothing is emitted off Unix or
   without a live driver.
-- `AwayDividerTests` — insertion at the recorded index; the three consumption conjuncts, each failing
-  alone; replacement on a second return; no bar for an empty window; the bar is not counted as unread.
-- Snapshot views `away` (divider on screen) and `away-scrollback` (divider above the fold, over
-  `LoadLongScene`). CLAUDE.md is explicit that the three `scroll*` views are the only ones with more
-  output than a pane holds, and that anything touching the output area needs one.
+- `AwayDividerTests` — insertion at the recorded index; both consumption conjuncts; replacement on a
+  second return; no bar for an empty window; the bar is not counted as unread; and one test that
+  crosses the whole seam through the real global-shortcut registration rather than the simulation seam.
+- **The deep-absence tests assert on the painted frame, not on a scroll offset**, because the offset is
+  where the reveal's own bug lived: an index-as-row scroll lands hundreds of rows adrift and only the
+  frame tells the two apart. Both fail without `RevealAwayBar`.
+- Snapshot views `away` (shallow: divider on screen, pane left on its live tail) and `away-scrollback`
+  (deep: the client has scrolled the pane to the divider, over `LoadLongScene`). CLAUDE.md is explicit
+  that anything touching the output area needs a view with more output than a pane holds.
+- **A real terminal, because none of the above can see the signal itself.** The headless harness cannot
+  produce a focus report — `ShouldEnable` is false for a headless driver by design. Driving a real kitty
+  proved the rest: the client emits `?1004h`; a DECRQM probe answers `?1004;1` after the alternate-screen
+  switch and after every mode the framework sets behind it; the terminal writes `ESC [ O` and `ESC [ I`;
+  and the client recognised a 42-second absence and drew the bar. Note that a test which moves the client
+  to a separate **OS window** and drives focus with `kitten @ focus-window` proves nothing — programmatic
+  OS-focus stealing is refused under Wayland, so no focus transition happens. Use a tab or a split.
 - The whole suite and `dotnet build SharpMUTerm.slnx` warning-free.
 
 ## Out of scope
