@@ -317,6 +317,47 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>Assembles pane drag-and-drop out of the driver's raw mouse frames (see PaneDragTracker).</summary>
     private readonly PaneDragTracker _paneDrag = new();
 
+    /// <summary>
+    /// Notices the reader coming back to the terminal after being away from it, so the panes can be
+    /// marked where they left. Always constructed and usually inert: see <see cref="TerminalFocusWatcher"/>
+    /// for what it can and cannot see, and the <c>focusReporting</c> constructor parameter for who turns
+    /// it on.
+    /// </summary>
+    private readonly TerminalFocusWatcher _focus;
+
+    /// <summary>
+    /// Where each window's newest line was when the reader last did anything, by window id.
+    /// <para>
+    /// It is tracked forward, on every input event, rather than found retroactively when the return
+    /// arrives, because there is nothing in the buffer to find it by: a <see cref="PaneLine"/>'s stamp is
+    /// <em>formatted text</em> and not a time, so the buffer cannot be searched for "the first line newer
+    /// than this instant". Widening <c>PaneLine</c> to carry an arrival time would touch every append and
+    /// the restore codec; this costs a dictionary write per keystroke over a handful of entries.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, int> _awayPending = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Where each window's newest line was at the input <em>before</em> the last one — which is the
+    /// boundary an away bar is actually drawn at.
+    /// <para>
+    /// <b>The same ordering trap the clock has, one field over.</b> The terminal's focus report arrives
+    /// disguised as a Tab keypress, so by the time the return is recognised that keypress has already
+    /// been through <see cref="NoteReaderInput"/> and moved <see cref="_awayPending"/> to the end of a
+    /// buffer full of lines the reader never saw. Reading it there finds nothing missed and draws no bar
+    /// at all. <see cref="TerminalFocusWatcher.TryTakeAsReturn"/> measures its gap from the input before
+    /// the Tab for exactly this reason; so does this.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, int> _awayBoundary = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The away bar each window is currently carrying, by window id. At most one per window: a return
+    /// while a previous bar is still unread replaces it, because two rows in one pane cannot both be
+    /// where the reader left.
+    /// </summary>
+    private readonly Dictionary<string, AwayMark> _awayMarks = new(StringComparer.Ordinal);
+
     /// <summary>How the configuration is written back, or null for an app that owns no file.</summary>
     private readonly Action<AppConfiguration>? _save;
 
@@ -414,6 +455,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// needs no "is there a cache" branch, and a snapshot can seed a report through the same writer a
     /// live session uses without any of it reaching disk.
     /// </param>
+    /// <param name="focusReporting">
+    /// Whether to ask the terminal to report focus, so the panes can be marked where the reader was when
+    /// they tabbed away (see <see cref="TerminalFocusWatcher"/>). Null, the default, decides from the
+    /// driver — off on Windows, whose input path cannot decode the reports, and off headless, where
+    /// there is no terminal to have been left and where a harness pressing Tab must get a Tab.
+    /// <para>
+    /// It is a parameter rather than only that decision because the interesting half of the feature is
+    /// what happens to a <em>declined</em> Tab, and a test can only exercise that against a driver the
+    /// automatic answer says no to.
+    /// </para>
+    /// </param>
     public SharpMUTermApp(
         AppConfiguration config,
         TerminalCapabilities capabilities,
@@ -423,7 +475,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         Action<AppConfiguration>? save = null,
         string? logRoot = null,
         RestoreLog? restore = null,
-        MsspCache? mssp = null)
+        MsspCache? mssp = null,
+        bool? focusReporting = null)
     {
         _config = config;
         _save = save;
@@ -475,6 +528,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             EnableAnimations: !headless,
             ExitKey: null);
         _system = new ConsoleWindowSystem(driver ?? new NetConsoleDriver(RenderMode.Buffer), options);
+
+        // Built here so the app always has one to ask, and inert unless something turns it on. Nothing
+        // reaches the terminal until Run() starts it, which is the same shape as the save/logRoot/restore
+        // family one layer out: an app that is not the live entry point must not write to the developer's
+        // terminal any more than it writes to their configuration.
+        _focus = new TerminalFocusWatcher(
+            _system.ConsoleDriver,
+            _time,
+            focusReporting ?? TerminalFocusWatcher.ShouldEnable(_system.ConsoleDriver));
+        _focus.Input += NoteReaderInput;
+        _focus.Returned += MarkWhereTheReaderLeft;
 
         _header = Controls.Markup(HeaderMarkup()).StickyTop().Build();
         _header.LinkClicked += (_, e) => OnChromeLinkClicked(e.Url);
@@ -627,6 +691,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     public int Run(IReadOnlyList<StartupConnection> startup)
     {
         ScheduleStartup(startup ?? Array.Empty<StartupConnection>());
+
+        // Here and not in the constructor: this is the one method that means "there is a live terminal
+        // in front of this app", and asking a terminal to report focus is a write to it.
+        _focus.Start();
         return _system.Run();
     }
 
@@ -812,6 +880,33 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
                 ReArmWholeFrame();
             }
+        }
+
+        // The bar marking where the reader was when they tabbed away from the terminal. Two views,
+        // because the two states it has are the two ends of the consumption rule. `away` is a shallow
+        // absence: the bar and everything below it are on screen at once, which is the frame where the
+        // bar has to be legible without being loud. `away-scrollback` is a deep one, where more arrived
+        // than the pane can hold — the bar is above the fold, the reader has gone back to look for it,
+        // and the frame carries it with the lines it divides on both sides of it *and* the status row's
+        // scrollback segment. Only the second can show that a bottom-anchored pane being "caught up"
+        // says nothing about whether the lines have been read, which is the mistake the obvious
+        // consumption rule makes.
+        if (string.Equals(view, "away", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(view, "away-scrollback", StringComparison.OrdinalIgnoreCase))
+        {
+            var deep = string.Equals(view, "away-scrollback", StringComparison.OrdinalIgnoreCase);
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false)); // the reader is here
+            LoadLongScene(MainWindowId, deep ? 40 : 4);
+            SimulateReturnFromAway(TimeSpan.FromMinutes(deep ? 143 : 12));
+            SettleScroll();
+
+            if (deep)
+            {
+                SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+                SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            }
+
+            ReArmWholeFrame();
         }
 
         // A frozen pane whose pinned half holds far more than its three-quarters of the pane, scrolled
@@ -2085,6 +2180,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
             _lines[windowId] = buffer = new List<PaneLine>();
+
+            // A window the reader has never been offered an input event over starts at the beginning:
+            // everything about to land in it is content they have not seen. Seeded here rather than
+            // left to default, because "no entry" would otherwise have to mean two different things —
+            // a window that is new, and a window whose boundary happens to be zero — and the arm that
+            // read it as "the reader has seen everything" silently drew no bar for any window that
+            // opened while they were away, which is every spawn window a busy absence creates.
+            _awayPending[windowId] = 0;
+            _awayBoundary[windowId] = 0;
         }
 
         buffer.Add(new PaneLine(markup, stamp));
@@ -2100,6 +2204,30 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             if (_freezePoints.TryGetValue(windowId, out var point))
             {
                 _freezePoints[windowId] = Math.Max(0, point - excess);
+            }
+
+            // Everything else that indexes into this buffer moves with it. The boundary is clamped at
+            // zero — a reader whose position has been trimmed away was, as far as this buffer can now
+            // say, at the beginning of it. The away bar is not clamped: a bar trimmed off the top is
+            // gone, and a mark left pointing at row zero would have the next removal take a line of the
+            // game's output instead.
+            if (_awayPending.TryGetValue(windowId, out var pending))
+            {
+                _awayPending[windowId] = Math.Max(0, pending - excess);
+            }
+
+            if (_awayBoundary.TryGetValue(windowId, out var boundary))
+            {
+                _awayBoundary[windowId] = Math.Max(0, boundary - excess);
+            }
+
+            if (_awayMarks.TryGetValue(windowId, out var mark))
+            {
+                mark.Index -= excess;
+                if (mark.Index < 0)
+                {
+                    _awayMarks.Remove(windowId);
+                }
             }
         }
 
@@ -2225,35 +2353,250 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void RepaintPanes()
     {
+        foreach (var windowId in _lines.Keys)
+        {
+            RepaintPane(windowId);
+        }
+    }
+
+    /// <summary>
+    /// Re-draws one output pane from its line buffer. The single-window half of
+    /// <see cref="RepaintPanes"/>, and it carries the same warning: this is the whole-buffer feed, so it
+    /// belongs only to changes bounded by a deliberate event. Inserting and removing an away bar
+    /// (<see cref="AwayBarRenderer"/>) is one — it happens when the reader comes back and when they have
+    /// read what they missed, not per line and not per frame.
+    /// </summary>
+    private void RepaintPane(string windowId)
+    {
+        // Skipped for the reason RepaintPanes gives: the web view's pane is not fed from this buffer at
+        // all, so re-feeding it would replace the page with whatever last printed into that window.
+        if (string.Equals(windowId, WebWindowId, StringComparison.Ordinal)
+            || !_lines.TryGetValue(windowId, out var buffer))
+        {
+            return;
+        }
+
+        if (_freezePoints.TryGetValue(windowId, out var point))
+        {
+            var split = Math.Clamp(point, 0, buffer.Count);
+            if (_frozenPanes.TryGetValue(windowId, out var frozen))
+            {
+                FeedRange(frozen, buffer, 0, split);
+            }
+
+            if (_panes.TryGetValue(windowId, out var tail))
+            {
+                FeedRange(tail, buffer, split, buffer.Count - split);
+            }
+
+            return;
+        }
+
+        if (_panes.TryGetValue(windowId, out var control))
+        {
+            FeedRange(control, buffer, 0, buffer.Count);
+        }
+    }
+
+    /// <summary>
+    /// An away bar a window is currently carrying: where it sits in the line buffer, and the two
+    /// observations that between them mean the reader has read past it.
+    /// </summary>
+    private sealed class AwayMark
+    {
+        /// <summary>The bar's own index in the window's line buffer. Moves with an insert or a trim.</summary>
+        public int Index;
+
+        /// <summary>Whether the bar has been inside the pane's viewport since it was drawn.</summary>
+        public bool Seen;
+
+        /// <summary>Whether the reader has done anything at all since it was drawn.</summary>
+        public bool InputSince;
+    }
+
+    /// <summary>
+    /// Records that the reader did something: moves every window's boundary up to its newest line, and
+    /// re-checks whether an away bar already on screen has now been read.
+    /// <para>
+    /// This is where the boundary comes from. It cannot be found retroactively — see
+    /// <see cref="_awayPending"/> — so it is kept current, and the last value it held before the reader
+    /// vanished is where they were.
+    /// </para>
+    /// </summary>
+    private void NoteReaderInput()
+    {
         foreach (var (windowId, buffer) in _lines)
+        {
+            _awayBoundary[windowId] = _awayPending.GetValueOrDefault(windowId);
+            _awayPending[windowId] = buffer.Count;
+        }
+
+        foreach (var mark in _awayMarks.Values)
+        {
+            mark.InputSince = true;
+        }
+
+        ConsumeReadAwayBars();
+    }
+
+    /// <summary>
+    /// Draws an away bar in every window that gained lines while the reader was gone.
+    /// <para>
+    /// A window that gained nothing gets nothing: there is no boundary to mark, and a bar sitting on the
+    /// newest line of a quiet pane would be pure furniture. Neither does the web view, whose pane is not
+    /// fed from the line buffer.
+    /// </para>
+    /// <para>
+    /// The bar is the client's own chrome, so it is appended through the buffer rather than through
+    /// <see cref="AppendLine"/>: it must not badge the window unread, and it must not reach the restore
+    /// log — which it cannot anyway, because that is fed from the session's own line handlers and
+    /// deliberately not from the append seam.
+    /// </para>
+    /// </summary>
+    private void MarkWhereTheReaderLeft(TimeSpan away)
+    {
+        var accent = FrozenAccentHex();
+        foreach (var windowId in _lines.Keys.ToArray())
         {
             if (string.Equals(windowId, WebWindowId, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            if (_freezePoints.TryGetValue(windowId, out var point))
+            // At most one per window, so the previous bar goes first — and it goes first rather than
+            // last because removing it shifts every index after it, the pending boundary included.
+            RemoveAwayBar(windowId);
+
+            var buffer = _lines[windowId];
+            var at = Math.Clamp(_awayBoundary.GetValueOrDefault(windowId), 0, buffer.Count);
+            var missed = buffer.Count - at;
+            if (missed <= 0)
             {
-                var split = Math.Clamp(point, 0, buffer.Count);
-                if (_frozenPanes.TryGetValue(windowId, out var frozen))
-                {
-                    FeedRange(frozen, buffer, 0, split);
-                }
-
-                if (_panes.TryGetValue(windowId, out var tail))
-                {
-                    FeedRange(tail, buffer, split, buffer.Count - split);
-                }
-
                 continue;
             }
 
-            if (_panes.TryGetValue(windowId, out var control))
+            buffer.Insert(at, new PaneLine(AwayBarRenderer.Bar(missed, away, accent)));
+            if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
             {
-                FeedRange(control, buffer, 0, buffer.Count);
+                _freezePoints[windowId] = freeze + 1;
+            }
+
+            _awayMarks[windowId] = new AwayMark { Index = at };
+            RepaintPane(windowId);
+        }
+
+        // The reader is back and this is where they are now, so the next absence measures from here
+        // rather than from the keystroke before the last one.
+        foreach (var (windowId, buffer) in _lines)
+        {
+            _awayPending[windowId] = _awayBoundary[windowId] = buffer.Count;
+        }
+    }
+
+    /// <summary>
+    /// Clears every away bar the reader has now read past, which is three things at once and not one.
+    /// <para>
+    /// The obvious test — <c>Workspace.IsCaughtUp</c> — does not survive contact: a pane bottom-anchors,
+    /// so it is already "visible and not scrolled back" the instant the reader returns, however many
+    /// hundred lines are above the fold. Clearing on it would clear the bar before a word of them had
+    /// been read.
+    /// </para>
+    /// <para>
+    /// So: the bar has been <em>inside the viewport</em> (which is what makes a deep absence keep its
+    /// bar until the reader scrolls up and finds it), the pane is at its <em>live tail</em>, and the
+    /// reader has <em>done something</em> since it was drawn (which is what stops a shallow absence —
+    /// a handful of lines, all on screen with the bar — clearing in the very frame it appears).
+    /// </para>
+    /// </summary>
+    private void ConsumeReadAwayBars()
+    {
+        foreach (var windowId in _awayMarks.Keys.ToArray())
+        {
+            if (!_awayMarks.TryGetValue(windowId, out var mark)
+                || _paneScrolls.GetValueOrDefault(windowId) is not { } panel)
+            {
+                continue;
+            }
+
+            // A frozen window's live control starts at the freeze point, so the bar's row within that
+            // control is its buffer index less the split. A bar in the *frozen* half is pinned on screen
+            // above the divider and has been seen by construction.
+            var origin = _freezePoints.TryGetValue(windowId, out var split) ? Math.Max(0, split) : 0;
+            var row = mark.Index - origin;
+            var top = panel.VerticalScrollOffset;
+            if (row < 0 || (row >= top && row < top + panel.ViewportHeight))
+            {
+                mark.Seen = true;
+            }
+
+            // AutoScroll is the framework's own "showing the live tail" bit — the same fact
+            // SyncScrollbackState mirrors, rather than a second one kept in step with it.
+            if (mark.Seen && mark.InputSince && panel.AutoScroll)
+            {
+                RemoveAwayBar(windowId);
+                RepaintPane(windowId);
             }
         }
     }
+
+    /// <summary>
+    /// Takes a window's away bar out of its line buffer, moving everything that indexes into that buffer
+    /// past it — the freeze point and the pending boundary — down by the row it freed. Does not repaint:
+    /// the callers either follow with one or are about to insert a replacement.
+    /// </summary>
+    /// <returns>Whether there was a bar to remove.</returns>
+    private bool RemoveAwayBar(string windowId)
+    {
+        if (!_awayMarks.TryGetValue(windowId, out var mark)
+            || !_lines.TryGetValue(windowId, out var buffer)
+            || mark.Index < 0
+            || mark.Index >= buffer.Count)
+        {
+            return _awayMarks.Remove(windowId);
+        }
+
+        buffer.RemoveAt(mark.Index);
+        _awayMarks.Remove(windowId);
+
+        if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > mark.Index)
+        {
+            _freezePoints[windowId] = freeze - 1;
+        }
+
+        if (_awayPending.TryGetValue(windowId, out var pending) && pending > mark.Index)
+        {
+            _awayPending[windowId] = pending - 1;
+        }
+
+        if (_awayBoundary.TryGetValue(windowId, out var boundary) && boundary > mark.Index)
+        {
+            _awayBoundary[windowId] = boundary - 1;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Drives the return the terminal's focus report would have driven. The seam a headless test uses:
+    /// <see cref="TerminalFocusWatcher.ShouldEnable"/> is false for a headless driver by design, so the
+    /// rule that recognises a return is tested against the watcher directly and what the client *does*
+    /// with one is tested here.
+    /// <para>
+    /// It notes an input first because the real thing does: a focus report arrives as a Tab keypress,
+    /// which has been through <see cref="NoteReaderInput"/> before anything recognises it as a return.
+    /// A seam that skipped that step would read a different boundary from the one that ships, which is
+    /// the whole failure mode <see cref="_awayBoundary"/> exists to describe.
+    /// </para>
+    /// </summary>
+    internal void SimulateReturnFromAway(TimeSpan away)
+    {
+        _focus.NoteInput();
+        MarkWhereTheReaderLeft(away);
+    }
+
+    /// <summary>The away bar a window is carrying, by its index in that window's line buffer, or null.</summary>
+    internal int? AwayBarIndex(string windowId) =>
+        _awayMarks.TryGetValue(windowId, out var mark) ? mark.Index : null;
 
     /// <summary>
     /// Appends a line to a window's pane and badges it unread when the reader cannot see where it landed.
@@ -3498,6 +3841,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             RefreshTabTitles();
         }
 
+        // A viewport that moved is the gesture an away bar is read by, so this is where "has it been on
+        // screen, and are we back at the tail" gets asked. Every scroll route reaches here — the keys,
+        // the wheel and the scrollbar alike.
+        ConsumeReadAwayBars();
         RefreshStatusRow();
     }
 
@@ -3759,6 +4106,36 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                     $"the {key} settings screen is not claimed in MacroKeys.AppShortcuts");
             }
         }
+
+        RegisterFocusReportTab();
+    }
+
+    /// <summary>
+    /// Registers bare Tab, because a terminal reporting that its window regained focus arrives here as
+    /// one — see <see cref="TerminalFocusWatcher"/> for why that is the only channel there is.
+    /// <para>
+    /// <b>It is deliberately not in <see cref="MacroKeys.AppShortcuts"/>.</b> That table is what F4 reads
+    /// to tell a user which chords the application has taken, and every entry in it is taken outright.
+    /// This one is not: it declines all but a vanishing fraction of the Tabs it sees, and a real Tab
+    /// still reaches <see cref="InputBarControl"/>'s sibling cycle and the settings screens exactly as it
+    /// did before. Listing it would tell users a key was gone that is not gone, which is the same class
+    /// of lie the <c>⌃Tab</c> claim was — a chord advertised as claimed that could never have matched.
+    /// </para>
+    /// <para>
+    /// Registered only when the watcher is live, so on Windows and headless nothing is claimed at all
+    /// and the framework's Tab pipeline is untouched.
+    /// </para>
+    /// </summary>
+    private void RegisterFocusReportTab()
+    {
+        if (!_focus.IsEnabled)
+        {
+            return;
+        }
+
+        Func<bool> action = _focus.TryTakeAsReturn;
+        _system.RegisterGlobalShortcut((ConsoleModifiers)0, ConsoleKey.Tab, action);
+        _shortcuts[((ConsoleModifiers)0, ConsoleKey.Tab)] = action;
     }
 
     /// <summary>
@@ -6584,12 +6961,23 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal string? SimulateKey(ConsoleKeyInfo key)
     {
+        // Every key the reader presses, so the pending away marks move with them and a Tab can be told
+        // from the terminal's focus report by the gap in front of it. In the live client this arrives
+        // from the driver, which a headless harness never runs.
+        _focus.NoteInput();
+
         // The framework runs a global shortcut before the window sees the key at all, so the harness
         // does too — otherwise a test pressing ⌃B would find it typed into the command line, which is
         // the opposite of what the running app does with it.
-        if (_shortcuts.TryGetValue((key.Modifiers, key.Key), out var shortcut))
+        //
+        // A handler that returns false has *declined* the key, and the framework then carries on down
+        // the normal pipeline (ConsoleWindowSystem.cs:1683). This used to discard the result and swallow
+        // the key either way, which was invisible while every claim returned true and stopped being so
+        // the moment one did not: the focus-report Tab declines almost every Tab it sees, and a harness
+        // that ate them would have every command-bar cycle test passing against a client that no longer
+        // cycles.
+        if (_shortcuts.TryGetValue((key.Modifiers, key.Key), out var shortcut) && shortcut())
         {
-            shortcut();
             return null;
         }
 
@@ -8781,6 +9169,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _system.ConsoleDriver.MouseEvent -= OnDriverMouseEvent;
+        _focus.Dispose();           // and the terminal is told to stop reporting focus at nobody
         _sizeFlushTimer?.Dispose(); // nothing left to tell a server we are shutting down to
         _noticeTimer?.Dispose();    // and no row left to put a notice back on
         _prefixTimer?.Dispose();    // and no window left to float a which-key panel over

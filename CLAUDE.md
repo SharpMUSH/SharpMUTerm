@@ -103,6 +103,44 @@ fallbacks) for inline images/maps.
   Restored content is closed off by one `RestoreBarRenderer` row and the lines themselves are left
   alone. Restoring 3,000 lines costs ~18 ms before the first frame. `restore:` is the third member of
   the `save:`/`logRoot:` family — **null by default, so no test and no snapshot owns one**.
+- **Coming back to the terminal leaves a bar where you were** (`AwayBarRenderer` + `TerminalFocusWatcher`,
+  Tui). Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
+  `RestoreBarRenderer` do: mark the *boundary*, never restyle the content. The signal is real terminal
+  focus reporting (`CSI ?1004h`) and **both halves of getting it are workarounds**, which is why they are
+  in one file. No released SharpConsoleUI asks for focus (verified against 2.5.18's string heap: `?2004`
+  is there, `?1004` is in no version), `IConsoleDriver` has no focus event, and `UnixStdinReader`
+  dispatches only key/paste/mouse. So we ask through `IConsoleDriver.WriteClipboardOsc52`, which is named
+  for its first customer and is really a verbatim raw write under the renderer's own `_consoleLock` — the
+  only public write serialised against frame painting — funnelled through one `EmitTerminalMode` so a
+  version that starts validating that payload is one line to fix. And focus-**in** is recognised in the
+  **Tab keypress** `AnsiInputParser.DispatchCsi` mistranslates it into (`:511` reads a trailing `I` as
+  Tab, right for `ESC [ 1;5 I` = Ctrl+Tab, wrong for the bare form). Tab is claimed through
+  `RegisterGlobalShortcut`'s **declining** overload, deliberately *not* through `MacroKeys.AppShortcuts`:
+  it declines nearly every Tab it sees, and listing it would tell F4's readers a key was gone that is not.
+  - **Telling that Tab from a real one is a question about time, and the comparison must be against the
+    input *before* it.** The disguised focus-in is itself a `KeyPressed`, raised before `InputCoordinator`
+    reaches the global shortcuts, so measuring from the latest timestamp finds a gap of zero on every
+    return and the feature never fires — a bug indistinguishable from the terminal not supporting `?1004`.
+    **The same trap bit the boundary**, one field over: that keypress had already moved `_awayPending` to
+    the end of a buffer full of unseen lines, so `_awayBoundary` keeps the value from the input before it.
+    `SimulateReturnFromAway` notes an input first for that reason — a seam that skipped it would read a
+    boundary the shipping path never reads.
+  - **Focus-out is not recoverable.** `ESC [ O` has no case and is dropped as an `UnknownSequenceEvent`,
+    so a departure cannot be timestamped; the boundary is the last input event instead, which is seconds
+    off. **Unix only** — the Windows branch is a `Console.ReadKey` loop with its own reassembly, so
+    `?1004` must not be enabled there — and inert headless, because a harness pressing Tab must get a Tab.
+  - **Consumption is three conjuncts, and `Workspace.IsCaughtUp` is not one of them.** A pane
+    bottom-anchors, so it is already "visible and not scrolled back" the instant you return with two
+    hundred unread lines above the fold; clearing on it clears the bar before a word is read. It goes when
+    the bar has been *inside the viewport*, the pane is at its *live tail*, and *one input* has landed
+    since it was drawn — the last of which is what stops a shallow absence clearing in the frame it
+    appears in. Insert and remove are mid-buffer, so each costs one `RepaintPane`; affordable for the
+    timestamp toggle's reason, bounded by a deliberate event rather than by lines or frames.
+  - The bar is chrome: it never badges unread, never reaches the restore log (already free — that is fed
+    from the session's line handlers, not the append seam), and a trim that takes it drops the mark with
+    it. A window that gained nothing gets no bar.
+  - **`SimulateKey` used to discard a global shortcut's result** and swallow the key either way. Harmless
+    while every claim returned true; wrong the moment one declined, and it now honours the decline.
 - **Every server's MSSP report is kept, and the INFO screen reads it** (`MsspCache`, Core; `mssp.json`
   beside `config.json`, keyed by `host:port`; F5 ▸ `i`). Fourth of the `save:`/`logRoot:`/`restore:`
   family with **one deliberate difference**: the constructor parameter is null by default like the
@@ -191,7 +229,12 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
-  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`, `prefix-panel` (the ⌃B which-key
+  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
+  `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
+  *terminal* — the shallow absence, where the bar and everything below it are on screen at once, and the
+  deep one, where more arrived than the pane holds and the reader has scrolled back to find it; the
+  second is the only frame that can show a bottom-anchored pane being "caught up" while nothing has been
+  read), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the
