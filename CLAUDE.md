@@ -112,11 +112,22 @@ fallbacks) for inline images/maps.
   dispatches only key/paste/mouse. So we ask through `IConsoleDriver.WriteClipboardOsc52`, which is named
   for its first customer and is really a verbatim raw write under the renderer's own `_consoleLock` — the
   only public write serialised against frame painting — funnelled through one `EmitTerminalMode` so a
-  version that starts validating that payload is one line to fix. And focus-**in** is recognised in the
-  **Tab keypress** `AnsiInputParser.DispatchCsi` mistranslates it into (`:511` reads a trailing `I` as
-  Tab, right for `ESC [ 1;5 I` = Ctrl+Tab, wrong for the bare form). Tab is claimed through
+  version that starts validating that payload is one line to fix. And focus-**in** is recognised as the
+  **bare Tab keypress that `AnsiInputParser.DispatchCsi` mistranslates it into** — `:511` reads a
+  trailing `I` as Tab, which is right for `ESC [ 1;5 I` = Ctrl+Tab and wrong for the bare form. Tab is
+  claimed through
   `RegisterGlobalShortcut`'s **declining** overload, deliberately *not* through `MacroKeys.AppShortcuts`:
   it declines nearly every Tab it sees, and listing it would tell F4's readers a key was gone that is not.
+  - **The watcher listens to the driver, so its `Input` runs on the driver's reader thread — and the app
+    marshals.** The framework's own key path does not run there (its driver handler only enqueues,
+    `ConsoleWindowSystem.cs:970-973`, and `InputCoordinator.ProcessInput` drains on the main loop), so
+    every other key handler here is on the UI thread and this one cannot be: a queued key arrives too
+    late to measure the gap in front of a focus-in Tab. `NoteInput` keeps its timestamps on the reader
+    thread; both subscriptions go through `OnUiThread`, because everything past them — pane buffers,
+    away marks, the controls they repaint — is the UI thread's. **Marshalling reorders, so the input is
+    numbered** (`InputCount`, carried by `Input`; `AwayMark.DrawnAfter` is the stamp): a note raised
+    before the return that drew a bar can be delivered after it, and would otherwise set `InputSince` on
+    a bar nobody has seen, retiring it to the keystroke that produced it.
   - **Telling that Tab from a real one is a question about time, and the comparison must be against the
     input *before* it.** The disguised focus-in is itself a `KeyPressed`, raised before `InputCoordinator`
     reaches the global shortcuts, so measuring from the latest timestamp finds a gap of zero on every
@@ -304,9 +315,12 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `LogFolder` or a fake sink would have passed all along. It also let a pile of per-test
   `character.Logging = new LoggingSettings()` workarounds be deleted — with them gone the suite exercises
   the gate, and an unfixed build leaks seven files a run instead of three.
-- **The three `scroll*` views are the only ones with more output than a pane holds.** Every other view
-  fits, which is exactly why no snapshot caught the panes being unable to scroll at all. Reach for one
-  of these (or `LoadLongScene`) whenever a change touches the output area.
+- **Four views have more output than a pane holds** — `scrollback`, `scrollback-up`,
+  `freeze-scrollback` and `away-scrollback`. Name them, rather than saying "the `scroll*` views": the
+  prefix has now twice lagged behind the set it claimed to describe, and a reader looking for a
+  long-output view goes by the list. (`away` is the shallow one and fits.) Every other view fits too,
+  which is exactly why no snapshot caught the panes being unable to scroll at all. Reach for one of
+  these (or `LoadLongScene`) whenever a change touches the output area.
 - **Send the user the `.svg`.** For your *own* inspection render the `.html` — Chromium clips the
   bottom of a bare `.svg` through aspect-ratio scaling, which will make you chase a layout bug that
   isn't there.

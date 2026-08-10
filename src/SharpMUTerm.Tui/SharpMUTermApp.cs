@@ -537,8 +537,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             _system.ConsoleDriver,
             _time,
             focusReporting ?? TerminalFocusWatcher.ShouldEnable(_system.ConsoleDriver));
-        _focus.Input += NoteReaderInput;
-        _focus.Returned += MarkWhereTheReaderLeft;
+        // The watcher listens to the driver, which raises input on its own reader thread; everything past
+        // these two handlers is UI-thread state. OnUiThread runs inline when it already is one.
+        _focus.Input += at => OnUiThread(() => NoteReaderInput(at));
+        _focus.Returned += away => OnUiThread(() => MarkWhereTheReaderLeft(away));
 
         _header = Controls.Markup(HeaderMarkup()).StickyTop().Build();
         _header.LinkClicked += (_, e) => OnChromeLinkClicked(e.Url);
@@ -2402,6 +2404,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         /// <summary>Whether the reader has done anything at all since it was drawn.</summary>
         public bool InputSince;
+
+        /// <summary>
+        /// The watcher's input count when this bar was drawn. Both paths are marshalled, so an input
+        /// raised <em>before</em> the return can be delivered after it; without the stamp that late note
+        /// would set <see cref="InputSince"/> and retire the bar to the keystroke that produced it.
+        /// </summary>
+        public long DrawnAfter;
     }
 
     /// <summary>
@@ -2413,7 +2422,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// vanished is where they were.
     /// </para>
     /// </summary>
-    private void NoteReaderInput()
+    private void NoteReaderInput(long at)
     {
         foreach (var (windowId, buffer) in _lines)
         {
@@ -2421,7 +2430,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             _awayPending[windowId] = buffer.Count;
         }
 
-        foreach (var mark in _awayMarks.Values)
+        foreach (var mark in _awayMarks.Values.Where(mark => mark.DrawnAfter < at))
         {
             mark.InputSince = true;
         }
@@ -2455,13 +2464,20 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
             // At most one per window, so the previous bar goes first — and it goes first rather than
             // last because removing it shifts every index after it, the pending boundary included.
-            RemoveAwayBar(windowId);
+            var removed = RemoveAwayBar(windowId);
 
             var buffer = _lines[windowId];
             var at = Math.Clamp(_awayBoundary.GetValueOrDefault(windowId), 0, buffer.Count);
             var missed = buffer.Count - at;
             if (missed <= 0)
             {
+                // No replacement is going in, and RemoveAwayBar leaves the repaint to its caller — so
+                // without this the row leaves the buffer and stays on the control.
+                if (removed)
+                {
+                    RepaintPane(windowId);
+                }
+
                 continue;
             }
 
@@ -2471,7 +2487,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 _freezePoints[windowId] = freeze + 1;
             }
 
-            var mark = new AwayMark { Index = at };
+            var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount };
             _awayMarks[windowId] = mark;
             RepaintPane(windowId);
             RevealAwayBar(windowId, mark);

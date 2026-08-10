@@ -1,13 +1,13 @@
 # The away divider: where you were when you left the terminal
 
 **Date:** 2026-08-10
-**Status:** proposed — design only, nothing implemented
+**Status:** implemented — `TerminalFocusWatcher`, `AwayBarRenderer`, and the away-marker lifecycle in `SharpMUTermApp`
 
 ## Problem
 
 Tab away from the terminal, come back later, and there is no way to tell which of the lines on
-screen you have already read. Every pane has bottom-anchored through your absence, so what you land
-on is the newest output with no boundary in it. The client already knows how to say "the rows above
+screen you have already read. Every pane stayed bottom-anchored through your absence, so what you
+land on is the newest output with no boundary in it. The client already knows how to say "the rows above
 this are not live" twice over — `FreezeBarRenderer` divides pinned scrollback from the live tail,
 `RestoreBarRenderer` closes off content carried over from a previous run — and has nothing to say
 about the one absence that happens many times a day.

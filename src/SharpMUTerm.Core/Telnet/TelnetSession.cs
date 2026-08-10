@@ -387,8 +387,9 @@ public sealed class TelnetSession : ITelnetSession
         _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _readLoop = Task.Run(() => ReadLoopAsync(_loopCts.Token), CancellationToken.None);
 
-        // Nothing else goes out here. The opening negotiation is the interpreter's, and every option
-        // this client turns on is one the server offered first — see UnsolicitedNegotiationTests.
+        // Nothing else goes out from here. The interpreter's own opening WILL NAWS offers an option of
+        // ours; what this client never sends is an IAC DO the server has not offered — see
+        // UnsolicitedNegotiationTests for the login that paid for the rule.
     }
 
     private Task<TelnetInterpreter> BuildInterpreterAsync()

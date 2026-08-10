@@ -65,6 +65,7 @@ internal sealed class TerminalFocusWatcher : IDisposable
 
     private DateTimeOffset _lastInputAt;
     private DateTimeOffset _previousInputAt;
+    private long _inputs;
     private bool _started;
     private bool _disposed;
 
@@ -93,8 +94,19 @@ internal sealed class TerminalFocusWatcher : IDisposable
     /// routed to an overlay rather than to the workspace. It is what the client hangs "where was the
     /// reader last looking" off, and it is here rather than on the app's own key handler because that
     /// handler does not see a key an overlay consumed.
+    /// <para>
+    /// <b>It runs on the driver's own input thread, and <see cref="Returned"/> does not.</b> This watcher
+    /// subscribes to the driver's events directly — it has to, because the framework's own key path only
+    /// enqueues there and would arrive too late to measure the gap in front of a focus-in Tab — so a
+    /// subscriber touching anything the UI thread owns must marshal. The argument counts the inputs seen,
+    /// which is what lets a subscriber that defers its work order it against a <see cref="Returned"/> in
+    /// between.
+    /// </para>
     /// </summary>
-    public event Action? Input;
+    public event Action<long>? Input;
+
+    /// <summary>How many inputs this watcher has seen. Monotonic, and the value <see cref="Input"/> carries.</summary>
+    public long InputCount => Interlocked.Read(ref _inputs);
 
     /// <summary>
     /// Whether this watcher will do anything at all. False leaves the terminal untouched and leaves
@@ -192,7 +204,7 @@ internal sealed class TerminalFocusWatcher : IDisposable
     {
         _previousInputAt = _lastInputAt;
         _lastInputAt = _time.GetUtcNow();
-        Input?.Invoke();
+        Input?.Invoke(Interlocked.Increment(ref _inputs));
     }
 
     public void Dispose()

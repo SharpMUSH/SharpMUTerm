@@ -153,9 +153,8 @@ public class AwayDividerTests
         app.RenderWholeFrame();
 
         app.SimulateReturnFromAway(TimeSpan.FromHours(2));
-        var frame = app.RenderWholeFrame();
 
-        await Assert.That(frame).Contains(AwayBarRenderer.Label);
+        await Assert.That(Painted(app.RenderWholeFrame())).IsTrue();
     }
 
     /// <summary>
@@ -202,13 +201,43 @@ public class AwayDividerTests
         app.RenderWholeFrame();
 
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(12));
-        var frame = app.RenderWholeFrame();
 
-        await Assert.That(frame).Contains(AwayBarRenderer.Label);
+        await Assert.That(Painted(app.RenderWholeFrame())).IsTrue();
 
         // Still at the tail, so one keystroke is all it takes to be done with it.
         app.SimulateKey(Key(ConsoleKey.End));
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
+    }
+
+    /// <summary>
+    /// A second return to a window that gained nothing takes the old bar away, and it has to leave the
+    /// screen with it: the removal and the repaint were separated by an early exit, so the row left the
+    /// buffer and stayed on the control with no mark left to consume it.
+    /// <para>
+    /// Asserted on the painted frame, because the buffer was always right. The absence has to be a deep
+    /// one — a shallow one is at the live tail, where <c>ConsumeReadAwayBars</c> removes and repaints
+    /// before this path is reached.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task ASecondReturnToAQuietWindowTakesTheOldBarOffTheScreen()
+    {
+        var (app, session, _) = Bound();
+        app.SimulateKey(Key(ConsoleKey.End));
+        for (var i = 0; i < 200; i++)
+        {
+            session.PrintSystem($"*** while you were away {i}");
+        }
+
+        app.RenderWholeFrame();
+        app.SimulateReturnFromAway(TimeSpan.FromHours(2));
+        await Assert.That(Painted(app.RenderWholeFrame())).IsTrue().Because("the first absence draws one");
+
+        // Away again with nothing arriving: the same bar asked to go, not one being replaced.
+        app.SimulateReturnFromAway(TimeSpan.FromHours(2));
+
+        await Assert.That(app.AwayBarIndex(Main)).IsNull();
+        await Assert.That(Painted(app.RenderWholeFrame())).IsFalse();
     }
 
     /// <summary>
@@ -226,6 +255,10 @@ public class AwayDividerTests
         var before = app.UnreadOf(Main);
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(12));
 
+        // Without this the test passes against a client that stopped drawing bars at all — and at the
+        // live tail both counts are zero, so the equality alone says little.
+        await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
+        await Assert.That(before).IsEqualTo(0);
         await Assert.That(app.UnreadOf(Main)).IsEqualTo(before);
     }
 
@@ -283,15 +316,23 @@ public class AwayDividerTests
     /// the moment one declined.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// Both raise the second command line first, so the Tab has something to <em>do</em>: the no-bar
+    /// assertion alone holds just as well for a Tab that was swallowed and drew nothing, which is the
+    /// failure these exist to exclude. With a sibling bar up, an arriving Tab cycles the armed one.
+    /// </remarks>
     [Test]
     public async Task ATabFromAReaderWhoIsSittingThereIsATab()
     {
         var (app, session, _) = Bound(focusReporting: true);
+        ToggleSecondBar(app);
         app.SimulateKey(Key(ConsoleKey.End));
         session.PrintSystem("*** a line");
 
+        await Assert.That(app.SecondBarArmed).IsTrue().Because("raising the second bar arms it");
         app.SimulateKey(Key(ConsoleKey.Tab, '\t'));
 
+        await Assert.That(app.SecondBarArmed).IsFalse().Because("a real Tab reaches the bar's sibling cycle");
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
 
@@ -299,14 +340,16 @@ public class AwayDividerTests
     public async Task AnAppWithNoFocusReportingClaimsNoTabAtAll()
     {
         var (app, session, time) = Bound();
+        ToggleSecondBar(app);
         app.SimulateKey(Key(ConsoleKey.End));
         session.PrintSystem("*** while you were away");
 
         time.Advance(TimeSpan.FromHours(3));
+        await Assert.That(app.SecondBarArmed).IsTrue();
         app.SimulateKey(Key(ConsoleKey.Tab, '\t'));
 
-        // Headless is not a terminal that can report focus, so nothing here is a return and Tab is
-        // nobody's but the command line's.
+        // The gap in front of this Tab is three hours, so a live watcher would certainly have taken it.
+        await Assert.That(app.SecondBarArmed).IsFalse();
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
 
@@ -339,6 +382,20 @@ public class AwayDividerTests
             focusReporting: focusReporting);
         var session = app.BindWorldWithoutConnecting(config.Worlds[0]);
         return (app, session, time);
+    }
+
+    /// <summary>
+    /// Whether the away bar is on the painted frame, read off the decoded cells. A frame is
+    /// cursor-addressed SGR, so a substring search can miss a label split by a cursor move or a style run.
+    /// </summary>
+    private static bool Painted(string frame) =>
+        FrameGrid.Decode(frame, Width, Height).Any(row => row.Contains(AwayBarRenderer.Label, StringComparison.Ordinal));
+
+    /// <summary>Raises the second command line the way ⌃B i does, which also arms it.</summary>
+    private static void ToggleSecondBar(SharpMUTermApp app)
+    {
+        app.SimulateKey(Key(ConsoleKey.B, ctrl: true));
+        app.SimulateKey(new ConsoleKeyInfo('i', ConsoleKey.I, false, false, false));
     }
 
     private static ConsoleKeyInfo Key(ConsoleKey key, char character = '\0', bool ctrl = false) =>

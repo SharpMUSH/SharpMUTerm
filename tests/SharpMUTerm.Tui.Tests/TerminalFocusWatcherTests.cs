@@ -104,8 +104,12 @@ public class TerminalFocusWatcherTests
         watcher.Start();
         await Assert.That(driver.Written).IsEquivalentTo(new[] { "\x1b[?1004h" });
 
+        // Ordered: IsEquivalentTo ignores order by default, so a watcher that disabled reporting before
+        // enabling it would leave the terminal reporting focus for ever and still pass.
         watcher.Stop();
-        await Assert.That(driver.Written).IsEquivalentTo(new[] { "\x1b[?1004h", "\x1b[?1004l" });
+        await Assert.That(driver.Written).IsEquivalentTo(
+            new[] { "\x1b[?1004h", "\x1b[?1004l" },
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
     [Test]
@@ -162,17 +166,22 @@ public class TerminalFocusWatcherTests
         await Assert.That(TerminalFocusWatcher.ShouldEnable(headless)).IsFalse();
     }
 
+    /// <summary>
+    /// Every input is announced, with a count that only goes up — which is what lets a subscriber that
+    /// defers its work (the app does; these are raised on the driver's thread) order it against a return.
+    /// </summary>
     [Test]
-    public async Task NoteInputAnnouncesEveryInputEvent()
+    public async Task NoteInputAnnouncesEveryInputEventWithARisingCount()
     {
         var (watcher, _, _) = Watcher();
-        var seen = 0;
-        watcher.Input += () => seen++;
+        var seen = new List<long>();
+        watcher.Input += at => seen.Add(at);
 
         watcher.NoteInput();
         watcher.NoteInput();
 
-        await Assert.That(seen).IsEqualTo(2);
+        await Assert.That(seen).IsEquivalentTo(new long[] { 1, 2 }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(watcher.InputCount).IsEqualTo(2L);
     }
 
     private static (TerminalFocusWatcher Watcher, ManualTimeProvider Time, List<TimeSpan> Returns) Watcher(
