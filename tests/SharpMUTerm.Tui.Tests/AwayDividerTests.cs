@@ -365,6 +365,13 @@ public class AwayDividerTests
     {
         var config = DemoScene.Build();
         config.ScrollbackSpill.Enabled = false;
+
+        // And no dwell floor. These tests are about where the bar is drawn, what puts it on screen, and
+        // what takes it away again — the two conditions that were always there — and several of them turn
+        // on "one keystroke is all it takes", which is only the answer when the floor is zero. The floor
+        // is a third condition with a suite of its own (ActivityBarDwellTests); setting it here keeps each
+        // suite asserting one rule rather than both at once.
+        config.Text.ActivityBarSeconds = 0;
         return config;
     }
 
