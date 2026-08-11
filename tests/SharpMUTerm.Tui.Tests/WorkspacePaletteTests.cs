@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Tui;
 
@@ -241,6 +242,160 @@ public class WorkspacePaletteTests
             .IsNotEqualTo(Xterm256(WorkspacePalette.IdleBand(theme)));
         await Assert.That(Xterm256(WorkspacePalette.Focus(theme)))
             .IsNotEqualTo(Xterm256(WorkspacePalette.Surface(theme)));
+    }
+
+    // --- The per-character tints -----------------------------------------------------------------
+
+    /// <summary>Every colour a character's pane can be given, without the untinted default.</summary>
+    private static IEnumerable<PaneTint> Colours() =>
+        Enum.GetValues<PaneTint>().Where(t => t != PaneTint.None);
+
+    /// <summary>
+    /// <b>A tint changes the plane's hue and not its brightness.</b> This is the legibility guarantee the
+    /// whole design rests on: a MU* server chooses the colours of the text drawn on this plane, so a tint
+    /// that lightened or darkened the pane would change every contrast ratio the theme was designed
+    /// against — on a palette the client neither controls nor can test. Held to a point of luma, which is
+    /// rounding to bytes and nothing else.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task ATintedPaneIsExactlyAsBrightAsAnUntintedOne(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var surface = Luma(WorkspacePalette.Surface(theme));
+
+        foreach (var tint in Colours())
+        {
+            await Assert.That(Math.Abs(Luma(WorkspacePalette.Tint(theme, tint)) - surface))
+                .IsLessThanOrEqualTo(1.0)
+                .Because($"{tint} on {themeName}");
+        }
+    }
+
+    /// <summary>
+    /// And it is a <em>tint</em>: the plane really does move. Distance measured across the channels
+    /// rather than in luma, because luma is precisely the axis the test above pins to zero — a tint that
+    /// did nothing at all would pass that one.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task EveryTintIsItsOwnPlaneAndNoneOfThemIsTheSurface(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var planes = Colours().Select(t => WorkspacePalette.Tint(theme, t)).ToList();
+
+        await Assert.That(planes.Distinct().Count()).IsEqualTo(planes.Count);
+        await Assert.That(planes).DoesNotContain(WorkspacePalette.Surface(theme));
+    }
+
+    /// <summary>
+    /// <see cref="PaneTint.None"/> is the surface itself, byte for byte. A client whose characters have
+    /// chosen no colour is painted exactly as it was before this existed — which is what makes the
+    /// default safe to ship without a migration.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task NoTintIsTheSurfaceUnchanged(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+
+        await Assert.That(WorkspacePalette.Tint(theme, PaneTint.None))
+            .IsEqualTo(WorkspacePalette.Surface(theme));
+    }
+
+    /// <summary>
+    /// <b>Focus survives every tint.</b> The two cues are on separate channels — identity in hue, focus
+    /// in luminance — so a tinted pane is still visibly the focused one, on every theme and in every
+    /// colour. This is the composition claim: the tint replaces the plane, and the focus step is taken
+    /// off whatever plane that is.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task AFocusedTintedPaneIsStillLiftedOffItsUnfocusedSelf(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+
+        foreach (var tint in Colours())
+        {
+            var plane = WorkspacePalette.Tint(theme, tint);
+            await Assert.That(Luma(WorkspacePalette.Focus(plane)) - Luma(plane))
+                .IsGreaterThan(Visible)
+                .Because($"{tint} on {themeName}");
+        }
+    }
+
+    /// <summary>
+    /// And it is the <em>same</em> lift, not merely some lift: the focus step is a multiplication, so it
+    /// lands the same distance above a tinted plane as above the plain surface. Without this a tint could
+    /// quietly make one character's pane look more focused than another's, which would be the cue
+    /// reporting the wrong fact.
+    /// <para>
+    /// The light theme is left out on purpose and not by oversight: its surface is already so bright that
+    /// the focus step clamps at white (this is true of the untinted plane too, and predates tints), so
+    /// there is no step there for a tint to preserve or to break.
+    /// </para>
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Solarized Dark")]
+    public async Task TheFocusStepIsTheSameAboveATintedPlaneAsAboveThePlainOne(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var plain = Luma(WorkspacePalette.Focus(theme)) - Luma(WorkspacePalette.Surface(theme));
+
+        foreach (var tint in Colours())
+        {
+            var plane = WorkspacePalette.Tint(theme, tint);
+            var step = Luma(WorkspacePalette.Focus(plane)) - Luma(plane);
+            await Assert.That(Math.Abs(step - plain)).IsLessThan(2.0).Because($"{tint} on {themeName}");
+        }
+    }
+
+    /// <summary>
+    /// The tints are told apart by <em>colour</em>, which is the cue that survives sitting beside a pane
+    /// of the same brightness. Measured as the distance between two planes with their (identical)
+    /// brightness taken out — a pair that differed only in luma would score zero here, and would be two
+    /// characters a reader has to compare rather than recognise.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Solarized Dark")]
+    public async Task TwoCharactersPanesDifferInHueAndNotInBrightness(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var planes = Colours().Select(t => (Tint: t, Plane: WorkspacePalette.Tint(theme, t))).ToList();
+
+        foreach (var a in planes)
+        {
+            foreach (var b in planes.Where(p => p.Tint != a.Tint))
+            {
+                await Assert.That(ChromaDistance(a.Plane, b.Plane))
+                    .IsGreaterThan(6.0)
+                    .Because($"{a.Tint} vs {b.Tint} on {themeName}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// How far apart two colours are once their brightness is discounted — the channel distance between
+    /// them after each has been shifted to a common luma. It is a coarse measure and deliberately so: the
+    /// claim being pinned is "these are different colours", not a perceptual model.
+    /// </summary>
+    private static double ChromaDistance(SharpMUTerm.Core.Text.Rgb a, SharpMUTerm.Core.Text.Rgb b)
+    {
+        var shift = Luma(a) - Luma(b);
+        var dr = a.R - b.R - shift;
+        var dg = a.G - b.G - shift;
+        var db = a.B - b.B - shift;
+        return Math.Sqrt((dr * dr) + (dg * dg) + (db * db));
     }
 
     /// <summary>

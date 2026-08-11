@@ -470,10 +470,10 @@ public class ScreenModelTests
     /// so one control covers one stored value), the folder, and <c>restore</c>. This replaces F9's
     /// screen, whose rows edited whichever character happened to be active.
     /// <para>
-    /// The count is eight because the password, the connect line and <c>at start</c> are fields of this
-    /// row too, drawn between the name and the log values. The ordinals are addressed by name, which is
-    /// what let them be inserted in drawn order rather than appended past the log values — see
-    /// <see cref="WorldsScreenRenderer.PasswordField"/>.
+    /// The count is nine because the password, the connect line and <c>at start</c> are fields of this
+    /// row too, drawn between the name and the log values, and <c>tint</c> closes it. The ordinals are
+    /// addressed by name, which is what let them be inserted in drawn order rather than appended past the
+    /// log values — see <see cref="WorldsScreenRenderer.PasswordField"/>.
     /// </para>
     /// <para>
     /// <c>restore</c> is a separate switch from the format and not a fourth value of it, because the two
@@ -491,7 +491,7 @@ public class ScreenModelTests
         var model = WorldsScreenRenderer.Model(worlds, Sets(), 0, 0);
         var row = model.RowAt(WorldsScreenRenderer.CharactersPane, 0);
 
-        await Assert.That(row.FieldCount).IsEqualTo(8);
+        await Assert.That(row.FieldCount).IsEqualTo(9);
         await Assert.That(row.FieldAt(WorldsScreenRenderer.CharacterNameField)!.Value.Get()).IsEqualTo("Kaz");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogFormatField)!.Value.Get()).IsEqualTo("Html");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogDirectoryField)!.Value.Get()).IsEqualTo("/logs/kaz");
@@ -509,6 +509,36 @@ public class ScreenModelTests
 
         restore.Set(WorldsScreenRenderer.RestoreOff);
         await Assert.That(character.Logging.RestoreLog).IsFalse();
+    }
+
+    /// <summary>
+    /// The <c>tint</c> row: a closed list of the colours a character's panes can be painted in, offered
+    /// on the character's own row and writing through to the character it was drawn for.
+    /// <para>
+    /// It is an enumeration field like the log format, so the list is the enum's members and nothing can
+    /// be typed into existence beside them — which is the point of a named palette rather than a hex
+    /// (see <see cref="SharpMUTerm.Core.Configuration.PaneTint"/>). <c>None</c> leads, because it is the
+    /// default and a list that opened on a colour would read as one already being chosen.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Worlds_TheCharacterRowCarriesItsPaneTint()
+    {
+        var worlds = Worlds();
+        var character = worlds[0].Characters[0];
+        var model = WorldsScreenRenderer.Model(worlds, Sets(), 0, 0);
+        var row = model.RowAt(WorldsScreenRenderer.CharactersPane, 0);
+        var tint = row.FieldAt(WorldsScreenRenderer.PaneTintField)!.Value;
+
+        await Assert.That(tint.Get()).IsEqualTo(nameof(PaneTint.None));
+        await Assert.That(tint.Choices).IsEquivalentTo(Enum.GetNames<PaneTint>());
+        await Assert.That(tint.ClosedChoices).IsTrue();
+
+        tint.Set(nameof(PaneTint.Moss));
+        await Assert.That(character.Tint).IsEqualTo(PaneTint.Moss);
+
+        // And a colour that is not on the list is refused at the field rather than parsed and corrected.
+        await Assert.That(tint.Validate("Chartreuse")).IsNotNull();
     }
 
     /// <summary>

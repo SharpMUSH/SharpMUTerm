@@ -267,7 +267,13 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   connections by *worlds* and a quit prompt reducing them to distinct world names), `characters` (**two
   characters genuinely open** — the one state the rail's ⌥J/⌥K column can be seen in, and the one thing
   `connections` cannot fake: that view marks dots connected and opens no session, while the cycle walks
-  the sessions this client holds), `deletions`,
+  the sessions this client holds), `tint` (**two characters' panes in two different colours**, one
+  focused and one not — the one frame where the per-character pane tint can be seen doing its job, since
+  a single tinted pane cannot answer "whose pane is this", and the one that shows the two cues are on
+  separate channels: identity in hue, focus in luminance. It writes the colours onto the real
+  `CharacterDefinition`s; the **demo config carries none**, because `PaneTint.None` is the default and a
+  tinted demo would make every other frame in the gallery show a state most clients are not in),
+  `deletions`,
   `mssp`/`mssp-none`/`mssp-never` (the **three** states of the F5 ▸ `i` server-information report —
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
@@ -621,6 +627,33 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   is the test that stops this being "improved" into a border. Colours live in `WorkspacePalette`, whose
   constants are all derived from a `ScreenPalette` pair so the workspace and the settings screens share
   one idea of what focus looks like; the focus step is `CursorBg ÷ EditBg`.
+- **A pane's plane says two things, and they are kept on separate channels: identity is *hue*, focus is
+  *luminance*.** A character may be given a colour (`CharacterDefinition.Tint` → `PaneTint`, Core;
+  `WorkspacePalette.Tint`, Tui; F5's `tint` row), that colour becomes the pane's base plane, and the same
+  focus multiplication is applied on top of it — `PaneSurfaceTone` is two lines and the composition is
+  the whole design. Four things about it are load-bearing. **The tint preserves the surface's luminance
+  exactly**: the anchor is re-lit to the surface's own luma before it is mixed (`AtLuma`), and luma is
+  linear in the channels, so the blend is luminance-neutral by construction rather than by a tuned
+  constant. That is not tidiness — this is the plane the *game's* text is read against, the server picks
+  that text's colours, and a tint that moved the brightness would change every contrast ratio the theme
+  was designed around, on a palette we cannot test. It also means the focus step lands the same distance
+  above a tinted plane as above a plain one, so a colour cannot make one character's pane look more
+  focused than another's. **It therefore says nothing on a monochrome terminal, deliberately** — the cue
+  that must survive a lost hue is focus, and the rail and the tab title still name the character in
+  words. **It is a truecolor cue**: at the surface's luminance the tints are a few points per channel
+  apart, and a 256-colour terminal quantises them onto the untinted entry — which degrades to exactly the
+  pane there would otherwise be. That is unacceptable for focus, which is why
+  `FocusSurvivesA256ColourTerminal` exists and has no tint counterpart. And **it costs no cells**, for the
+  same NAWS reason the focus cue does not: `PaneTintTests.TintingACharacterMovesNoPaneRectangle` is that
+  pin, and it commits through `SaveConfiguration`, which is also what makes an F5 edit reach the panes
+  *now* rather than at the user's next focus move. A pane wears the colour of the window **in front of
+  it** — a pane can host several characters' windows as tabs and paints one rectangle — resolved through
+  the workspace's ownership record and never through `_active`, because a background pane wearing the
+  focused character's colour would say the opposite of what it means. The palette is a **closed set of
+  six names** and not a hex: a free colour cannot be validated against a theme the user may change
+  tomorrow, and a name survives that change where a hex picked against a dark theme becomes a hole.
+  `PaneTint.None` is the default and **no migration marks anybody** — the same reasoning as
+  `ConnectAtStartup`, and the reason the schema version did not move for it.
 - **The Ctrl+arrows move pane *selection*, not keyboard focus — but selection carries the session.** The
   pin (`FocusChanged → PinFocusToArmedBar`) is untouched: typing always lands in the armed command line
   wherever you have navigated to. That is a fact about which *control* gets a keystroke, and it says

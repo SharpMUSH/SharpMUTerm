@@ -1113,6 +1113,42 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             }
         }
 
+        // Per-character pane tints, in the one geometry that can show what they are for: two characters'
+        // panes side by side, wearing two different colours, with the focus on one of them. A single
+        // tinted pane proves nothing — the question the feature answers is "whose pane is this", and that
+        // question needs a second pane to be asked at all — and the focused/unfocused pair in the same
+        // frame is what shows the two cues are on separate channels (hue says whose, luminance says
+        // where you are).
+        //
+        // The tints are written onto the real CharacterDefinitions and everything downstream is the
+        // shipping path. The *demo config* carries none, deliberately: PaneTint.None is the default, so a
+        // demo that tinted its characters would make every other frame in the gallery show a state most
+        // clients are not in, and would quietly become the thing the palette is checked against.
+        if (string.Equals(view, "tint", StringComparison.OrdinalIgnoreCase))
+        {
+            // Guarded the way `characters` above is: --demo-config is the caller's choice, so a machine
+            // with no worlds — or a world nobody has put a character in — reaches this line.
+            var tinted = _config.Worlds.Where(w => w.Characters.Count > 0).Take(2).ToList();
+            PaneTint[] colours = [PaneTint.Slate, PaneTint.Moss];
+            for (var i = 0; i < tinted.Count; i++)
+            {
+                tinted[i].Characters[0].Tint = colours[i];
+            }
+
+            // A pane each, and in this order for a reason: opening the second character puts its window
+            // in front of the pane the demo resumes with, and the split then moves everything that is
+            // *not* in front into the new pane — so the frame comes out one character per pane rather
+            // than one pane holding both. The focus stays where the split leaves it, which is what makes
+            // this frame carry a focused tinted pane beside an unfocused tinted one.
+            if (tinted.Count > 1)
+            {
+                SwitchToCharacter($"{tinted[1].Name}.{tinted[1].Characters[0].Name}");
+            }
+
+            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            RebuildPaneArea();
+        }
+
         // The deletion review, reached the only way a user can reach it: open F5, take the selected world
         // out with Delete, then leave with Esc. Everything in the frame — the wording, the count of
         // characters going with the world, which button ⏎ is standing on — is what the real keys produce.
@@ -4488,6 +4524,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         RefreshHeader();
         RefreshRail();
 
+        // And F5 sets a character's pane tint, which is read off the configuration every time a plane is
+        // painted — but the planes are only repainted when something moves (a focus change, an
+        // activation, a layout rebuild). Without this the colour committed on F5 would arrive at whatever
+        // the user did next, which is indistinguishable from the setting not working.
+        RefreshPaneFocus();
+
         PersistConfiguration();
     }
 
@@ -6580,11 +6622,51 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         return built;
     }
 
-    /// <summary>The plane a pane is painted on: the lit one when it holds the focus, otherwise the surface.</summary>
-    private Rgb PaneSurfaceTone(string? paneId) =>
-        paneId is not null && IsFocusedPane(paneId)
-            ? WorkspacePalette.Focus(_theme)
-            : WorkspacePalette.Surface(_theme);
+    /// <summary>
+    /// The plane a pane is painted on: its occupant's own tone (<see cref="PanePlane"/>), lit when the
+    /// pane holds the focus. The two questions are answered on separate channels — the tint says
+    /// <em>whose</em> pane this is in hue, the focus step says <em>where you are</em> in luminance — so a
+    /// tinted pane is exactly as visibly focused as an untinted one and a focused pane still says whose
+    /// it is. See <see cref="WorkspacePalette.Tint"/>.
+    /// </summary>
+    private Rgb PaneSurfaceTone(string? paneId)
+    {
+        var plane = PanePlane(paneId);
+        return paneId is not null && IsFocusedPane(paneId) ? WorkspacePalette.Focus(plane) : plane;
+    }
+
+    /// <summary>
+    /// A pane's <em>unfocused</em> plane — the tint of the character whose window is in front of it, or
+    /// the plain surface when that window has no owner or its character has chosen no colour.
+    /// </summary>
+    private Rgb PanePlane(string? paneId) => WorkspacePalette.Tint(_theme, PaneTintOf(paneId));
+
+    /// <summary>
+    /// Which character's colour a pane wears: the one owning the window <em>currently in front</em>, not
+    /// the pane's whole tab list. A pane can host several characters' windows as tabs and paints one
+    /// rectangle, so the only honest answer is the window whose output is actually on the screen — and it
+    /// follows the strip, because <c>Activate</c> runs <see cref="SyncToFocusedPane"/> and so repaints
+    /// every plane whenever the front window changes.
+    /// <para>
+    /// Ownership is read the way everything else reads it — the workspace's own record
+    /// (<c>WorkspaceWindow.SessionKey</c>) — and never from <c>_active</c>: a background pane must wear
+    /// its own character's colour, not the focused character's, which is the same rule that stops a link
+    /// clicked in a background pane sending to whoever happens to be in front (see
+    /// <see cref="WindowSession"/>). A window nobody owns (the web view) and a key naming a character
+    /// this configuration no longer holds both come out untinted rather than guessed at.
+    /// </para>
+    /// </summary>
+    private PaneTint PaneTintOf(string? paneId)
+    {
+        if (paneId is null || _workspace.Layout.FindPane(paneId)?.ActiveTab is not { } windowId)
+        {
+            return PaneTint.None;
+        }
+
+        return _workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner
+            ? CharacterFor(owner)?.Tint ?? PaneTint.None
+            : PaneTint.None;
+    }
 
     /// <summary>
     /// Repaints the focus indicator without rebuilding the pane area. A focus move changes two things and
@@ -6605,7 +6687,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             foreach (var (paneId, tabs) in _paneTabs)
             {
-                PaintTabChips(tabs, IsFocusedPane(paneId));
+                PaintTabChips(tabs, IsFocusedPane(paneId), PanePlane(paneId));
             }
         }
 
@@ -6774,14 +6856,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// safe there reads, in a rendered frame, as a gentle elevation rather than as "super obvious", which
     /// is what was asked for. The chip has no such constraint: nothing is read on it but its own label.
     /// </para>
+    /// <para>
+    /// The inactive chips are painted on <paramref name="plane"/> — the pane's <em>own</em> plane, tint
+    /// and all — rather than on the palette's plain surface. They sit inside the rectangle that plane
+    /// fills, so a strip drawn on the untinted tone would be a differently-coloured band across the top
+    /// of every tinted pane. The active chip keeps the chrome family's armed band, because that one is
+    /// saying where the keyboard is and not whose pane this is.
+    /// </para>
     /// </summary>
-    private void PaintTabChips(TabControl tabs, bool focused)
+    private void PaintTabChips(TabControl tabs, bool focused, Rgb plane)
     {
-        var activeBg = ToColor(focused ? WorkspacePalette.ArmedBand(_theme) : WorkspacePalette.Surface(_theme));
+        var activeBg = ToColor(focused ? WorkspacePalette.ArmedBand(_theme) : plane);
         var activeFg = ToColor(focused
             ? _theme.Resolve(TerminalColor.Default, isBackground: false)
             : WorkspacePalette.IdleInk(_theme));
-        var restBg = ToColor(focused ? WorkspacePalette.Focus(_theme) : WorkspacePalette.Surface(_theme));
+        var restBg = ToColor(focused ? WorkspacePalette.Focus(plane) : plane);
         var restFg = ToColor(WorkspacePalette.IdleInk(_theme));
 
         tabs.ActiveFocusedBackgroundColor = activeBg;
@@ -6830,7 +6919,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             tabs.ActiveTabIndex = pane.ActiveIndex;
         }
 
-        PaintTabChips(tabs, focused);
+        PaintTabChips(tabs, focused, PanePlane(pane.Id));
 
         var paneId = pane.Id;
         tabs.TabChanged += (_, e) => OnTabChanged(paneId, e.NewTab);

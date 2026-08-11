@@ -123,8 +123,10 @@ the SharpConsoleUI shell over the `Core` models: the **connection rail** (worlds
 windows), **split panes** with tabbed windows (each leaf pane a tab strip; row/column splits become
 proportional grids with draggable splitters; zoom collapses to one pane), the **command surface**
 (`Ctrl+P`) ranking GO TO / WORLD / TERMINAL / LAYOUT actions, per-world **accent colours** threaded
-through the header/rail/status, a **status bar** with GMCP HP/EN meters, and a character-bound input
-prompt with a destination/draft gutter. Built on these `Core` pieces (pure + tested):
+through the header/rail/status, optional per-character **pane tints** (a named colour on the plane a
+character's panes are painted on, at the theme surface's own luminance so the focus cue — which is
+luminance — stays the only thing saying where you are), a **status bar** with GMCP HP/EN meters, and a
+character-bound input prompt with a destination/draft gutter. Built on these `Core` pieces (pure + tested):
 - **Config schema** (`Core.Configuration`): worlds (servers) hold **characters**; automation lives
   in shared, named **trigger sets** that characters opt into. Sessions key on `world.character` and
   compose engines from the union of a character's sets. Versioned with `ConfigurationMigrator`.
