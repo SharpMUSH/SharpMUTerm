@@ -56,7 +56,9 @@ public class MacroKeyCaptureTests
     /// </summary>
     [Test]
     [Arguments("Ctrl+F1", nameof(MacroKeyDelivery.Fires))]
-    [Arguments("F1", nameof(MacroKeyDelivery.Fires))]
+    // F1 opens the composer, so a macro bound there can never fire — the same answer F2–F9 get
+    // for the settings screens. F12 below is what a free function key looks like.
+    [Arguments("F1", nameof(MacroKeyDelivery.Taken))]
     [Arguments("F12", nameof(MacroKeyDelivery.Fires))]
     [Arguments("Shift+F3", nameof(MacroKeyDelivery.Fires))]
     [Arguments("Ctrl+K", nameof(MacroKeyDelivery.Fires))]

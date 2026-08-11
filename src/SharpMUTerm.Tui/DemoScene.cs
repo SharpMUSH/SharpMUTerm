@@ -20,6 +20,14 @@ internal static class DemoScene
     public const string ActiveSessionKey = "Aetherfall.Corvid";
 
     /// <summary>
+    /// The character the demo is focused on, as a session's own title would spell it — the half of
+    /// <see cref="ActiveSessionKey"/> after the dot. Named here so a frame that has to fake something a
+    /// live session would supply (the composer's target) says the same word the live writer would;
+    /// <c>ComposeWindowTests</c> holds the two together.
+    /// </summary>
+    public static string MainCharacterName => ActiveSessionKey[(ActiveSessionKey.IndexOf('.') + 1)..];
+
+    /// <summary>
     /// The demo's Chat spawn window. Spelt once, here, because a spawn window's id names its
     /// <em>owner</em> as well as its target — the saved workspace, the snapshot's <c>spawn</c> view and
     /// the scene's own backlog all have to mean the same window, and three hand-built ids would not.

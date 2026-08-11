@@ -286,6 +286,13 @@ internal static class Program
         usage.WriteLine("character's saved password and connect line — F5's 'login' row says which.");
         usage.WriteLine();
         usage.WriteLine("In-app: Up/Down history · Ctrl+N next window · Ctrl+W close · Ctrl+P palette · Ctrl+Q quit.");
+        // The composer earns a line of its own because what it *sends* is not guessable from the window:
+        // the buffer is one command and its line breaks are written %r, which is what a MUSH board or
+        // mail body wants. Naming the send chord matters for the same reason — Ctrl+Enter is what a
+        // reader will try, and no Unix terminal reports it distinctly.
+        usage.WriteLine("Write:  F1 opens a full-screen editor for a post. The whole buffer is one command and");
+        usage.WriteLine("        its line breaks are sent as %r; Ctrl+S sends, Alt+L switches between sending the");
+        usage.WriteLine("        text as typed and escaping it, Esc closes and keeps the draft for that character.");
         usage.WriteLine("Scroll: PgUp/PgDn a page · Shift+Up/Down a line · Ctrl+Home top · Ctrl+End back to live output.");
         usage.WriteLine("Focus:  Ctrl+Left/Right/Up/Down move between panes (Ctrl+Down at the bottom reaches the second");
         usage.WriteLine("        command line); Ctrl+O cycles them; Tab switches command lines. The pane you are on and");

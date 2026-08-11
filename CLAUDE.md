@@ -259,6 +259,46 @@ fallbacks) for inline images/maps.
   - **The launcher is caller-supplied and null by default**, the fourth member of the
     `save:`/`logRoot:`/`restore:` family: **a snapshot and a test start no browser**, and an app with no
     opener refuses out loud (`AutoLinkTests.AnAppWithNoOpenerLaunchesNothingAndSaysSo`).
+- **F1 is the composer: a full-screen editor for writing a post, sent as one command**
+  (`ComposeOverlay`, Tui; `ComposeMessage`, Core; ⌃P ▸ *Compose a post*; `--view compose` /
+  `compose-literal`). It is **the one place `MultilineEditControl` is right**. CLAUDE.md rules that
+  control out of the *command line* because ⏎ there has to send rather than insert; a composer is the
+  opposite case, so undo, find, selection, mouse and a caret over wrapped rows all come free instead of
+  being written again.
+  - **The buffer is the whole command**, verb and all — nothing is prepended and nothing is guessed at —
+    and its line breaks are joined with `%r`, because a MUSH stores a post as one string and renders the
+    breaks itself. Blank rows at the ends are where the caret was left and are dropped; interior ones are
+    paragraph breaks and become `%r%r`.
+  - **⌥L switches escaping, and the escaping runs *before* the join.** In `literal` the body's `%`, `[`,
+    `]`, `{`, `}`, `;` and `\` are escaped so the post shows what was typed; in `as typed` nothing is.
+    Escaping after the join would produce `%%r` — the characters "%r" posted into the body instead of a
+    line break, on every line of every literal post. The mode travels with the draft.
+  - **It is modal, and that is what makes it possible at all.** `PinFocusToArmedBar` would fight an editor
+    needing real focus for ever — except it stands down while the main window is inactive, which a modal
+    guarantees. Same reason the settings screens are modal.
+  - **Paste is the framework's here, and must stay the only path.** `SettingsOverlay` takes paste off the
+    *driver* because its screens have no focusable target, and its own remarks warn that a focusable
+    `IPasteTarget` would make both fire. `MultilineEditControl` is one. That is why F1 **refuses over an
+    open settings screen** (and why two modal windows with two `PreviewKeyPressed` handlers could not be
+    driven headlessly anyway).
+  - **The editor is sized from the driver, not by `Fill` alone.** `VerticalAlignment.Fill` reads arranged
+    bounds only once arranged, and the first frame is laid out against the control's ten-row default — a
+    maximised window with a ten-row editor and the footer immediately under it. `FitEditor` sets
+    `ViewportHeight` from `ConsoleDriver.ScreenSize`, and re-runs on `ScreenResized`. Its colours must set
+    **both** pairs: the control paints from the *focused* pair, and it always has focus here, so setting
+    only `BackgroundColor` leaves the framework's grey on screen.
+  - **Drafts are per character and in memory only**, for the life of the run. Not on disk deliberately: a
+    post is a few minutes' work, and a file would be a fourth thing this client writes, a purge entry, a
+    `--help` line and somebody's unsent post in their home directory. Keyed by the *window's* owner, never
+    `_active`; a window belonging to no connection keeps none. **`Close()` raises `Closed`, which is what
+    stores the draft, so a send must close first and forget after** — the other order posts the text and
+    hands it straight back next time the window opens.
+  - **F1 is claimed in `MacroKeys.AppShortcuts` but is not a settings screen**, so `ShortcutAction` answers
+    it *before* the screen lookup — an arm reached only on a miss would make every future unclaimed F-key
+    silently open the composer. Claiming it takes it off `MacroKeys.Bindable` automatically, which is why
+    a macro test that used F1 as "a free function key" had to move to F12.
+  - **The footer names ⌃S, ⌥L and Esc and nothing else.** No `⌃F find`: the control has a find *API* and
+    no chord bound to it, and this screen is held to the same honesty rule as the settings screens.
 - **Every `[link=…]` payload a pane carries is scheme-tagged by `InteractionKind`** (`LinkPayload`:
   `mux:send:` / `mux:prompt:` / `mux:web:`), and the panes' handler takes the *window id* the click
   came from. Both are security properties, not tidiness. The tagging is disjoint because the
@@ -325,6 +365,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   The moved frame is also the one that shows a bar wearing a character's hue while its prompt reads
   `no connection ›`, which is the composition rule stated in paint: hue says whose, not whether),
   `deletions`,
+  `compose`/`compose-literal` (the F1 composer in each of its two escaping modes — the pair exists
+  because ⌥L changes what is *sent* and only the header says which way it is set; the demo has no
+  session, so the target is handed in and pinned against the live writer by `ComposeWindowTests`),
   `mssp`/`mssp-none`/`mssp-never` (the **three** states of the F5 ▸ `i` server-information report —
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
