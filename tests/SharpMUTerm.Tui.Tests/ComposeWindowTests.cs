@@ -252,6 +252,41 @@ public class ComposeWindowTests
         await Assert.That(world.App.StatusMarkup).Contains("close the settings screen first");
     }
 
+    /// <summary>
+    /// The same rule for every surface, not only the settings screens. A modal surface owns the screen
+    /// in this client, and the composer is one — so it may not be stacked on top of another, and the
+    /// refusal names the one that is in the way rather than saying "a surface".
+    /// </summary>
+    [Test]
+    public async Task ItRefusesToOpenOverTheCommandSurface()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.P, ConsoleModifiers.Control));
+        await Assert.That(world.App.MenuIsOpen).IsTrue();
+
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+
+        await Assert.That(world.App.Composer.IsOpen).IsFalse();
+        await Assert.That(world.App.StatusMarkup).Contains("close the command surface first");
+    }
+
+    /// <summary>
+    /// And the other direction, which is what putting the composer into <c>AnyOverlayOpen</c> buys: the
+    /// surfaces that already decline to act while a screen is up decline while a post is being written
+    /// too. ⌃R is the one that reads that flag directly.
+    /// </summary>
+    [Test]
+    public async Task TheComposerCountsAsAnOpenSurface()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+
+        world.App.SimulateKey(Key(ConsoleKey.R, ConsoleModifiers.Control));
+
+        await Assert.That(world.App.HistorySearchOpen).IsFalse();
+        await Assert.That(world.App.Composer.IsOpen).IsTrue();
+    }
+
     // ---- Harness -----------------------------------------------------------------------------
 
     private sealed record Wired(SharpMUTermApp App, RecordingTelnetSession Telnet);

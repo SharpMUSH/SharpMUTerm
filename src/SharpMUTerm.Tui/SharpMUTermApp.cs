@@ -2949,9 +2949,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void ToggleComposer()
     {
-        if (!_composer.IsOpen && _settings.IsOpen)
+        // Any surface, not just a settings screen. The settings screens are the case with teeth — see the
+        // paste reasoning above — but the rule this app already states is that a modal surface owns the
+        // screen, and the composer is one, so it may not be stacked on top of another.
+        if (!_composer.IsOpen && AnyOverlayOpen)
         {
-            RefuseCommand("close the settings screen first — the composer cannot open over it");
+            RefuseCommand($"close {OpenOverlayName()} first — the composer cannot open over it");
             return;
         }
 
@@ -3187,7 +3190,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen;
+
+    /// <summary>
+    /// What <see cref="AnyOverlayOpen"/> is currently true because of, in the words the reader knows the
+    /// surface by. A refusal that named "a surface" would leave somebody looking for which one; every
+    /// other refusal in this client names the thing it is talking about, and this is one string.
+    /// </summary>
+    private string OpenOverlayName() =>
+        _settings.IsOpen ? "the settings screen"
+        : _palette.IsOpen ? "the command surface"
+        : _quit.IsOpen ? "the quit prompt"
+        : _messageLog.IsOpen ? "the client messages"
+        : _historySearch.IsOpen ? "the history search"
+        : _prefixPanel.IsOpen ? "the pane keys panel"
+        : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
     private bool AnyBarHasText() =>
