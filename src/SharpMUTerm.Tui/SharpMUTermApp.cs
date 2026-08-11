@@ -3197,6 +3197,34 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// surface by. A refusal that named "a surface" would leave somebody looking for which one; every
     /// other refusal in this client names the thing it is talking about, and this is one string.
     /// </summary>
+    /// <summary>
+    /// Refuses a surface that would open <em>over</em> the composer, naming what is in the way. The
+    /// composer's own guard is the other half of this; together they make the pair mutually exclusive
+    /// rather than one-sided, which is the whole of the stacking rule for this feature.
+    /// <para>
+    /// <b>⌃Q is deliberately not one of the callers.</b> Quitting has to work from wherever the reader
+    /// is — a modal that could refuse it would be a client you cannot leave — so the quit prompt opens
+    /// over the composer and <see cref="QuitFactsNow"/> counts the unsent post instead, which is the
+    /// answer that actually helps: it says what would be lost rather than declining to ask.
+    /// </para>
+    /// <para>
+    /// The pre-existing surfaces still open over <em>each other</em>, as they did before the composer
+    /// existed. Making all of them mutually exclusive is a change to five surfaces with its own test
+    /// surface — and ⌃P has to keep closing the palette it opened, so it cannot simply read
+    /// <see cref="AnyOverlayOpen"/> — which is a separate piece of work rather than part of this one.
+    /// </para>
+    /// </summary>
+    private bool ComposerIsInTheWay(string surface)
+    {
+        if (!_composer.IsOpen)
+        {
+            return false;
+        }
+
+        RefuseCommand($"close the composer first (Esc keeps the post) — {surface} cannot open over it");
+        return true;
+    }
+
     private string OpenOverlayName() =>
         _settings.IsOpen ? "the settings screen"
         : _palette.IsOpen ? "the command surface"
@@ -4468,7 +4496,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             }
 
             var key = claim.Key;
-            return () => { _settings.Toggle(key, open); return true; };
+            return () =>
+            {
+                if (!ComposerIsInTheWay("a settings screen"))
+                {
+                    _settings.Toggle(key, open);
+                }
+
+                return true;
+            };
         }
 
         if (claim.Modifiers == ConsoleModifiers.Alt)
@@ -4566,7 +4602,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var activeId = ActiveWindowId();
         var holding = _workspace.Windows.Where(w => w.HasUnsentInput).ToList();
         var bars = (_input.Buffer.IsEmpty ? 0 : 1) + (_second.Visible && !_second.Buffer.IsEmpty ? 1 : 0);
-        var drafts = holding.Count(w => w.Id != activeId) + bars;
+        // A post in the composer is a draft too, and the one most worth being asked about: it is minutes
+        // of writing rather than a line, and it is kept in memory only, so quitting is exactly the thing
+        // that loses it. The open window's buffer is counted separately from the stored drafts because it
+        // is not in that dictionary until it closes — counting the dictionary alone would say nothing
+        // about the post on the screen.
+        var posts = _composeDrafts.Count + (_composer.IsOpen && _composer.Body.Trim().Length > 0 ? 1 : 0);
+        var drafts = holding.Count(w => w.Id != activeId) + bars + posts;
 
         // An open settings screen is deliberately not among the facts. It used to contribute "F5 is open
         // — 3 unsaved edits", which was true while closing a screen could throw its edits away; now every
@@ -5772,7 +5814,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 ToggleSecondBar();
                 return true;
             case "term:messages":
-                _messageLog.Toggle();
+                if (!ComposerIsInTheWay("the client messages"))
+                {
+                    _messageLog.Toggle();
+                }
+
                 return true;
             case "term:restore-purge":
                 PurgeRestoreLog();
@@ -6079,6 +6125,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>Opens/closes the command surface (⌃P or the header ☰ menu) and flips the header caret.</summary>
     private void ToggleMenu()
     {
+        if (ComposerIsInTheWay("the command surface"))
+        {
+            return;
+        }
+
         _palette.Toggle();
         _header.SetContent(new List<string> { HeaderMarkup() });
     }

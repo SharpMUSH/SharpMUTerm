@@ -287,6 +287,49 @@ public class ComposeWindowTests
         await Assert.That(world.App.Composer.IsOpen).IsTrue();
     }
 
+    /// <summary>
+    /// And nothing opens over the composer either — the pair is mutually exclusive rather than
+    /// one-sided. Driven through the real chords and the real ⌃P entry, because a global shortcut runs
+    /// before any window sees the key, which is exactly how a second modal got on top of this one.
+    /// </summary>
+    [Test]
+    public async Task NoOtherSurfaceOpensOverTheComposer()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+
+        world.App.SimulateKey(Key(ConsoleKey.P, ConsoleModifiers.Control));
+        await Assert.That(world.App.MenuIsOpen).IsFalse();
+
+        world.App.SimulateKey(Key(ConsoleKey.F7));
+        await Assert.That(world.App.OpenSettingsKey).IsNull();
+
+        world.App.DispatchCommand("term:messages");
+        await Assert.That(world.App.MessageLogIsOpen).IsFalse();
+
+        await Assert.That(world.App.Composer.IsOpen).IsTrue();
+        await Assert.That(world.App.StatusMarkup).Contains("close the composer first");
+    }
+
+    /// <summary>
+    /// ⌃Q is the exception, and deliberately: a client you cannot leave from a modal would be worse than
+    /// one that stacks a prompt. What it does instead is <em>count</em> the unsent post, so the question
+    /// says what leaving would cost — the composer keeps drafts in memory only, so quitting is the one
+    /// thing that loses them.
+    /// </summary>
+    [Test]
+    public async Task QuittingStillWorksAndCountsTheUnsentPost()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+        world.App.Composer.SimulateTyping("a post worth keeping");
+
+        world.App.SimulateKey(Key(ConsoleKey.Q, ConsoleModifiers.Control));
+
+        await Assert.That(world.App.QuitPromptOpen).IsTrue();
+        await Assert.That(string.Join("\n", world.App.QuitPromptLines)).Contains("unsent draft");
+    }
+
     // ---- Harness -----------------------------------------------------------------------------
 
     private sealed record Wired(SharpMUTermApp App, RecordingTelnetSession Telnet);
