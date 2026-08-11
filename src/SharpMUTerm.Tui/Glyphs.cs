@@ -39,6 +39,12 @@ internal static class Glyphs
     public const string Away = "\uf070"; // nf-fa-eye_slash
 
     /// <summary>
+    /// The bar marking the line \u2303F sent you to \u2014 see <see cref="SearchBarRenderer"/>. A magnifying
+    /// glass, the one icon in this set that needs no explaining.
+    /// </summary>
+    public const string Search = "\uf002"; // nf-fa-search
+
+    /// <summary>
     /// The focused pane's marker, drawn on the active tab of the pane every workspace key acts on. Box
     /// drawing rather than a Nerd Font icon, deliberately: it is the one glyph here whose job is to be
     /// legible when nothing else is, so it must not be the character that degrades to a tofu box on a
