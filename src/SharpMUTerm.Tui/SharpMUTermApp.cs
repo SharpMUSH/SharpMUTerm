@@ -3509,54 +3509,89 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _second.Text = _drafts.Recall(windowId, InputBar.Secondary);
     }
 
+    /// <summary>Which of the two ways into history a keystroke is, or neither.</summary>
+    private enum RecallMode
+    {
+        /// <summary>Not a recall key at all.</summary>
+        No,
+
+        /// <summary>A bare arrow: the caret gets it first, and history only where the caret cannot move.</summary>
+        AtTheEdges,
+
+        /// <summary>⌥↑ or ⌥↓: history, wherever the caret is.</summary>
+        Always,
+    }
+
     /// <summary>
-    /// Handles ↑/↓ as draft-safe history recall. A command line tall enough to have another row keeps
-    /// the arrows for the caret — recall only happens where the caret has nowhere further to go, which
-    /// is the single-row case it has always been plus the top and bottom of a grown one.
+    /// Handles ↑/↓ and ⌥↑/⌥↓ as draft-safe history recall.
     /// <para>
-    /// <b>The bare arrows only.</b> This used to look at the key and never at the modifiers, which is how
-    /// it came to swallow Shift+↑ from the scrollback work — repaired then by putting the scrollback keys
-    /// ahead of it, which fixes the one chord that had already been reported and leaves the next one to
-    /// be found the same way. Ordering still matters and is unchanged; declining what is not ours is the
-    /// half that was missing.
+    /// <b>Two ways in, and the difference is the caret.</b> On the bare arrows a command line tall enough
+    /// to have another row keeps them for the caret, and recall happens only where the caret has nowhere
+    /// further to go — the single-row case it has always been, plus the top and bottom of a grown one.
+    /// That is unchanged. ⌥↑/⌥↓ mean history and nothing else, which is what makes them usable on a draft
+    /// several rows tall: "recall happens at the edges" stops being a rule you can hold in your head the
+    /// moment the bar grows, and that was the report. Both are kept, because the edge behaviour is how
+    /// this client has always worked and nothing is taken away by adding a chord beside it.
+    /// </para>
+    /// <para>
+    /// <b>⌥ and not ⌃, and that is the terminal's answer rather than a preference.</b> ⌃↑/⌃↓ arrives as
+    /// <c>ESC [ 1;5 A</c>/<c>B</c> and is already spent twice over — pane selection, and the ladder from
+    /// the last pane onto the second command line. ⌥↑/⌥↓ is <c>ESC [ 1;3 A</c>/<c>B</c>, which
+    /// <c>AnsiInputParser.ParseModifiers</c> reads as Alt, and which nothing else here or in the
+    /// framework claims. Measured at a raw-mode reader with <c>kitten @ send-key</c> before it was spent.
+    /// </para>
+    /// <para>
+    /// <b>Exact modifiers, on both.</b> This used to look at the key and never at the modifiers, which is
+    /// how it came to swallow Shift+↑ from the scrollback work — repaired then by putting the scrollback
+    /// keys ahead of it, which fixed the one chord that had been reported and left the next one to be
+    /// found the same way. Ordering still matters and is unchanged; declining what is not ours is the
+    /// half that was missing, and a <c>switch</c> on the whole modifier set is what keeps Alt+Shift+↑
+    /// (the pane resize) out of here now that Alt alone means something.
     /// </para>
     /// </summary>
     private bool TryRecallKey(KeyPressedEventArgs e)
     {
-        if (e.KeyInfo.Modifiers != 0)
+        var mode = e.KeyInfo.Modifiers switch
+        {
+            (ConsoleModifiers)0 => RecallMode.AtTheEdges,
+            ConsoleModifiers.Alt => RecallMode.Always,
+            _ => RecallMode.No,
+        };
+
+        if (mode == RecallMode.No)
         {
             return false;
         }
 
         var bar = ActiveBar();
         var kind = BarKind(bar);
-        var history = HistoryFor(kind);
+        var entries = HistoryFor(kind);
 
         string? text;
         switch (e.KeyInfo.Key)
         {
             case ConsoleKey.UpArrow:
-                if (bar.TryMoveRow(-1))
+                if (mode == RecallMode.AtTheEdges && bar.TryMoveRow(-1))
                 {
                     e.Handled = true;
                     return true;
                 }
 
-                text = history.Recall(bar.Text);
+                text = entries.Recall(bar.Text);
                 break;
             case ConsoleKey.DownArrow:
-                if (bar.TryMoveRow(1))
+                if (mode == RecallMode.AtTheEdges && bar.TryMoveRow(1))
                 {
                     e.Handled = true;
                     return true;
                 }
 
-                if (!history.IsRecalling)
+                if (!entries.IsRecalling)
                 {
                     return false;
                 }
 
-                text = history.Forward();
+                text = entries.Forward();
                 break;
             default:
                 return false;

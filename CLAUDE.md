@@ -553,6 +553,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     alias (the `⌃D` rule). The label a **frozen** reader is looking at (`FreezeBarRenderer`) moves with
     the chord: a bar naming a key that no longer thaws the pane would be the worst possible place to
     leave a stale chord.
+  - **History recall has its own chord: `⌥↑`/`⌥↓`.** The bare arrows still recall where the caret has
+    nowhere further to go, and that is unchanged — but it is a rule that stops being usable the moment
+    the bar grows to a second row, which was the report. `⌃↑`/`⌃↓`, the alternative offered, was never
+    available: the terminal writes `ESC [ 1;5 A` and this client already spends it on pane selection
+    and on the ladder onto the second command line. `ESC [ 1;3 A` is Alt, is free, and is what
+    `TryRecallKey` now matches on — **exactly**, so `⌥⇧↑` (the pane resize) still reaches its own
+    handler. A macro bound to `Alt+Up` wins over recall, because `DispatchMacro` runs first: the same
+    relationship `Ctrl+←/→` has with pane selection.
   - **Known and not fixed here**: `⌃N` and `⌃O` have no reverse (the character cycle does — `⌥J`/`⌥K`),
     and `⌃W` and `⌃B x` are two chords for one action. Both are shape complaints rather than defects,
     and both are behaviour changes rather than modifier moves.
