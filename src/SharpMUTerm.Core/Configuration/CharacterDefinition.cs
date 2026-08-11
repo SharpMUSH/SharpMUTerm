@@ -112,6 +112,27 @@ public sealed class CharacterDefinition
     /// <summary>Names of the <see cref="TriggerSet"/>s that apply to this character.</summary>
     public List<string> TriggerSets { get; set; } = new();
 
+    /// <summary>
+    /// The colour this character's output panes are painted in, so a workspace holding several
+    /// characters says whose pane is whose without being read. <see cref="PaneTint.None"/> — the default
+    /// — inherits the theme, which is what every pane did before this existed.
+    /// <para>
+    /// <b>No migration marks anybody</b>, for the same reason <see cref="ConnectAtStartup"/>'s does not:
+    /// an absent field deserializes to <see cref="PaneTint.None"/>, which is precisely the behaviour the
+    /// configuration already had, and a migration that assigned colours would repaint the workspace of
+    /// every user who never asked for one. The schema version is therefore untouched — this is a new
+    /// optional field whose default <em>is</em> the old behaviour, not a change of meaning to an existing
+    /// one (contrast <c>ConfigurationMigrator</c>'s v2→v3 encoding step, where the same value started
+    /// meaning something else).
+    /// </para>
+    /// <para>
+    /// What the name resolves to is <c>SharpMUTerm.Tui</c>'s business — see <c>WorkspacePalette.Tint</c>,
+    /// which derives every tint from the active theme's own surface. Nothing in
+    /// <c>SharpMUTerm.Core</c> knows a hex for these, which is what keeps the setting UI-agnostic.
+    /// </para>
+    /// </summary>
+    public PaneTint Tint { get; set; }
+
     /// <summary>Logging is configured per character.</summary>
     public LoggingSettings Logging { get; set; } = new();
 
@@ -154,6 +175,7 @@ public sealed class CharacterDefinition
         OnConnect = OnConnect,
         OnDisconnect = OnDisconnect,
         TriggerSets = new List<string>(TriggerSets),
+        Tint = Tint,
         Logging = new LoggingSettings
         {
             Format = Logging.Format,

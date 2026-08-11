@@ -22,6 +22,7 @@ public class DefinitionCloneTests
         OnDisconnect = "quit",
         TriggerSets = new List<string> { "Comms", "Combat" },
         Logging = new LoggingSettings { Format = LogFormat.Html, Directory = "/logs/kaz" },
+        Tint = PaneTint.Moss,
     };
 
     [Test]
@@ -49,6 +50,11 @@ public class DefinitionCloneTests
         await Assert.That(copy.TriggerSets).IsEquivalentTo(new[] { "Comms", "Combat" });
         await Assert.That(copy.Logging.Format).IsEqualTo(LogFormat.Html);
         await Assert.That(copy.Logging.Directory).IsEqualTo("/logs/kaz");
+
+        // The pane colour comes across for the ordinary reason: a duplicate is a copy of a character,
+        // and one that arrived untinted beside its original would read as two characters sharing a
+        // colour — which is precisely the confusion the setting exists to remove.
+        await Assert.That(copy.Tint).IsEqualTo(PaneTint.Moss);
     }
 
     [Test]
