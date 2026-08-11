@@ -374,6 +374,38 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly Dictionary<string, AwayMark> _awayMarks = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Where the lines the reader has not seen begin, per window, for the windows that have any: the
+    /// buffer index of the first line that landed while the window was not <em>caught up</em>.
+    /// <para>
+    /// <b>Recorded forwards, unlike <see cref="_awayBoundary"/> beside it.</b> The terminal boundary has
+    /// to be reconstructed from the last input before the reader vanished, because a terminal reports
+    /// focus-<em>in</em> and this client cannot see focus-out at all. This one needs none of that
+    /// machinery: a line arrives, the window either is or is not caught up, and if it is not then this is
+    /// the boundary. Exact rather than approximate, and one comparison in a method that already runs per
+    /// line.
+    /// </para>
+    /// <para>
+    /// <see cref="Workspace.IsCaughtUp"/> and not <c>IsVisible</c>, which is already the rule the unread
+    /// badge answers to (<see cref="OnLine"/>): a visible tab whose output the reader has scrolled back
+    /// off is exactly as blind as a tab they are not looking at. One fact behind both, so a badge showing
+    /// a count always has a bar under it saying where the count begins — the badge said 3 and nothing
+    /// said which 3, which is what got reported.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, int> _missedFrom = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether a line landing out of sight is an <em>absence</em> yet. False until the constructor has
+    /// finished, for two reasons that are really the same one: until the workspace has been laid out,
+    /// "not visible" means "no pane has been built", which is nothing the reader missed; and
+    /// <see cref="RestorePreviousSession"/> pours a previous run's lines through
+    /// <see cref="AppendWindowLine"/> into windows that are not visible yet. Every one of those already
+    /// sits under a <see cref="RestoreBarRenderer"/> bar saying exactly what it is, and a second bar over
+    /// the top would be the client marking its own startup as news.
+    /// </summary>
+    private bool _watching;
+
     /// <summary>How the configuration is written back, or null for an app that owns no file.</summary>
     private readonly Action<AppConfiguration>? _save;
 
@@ -711,6 +743,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // also the last moment at which no live line has arrived to be restored *above*.
         RestorePreviousSession();
         _system.AddWindow(_window);
+
+        // From here on, a line landing in a window the reader cannot see is something they missed. Not
+        // before: see _watching — the restore replay above goes through the same seam, into windows that
+        // have no pane yet.
+        _watching = true;
     }
 
     /// <summary>Captures the current workspace (panes/windows/focus) so it can be persisted and resumed.</summary>
@@ -2343,6 +2380,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             _awayBoundary[windowId] = 0;
         }
 
+        // The moment a boundary is made: a line landing in a window the reader is not watching. Before
+        // the Add, so the index is the first line they missed rather than the one after it — and only
+        // the first such line records it, because every one after that is on the same side of the same
+        // boundary.
+        if (_watching && !_missedFrom.ContainsKey(windowId) && !_workspace.IsCaughtUp(windowId))
+        {
+            _missedFrom[windowId] = buffer.Count;
+        }
+
         buffer.Add(new PaneLine(markup, stamp));
 
 
@@ -2371,6 +2417,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             if (_awayBoundary.TryGetValue(windowId, out var boundary))
             {
                 _awayBoundary[windowId] = Math.Max(0, boundary - excess);
+            }
+
+            if (_missedFrom.TryGetValue(windowId, out var missed))
+            {
+                _missedFrom[windowId] = Math.Max(0, missed - excess);
             }
 
             if (_awayMarks.TryGetValue(windowId, out var mark))
@@ -2624,7 +2675,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             var removed = RemoveAwayBar(windowId);
 
             var buffer = _lines[windowId];
-            var at = Math.Clamp(_awayBoundary.GetValueOrDefault(windowId), 0, buffer.Count);
+
+            // Two boundaries can exist for one window, and the *older* wins. This one is reconstructed
+            // from the input before the last — so a reader who typed after lines landed in a window they
+            // could not see has a terminal boundary at the end of it, saying they missed nothing. The
+            // window's own boundary was recorded when the first of those lines arrived and knows better.
+            // Taking this one unconditionally moved the bar down past the very lines it was made for, or
+            // dropped it entirely; still one bar per window, marking the earlier of the two absences.
+            var boundary = _awayBoundary.GetValueOrDefault(windowId);
+            if (_missedFrom.TryGetValue(windowId, out var missedFrom))
+            {
+                boundary = Math.Min(boundary, missedFrom);
+                _missedFrom.Remove(windowId);
+            }
+
+            var at = Math.Clamp(boundary, 0, buffer.Count);
             var missed = buffer.Count - at;
             if (missed <= 0)
             {
@@ -2659,6 +2724,90 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         foreach (var (windowId, buffer) in _lines)
         {
             _awayPending[windowId] = _awayBoundary[windowId] = buffer.Count;
+        }
+    }
+
+    /// <summary>
+    /// Draws the boundary in every window that has missed lines and is caught up again — the reader has
+    /// come back to it, so this is the moment to say where they left off.
+    /// <para>
+    /// Called from the two places a window can <em>become</em> caught up: <see cref="Activate"/>, which
+    /// raises a tab and focuses its pane, and <see cref="SyncScrollbackState"/>, where every scroll route
+    /// lands — the keys, the wheel and the scrollbar alike. There is no third, because
+    /// <see cref="Workspace.IsCaughtUp"/> is visibility and scroll position and nothing else moves either.
+    /// </para>
+    /// <para>
+    /// The bar is the client's own chrome, so it goes in through the buffer rather than through
+    /// <see cref="AppendWindowLine"/>: it must not badge the window unread, and it must not reach the
+    /// restore log. Re-entrancy is not a risk — the pending entry is dropped before the reveal, and the
+    /// reveal's scroll comes back through <see cref="SyncScrollbackState"/> with nothing left pending.
+    /// </para>
+    /// <para>
+    /// <b><paramref name="reveal"/> is false when the reader's own scroll is what caught the window up,
+    /// and that is not a detail.</b> Arriving at a window is a jump: the pane bottom-anchors, so a bar
+    /// for a deep absence is drawn far above the fold and nothing on screen would change without a
+    /// scroll to it. Pressing ⌃End is the opposite — an explicit "take me to the live tail" — and a
+    /// client that answered it by scrolling somewhere else would be moving the reader's attention away
+    /// from the place they just asked for. The bar is still drawn either way; only the jump is withheld.
+    /// </para>
+    /// </summary>
+    /// <param name="reveal">Whether to scroll each pane so its new bar is on screen.</param>
+    private void MarkMissedLines(bool reveal)
+    {
+        foreach (var windowId in _missedFrom.Keys.ToArray())
+        {
+            // The web view's pane is not fed from the line buffer, so there is nothing there to mark.
+            if (!_workspace.IsCaughtUp(windowId)
+                || string.Equals(windowId, WebWindowId, StringComparison.Ordinal)
+                || !_lines.TryGetValue(windowId, out var buffer))
+            {
+                continue;
+            }
+
+            var at = Math.Clamp(_missedFrom[windowId], 0, buffer.Count);
+            _missedFrom.Remove(windowId);
+            if (buffer.Count - at <= 0)
+            {
+                continue;
+            }
+
+            // At most one bar per window, so a previous one goes first — and first rather than last,
+            // because removing it shifts every index after it, this boundary included.
+            if (RemoveAwayBar(windowId))
+            {
+                at = Math.Clamp(at, 0, buffer.Count);
+            }
+
+            buffer.Insert(at, new PaneLine(AwayBarRenderer.Missed(buffer.Count - at, FrozenAccentHex())));
+            if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
+            {
+                _freezePoints[windowId] = freeze + 1;
+            }
+
+            var mark = new AwayMark
+            {
+                Index = at,
+                DrawnAfter = _focus.InputCount,
+            };
+
+            _awayMarks[windowId] = mark;
+            RepaintPane(windowId);
+            if (reveal)
+            {
+                RevealAwayBar(windowId, mark);
+                continue;
+            }
+
+            // No jump — but the pane still gained a row, and a whole-buffer re-feed leaves the panel's
+            // offset a frame behind (auto-scroll re-pins during paint, after the children were arranged).
+            // On the frame in between, a pane that is following its tail would be showing the row above
+            // its newest line, which is a reader pressing ⌃End and watching the newest line leave the
+            // screen. Re-pinning here is the same pairing BackToLive makes, and touches AutoScroll not
+            // at all: ScrollToBottom is a bare offset write.
+            if (_paneScrolls.GetValueOrDefault(windowId) is { AutoScroll: true } following)
+            {
+                following.ScrollToBottom();
+            }
         }
     }
 
@@ -4296,6 +4445,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // A viewport that moved is the gesture an away bar is read by, so this is where "has it been on
         // screen, and are we back at the tail" gets asked. Every scroll route reaches here — the keys,
         // the wheel and the scrollbar alike.
+        //
+        // Coming back down to the tail is also how a window stops being one the reader is missing, so the
+        // boundary is drawn here before it is consumed: a pane scrolled back while output arrived has
+        // both things to do, in that order, and the bar it has just been given is not one it has read.
+        // Without the reveal — the reader is here because they scrolled here.
+        MarkMissedLines(reveal: false);
         ConsumeReadAwayBars();
         RefreshStatusRow();
     }
@@ -9062,6 +9217,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _activating = true;
         try
         {
+            // Before the syncs, and with the reveal: the window has just become caught up (ActivateWindow
+            // above raised its tab and focused its pane), so this is the moment its boundary is drawn —
+            // and arriving at a window is exactly the case that needs the jump, because a pane
+            // bottom-anchors and a deep absence's bar is drawn far above the fold.
+            MarkMissedLines(reveal: true);
             AdoptSessionOf(id);
             SelectTabFor(id);
             SyncToFocusedPane();
