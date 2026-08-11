@@ -285,6 +285,19 @@ internal static class OptionsScreenRenderer
             new("├ UNICODE", null, null),
             new("emoji substitution", null, settings.EmojiSubstitution, null,
                 ScreenToggle.Bind(() => settings.EmojiSubstitution, v => settings.EmojiSubstitution = v)),
+            new(string.Empty, null, null),
+            new("├ ACTIVITY", null, null),
+
+            // Seconds, and its own section: it is the only row on this screen describing the client's own
+            // chrome rather than how a world's text is drawn. Zero is a real answer — it retires the bar
+            // as soon as it has been read past, which is what this client did before the floor existed —
+            // so the field's floor is 0, as the tab width's is.
+            new("activity bar holds for (seconds)",
+                settings.ActivityBarSeconds.ToString(CultureInfo.InvariantCulture), null, null, null,
+                ScreenField.Integer(
+                    "activity bar holds for (seconds)",
+                    () => settings.ActivityBarSeconds, v => settings.ActivityBarSeconds = v,
+                    0, TextSettings.MaxActivityBarSeconds)),
         });
     }
 

@@ -2619,6 +2619,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         /// would set <see cref="InputSince"/> and retire the bar to the keystroke that produced it.
         /// </summary>
         public long DrawnAfter;
+
+        /// <summary>
+        /// When this bar was drawn, off the app's own <c>TimeProvider</c>. The dwell floor is measured
+        /// from here — see <see cref="TextSettings.ActivityBarSeconds"/>, which explains why a floor in
+        /// time and not in keystrokes.
+        /// </summary>
+        public DateTimeOffset DrawnAt;
     }
 
     /// <summary>
@@ -2709,7 +2716,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 _freezePoints[windowId] = freeze + 1;
             }
 
-            var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount };
+            var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount, DrawnAt = _time.GetUtcNow() };
             _awayMarks[windowId] = mark;
             RepaintPane(windowId);
             RevealAwayBar(windowId, mark);
@@ -2788,6 +2795,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             {
                 Index = at,
                 DrawnAfter = _focus.InputCount,
+                DrawnAt = _time.GetUtcNow(),
             };
 
             _awayMarks[windowId] = mark;
@@ -2944,7 +2952,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
             // AutoScroll is the framework's own "showing the live tail" bit — the same fact
             // SyncScrollbackState mirrors, rather than a second one kept in step with it.
-            if (mark.InputSince && panel.AutoScroll)
+            //
+            // The third conjunct is the dwell floor. Without it a shallow absence — the bar and
+            // everything under it on screen at once, the pane never moved — retired on the very next
+            // keystroke, a second or two after the bar appeared, which is the bar going before it could
+            // be read. It is a floor and not a timer: nothing fires on its own, so the bar goes on the
+            // first of these checks after the floor has passed.
+            var held = TimeSpan.FromSeconds(Math.Max(0, _config.Text.ActivityBarSeconds));
+            if (mark.InputSince && panel.AutoScroll && _time.GetUtcNow() - mark.DrawnAt >= held)
             {
                 RemoveAwayBar(windowId);
                 RepaintPane(windowId);
