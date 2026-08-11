@@ -295,18 +295,22 @@ public class PaneActivationTests
 
     /// <summary>
     /// A macro key is a keystroke too, and it went through <c>_active</c> by the same route the command
-    /// line did — so F1 pressed with a session-less pane in front of you fired the macro of the world you
-    /// had left. Same rule, same resolver.
+    /// line did — so a macro key pressed with a session-less pane in front of you fired the macro of the
+    /// world you had left. Same rule, same resolver.
+    /// <para>
+    /// The binding is F12 because it is free. It was F1 until the composer claimed that key, and a macro
+    /// on a claimed chord cannot fire at all — which would have made this pass for the wrong reason.
+    /// </para>
     /// </summary>
     [Test]
     public async Task AMacroKeyInAPaneWithNoSession_FiresNothing()
     {
         var one = await ConnectedBesideASessionLessPane();
-        one.App.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+        one.App.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F12, false, false, false));
         await Assert.That(one.Ann.Lines).IsEquivalentTo(new[] { "look" }); // the macro is live where it belongs
 
         MoveTo(one.App, one.SessionLessPane);
-        one.App.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+        one.App.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F12, false, false, false));
 
         await Assert.That(one.Ann.Lines).IsEquivalentTo(new[] { "look" }); // and nowhere else
     }
@@ -590,7 +594,7 @@ public class PaneActivationTests
         config.TriggerSets.Add(new TriggerSet
         {
             Name = "keys",
-            Macros = { new Macro { Name = "look", Key = "F1", Command = "look" } },
+            Macros = { new Macro { Name = "look", Key = "F12", Command = "look" } },
         });
 
         var world = World("Quiet");

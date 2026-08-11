@@ -146,6 +146,11 @@ internal static class MacroKeys
         // are read off.
         new(ConsoleModifiers.Alt, ConsoleKey.J, "goes to the next character"),
         new(ConsoleModifiers.Alt, ConsoleKey.K, "goes to the previous character"),
+        // F1 is the composer and not a settings screen, which is why it sits ahead of the F2–F9 block
+        // rather than in it: those keys all open the same overlay from one table, and this one opens a
+        // different surface. It is claimed here for the same reason they are — F4 reads this list to say
+        // which chords a macro can never fire on, and a key taken elsewhere would make that answer wrong.
+        new((ConsoleModifiers)0, ConsoleKey.F1, "opens the composer"),
         new((ConsoleModifiers)0, ConsoleKey.F2, "opens Triggers"),
         new((ConsoleModifiers)0, ConsoleKey.F3, "opens Aliases"),
         new((ConsoleModifiers)0, ConsoleKey.F4, "opens this screen"),

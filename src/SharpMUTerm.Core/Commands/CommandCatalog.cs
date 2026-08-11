@@ -210,6 +210,12 @@ public static class CommandCatalog
         // has a row even though each has an F-key.
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Search command history", "term:history", "⌃R"));
+
+        // The composer. Named here as well as bound to F1 for the reason the row above it is: a surface
+        // nobody can find is a surface nobody uses, and this one is not something a reader would guess
+        // at from the command line in front of them.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Compose a post", "term:compose", "F1 · a full editor, sent as one line"));
         items.Add(context.TimestampsOn
             ? new CommandItem(CommandGroup.Terminal, "Hide timestamps", "term:timestamps-off")
             : new CommandItem(CommandGroup.Terminal, "Show timestamps", "term:timestamps-on"));

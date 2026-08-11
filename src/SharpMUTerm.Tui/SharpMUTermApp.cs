@@ -224,6 +224,22 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly CommandPalette _palette;
     private readonly SettingsOverlay _settings;
 
+    /// <summary>The F1 composer — a full editor for a post, sent as one line. See <see cref="ComposeOverlay"/>.</summary>
+    private readonly ComposeOverlay _composer;
+
+    /// <summary>
+    /// The unfinished post each character is holding, by session key, for the life of this run.
+    /// <para>
+    /// Per character rather than per window, because a post is addressed to a <em>game</em> — the same
+    /// draft should come back whether you left it from the main window or a capture that character owns.
+    /// In memory rather than on disk deliberately: a post is a few minutes' work and closing the client
+    /// is a decision, so this earns none of what a file costs — a fourth thing this client writes, a
+    /// purge entry, a line in <c>--help</c>, and someone's unsent post sitting in their home directory.
+    /// A window with no owner keeps no draft; there is nothing to key it by.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, ComposeResult> _composeDrafts = new(StringComparer.Ordinal);
+
     /// <summary>
     /// The settings overlay, so a headless test can drive a key into an open screen and ask what
     /// happened. It is the same seam <c>SimulateKey</c> exists for and for the same reason: the
@@ -607,6 +623,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _settings = new SettingsOverlay(_system);
+        _composer = new ComposeOverlay(_system);
+        _composer.Send += (_, result) => SendComposed(result);
+        _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
 
         // The ⌃B which-key panel. Its facts are read at the moment it opens, so it explains the workspace
@@ -783,6 +802,28 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             _workspace.ActivateWindow(DemoScene.ChatWindowId);
             RebuildPaneArea();
+        }
+
+        // The composer, in both of its escaping modes — the one thing about that window a reader cannot
+        // otherwise see, since ⌥L changes what is *sent* and only the header says which way it is set.
+        //
+        // The target is handed in rather than resolved, because the demo scene holds no live session:
+        // this is the same fake the status identity already is (`_statusIdentity`), and it is held to the
+        // live writer by ComposeWindowTests, which asserts that a real session's composer header reads
+        // what SessionTitle produces. The body is prose with a '%' and brackets in it on purpose — it is
+        // the text whose two renderings differ.
+        if (string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase))
+        {
+            _composer.Toggle(
+                DemoScene.MainCharacterName,
+                "+bbpost 12=The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
+                + "short two horses. [Nobody] said what everyone was thinking.\n\n"
+                + "  -- Corvid, scribe",
+                string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase)
+                    ? ComposeEscaping.Literal
+                    : ComposeEscaping.AsTyped,
+                canSend: true);
         }
 
         // Split the workspace: Aardwolf (main) stays in the left pane, the Chat window moves to the
@@ -2893,6 +2934,110 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private WorldSession? SendTarget() => WindowSession(ActiveWindowId());
 
     /// <summary>
+    /// Opens or closes the composer (F1, ⌃P ▸ <c>Compose a post</c>), on the draft belonging to the
+    /// character whose window is focused.
+    /// <para>
+    /// It refuses while a settings screen is up rather than stacking on top of one. Two reasons, and the
+    /// second is the one that would have been a bug: two modal windows with two
+    /// <c>PreviewKeyPressed</c> handlers cannot be driven headlessly, which is the same call
+    /// <see cref="SettingsOverlay"/> and <see cref="EditReviewOverlay"/> already made — and
+    /// <c>SettingsOverlay</c> takes paste off the <em>driver</em> while it is open, precisely because its
+    /// screens offer no focusable target. The composer offers one. Open at the same time, a single paste
+    /// would be delivered twice: once into the editor by the framework, and once into whatever field the
+    /// screen behind it had open.
+    /// </para>
+    /// </summary>
+    private void ToggleComposer()
+    {
+        if (!_composer.IsOpen && _settings.IsOpen)
+        {
+            RefuseCommand("close the settings screen first — the composer cannot open over it");
+            return;
+        }
+
+        if (_composer.IsOpen)
+        {
+            _composer.Close();
+            return;
+        }
+
+        var windowId = ActiveWindowId();
+        var session = WindowSession(windowId);
+        var draft = ComposeDraftKey(windowId) is { } key && _composeDrafts.TryGetValue(key, out var kept)
+            ? kept
+            : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
+
+        _composer.Toggle(
+            session is null ? string.Empty : SessionTitle(session),
+            draft.Body,
+            draft.Escaping,
+            canSend: session is not null);
+    }
+
+    /// <summary>
+    /// Which character a composed post belongs to: the window's own owner, never <c>_active</c>. Null for
+    /// a window that belongs to no connection — the web view — which keeps no draft, because there is
+    /// nothing to key one by and nowhere for it to be sent.
+    /// </summary>
+    private string? ComposeDraftKey(string windowId) =>
+        WindowSession(windowId)?.SessionKey
+        ?? (_workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner ? owner : null);
+
+    /// <summary>
+    /// Sends a composed post as one line, through the ordinary command path — so it is echoed, recorded
+    /// in history and alias-expanded exactly like the same text typed on the command line, which is what
+    /// the buffer <em>is</em>. The window closes on success and keeps the post on a refusal.
+    /// </summary>
+    private void SendComposed(ComposeResult result)
+    {
+        var windowId = ActiveWindowId();
+        if (WindowSession(windowId) is not { } session)
+        {
+            RefuseCommand(NothingToSendTo(windowId));
+            return;
+        }
+
+        if (ComposeMessage.Build(result.Body, result.Escaping) is not { } line)
+        {
+            // An empty buffer is not a blank command to send: a MUSH answers a blank line, and some log
+            // it. Said out loud rather than closing quietly, so ⌃S on an empty window is not mistaken
+            // for a post that went.
+            RefuseCommand("nothing to send — the composer is empty");
+            return;
+        }
+
+        // Close first, then forget: closing raises Closed, which is what keeps a draft, so a removal
+        // before it is undone by the very act of shutting the window — the post came back next time it
+        // was opened, already sent.
+        _composer.Close();
+        _composeDrafts.Remove(session.SessionKey);
+        _ = session.SendUserInputAsync(line);
+    }
+
+    /// <summary>
+    /// Keeps what the composer was holding as it closed, or forgets the character's draft when the
+    /// window was left empty — so a sent-and-cleared composer does not reopen holding the last post.
+    /// </summary>
+    private void KeepComposeDraft(ComposeResult result)
+    {
+        if (ComposeDraftKey(ActiveWindowId()) is not { } key)
+        {
+            return;
+        }
+
+        if (result.Body.Trim().Length == 0)
+        {
+            _composeDrafts.Remove(key);
+            return;
+        }
+
+        _composeDrafts[key] = result;
+    }
+
+    /// <summary>The composer, for the tests and the snapshot views.</summary>
+    internal ComposeOverlay Composer => _composer;
+
+    /// <summary>
     /// Why a line could not be sent, naming what would open a connection. Three states, because they need
     /// three different next steps: a window whose recorded owner has no session this run, a window that
     /// belongs to no connection at all (the web view), and a client with nothing open anywhere — which is
@@ -4291,6 +4436,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     {
         if (claim.Modifiers == (ConsoleModifiers)0)
         {
+            // F1 is the one bare-key claim that is not a settings screen. Checked before the screen
+            // lookup rather than after it, so the "claimed but nothing runs on it" throw below stays a
+            // real check: an arm reached only on a miss would make every future unclaimed F-key silently
+            // open the composer.
+            if (claim.Key == ConsoleKey.F1)
+            {
+                return () => { ToggleComposer(); return true; };
+            }
+
             if (!screens.TryGetValue(claim.Key, out var open))
             {
                 return null;
@@ -5608,6 +5762,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:history":
                 ToggleHistorySearch();
+                return true;
+            case "term:compose":
+                ToggleComposer();
                 return true;
             case "term:log-on":
                 StartLogging();
