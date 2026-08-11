@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Theming;
 
@@ -22,6 +23,13 @@ namespace SharpMUTerm.Tui;
 /// of the colour the header and input bands are already painted in. MU* text is unaffected — a span
 /// with the default background emits no background at all (see <see cref="MarkupFormatter"/>), so it
 /// takes whatever surface it is drawn on.
+/// </para>
+/// <para>
+/// A pane's plane can also carry <em>whose</em> pane it is (<see cref="Tint"/>), and the two facts a
+/// plane states are kept on separate channels so neither can be mistaken for the other: <b>identity is
+/// hue and focus is luminance</b>. <see cref="Tint"/> moves the surface's colour without moving its
+/// brightness, <see cref="Focus(Rgb)"/> moves its brightness without moving its colour, and the focus
+/// step lands the same distance above a tinted plane as above an untinted one.
 /// </para>
 /// </summary>
 internal static class WorkspacePalette
@@ -105,7 +113,120 @@ internal static class WorkspacePalette
     /// game's own output. See <c>SharpMUTermApp.PaneOutputRects</c>.
     /// </para>
     /// </summary>
-    internal static Rgb Focus(Theme theme) => Scale(Surface(theme), FocusScale);
+    internal static Rgb Focus(Theme theme) => Focus(Surface(theme));
+
+    /// <summary>
+    /// The same focus step, taken off whatever plane a pane is actually painted on — which is
+    /// <see cref="Surface"/> for a character with no tint and <see cref="Tint"/> for one that has chosen
+    /// a colour. It is the <em>one</em> step either way: focus is a multiplication, so it lands the same
+    /// distance above every plane it is applied to, and a tinted pane is therefore exactly as visibly
+    /// focused as an untinted one.
+    /// <para>
+    /// This overload is what keeps the two cues from fighting. A tint changes only the plane's
+    /// <em>hue</em> (see <see cref="Tint"/>); focus changes only its <em>luminance</em>. Neither can be
+    /// read as the other, and no combination of the two produces a pane that is ambiguous about which
+    /// question it is answering.
+    /// </para>
+    /// </summary>
+    internal static Rgb Focus(Rgb plane) => Scale(plane, FocusScale);
+
+    /// <summary>
+    /// The plane a character's pane is painted on: <see cref="Surface"/> pushed toward the tint's hue at
+    /// the surface's <em>own luminance</em>, so a workspace holding several characters says whose pane is
+    /// whose. <see cref="PaneTint.None"/> returns the surface itself, byte for byte — an untinted client
+    /// is painted exactly as it was before this existed.
+    /// <para>
+    /// <b>The luminance is preserved deliberately, and that is the whole legibility argument.</b> A MU*
+    /// server chooses its own text colours and this is the plane they are read against, so a tint that
+    /// darkened or lightened the pane would change every contrast ratio the theme was designed around —
+    /// on a palette the client does not control and cannot test. Matching the anchor to the surface's
+    /// luminance <em>before</em> mixing (<see cref="AtLuma"/>) makes the mix luminance-neutral by
+    /// construction rather than by a constant somebody tuned: luma is linear in the channels, so a blend
+    /// of two colours of equal luma has that luma too, for any <see cref="TintStrength"/> and on any
+    /// theme.
+    /// </para>
+    /// <para>
+    /// Two consequences worth stating rather than discovering. <b>The tint carries no information a
+    /// monochrome terminal can show</b>, and it must not: the cue that has to survive a lost hue is
+    /// focus, and focus is luminance. A reader who cannot use the tint loses nothing they did not
+    /// already have — the sidebar and the tab title still name the character in words. <b>And it is a
+    /// truecolor cue</b>: at the surface's luminance the tints are a few points apart per channel, which
+    /// a 256-colour terminal will quantise onto the same entry as the untinted plane. That degrades to
+    /// <em>exactly the pane there would otherwise be</em>, which is why it is acceptable here and would
+    /// not be for focus (see <c>WorkspacePaletteTests.FocusSurvivesA256ColourTerminal</c>).
+    /// </para>
+    /// </summary>
+    internal static Rgb Tint(Theme theme, PaneTint tint)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        var surface = Surface(theme);
+        return Anchor(tint) is { } anchor
+            ? Mix(surface, AtLuma(anchor, Luma(surface)), TintStrength)
+            : surface;
+    }
+
+    /// <summary>
+    /// How far a tinted plane travels from the theme's surface toward its hue. It is a pure chroma
+    /// control — <see cref="AtLuma"/> has already taken the brightness question away — so this is the
+    /// answer to "how coloured", and nothing else. Short of the whole way, because the anchor at the
+    /// surface's luminance is as saturated as that luminance allows and a pane painted in it reads as a
+    /// coloured panel rather than as a client with a quiet mark on it. The thing being identified is a
+    /// character, not an alarm.
+    /// </summary>
+    private const double TintStrength = 0.7;
+
+    /// <summary>
+    /// The hue each named tint stands for, as a mid-luminance reference colour. These are never painted:
+    /// <see cref="Tint"/> re-lights each one to the active theme's surface before it is used, so what is
+    /// fixed here is the <em>hue</em> and the modest saturation, and the brightness is the theme's.
+    /// <para>
+    /// Six, spread around the wheel at roughly even spacing (blue → blue-green → green → amber →
+    /// red-orange → violet), because the failure this feature has is two characters whose colours a
+    /// reader has to compare rather than recognise. They are muted rather than primary for the same
+    /// reason the anchors exist at all: re-lit to a dark theme's surface a primary would come out as
+    /// nearly the maximum chroma that luminance can hold, and the pane would shout.
+    /// </para>
+    /// </summary>
+    private static Rgb? Anchor(PaneTint tint) => tint switch
+    {
+        PaneTint.Slate => new Rgb(0x4a, 0x6f, 0xa5),
+        PaneTint.Teal => new Rgb(0x2a, 0x8c, 0x84),
+        PaneTint.Moss => new Rgb(0x5a, 0x8a, 0x42),
+        PaneTint.Ochre => new Rgb(0xa8, 0x7c, 0x2e),
+        PaneTint.Ember => new Rgb(0xa8, 0x54, 0x40),
+        PaneTint.Plum => new Rgb(0x84, 0x54, 0xa0),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The same colour at a different brightness — <paramref name="target"/> luma, keeping the hue. It
+    /// takes the two directions separately because only one of them is safe in each: a colour brighter
+    /// than the target is <em>scaled</em> down (a multiplication can never leave the byte range), and one
+    /// darker is blended toward white, which reaches any luminance up to 255 without clipping. Scaling
+    /// upward would clip the strongest channel first and so would silently change the hue — on a light
+    /// theme, where every anchor has to travel up, it would change it beyond recognition.
+    /// </summary>
+    private static Rgb AtLuma(Rgb rgb, double target)
+    {
+        var luma = Luma(rgb);
+        if (luma <= 0)
+        {
+            return rgb;
+        }
+
+        return luma >= target
+            ? Scale(rgb, target / luma)
+            : Mix(rgb, new Rgb(255, 255, 255), (target - luma) / (255 - luma));
+    }
+
+    /// <summary>
+    /// Perceived brightness, on the same weights the rest of this codebase measures a colour by (ITU-R
+    /// BT.601, which is what <c>WorkspacePaletteTests</c> and <c>FocusIndicationTests</c> already use).
+    /// Being <em>linear</em> in the channels is the property <see cref="Tint"/> leans on, not the
+    /// particular weights.
+    /// </summary>
+    private static double Luma(Rgb rgb) => ((rgb.R * 299.0) + (rgb.G * 587.0) + (rgb.B * 114.0)) / 1000.0;
 
     /// <summary>
     /// The chrome band a command line is drawn on when ⏎ will <em>not</em> send from it. It is the theme's

@@ -293,7 +293,11 @@ top to bottom:
   *"no characters — this world has nothing to connect with."*
 - **`└ CHARACTER · <name>`**: two columns. Left: name, password (masked, *saved in secrets.json,
   plaintext*), the connect-line template (`connect %CHARACTER% %PASSWORD%`), on-connect, `at start`,
-  `login` (derived, read-only), session state, log format + folder. Right: the trigger-set checklist — each row is
+  `login` (derived, read-only), session state, log format + folder, `restore`, and `tint` — the colour
+  this character's panes are painted in, chosen from a closed list of six names (plus `None`, the
+  default, which leaves the pane on the theme's own surface). A tint changes the plane's hue and not its
+  brightness, so the game's text keeps every contrast the theme was designed with and the focused pane is
+  still the brighter one. Right: the trigger-set checklist — each row is
   `[x] ▪ Comms — channel + page routing    2 rules`. Toggling assigns/unassigns live.
 
 Footer: `[Esc] Close` and, on the right, whatever `⏎` does on the row the cursor is on (`Edit`, `Add`,

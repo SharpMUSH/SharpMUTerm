@@ -110,6 +110,14 @@ internal static class WorldsScreenRenderer
     internal const int RestoreLogField = 7;
 
     /// <summary>
+    /// <see cref="CharacterDefinition.Tint"/> — the colour this character's panes are painted in.
+    /// Appended after the logging block rather than slotted in beside the connection rows, for the
+    /// numbering reason above and because it is the one row on this form that is about
+    /// <em>appearance</em>: it belongs at the end, where a reader stops looking for behaviour.
+    /// </summary>
+    internal const int PaneTintField = 8;
+
+    /// <summary>
     /// The trigger-set row's field ordinals. A set's name leads, as every list row's does — and here it
     /// is more than a label: a character opts into automation <em>by name</em>, so renaming a set is a
     /// change with consequences elsewhere in the configuration (see <see cref="RenameSet"/>).
@@ -325,6 +333,29 @@ internal static class WorldsScreenRenderer
     private static readonly string[] RestoreChoices = { RestoreOn, RestoreOff };
 
     /// <summary>
+    /// The row for <see cref="CharacterDefinition.Tint"/>. One word, because the CHARACTER panel is 48
+    /// cells and <c>CharField</c> has already spent fourteen of them — the same budget
+    /// <see cref="StartupLabel"/> and <see cref="StorageNote"/> are written to.
+    /// </summary>
+    internal const string TintLabel = "tint";
+
+    /// <summary>
+    /// What the <c>tint</c> row says the colour is for. It names the <em>pane</em>, because that is the
+    /// only thing this setting paints: it is not a theme, not the character's ink, and not the world's
+    /// accent (which is a foreground and already exists). A reader who takes it for any of those three
+    /// would be surprised by what the frame does.
+    /// </summary>
+    internal const string TintNote = "— this character's pane";
+
+    /// <summary>
+    /// What <see cref="PaneTint.None"/> reads as on the row. The enum's own member name, so the resting
+    /// row and the choice list ⏎ opens say the same word — and drawn in the muted ink the screen's other
+    /// "this feature is simply not on" values use (<see cref="StartupOff"/>, <see cref="RestoreOff"/>).
+    /// </summary>
+    internal static string TintDetail(PaneTint tint) =>
+        tint == PaneTint.None ? $"[{Label}]{PaneTint.None}[/]" : $"[{Value}]{tint}[/]";
+
+    /// <summary>
     /// The screen's four navigable panes, in ⇥ order: the WORLDS list (no checkbox on a world's row,
     /// but ⏎ opens the world's own fields — the ones the detail column lists), the selected world's
     /// characters (no checkbox on a character's row either — ⏎ edits its name, password, connect line,
@@ -422,7 +453,8 @@ internal static class WorldsScreenRenderer
                     RestoreLabel,
                     () => c.Logging.RestoreLog ? RestoreOn : RestoreOff,
                     v => c.Logging.RestoreLog = string.Equals(v, RestoreOn, StringComparison.OrdinalIgnoreCase),
-                    RestoreChoices)))
+                    RestoreChoices),
+                ScreenField.Enumeration(TintLabel, () => c.Tint, v => c.Tint = v)))
                 .Concat(CharacterButtons(world, selectedCharacter))
                 .ToArray();
 
@@ -1071,6 +1103,12 @@ internal static class WorldsScreenRenderer
                 RestoreLogField,
                 pane: CharactersPane)),
             CharField(string.Empty, $"[{Label}]{RestoreNote}[/]"),
+            CharField(TintLabel, Field(
+                TintDetail(character.Tint),
+                cursor,
+                selectedCharacter,
+                PaneTintField,
+                pane: CharactersPane) + $" [{Label}]{TintNote}[/]"),
         };
 
         // The log format and `restore` both sit near the foot of this block, so their lists are drawn
