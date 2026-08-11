@@ -219,6 +219,146 @@ public class PaneTintTests
             .IsEqualTo(pane == app.FocusedPaneId ? focused : unfocused);
     }
 
+    // --- the command line wears it too ------------------------------------------------------------
+
+    /// <summary>The colour the character behind the focused window has chosen, read off the same two
+    /// records the app reads — the pane's front window, and the owner the workspace has for it.</summary>
+    private static PaneTint FocusedCharactersTint(SharpMUTermApp app, AppConfiguration config)
+    {
+        var key = app.PaneActiveTab(app.FocusedPaneId) is { } window ? app.WindowOwnerOf(window) : null;
+        return config.Worlds
+            .SelectMany(world => world.Characters.Select(c => (Key: $"{world.Name}.{c.Name}", Character: c)))
+            .FirstOrDefault(pair => pair.Key == key)
+            .Character?.Tint ?? PaneTint.None;
+    }
+
+    /// <summary>
+    /// <b>The command line wears the colour of the character ⏎ is aimed at.</b> The bar sits directly
+    /// under the pane and is the other half of the same question — a glance at one row now says which
+    /// pane you are in, whose connection this is, and which line is armed — so a bar in a different
+    /// colour from the pane above it would say the two belong to different characters.
+    /// </summary>
+    [Test]
+    public async Task TheCommandLineWearsTheFocusedCharactersColour()
+    {
+        var config = DemoScene.Build();
+        var app = App(config);
+
+        var ansi = app.RenderSnapshot("tint");
+        var tint = FocusedCharactersTint(app, config);
+        var (armed, idle) = app.InputBandColors;
+
+        await Assert.That(tint).IsNotEqualTo(PaneTint.None); // the view really did colour the focused one
+        await Assert.That(armed).IsEqualTo(Colour(WorkspacePalette.ArmedBand(config.Theme, tint)));
+        await Assert.That(idle).IsEqualTo(Colour(WorkspacePalette.IdleBand(config.Theme, tint)));
+
+        // And it is on the frame, not merely on the control: the band is the bar's own fill.
+        await Assert.That(FrameGrid.CellsPainted(ansi, armed)).IsGreaterThan(0);
+        await Assert.That(armed).IsNotEqualTo(Colour(WorkspacePalette.ArmedBand(config.Theme, PaneTint.None)));
+    }
+
+    /// <summary>
+    /// And it <em>follows</em> the focus, through the real ⌃→. This is the property the feature is for:
+    /// navigating to another character's pane repaints the row you type into, so the client cannot be in
+    /// the state the send path's own resolver exists to prevent — attention on one pane, keystrokes to
+    /// another — without saying so in colour.
+    /// </summary>
+    [Test]
+    public async Task MovingTheFocusMovesTheBarsColourWithIt()
+    {
+        var config = DemoScene.Build();
+        var app = App(config);
+        app.RenderSnapshot("tint");
+
+        var before = app.InputBandColors;
+        var wasTint = FocusedCharactersTint(app, config);
+
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, true));
+        var ansi = app.RenderWholeFrame();
+
+        var nowTint = FocusedCharactersTint(app, config);
+        var (armed, idle) = app.InputBandColors;
+
+        await Assert.That(nowTint).IsNotEqualTo(wasTint); // the move landed on the other character
+        await Assert.That(armed).IsEqualTo(Colour(WorkspacePalette.ArmedBand(config.Theme, nowTint)));
+        await Assert.That(idle).IsEqualTo(Colour(WorkspacePalette.IdleBand(config.Theme, nowTint)));
+        await Assert.That(armed).IsNotEqualTo(before.Armed);
+        await Assert.That(FrameGrid.CellsPainted(ansi, armed)).IsGreaterThan(0);
+
+        // The bar and the pane it sits under are one answer, not two that happen to agree.
+        await Assert.That(app.PaneSurfaceColors[app.FocusedPaneId])
+            .IsEqualTo(Colour(WorkspacePalette.Focus(WorkspacePalette.Tint(config.Theme, nowTint))));
+    }
+
+    /// <summary>
+    /// <b>Armed and idle still read apart under a tint</b>, which is the constraint the composition rule
+    /// exists to satisfy: the colour moves both bands' hue and neither band's brightness, so the step
+    /// that says which line ⏎ sends from is the step it has always been. Read off a frame carrying both
+    /// bars at once, because a pair of properties can differ while one of them is never painted.
+    /// </summary>
+    [Test]
+    public async Task ATintedPairOfCommandLinesStillSaysWhichOneIsArmed()
+    {
+        var config = DemoScene.Build();
+        var app = App(config);
+
+        var ansi = app.RenderSnapshot("tint-input");
+        var (armed, idle) = app.InputBandColors;
+
+        await Assert.That(app.SecondBarShown).IsTrue();
+        await Assert.That(FocusedCharactersTint(app, config)).IsNotEqualTo(PaneTint.None);
+        await Assert.That(FrameGrid.Sgr(armed)).IsNotEqualTo(FrameGrid.Sgr(idle));
+        await Assert.That(FrameGrid.CellsPainted(ansi, armed)).IsGreaterThan(0);
+        await Assert.That(FrameGrid.CellsPainted(ansi, idle)).IsGreaterThan(0);
+
+        // The armed prompt is bold and the idle one dim, whatever colour they are wearing — the cue that
+        // survives a terminal flattening two backgrounds together.
+        await Assert.That(app.PrimaryPromptMarkup).StartsWith("[bold on ");
+        await Assert.That(app.SecondPromptMarkup).StartsWith("[dim on ");
+    }
+
+    /// <summary>
+    /// <b>A client whose characters have chosen no colour has the command line it always had.</b>
+    /// <see cref="PaneTint.None"/> is the default and there is no migration marking anybody, so this is
+    /// the pin that makes the bar's half of the feature safe to ship — the same claim
+    /// <see cref="AnUntintedWorkspaceIsThePlainSurface"/> makes about the panes.
+    /// </summary>
+    [Test]
+    public async Task AnUntintedClientsCommandLineIsUnchanged()
+    {
+        var config = DemoScene.Build();
+        var app = App(config);
+
+        app.RenderSnapshot();
+        var (armed, idle) = app.InputBandColors;
+
+        await Assert.That(armed).IsEqualTo(Colour(WorkspacePalette.ArmedBand(config.Theme)));
+        await Assert.That(idle).IsEqualTo(Colour(WorkspacePalette.IdleBand(config.Theme)));
+    }
+
+    /// <summary>
+    /// A focused window nobody owns leaves the bands exactly where they were, even on a client whose
+    /// characters have colours. There is nobody for the bar to be, and wearing the last character's
+    /// colour would be the <c>_active</c> fallback in a new place — the misdelivery bug this client keeps
+    /// finding, said in paint.
+    /// </summary>
+    [Test]
+    public async Task AFocusedWindowWithNoOwnerLeavesTheBandsAlone()
+    {
+        var config = DemoScene.Build();
+        Corvid(config).Tint = PaneTint.Plum;
+        var app = App(config);
+        app.RenderSnapshot("web"); // the web view belongs to no character and is brought to the front
+
+        var focusedWindow = app.PaneActiveTab(app.FocusedPaneId);
+        var (armed, idle) = app.InputBandColors;
+
+        await Assert.That(focusedWindow).IsNotNull();
+        await Assert.That(app.WindowOwnerOf(focusedWindow!)).IsNull();
+        await Assert.That(armed).IsEqualTo(Colour(WorkspacePalette.ArmedBand(config.Theme)));
+        await Assert.That(idle).IsEqualTo(Colour(WorkspacePalette.IdleBand(config.Theme)));
+    }
+
     // --- the NAWS trap ----------------------------------------------------------------------------
 
     /// <summary>
@@ -249,17 +389,24 @@ public class PaneTintTests
         var before = app.PaneOutputRects().ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         var planesBefore = app.PaneSurfaceColors.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         var railBefore = app.RailColumnWidth;
+        var rowsBefore = app.LaidOutRows;
+        var bandsBefore = app.InputBandColors;
 
         Corvid(config).Tint = PaneTint.Ochre;
         app.SaveConfiguration();
         app.RenderNextFrame();
 
-        // The colour really did arrive, without anything else being touched…
+        // The colour really did arrive, on the panes and on the command line, without anything else
+        // being touched…
         await Assert.That(app.PaneSurfaceColors.Values.Distinct())
             .IsNotEquivalentTo(planesBefore.Values.Distinct());
+        await Assert.That(app.InputBandColors).IsNotEqualTo(bandsBefore);
 
-        // …and it cost nothing: same sidebar, same rectangles, so the same NAWS size.
+        // …and it cost nothing: same sidebar, same rectangles, same bands of the window, so the same
+        // NAWS size. The input area is checked as well as the panes because a bar is a sticky band —
+        // one that grew a row would take that row off every pane on the screen.
         await Assert.That(app.RailColumnWidth).IsEqualTo(railBefore);
+        await Assert.That(app.LaidOutRows).IsEqualTo(rowsBefore);
         var after = app.PaneOutputRects();
         await Assert.That(after.Count).IsEqualTo(before.Count);
         foreach (var (paneId, rect) in before)
