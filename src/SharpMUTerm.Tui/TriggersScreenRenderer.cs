@@ -119,21 +119,23 @@ internal static class TriggersScreenRenderer
     private static string Route(Trigger trigger) => trigger.Actions.SpawnTarget ?? MainWindow;
 
     /// <summary>
-    /// The windows offered as ↑↓ suggestions on the route field: the main output, every spawn window
-    /// the workspace knows about, and — always — the one this rule already points at, so a rule
-    /// routed somewhere the current workspace has no window for still shows its own value.
+    /// The destinations offered as ↑↓ suggestions on the route field: the main output, every window a
+    /// rule or the workspace can name (<c>SharpMUTermApp.RouteTargets</c>), and — always — the one this
+    /// rule already points at, so a rule routed somewhere the current workspace has no window for still
+    /// shows its own value.
     /// <para>
     /// These are suggestions, not the permitted set. Typing a name that isn't here is how a new spawn
-    /// window comes into existence: the workspace's spawn windows are defined by what triggers route
-    /// to, so a closed list could only ever re-use one that already exists.
+    /// window comes into existence: a name nothing answers to is created as a capture pane
+    /// (<c>Workspace.RouteLine</c>), so a closed list could only ever re-use a destination that already
+    /// exists.
     /// </para>
     /// </summary>
-    internal static IReadOnlyList<string> Routes(Trigger trigger, IReadOnlyList<string>? spawnTargets)
+    internal static IReadOnlyList<string> Routes(Trigger trigger, IReadOnlyList<string>? routeTargets)
     {
         ArgumentNullException.ThrowIfNull(trigger);
 
         var routes = new List<string> { MainWindow };
-        foreach (var target in (spawnTargets ?? Array.Empty<string>()).Append(Route(trigger)))
+        foreach (var target in (routeTargets ?? Array.Empty<string>()).Append(Route(trigger)))
         {
             if (!string.IsNullOrEmpty(target) && !routes.Contains(target, StringComparer.Ordinal))
             {
@@ -210,15 +212,15 @@ internal static class TriggersScreenRenderer
     public static List<string> Render(
         IReadOnlyList<TriggerSet> sets,
         int selectedTrigger,
-        IReadOnlyList<string> spawnTargets)
+        IReadOnlyList<string> routeTargets)
     {
         ArgumentNullException.ThrowIfNull(sets);
-        ArgumentNullException.ThrowIfNull(spawnTargets);
+        ArgumentNullException.ThrowIfNull(routeTargets);
 
         var left = RulesColumn(sets, selectedTrigger);
-        var right = EditorColumn(sets, selectedTrigger, spawnTargets);
+        var right = EditorColumn(sets, selectedTrigger, routeTargets);
 
-        var lines = new List<string> { HeaderLine(0, Model(sets, selectedTrigger, spawnTargets)), string.Empty };
+        var lines = new List<string> { HeaderLine(0, Model(sets, selectedTrigger, routeTargets)), string.Empty };
 
         var rowCount = Math.Max(left.Count, right.Count);
         for (var i = 0; i < rowCount; i++)
@@ -261,7 +263,7 @@ internal static class TriggersScreenRenderer
     /// and a palette are — while the editor keeps drawing them where they are read.
     /// </para>
     /// </summary>
-    /// <param name="spawnTargets">
+    /// <param name="routeTargets">
     /// The spawn windows a rule may route to, beyond <c>main</c> and its own current target. Optional
     /// so a caller that only wants the navigable shape (the header hints, the tests) need not know the
     /// workspace's windows.
@@ -269,7 +271,7 @@ internal static class TriggersScreenRenderer
     internal static ScreenModel Model(
         IReadOnlyList<TriggerSet> sets,
         int selectedTrigger,
-        IReadOnlyList<string>? spawnTargets = null)
+        IReadOnlyList<string>? routeTargets = null)
     {
         ArgumentNullException.ThrowIfNull(sets);
 
@@ -284,7 +286,7 @@ internal static class TriggersScreenRenderer
                 "route",
                 () => Route(entry.Trigger),
                 v => entry.Trigger.Actions.SpawnTarget = v == MainWindow ? null : v.Trim(),
-                Routes(entry.Trigger, spawnTargets)),
+                Routes(entry.Trigger, routeTargets)),
             ScreenField.Colour(
                 "highlight fg",
                 () => entry.Trigger.Actions.HighlightForeground,
@@ -517,13 +519,13 @@ internal static class TriggersScreenRenderer
     internal static List<string> EditorColumn(
         IReadOnlyList<TriggerSet> sets,
         int selectedTrigger,
-        IReadOnlyList<string> spawnTargets,
+        IReadOnlyList<string> routeTargets,
         ScreenFocus? focus = null,
         int width = ColumnWidth,
         int height = 0)
     {
         ArgumentNullException.ThrowIfNull(sets);
-        ArgumentNullException.ThrowIfNull(spawnTargets);
+        ArgumentNullException.ThrowIfNull(routeTargets);
 
         var cursor = focus ?? ScreenFocus.None;
         var flattened = Flatten(sets);
@@ -531,7 +533,7 @@ internal static class TriggersScreenRenderer
             ? BuildEditor(
                 flattened[selectedTrigger].Trigger,
                 flattened[selectedTrigger].SetName,
-                spawnTargets,
+                routeTargets,
                 cursor,
                 selectedTrigger,
                 width,
@@ -609,7 +611,7 @@ internal static class TriggersScreenRenderer
     private static List<string> BuildEditor(
         Trigger trigger,
         string setName,
-        IReadOnlyList<string> spawnTargets,
+        IReadOnlyList<string> routeTargets,
         ScreenFocus cursor,
         int index,
         int width = ColumnWidth,

@@ -3390,13 +3390,23 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Routes a trigger-spawned line to its spawn window (creating the tab on first use).
+    /// Routes a trigger-matched line to the window its rule names — <b>one that already exists when the
+    /// target names one, and a spawn window created on the spot when it does not</b>
+    /// (<see cref="Workspace.RouteLine"/>). Routing used to be <c>RouteSpawn</c> and nothing else, so
+    /// every destination a rule could have was a spawn pane of its own session's; a route naming a window
+    /// on the screen opened a second one beside it wearing the same label.
     /// <para>
     /// The owner recorded on a first-seen window is the <paramref name="session"/> whose trigger fired,
     /// not <c>_active</c>. It used to be the latter, so a background world's capture opened a window
     /// labelled and owned by whichever character happened to be focused — and ownership is not
     /// cosmetic: the rail lists a character's windows by it, and <see cref="WindowSession"/> resolves
     /// which world a link clicked in a spawn window sends to by it.
+    /// </para>
+    /// <para>
+    /// It is stamped on this session's <em>own capture panes</em> only. The label prefixes a tab as
+    /// <c>Owner: Name</c> so a spawn scattered into another pane stays tied to its character, and a
+    /// destination this session does not own is somebody else's window or nobody's — writing our name
+    /// onto another character's main window would relabel their pane after whoever routed into it.
     /// </para>
     /// <para>
     /// The same session key also <em>picks</em> the window (<see cref="Workspace.SpawnWindowId(string?,string)"/>),
@@ -3409,12 +3419,19 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnSpawnLine(WorldSession session, string target, StyledLine line)
     {
-        var existed = _workspace.FindWindow(Workspace.SpawnWindowId(session.SessionKey, target)) is not null;
-        var window = _workspace.RouteSpawn(target, session.SessionKey);
+        // Asked before routing rather than after, because routing is what makes the answer false: this is
+        // "was there already somewhere for this line to go", which is what decides between adding a tab
+        // and merely refreshing the badges.
+        var existed = _workspace.FindRouteTarget(target, session.SessionKey) is not null;
+        var window = _workspace.RouteLine(target, session.SessionKey);
 
         // Its owner's own name, which for a session with no character is its world's. It used to fall back on
         // the *main window's* title, which is a different session's name as soon as more than one is open.
-        window.OwnerLabel ??= SessionTitle(session);
+        if (window.Kind == WindowKind.Spawn &&
+            string.Equals(window.SessionKey, session.SessionKey, StringComparison.Ordinal))
+        {
+            window.OwnerLabel ??= SessionTitle(session);
+        }
         PaneContentFor(window.Id, window.Title); // ensure the live control exists before buffering
 
         // The restore log is fed here as well as in OnLine, and that is the crux of the whole feature:
@@ -3424,7 +3441,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         AppendWindowLine(window.Id, _formatter.ToMarkup(line), stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
 
-        // A first-seen spawn adds a tab to its pane, so rebuild; otherwise just refresh badges.
+        // A first-seen destination adds a tab to its pane, so rebuild; otherwise just refresh badges.
         if (existed)
         {
             RefreshTabTitles();
@@ -5565,14 +5582,41 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
     }
 
-    /// <summary>Distinct spawn-window targets referenced by any trigger (for the F2 route-to list).</summary>
-    private IReadOnlyList<string> SpawnTargets() =>
-        _config.TriggerSets.SelectMany(s => s.Triggers)
-            .Select(t => t.Actions.SpawnTarget)
-            .Where(t => !string.IsNullOrEmpty(t))
-            .Select(t => t!)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
+    /// <summary>
+    /// The destinations the F2 <c>route</c> field offers: every window some trigger already routes to,
+    /// then the windows this workspace actually holds.
+    /// <para>
+    /// The second half is what makes routing to an existing window <em>expressible</em>. A rule's
+    /// destination is resolved by name against the windows that are open
+    /// (<see cref="Workspace.RouteLine"/>), and while the list was the other rules' targets alone the
+    /// only names it could offer were spawn panes — so the one place a user reads what a route may say
+    /// could not name the character's own window, another character's, or any window they had opened. The
+    /// list is suggestions and not the permitted set, so this widens what is discoverable rather than
+    /// what is legal.
+    /// </para>
+    /// <para>
+    /// Trigger targets lead, because a rule that has not opened its pane yet names a window nothing else
+    /// can offer, and because that is the order this list has always been read in.
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<string> RouteTargets()
+    {
+        var targets = new List<string>();
+        foreach (var name in _config.TriggerSets.SelectMany(s => s.Triggers)
+                     .Select(t => t.Actions.SpawnTarget)
+                     .Concat(_workspace.Windows
+                         .Where(w => _workspace.Layout.FindWindow(w.Id) is not null)
+                         .OrderBy(w => w.Sequence)
+                         .Select(w => w.Title)))
+        {
+            if (!string.IsNullOrEmpty(name) && !targets.Contains(name, StringComparer.Ordinal))
+            {
+                targets.Add(name);
+            }
+        }
+
+        return targets;
+    }
 
     /// <summary>Every configured macro across all trigger sets (for the F4 keypad/hotkey list).</summary>
     private IReadOnlyList<Macro> Macros() => _config.TriggerSets.SelectMany(s => s.Macros).ToList();
@@ -5753,13 +5797,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private ScreenBinding TriggersScreen()
     {
         var session = new SettingsSession(selection =>
-            TriggersScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0), SpawnTargets()),
+            TriggersScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0), RouteTargets()),
             SaveConfiguration);
 
         return new ScreenBinding(session, () => TriggersScreenView.Build(
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
-            SpawnTargets(),
+            RouteTargets(),
             _system.DesktopDimensions.Width,
             session.Focus(),
             _system.DesktopDimensions.Height));
@@ -8461,6 +8505,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>A window's recorded owner. Ownership is read by the rail and by
     /// <see cref="WindowSession"/>, and it goes stale silently, so it is worth asserting directly.</summary>
     internal string? WindowOwnerOf(string windowId) => _workspace.FindWindow(windowId)?.SessionKey;
+
+    /// <summary>A window's owner <em>label</em> — the <c>Owner: Name</c> prefix its tab wears. A different
+    /// fact from <see cref="WindowOwnerOf"/> and worth asserting separately: a line routed into a window
+    /// somebody else owns must not stamp the routing character's name onto it.</summary>
+    internal string? WindowOwnerLabelOf(string windowId) => _workspace.FindWindow(windowId)?.OwnerLabel;
 
     /// <summary>A pane's visible tab, so a test can say which window a click on a tab strip brought up.</summary>
     internal string? PaneActiveTab(string paneId) => _workspace.Layout.FindPane(paneId)?.ActiveTab;

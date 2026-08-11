@@ -54,7 +54,7 @@ public class TriggersScreenRendererTests
     [Test]
     public async Task Render_RuleListShowsNamePatternOwningSetAndRoute()
     {
-        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, spawnTargets: new[] { "Chat", "Combat log" });
+        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, routeTargets: new[] { "Chat", "Combat log" });
 
         var rowIndex = lines.FindIndex(l => l.Contains("Tell") && l.Contains(@"^(\w+) tells you"));
         await Assert.That(lines[rowIndex]).Contains("→ Chat");
@@ -66,7 +66,7 @@ public class TriggersScreenRendererTests
     [Test]
     public async Task Render_FlagsSummariseGagHighlightAndSpawn()
     {
-        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, spawnTargets: new[] { "Chat" });
+        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, routeTargets: new[] { "Chat" });
 
         var tellRowIndex = lines.FindIndex(l => l.Contains("Tell") && l.Contains(@"^(\w+) tells you"));
         var tellSub = lines[tellRowIndex + 1];
@@ -82,7 +82,7 @@ public class TriggersScreenRendererTests
     [Test]
     public async Task Render_SelectedTriggerEditorShowsPatternAndRoute()
     {
-        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, spawnTargets: new[] { "Chat", "Combat log" });
+        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, routeTargets: new[] { "Chat", "Combat log" });
 
         await Assert.That(lines.Any(l => l.Contains("match pattern"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains(@"^(\w+) tells you"))).IsTrue();
@@ -99,10 +99,10 @@ public class TriggersScreenRendererTests
     [Test]
     public async Task Render_GagToggleReflectsActionsGag()
     {
-        var gagged = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 1, spawnTargets: Array.Empty<string>());
+        var gagged = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 1, routeTargets: Array.Empty<string>());
         await Assert.That(gagged.Any(l => l.Contains("[[x]] gag line") || l.Contains("#00f5b7][[x]][/] gag line"))).IsTrue();
 
-        var notGagged = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, spawnTargets: Array.Empty<string>());
+        var notGagged = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, routeTargets: Array.Empty<string>());
         await Assert.That(notGagged.Any(l => l.Contains("[dim][[ ]] gag line[/]"))).IsTrue();
     }
 
@@ -115,7 +115,7 @@ public class TriggersScreenRendererTests
     [Test]
     public async Task Render_HighlightCaptionAndSwatchAppearWhenColourSet()
     {
-        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, spawnTargets: Array.Empty<string>());
+        var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, routeTargets: Array.Empty<string>());
 
         var heading = lines.Single(l => l.Contains("highlight") && !l.Contains("fg") && !l.Contains("bg"));
         await Assert.That(heading).Contains("recoloured");
@@ -129,7 +129,7 @@ public class TriggersScreenRendererTests
     [Test]
     public async Task Render_EmptySetsShowsNoTriggers()
     {
-        var lines = TriggersScreenRenderer.Render(Array.Empty<TriggerSet>(), selectedTrigger: -1, spawnTargets: Array.Empty<string>());
+        var lines = TriggersScreenRenderer.Render(Array.Empty<TriggerSet>(), selectedTrigger: -1, routeTargets: Array.Empty<string>());
 
         await Assert.That(lines.Any(l => l.Contains("no triggers"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("Triggers & spawn routing"))).IsTrue();
@@ -150,7 +150,7 @@ public class TriggersScreenRendererTests
             },
         };
 
-        var lines = TriggersScreenRenderer.Render(sets, selectedTrigger: 0, spawnTargets: Array.Empty<string>());
+        var lines = TriggersScreenRenderer.Render(sets, selectedTrigger: 0, routeTargets: Array.Empty<string>());
         await Assert.That(lines.Any(l => l.Contains("Br[[acket]]"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("x[[1]]"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("Weird[[Set]]"))).IsTrue();
