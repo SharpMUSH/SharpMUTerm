@@ -205,6 +205,19 @@ public class AutoLinkTests
     public async Task TheGateRefusesEverythingElse(string target) =>
         await Assert.That(ExternalBrowser.TryParseOpenable(target, out _)).IsFalse();
 
+    /// <summary>
+    /// The launcher enforces its own gate rather than trusting the one caller that exists today. Only
+    /// the refusing half is exercised here for the obvious reason: the accepting half starts a browser
+    /// on whatever machine is running the suite.
+    /// </summary>
+    [Test]
+    [Arguments("file:///etc/passwd")]
+    [Arguments("javascript:alert(1)")]
+    [Arguments("ms-msdt:/id")]
+    [Arguments("not a url at all")]
+    public async Task TheLauncherItselfRefusesAnythingButHttp(string target) =>
+        await Assert.That(() => ExternalBrowser.Open(target)).Throws<ArgumentException>();
+
     // ---- Harness ---------------------------------------------------------------------------
 
     private sealed record Wired(SharpMUTermApp App, RecordingTelnetSession Telnet, List<string> Opened)
@@ -316,8 +329,12 @@ public class AutoLinkTests
         world.App.PaneLines(windowId).SelectMany(LinksOn).ToList();
 
     /// <summary>
-    /// The links on one buffered line, read with the framework's own parser at the pane's width — so a
-    /// line that wraps comes back as the rows the control really paints, which is the whole subject here.
+    /// The links on one <em>buffered</em> line, read with the framework's own parser at no particular
+    /// width — so a link is one span however long it is. That is the right reading for "is this text
+    /// clickable at all", and the wrong one for "can a click reach it", which is
+    /// <see cref="SharpMUTermApp.PaneRowLinks"/>: that parses at the pane's own width and comes back with
+    /// the rows the control really paints. The two are not interchangeable, and conflating them is the
+    /// bug the wrapped-URL test exists to catch.
     /// </summary>
     private static List<LinkSpan> LinksOn(string markup)
     {
