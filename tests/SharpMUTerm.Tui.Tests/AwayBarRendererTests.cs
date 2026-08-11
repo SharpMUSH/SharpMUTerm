@@ -35,6 +35,45 @@ public class AwayBarRendererTests
     }
 
     /// <summary>
+    /// The window-absence bar says what it can and no more. There is no duration on it: the terminal
+    /// bar measures from the last input before the reader vanished, which is a real (if approximate)
+    /// instant, while this one is made when a line lands in a window nobody is watching — a moment the
+    /// reader was not part of. A "3 min" on it would be timing the *output*, not the absence.
+    /// </summary>
+    [Test]
+    public async Task Missed_CountsTheLinesAndClaimsNoDuration()
+    {
+        var bar = AwayBarRenderer.Missed(47, "#c678dd");
+
+        await Assert.That(bar).Contains($"[#c678dd]{Glyphs.Away} {AwayBarRenderer.MissedLabel}[/]");
+        await Assert.That(bar).Contains("47 lines since you were here");
+        await Assert.That(bar).DoesNotContain("min");
+        await Assert.That(bar).Contains("[dim]");
+    }
+
+    [Test]
+    public async Task Missed_CountsOneLineInTheSingular()
+    {
+        await Assert.That(AwayBarRenderer.Missed(1, "#c678dd")).Contains("1 line since you were here");
+    }
+
+    /// <summary>
+    /// The two labels are different words, so a reader who sees both in one client can tell which
+    /// absence they are looking at without counting the lines.
+    /// </summary>
+    [Test]
+    public async Task TheTwoAbsencesDoNotWearTheSameWord()
+    {
+        await Assert.That(AwayBarRenderer.MissedLabel).IsNotEqualTo(AwayBarRenderer.Label);
+    }
+
+    [Test]
+    public void Missed_RejectsAnEmptyAccent()
+    {
+        Assert.Throws<ArgumentException>(() => AwayBarRenderer.Missed(4, string.Empty));
+    }
+
+    /// <summary>
     /// The coarsest unit that still decides something. The anchor is the last input event rather than
     /// the moment of departure — focus-out is not observable — so a sub-minute gap must not be dressed
     /// up as "0 min", which would claim a precision the figure does not have.
