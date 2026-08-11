@@ -25,6 +25,30 @@ internal static class MarkupText
         return TagPattern.Replace(protectedText, string.Empty).Length;
     }
 
+    /// <summary>
+    /// The text a markup string actually puts on the screen: <c>[tag]</c> wrappers removed, and escaped
+    /// brackets (<c>[[</c>/<c>]]</c>) back to the single characters they stand for.
+    /// <para>
+    /// This is what ⌃F searches, and it searches this rather than the markup because a match has to mean
+    /// what it looks like: a colour tag in the middle of a word must not split one, and a reader must not
+    /// be able to search for <c>#ff0000</c> and find every red line. The same rule <c>UrlDetector</c>
+    /// follows one layer down — run over the line, never over its pieces.
+    /// </para>
+    /// <para>
+    /// It shares <see cref="VisibleLength"/>'s protect-then-strip shape deliberately, and the two are
+    /// held together by test: <c>Plain(x).Length</c> equals <c>VisibleLength(x)</c> for every input. A
+    /// divergence would put a match's offsets in a different coordinate system from the width every
+    /// renderer measures with.
+    /// </para>
+    /// </summary>
+    internal static string Plain(string markup)
+    {
+        var protectedText = markup.Replace("[[", "\u0001").Replace("]]", "\u0002");
+        return TagPattern.Replace(protectedText, string.Empty)
+            .Replace('\u0001', '[')
+            .Replace('\u0002', ']');
+    }
+
     /// <summary>Pads a markup string to a target *visible* column width, ignoring markup tags.</summary>
     internal static string PadVisible(string markup, int width)
     {

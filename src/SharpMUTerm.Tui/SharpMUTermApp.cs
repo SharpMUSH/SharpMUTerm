@@ -2403,7 +2403,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             _missedFrom[windowId] = buffer.Count;
         }
 
-        buffer.Add(new PaneLine(markup, stamp));
+        // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
+        // every line of every window (see PaneLine.Plain).
+        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup)));
 
 
         // Cap the UI-side buffer at the configured scrollback so a long session doesn't grow without

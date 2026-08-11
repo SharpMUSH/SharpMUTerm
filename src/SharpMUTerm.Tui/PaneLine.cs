@@ -32,4 +32,18 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 /// <param name="Markup">The line's own Spectre-style markup, with no gutter attached.</param>
 /// <param name="Stamp">When the line arrived, pre-formatted for the gutter, or null for no gutter.</param>
-internal readonly record struct PaneLine(string Markup, string? Stamp = null);
+/// <param name="Plain">
+/// The text the markup puts on the screen (<see cref="MarkupText.Plain"/>) — what ⌃F searches.
+/// <para>
+/// Held rather than derived, because the search surface refilters on every keystroke over every line of
+/// every window: stripping thousands of lines eight times while somebody types a word is the difference
+/// between a search that feels instant and one that does not. The cost is one string per buffered line,
+/// bounded by the same cap the buffer already has.
+/// </para>
+/// <para>
+/// Empty for the client's own chrome — the away and search bars, which are <em>inserted</em> into the
+/// buffer rather than appended through it. A search that could find its own boundary markers would let
+/// ⌥G walk between them, and they are not output.
+/// </para>
+/// </param>
+internal readonly record struct PaneLine(string Markup, string? Stamp = null, string Plain = "");
