@@ -18,14 +18,14 @@ internal static class TriggersScreenView
     public static IWindowControl Build(
         IReadOnlyList<TriggerSet> sets,
         int selectedTrigger,
-        IReadOnlyList<string> spawnTargets,
+        IReadOnlyList<string> routeTargets,
         int width,
         ScreenFocus? focus = null,
         int height = 0)
     {
         var header = ScreenChrome.Band(
             TriggersScreenRenderer.HeaderLine(
-                width, TriggersScreenRenderer.Model(sets, selectedTrigger, spawnTargets), focus),
+                width, TriggersScreenRenderer.Model(sets, selectedTrigger, routeTargets), focus),
             ScreenPalette.HeaderBg);
         var footer = ScreenChrome.Band(
             TriggersScreenRenderer.FooterLine(sets, selectedTrigger, width, focus), ScreenPalette.FooterBg);
@@ -41,7 +41,7 @@ internal static class TriggersScreenView
         var body = ScreenChrome.Rows(height);
         var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules);
         var right = TriggersScreenRenderer.EditorColumn(
-            sets, selectedTrigger, spawnTargets, focus, width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body);
+            sets, selectedTrigger, routeTargets, focus, width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body);
 
         var rulesCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, body)));
         var editorCol = ScreenChrome.Stretch(new MarkupControl(

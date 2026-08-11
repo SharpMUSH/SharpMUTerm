@@ -513,7 +513,7 @@ public class OutputScrollbackTests
     /// <summary>
     /// A frozen pane's pinned half scrolls, and its live tail keeps following. Freeze holds a region
     /// still above the bar and leaves the tail live below it; before this the pinned half could only ever
-    /// show its oldest screenful, which made ⌃F a way of pinning history you could not read.
+    /// show its oldest screenful, which made ⌥F a way of pinning history you could not read.
     /// </summary>
     [Test]
     public async Task AFrozenPanesPinnedHalfScrollsWhileItsTailStaysLive()

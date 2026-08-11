@@ -103,8 +103,72 @@ fallbacks) for inline images/maps.
   Restored content is closed off by one `RestoreBarRenderer` row and the lines themselves are left
   alone. Restoring 3,000 lines costs ~18 ms before the first frame. `restore:` is the third member of
   the `save:`/`logRoot:` family — **null by default, so no test and no snapshot owns one**.
+- **`⌃F` searches the output the client is holding** (`OutputSearch`, Core; `SearchPrompt`/`SearchSurface`
+  + `SearchBarRenderer`, Tui). A modal results surface — the `⌃R` idiom, and the same pure-prompt/host
+  split — over the pane buffers, with `⌥E` for regex, `⌥A` to widen from the focused window to every
+  window, `⏎` to go, and `⌥G` to walk to the next hit. Decisions worth not relitigating:
+  - **What is searched is the pane buffer**, not `WorldSession.Scrollback` and not the file-backed spill.
+    `RestoreLog`'s reasoning one layer over: a spawn window's lines reach neither, so a session-keyed
+    search would find nothing in exactly the windows people search hardest. The bound is *stated* —
+    `12 found · 4,812 lines held` — so a reader who cannot find an old line sees why rather than
+    concluding the search is broken.
+  - **`PaneLine.Plain` is held, not derived.** Matching runs over the visible text so a colour change
+    mid-word cannot split a match and `#ff0000` cannot find every red line (`UrlDetector`'s rule, one
+    layer down) — and it is computed once at append, because the surface refilters over every line of
+    every window on every keystroke. Chrome rows carry none, so a search cannot find its own bars.
+  - **Case is ignored in both modes**, matching `HistorySearch`; `(?-i)` is the way back, which is why
+    there is no third toggle. An invalid pattern is a *state* (a regex is unparseable most of the time it
+    is being typed), and there is a match timeout, because this runs on the UI thread per keystroke.
+  - **`⏎` goes through `Activate`**, the one activation path, so a hit in a background pane brings the
+    pane, the tab and the session forward together rather than scrolling something nobody is looking at.
+    One bar client-wide; `⌥G` moves it rather than leaving a trail.
+  - **`⌥G` removes the bar before re-running the search.** The bar is itself a row, so a search run
+    around it returns indices in a buffer about to lose one and every hit below it lands a row early.
+  - **Escape does not clear the bar.** A claimed Escape does not set `_escapeAt`, and `TryAltEnter` pairs
+    an unclaimed one with a following Enter to make `⌥⏎` — binding it here would break the newline chord
+    for as long as a bar was on screen, which nobody would connect to search.
+  - **There is no backward chord, and that was measured.** `⌥⇧G` would decode (`ProcessEscape` reads
+    Shift out of `char.IsUpper`), but kitty writes it as `CSI 103;4u` — a kitty-keyboard-protocol
+    sequence `DispatchCsi` drops. `⌥⇧1`'s story one letter over; a decode test is not an arrival test.
+  - **Two kinds of client chrome now live in the line buffers**, so `InsertChromeRow`/`RemoveChromeRow`
+    are the one place that fixes up everything indexing into one — the freeze point, the pending
+    boundary, the activity bar and the search bar move together or none of them do.
+  - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
+    first frame, and every line would otherwise count as missed — so any frame that later made such a
+    window visible carried an activity bar reporting the client's own setup as news.
+- **Coming back to a window you were not watching leaves a bar where you left off, and that covers two
+  different absences.** The *window* one is `NEW` and is the common case: a line lands while the window
+  is not `Workspace.IsCaughtUp` — visible **and** at its live tail — and `_missedFrom` records the index
+  of that first line, exactly, at the moment it happens. `MarkMissedLines` draws it when the window is
+  caught up again, from the only two places that can make it so (`Activate`, and `SyncScrollbackState`,
+  where every scroll route lands). Three things not to relitigate. **`IsCaughtUp` and not `IsVisible`**,
+  because that is already the unread badge's rule and one fact behind both means a badge showing a count
+  always has a bar under it saying where the count begins — "the badge said 3 and nothing said which 3"
+  was the report. **The reveal is only for *arriving*:** a pane bottom-anchors, so a deep absence's bar
+  is drawn far above the fold and nothing on screen would change without the jump — but ⌃End is an
+  explicit *take me to the live tail*, and scrolling somewhere else in answer to it is the "attention on
+  one pane, keystrokes to another" defect wearing a different hat (`CtrlEndGoesBackToFollowingTheLiveTail`
+  is the pin; the pane is re-pinned after the insert instead, because a whole-buffer re-feed leaves the
+  offset a frame behind and the newest line would blink off screen). **Nothing accrues before the
+  constructor finishes** (`_watching`): until the workspace is laid out, "not visible" means "no pane
+  built yet", and `RestorePreviousSession` pours a previous run through the same seam into windows that
+  already sit under a `RestoreBarRenderer` bar.
+  - **The bar retires on three conjuncts, and the third is a floor in time.** At the live tail, one input
+    since it was drawn, **and** `TextSettings.ActivityBarSeconds` elapsed (F7 ▸ ACTIVITY, default 30, `0`
+    is the old behaviour exactly). Two were not enough: a shallow absence leaves the pane at its tail, so
+    the next keystroke took the bar a second or two after it appeared. Time and not keystrokes because
+    that is the unit the complaint was in — a raised input count is an hour on a quiet character and
+    three seconds on a busy one. It is a **floor, not a timer**: nothing fires on its own, so the bar
+    goes on the first of these checks after it passes, and an untouched client keeps its bar. Measured
+    off the app's existing `TimeProvider`, so tests move the clock rather than racing it, and
+    `AwayDividerTests` sets the floor to zero so each suite asserts one rule.
 - **Coming back to the terminal leaves a bar where you were** (`AwayBarRenderer` + `TerminalFocusWatcher`,
-  Tui). Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
+  Tui). The *other* absence, and the harder one, because a terminal reports focus-in and not focus-out —
+  so this boundary is reconstructed from the input before the last, where the window one above is
+  recorded forwards. Where a window has both, the **older wins**: a reader who typed after lines landed
+  in a window they could not see has a terminal boundary at the end of that buffer, claiming they missed
+  nothing, and the window's own boundary knows better. Still one bar per window.
+  Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
   `RestoreBarRenderer` do: mark the *boundary*, never restyle the content. The signal is real terminal
   focus reporting (`CSI ?1004h`) and **both halves of getting it are workarounds**, which is why they are
   in one file. No released SharpConsoleUI asks for focus (verified against 2.5.18's string heap: `?2004`
@@ -329,11 +393,19 @@ A headless environment can't run `NetConsoleDriver` or render Kitty graphics, bu
 therefore unverifiable: it renders real frames headlessly.
 
 ```bash
+dotnet build -c Release SharpMUTerm.slnx                     # -c Release, or --no-build lies to you
 dotnet run -c Release --project src/SharpMUTerm.Tui --no-build -- \
   --snapshot --demo-config --view <name> --size 120x32 --out frame.ansi
 python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
 ```
 
+- **`-c Release` on the build, and it is not a formality.** A bare `dotnet build` produces *Debug*,
+  `--no-build` runs the *Release* output, and nothing warns you: the snapshot renders happily from a
+  binary that predates your change, so a new view comes out byte-identical to the default frame and a
+  changed one shows the old behaviour. That reads exactly like a feature that does not work, and it
+  has cost real time. Either build Release first, or drop `--no-build` (`--no-build` is only there to
+  keep the render fast). Running the test suites also refreshes Release, which is why the trap hides
+  whenever you happen to have just run them.
 - **`--demo-config` is not optional for verification work.** Without it the snapshot renders
   whatever config is on the machine, and a saved `~/.config/SharpMUTerm/` quietly replaces the demo
   worlds — you end up checking your own data and calling it the demo.
@@ -380,7 +452,16 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
   has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
   pane being "caught up" while nothing has been read, and the only one that would catch a scroll landing
-  at the wrong row), `prefix-panel` (the ⌃B which-key
+  at the wrong row), `search`/`search-regex`/`search-all`/`search-landed` (the ⌃F surface: a plain
+  query with its hits marked, the same query read as a *pattern* — the header is the only place
+  either state is said, which is why they are a pair, `compose`/`compose-literal`'s reasoning — the
+  widened scope, where the window column appears and a background pane's hit is listed under it, and
+  what ⏎ leaves behind. The last is over a **split**, so the pane is narrower than the terminal:
+  that is the geometry that catches a landing scrolled to the wrong row, since a buffer index is not
+  a viewport row), `activity-bar` (the *other* absence — a window the reader was not watching: three
+  lines land in the main window while Chat is in front of it, and picking main back lands on the `NEW`
+  bar with those three under it. Separate from `away` because the two are separate facts with separate
+  wording, and this is the one that happens many times an hour), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the
@@ -544,8 +625,23 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Deliberately left on Ctrl**, because the convention is worth more than the pattern: `⌃R`
     (readline's reverse history search), `⌃P` (command surface), `⌃Q` (quit — and safe here because
     `TerminalRawMode` clears `IXON`, so it is not XON), `⌃B` (tmux's prefix), `⌃O` (pane cycle),
-    `⌃N`/`⌃W`/`⌃F`, and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
+    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
     would be as wrong as one that moved nothing.
+  - **Freeze is `⌥F`, and `⌃F` is find** — the search surface, above. Freeze was on `⌃F` and left it for
+    exactly the reason the keys above stay where they are: `⌃F` means *find* to everyone who has used a
+    computer, and that convention outweighs freeze's claim on the chord. Freeze kept its letter and changed its modifier —
+    the smallest move that frees it; `⌥F` is `ESC f`, measured. Nothing is left behind on `⌃F` as an
+    alias (the `⌃D` rule). The label a **frozen** reader is looking at (`FreezeBarRenderer`) moves with
+    the chord: a bar naming a key that no longer thaws the pane would be the worst possible place to
+    leave a stale chord.
+  - **History recall has its own chord: `⌥↑`/`⌥↓`.** The bare arrows still recall where the caret has
+    nowhere further to go, and that is unchanged — but it is a rule that stops being usable the moment
+    the bar grows to a second row, which was the report. `⌃↑`/`⌃↓`, the alternative offered, was never
+    available: the terminal writes `ESC [ 1;5 A` and this client already spends it on pane selection
+    and on the ladder onto the second command line. `ESC [ 1;3 A` is Alt, is free, and is what
+    `TryRecallKey` now matches on — **exactly**, so `⌥⇧↑` (the pane resize) still reaches its own
+    handler. A macro bound to `Alt+Up` wins over recall, because `DispatchMacro` runs first: the same
+    relationship `Ctrl+←/→` has with pane selection.
   - **Known and not fixed here**: `⌃N` and `⌃O` have no reverse (the character cycle does — `⌥J`/`⌥K`),
     and `⌃W` and `⌃B x` are two chords for one action. Both are shape complaints rather than defects,
     and both are behaviour changes rather than modifier moves.

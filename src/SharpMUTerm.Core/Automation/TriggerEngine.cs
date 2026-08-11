@@ -253,17 +253,31 @@ public sealed class TriggerEngine
                 suppress = true;
             }
 
+            // The rewrite runs *before* the highlight, and that order is the whole of a reported defect.
+            // It used to run after, and a rewrite replaces the line wholesale with an unstyled one — so a
+            // rule that both rewrote and highlighted threw its own colours, attributes and left rule away
+            // on the very next statement. That is not an exotic combination: it is what a channel rule
+            // looks like (route it, tidy it to `» $1`, colour it), and it is the shape of the demo
+            // configuration's own headline rule. The F2 screen badged such a rule `H` and painted its
+            // swatches, so the client promised a highlight that could never appear.
+            var rewritten = false;
+            if (actions.Rewrite is not null)
+            {
+                current = StyledLine.FromText(match.Result(actions.Rewrite), TextStyle.Default);
+                rewritten = true;
+            }
+
             if (actions.HighlightForeground is not null ||
                 actions.HighlightBackground is not null ||
                 actions.AddAttributes != TextAttributes.None)
             {
-                current = ApplyHighlight(current, match, actions);
-            }
-
-            if (actions.Rewrite is not null)
-            {
-                var text = match.Result(actions.Rewrite);
-                current = StyledLine.FromText(text, TextStyle.Default);
+                // A rewrite makes the match's own offsets meaningless — they described the string the
+                // rewrite replaced — so the highlight covers the whole of what the rule produced, which
+                // is the only region of the new line the rule can be said to be talking about. Without a
+                // rewrite it covers the match and only the match, exactly as it always has.
+                current = rewritten
+                    ? ApplyHighlight(current, 0, current.Length, actions)
+                    : ApplyHighlight(current, match.Index, match.Length, actions);
             }
 
             if (!string.IsNullOrEmpty(actions.SendResponse))
@@ -382,9 +396,15 @@ public sealed class TriggerEngine
     /// </summary>
     public const int MaxTargetLength = 64;
 
-    private static StyledLine ApplyHighlight(StyledLine line, Match match, TriggerActions actions)
+    /// <summary>
+    /// Recolours <paramref name="length"/> characters from <paramref name="start"/> and carries the
+    /// rule's colour onto the whole line so the output pane can draw its left rule. The region is a
+    /// parameter rather than a <see cref="Match"/> because a rewritten line has no match offsets left to
+    /// speak of — see the call site.
+    /// </summary>
+    private static StyledLine ApplyHighlight(StyledLine line, int start, int length, TriggerActions actions)
     {
-        var restyled = StyledText.Restyle(line, match.Index, match.Length, style =>
+        var restyled = StyledText.Restyle(line, start, length, style =>
         {
             if (actions.HighlightForeground is not null)
             {

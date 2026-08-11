@@ -29,6 +29,14 @@ internal static class AwayBarRenderer
     internal const string Label = "AWAY";
 
     /// <summary>
+    /// The label on the bar marking a <em>window</em> the reader was not watching, as against
+    /// <see cref="Label"/>'s terminal absence. Two words rather than one bar with two meanings: AWAY is
+    /// about the reader, NEW is about the window, and a reader who meets both in one client should be
+    /// able to tell which absence they are looking at without counting the lines.
+    /// </summary>
+    internal const string MissedLabel = "NEW";
+
+    /// <summary>
     /// The bar for <paramref name="lines"/> lines that arrived over an absence of <paramref name="away"/>,
     /// on an already-resolved <c>#rrggbb</c> accent.
     /// </summary>
@@ -44,6 +52,26 @@ internal static class AwayBarRenderer
         var rule = new string('─', RuleCells);
         return $"[{accentHex}]{Glyphs.Away} {Label}[/] "
             + $"[dim]{MarkupText.Escape($"{count} since you left · {Duration(away)}")} {rule}[/]";
+    }
+
+    /// <summary>
+    /// The bar for <paramref name="lines"/> lines that arrived in a window while the reader was not
+    /// watching it, on an already-resolved <c>#rrggbb</c> accent.
+    /// <para>
+    /// It carries a count and no duration, which is the one way it differs from <see cref="Bar"/>. The
+    /// terminal bar's span is measured from the last input before the reader vanished — approximate, but
+    /// an instant they were part of. This boundary is made at the moment a line lands in a window nobody
+    /// is watching, so a duration on it would be timing the <em>output</em> rather than the absence.
+    /// </para>
+    /// </summary>
+    public static string Missed(int lines, string accentHex)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accentHex);
+
+        var count = lines == 1 ? "1 line" : $"{lines} lines";
+        var rule = new string('─', RuleCells);
+        return $"[{accentHex}]{Glyphs.Away} {MissedLabel}[/] "
+            + $"[dim]{MarkupText.Escape($"{count} since you were here")} {rule}[/]";
     }
 
     /// <summary>

@@ -82,6 +82,34 @@ public sealed class TextSettings
     /// </summary>
     public bool EmojiSubstitution { get; set; } = true;
 
+    /// <summary>
+    /// How long the activity bar stays put after the reader has read past it, in seconds.
+    /// <para>
+    /// It exists because two conditions were not enough. The bar retires when its pane is back at its
+    /// live tail <em>and</em> one input has landed since it was drawn — and on a shallow absence the pane
+    /// is already at its tail the moment the reader returns, so the very next keystroke took the bar away
+    /// a second or two after it appeared. That was reported as the bar going before it could be read.
+    /// </para>
+    /// <para>
+    /// A floor in <em>time</em>, because that is the unit the complaint was in. A raised input count
+    /// would be an hour on a quiet character and three seconds on a busy one — the same bug with a bigger
+    /// number in it.
+    /// </para>
+    /// <para>
+    /// It is only a floor: the other two conditions still have to hold, and the bar goes on the first
+    /// check <em>after</em> it — the next keystroke or scroll, rather than a timer firing on its own. A
+    /// client sitting untouched keeps its bar, which is the right answer for a reader who has walked away
+    /// again. Zero restores the behaviour this replaced, exactly.
+    /// </para>
+    /// </summary>
+    public int ActivityBarSeconds { get; set; } = DefaultActivityBarSeconds;
+
+    /// <summary>Thirty seconds: long enough to read a screenful, short enough not to become furniture.</summary>
+    public const int DefaultActivityBarSeconds = 30;
+
+    /// <summary>Ten minutes. Past this a boundary marker is not a marker, it is a pin.</summary>
+    public const int MaxActivityBarSeconds = 600;
+
     // There is deliberately no "ambiguous width" here. It was a setting with nothing behind it: every
     // column measurement in this app is SharpConsoleUI's (Helpers/UnicodeWidth.cs), which asks the
     // Wcwidth tables and offers no East-Asian-ambiguous policy to set. Honouring it needs an upstream
