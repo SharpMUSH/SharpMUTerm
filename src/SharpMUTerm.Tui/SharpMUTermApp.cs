@@ -4725,7 +4725,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 return () => { CycleCharacter(-1); return true; };
             }
 
-            // ⌥F freezes and resumes the focused pane. It was ⌥F, and moved so that search could have the
+            // ⌥F freezes and resumes the focused pane. It was ⌃F, and moved so that search could have the
             // chord every reader on every platform reaches for. Same delivery story as ⌥D and ⌥R: ESC + a
             // printable byte, decoded as that letter with Alt set.
             if (claim.Key == ConsoleKey.F)
