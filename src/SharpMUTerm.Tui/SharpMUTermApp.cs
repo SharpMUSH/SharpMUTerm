@@ -362,6 +362,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly Action<AppConfiguration>? _save;
 
     /// <summary>
+    /// How a URL is handed to the desktop, or null for an app that launches nothing. Supplied by the
+    /// caller for the same reason <see cref="_save"/>, <see cref="_logRoot"/> and <see cref="_restore"/>
+    /// are: only <c>Program</c> knows it is the live client. <strong>A snapshot and a test start no
+    /// browser</strong>, and that is a property of the object rather than a promise — an app given no
+    /// opener refuses out loud instead, which is also what a headless run should do.
+    /// </summary>
+    private readonly Action<string>? _openUrl;
+
+    /// <summary>
     /// The directory session transcripts are written under, or null for an app that owns no log
     /// directory — which is the default, and is what every test and every snapshot gets. See the
     /// <c>logRoot</c> constructor parameter for why it is handed in rather than resolved here.
@@ -476,10 +485,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         string? logRoot = null,
         RestoreLog? restore = null,
         MsspCache? mssp = null,
-        bool? focusReporting = null)
+        bool? focusReporting = null,
+        Action<string>? openUrl = null)
     {
         _config = config;
         _save = save;
+        _openUrl = openUrl;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
         _mssp = mssp ?? new MsspCache();
@@ -783,6 +794,36 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             _workspace.ActivateWindow(DemoScene.ChatWindowId);
             RebuildPaneArea();
+        }
+
+        // The reported defect, as a frame: a URL too long for the pane it arrived in. It splits first
+        // precisely so the pane is narrower than the terminal — that is the whole bug. The emulator's own
+        // URL detection works on the terminal *row*, so a URL wrapped inside a pane is two fragments to
+        // it, with a divider and another pane's output in between, and clicking either half does
+        // nothing. The frame shows the underline running to the pane's edge and continuing on the next
+        // row, which is one span split across two rows by MarkupParser and hit-tested on both.
+        //
+        // The line goes in through AppendDemoLine, so what is drawn here is what UrlDetector produced
+        // rather than a link posed by hand. Only this view feeds it: adding a URL to the shared scene
+        // would move every other frame in the repository for a reason none of them is about.
+        if (string.Equals(view, "links", StringComparison.OrdinalIgnoreCase))
+        {
+            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            RebuildPaneArea();
+
+            var parser = new AnsiParser();
+            foreach (var text in new[]
+            {
+                "\x1b[0;37mThe noticeboard reads: patch notes at\x1b[0m",
+                "https://aetherfall.example/news/2026/the-long-winter-patch-notes?from=board#changes",
+                "\x1b[0;37mand the map (see https://aetherfall.example/map) is worth a look.\x1b[0m",
+            })
+            {
+                foreach (var line in parser.Feed(text + "\n"))
+                {
+                    AppendDemoLine(MainWindowId, line);
+                }
+            }
         }
 
         // Split the workspace: Aardwolf (main) stays in the left pane, the Chat window moves to the
@@ -1334,6 +1375,23 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// snapshots/demos. The workspace structure (main + Chat, panes, focus) comes from the config's
     /// resumed <c>LastSession</c> — this only supplies scrollback, which is never persisted.
     /// </summary>
+    /// <summary>
+    /// Puts one line of demo output into a window the way a live session would — link detection
+    /// included, through the very function <c>WorldSession.ApplyLinks</c> calls.
+    /// <para>
+    /// The demo has no session, so anything a session does to a line has to be done here too or the
+    /// snapshots quietly show something the client never renders. Calling <see cref="UrlDetector"/>
+    /// rather than hand-writing a <see cref="SpanInteraction"/> into the scene is what keeps the two
+    /// sides from drifting: a change to what counts as a URL reaches the frames without anybody
+    /// remembering to update them.
+    /// </para>
+    /// </summary>
+    private void AppendDemoLine(string windowId, StyledLine line)
+    {
+        var shown = _config.Text.DetectLinks ? UrlDetector.ApplyToLine(line) : line;
+        AppendWindowLine(windowId, _formatter.ToMarkup(shown), StampNow());
+    }
+
     private void LoadDemoScene()
     {
         InitDemoRuntimeState();
@@ -1343,7 +1401,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             foreach (var line in parser.Feed(ansiLine + "\n"))
             {
-                AppendWindowLine(windowId, _formatter.ToMarkup(line), StampNow());
+                AppendDemoLine(windowId, line);
             }
         }
 
@@ -5466,6 +5524,29 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ? pane.Text.Split('\n')
             : Array.Empty<string>();
 
+    /// <summary>
+    /// A window's link spans as the pane really lays them out: one list per <em>rendered</em> row,
+    /// wrapped at the pane's own width by the framework's own parser — the same call
+    /// <c>MarkupControl</c>'s parse cache makes.
+    /// <para>
+    /// It exists because <see cref="PaneLines"/> is not rows. A buffered line is one string however wide
+    /// the pane is, and a click lands on a row; conflating the two is fine right up until something
+    /// wraps, which is the entire subject of automatic link detection. A test that read links off the
+    /// buffer would assert that a wrapped URL is one link while the reader is looking at two rows.
+    /// </para>
+    /// </summary>
+    internal IReadOnlyList<IReadOnlyList<SharpConsoleUI.Parsing.LinkSpan>> PaneRowLinks(string windowId)
+    {
+        if (!_panes.TryGetValue(windowId, out var pane) || pane.ActualWidth <= 0)
+        {
+            return Array.Empty<IReadOnlyList<SharpConsoleUI.Parsing.LinkSpan>>();
+        }
+
+        SharpConsoleUI.Parsing.MarkupParser.ParseLines(
+            pane.Text, pane.ActualWidth, SColor.White, SColor.Black, out var links);
+        return links.Select(IReadOnlyList<SharpConsoleUI.Parsing.LinkSpan> (row) => row).ToList();
+    }
+
     /// <summary>The live configuration this app is running on.</summary>
     internal AppConfiguration Configuration => _config;
 
@@ -6018,7 +6099,22 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 break;
 
             case (LinkAction.Web, var target):
-                OpenWeb(windowId, target);
+                // Where a URL opens is decided by the surface the click came from, not by the payload:
+                // inside the web view its own anchors navigate the view (a page whose every link ejected
+                // you to another application would not be a browser), and anywhere else — a world's
+                // output, a capture, an MXP <A HREF> — it is handed to the desktop. The discriminator is
+                // the window id, which is a trusted parameter set where the handler is subscribed and is
+                // never text a server chose. That is the same reasoning that makes this handler take a
+                // window id at all.
+                if (string.Equals(windowId, WebWindowId, StringComparison.Ordinal))
+                {
+                    OpenWeb(windowId, target);
+                }
+                else
+                {
+                    OpenExternally(windowId, target);
+                }
+
                 break;
 
             default:
@@ -6060,6 +6156,53 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         if (newTab?.Tag is string id)
         {
             Activate(id);
+        }
+    }
+
+    /// <summary>
+    /// Hands a clicked URL to the desktop's own handler, reporting into the transcript of the world the
+    /// click came from — the same rule <see cref="OpenWeb"/> follows, and for the same reason: a link
+    /// clicked in a background pane belongs to that pane's world, not to whichever one is active.
+    /// <para>
+    /// <strong>The scheme is checked here, and this is the security boundary.</strong>
+    /// <see cref="UrlDetector"/> only ever produces <c>http</c>/<c>https</c>, but this path also carries
+    /// what a <em>server</em> marked up: an MXP <c>&lt;A HREF="file:///…"&gt;</c>, a <c>javascript:</c>,
+    /// or one of the schemes a desktop registers to applications (<c>ms-msdt:</c> and its relatives).
+    /// Handing any of those to <c>xdg-open</c> or <c>ShellExecute</c> is letting the world on the other
+    /// end of the socket choose which program runs on this machine. The web view could afford to be
+    /// laxer — its gate is <c>WebPageFetcher</c>'s, and the worst case there is that this client fetches
+    /// something — but nothing past this point is ours to sandbox.
+    /// </para>
+    /// </summary>
+    private void OpenExternally(string windowId, string target)
+    {
+        if (!ExternalBrowser.TryParseOpenable(target, out var url))
+        {
+            RefuseCommand(
+                $"that link is not an http or https address, so nothing here will open it ({Snippet(target)})");
+            return;
+        }
+
+        if (_openUrl is null)
+        {
+            // Not silence: an app with no opener is a snapshot or a test, and if one ever reaches this
+            // in a real client the reader deserves to know the click was seen and declined.
+            RefuseCommand($"this client was started with no way to open a browser ({Snippet(url)})");
+            return;
+        }
+
+        var owner = WindowSession(windowId) ?? _active;
+        owner?.PrintSystem($"*** Opening {url} in your browser...");
+
+        try
+        {
+            _openUrl(url);
+        }
+        catch (Exception ex)
+        {
+            // A desktop with no handler registered throws from the launch itself. It is a notice rather
+            // than a crash: the click was a click, and this runs on the UI thread.
+            Notice($"could not open {Snippet(url)}: {ex.Message}");
         }
     }
 

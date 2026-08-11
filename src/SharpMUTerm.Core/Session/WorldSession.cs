@@ -362,9 +362,18 @@ public sealed class WorldSession : IAsyncDisposable
             TriggerScriptRequested?.Invoke(this, invocation);
         }
 
+        // The line as it will be *shown*, computed once and used for both destinations. A spawn window
+        // used to be handed `result.Line` while the main window was handed the emoji-substituted one, so
+        // the same line read differently in the two panes it landed in; a capture is a copy of the line,
+        // not a different line. Links are found here for the same reason, and after the substitution
+        // rather than before it, so a link's target is exactly the text under it — a span whose visible
+        // text and destination disagree is the shape of a phishing link, and this client should not be
+        // in the business of manufacturing one.
+        var shown = ApplyLinks(ApplyEmoji(result.Line));
+
         foreach (var target in result.SpawnTargets)
         {
-            SpawnLine?.Invoke(this, new SpawnLineEventArgs(target, result.Line));
+            SpawnLine?.Invoke(this, new SpawnLineEventArgs(target, shown));
         }
 
         foreach (var response in result.Responses)
@@ -374,9 +383,17 @@ public sealed class WorldSession : IAsyncDisposable
 
         if (!result.Suppress)
         {
-            Print(ApplyEmoji(result.Line));
+            Print(shown);
         }
     }
+
+    /// <summary>
+    /// Marks the plain-text URLs in a line clickable when F7's <c>detect links</c> is on; a no-op
+    /// otherwise. Read here rather than at construction, like the settings around it, so unticking it
+    /// stops the next line rather than the next session.
+    /// </summary>
+    private StyledLine ApplyLinks(StyledLine line) =>
+        _text?.DetectLinks == false ? line : UrlDetector.ApplyToLine(line);
 
     /// <summary>
     /// Substitutes emoji across the whole line when enabled for this world (preserving word

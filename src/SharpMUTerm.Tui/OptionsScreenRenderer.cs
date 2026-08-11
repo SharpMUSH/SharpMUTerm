@@ -265,6 +265,12 @@ internal static class OptionsScreenRenderer
                 ScreenToggle.Bind(() => settings.AllowBlink, v => settings.AllowBlink = v)),
             new("underline hyperlinks", null, settings.UnderlineHyperlinks, null,
                 ScreenToggle.Bind(() => settings.UnderlineHyperlinks, v => settings.UnderlineHyperlinks = v)),
+
+            // Under COLOUR because it sits with the row above it — that one says how a link looks, this
+            // one says what counts as a link — even though neither is strictly about colour. The pair
+            // reads as one idea, which a LINKS section of two rows would not improve.
+            new("detect links in output", null, settings.DetectLinks, null,
+                ScreenToggle.Bind(() => settings.DetectLinks, v => settings.DetectLinks = v)),
             new(string.Empty, null, null),
             new("├ WHITESPACE", null, null),
 

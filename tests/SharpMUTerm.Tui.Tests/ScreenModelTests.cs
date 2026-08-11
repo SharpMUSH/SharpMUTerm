@@ -364,15 +364,16 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 10 display rows: 3 section headers + 2 spacers + 5 options. It was 7/4 before WHITESPACE and
-        // its "tab width (spaces)" row, which brought a header and a spacer with it.
-        await Assert.That(screen.Rows.Count).IsEqualTo(10);
+        // 11 display rows: 3 section headers + 2 spacers + 6 options. It was 7/4 before WHITESPACE and
+        // its "tab width (spaces)" row, which brought a header and a spacer with it, and 10/5 before
+        // "detect links in output" joined the COLOUR section.
+        await Assert.That(screen.Rows.Count).IsEqualTo(11);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(5);
+        await Assert.That(model.Sizes[0]).IsEqualTo(6);
     }
 
     /// <summary>
-    /// F7 is four checkboxes and one count. The count is <c>tab width (spaces)</c>, and it is what puts
+    /// F7 is five checkboxes and one count. The count is <c>tab width (spaces)</c>, and it is what puts
     /// <c>⏎ edit</c> back in this screen's header — <c>HasEditableRow</c> was false for as long as every
     /// row here was a toggle. Asserted here rather than only in the renderer test, because the header
     /// advertising a key the screen has no use for is exactly the rule these screens are held to.
@@ -389,12 +390,15 @@ public class ScreenModelTests
         model.ToggleAt(0, 2)!.Value.Flip();
         await Assert.That(text.UnderlineHyperlinks).IsFalse();
 
-        model.ToggleAt(0, 4)!.Value.Flip();
+        model.ToggleAt(0, 3)!.Value.Flip();
+        await Assert.That(text.DetectLinks).IsFalse();
+
+        model.ToggleAt(0, 5)!.Value.Flip();
         await Assert.That(text.EmojiSubstitution).IsFalse();
 
-        // Row 3 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
+        // Row 4 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
         // this screen carry an editable row at all.
-        await Assert.That(model.ToggleAt(0, 3)).IsNull();
+        await Assert.That(model.ToggleAt(0, 4)).IsNull();
         await Assert.That(model.HasEditableRow).IsTrue();
     }
 
