@@ -156,9 +156,101 @@ public sealed class Workspace
     }
 
     /// <summary>
+    /// Routes a matched trigger's line to the window <paramref name="target"/> names, on behalf of
+    /// <paramref name="sessionKey"/>: <b>a window that already exists wins, and a spawn window is what
+    /// happens when nothing answers</b>. Counts the line as unread unless the destination is currently
+    /// being read, and returns it.
+    /// <para>
+    /// This is the resolver a routed line goes through, and the finding half of it is the point. A rule's
+    /// destination used to be <see cref="RouteSpawn"/> and nothing else, which computes a spawn id and
+    /// registers a new <see cref="WindowKind.Spawn"/> window when nothing answers to it — so "put this in
+    /// the window I already have open" was not a thing a rule could ask for however it was spelt, and a
+    /// route naming a window on the screen opened a second one beside it wearing the same label.
+    /// </para>
+    /// <para>
+    /// <b>What a target may reach is deliberately narrower than "any window with that title".</b> It is
+    /// this session's own windows, the windows nobody owns, and another character's <em>main</em> window
+    /// — one alt's channel collected into the pane you actually read. It is <em>not</em> another
+    /// session's spawn or auxiliary window: two characters running one capture rule get a pane each, and
+    /// a bare title lookup would collapse them back into one and file the second character's channel
+    /// under the first, which is the exact defect <see cref="SpawnWindowId(string?,string)"/> was given
+    /// an owner to fix. A main window is admitted across that boundary because it is a window the user
+    /// opened by connecting, rather than one a rule conjured out of a capture.
+    /// </para>
+    /// <para>
+    /// <b>Only a placed window is a destination.</b> Appending to a window no pane holds writes into a
+    /// buffer nothing can draw, which from the reader's side is indistinguishable from the rule not
+    /// firing at all; a closed window is passed over and the line goes somewhere visible.
+    /// </para>
+    /// <para>
+    /// <b>Finding never creates.</b> A target is often a template with capture groups in it
+    /// (<c>Channel $1</c>), so the name can be the server's text — and the security property that keeps
+    /// that bounded is that this arm can only ever land in a window the user already has. Making one out
+    /// of a captured name still goes through <see cref="RouteSpawn"/>, which puts the matching session's
+    /// own key on it.
+    /// </para>
+    /// </summary>
+    public WorkspaceWindow RouteLine(string target, string? sessionKey = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(target);
+        if (FindRouteTarget(target, sessionKey) is not { } existing)
+        {
+            return RouteSpawn(target, sessionKey);
+        }
+
+        NoteActivity(existing.Id);
+        return existing;
+    }
+
+    /// <summary>
+    /// The window <paramref name="target"/> already names for <paramref name="sessionKey"/>, or null when
+    /// nothing does — the finding half of <see cref="RouteLine"/>, with no side effects, so a caller can
+    /// tell "this line opened a pane" from "this line went to one that was already there" without
+    /// routing twice. See <see cref="RouteLine"/> for what a target may and may not reach.
+    /// </summary>
+    public WorkspaceWindow? FindRouteTarget(string target, string? sessionKey = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(target);
+
+        // Preference order, and it has to be total: several windows may carry one title, and a route that
+        // resolved differently from one line to the next would scatter a channel across panes. This
+        // session's own first, then the unowned, then another character's main; ties inside a group go to
+        // the older window, which is the same creation order everything else here numbers windows in.
+        var best = _windows.Values
+            .Where(w => string.Equals(w.Title, target, StringComparison.Ordinal))
+            .Where(w => Layout.FindWindow(w.Id) is not null)
+            .Select(w => (Window: w, Rank: RouteRank(w, sessionKey)))
+            .Where(candidate => candidate.Rank >= 0)
+            .OrderBy(candidate => candidate.Rank)
+            .ThenBy(candidate => candidate.Window.Sequence)
+            .Select(candidate => candidate.Window)
+            .FirstOrDefault();
+
+        // A spawn window the user has since renamed answers to no title, and its rule must go on feeding
+        // it rather than opening a second pane beside it under the old name.
+        return best ?? _windows.GetValueOrDefault(SpawnWindowId(sessionKey, target));
+    }
+
+    /// <summary>
+    /// How willingly <paramref name="window"/> takes a line routed by <paramref name="sessionKey"/> —
+    /// lower is better, and negative means never.
+    /// </summary>
+    private static int RouteRank(WorkspaceWindow window, string? sessionKey) => window switch
+    {
+        _ when window.SessionKey is not null && string.Equals(window.SessionKey, sessionKey, StringComparison.Ordinal) => 0,
+        _ when window.SessionKey is null => 1,
+        _ when window.Kind == WindowKind.Main => 2,
+        _ => -1,
+    };
+
+    /// <summary>
     /// Routes trigger-spawned output to <paramref name="sessionKey"/>'s spawn window named
     /// <paramref name="target"/>, creating and placing the window on first use, and counts the line as
     /// unread unless the window is currently visible. Returns the destination window.
+    /// <para>
+    /// <b>This is the creating half only</b>; <see cref="RouteLine"/> is what a routed line goes through,
+    /// and it reaches here when no window the target names already exists.
+    /// </para>
     /// <para>
     /// <b>The destination is per session, not per workspace.</b> Two connected characters running the
     /// same capture rule each get a window of their own; the id carries the owner, so the second
