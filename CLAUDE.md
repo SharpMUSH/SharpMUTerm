@@ -103,8 +103,39 @@ fallbacks) for inline images/maps.
   Restored content is closed off by one `RestoreBarRenderer` row and the lines themselves are left
   alone. Restoring 3,000 lines costs ~18 ms before the first frame. `restore:` is the third member of
   the `save:`/`logRoot:` family — **null by default, so no test and no snapshot owns one**.
+- **Coming back to a window you were not watching leaves a bar where you left off, and that covers two
+  different absences.** The *window* one is `NEW` and is the common case: a line lands while the window
+  is not `Workspace.IsCaughtUp` — visible **and** at its live tail — and `_missedFrom` records the index
+  of that first line, exactly, at the moment it happens. `MarkMissedLines` draws it when the window is
+  caught up again, from the only two places that can make it so (`Activate`, and `SyncScrollbackState`,
+  where every scroll route lands). Three things not to relitigate. **`IsCaughtUp` and not `IsVisible`**,
+  because that is already the unread badge's rule and one fact behind both means a badge showing a count
+  always has a bar under it saying where the count begins — "the badge said 3 and nothing said which 3"
+  was the report. **The reveal is only for *arriving*:** a pane bottom-anchors, so a deep absence's bar
+  is drawn far above the fold and nothing on screen would change without the jump — but ⌃End is an
+  explicit *take me to the live tail*, and scrolling somewhere else in answer to it is the "attention on
+  one pane, keystrokes to another" defect wearing a different hat (`CtrlEndGoesBackToFollowingTheLiveTail`
+  is the pin; the pane is re-pinned after the insert instead, because a whole-buffer re-feed leaves the
+  offset a frame behind and the newest line would blink off screen). **Nothing accrues before the
+  constructor finishes** (`_watching`): until the workspace is laid out, "not visible" means "no pane
+  built yet", and `RestorePreviousSession` pours a previous run through the same seam into windows that
+  already sit under a `RestoreBarRenderer` bar.
+  - **The bar retires on three conjuncts, and the third is a floor in time.** At the live tail, one input
+    since it was drawn, **and** `TextSettings.ActivityBarSeconds` elapsed (F7 ▸ ACTIVITY, default 30, `0`
+    is the old behaviour exactly). Two were not enough: a shallow absence leaves the pane at its tail, so
+    the next keystroke took the bar a second or two after it appeared. Time and not keystrokes because
+    that is the unit the complaint was in — a raised input count is an hour on a quiet character and
+    three seconds on a busy one. It is a **floor, not a timer**: nothing fires on its own, so the bar
+    goes on the first of these checks after it passes, and an untouched client keeps its bar. Measured
+    off the app's existing `TimeProvider`, so tests move the clock rather than racing it, and
+    `AwayDividerTests` sets the floor to zero so each suite asserts one rule.
 - **Coming back to the terminal leaves a bar where you were** (`AwayBarRenderer` + `TerminalFocusWatcher`,
-  Tui). Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
+  Tui). The *other* absence, and the harder one, because a terminal reports focus-in and not focus-out —
+  so this boundary is reconstructed from the input before the last, where the window one above is
+  recorded forwards. Where a window has both, the **older wins**: a reader who typed after lines landed
+  in a window they could not see has a terminal boundary at the end of that buffer, claiming they missed
+  nothing, and the window's own boundary knows better. Still one bar per window.
+  Third of the boundary bars, and it earns its row the same way `FreezeBarRenderer` and
   `RestoreBarRenderer` do: mark the *boundary*, never restyle the content. The signal is real terminal
   focus reporting (`CSI ?1004h`) and **both halves of getting it are workarounds**, which is why they are
   in one file. No released SharpConsoleUI asks for focus (verified against 2.5.18's string heap: `?2004`
@@ -329,11 +360,19 @@ A headless environment can't run `NetConsoleDriver` or render Kitty graphics, bu
 therefore unverifiable: it renders real frames headlessly.
 
 ```bash
+dotnet build -c Release SharpMUTerm.slnx                     # -c Release, or --no-build lies to you
 dotnet run -c Release --project src/SharpMUTerm.Tui --no-build -- \
   --snapshot --demo-config --view <name> --size 120x32 --out frame.ansi
 python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
 ```
 
+- **`-c Release` on the build, and it is not a formality.** A bare `dotnet build` produces *Debug*,
+  `--no-build` runs the *Release* output, and nothing warns you: the snapshot renders happily from a
+  binary that predates your change, so a new view comes out byte-identical to the default frame and a
+  changed one shows the old behaviour. That reads exactly like a feature that does not work, and it
+  has cost real time. Either build Release first, or drop `--no-build` (`--no-build` is only there to
+  keep the render fast). Running the test suites also refreshes Release, which is why the trap hides
+  whenever you happen to have just run them.
 - **`--demo-config` is not optional for verification work.** Without it the snapshot renders
   whatever config is on the machine, and a saved `~/.config/SharpMUTerm/` quietly replaces the demo
   worlds — you end up checking your own data and calling it the demo.
@@ -380,7 +419,10 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
   has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
   pane being "caught up" while nothing has been read, and the only one that would catch a scroll landing
-  at the wrong row), `prefix-panel` (the ⌃B which-key
+  at the wrong row), `activity-bar` (the *other* absence — a window the reader was not watching: three
+  lines land in the main window while Chat is in front of it, and picking main back lands on the `NEW`
+  bar with those three under it. Separate from `away` because the two are separate facts with separate
+  wording, and this is the one that happens many times an hour), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the

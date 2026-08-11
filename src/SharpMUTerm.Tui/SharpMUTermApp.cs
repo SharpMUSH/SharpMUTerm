@@ -1023,6 +1023,20 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ReArmWholeFrame();
         }
 
+        // The other absence: a window the reader was not watching. `away` above is the terminal one, and
+        // the two are worth separate frames because they are separate facts with separate wording — this
+        // is the one that happens many times an hour, and the only frame where a NEW bar can be seen with
+        // the lines it divides above and below it. It is reached the way a reader reaches it: lines land
+        // in a background tab, and the tab is picked.
+        if (string.Equals(view, "activity-bar", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateWindowChange(DemoScene.ChatWindowId);
+            LoadLongScene(MainWindowId, 3);
+            SettleScroll();
+            SimulateWindowChange(MainWindowId);
+            ReArmWholeFrame();
+        }
+
         // A frozen pane whose pinned half holds far more than its three-quarters of the pane, scrolled
         // up inside it — the two features composing, which is the frame that says whether they do.
         if (string.Equals(view, "freeze-scrollback", StringComparison.OrdinalIgnoreCase))
