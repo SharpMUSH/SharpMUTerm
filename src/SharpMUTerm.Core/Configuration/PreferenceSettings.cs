@@ -61,6 +61,21 @@ public sealed class TextSettings
     public bool UnderlineHyperlinks { get; set; } = true;
 
     /// <summary>
+    /// Make the <c>http(s)</c> URLs a world prints as plain text clickable — see
+    /// <see cref="Text.UrlDetector"/>, which explains why the terminal's own detection cannot do this
+    /// inside a pane.
+    /// <para>
+    /// It is read per line as the line is built, which puts it in the same family as
+    /// <see cref="StripIncomingColour"/>, <see cref="TabWidth"/> and <see cref="EmojiSubstitution"/>:
+    /// unticking it stops the next line rather than rewriting the ones already on the screen. That is
+    /// deliberate and is not the timestamp gutter's situation — the gutter is glued on at the moment a
+    /// control is fed, so it can repaint history, while a link is a property of the line's own spans and
+    /// a pane's history is markup by then. Nothing here pretends otherwise.
+    /// </para>
+    /// </summary>
+    public bool DetectLinks { get; set; } = true;
+
+    /// <summary>
     /// Substitute emoji for shortcodes and emoticons in inbound text. The app-wide off switch over
     /// <see cref="WorldDefinition.Emoji"/>, which is where a world opts in and says which
     /// substitutions it wants — see <c>WorldSession.ApplyEmoji</c>.

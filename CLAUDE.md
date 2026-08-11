@@ -213,6 +213,52 @@ fallbacks) for inline images/maps.
   leaves, so several auto-connects always land you in the same place, and a black-holed host cannot hold
   the other worlds' windows hostage. `ConnectAtStartup` is *not* `AutoLogin` — one opens the socket, the
   other sends the connect line once one is open, and either is useful alone.
+- **The URLs a world prints as plain text are marked up by this client, because the terminal's own
+  detection cannot survive a pane** (`UrlDetector`, Core; F7 ▸ `detect links in output`, default on).
+  Kitty, WezTerm and Ghostty all find URLs in the cells they paint — across the terminal **row**. A pane
+  is narrower than the row, so a wrapped URL is `https://exa` on one row and `mple.com/page` on the next
+  with a divider and possibly another pane's output between them; neither half is a URL, neither is
+  clickable, and nothing says so. Marking the span ourselves moves the decision to the layer that knows
+  where the line really ends: `MarkupParser` splits a `[link=…]` across every row it wraps onto
+  (`MarkupParser.cs:1272-1296`) and `MarkupControl` hit-tests each row. **OSC 8 is not an option** — the
+  compositor's cells carry no such attribute.
+  - **It runs over the whole line, never span by span.** A server may change colour mid-URL (a highlight
+    rule, or a game that paints the scheme differently), and matching per span finds two half-URLs and
+    produces two links to two truncated targets — the same defect as the wrap, one layer down. Same
+    shape as `EmojiSubstitutor.ApplyToLine`, and for the same reason.
+  - **It runs after the emoji substitution, and both feed the spawn dispatch.** After, so a link's target
+    is exactly the text under it: a span whose visible text and destination differ is the shape of a
+    phishing link, and this client should not manufacture one. `ProcessOutputLine` computes the shown
+    line once and hands the *same* line to `SpawnLine` and to `Print` — a capture used to get
+    `result.Line` while the main window got the substituted one, so one line read differently in the two
+    panes it landed in.
+  - **A run overlapping an existing `SpanInteraction` is skipped.** What MXP marked up is MXP's; this may
+    neither replace a `<SEND>` nor wrap one in a second link.
+  - **The setting is ingest-time, and that is stated rather than papered over.** It joins
+    `strip incoming colour`, tab width and `emoji substitution`: unticking it stops the next line and
+    leaves history alone. It is *not* the timestamp gutter's situation — the gutter is glued on when a
+    control is fed, so it can repaint history, while a link is a property of the line's spans and a
+    pane's history is markup by then.
+  - **Two schemes only, `http://` and `https://`, spelt out.** No `www.`, no bare host, no `mailto:`.
+    The output of this detector is eventually handed to the desktop, so what it can name is a security
+    property. Trailing `.,;:!?'"` and *unbalanced* closers are given back to the sentence (a wiki URL
+    keeps its parentheses); a scheme inside a URL does not start a second link; there is a length cap.
+- **Every http(s) link clicked in a pane opens in the desktop's browser; the built-in web view is
+  reached by its own anchors and by `/web <url>`** (`ExternalBrowser`, Tui). `LinkAction.Web` is routed
+  **by the surface the click came from**, not by the payload: `windowId == WebWindowId` navigates the
+  view, anything else launches. Without that split the built-in browser would eject you to Firefox on
+  its first in-page link. The window id is a trusted parameter set where the handler is subscribed —
+  never server text — which is the same reasoning that makes that handler take one at all.
+  - **The scheme gate is at the moment of opening, and that is the security boundary.** `UrlDetector`
+    only ever produces http(s), but this path also carries what a *server* marked up: an MXP
+    `<A HREF="file:///…">`, a `javascript:`, or one of the schemes a desktop registers to applications
+    (`ms-msdt:` and relatives). Handing any of those to `xdg-open`/`ShellExecute` is letting the world
+    choose which program runs on the machine. The URL is launched as `ProcessStartInfo.FileName`, never
+    composed into a shell string, and what is launched is `Uri.AbsoluteUri` — what .NET parsed, not a
+    second reading of the same bytes.
+  - **The launcher is caller-supplied and null by default**, the fourth member of the
+    `save:`/`logRoot:`/`restore:` family: **a snapshot and a test start no browser**, and an app with no
+    opener refuses out loud (`AutoLinkTests.AnAppWithNoOpenerLaunchesNothingAndSaysSo`).
 - **Every `[link=…]` payload a pane carries is scheme-tagged by `InteractionKind`** (`LinkPayload`:
   `mux:send:` / `mux:prompt:` / `mux:web:`), and the panes' handler takes the *window id* the click
   came from. Both are security properties, not tidiness. The tagging is disjoint because the
@@ -279,7 +325,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
   `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
-  `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
+  `links` (a URL too long for the pane it arrived in — a split, so the pane is narrower than the
+  terminal, which is the whole defect; the frame shows one underlined span running to the pane's edge
+  and continuing on the next row), `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
   *terminal* — the shallow absence, where the bar and everything below it are on screen at once and the
   pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
   has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored

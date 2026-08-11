@@ -39,7 +39,7 @@ public class SnapshotViewEmptyConfigTests
     [
         "collapsed", "prefix", "prefix-panel", "timestamps", "timestamps-toggled", "spawn", "split",
         "focus", "focus-moved", "freeze", "freeze-scrollback", "move", "drag", "scrollback",
-        "scrollback-up", "away", "away-scrollback", "web", "rail-long", "history", "history-search",
+        "scrollback-up", "away", "away-scrollback", "links", "web", "rail-long", "history", "history-search",
         "history-search-filter", "draft", "draft2", "menu", "menu-split", "messages", "quit",
         "connections", "characters", "tint", "deletions", "textansi", "input", "keypad", "password",
         "startup", "logging", "set", "triggers", "route", "highlight", "worlds", "settings", "mssp",
