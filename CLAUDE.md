@@ -103,6 +103,39 @@ fallbacks) for inline images/maps.
   Restored content is closed off by one `RestoreBarRenderer` row and the lines themselves are left
   alone. Restoring 3,000 lines costs ~18 ms before the first frame. `restore:` is the third member of
   the `save:`/`logRoot:` family — **null by default, so no test and no snapshot owns one**.
+- **`⌃F` searches the output the client is holding** (`OutputSearch`, Core; `SearchPrompt`/`SearchSurface`
+  + `SearchBarRenderer`, Tui). A modal results surface — the `⌃R` idiom, and the same pure-prompt/host
+  split — over the pane buffers, with `⌥E` for regex, `⌥A` to widen from the focused window to every
+  window, `⏎` to go, and `⌥G` to walk to the next hit. Decisions worth not relitigating:
+  - **What is searched is the pane buffer**, not `WorldSession.Scrollback` and not the file-backed spill.
+    `RestoreLog`'s reasoning one layer over: a spawn window's lines reach neither, so a session-keyed
+    search would find nothing in exactly the windows people search hardest. The bound is *stated* —
+    `12 found · 4,812 lines held` — so a reader who cannot find an old line sees why rather than
+    concluding the search is broken.
+  - **`PaneLine.Plain` is held, not derived.** Matching runs over the visible text so a colour change
+    mid-word cannot split a match and `#ff0000` cannot find every red line (`UrlDetector`'s rule, one
+    layer down) — and it is computed once at append, because the surface refilters over every line of
+    every window on every keystroke. Chrome rows carry none, so a search cannot find its own bars.
+  - **Case is ignored in both modes**, matching `HistorySearch`; `(?-i)` is the way back, which is why
+    there is no third toggle. An invalid pattern is a *state* (a regex is unparseable most of the time it
+    is being typed), and there is a match timeout, because this runs on the UI thread per keystroke.
+  - **`⏎` goes through `Activate`**, the one activation path, so a hit in a background pane brings the
+    pane, the tab and the session forward together rather than scrolling something nobody is looking at.
+    One bar client-wide; `⌥G` moves it rather than leaving a trail.
+  - **`⌥G` removes the bar before re-running the search.** The bar is itself a row, so a search run
+    around it returns indices in a buffer about to lose one and every hit below it lands a row early.
+  - **Escape does not clear the bar.** A claimed Escape does not set `_escapeAt`, and `TryAltEnter` pairs
+    an unclaimed one with a following Enter to make `⌥⏎` — binding it here would break the newline chord
+    for as long as a bar was on screen, which nobody would connect to search.
+  - **There is no backward chord, and that was measured.** `⌥⇧G` would decode (`ProcessEscape` reads
+    Shift out of `char.IsUpper`), but kitty writes it as `CSI 103;4u` — a kitty-keyboard-protocol
+    sequence `DispatchCsi` drops. `⌥⇧1`'s story one letter over; a decode test is not an arrival test.
+  - **Two kinds of client chrome now live in the line buffers**, so `InsertChromeRow`/`RemoveChromeRow`
+    are the one place that fixes up everything indexing into one — the freeze point, the pending
+    boundary, the activity bar and the search bar move together or none of them do.
+  - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
+    first frame, and every line would otherwise count as missed — so any frame that later made such a
+    window visible carried an activity bar reporting the client's own setup as news.
 - **Coming back to a window you were not watching leaves a bar where you left off, and that covers two
   different absences.** The *window* one is `NEW` and is the common case: a line lands while the window
   is not `Workspace.IsCaughtUp` — visible **and** at its live tail — and `_missedFrom` records the index
@@ -419,7 +452,13 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
   has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
   pane being "caught up" while nothing has been read, and the only one that would catch a scroll landing
-  at the wrong row), `activity-bar` (the *other* absence — a window the reader was not watching: three
+  at the wrong row), `search`/`search-regex`/`search-all`/`search-landed` (the ⌃F surface: a plain
+  query with its hits marked, the same query read as a *pattern* — the header is the only place
+  either state is said, which is why they are a pair, `compose`/`compose-literal`'s reasoning — the
+  widened scope, where the window column appears and a background pane's hit is listed under it, and
+  what ⏎ leaves behind. The last is over a **split**, so the pane is narrower than the terminal:
+  that is the geometry that catches a landing scrolled to the wrong row, since a buffer index is not
+  a viewport row), `activity-bar` (the *other* absence — a window the reader was not watching: three
   lines land in the main window while Chat is in front of it, and picking main back lands on the `NEW`
   bar with those three under it. Separate from `away` because the two are separate facts with separate
   wording, and this is the one that happens many times an hour), `prefix-panel` (the ⌃B which-key
@@ -586,11 +625,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Deliberately left on Ctrl**, because the convention is worth more than the pattern: `⌃R`
     (readline's reverse history search), `⌃P` (command surface), `⌃Q` (quit — and safe here because
     `TerminalRawMode` clears `IXON`, so it is not XON), `⌃B` (tmux's prefix), `⌃O` (pane cycle),
-    `⌃N`/`⌃W`, and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
+    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
     would be as wrong as one that moved nothing.
-  - **Freeze is `⌥F`, and `⌃F` is find.** Freeze was on `⌃F` and left it for exactly the reason the
-    keys above stay where they are: `⌃F` means *find* to everyone who has used a computer, and that
-    convention outweighs freeze's claim on the chord. Freeze kept its letter and changed its modifier —
+  - **Freeze is `⌥F`, and `⌃F` is find** — the search surface, above. Freeze was on `⌃F` and left it for
+    exactly the reason the keys above stay where they are: `⌃F` means *find* to everyone who has used a
+    computer, and that convention outweighs freeze's claim on the chord. Freeze kept its letter and changed its modifier —
     the smallest move that frees it; `⌥F` is `ESC f`, measured. Nothing is left behind on `⌃F` as an
     alias (the `⌃D` rule). The label a **frozen** reader is looking at (`FreezeBarRenderer`) moves with
     the chord: a bar naming a key that no longer thaws the pane would be the worst possible place to

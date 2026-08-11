@@ -117,6 +117,10 @@ internal static class MacroKeys
         new(ConsoleModifiers.Control, ConsoleKey.P, "opens the command surface"),
         new(ConsoleModifiers.Control, ConsoleKey.B, "arms the pane prefix"),
         new(ConsoleModifiers.Control, ConsoleKey.R, "searches the command history"),
+        // ⌃F is find, which is what it means to everyone who has used a computer — the convention is
+        // worth the Ctrl chord, and freeze moved to ⌥F to make room. ⌃R searches what *you* typed; this
+        // searches what the *worlds* said, and the two chords sit one letter apart under one modifier.
+        new(ConsoleModifiers.Control, ConsoleKey.F, "searches the output"),
         // The connection pair, and it is a pair: ⌥D disconnects, ⌥R reconnects. One modifier, two
         // letters that spell the two words, opposite actions that look opposite on the keyboard.
         //
@@ -146,6 +150,18 @@ internal static class MacroKeys
         // No ⌃F alias is left behind, for the reason ⌃D was released rather than kept: a second key for
         // one action is either a secret or a duplicate row on every surface that lists chords.
         new(ConsoleModifiers.Alt, ConsoleKey.F, "freezes the pane"),
+        // The search repeat, so walking hits is one key rather than reopening the surface for each.
+        //
+        // It wraps forward and there is *no backward chord*, which was measured rather than chosen. The
+        // obvious partner is ⌥⇧G, and the parser would decode it — `ProcessEscape` reads the Shift flag
+        // out of `char.IsUpper`, so `ESC G` is Alt+Shift+G. The terminal does not send `ESC G`: read off
+        // a pty with `kitten @ send-key`, kitty writes ⌥⇧G as `CSI 103;4u`, a kitty-keyboard-protocol
+        // sequence `AnsiInputParser.DispatchCsi` has no case for and `UnixStdinReader` drops. It is
+        // ⌥⇧1's story exactly (`CSI 49;4u`), one letter over. A decode test is not an arrival test.
+        //
+        // So ⌥G is the whole repeat, and no surface advertises a chord that goes back — going back is
+        // ⌃F again, which is one keystroke more and is a key that exists.
+        new(ConsoleModifiers.Alt, ConsoleKey.G, "goes to the next search hit"),
         // The character cycle. Letters and not digits because the digit row is spent (⌥N windows, ⌃B N
         // panes) and there is no third digit-bearing modifier this terminal delivers: read off a pty,
         // kitty writes ⌥⇧1 as `CSI 49;4u` and ⌃⇧N as `CSI 110;6u` — kitty-keyboard-protocol sequences

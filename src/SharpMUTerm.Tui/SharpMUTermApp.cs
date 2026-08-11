@@ -265,6 +265,26 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly HistorySurface _historySearch;
 
+    /// <summary>
+    /// The ⌃F search surface: the lines this client is holding, filtered by typing. ⏎ there goes to a
+    /// line and marks it; it never sends anything. Its sibling one letter away, ⌃R, searches what
+    /// <em>you</em> typed — this searches what the worlds said.
+    /// </summary>
+    private readonly SearchSurface _search;
+
+    /// <summary>
+    /// The last search's terms, kept so ⌥G can walk to the next hit without reopening the surface: the
+    /// query, whether it was a pattern, and whether it covered every window. Null until something has
+    /// been searched for, which is what ⌥G refuses on.
+    /// </summary>
+    private (string Query, bool Regex, bool All)? _lastSearch;
+
+    /// <summary>
+    /// Where the search bar sits, or null when no hit has been landed on. One client-wide, not one per
+    /// window: it marks <em>the</em> hit you went to, and ⌥G moves it rather than leaving a trail.
+    /// </summary>
+    private (string WindowId, int Index)? _searchMark;
+
     /// <summary>Whether a confirmed quit has asked the loop to end — the headless view of the exit.</summary>
     private bool _exiting;
 
@@ -684,6 +704,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             HistoryBarLabel,
             InsertHistoryEntry);
 
+        _search = new SearchSurface(_system, SearchableWindows, GoToSearchHit);
+
         _window.OnResize += (_, _) =>
         {
             // NAWS is deliberately not reported from here. At this moment the panes still carry the
@@ -823,7 +845,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ShowTimestamps = true;
         }
 
+        // The demo scene is a scene, not an absence. It pours lines into windows the reader has never
+        // been in front of — a spawn window's whole history arrives before the first frame — and every
+        // one of them would count as missed, so any frame that later made such a window visible (a split,
+        // a tab change) would carry an activity bar reporting the client's own setup as news. Same
+        // reasoning as `_watching` itself, which the restore replay needs for the same shape of reason.
+        _watching = false;
         LoadDemoScene();
+        _watching = true;
 
         // The reported bug, as a frame: the scene is already on screen with the column off, and *then*
         // the real ⌃P entry is dispatched. Under the old append-time gutter this frame was identical to
@@ -1020,6 +1049,73 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             LoadLongScene(MainWindowId, deep ? 40 : 4);
             SettleScroll();
             SimulateReturnFromAway(TimeSpan.FromMinutes(deep ? 143 : 12));
+            ReArmWholeFrame();
+        }
+
+        // The ⌃F search surface, over a client that has something to find. Four views, because four
+        // things about it are only visible in a frame: `search` is a plain query with its hits marked,
+        // `search-regex` is the same query read as a pattern (the header is the only place either state
+        // is said, which is why they are a pair — the same reasoning as compose/compose-literal),
+        // `search-all` is the widened scope, where the window column appears and hits from a pane the
+        // reader is not looking at are listed under it, and `search-landed` is what ⏎ leaves behind.
+        //
+        // Driven through the surface's own key handler, as `history-search-filter` is: the frame shows
+        // what the real filter produced rather than an impression of it.
+        if (view is not null && view.StartsWith("search", StringComparison.OrdinalIgnoreCase))
+        {
+            // A split first, so the pane is narrower than the terminal. That is the geometry that catches
+            // a landing scrolled to the wrong row — a buffer index is not a viewport row, and in a narrow
+            // pane almost every line wraps.
+            if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
+            {
+                PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+                RebuildPaneArea();
+
+                // Laid out *before* the scene is loaded, so the windows are visible and at their live
+                // tails as the lines arrive. Without it the split's own rebuild leaves them uncaught-up
+                // for the length of the load, every line counts as missed, and the frame comes out
+                // carrying an activity bar — a true report of a state this view is not about.
+                RenderFrame();
+                SettleScroll();
+            }
+
+            LoadLongScene(MainWindowId, 30);
+            foreach (var line in new[]
+                     {
+                         "The goblin snarls at you and misses.",
+                         "You hit the goblin for 12 damage.",
+                         "A goblin corpse lies here, still twitching.",
+                     })
+            {
+                AppendWindowLine(MainWindowId, MarkupText.Escape(line));
+            }
+
+            AppendWindowLine(DemoScene.ChatWindowId, MarkupText.Escape("<OOC> Ana: the goblin room is bugged"));
+            SettleScroll();
+
+            OpenSearchForSnapshot();
+            if (string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase))
+            {
+                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
+            }
+
+            if (string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase))
+            {
+                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
+                SimulateSearchTyping(@"gobl\w+ (corpse|for)");
+            }
+            else
+            {
+                SimulateSearchTyping("goblin");
+            }
+
+            if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
+            {
+                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                SettleScroll();
+            }
+
             ReArmWholeFrame();
         }
 
@@ -2403,7 +2499,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             _missedFrom[windowId] = buffer.Count;
         }
 
-        buffer.Add(new PaneLine(markup, stamp));
+        // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
+        // every line of every window (see PaneLine.Plain).
+        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup)));
 
 
         // Cap the UI-side buffer at the configured scrollback so a long session doesn't grow without
@@ -2445,6 +2543,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 {
                     _awayMarks.Remove(windowId);
                 }
+            }
+
+            // Same rule for the search bar: a bar trimmed off the top is gone, and a mark left pointing
+            // at row zero would have the next removal take a line of the game's output instead.
+            if (_searchMark is { } search && string.Equals(search.WindowId, windowId, StringComparison.Ordinal))
+            {
+                var moved = search.Index - excess;
+                _searchMark = moved < 0 ? null : (windowId, moved);
             }
         }
 
@@ -2724,11 +2830,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            buffer.Insert(at, new PaneLine(AwayBarRenderer.Bar(missed, away, accent)));
-            if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
-            {
-                _freezePoints[windowId] = freeze + 1;
-            }
+            InsertChromeRow(windowId, at, AwayBarRenderer.Bar(missed, away, accent));
 
             var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount, DrawnAt = _time.GetUtcNow() };
             _awayMarks[windowId] = mark;
@@ -2799,11 +2901,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 at = Math.Clamp(at, 0, buffer.Count);
             }
 
-            buffer.Insert(at, new PaneLine(AwayBarRenderer.Missed(buffer.Count - at, FrozenAccentHex())));
-            if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
-            {
-                _freezePoints[windowId] = freeze + 1;
-            }
+            InsertChromeRow(windowId, at, AwayBarRenderer.Missed(buffer.Count - at, FrozenAccentHex()));
 
             var mark = new AwayMark
             {
@@ -2982,40 +3080,269 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Takes a window's away bar out of its line buffer, moving everything that indexes into that buffer
-    /// past it — the freeze point and the pending boundary — down by the row it freed. Does not repaint:
-    /// the callers either follow with one or are about to insert a replacement.
+    /// Puts one row of the client's own chrome into a window's line buffer, and moves everything that
+    /// indexes into that buffer past it up by the row it took.
+    /// <para>
+    /// There are two kinds of inserted chrome now — the activity bar and the search bar — and every index
+    /// into a buffer has to survive both: the freeze point, the pending boundary, the other bar, and this
+    /// one. That bookkeeping lives here and in <see cref="RemoveChromeRow"/> rather than being written out
+    /// at each site, because a site that forgot one of them would leave a mark pointing at a line of the
+    /// game's output, and the next removal would take that line instead.
+    /// </para>
+    /// <para>
+    /// It inserts, and does not repaint — the callers do, because they also have a reveal to sequence.
+    /// The row carries no plain text, so a search cannot find it (see <see cref="PaneLine.Plain"/>).
+    /// </para>
     /// </summary>
-    /// <returns>Whether there was a bar to remove.</returns>
-    private bool RemoveAwayBar(string windowId)
+    private void InsertChromeRow(string windowId, int at, string markup)
     {
-        if (!_awayMarks.TryGetValue(windowId, out var mark)
-            || !_lines.TryGetValue(windowId, out var buffer)
-            || mark.Index < 0
-            || mark.Index >= buffer.Count)
+        if (!_lines.TryGetValue(windowId, out var buffer))
         {
-            return _awayMarks.Remove(windowId);
+            return;
         }
 
-        buffer.RemoveAt(mark.Index);
-        _awayMarks.Remove(windowId);
+        at = Math.Clamp(at, 0, buffer.Count);
+        buffer.Insert(at, new PaneLine(markup));
 
-        if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > mark.Index)
+        if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
+        {
+            _freezePoints[windowId] = freeze + 1;
+        }
+
+        if (_awayMarks.TryGetValue(windowId, out var mark) && mark.Index >= at)
+        {
+            mark.Index++;
+        }
+
+        if (_searchMark is { } search
+            && string.Equals(search.WindowId, windowId, StringComparison.Ordinal)
+            && search.Index >= at)
+        {
+            _searchMark = (windowId, search.Index + 1);
+        }
+    }
+
+    /// <summary>
+    /// Takes one row of the client's own chrome out of a window's line buffer, moving everything that
+    /// indexes into that buffer past it down by the row it freed. The other half of
+    /// <see cref="InsertChromeRow"/>, and the same reason for existing.
+    /// </summary>
+    private void RemoveChromeRow(string windowId, int at)
+    {
+        if (!_lines.TryGetValue(windowId, out var buffer) || at < 0 || at >= buffer.Count)
+        {
+            return;
+        }
+
+        buffer.RemoveAt(at);
+
+        if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
         {
             _freezePoints[windowId] = freeze - 1;
         }
 
-        if (_awayPending.TryGetValue(windowId, out var pending) && pending > mark.Index)
+        if (_awayPending.TryGetValue(windowId, out var pending) && pending > at)
         {
             _awayPending[windowId] = pending - 1;
         }
 
-        if (_awayBoundary.TryGetValue(windowId, out var boundary) && boundary > mark.Index)
+        if (_awayBoundary.TryGetValue(windowId, out var boundary) && boundary > at)
         {
             _awayBoundary[windowId] = boundary - 1;
         }
 
+        if (_missedFrom.TryGetValue(windowId, out var missed) && missed > at)
+        {
+            _missedFrom[windowId] = missed - 1;
+        }
+
+        if (_awayMarks.TryGetValue(windowId, out var mark) && mark.Index > at)
+        {
+            mark.Index--;
+        }
+
+        if (_searchMark is { } search
+            && string.Equals(search.WindowId, windowId, StringComparison.Ordinal)
+            && search.Index > at)
+        {
+            _searchMark = (windowId, search.Index - 1);
+        }
+    }
+
+    /// <summary>
+    /// Takes a window's away bar out of its line buffer. Does not repaint: the callers either follow with
+    /// one or are about to insert a replacement. The index bookkeeping is <see cref="RemoveChromeRow"/>'s,
+    /// which is the one place that knows everything pointing into a buffer.
+    /// </summary>
+    /// <returns>Whether there was a bar to remove.</returns>
+    private bool RemoveAwayBar(string windowId)
+    {
+        if (!_awayMarks.TryGetValue(windowId, out var mark))
+        {
+            return false;
+        }
+
+        var at = mark.Index;
+        _awayMarks.Remove(windowId);
+        RemoveChromeRow(windowId, at);
         return true;
+    }
+
+    /// <summary>
+    /// Takes the search bar off whichever window is carrying it, and forgets where it was. Does not
+    /// repaint — every caller either repaints that pane or is about to put a new bar somewhere else.
+    /// </summary>
+    /// <returns>The window the bar was in, or null when there was no bar.</returns>
+    private string? RemoveSearchBar()
+    {
+        if (_searchMark is not { } mark)
+        {
+            return null;
+        }
+
+        _searchMark = null;
+        RemoveChromeRow(mark.WindowId, mark.Index);
+        return mark.WindowId;
+    }
+
+    /// <summary>
+    /// Goes to one search hit: activates its window, marks the line with a bar, and scrolls the pane so
+    /// the bar is on screen.
+    /// <para>
+    /// <b>Activation goes through <see cref="Activate"/></b>, the one activation path — it selects the
+    /// pane, raises the tab and adopts the session, so ⏎ on a hit in a background pane leaves the client
+    /// in a consistent state rather than merely scrolling something the reader is not looking at. That is
+    /// the same reasoning that keeps every other "bring this window forward" gesture on that method.
+    /// </para>
+    /// <para>
+    /// <b>One bar client-wide.</b> It marks <em>the</em> hit you went to; ⌥G moves it rather than leaving
+    /// a trail behind, and a second search replaces it. It is <em>not</em> cleared by Escape: a claimed
+    /// Escape does not set <c>_escapeAt</c>, and <see cref="TryAltEnter"/> pairs an unclaimed one with a
+    /// following Enter to make Alt+⏎ — so binding Escape here would break the newline chord for as long as
+    /// a search bar was on screen, which is a defect nobody would connect to search.
+    /// </para>
+    /// </summary>
+    private void GoToSearchHit(SearchRow row, string query, int ordinal, int total)
+    {
+        _lastSearch = (query, _search.Regex, _search.AllWindows);
+
+        var previous = RemoveSearchBar();
+        if (previous is { } cleared && !string.Equals(cleared, row.WindowId, StringComparison.Ordinal))
+        {
+            RepaintPane(cleared);
+        }
+
+        if (!_lines.TryGetValue(row.WindowId, out var buffer))
+        {
+            RefuseCommand("that window is gone");
+            return;
+        }
+
+        Activate(row.WindowId);
+
+        var at = Math.Clamp(row.LineIndex, 0, buffer.Count);
+        InsertChromeRow(row.WindowId, at, SearchBarRenderer.Bar(query, ordinal, total, FrozenAccentHex()));
+        _searchMark = (row.WindowId, at);
+
+        RepaintPane(row.WindowId);
+        RevealSearchBar(row.WindowId, at);
+        SyncScrollbackState();
+    }
+
+    /// <summary>
+    /// Goes to the hit after the one the bar is on, wrapping — the whole of ⌥G. It re-runs the last
+    /// search rather than keeping a result list, because the buffers move underneath one: lines arrive,
+    /// and a trim takes them off the front. Re-running also means ⌥G finds a hit that arrived since.
+    /// </summary>
+    private void NextSearchHit()
+    {
+        if (_lastSearch is not { } last)
+        {
+            RefuseCommand("nothing has been searched for yet — ⌃F searches the output");
+            return;
+        }
+
+        // The bar comes off *before* the search is re-run, and that is not tidiness: the bar is itself a
+        // row in the buffer, so a search run around it returns indices in a buffer that is about to lose
+        // one — every hit below the bar would be off by one, and the next ⌥G would land a row early. With
+        // it gone, the hit it was marking sits at exactly the index the bar had, which is also how "the
+        // one after this" is found below.
+        var was = _searchMark;
+        if (RemoveSearchBar() is { } cleared)
+        {
+            RepaintPane(cleared);
+        }
+
+        var rows = new List<SearchRow>();
+        foreach (var window in SearchableWindows(last.All))
+        {
+            var result = OutputSearch.Match(window.Lines, last.Query, last.Regex);
+            if (result.Error is not null)
+            {
+                RefuseCommand($"that search no longer works: {result.Error}");
+                return;
+            }
+
+            rows.AddRange(result.Matches.Select(m =>
+                new SearchRow(window.WindowId, window.Label, m.LineIndex, m.Text, m.MatchStart, m.MatchLength)));
+        }
+
+        if (rows.Count == 0)
+        {
+            RefuseCommand($"no lines hold “{Snippet(last.Query)}” any more");
+            return;
+        }
+
+        // The one after the hit the bar was on, wrapping. Found in the flat list rather than by index
+        // within a window, so with ⌥A on it walks out of one window and into the next in the order the
+        // surface listed them. A bar whose line has since been trimmed away is simply not found, and the
+        // walk starts again from the first hit — which is the only answer left, and a defensible one.
+        var next = 0;
+        if (was is { } mark)
+        {
+            var current = rows.FindIndex(r =>
+                string.Equals(r.WindowId, mark.WindowId, StringComparison.Ordinal) && r.LineIndex == mark.Index);
+            next = current >= 0 ? (current + 1) % rows.Count : 0;
+        }
+
+        GoToSearchHit(rows[next], last.Query, next + 1, rows.Count);
+    }
+
+    /// <summary>
+    /// Scrolls a pane so a freshly drawn search bar is on screen, with the line it marks under it. The
+    /// away bar's arithmetic, and for its reason: a buffer index is not a viewport row — the panel's
+    /// offset counts <em>display</em> rows and a buffered line wraps into as many as it needs, so in a
+    /// narrow pane scrolling to the index lands hundreds of rows adrift.
+    /// <para>
+    /// Unlike the away bar's reveal, this one runs whether or not the bar is already in view: the reader
+    /// asked to be taken to this line, so leaving the pane where it was would be answering "go there"
+    /// with "it is already roughly there".
+    /// </para>
+    /// </summary>
+    private void RevealSearchBar(string windowId, int index)
+    {
+        if (_paneScrolls.GetValueOrDefault(windowId) is not { } panel
+            || !_lines.TryGetValue(windowId, out var buffer)
+            || panel.ViewportWidth <= 0
+            || panel.ViewportHeight <= 0)
+        {
+            return;
+        }
+
+        var origin = _freezePoints.TryGetValue(windowId, out var split) ? Math.Max(0, split) : 0;
+        if (index < origin)
+        {
+            return;
+        }
+
+        var tailRows = MeasureRows(buffer, index, panel.ViewportWidth, _panes.GetValueOrDefault(windowId));
+        if (tailRows <= 0)
+        {
+            return;
+        }
+
+        var target = Math.Max(0, panel.TotalContentHeight - tailRows);
+        panel.ScrollVerticalBy(target - panel.VerticalScrollOffset);
     }
 
     /// <summary>
@@ -3448,7 +3775,68 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen;
+
+    /// <summary>
+    /// Opens the ⌃F search surface, or closes it when the chord arrives again.
+    /// <para>
+    /// It refuses over any other overlay, and says so over the composer for the reason the composer
+    /// refuses over a settings screen: two modal windows with two <c>PreviewKeyPressed</c> handlers
+    /// cannot be driven headlessly, and `SettingsOverlay` takes paste off the *driver* because its
+    /// screens have no focusable target — a second modal in front of it would make both fire.
+    /// </para>
+    /// </summary>
+    private void ToggleSearch()
+    {
+        if (_search.IsOpen)
+        {
+            _search.Toggle();
+            return;
+        }
+
+        if (_composer.IsOpen)
+        {
+            RefuseCommand("close the composer first — search cannot open over it");
+            return;
+        }
+
+        if (AnyOverlayOpen || _moveMode)
+        {
+            return;
+        }
+
+        _search.Toggle();
+    }
+
+    /// <summary>
+    /// The windows ⌃F looks in: the focused one, or every window holding output when
+    /// <paramref name="all"/> — which is what ⌥A switches.
+    /// <para>
+    /// <b>What is searched is the pane buffer</b>, and not a session's <c>Scrollback</c> or the
+    /// file-backed spill. <c>RestoreLog</c>'s reasoning, one layer over: a spawn window's lines never
+    /// reach a session's scrollback at all (a gagging capture rule keeps them out of the transcript
+    /// entirely), so a session-keyed search would find nothing in exactly the windows people search
+    /// hardest. The surface states the bound it did search rather than implying a bigger one.
+    /// </para>
+    /// <para>
+    /// The web view is excluded because its pane is not fed from this buffer — the same exclusion the
+    /// activity boundary and <c>RepaintPanes</c> make. Labels go through <see cref="Snippet"/>: a window
+    /// title can be a <em>world's</em> text (the web view is titled from the page it loaded).
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<SearchCorpus> SearchableWindows(bool all)
+    {
+        var ids = all
+            ? _lines.Keys.Where(id => !string.Equals(id, WebWindowId, StringComparison.Ordinal))
+            : new[] { ActiveWindowId() }.Where(_lines.ContainsKey);
+
+        return ids
+            .Select(id => new SearchCorpus(
+                id,
+                Snippet(WindowTitle(id)),
+                _lines[id].Select(line => line.Plain).ToArray()))
+            .ToArray();
+    }
 
     /// <summary>
     /// Refuses a surface that would open <em>over</em> the composer, naming what is in the way. The
@@ -3489,6 +3877,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         : _quit.IsOpen ? "the quit prompt"
         : _messageLog.IsOpen ? "the client messages"
         : _historySearch.IsOpen ? "the history search"
+        : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
         : "what is open";
 
@@ -4909,6 +5298,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 return () => { CycleCharacter(-1); return true; };
             }
 
+            // ⌥G walks to the next hit of the last search, so a reader following a name down a transcript
+            // presses one key rather than reopening the surface for each. There is no backward chord —
+            // see MacroKeys, where the measurement that rules ⌥⇧G out is recorded.
+            if (claim.Key == ConsoleKey.G)
+            {
+                return () => { NextSearchHit(); return true; };
+            }
+
             // ⌥F freezes and resumes the focused pane. It was ⌃F, and moved so that search could have the
             // chord every reader on every platform reaches for. Same delivery story as ⌥D and ⌥R: ESC + a
             // printable byte, decoded as that letter with Alt set.
@@ -4951,6 +5348,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             // framework's parser turns byte 0x08 into Backspace with no Control modifier, so binding it
             // would take the command line's erase key and the app could not even tell the two apart.
             ConsoleKey.R => () => { ToggleHistorySearch(); return true; },
+            // ⌃F is find. Freeze had it and moved to ⌥F: the convention is what every reader on every
+            // platform reaches for, and ⌃R one letter away searches the other half of a session — what
+            // you typed, where this is what the worlds said.
+            ConsoleKey.F => () => { ToggleSearch(); return true; },
             _ => null,
         };
     }
@@ -8272,6 +8673,30 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// the keyboard while it is up, and the framework's routing to it only exists inside <c>Run()</c>.
     /// </summary>
     internal void SimulateHistorySearchKey(ConsoleKeyInfo key) => _historySearch.SimulateKey(key);
+
+    /// <summary>Whether the ⌃F search surface is up.</summary>
+    internal bool SearchIsOpen => _search.IsOpen;
+
+    /// <summary>What the search surface is currently listing — what ↑↓ walk and ⏎ picks from.</summary>
+    internal IReadOnlyList<SearchRow> SearchRows => _search.Rows;
+
+    /// <summary>Feeds one key to the search surface's own handler, as the framework's pump would.</summary>
+    internal void SimulateSearchKey(ConsoleKeyInfo key) => _search.SimulateKey(key);
+
+    /// <summary>Types a whole query into the search surface, one real keystroke at a time.</summary>
+    internal void SimulateSearchTyping(string text) => _search.SimulateTyping(text);
+
+    /// <summary>Opens the search surface for a snapshot frame, bypassing the chord's overlay guards.</summary>
+    internal void OpenSearchForSnapshot() => _search.OpenForSnapshot();
+
+    /// <summary>
+    /// Where the search bar sits in a window's line buffer, or null when that window is not carrying it.
+    /// There is only ever one, client-wide.
+    /// </summary>
+    internal int? SearchBarIndex(string windowId) =>
+        _searchMark is { } mark && string.Equals(mark.WindowId, windowId, StringComparison.Ordinal)
+            ? mark.Index
+            : null;
 
     /// <summary>Types a filter into the open ⌃R surface, one real keystroke at a time.</summary>
     internal void SimulateHistorySearchTyping(string text) => _historySearch.SimulateTyping(text);

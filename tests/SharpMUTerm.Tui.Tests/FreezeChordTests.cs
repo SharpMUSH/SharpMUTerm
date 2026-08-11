@@ -59,12 +59,20 @@ public class FreezeChordTests
         await Assert.That(app.FrozenScrollbackOf(Main)).IsNull();
     }
 
+    /// <summary>
+    /// Both halves of the move: ⌥F is freeze, and ⌃F is claimed by something that is not freeze. The
+    /// second half matters because the whole point of the move was to hand ⌃F to find — a claim list
+    /// where it had simply gone missing would mean the chord had been spent on nothing.
+    /// </summary>
     [Test]
-    public async Task TheClaimListNamesAltFAndNoLongerNamesCtrlF()
+    public async Task TheClaimListNamesAltFForFreezeAndCtrlFForSomethingElse()
     {
         var claims = MacroKeys.AppShortcuts;
 
-        await Assert.That(claims.Any(c => c.Modifiers == ConsoleModifiers.Alt && c.Key == ConsoleKey.F)).IsTrue();
-        await Assert.That(claims.Any(c => c.Modifiers == ConsoleModifiers.Control && c.Key == ConsoleKey.F)).IsFalse();
+        var alt = claims.Single(c => c.Modifiers == ConsoleModifiers.Alt && c.Key == ConsoleKey.F);
+        await Assert.That(alt.Does).Contains("freeze");
+
+        var ctrl = claims.Single(c => c.Modifiers == ConsoleModifiers.Control && c.Key == ConsoleKey.F);
+        await Assert.That(ctrl.Does).DoesNotContain("freeze");
     }
 }
