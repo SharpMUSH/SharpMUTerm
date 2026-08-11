@@ -29,7 +29,10 @@ public sealed class TriggerActions
 
     /// <summary>
     /// Replace the whole line's text with this template (supports <c>$1</c>..<c>$9</c> and
-    /// <c>${name}</c> capture references). Rewritten text renders with the default style. Null — which
+    /// <c>${name}</c> capture references). Rewritten text starts from the default style — a rewrite is
+    /// how a server's own colour is dropped as well as how its wording is changed — and then wears
+    /// whatever <see cref="HighlightForeground"/>, <see cref="HighlightBackground"/> and
+    /// <see cref="AddAttributes"/> this same rule asks for, across the whole of it. Null — which
     /// is what the F2 screen writes for a blank field — means the rule rewrites nothing; settable for
     /// the same reason <see cref="SpawnTarget"/> is, and with the same absence of any cached state.
     /// </summary>
