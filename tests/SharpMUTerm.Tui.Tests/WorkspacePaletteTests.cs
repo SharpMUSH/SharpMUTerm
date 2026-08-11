@@ -251,27 +251,61 @@ public class WorkspacePaletteTests
         Enum.GetValues<PaneTint>().Where(t => t != PaneTint.None);
 
     /// <summary>
-    /// <b>A tint changes the plane's hue and not its brightness.</b> This is the legibility guarantee the
-    /// whole design rests on: a MU* server chooses the colours of the text drawn on this plane, so a tint
-    /// that lightened or darkened the pane would change every contrast ratio the theme was designed
-    /// against — on a palette the client neither controls nor can test. Held to a point of luma, which is
-    /// rounding to bytes and nothing else.
+    /// <b>All six tints sit at exactly one luminance — and it is one step below the untinted surface,
+    /// not level with it.</b> Two claims, and the first is the one everything else rests on: no
+    /// character's pane may be brighter than another's, or the colour would be answering the question
+    /// focus answers. It holds by construction (the plane is re-lit before the anchor is mixed in, and
+    /// luma is linear in the channels), so what is left is rounding to bytes and nothing else — two of
+    /// them, the re-light and the mix, which is worth about a point of luma at any brightness.
+    /// <para>
+    /// The second claim is a deliberate change from the first cut, which pinned the tinted plane to the
+    /// surface's <em>own</em> luma. MU* servers are written for black terminals and their bright ANSI is
+    /// what is read on this plane, so it wants to be darker than the client's chrome. The step is the
+    /// same for every colour, which is what leaves the focus cue — a ratio — untouched.
+    /// </para>
     /// </summary>
     [Test]
     [Arguments("Dark")]
     [Arguments("Light")]
     [Arguments("Solarized Dark")]
-    public async Task ATintedPaneIsExactlyAsBrightAsAnUntintedOne(string themeName)
+    public async Task EveryTintedPaneSitsAtOneLuminanceAStepBelowTheSurface(string themeName)
     {
         var theme = ThemeLibrary.Get(themeName);
         var surface = Luma(WorkspacePalette.Surface(theme));
+        var planes = Colours().Select(t => Luma(WorkspacePalette.Tint(theme, t))).ToList();
 
-        foreach (var tint in Colours())
-        {
-            await Assert.That(Math.Abs(Luma(WorkspacePalette.Tint(theme, tint)) - surface))
-                .IsLessThanOrEqualTo(1.0)
-                .Because($"{tint} on {themeName}");
-        }
+        // One luminance, whatever the colour.
+        await Assert.That(planes.Max() - planes.Min()).IsLessThanOrEqualTo(1.5).Because(themeName);
+
+        // And below the untinted plane. As a *fraction* of it, not by a fixed number of luma: on a dark
+        // theme the whole workspace lives in the low thirties, where a step of Visible would be a third
+        // of the surface's entire brightness, and the eye reads a dark plane's depth in ratio anyway.
+        await Assert.That(planes.Max()).IsLessThan(surface * 0.9).Because(themeName);
+    }
+
+    /// <summary>
+    /// <b>Every focused pane on the screen is brighter than every unfocused one, whatever colours are in
+    /// play.</b> This is what bounds the darkening, and it is the reason the depth is derived rather than
+    /// chosen: a client may hold tinted and untinted characters at once, so the planes on screen are the
+    /// tinted one, the surface, and each of those lifted — and a darkening deep enough to drop a
+    /// <em>focused</em> tinted pane to an <em>unfocused</em> untinted one would have the focus cue
+    /// reporting the wrong fact, which is exactly what the two-channel design exists to prevent.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task EveryFocusedPaneOutshinesEveryUnfocusedOneAcrossTheWholePalette(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var planes = Colours().Select(t => WorkspacePalette.Tint(theme, t))
+            .Append(WorkspacePalette.Surface(theme))
+            .ToList();
+
+        var dimmestFocused = planes.Min(p => Luma(WorkspacePalette.Focus(p)));
+        var brightestUnfocused = planes.Max(Luma);
+
+        await Assert.That(dimmestFocused).IsGreaterThan(brightestUnfocused).Because(themeName);
     }
 
     /// <summary>
@@ -333,10 +367,14 @@ public class WorkspacePaletteTests
     }
 
     /// <summary>
-    /// And it is the <em>same</em> lift, not merely some lift: the focus step is a multiplication, so it
-    /// lands the same distance above a tinted plane as above the plain surface. Without this a tint could
-    /// quietly make one character's pane look more focused than another's, which would be the cue
-    /// reporting the wrong fact.
+    /// And it is the <em>same</em> lift, measured the way the lift is actually applied: focus is a
+    /// multiplication, so what has to be equal above every plane is the <em>ratio</em>, and it is equal
+    /// above all six tints and above the plain surface alike. Without this a colour could quietly make
+    /// one character's pane look more focused than another's, which would be the cue reporting the wrong
+    /// fact. (The absolute step is smaller above a tinted plane than above the untinted one, and
+    /// necessarily so — the plane is darker. That is the trade the depth makes, and the ordering it may
+    /// not break is pinned by
+    /// <see cref="EveryFocusedPaneOutshinesEveryUnfocusedOneAcrossTheWholePalette"/>.)
     /// <para>
     /// The light theme is left out on purpose and not by oversight: its surface is already so bright that
     /// the focus step clamps at white (this is true of the untinted plane too, and predates tints), so
@@ -346,16 +384,134 @@ public class WorkspacePaletteTests
     [Test]
     [Arguments("Dark")]
     [Arguments("Solarized Dark")]
-    public async Task TheFocusStepIsTheSameAboveATintedPlaneAsAboveThePlainOne(string themeName)
+    public async Task TheFocusStepIsTheSameRatioAboveATintedPlaneAsAboveThePlainOne(string themeName)
     {
         var theme = ThemeLibrary.Get(themeName);
-        var plain = Luma(WorkspacePalette.Focus(theme)) - Luma(WorkspacePalette.Surface(theme));
+        var plain = Luma(WorkspacePalette.Focus(theme)) / Luma(WorkspacePalette.Surface(theme));
 
         foreach (var tint in Colours())
         {
             var plane = WorkspacePalette.Tint(theme, tint);
-            var step = Luma(WorkspacePalette.Focus(plane)) - Luma(plane);
-            await Assert.That(Math.Abs(step - plain)).IsLessThan(2.0).Because($"{tint} on {themeName}");
+            var step = Luma(WorkspacePalette.Focus(plane)) / Luma(plane);
+            await Assert.That(Math.Abs(step - plain)).IsLessThan(0.05).Because($"{tint} on {themeName}");
+        }
+    }
+
+    // --- the tints on the command line -------------------------------------------------------------
+
+    /// <summary>
+    /// <b>A tinted command line keeps the whole armed-versus-idle step.</b> The bar wears the character's
+    /// hue, and only the hue: luminance on this row is already the one cue that says which line ⏎ sends
+    /// from, so the tint leaves it alone. Held to the same <see cref="Obvious"/> bar the untinted pair is
+    /// held to — a colour must never make the two bars harder to tell apart than no colour at all.
+    /// <para>
+    /// The light theme is measured against <see cref="Visible"/> instead, and the reason is arithmetic
+    /// rather than tolerance: its idle band lifted by the focus step clamps against white before the lean
+    /// toward the prompt colour is applied, so how much of the step survives depends on which channels a
+    /// given hue has left to give. It predates tints — the untinted light band is already the narrowest
+    /// of the three — and every other cue on the row is untouched.
+    /// </para>
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task ATintedCommandLineIsStillObviouslyArmedOrIdle(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var floor = themeName == "Light" ? Visible : Obvious;
+
+        foreach (var tint in Colours())
+        {
+            var armed = Luma(WorkspacePalette.ArmedBand(theme, tint));
+            var idle = Luma(WorkspacePalette.IdleBand(theme, tint));
+
+            await Assert.That(armed - idle).IsGreaterThan(floor).Because($"{tint} on {themeName}");
+        }
+    }
+
+    /// <summary>
+    /// The band moves in colour and not in brightness — the other half of the composition rule, and what
+    /// makes the claim above hold by construction rather than by luck. It also keeps
+    /// <see cref="WorkspacePalette.IdleInk"/>, which is measured against the untinted band and shared with
+    /// the tab chips, at the contrast it was picked with.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task ATintedBandKeepsTheUntintedBandsBrightness(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var plain = Luma(WorkspacePalette.IdleBand(theme));
+
+        foreach (var tint in Colours())
+        {
+            var band = WorkspacePalette.IdleBand(theme, tint);
+            await Assert.That(Math.Abs(Luma(band) - plain)).IsLessThanOrEqualTo(1.0).Because($"{tint} on {themeName}");
+            await Assert.That(band).IsNotEqualTo(WorkspacePalette.IdleBand(theme)).Because($"{tint} on {themeName}");
+        }
+    }
+
+    /// <summary>
+    /// And the armed band still leans toward the theme's prompt colour on top of the character's hue, so
+    /// a tinted pair differs in brightness <em>and</em> in hue exactly as the untinted pair does. This is
+    /// the reason the armed band is derived from the tinted idle one rather than tinted in its own right:
+    /// tinting it directly would have overwritten the lean with the character's colour.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Solarized Dark")]
+    public async Task ATintedArmedBandStillLeansTowardThePromptColour(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+
+        foreach (var tint in Colours())
+        {
+            var armed = WorkspacePalette.ArmedBand(theme, tint);
+            var idle = WorkspacePalette.IdleBand(theme, tint);
+
+            await Assert.That(armed.B - idle.B).IsGreaterThan(armed.R - idle.R).Because($"{tint} on {themeName}");
+        }
+    }
+
+    /// <summary>
+    /// <see cref="PaneTint.None"/> leaves both bands byte for byte where they were. The command line of a
+    /// client whose characters have chosen no colour — and of one whose focused window belongs to nobody
+    /// at all — is painted exactly as it was before any of this existed.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task NoTintLeavesBothBandsUnchanged(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+
+        await Assert.That(WorkspacePalette.IdleBand(theme, PaneTint.None)).IsEqualTo(WorkspacePalette.IdleBand(theme));
+        await Assert.That(WorkspacePalette.ArmedBand(theme, PaneTint.None)).IsEqualTo(WorkspacePalette.ArmedBand(theme));
+    }
+
+    /// <summary>
+    /// Two characters' command lines are told apart by colour, the same way their panes are. Measured
+    /// with brightness discounted, because these bands are all at one luminance by construction.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Solarized Dark")]
+    public async Task TwoCharactersCommandLinesDifferInHue(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var bands = Colours().Select(t => (Tint: t, Band: WorkspacePalette.IdleBand(theme, t))).ToList();
+
+        foreach (var a in bands)
+        {
+            foreach (var b in bands.Where(p => p.Tint != a.Tint))
+            {
+                await Assert.That(ChromaDistance(a.Band, b.Band))
+                    .IsGreaterThan(6.0)
+                    .Because($"{a.Tint} vs {b.Tint} on {themeName}");
+            }
         }
     }
 

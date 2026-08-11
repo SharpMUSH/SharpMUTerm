@@ -327,7 +327,28 @@ public class ComposeWindowTests
         world.App.SimulateKey(Key(ConsoleKey.Q, ConsoleModifiers.Control));
 
         await Assert.That(world.App.QuitPromptOpen).IsTrue();
-        await Assert.That(string.Join("\n", world.App.QuitPromptLines)).Contains("unsent draft");
+        await Assert.That(string.Join("\n", world.App.QuitPromptLines)).Contains("1 unsent draft");
+    }
+
+    /// <summary>
+    /// One post is one draft, however many places it is being held. After Esc and F1 the same text is in
+    /// the store <em>and</em> in the open window — the store kept it on the way out and the window is
+    /// holding it again — and counting both told the reader they were about to lose two things.
+    /// </summary>
+    [Test]
+    public async Task AReopenedPostIsCountedOnce()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+        world.App.Composer.SimulateTyping("one post, counted once");
+        world.App.Composer.SimulateKey(Esc);
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+
+        world.App.SimulateKey(Key(ConsoleKey.Q, ConsoleModifiers.Control));
+
+        var prompt = string.Join("\n", world.App.QuitPromptLines);
+        await Assert.That(prompt).Contains("1 unsent draft");
+        await Assert.That(prompt).DoesNotContain("2 unsent draft");
     }
 
     // ---- Harness -----------------------------------------------------------------------------

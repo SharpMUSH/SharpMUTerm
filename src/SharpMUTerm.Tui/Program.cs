@@ -128,7 +128,8 @@ internal static class Program
             save: saved => ConfigurationStore.Save(ConfigurationStore.DefaultPath, saved),
             logRoot: logRoot,
             restore: restore,
-            mssp: mssp);
+            mssp: mssp,
+            openUrl: ExternalBrowser.Open);
         var exitCode = liveApp.Run(startup); // blocks on the SharpConsoleUI main loop until exit
 
         // Persist the workspace so the next launch resumes where this one left off.

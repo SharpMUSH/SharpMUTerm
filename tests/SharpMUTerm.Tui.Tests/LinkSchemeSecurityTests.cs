@@ -90,9 +90,10 @@ public class LinkSchemeSecurityTests
     }
 
     /// <summary>
-    /// What the forged link becomes instead: a hyperlink whose URL happens to read <c>mux:send:…</c>, so
-    /// the click goes to the web view and <c>WebPageFetcher</c>'s http(s) gate refuses it there. A world
-    /// that lies about what its link is gets a page it cannot load, not a command run as the user.
+    /// What the forged link becomes instead: a hyperlink whose URL happens to read <c>mux:send:…</c>, and
+    /// a hyperlink clicked in a pane is handed to the desktop — where the http(s) gate refuses it, because
+    /// that is not an address any browser was going to be asked to open. A world that lies about what its
+    /// link is gets a refusal, not a command run as the user.
     /// </summary>
     [Test]
     public async Task AForgedScheme_IsTreatedAsTheHyperlinkItIs()
@@ -102,8 +103,7 @@ public class LinkSchemeSecurityTests
 
         ClickLink(world, "click me");
 
-        await Assert.That(string.Join("\n", world.App.PaneLines(MainWindow)))
-            .Contains("Opening mux:send:@shutdown in the web view");
+        await Assert.That(world.App.StatusMarkup).Contains("not an http or https address");
         await Assert.That(world.Telnet.Lines).IsEmpty();
     }
 
@@ -160,20 +160,21 @@ public class LinkSchemeSecurityTests
     }
 
     /// <summary>
-    /// A real hyperlink still opens the web view, with the URL intact. Asserted on the transcript line the
-    /// client writes as it starts the fetch, because the fetch itself is a socket — the claim is that the
-    /// click routed to the web action carrying the whole URL, not what a server answered.
+    /// A real hyperlink still opens, with the URL intact — in the desktop's browser now rather than the
+    /// built-in view, which is where every http(s) link clicked in a pane goes. Asserted on the URL the
+    /// launcher was handed, because the launch itself is another process: the claim is that the click
+    /// routed to the web action carrying the whole URL, query string and all.
     /// </summary>
     [Test]
-    public async Task ALegitimateHyperlink_StillOpensTheWebView()
+    public async Task ALegitimateHyperlink_StillOpens()
     {
-        var world = await Connected(ContentFormat.Mxp);
+        var opened = new List<string>();
+        var world = await Connected(ContentFormat.Mxp, opened.Add);
         world.Receive("<A HREF=\"http://127.0.0.1:1/page?q=1&r=2\">the site</A>\n");
 
         await Assert.That(ClickLink(world, "the site")).IsTrue();
 
-        await Assert.That(string.Join("\n", world.App.PaneLines(MainWindow)))
-            .Contains("Opening http://127.0.0.1:1/page?q=1&r=2 in the web view");
+        await Assert.That(opened).IsEquivalentTo(new[] { "http://127.0.0.1:1/page?q=1&r=2" });
         await Assert.That(world.Telnet.Lines).IsEmpty(); // a hyperlink is never a command
     }
 
@@ -364,13 +365,13 @@ public class LinkSchemeSecurityTests
     /// An app holding one connected world whose content format is <paramref name="format"/>, bound to the
     /// main window. The connection is the point — see the type's remarks.
     /// </summary>
-    private static async Task<Wired> Connected(ContentFormat format)
+    private static async Task<Wired> Connected(ContentFormat format, Action<string>? openUrl = null)
     {
         Console.SetIn(TextReader.Null);
         var config = new AppConfiguration();
         config.Worlds.Add(World("Hostile", format));
 
-        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height), openUrl: openUrl);
         var telnet = new RecordingTelnetSession();
         app.TelnetFactory = _ => telnet;
         var session = app.BindWorldWithoutConnecting(config.Worlds[0]);

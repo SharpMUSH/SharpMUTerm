@@ -213,6 +213,52 @@ fallbacks) for inline images/maps.
   leaves, so several auto-connects always land you in the same place, and a black-holed host cannot hold
   the other worlds' windows hostage. `ConnectAtStartup` is *not* `AutoLogin` — one opens the socket, the
   other sends the connect line once one is open, and either is useful alone.
+- **The URLs a world prints as plain text are marked up by this client, because the terminal's own
+  detection cannot survive a pane** (`UrlDetector`, Core; F7 ▸ `detect links in output`, default on).
+  Kitty, WezTerm and Ghostty all find URLs in the cells they paint — across the terminal **row**. A pane
+  is narrower than the row, so a wrapped URL is `https://exa` on one row and `mple.com/page` on the next
+  with a divider and possibly another pane's output between them; neither half is a URL, neither is
+  clickable, and nothing says so. Marking the span ourselves moves the decision to the layer that knows
+  where the line really ends: `MarkupParser` splits a `[link=…]` across every row it wraps onto
+  (`MarkupParser.cs:1272-1296`) and `MarkupControl` hit-tests each row. **OSC 8 is not an option** — the
+  compositor's cells carry no such attribute.
+  - **It runs over the whole line, never span by span.** A server may change colour mid-URL (a highlight
+    rule, or a game that paints the scheme differently), and matching per span finds two half-URLs and
+    produces two links to two truncated targets — the same defect as the wrap, one layer down. Same
+    shape as `EmojiSubstitutor.ApplyToLine`, and for the same reason.
+  - **It runs after the emoji substitution, and both feed the spawn dispatch.** After, so a link's target
+    is exactly the text under it: a span whose visible text and destination differ is the shape of a
+    phishing link, and this client should not manufacture one. `ProcessOutputLine` computes the shown
+    line once and hands the *same* line to `SpawnLine` and to `Print` — a capture used to get
+    `result.Line` while the main window got the substituted one, so one line read differently in the two
+    panes it landed in.
+  - **A run overlapping an existing `SpanInteraction` is skipped.** What MXP marked up is MXP's; this may
+    neither replace a `<SEND>` nor wrap one in a second link.
+  - **The setting is ingest-time, and that is stated rather than papered over.** It joins
+    `strip incoming colour`, tab width and `emoji substitution`: unticking it stops the next line and
+    leaves history alone. It is *not* the timestamp gutter's situation — the gutter is glued on when a
+    control is fed, so it can repaint history, while a link is a property of the line's spans and a
+    pane's history is markup by then.
+  - **Two schemes only, `http://` and `https://`, spelt out.** No `www.`, no bare host, no `mailto:`.
+    The output of this detector is eventually handed to the desktop, so what it can name is a security
+    property. Trailing `.,;:!?'"` and *unbalanced* closers are given back to the sentence (a wiki URL
+    keeps its parentheses); a scheme inside a URL does not start a second link; there is a length cap.
+- **Every http(s) link clicked in a pane opens in the desktop's browser; the built-in web view is
+  reached by its own anchors and by `/web <url>`** (`ExternalBrowser`, Tui). `LinkAction.Web` is routed
+  **by the surface the click came from**, not by the payload: `windowId == WebWindowId` navigates the
+  view, anything else launches. Without that split the built-in browser would eject you to Firefox on
+  its first in-page link. The window id is a trusted parameter set where the handler is subscribed —
+  never server text — which is the same reasoning that makes that handler take one at all.
+  - **The scheme gate is at the moment of opening, and that is the security boundary.** `UrlDetector`
+    only ever produces http(s), but this path also carries what a *server* marked up: an MXP
+    `<A HREF="file:///…">`, a `javascript:`, or one of the schemes a desktop registers to applications
+    (`ms-msdt:` and relatives). Handing any of those to `xdg-open`/`ShellExecute` is letting the world
+    choose which program runs on the machine. The URL is launched as `ProcessStartInfo.FileName`, never
+    composed into a shell string, and what is launched is `Uri.AbsoluteUri` — what .NET parsed, not a
+    second reading of the same bytes.
+  - **The launcher is caller-supplied and null by default**, the fourth member of the
+    `save:`/`logRoot:`/`restore:` family: **a snapshot and a test start no browser**, and an app with no
+    opener refuses out loud (`AutoLinkTests.AnAppWithNoOpenerLaunchesNothingAndSaysSo`).
 - **F1 is the composer: a full-screen editor for writing a post, sent as one command**
   (`ComposeOverlay`, Tui; `ComposeMessage`, Core; ⌃P ▸ *Compose a post*; `--view compose` /
   `compose-literal`). It is **the one place `MultilineEditControl` is right**. CLAUDE.md rules that
@@ -312,7 +358,12 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a single tinted pane cannot answer "whose pane is this", and the one that shows the two cues are on
   separate channels: identity in hue, focus in luminance. It writes the colours onto the real
   `CharacterDefinition`s; the **demo config carries none**, because `PaneTint.None` is the default and a
-  tinted demo would make every other frame in the gallery show a state most clients are not in),
+  tinted demo would make every other frame in the gallery show a state most clients are not in) and
+  `tint-input`/`tint-input-moved` (the same scene with **both command lines up**, before and after a real
+  ⌃→ — the only geometry that can show the *bar* wearing the focused character's colour beside a pane
+  wearing it, an armed tinted band over an idle tinted one, and the colour travelling with the focus.
+  The moved frame is also the one that shows a bar wearing a character's hue while its prompt reads
+  `no connection ›`, which is the composition rule stated in paint: hue says whose, not whether),
   `deletions`,
   `compose`/`compose-literal` (the F1 composer in each of its two escaping modes — the pair exists
   because ⌥L changes what is *sent* and only the header says which way it is set; the demo has no
@@ -322,7 +373,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
   `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
-  `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
+  `links` (a URL too long for the pane it arrived in — a split, so the pane is narrower than the
+  terminal, which is the whole defect; the frame shows one underlined span running to the pane's edge
+  and continuing on the next row), `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
   *terminal* — the shallow absence, where the bar and everything below it are on screen at once and the
   pane is left on its live tail, and the deep one, where more arrived than the pane holds and the client
   has scrolled the pane to the bar itself; the second is the only frame that can show a bottom-anchored
@@ -669,34 +722,67 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `▌` in the tab *title* — all zero-cost. `FocusIndicationTests.MovingFocusDoesNotMoveAnyPaneRectangle`
   is the test that stops this being "improved" into a border. Colours live in `WorkspacePalette`, whose
   constants are all derived from a `ScreenPalette` pair so the workspace and the settings screens share
-  one idea of what focus looks like; the focus step is `CursorBg ÷ EditBg`.
-- **A pane's plane says two things, and they are kept on separate channels: identity is *hue*, focus is
+  one idea of what focus looks like; the focus step is `CursorBg ÷ EditBg`. The **command line** is the
+  fourth cue and the one that follows you between panes: it wears the armed band when ⏎ sends from it,
+  and — when the character behind the focused window has chosen a colour — that character's hue as well
+  (see the tint entry below).
+- **A plane says two things, and they are kept on separate channels: identity is *hue*, focus is
   *luminance*.** A character may be given a colour (`CharacterDefinition.Tint` → `PaneTint`, Core;
   `WorkspacePalette.Tint`, Tui; F5's `tint` row), that colour becomes the pane's base plane, and the same
   focus multiplication is applied on top of it — `PaneSurfaceTone` is two lines and the composition is
-  the whole design. Four things about it are load-bearing. **The tint preserves the surface's luminance
-  exactly**: the anchor is re-lit to the surface's own luma before it is mixed (`AtLuma`), and luma is
-  linear in the channels, so the blend is luminance-neutral by construction rather than by a tuned
-  constant. That is not tidiness — this is the plane the *game's* text is read against, the server picks
-  that text's colours, and a tint that moved the brightness would change every contrast ratio the theme
-  was designed around, on a palette we cannot test. It also means the focus step lands the same distance
-  above a tinted plane as above a plain one, so a colour cannot make one character's pane look more
-  focused than another's. **It therefore says nothing on a monochrome terminal, deliberately** — the cue
-  that must survive a lost hue is focus, and the rail and the tab title still name the character in
-  words. **It is a truecolor cue**: at the surface's luminance the tints are a few points per channel
-  apart, and a 256-colour terminal quantises them onto the untinted entry — which degrades to exactly the
-  pane there would otherwise be. That is unacceptable for focus, which is why
+  the whole design. Load-bearing, in order. **All six tints sit at exactly one luminance**: the plane is
+  re-lit to the target before the anchor is mixed into it (`AtLuma`), and luma is linear in the channels,
+  so both ends of the blend share that luma and so does every point between them — by construction, on
+  any theme, for any `TintStrength`. No character's pane is brighter than another's, and the focus step —
+  a *multiplication* — therefore lands the same **ratio** above each. **That one luminance is `TintDepth`
+  below the untinted surface, not level with it**, and the change is deliberate: the first cut held the
+  tinted plane at the surface's own luma to preserve every contrast ratio the theme was designed around,
+  and MU\* servers are written for **black** terminals, so the plane their bright ANSI is read on wants
+  to be darker than the client's chrome rather than level with it. **The depth is bounded and the bound
+  is arithmetic**: a client may hold tinted and untinted characters at once, so a depth reaching
+  `1 ÷ FocusScale` would leave a *focused* tinted pane no brighter than an *unfocused* untinted one —
+  the focus cue reporting the wrong fact. `TintDepth` is the geometric mean of that floor and no
+  darkening at all, so the untinted surface sits midway in ratio (√FocusScale ≈ 1.26 either way);
+  `EveryFocusedPaneOutshinesEveryUnfocusedOneAcrossTheWholePalette` is the pin, and it is why "make them
+  darker still" is a change that has to move `FocusScale` too. **The anchors are saturated for the same
+  reason**: chroma is bounded by luminance, so at the darker target a muted anchor has nothing left —
+  the first set's two closest colours were ΔE 8.2 apart and its nearest was ΔE 7.7 from the untinted
+  plane; these are ΔE 14.4 and ΔE 12.1. **It says nothing on a monochrome terminal, deliberately** — the
+  cue that must survive a lost hue is focus, and the rail and the tab title still name the character in
+  words — and it is a **truecolor** cue, which is unacceptable for focus and is why
   `FocusSurvivesA256ColourTerminal` exists and has no tint counterpart. And **it costs no cells**, for the
   same NAWS reason the focus cue does not: `PaneTintTests.TintingACharacterMovesNoPaneRectangle` is that
-  pin, and it commits through `SaveConfiguration`, which is also what makes an F5 edit reach the panes
-  *now* rather than at the user's next focus move. A pane wears the colour of the window **in front of
-  it** — a pane can host several characters' windows as tabs and paints one rectangle — resolved through
-  the workspace's ownership record and never through `_active`, because a background pane wearing the
-  focused character's colour would say the opposite of what it means. The palette is a **closed set of
-  six names** and not a hex: a free colour cannot be validated against a theme the user may change
-  tomorrow, and a name survives that change where a hex picked against a dark theme becomes a hole.
-  `PaneTint.None` is the default and **no migration marks anybody** — the same reasoning as
-  `ConnectAtStartup`, and the reason the schema version did not move for it.
+  pin (rectangles *and* `LaidOutRows`, since the command line is a sticky band and one that grew a row
+  would take that row off every pane), and it commits through `SaveConfiguration`, which is also what
+  makes an F5 edit reach the panes *now* rather than at the user's next focus move. A pane wears the
+  colour of the window **in front of it** — a pane can host several characters' windows as tabs and
+  paints one rectangle — resolved through the workspace's ownership record and never through `_active`,
+  because a background pane wearing the focused character's colour would say the opposite of what it
+  means. The palette is a **closed set of six names** and not a hex: a free colour cannot be validated
+  against a theme the user may change tomorrow, and a name survives that change where a hex picked
+  against a dark theme becomes a hole. `PaneTint.None` is the default and **no migration marks anybody**
+  — the same reasoning as `ConnectAtStartup`, and the reason the schema version did not move for it.
+  - **The command line wears it too, and takes the hue without the depth** (`PaintInputBands`,
+    `WorkspacePalette.IdleBand(theme, tint)` / `ArmedBand(theme, tint)`). On a pane, luminance carries
+    focus as a ratio that a step applied equally to all six leaves intact; on the input row luminance is
+    *already* spoken for — it is the whole armed-versus-idle cue — so a colour that moved it would put a
+    second fact on a channel that carries one. Hue-only means the armed bar stays exactly the step above
+    the idle one that it always was, in every colour and on every theme, and that `IdleInk` (measured
+    against the untinted band, and shared with the tab chips) keeps the contrast it was picked with.
+    The armed band is derived **from the tinted idle band** rather than tinted itself, so the lean toward
+    `Theme.Prompt` survives on top of the character's hue and the pair still differ in brightness *and*
+    colour. The one theme where the step narrows is **Light**, where the lift clamps against white before
+    the prompt lean is applied — it predates tints, its untinted band is already the narrowest of the
+    three, and `ATintedCommandLineIsStillObviouslyArmedOrIdle` holds it to `Visible` there and to
+    `Obvious` everywhere else.
+  - **Whose colour the bar wears is `SendTarget`'s answer, falling back to the focused window's recorded
+    owner** (`InputTint`) — never `_active`, which is the misdelivery bug in every shape it has had. The
+    fallback is the second arm `WindowSession` already walks and the same record `PaneTintOf` reads, so
+    the bar and the pane above it are *one* answer rather than two that agree most of the time.
+    **The colour says whose, never whether**: a focused window whose owner has no session this run wears
+    that owner's colour while the prompt reads `no connection ›` and ⏎ refuses out loud — identity and
+    reachability are two facts, and the row already states the second twice. A window nobody owns (the
+    web view) leaves both bands exactly as they were.
 - **The Ctrl+arrows move pane *selection*, not keyboard focus — but selection carries the session.** The
   pin (`FocusChanged → PinFocusToArmedBar`) is untouched: typing always lands in the armed command line
   wherever you have navigated to. That is a fact about which *control* gets a keystroke, and it says
