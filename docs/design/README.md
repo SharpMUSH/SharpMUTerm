@@ -251,8 +251,8 @@ like any other output window. Which rule feeds a pane is F2's answer, not the pa
 Output view: timestamp column (optional), then styled spans. Trigger-highlighted lines get a
 2-col left rule in the trigger's colour plus a tinted background.
 
-Freezing (⌃F) splits the pane horizontally: frozen scrollback above under a
-`▲ FROZEN ⌃F` bar, live tail below.
+Freezing (⌥F) splits the pane horizontally: frozen scrollback above under a
+`▲ FROZEN ⌥F` bar, live tail below.
 
 **Input** (grows, min 3 rows): prompt reads `Corvid@aetherfall ›` — bound to the focused
 **character**, not the focused pane. Right gutter shows the destination window (`→ main`),
@@ -423,7 +423,7 @@ count on the tab, the rail character, and the rail world.
 
 ### Other keys
 
-`⌃P` command surface · `⌃F` freeze/resume in focused pane · `⌃L` toggle logging ·
+`⌃P` command surface · `⌥F` freeze/resume in focused pane · `⌃L` toggle logging ·
 `⌃Tab` next tab in pane · `⌃R` reconnect · `↑`/`↓` history · `F2`–`F9` config · `Esc` close overlay ·
 `Shift+Enter` newline in input.
 

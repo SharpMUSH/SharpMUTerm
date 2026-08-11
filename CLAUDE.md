@@ -544,8 +544,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Deliberately left on Ctrl**, because the convention is worth more than the pattern: `⌃R`
     (readline's reverse history search), `⌃P` (command surface), `⌃Q` (quit — and safe here because
     `TerminalRawMode` clears `IXON`, so it is not XON), `⌃B` (tmux's prefix), `⌃O` (pane cycle),
-    `⌃N`/`⌃W`/`⌃F`, and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
+    `⌃N`/`⌃W`, and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
     would be as wrong as one that moved nothing.
+  - **Freeze is `⌥F`, and `⌃F` is find.** Freeze was on `⌃F` and left it for exactly the reason the
+    keys above stay where they are: `⌃F` means *find* to everyone who has used a computer, and that
+    convention outweighs freeze's claim on the chord. Freeze kept its letter and changed its modifier —
+    the smallest move that frees it; `⌥F` is `ESC f`, measured. Nothing is left behind on `⌃F` as an
+    alias (the `⌃D` rule). The label a **frozen** reader is looking at (`FreezeBarRenderer`) moves with
+    the chord: a bar naming a key that no longer thaws the pane would be the worst possible place to
+    leave a stale chord.
   - **Known and not fixed here**: `⌃N` and `⌃O` have no reverse (the character cycle does — `⌥J`/`⌥K`),
     and `⌃W` and `⌃B x` are two chords for one action. Both are shape complaints rather than defects,
     and both are behaviour changes rather than modifier moves.

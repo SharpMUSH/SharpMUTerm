@@ -116,7 +116,6 @@ internal static class MacroKeys
         new(ConsoleModifiers.Control, ConsoleKey.O, "cycles the panes"),
         new(ConsoleModifiers.Control, ConsoleKey.P, "opens the command surface"),
         new(ConsoleModifiers.Control, ConsoleKey.B, "arms the pane prefix"),
-        new(ConsoleModifiers.Control, ConsoleKey.F, "freezes the pane"),
         new(ConsoleModifiers.Control, ConsoleKey.R, "searches the command history"),
         // The connection pair, and it is a pair: ⌥D disconnects, ⌥R reconnects. One modifier, two
         // letters that spell the two words, opposite actions that look opposite on the keyboard.
@@ -138,6 +137,15 @@ internal static class MacroKeys
         // Both act at once; ⌃Q is the only key in this client that asks anything.
         new(ConsoleModifiers.Alt, ConsoleKey.D, "disconnects the focused character"),
         new(ConsoleModifiers.Alt, ConsoleKey.R, "reconnects the focused character"),
+        // Freeze is ⌥F and not ⌃F, and it moved rather than gaining a second spelling. ⌃F means *find*
+        // to everyone who has used a computer, and the search surface takes it; freeze keeps its letter
+        // and changes its modifier, which is the smallest move that frees the chord. ⌥F is delivered as
+        // `ESC f` — measured at a raw reader with `kitten @ send-key`, the same way ⌥D and ⌥R were — and
+        // is claimed by nothing else here or in the framework.
+        //
+        // No ⌃F alias is left behind, for the reason ⌃D was released rather than kept: a second key for
+        // one action is either a secret or a duplicate row on every surface that lists chords.
+        new(ConsoleModifiers.Alt, ConsoleKey.F, "freezes the pane"),
         // The character cycle. Letters and not digits because the digit row is spent (⌥N windows, ⌃B N
         // panes) and there is no third digit-bearing modifier this terminal delivers: read off a pty,
         // kitty writes ⌥⇧1 as `CSI 49;4u` and ⌃⇧N as `CSI 110;6u` — kitty-keyboard-protocol sequences

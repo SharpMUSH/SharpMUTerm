@@ -193,7 +193,7 @@ public class TimestampGutterTests
 
     /// <summary>
     /// A frozen pane takes it on <b>both</b> halves, and stays a frozen pane. Freezing splits a window's
-    /// buffer at the length it had when ⌃F was pressed and draws the two sides into two controls, so a
+    /// buffer at the length it had when ⌥F was pressed and draws the two sides into two controls, so a
     /// repaint that fed one control the whole buffer would slide the pinned scrollback into the live
     /// tail and duplicate every line above the bar. The <c>freeze</c> view puts the demo scene above the
     /// split and two courier lines below it — one assertion for each side.

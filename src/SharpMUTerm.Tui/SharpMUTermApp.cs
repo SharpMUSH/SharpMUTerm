@@ -2321,7 +2321,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>
     /// Appends one already-formatted markup line to a window: records it in the scrollback buffer and,
     /// if the window has a live control, paints it. A frozen pane's live control is its tail region, so
-    /// new lines land below the <c>▲ FROZEN ⌃F</c> bar while the pinned scrollback stays put.
+    /// new lines land below the <c>▲ FROZEN ⌥F</c> bar while the pinned scrollback stays put.
     /// <para>
     /// <paramref name="stamp"/> is when the line arrived, and defaults to none: only a world's output
     /// passes one, because only a world's output is what the timestamp column describes.
@@ -4097,7 +4097,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// The viewport the scrollback keys drive: the focused pane's active window.
     /// <para>
     /// A frozen pane hands them its <em>pinned</em> half. Freeze and scrollback are two ways of looking
-    /// at the same history and this is where they compose: ⌃F holds a region still above the bar and
+    /// at the same history and this is where they compose: ⌥F holds a region still above the bar and
     /// keeps the tail live below it, and while that is up the region worth moving through is the pinned
     /// one — the live tail is by definition already showing its newest line. The tail keeps its own
     /// viewport regardless (see <see cref="BuildFrozenContent"/>), so a burst into a four-row tail still
@@ -4690,6 +4690,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 return () => { CycleCharacter(-1); return true; };
             }
 
+            // ⌥F freezes and resumes the focused pane. It was ⌥F, and moved so that search could have the
+            // chord every reader on every platform reaches for. Same delivery story as ⌥D and ⌥R: ESC + a
+            // printable byte, decoded as that letter with Alt set.
+            if (claim.Key == ConsoleKey.F)
+            {
+                return () => { ToggleFreeze(); return true; };
+            }
+
             // ⌥1–⌥9 go to the numbered window. Same delivery story as Alt+R and one digit over: the
             // terminal writes ESC + the digit and the parser reads it as that digit with Alt set.
             if (MacroKeys.WindowJumpNumber(claim.Key) is { } number)
@@ -4719,7 +4727,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ConsoleKey.O => () => { CyclePane(); return true; },
             ConsoleKey.P => () => { ToggleMenu(); return true; },
             ConsoleKey.B => () => { ArmPrefix(); return true; },
-            ConsoleKey.F => () => { ToggleFreeze(); return true; },
             // ⌃R is the readline/bash/zsh/fish reverse-history-search chord, which is why the surface is
             // on it. ⌃H — what a user reaching for "history" tries first — cannot be bound at all: the
             // framework's parser turns byte 0x08 into Backspace with no Control modifier, so binding it
@@ -6272,7 +6279,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Freezes or resumes the focused pane (⌃F). Freezing records the active window's current scrollback
+    /// Freezes or resumes the focused pane (⌥F). Freezing records the active window's current scrollback
     /// length as the split point (pinned scrollback above, live tail below); resuming clears it and
     /// re-flows the whole buffer back into the single output control.
     /// </summary>
@@ -7059,7 +7066,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     /// <param name="content">The pane's tab strip (or its move/drag stand-in).</param>
     /// <param name="focused">
-    /// Whether this is <c>Layout.FocusedPane</c> — the pane the scrollback keys, the ⌃B commands, ⌃F and
+    /// Whether this is <c>Layout.FocusedPane</c> — the pane the scrollback keys, the ⌃B commands, ⌥F and
     /// the Ctrl+arrows all act on. Nothing rendered it before, so the one pane every keystroke was aimed
     /// at looked exactly like the ones it was not; it is lit with <see cref="WorkspacePalette.Focus"/>,
     /// the same tone as the armed command line.
@@ -7426,19 +7433,19 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Builds a frozen window's content: a vertical split of pinned scrollback (buffer up to the freeze
-    /// point), the <c>▲ FROZEN ⌃F</c> bar, and the live tail (buffer since the freeze). The tail is the
+    /// point), the <c>▲ FROZEN ⌥F</c> bar, and the live tail (buffer since the freeze). The tail is the
     /// window's real control, so incoming lines keep landing below the bar while the top stays pinned.
     /// <para>
     /// <b>Both halves get their own scroll viewport.</b> The pinned half is the one a reader most wants
     /// to move through — it is the history freeze exists to hold still — and before this it could show
-    /// only the oldest screenful of it, which made ⌃F a way of pinning text you could not read. The
+    /// only the oldest screenful of it, which made ⌥F a way of pinning text you could not read. The
     /// live tail gets one too, for the same reason every other pane does: it is a tail, and a burst of
     /// output past its few rows would otherwise vanish under the bar.
     /// </para>
     /// <para>
     /// Both are ordinary <see cref="ScrollablePanelControl.AutoScroll"/> viewports, with no
     /// freeze-specific rule. On the pinned half "the bottom" is the freeze point — the last line that was
-    /// on screen when ⌃F was pressed — so auto-scroll opens it exactly where the reader left off and
+    /// on screen when ⌥F was pressed — so auto-scroll opens it exactly where the reader left off and
     /// detaches the moment they scroll up, which is the behaviour a special case would have had to
     /// reproduce. It also keeps the half honest when the scrollback cap trims the buffer and
     /// <see cref="AppendWindowLine"/> walks the freeze point down: the pinned region shrinks and the
@@ -7458,7 +7465,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var live = PaneContentFor(windowId, title);
         FeedRange(live, buffer, split, buffer.Count - split);
 
-        // Pinned scrollback gets the lion's share; a single "❄ FROZEN ⌃F ───" line is both label and
+        // Pinned scrollback gets the lion's share; a single "❄ FROZEN ⌥F ───" line is both label and
         // border, with the live tail a few rows below it.
         var grid = Controls.Grid()
             .WithAlignment(HorizontalAlignment.Stretch)
