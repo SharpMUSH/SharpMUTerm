@@ -295,9 +295,12 @@ top to bottom:
   plaintext*), the connect-line template (`connect %CHARACTER% %PASSWORD%`), on-connect, `at start`,
   `login` (derived, read-only), session state, log format + folder, `restore`, and `tint` — the colour
   this character's panes are painted in, chosen from a closed list of six names (plus `None`, the
-  default, which leaves the pane on the theme's own surface). A tint changes the plane's hue and not its
-  brightness, so the game's text keeps every contrast the theme was designed with and the focused pane is
-  still the brighter one. Right: the trigger-set checklist — each row is
+  default, which leaves the pane on the theme's own surface). It colours the **command line** as well, so
+  a glance at the bar says whose connection `⏎` is aimed at. All six tints sit at one luminance — no
+  character's pane is brighter than another's — one step below the untinted surface, because a MU\*'s own
+  bright ANSI is read on that plane and the games are written for black terminals; the bar takes the hue
+  without the step, since brightness there already says which of the two command lines is armed. The
+  focused pane is still the brighter one, whatever colours are in play. Right: the trigger-set checklist — each row is
   `[x] ▪ Comms — channel + page routing    2 rules`. Toggling assigns/unassigns live.
 
 Footer: `[Esc] Close` and, on the right, whatever `⏎` does on the row the cursor is on (`Edit`, `Add`,

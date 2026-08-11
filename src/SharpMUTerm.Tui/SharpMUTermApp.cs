@@ -1165,7 +1165,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // shipping path. The *demo config* carries none, deliberately: PaneTint.None is the default, so a
         // demo that tinted its characters would make every other frame in the gallery show a state most
         // clients are not in, and would quietly become the thing the palette is checked against.
-        if (string.Equals(view, "tint", StringComparison.OrdinalIgnoreCase))
+        //
+        // `tint-input` is the same scene with both command lines up, which is the only geometry that can
+        // show the *bar* wearing the focused character's colour beside a pane wearing it — and
+        // `tint-input-moved` is that frame after a real ⌃→, so the pair is the before and after of the
+        // keystroke rather than two hand-posed states. It is the same construction `focus`/`focus-moved`
+        // use, for the same reason: a colour that follows the focus is a claim about two frames.
+        if (view is not null && view.StartsWith("tint", StringComparison.OrdinalIgnoreCase))
         {
             // Guarded the way `characters` above is: --demo-config is the caller's choice, so a machine
             // with no worlds — or a world nobody has put a character in — reaches this line.
@@ -1188,6 +1194,22 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
             PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
             RebuildPaneArea();
+
+            if (view.StartsWith("tint-input", StringComparison.OrdinalIgnoreCase))
+            {
+                ToggleSecondBar();
+                ArmBar(_input);
+
+                if (view.EndsWith("-moved", StringComparison.OrdinalIgnoreCase))
+                {
+                    RenderFrame(); // a directional move reads the panes' arranged bounds
+                    SimulateKey(Stroke('\0', ConsoleKey.RightArrow, ctrl: true));
+
+                    // That frame left the driver's front buffer populated, so the closing render would
+                    // emit only the cells that changed — see the `drag` and `focus-moved` views.
+                    ReArmWholeFrame();
+                }
+            }
         }
 
         // The deletion review, reached the only way a user can reach it: open F5, take the selected world
@@ -3119,8 +3141,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // same tone as the focused pane and the idle one sits on the same recessed plane as the rest of
         // the chrome. They used to be two hardcoded blue-greys thirteen points apart per channel, which
         // is what "make it super obvious which input window is selected" was reported about.
-        bar.BandColor = ToColor(WorkspacePalette.ArmedBand(_theme));
-        bar.IdleBandColor = ToColor(WorkspacePalette.IdleBand(_theme));
+        //
+        // These are the untinted pair, and they are only the starting value: PaintInputBands owns the
+        // live one, because the bands follow the character ⏎ is aimed at and that changes without the
+        // bar being rebuilt. Setting them here anyway means a bar is never unpainted between construction
+        // and the first chrome refresh.
+        PaintInputBands(PaneTint.None);
         bar.TextColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: false));
         bar.IdleTextColor = ToColor(WorkspacePalette.IdleInk(_theme));
         bar.HasSibling = () => _second.Visible;
@@ -4108,11 +4134,76 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void UpdateInputChrome()
     {
+        // The bands first, because the prompt cells are painted to match them (PromptMarkup reads the
+        // pair this leaves behind). One order, one refresh, so the bar's fill and the prompt on top of it
+        // cannot be a frame apart.
+        PaintInputBands(InputTint());
         var label = PromptLabel();
         _input.Prompt = PromptMarkup(label, _input.Armed);
         _second.Prompt = PromptMarkup(SecondPromptLabel(label), _second.Armed);
         RefreshStatusBar();
     }
+
+    /// <summary>
+    /// The two bands the command lines are currently painted in. Held rather than recomputed so that
+    /// <see cref="PromptMarkup"/> paints its cells in the tone the bar was actually given: the prompt and
+    /// the bar make one continuous row, and deriving that colour twice from two expressions is how the
+    /// two hardcoded hexes this replaced came to need a "keep in sync" comment.
+    /// </summary>
+    private (Rgb Armed, Rgb Idle) _inputBands;
+
+    /// <summary>
+    /// Repaints both command lines in <paramref name="tint"/>'s colour. <b>The bar wears the tint of the
+    /// character it is talking to</b>, so "which pane am I in", "who does ⏎ reach" and "which line is
+    /// armed" are answered by one row without reading a word of it.
+    /// <para>
+    /// <b>Tint and armed-ness compose the way hue and luminance do everywhere else here.</b> The colour
+    /// moves both bands' hue and neither band's brightness (see
+    /// <see cref="WorkspacePalette.IdleBand(Theme, PaneTint)"/>), so the armed bar stays exactly the same
+    /// step above the idle one in every colour — plus the lean toward the theme's prompt hue, the bold
+    /// versus dim prompt and the bright versus dim ink, none of which a tint touches. A tint can
+    /// therefore never make the two bars harder to tell apart, which is the property the whole input-band
+    /// design was rebuilt around.
+    /// </para>
+    /// </summary>
+    private void PaintInputBands(PaneTint tint)
+    {
+        _inputBands = (WorkspacePalette.ArmedBand(_theme, tint), WorkspacePalette.IdleBand(_theme, tint));
+        foreach (var bar in new[] { _input, _second })
+        {
+            bar.BandColor = ToColor(_inputBands.Armed);
+            bar.IdleBandColor = ToColor(_inputBands.Idle);
+        }
+    }
+
+    /// <summary>
+    /// Whose colour the command line wears: the character behind the <em>focused window</em>, resolved
+    /// through <see cref="SendTarget"/> — the session ⏎ actually reaches — and falling back to the owner
+    /// the workspace records for that window when no session is open for it. Never <c>_active</c>: that
+    /// fallback is the misdelivery bug in every shape it has had, and a bar wearing the colour of a
+    /// character whose pane you are not in would be the loudest shape yet.
+    /// <para>
+    /// The fallback is the second arm <see cref="WindowSession"/> already walks, which is what makes the
+    /// bar and the pane above it <em>one</em> answer rather than two that agree most of the time: a pane
+    /// is painted from the same record (<see cref="PaneTintOf"/>), and a command line sitting under a
+    /// tinted pane in a different colour would say the two belong to different characters.
+    /// </para>
+    /// <para>
+    /// <b>The colour says whose, never whether.</b> A focused window whose owner has no session this run
+    /// still wears that owner's colour while the prompt reads <c>no connection ›</c> and ⏎ refuses out
+    /// loud (<see cref="NothingToSendTo"/>) — identity and reachability are two facts, the tint carries
+    /// the first everywhere else in this client, and the row already states the second twice. A window
+    /// nobody owns (the web view) and a character who has chosen no colour both leave the bands exactly
+    /// as they were before any of this existed.
+    /// </para>
+    /// </summary>
+    private PaneTint InputTint() =>
+        TintOf(SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey);
+
+    /// <summary>The colour a <c>world.character</c> key has chosen, or none when the key names nobody
+    /// this configuration still holds.</summary>
+    private PaneTint TintOf(string? sessionKey) =>
+        sessionKey is { Length: > 0 } key ? CharacterFor(key)?.Tint ?? PaneTint.None : PaneTint.None;
 
     /// <summary>
     /// What the command line calls itself: <b>the character ⏎ will reach</b>, and nothing else. It reads
@@ -4155,14 +4246,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>
     /// The input band's background hex — shared by the bar's own fill (<see cref="InputBarControl"/>)
     /// and the prompt cells (<see cref="PromptMarkup"/>) so the input row reads as one solid full-width
-    /// band. It reads the tone out of <see cref="WorkspacePalette"/> rather than restating it: these two
-    /// were a pair of hardcoded hexes carrying a "keep in sync with <see cref="SetUpBar"/>" comment,
-    /// which is a colour the theme should have owned and two places to forget.
+    /// band. It reads the tone the bar was <em>given</em> (<see cref="_inputBands"/>) rather than
+    /// re-deriving it: these two were a pair of hardcoded hexes carrying a "keep in sync with
+    /// <see cref="SetUpBar"/>" comment, and now that the band follows the character ⏎ is aimed at, a
+    /// second derivation would be a second place for the prompt cells to disagree with the row they sit on.
     /// </summary>
-    private string InputBandHex => Hex(WorkspacePalette.ArmedBand(_theme));
+    private string InputBandHex => Hex(_inputBands.Armed);
 
     /// <summary>The band behind the bar ⏎ will not send from.</summary>
-    private string IdleBandHex => Hex(WorkspacePalette.IdleBand(_theme));
+    private string IdleBandHex => Hex(_inputBands.Idle);
 
     /// <summary>
     /// Wraps a prompt label so its cells carry the band background and its styling says whether this is
@@ -6806,9 +6898,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             return PaneTint.None;
         }
 
-        return _workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner
-            ? CharacterFor(owner)?.Tint ?? PaneTint.None
-            : PaneTint.None;
+        return TintOf(_workspace.FindWindow(windowId)?.SessionKey);
     }
 
     /// <summary>
