@@ -845,7 +845,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ShowTimestamps = true;
         }
 
+        // The demo scene is a scene, not an absence. It pours lines into windows the reader has never
+        // been in front of — a spawn window's whole history arrives before the first frame — and every
+        // one of them would count as missed, so any frame that later made such a window visible (a split,
+        // a tab change) would carry an activity bar reporting the client's own setup as news. Same
+        // reasoning as `_watching` itself, which the restore replay needs for the same shape of reason.
+        _watching = false;
         LoadDemoScene();
+        _watching = true;
 
         // The reported bug, as a frame: the scene is already on screen with the column off, and *then*
         // the real ⌃P entry is dispatched. Under the old append-time gutter this frame was identical to
@@ -1042,6 +1049,73 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             LoadLongScene(MainWindowId, deep ? 40 : 4);
             SettleScroll();
             SimulateReturnFromAway(TimeSpan.FromMinutes(deep ? 143 : 12));
+            ReArmWholeFrame();
+        }
+
+        // The ⌃F search surface, over a client that has something to find. Four views, because four
+        // things about it are only visible in a frame: `search` is a plain query with its hits marked,
+        // `search-regex` is the same query read as a pattern (the header is the only place either state
+        // is said, which is why they are a pair — the same reasoning as compose/compose-literal),
+        // `search-all` is the widened scope, where the window column appears and hits from a pane the
+        // reader is not looking at are listed under it, and `search-landed` is what ⏎ leaves behind.
+        //
+        // Driven through the surface's own key handler, as `history-search-filter` is: the frame shows
+        // what the real filter produced rather than an impression of it.
+        if (view is not null && view.StartsWith("search", StringComparison.OrdinalIgnoreCase))
+        {
+            // A split first, so the pane is narrower than the terminal. That is the geometry that catches
+            // a landing scrolled to the wrong row — a buffer index is not a viewport row, and in a narrow
+            // pane almost every line wraps.
+            if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
+            {
+                PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+                RebuildPaneArea();
+
+                // Laid out *before* the scene is loaded, so the windows are visible and at their live
+                // tails as the lines arrive. Without it the split's own rebuild leaves them uncaught-up
+                // for the length of the load, every line counts as missed, and the frame comes out
+                // carrying an activity bar — a true report of a state this view is not about.
+                RenderFrame();
+                SettleScroll();
+            }
+
+            LoadLongScene(MainWindowId, 30);
+            foreach (var line in new[]
+                     {
+                         "The goblin snarls at you and misses.",
+                         "You hit the goblin for 12 damage.",
+                         "A goblin corpse lies here, still twitching.",
+                     })
+            {
+                AppendWindowLine(MainWindowId, MarkupText.Escape(line));
+            }
+
+            AppendWindowLine(DemoScene.ChatWindowId, MarkupText.Escape("<OOC> Ana: the goblin room is bugged"));
+            SettleScroll();
+
+            OpenSearchForSnapshot();
+            if (string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase))
+            {
+                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
+            }
+
+            if (string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase))
+            {
+                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
+                SimulateSearchTyping(@"gobl\w+ (corpse|for)");
+            }
+            else
+            {
+                SimulateSearchTyping("goblin");
+            }
+
+            if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
+            {
+                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                SettleScroll();
+            }
+
             ReArmWholeFrame();
         }
 
