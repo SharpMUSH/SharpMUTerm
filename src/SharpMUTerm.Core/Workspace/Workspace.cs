@@ -228,7 +228,15 @@ public sealed class Workspace
 
         // A spawn window the user has since renamed answers to no title, and its rule must go on feeding
         // it rather than opening a second pane beside it under the old name.
-        return best ?? _windows.GetValueOrDefault(SpawnWindowId(sessionKey, target));
+        //
+        // Placed, like the title lookup above it, and for the same reason: a window the registry still
+        // knows and no pane holds is *closed* (see the numbering remarks), and routing to one writes the
+        // channel into a buffer nobody can see. The registry outlives the layout in two ways — a restored
+        // workspace registers windows a saved layout no longer places — so this is reachable rather than
+        // theoretical. Falling through instead is not a loss: RouteLine then reaches RouteSpawn, which
+        // places this very window again under the same id, so the pane reopens with its history in it.
+        var renamed = _windows.GetValueOrDefault(SpawnWindowId(sessionKey, target));
+        return best ?? (renamed is not null && Layout.FindWindow(renamed.Id) is not null ? renamed : null);
     }
 
     /// <summary>
@@ -265,9 +273,17 @@ public sealed class Workspace
     {
         ArgumentException.ThrowIfNullOrEmpty(target);
         var id = SpawnWindowId(sessionKey, target);
-        if (!_windows.TryGetValue(id, out var window))
+        var window = _windows.TryGetValue(id, out var existing)
+            ? existing
+            : Register(new WorkspaceWindow(id, target, WindowKind.Spawn, sessionKey));
+
+        // Placed on the way past, and *not* only when the window is new. The registry outlives the layout
+        // — a restored workspace registers windows a saved layout no longer places — so a window can be
+        // known and closed at once, and returning that from a route writes the channel into a buffer
+        // nobody can see. Making this total is what lets FindRouteTarget decline a closed window and fall
+        // through here: the pane reopens under the same id, with its history already in it.
+        if (Layout.FindWindow(id) is null)
         {
-            window = Register(new WorkspaceWindow(id, target, WindowKind.Spawn, sessionKey));
             Layout.AddWindow(id, activate: false); // spawns open in the background and accrue unread
         }
 

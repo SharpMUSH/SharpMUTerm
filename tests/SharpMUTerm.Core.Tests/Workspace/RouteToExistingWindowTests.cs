@@ -177,6 +177,29 @@ public class RouteToExistingWindowTests
     }
 
     /// <summary>
+    /// The same rule through the renamed-spawn fallback, which is the one arm that does not go by title.
+    /// A spawn window whose pane the user closed is still in the registry — the registry outlives the
+    /// layout, and a restored workspace can register windows a saved layout no longer places — so the
+    /// fallback would hand back a window nothing draws. It has to place the pane again instead, under
+    /// the same id, so the channel comes back with its history rather than going somewhere invisible.
+    /// </summary>
+    [Test]
+    public async Task ARenamedSpawnWindowWhosePaneWasClosedIsPlacedAgainRatherThanFedInvisibly()
+    {
+        var workspace = AnnsWorkspace();
+        var spawned = workspace.RouteLine("Chat", Ann);
+        spawned.Title = "Tells"; // the user renames it, so no title answers to "Chat" any more
+        workspace.Layout.RemoveWindow(spawned.Id); // and closes its pane, leaving it registered
+
+        await Assert.That(workspace.FindRouteTarget("Chat", Ann)).IsNull();
+
+        var destination = workspace.RouteLine("Chat", Ann);
+
+        await Assert.That(destination.Id).IsEqualTo(spawned.Id);
+        await Assert.That(workspace.Layout.FindWindow(destination.Id)).IsNotNull();
+    }
+
+    /// <summary>
     /// Routing badges the destination unread when it is not the window being read, whichever kind it
     /// turned out to be. The badge is the only thing that says a background pane gained a line, and a
     /// resolution that reached a new kind of window without it would make the feature silent.
