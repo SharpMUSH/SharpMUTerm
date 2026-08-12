@@ -32,14 +32,10 @@ public sealed class Workspace
     /// Rebuilds a workspace from a restored set of windows and a pre-built layout (session resume).
     /// The two are assumed consistent — every window id referenced by a pane tab should have a window.
     /// <para>
-    /// <b>A window restored without a creation sequence is given one here, from the order it arrived
-    /// in.</b> Windows are numbered by <see cref="WorkspaceWindow.Sequence"/> and a configuration
-    /// written before that field existed carries none, so without this every restored window would sort
-    /// equal and the numbering would be whatever the sort happened to do. The saved order is the
-    /// numbering such a workspace was saved under, which is why it is the right seed. Any window that
-    /// <em>does</em> carry a sequence keeps it, and unsequenced ones are numbered after the highest
-    /// already taken, so a half-migrated set cannot produce two windows with one number. Same shape,
-    /// and the same reasoning, as <see cref="WorkspaceLayout"/>'s restoring constructor.
+    /// A window restored without a <see cref="WorkspaceWindow.Sequence"/> is seeded from the order it
+    /// arrived in — the numbering it was saved under. Sequenced windows keep theirs and unsequenced ones
+    /// are numbered after the highest taken, so a half-migrated set cannot produce two windows with one
+    /// number. Same shape as <see cref="WorkspaceLayout"/>'s restoring constructor.
     /// </para>
     /// </summary>
     public Workspace(IEnumerable<WorkspaceWindow> windows, WorkspaceLayout layout)
@@ -76,38 +72,21 @@ public sealed class Workspace
     /// <c>Go to …</c> entry for it names. Those are three spellings of this index and there is
     /// deliberately no second ordering for any of them to drift onto.
     /// <para>
-    /// <b>Scoped to the active character, and re-based from 1 for each.</b> It was global — every window
-    /// in the workspace in one sequence — and that failed on a real client the first day it was used:
-    /// with three characters sharing pane 1 as tabs, every character's row read <c>⌥1</c> because their
-    /// windows happened to be numbered from the same run. Nine digits also do not stretch across
-    /// everybody's windows; six windows over three characters already crowds them. Scoped, ⌥1 is
-    /// <em>this</em> character's main window whoever you are, ⌥2 their first capture, and the digits mean
-    /// the same thing wherever you stand.
+    /// <b>Scoped to the active character, re-based from 1.</b> Global numbering gives every character
+    /// sharing a pane the same <c>⌥1</c>, and nine digits do not stretch across everybody's windows.
+    /// Scoped, ⌥1 is <em>this</em> character's main window whoever you are.
     /// </para>
     /// <para>
-    /// <b>An unowned window is in everybody's list.</b> The web view belongs to no session and is
-    /// reachable from wherever you are, so it takes a digit under each character — a different one under
-    /// each, since it sits after that character's own windows. That is not a second numbering: this
-    /// method is exactly the set the rail draws window rows for (its owner filter admits a character's
-    /// own windows plus the unowned ones), so the digit on the screen and the digit in the chord are the
-    /// same list read twice.
+    /// <b>An unowned window is in everybody's list</b> — the web view is reachable from anywhere, so it
+    /// takes a digit under each character. Not a second numbering: this is exactly the set the rail draws
+    /// window rows for, so screen and chord are one list read twice.
     /// </para>
     /// <para>
-    /// <b>Creation order, for the reason panes are in creation order.</b> Any ordering that is a function
-    /// of <em>where</em> a window sits — its tab index, its pane's position — moves when something is
-    /// inserted before it, so dragging a channel one slot left would renumber every window after it and
-    /// ⌥4 would stop meaning what it meant while the user was doing something else entirely. A window's
-    /// number is fixed for as long as it is open, and a new one always appears at the end.
-    /// </para>
-    /// <para>
-    /// <b>The number is the index, not the sequence.</b> Sequences are never reused, so reading them
-    /// directly would leave holes — close the second of three windows and the survivors would be 1 and
-    /// 3, with ⌥2 doing nothing while two windows sat on the screen.
-    /// </para>
-    /// <para>
-    /// <b>Placed, because ⌥N has to land somewhere.</b> A window the registry still knows and no pane
-    /// holds is drawn in the rail as <c>closed</c>; giving it a number would spend a digit on a place
-    /// there is no way to go, and would shift every window after it for a row that names nothing.
+    /// <b>Creation order</b>, because any ordering that is a function of <em>where</em> a window sits
+    /// moves when something is inserted before it, and a digit must not stop meaning what it meant.
+    /// <b>The number is the index, not the sequence</b> — sequences are never reused, so reading them
+    /// directly would leave a digit that does nothing with windows still on the screen. <b>Placed only</b>,
+    /// since a window no pane holds is drawn <c>closed</c> and a digit for it names nowhere to go.
     /// </para>
     /// </summary>
     /// <param name="sessionKey">
@@ -161,33 +140,16 @@ public sealed class Workspace
     /// happens when nothing answers</b>. Counts the line as unread unless the destination is currently
     /// being read, and returns it.
     /// <para>
-    /// This is the resolver a routed line goes through, and the finding half of it is the point. A rule's
-    /// destination used to be <see cref="RouteSpawn"/> and nothing else, which computes a spawn id and
-    /// registers a new <see cref="WindowKind.Spawn"/> window when nothing answers to it — so "put this in
-    /// the window I already have open" was not a thing a rule could ask for however it was spelt, and a
-    /// route naming a window on the screen opened a second one beside it wearing the same label.
+    /// <b>What a target may reach is narrower than "any window with that title":</b> this session's own
+    /// windows, the unowned ones, and another character's <em>main</em> window — one alt's channel
+    /// collected into the pane you read. Never another session's spawn window, or two characters running
+    /// one capture rule would collapse into a single pane filed under whoever matched first.
     /// </para>
     /// <para>
-    /// <b>What a target may reach is deliberately narrower than "any window with that title".</b> It is
-    /// this session's own windows, the windows nobody owns, and another character's <em>main</em> window
-    /// — one alt's channel collected into the pane you actually read. It is <em>not</em> another
-    /// session's spawn or auxiliary window: two characters running one capture rule get a pane each, and
-    /// a bare title lookup would collapse them back into one and file the second character's channel
-    /// under the first, which is the exact defect <see cref="SpawnWindowId(string?,string)"/> was given
-    /// an owner to fix. A main window is admitted across that boundary because it is a window the user
-    /// opened by connecting, rather than one a rule conjured out of a capture.
-    /// </para>
-    /// <para>
-    /// <b>Only a placed window is a destination.</b> Appending to a window no pane holds writes into a
-    /// buffer nothing can draw, which from the reader's side is indistinguishable from the rule not
-    /// firing at all; a closed window is passed over and the line goes somewhere visible.
-    /// </para>
-    /// <para>
-    /// <b>Finding never creates.</b> A target is often a template with capture groups in it
-    /// (<c>Channel $1</c>), so the name can be the server's text — and the security property that keeps
-    /// that bounded is that this arm can only ever land in a window the user already has. Making one out
-    /// of a captured name still goes through <see cref="RouteSpawn"/>, which puts the matching session's
-    /// own key on it.
+    /// <b>Only a placed window is a destination</b> — appending to a window no pane holds is
+    /// indistinguishable from the rule not firing. <b>Finding never creates:</b> a target may be a
+    /// template filled from the server's own text, and what bounds that is this arm only ever landing in
+    /// a window the user already has.
     /// </para>
     /// </summary>
     public WorkspaceWindow RouteLine(string target, string? sessionKey = null)
@@ -226,15 +188,10 @@ public sealed class Workspace
             .Select(candidate => candidate.Window)
             .FirstOrDefault();
 
-        // A spawn window the user has since renamed answers to no title, and its rule must go on feeding
-        // it rather than opening a second pane beside it under the old name.
-        //
-        // Placed, like the title lookup above it, and for the same reason: a window the registry still
-        // knows and no pane holds is *closed* (see the numbering remarks), and routing to one writes the
-        // channel into a buffer nobody can see. The registry outlives the layout in two ways — a restored
-        // workspace registers windows a saved layout no longer places — so this is reachable rather than
-        // theoretical. Falling through instead is not a loss: RouteLine then reaches RouteSpawn, which
-        // places this very window again under the same id, so the pane reopens with its history in it.
+        // A renamed spawn window answers to no title, and its rule must go on feeding it rather than
+        // opening a second pane under the old name. Placed only, like the lookup above: the registry
+        // outlives the layout, and routing to a closed window writes into a buffer nobody can see.
+        // Falling through costs nothing — RouteSpawn re-places this same id, history and all.
         var renamed = _windows.GetValueOrDefault(SpawnWindowId(sessionKey, target));
         return best ?? (renamed is not null && Layout.FindWindow(renamed.Id) is not null ? renamed : null);
     }
@@ -260,13 +217,9 @@ public sealed class Workspace
     /// and it reaches here when no window the target names already exists.
     /// </para>
     /// <para>
-    /// <b>The destination is per session, not per workspace.</b> Two connected characters running the
-    /// same capture rule each get a window of their own; the id carries the owner, so the second
-    /// session to match cannot land in the first's window. It used to: the id was the target alone, so
-    /// whoever matched first created the window <em>with their own session key on it</em> and everybody
-    /// else's lines were appended to somebody else's pane. That was not merely a mixed-up channel — the
-    /// rail draws window rows for the active character only, so the second character's own channel was
-    /// filed under the first and was invisible from the character it belonged to.
+    /// <b>The destination is per session, not per workspace.</b> The id carries the owner, so two
+    /// characters running one capture rule get a window each and the second cannot land in the first's —
+    /// where it would also be invisible, since the rail draws window rows for the active character only.
     /// </para>
     /// </summary>
     public WorkspaceWindow RouteSpawn(string target, string? sessionKey = null)
@@ -277,11 +230,9 @@ public sealed class Workspace
             ? existing
             : Register(new WorkspaceWindow(id, target, WindowKind.Spawn, sessionKey));
 
-        // Placed on the way past, and *not* only when the window is new. The registry outlives the layout
-        // — a restored workspace registers windows a saved layout no longer places — so a window can be
-        // known and closed at once, and returning that from a route writes the channel into a buffer
-        // nobody can see. Making this total is what lets FindRouteTarget decline a closed window and fall
-        // through here: the pane reopens under the same id, with its history already in it.
+        // Placed on the way past, not only when the window is new: the registry outlives the layout, so a
+        // window can be known and closed at once. Making this total is what lets FindRouteTarget decline
+        // a closed window and fall through here.
         if (Layout.FindWindow(id) is null)
         {
             Layout.AddWindow(id, activate: false); // spawns open in the background and accrue unread
@@ -295,9 +246,8 @@ public sealed class Workspace
     public const string SpawnPrefix = "spawn:";
 
     /// <summary>
-    /// The owner field of a spawn window that belongs to nobody. A single <c>-</c>, which is not a
-    /// decimal length and so can never be mistaken for one — that is the whole reason it is not the
-    /// empty string.
+    /// The owner field of a spawn window that belongs to nobody. A single <c>-</c> rather than the empty
+    /// string, because it is not a decimal length and so cannot be mistaken for one.
     /// </summary>
     private const string Unowned = "-";
 
@@ -306,23 +256,14 @@ public sealed class Workspace
     /// routes to. Unique per <c>(owner, target)</c> and stable for ever, so a reconnect or a restart
     /// comes back to the pane it left.
     /// <para>
-    /// <b>Why the length prefix.</b> A session key and a target are both user-controlled strings that may
-    /// hold any character, colons included — a world or character can be called <c>a:b</c> and a
-    /// trigger's <c>SpawnTarget</c> is free text. Joining them with a separator is therefore <em>not</em>
-    /// injective: <c>(a, b:c)</c> and <c>(a:b, c)</c> would produce one id and collapse two characters'
-    /// panes into one, which is this defect again in a rarer shape. Writing the owner's length in front
-    /// of it makes the encoding total and reversible: the digits up to the first colon give the length,
-    /// exactly that many characters are the owner, one more colon is consumed, and everything left is
-    /// the target — so distinct pairs cannot produce equal ids, whatever is in them.
+    /// <b>Why the length prefix.</b> Both halves are user-controlled and may contain colons, so joining
+    /// them with a separator is not injective — <c>(a, b:c)</c> and <c>(a:b, c)</c> would collapse two
+    /// characters' panes into one. The owner's length in front makes the encoding total and reversible.
     /// </para>
     /// <para>
-    /// It is legible on purpose rather than hashed. This id is a dictionary key, a value in
-    /// <c>config.json</c>, and the stem of a <c>RestoreLog</c> file name; a digest would be unambiguous
-    /// too and would make every one of those unreadable to whoever has to look at them, for no property
-    /// a reversible encoding does not already have. (The file name's own collision handling is
-    /// unchanged and unaffected: <c>RestoreLog</c> stores the full id in each file's header and refuses
-    /// a file whose header names a different window, so a CRC-32 clash on the stem costs one window's
-    /// log rather than mixing two.)
+    /// Legible rather than hashed: this id is a dictionary key, a <c>config.json</c> value and the stem
+    /// of a <c>RestoreLog</c> file name, and a digest would buy no property a reversible encoding lacks
+    /// while making all three unreadable.
     /// </para>
     /// </summary>
     /// <param name="sessionKey">The owning <c>world.character</c> session, or null for a window nobody owns.</param>
@@ -451,12 +392,9 @@ public sealed class Workspace
     /// Records who owns a window, for the case where a session takes over one that already exists.
     /// Unknown ids are ignored.
     /// <para>
-    /// A window's owner is otherwise fixed at creation, which was fine while the first session always
-    /// created its own: the main window is opened before any session exists and the first session
-    /// simply adopts it, so without this its <see cref="WorkspaceWindow.SessionKey"/> keeps naming
-    /// whoever held it before — and anything that reads ownership (the connection rail listing a
-    /// character's windows, the command surface subtitling them with their owner) is then reading a
-    /// stale answer.
+    /// Ownership is otherwise fixed at creation, and the main window is opened before any session
+    /// exists — so without this the rail and the command surface would keep naming whoever held it
+    /// before the adopting session arrived.
     /// </para>
     /// </summary>
     public void SetWindowOwner(string windowId, string? sessionKey)
@@ -484,10 +422,9 @@ public sealed class Workspace
         Layout.FindWindow(windowId) is { } pane && pane.ActiveTab == windowId;
 
     /// <summary>
-    /// True when a new line arriving in this window would land somewhere the reader can see it: the
-    /// window is the visible tab of its pane <em>and</em> its output is not scrolled back. This is the
-    /// condition unread badging turns on — <see cref="IsVisible"/> alone is not it, which is why a client
-    /// that only asked that question badged nothing while the reader sat in their scrollback.
+    /// True when a line arriving here would land somewhere the reader can see it: the visible tab of its
+    /// pane <em>and</em> not scrolled back. This is the condition unread badging turns on;
+    /// <see cref="IsVisible"/> alone would badge nothing while the reader sits in their scrollback.
     /// </summary>
     public bool IsCaughtUp(string windowId) =>
         IsVisible(windowId) && _windows.TryGetValue(windowId, out var window) && !window.ScrolledBack;

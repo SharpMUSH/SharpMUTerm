@@ -11,13 +11,10 @@ namespace SharpMUTerm.Tui;
 /// unread/unsent detail and the chord that goes to them. Pure so the rail layout is unit-testable.
 /// <para>
 /// A row carrying a <see cref="RailRow.Target"/> is wrapped in a <c>[link=…]</c> span, which is how
-/// clicking it switches. The span is invisible chrome: <c>[link=…]</c> emits no cell, so the rail
-/// looks exactly as it did and — the part that matters beyond looks — its measured width is
-/// unchanged, because <c>SharpMUTermApp.RailWidth</c> derives the sidebar's column count from the
-/// widest row's <em>visible</em> width. A link that added a cell would resize the sidebar and, through
-/// per-pane NAWS, misreport every connected session's pane size. The span covers the row's content
-/// but never its leading indent or the empty tail out to the column edge, so a click aimed at the
-/// splitter beside the rail lands on nothing.
+/// clicking it switches. The span emits no cell, so it cannot change the sidebar's width — which the
+/// panes, and through per-pane NAWS every connected server, are sized from. It covers the row's content
+/// but not its indent or the tail out to the column edge, so a click aimed at the splitter beside the
+/// rail lands on nothing.
 /// </para>
 /// </summary>
 internal static class RailRenderer
@@ -25,16 +22,12 @@ internal static class RailRenderer
 
     /// <param name="rows">The rail's rows, as <see cref="RailModel"/> projects them.</param>
     /// <param name="maxWidth">
-    /// The widest a row may be, in visible cells — the sidebar's own cap. A row longer than that is elided
-    /// rather than left to wrap, because the sidebar's width is the widest row's <em>clamped</em>
-    /// (<c>SharpMUTermApp.RailWidth</c>), so any name past the clamp — a web page's title is the easy one —
-    /// would run onto a second line. A wrapped rail row is the thing the report was about.
+    /// The widest a row may be in visible cells. The sidebar's width is the widest row's <em>clamped</em>
+    /// width, so a name past the clamp — a web page's title, most easily — would wrap; elide instead.
     /// </param>
     /// <param name="ink">
-    /// The client's own voice for the active theme. A parameter rather than the constants it replaced,
-    /// because these land on the <see cref="WorkspacePalette.Backdrop"/>: measured against the plane they
-    /// are painted on, the old accent is 1.42:1 and the old draft pen 1.26:1 on the Light theme. Null
-    /// means the unmeasured base hues, which is what a unit test with no theme wants.
+    /// The client's own voice for the active theme, held to the legibility floor against the plane the
+    /// rail is drawn on. Null means the unmeasured base hues, which is what a themeless unit test wants.
     /// </param>
     public static List<string> Render(
         IReadOnlyList<RailRow> rows, int maxWidth = int.MaxValue, ChromeInk? ink = null)
@@ -42,19 +35,10 @@ internal static class RailRenderer
         ArgumentNullException.ThrowIfNull(rows);
         var voice = ink ?? ChromeInk.Default;
 
-        // Whether the chord column is drawn, decided once for the whole rail and **per row kind**.
-        //
-        // Reserved, because a field that costs a cell only when it has something in it resizes the
-        // sidebar — and the sidebar's width comes out of the pane area, which every connected server is
-        // told over NAWS (see UnsentFieldWidth for the reported instance of that bug). Within a kind the
-        // width therefore does not move as unread arrives, as a draft is typed, or as the ⌥J/⌥K pair
-        // travels from row to row on a character switch.
-        //
-        // Per kind, because the two kinds carry different mechanics and one of them is often empty: a
-        // window row's chord is the ⌥N numbering, a character row's is the cycle, and with fewer than two
-        // characters open no character row can have one at all. Reserving across both spent three cells
-        // on every character row of a client with one character open — which is the common case, and the
-        // opposite of the complaint this layout change exists to answer.
+        // Decided once for the whole rail and per row kind. Reserved, so the width does not move as
+        // unread arrives or the ⌥J/⌥K pair travels between rows; per kind, because a window row's chord
+        // is the ⌥N numbering and a character row's is the cycle, and with one character open no
+        // character row can have one — reserving across both would spend three cells on the common case.
         var reserveWindow = rows.Any(r => r.Kind == RailRowKind.Window && r.Chord is { Length: > 0 });
         var reserveCharacter = rows.Any(r => r.Kind == RailRowKind.Character && r.Chord is { Length: > 0 });
 
@@ -79,20 +63,13 @@ internal static class RailRenderer
     };
 
     /// <summary>
-    /// Renders a row, and if it does not fit, renders it again with its <see cref="RailRow.Label"/> shortened
-    /// by however much it overran. The label is the only part that may give ground: the accent spine, the
-    /// connected dot, the unread count, the ✎ pen and the chord column are all information. Measured with the
-    /// app's own <see cref="SharpMUTermApp.MarkupWidth"/>, because that is the measure the sidebar's width is
-    /// derived from — anything else could agree here and disagree where it matters.
+    /// Renders a row, and if it overruns, renders it again with the label shortened by the overrun. The
+    /// label is the only part that may give ground — everything else is information. Measured with
+    /// <see cref="SharpMUTermApp.MarkupWidth"/>, the same measure the sidebar's width is derived from.
     /// <para>
-    /// <b>Only the label may vary in width, and only when it changes.</b> Everything else on a row is either
-    /// one cell whatever it says (the spine, the ● / ○ dot, the ▸ active marker, the ▪ bullet) or occupies a
-    /// reserved field that is blank when it has nothing to say (<see cref="UnsentFieldWidth"/>,
-    /// <see cref="UnreadFieldWidth"/>). That is what stops a keystroke or a line of output resizing the
-    /// sidebar and, through it, every connected server's terminal size. The chord column is the one
-    /// remaining variable part and it is deliberately left so: it is absent only while the workspace holds
-    /// a single window, and it appears when a second one opens — which is a structural change that
-    /// rebuilds the pane area and re-reports every pane anyway.
+    /// <b>Only the label varies in width.</b> Everything else is one cell whatever it says or sits in a
+    /// reserved field that is blank when empty, which is what stops a keystroke or a line of output
+    /// resizing the sidebar and every connected server's terminal size with it.
     /// </para>
     /// </summary>
     private static string Fit(RailRow row, int maxWidth, Func<RailRow, string> render)
@@ -112,8 +89,7 @@ internal static class RailRenderer
     /// <summary>
     /// Renders the collapsed rail (⌃B b): a ~6-col strip of per-world accent separators and, under
     /// each, its characters as a status dot + initial + unread count. Both stay clickable — an initial
-    /// is the only handle a collapsed rail offers, so if it did not switch character the strip would be
-    /// decoration. (It was decoration, and this comment said otherwise, until the rail was wired up.)
+    /// is the only handle a collapsed rail offers.
     /// </summary>
     public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows, ChromeInk? ink = null)
     {
@@ -133,9 +109,8 @@ internal static class RailRenderer
                     var dot = row.Connected ? "●" : "○";
                     var name = row.Active ? $"[bold]{initial}[/]" : initial;
 
-                    // Reserved here too. The collapsed strip is clamped to 4–10 cells, so it moves less —
-                    // but it moves, and a strip that widens when a background world says something is the
-                    // same reflow as the expanded rail's, on a rail chosen for taking no space.
+                    // Reserved here too: the strip is clamped to 4–10 cells, so it moves less, but a
+                    // strip that widens when a background world speaks is the same reflow.
                     lines.Add(Link(row, $"[{Accent(row, voice)}]{dot}[/]{name}{UnreadField(row.Unread, voice)}"));
                     break;
             }
@@ -147,21 +122,11 @@ internal static class RailRenderer
     /// <summary>
     /// A character row: its chord, the active marker, the connected dot, the name and its unread total.
     /// <para>
-    /// <b>The chord leads, in the same column the window rows put theirs.</b> It is <c>⌥J</c> on the
-    /// character one step forward in the cycle and <c>⌥K</c> one step back — the only two that are a
-    /// single keystroke away — and blank on everybody else, including the row you are standing on, whose
-    /// <c>▸</c> already says so. It used to be the chord of that character's own <em>window</em>, from
-    /// when window numbering ran across the whole workspace; scoped to the active character, that printed
-    /// <c>⌥1</c> against every character on the screen, which is the confusion this replaced.
-    /// </para>
-    /// <para>
-    /// <b>Reserved, and on the left.</b> The field is <see cref="ChordFieldWidth"/> cells whether or not
-    /// there is a chord, so a row does not change width when the cycle moves — the same rule the pen and
-    /// the unread count follow, and for the same reason: the rail's width is its widest row, the sidebar
-    /// takes its columns out of the pane area, and every connected server is told its pane's size. And it
-    /// is on the left because the reader's complaint was the gap: with the chord at the end of the row it
-    /// sat behind two blank status fields, five cells of nothing between a window's name and the key that
-    /// goes to it.
+    /// The chord leads, in the column the window rows use. It is <c>⌥J</c> on the character one step
+    /// forward in the cycle and <c>⌥K</c> one step back — the only two a single keystroke away — and
+    /// blank on everybody else, including the row you are on, whose <c>▸</c> already says so. Reserved
+    /// (<see cref="ChordFieldWidth"/>) so a row does not change width as the cycle moves, and leading
+    /// rather than trailing so no blank status field separates it from the name it names.
     /// </para>
     /// </summary>
     private static string Character(RailRow row, bool reserve, ChromeInk ink)
@@ -174,15 +139,10 @@ internal static class RailRenderer
     }
 
     /// <summary>
-    /// <b>Cells the sidebar keeps for a row's chord, whether or not it has one.</b> Three: the sigil, one
-    /// digit or letter, and the space that separates it from the row's own glyph.
-    /// <para>
-    /// Reserved for the reason <see cref="UnsentFieldWidth"/> and <see cref="UnreadFieldWidth"/> are — a
-    /// cell that appears only when there is something to say resizes the sidebar, and the sidebar's width
-    /// comes out of the panes, which every connected server is told over NAWS. This one moves on events a
-    /// reader does not think of as structural: a capture window opening past the ninth loses its chord, and
-    /// the ⌥J/⌥K pair moves from row to row on every character switch.
-    /// </para>
+    /// Cells kept for a row's chord whether or not it has one: the sigil, one digit or letter, and a
+    /// separating space. Reserved for the reason <see cref="UnsentFieldWidth"/> is, and this one moves on
+    /// events a reader would not call structural — a window past the ninth loses its chord, and the
+    /// ⌥J/⌥K pair moves on every character switch.
     /// </summary>
     private const int ChordFieldWidth = 3;
 
@@ -210,17 +170,10 @@ internal static class RailRenderer
     }
 
     /// <summary>
-    /// <b>Cells the sidebar keeps for a row's unsent-draft pen, whether or not there is one.</b> Two: the
-    /// glyph and the space that separates it from the label.
-    /// <para>
-    /// This is the reported bug. The pen used to be emitted only when there was a draft, so the row grew by
-    /// two cells on the <em>first keystroke</em> of every line — and <c>SharpMUTermApp.RailWidth</c> takes
-    /// the sidebar's column count from its widest row, so the column grew, the panes shrank, and per-pane
-    /// NAWS re-announced a new terminal size to every connected server, which reflowed the game's own
-    /// output. Starting to type made the screen jump. The same reasoning is why focus is indicated by
-    /// recolouring and never by spending a cell; here the cell has to be spent, so it is spent
-    /// unconditionally.
-    /// </para>
+    /// Cells kept for a row's unsent-draft pen whether or not there is one. <b>Nothing volatile on a row
+    /// may cost a cell only when it has something to say:</b> the sidebar's width is its widest row, the
+    /// panes are what is left over, and per-pane NAWS re-announces that size to every connected server —
+    /// so a pen appearing on the first keystroke of a line reflows the game's own output.
     /// </summary>
     private const int UnsentFieldWidth = 2;
 
@@ -236,16 +189,10 @@ internal static class RailRenderer
         unsent ? $" [{ink.Draft}]{Glyphs.Draft}[/]" : new string(' ', UnsentFieldWidth);
 
     /// <summary>
-    /// An unread count in a fixed-width field, right-aligned, blank at zero. Reserved for the same reason
-    /// the pen is (<see cref="UnsentFieldWidth"/>) and with more urgency: unread arrives <em>unbidden from
-    /// the wire</em>, so an unreserved badge resizes the sidebar — and every connected server's idea of its
-    /// terminal — on a line of output the reader did not ask for, and again at 9 → 10 when it takes a
-    /// second digit. The cap is what makes the field finite: a count past <see cref="UnreadBadge.Max"/>
-    /// reads <c>99+</c>, which is the same three cells and the same information at a glance.
-    /// <para>
-    /// Both the wording and the colour come from <see cref="UnreadBadge"/>, which the pane tab labels draw
-    /// from as well, so the sidebar and the strip cannot come to say different things about one count.
-    /// </para>
+    /// An unread count in a fixed-width field, right-aligned, blank at zero. Reserved for
+    /// <see cref="UnsentFieldWidth"/>'s reason and more urgently: unread arrives unbidden from the wire.
+    /// The cap is what makes the field finite. Wording and colour both come from
+    /// <see cref="UnreadBadge"/>, so the sidebar and the tab strip cannot disagree about one count.
     /// </summary>
     private static string UnreadField(int unread, ChromeInk ink) =>
         unread <= 0
@@ -255,22 +202,13 @@ internal static class RailRenderer
     /// <summary>
     /// A window row: how you get to it, then what it is, then its badges.
     /// <para>
-    /// <b>The chord leads, in the same reserved column the character rows use.</b> That is the reported
-    /// complaint — "there is still way too much room after a window's name before it hits 'alt-1'". The
-    /// gap was the two badge fields, which are blank far more often than not and sat between the name and
-    /// the key. They cannot be removed (see <see cref="UnsentFieldWidth"/>: a field that costs a cell only
-    /// when it has something to say resizes the sidebar on a keystroke or a line of output, and the
-    /// sidebar's width comes out of the panes, which every connected server is told over NAWS) — so the
-    /// chord moved to the front instead, where nothing blank separates it from the name it belongs to,
-    /// and the badges ended up at the right edge where status belongs. The row's measured width is
-    /// unchanged by the move; only the order is.
+    /// The chord leads, in the reserved column the character rows use, so no blank status field sits
+    /// between a name and the key that reaches it; the badges trail, where status belongs.
     /// </para>
     /// <para>
-    /// The column earns its place only once the character holds a second window: with one, there is one
-    /// place to be, so the model leaves <see cref="RailRow.Chord"/> null and the field is not drawn at
-    /// all. A window past the ninth has no chord and shows blanks, which is the honest reading — the row
-    /// is still clickable and still reachable by ⌃N and the tab strip, and a column claiming a key that
-    /// would go somewhere else is the one thing this numbering exists to prevent.
+    /// The column is drawn only once the character holds a second window — with one there is one place to
+    /// be. A window past the ninth shows blanks: it is still clickable and still reachable by ⌃N, and a
+    /// column claiming a key that would go elsewhere is what this numbering exists to prevent.
     /// </para>
     /// <para>
     /// <c>closed</c> is a state rather than a destination, so it is drawn where the badges are rather than
@@ -302,8 +240,7 @@ internal static class RailRenderer
     /// <summary>
     /// A row's own accent as a markup hex, or the client's when it has none — either way held to the
     /// legibility floor against the plane the sidebar is drawn on. A world's accent is a colour a user
-    /// picked in F5 and this is where it meets a plane: unlifted, the demo's own <c>#ff9f1c</c> measures
-    /// 1.03:1 on the Light theme's backdrop.
+    /// picked in F5, and this is where it meets a plane it was not chosen against.
     /// </summary>
     private static string Accent(RailRow row, ChromeInk ink) =>
         row.Accent.Kind == TerminalColorKind.Rgb
