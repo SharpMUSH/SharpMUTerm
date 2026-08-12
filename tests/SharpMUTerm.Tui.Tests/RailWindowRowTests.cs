@@ -258,6 +258,13 @@ public class RailWindowRowTests
         var widest = Rail(app).Max(SharpMUTermApp.MarkupWidth);
         await Assert.That(widest).IsGreaterThan(16); // else the floor is what is being measured
         await Assert.That(app.RailColumnWidth).IsEqualTo(widest + 1);
+
+        // And the layout spent exactly that. The line above is arithmetic over the rows and would still
+        // pass if nothing applied the answer, so the claim is closed against the arranged pane rectangle:
+        // a pane starts past the rail, its divider and the one-cell spacer beside it
+        // (SharpMUTermApp.BuildWorkspaceRow), which is also the geometry per-pane NAWS is derived from.
+        var rect = app.PaneOutputRects()[app.FocusedPaneId];
+        await Assert.That(rect.X).IsEqualTo(app.RailColumnWidth + 2);
     }
 
     /// <summary>

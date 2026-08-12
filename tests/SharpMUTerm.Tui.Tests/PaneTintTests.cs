@@ -173,6 +173,44 @@ public class PaneTintTests
         await Assert.That(cells[(strip.y, theirs)].Background).IsNotEqualTo(cells[(strip.y, mine)].Background);
     }
 
+    /// <summary>
+    /// The other half of the chip's rule: <b>a tab nobody owns stays on the plain surface</b> rather than
+    /// borrowing the hue of whatever is in front of it. The web view is the reachable case — it belongs to
+    /// no character — and it is the one that would make the cue lie, since a colour there would name a
+    /// character whose window it is not.
+    /// </summary>
+    [Test]
+    public async Task AnUnownedBackgroundTabBorrowsNobodysColour()
+    {
+        var config = DemoScene.Build();
+        Corvid(config).Tint = PaneTint.Slate;
+        var app = App(config);
+
+        // The `web` view opens the web window into the pane and brings it forward; putting the character's
+        // own window back in front leaves the unowned one as the background tab this is about. The page is
+        // retitled first only so the tab carries a token nothing else on the frame does.
+        app.RenderSnapshot("web");
+        app.SimulateWebPageTitled("Atlas");
+        await Assert.That(app.DispatchCommand("win:main")).IsTrue();
+        var ansi = app.RenderWholeFrame(); // a second render over a populated buffer emits only a delta
+
+        var rows = FrameGrid.Decode(ansi, 120, 34);
+        var cells = FrameGrid.Cells(ansi, 120, 34);
+
+        // Past the sidebar, so the rail's own row for that window cannot be mistaken for the tab.
+        var strip = rows.Select((text, y) => (text, y))
+            .First(r => r.text.IndexOf("Atlas", StringComparison.Ordinal) > app.RailColumnWidth);
+
+        var untinted = WorkspacePalette.Recessed(WorkspacePalette.Focus(WorkspacePalette.Surface(config.Theme)));
+        var web = strip.text.IndexOf("Atlas", StringComparison.Ordinal);
+
+        await Assert.That(cells[(strip.y, web)].Background).IsEqualTo(untinted);
+
+        // And the pane behind that chip really is wearing a colour, or the frame asks nothing at all.
+        await Assert.That(app.PaneSurfaceColors[app.FocusedPaneId])
+            .IsEqualTo(Colour(WorkspacePalette.Focus(WorkspacePalette.Tint(config.Theme, PaneTint.Slate))));
+    }
+
     // --- composing with focus ---------------------------------------------------------------------
 
     /// <summary>

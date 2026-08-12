@@ -229,6 +229,21 @@ public class RailModelTests
         }
 
         await Assert.That(rows.Max(r => r.Indent)).IsEqualTo(2); // world → character → window, and no more
+
+        // The ladder above is monotonic and could still be nonsense — an empty row at 0 satisfies it — so
+        // each kind is held to its own depth. An Empty row stands where a character would, and takes a
+        // character's indent.
+        foreach (var row in rows)
+        {
+            var depth = row.Kind switch
+            {
+                RailRowKind.Header or RailRowKind.World => 0,
+                RailRowKind.Character or RailRowKind.Empty or RailRowKind.Host => 1,
+                _ => 2,
+            };
+
+            await Assert.That(row.Indent).IsEqualTo(depth).Because($"{row.Kind} ('{row.Label}')");
+        }
     }
 
     private static RailWorld TwoCharacterWorld() => new("Aetherfall", "aetherfall.mux", 4201, Accent, new[]
