@@ -539,7 +539,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   wording, and this is the one that happens many times an hour), `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
-  beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→), plus the
+  beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→),
+  `tabs` (**two tabs in the pane that does *not* hold the focus** — the one geometry that can show a
+  strip saying which tab is in front, since every other view has at most one tab in an unfocused pane.
+  It opens a third window for itself alone, and re-activates the main window before splitting, because
+  opening brings a window to the front and a split carries the tabs that are not), plus the
   default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
@@ -854,10 +858,25 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `TabTitles` claimed the opposite for as long as it existed, and the claim had two costs: the unread
   count went out untinted, and a window title was never escaped — a window called `[Chat]`, or a web view
   titled from the page it loaded, had that eaten as a tag by the parser *and* by the hit test. Titles are
-  `MarkupText.Escape`d now. The tint covers the name and the count only; the `▌` stays outside it, because
-  focus and activity are independent facts and a marker that changed colour on an incoming line would be
-  reporting the wrong one. **The two cues are different channels on purpose** — focus is said entirely in
-  *backgrounds* from the theme's chrome family, activity in a *foreground* no plane is painted in.
+  `MarkupText.Escape`d now. The tint and the selection **bold** cover the name and the count only; the `▌`
+  stays outside them, because focus, selection and activity are independent facts and a marker that
+  changed colour on an incoming line would be reporting the wrong one. **The cues are different channels
+  on purpose** — focus in *background luminance*, activity in a *foreground* no plane is painted in,
+  selection in *weight* and in a within-strip step. A selected tab can be unread, so the two are one tag
+  (`[bold #rrggbb]`) rather than two nested ones.
+- **A tab chip says which tab you are viewing, relative to its own strip — and pane focus is not a term in
+  it.** The selected chip is painted `PaneSurfaceTone` exactly, the plane its own page is painted on, and
+  its siblings are `WorkspacePalette.Recessed` one step below it (`BackdropScale`, the backdrop's own
+  step). Focus arrives already folded into that plane — tinted for the character, lifted for focus — so
+  one ratio inside every strip reads whether or not the pane holds the keyboard, and hue is untouched.
+  Deriving the selected chip *from* focus is what made this unreadable: `PaintTabChips` computed an
+  unfocused pane's selected chip and its siblings from the same expression, background **and** ink, so
+  every chip in a background pane was byte-identical to the pane's surface and the `▌` was no help
+  because `TabTitles` only emits it on the focused pane. `TabSelectionTests`, and the `tabs` view is the
+  frame — no other view has two tabs in an unfocused pane, which is why nothing caught it.
+  **Not fixed here**: the `│` between chips and the `─` filling the rest of the strip are hardcoded
+  `Color.Grey` in `TabControl.Rendering.cs`, unthemeable in all three header styles. That is an upstream
+  change.
 - **One unread count, one spelling: `UnreadBadge`.** The sidebar and the tab strip are two views of
   `WorkspaceWindow.Unread`, and they had two formatters — the rail capped at `99+`, the tab printed the
   raw integer, so a busy channel read `99+` in one place and `(4127)` in the other. Cap, field width and
@@ -889,7 +908,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   is derived from the pane rectangle (`PaneOutputRects`), so a border, gutter or marker column that only
   the focused pane has would re-announce a different terminal size to every connected server on every
   focus change and reflow the game's own output. The cues are the pane's own plane
-  (`WorkspacePalette.Focus`), the active tab's chip colour (`TabControl.Active*BackgroundColor`), and a
+  (`WorkspacePalette.Focus`), the tab chips it carries that plane into, and a
   `▌` in the tab *title* — all zero-cost. `FocusIndicationTests.MovingFocusDoesNotMoveAnyPaneRectangle`
   is the test that stops this being "improved" into a border. Colours live in `WorkspacePalette`, whose
   constants are all derived from a `ScreenPalette` pair so the workspace and the settings screens share

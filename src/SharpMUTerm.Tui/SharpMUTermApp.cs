@@ -950,6 +950,35 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             RebuildPaneArea();
         }
 
+        // The tab strip's own question — *which tab am I looking at* — in the one geometry that can
+        // answer it: a pane that does not hold the focus, holding two tabs. Every other view has at most
+        // one tab in an unfocused pane, which is exactly why no frame ever caught an unfocused pane
+        // painting its selected and unselected chips the same colour. A third window is opened for this
+        // view alone (see DemoScene.ScenesWindowId) and the split then carries both non-active tabs
+        // across, leaving the focus on the left pane and two tabs on the right. The unread on the tab
+        // that is *not* selected is there so the frame also shows the activity tint and the selection
+        // weight in one strip, which is the pair that has to stay legible together.
+        if (string.Equals(view, "tabs", StringComparison.OrdinalIgnoreCase))
+        {
+            var scenes = _workspace.OpenWindow(
+                DemoScene.ScenesWindowId, "Scenes", WindowKind.Spawn, DemoScene.ActiveSessionKey);
+            scenes.OwnerLabel = DemoScene.MainCharacterName;
+
+            // Opening a window brings it to the front, and a split carries the tabs that are *not* in
+            // front. Put the character's own window back in front first, or the split strands Scenes
+            // alone in the focused pane and the frame answers a different question.
+            _workspace.ActivateWindow(MainWindowId);
+            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+
+            for (var i = 0; i < 4; i++)
+            {
+                _workspace.NoteActivity(DemoScene.ScenesWindowId);
+            }
+
+            RebuildPaneArea();
+            RefreshRail();
+        }
+
         // The focus indication, in the one geometry that shows all of it at once: two panes and two
         // command lines, so a frame carries a focused pane beside an unfocused one *and* an armed bar
         // above an idle one. `focus` leaves the focus where a split leaves it (the left pane, primary bar
@@ -7868,7 +7897,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             foreach (var (paneId, tabs) in _paneTabs)
             {
-                PaintTabChips(tabs, IsFocusedPane(paneId), PanePlane(paneId));
+                PaintTabChips(tabs, PaneSurfaceTone(paneId));
             }
         }
 
@@ -8020,45 +8049,28 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         string.Equals(paneId, _workspace.Layout.FocusedPaneId, StringComparison.Ordinal);
 
     /// <summary>
-    /// Colours a pane's tab chips by whether the pane holds the focus. This is the cue that carries the
-    /// signal: the focused pane's active tab is painted in the very band the armed command line is painted
-    /// in, so one colour means "you are here" in both of the places it can be said, and the strip is
-    /// already drawn — so, like the plane behind it, this consumes no cells and cannot move the pane's
-    /// rectangle or the NAWS size derived from it.
+    /// Colours a pane's tab chips: the selected tab is painted <paramref name="surface"/> — the plane its
+    /// own page is painted on — and its siblings are recessed from it.
     /// <para>
-    /// The framework's four properties split on <em>its own</em> keyboard focus, which in this app is
-    /// never the tab strip: focus is pinned to the armed command line, so the <c>…Focused…</c> variants
-    /// would never be reached. Both are therefore set to the same value and driven by <em>our</em> pane
-    /// focus, which is the fact the user is asking about.
+    /// Pane focus is not a parameter, and that is the design. It is already in
+    /// <paramref name="surface"/>, which <c>PaneSurfaceTone</c> has lifted for focus and tinted for its
+    /// character, so the selection cue is one ratio inside every strip and reads whether or not the pane
+    /// holds the focus. Deriving the selected chip <em>from</em> focus is what left an unfocused pane
+    /// painting all of its chips the same colour.
     /// </para>
     /// <para>
-    /// Elevation alone was not enough. A pane's plane is what the game's own colours are read against, so
-    /// it can only be lifted so far before it starts competing with them — and a lift small enough to be
-    /// safe there reads, in a rendered frame, as a gentle elevation rather than as "super obvious", which
-    /// is what was asked for. The chip has no such constraint: nothing is read on it but its own label.
-    /// </para>
-    /// <para>
-    /// The inactive chips are painted on <paramref name="plane"/> — the pane's <em>own</em> plane, tint
-    /// and all — rather than on the palette's plain surface. They sit inside the rectangle that plane
-    /// fills, so a strip drawn on the untinted tone would be a differently-coloured band across the top
-    /// of every tinted pane. The active chip keeps the chrome family's armed band, because that one is
-    /// saying where the keyboard is and not whose pane this is.
+    /// The framework's four properties split on <em>its own</em> keyboard focus, which is never the tab
+    /// strip here — focus is pinned to the armed command line — so each pair is set to one value.
     /// </para>
     /// </summary>
-    private void PaintTabChips(TabControl tabs, bool focused, Rgb plane)
+    private void PaintTabChips(TabControl tabs, Rgb surface)
     {
-        // Each ink is held to the floor against the chip it actually lands on, and the two chips are
-        // different planes. Solarized is the theme that showed why: its foreground on its own armed band
-        // measured 2.43:1, so the active tab and the command line — the two places this pair is used —
-        // were the least readable text in the client on the theme most likely to be chosen for comfort.
-        var activeBgRgb = focused ? WorkspacePalette.ArmedBand(_theme) : plane;
-        var restBgRgb = focused ? WorkspacePalette.Focus(plane) : plane;
-        var activeBg = ToColor(activeBgRgb);
+        // Each ink is held to the floor against the chip it actually lands on; the two are different
+        // planes, and the recessed one is the harder of them.
+        var restBgRgb = WorkspacePalette.Recessed(surface);
+        var activeBg = ToColor(surface);
         var activeFg = ToColor(Contrast.Legible(
-            focused
-                ? _theme.Resolve(TerminalColor.Default, isBackground: false)
-                : WorkspacePalette.IdleInk(_theme),
-            activeBgRgb));
+            _theme.Resolve(TerminalColor.Default, isBackground: false), surface));
         var restBg = ToColor(restBgRgb);
         var restFg = ToColor(Contrast.Legible(WorkspacePalette.IdleInk(_theme), restBgRgb));
 
@@ -8085,11 +8097,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            // The marker rides the focused pane's *active* tab: the strip is plain text to the framework,
-            // so a glyph is the only per-pane cue the strip can carry, and it is the shape half of the
-            // focus signal — it reads on a monochrome terminal, where a luminance step does not.
+            // ▌ is the focus half of the signal and bold is the selection half; both read on a monochrome
+            // terminal, where a luminance step does not.
+            var selected = string.Equals(pane.ActiveTab, windowId, StringComparison.Ordinal);
             builder.AddTab(
-                TabTitles.For(window, ActiveCharacterKey(), focused && pane.ActiveTab == windowId, _ink),
+                TabTitles.For(window, ActiveCharacterKey(), focused && selected, selected, _ink),
                 BuildTabContent(pane, windowId, window));
             ids.Add(windowId);
         }
@@ -8108,7 +8120,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             tabs.ActiveTabIndex = pane.ActiveIndex;
         }
 
-        PaintTabChips(tabs, focused, PanePlane(pane.Id));
+        PaintTabChips(tabs, PaneSurfaceTone(pane.Id));
 
         var paneId = pane.Id;
         tabs.TabChanged += (_, e) => OnTabChanged(paneId, e.NewTab);
@@ -9909,8 +9921,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             {
                 if (page.Tag is string id && _workspace.FindWindow(id) is { } window)
                 {
+                    var selected = string.Equals(activeTab, id, StringComparison.Ordinal);
                     page.Title = TabTitles.For(
-                        window, focusedCharacter, IsFocusedPane(paneId) && activeTab == id, _ink);
+                        window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink);
                     // The × follows the active tab, so keep it in step with every title refresh.
                     page.IsClosable = CanCloseTab(id, activeTab);
                 }

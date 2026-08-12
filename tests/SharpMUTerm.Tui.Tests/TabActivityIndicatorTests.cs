@@ -117,7 +117,11 @@ public class TabActivityIndicatorTests
         app.RenderNextFrame();
 
         await Assert.That(app.UnreadOf(Main)).IsEqualTo(0);
-        await Assert.That(MainTabLabel(app)).IsEqualTo($"{Glyphs.FocusedPane} Corvid");
+
+        // On the visible text, not the markup: the label is still emboldened for being the tab its pane
+        // is showing, which is a different fact from having unread.
+        await Assert.That(FrameGrid.Visible(MainTabLabel(app)))
+            .IsEqualTo($"{Glyphs.FocusedPane} Corvid");
     }
 
     /// <summary>

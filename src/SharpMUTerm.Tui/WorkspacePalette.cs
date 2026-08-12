@@ -356,7 +356,19 @@ internal static class WorkspacePalette
     /// gaps a split leaves between panes. Recessed relative to <see cref="Surface"/>, so an empty pane
     /// is still a visible rectangle and a workspace of many panes reads as cards on a desk.
     /// </summary>
-    internal static Rgb Backdrop(Theme theme) => Scale(Surface(theme), BackdropScale);
+    internal static Rgb Backdrop(Theme theme) => Recessed(Surface(theme));
+
+    /// <summary>
+    /// One step behind a plane — the backdrop's own step, reused for the chips of a tab strip's
+    /// <em>unselected</em> tabs.
+    /// <para>
+    /// A chip states one fact, and states it relative to its own strip: the selected tab is painted the
+    /// plane its page is painted on, its siblings are recessed from it. Pane focus is not a term, because
+    /// it is already in the plane — so the selection cue is one ratio in every strip, on every theme,
+    /// under every tint, and the two questions a strip answers stay on separate channels.
+    /// </para>
+    /// </summary>
+    internal static Rgb Recessed(Rgb plane) => Scale(plane, BackdropScale);
 
     /// <summary>The one-cell hairline a split draws between two panes, and beside the rail.</summary>
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);
@@ -432,7 +444,10 @@ internal static class WorkspacePalette
     internal static Rgb ChromePlane(Theme theme)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Extreme(PanePlanes(theme).Append(Backdrop(theme)), Surface(theme));
+
+        // The recessed chips belong in the set: an unread tint is chrome ink and lands on one of them.
+        var planes = PanePlanes(theme).ToList();
+        return Extreme(planes.Concat(planes.Select(Recessed)).Append(Backdrop(theme)), Surface(theme));
     }
 
     /// <summary>

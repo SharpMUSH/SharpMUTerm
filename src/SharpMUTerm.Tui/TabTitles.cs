@@ -43,10 +43,17 @@ internal static class TabTitles
     /// two planes flatten together. It leads rather than trails because that is the edge of the strip a
     /// reader's eye starts at, and it is on the active tab only, so a pane never shows two.
     /// </param>
+    /// <param name="selected">
+    /// Whether this is the tab its pane is showing. It is emboldened in <em>every</em> pane, focused or
+    /// not, so the selection reads on a terminal that flattens the chips behind it — the shape half of
+    /// what the chip colours say. Independent of <paramref name="focusedPane"/>: an unfocused pane still
+    /// has a tab in front of it.
+    /// </param>
     public static string For(
         WorkspaceWindow window,
         string? focusedCharacterKey = null,
         bool focusedPane = false,
+        bool selected = false,
         ChromeInk? ink = null)
     {
         ArgumentNullException.ThrowIfNull(window);
@@ -76,11 +83,19 @@ internal static class TabTitles
 
         var focus = focusedPane ? Glyphs.FocusedPane + " " : string.Empty;
 
-        // The activity tint. It covers the window's name and its count and stops there: the ▌ ahead of it
-        // is the focus marker and the ✎ / ⌁ behind it are other facts, and a signal that recoloured them
-        // would be claiming they had changed too. Zero cells — see the remarks on this class.
+        // The activity tint and the selection weight cover the window's name and its count and stop
+        // there: the ▌ ahead of them is the focus marker and the ✎ / ⌁ behind them are other facts, and
+        // a signal that recoloured those would be claiming they had changed too. One tag rather than two
+        // nested ones, because a selected tab can also be unread. Zero cells — see the class remarks.
         var named = owner + MarkupText.Escape(window.Title) + unread;
-        var body = window.Unread > 0 ? $"[{UnreadBadge.TintFor(ink)}]{named}[/]" : named;
+        var style = (selected, window.Unread > 0) switch
+        {
+            (true, true) => $"bold {UnreadBadge.TintFor(ink)}",
+            (true, false) => "bold",
+            (false, true) => UnreadBadge.TintFor(ink),
+            _ => null,
+        };
+        var body = style is null ? named : $"[{style}]{named}[/]";
 
         return focus + body + pen + cross;
     }
