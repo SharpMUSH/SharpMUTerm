@@ -22,7 +22,6 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal static class RailRenderer
 {
-    private const string DefaultAccent = "#00f5b7";
 
     /// <param name="rows">The rail's rows, as <see cref="RailModel"/> projects them.</param>
     /// <param name="maxWidth">
@@ -31,9 +30,17 @@ internal static class RailRenderer
     /// (<c>SharpMUTermApp.RailWidth</c>), so any name past the clamp — a web page's title is the easy one —
     /// would run onto a second line. A wrapped rail row is the thing the report was about.
     /// </param>
-    public static List<string> Render(IReadOnlyList<RailRow> rows, int maxWidth = int.MaxValue)
+    /// <param name="ink">
+    /// The client's own voice for the active theme. A parameter rather than the constants it replaced,
+    /// because these land on the <see cref="WorkspacePalette.Backdrop"/>: measured against the plane they
+    /// are painted on, the old accent is 1.42:1 and the old draft pen 1.26:1 on the Light theme. Null
+    /// means the unmeasured base hues, which is what a unit test with no theme wants.
+    /// </param>
+    public static List<string> Render(
+        IReadOnlyList<RailRow> rows, int maxWidth = int.MaxValue, ChromeInk? ink = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
+        var voice = ink ?? ChromeInk.Default;
 
         // Whether the chord column is drawn, decided once for the whole rail and **per row kind**.
         //
@@ -54,20 +61,20 @@ internal static class RailRenderer
         var lines = new List<string>(rows.Count);
         foreach (var row in rows)
         {
-            lines.Add(Fit(row, maxWidth, r => RenderRow(r, reserveWindow, reserveCharacter)));
+            lines.Add(Fit(row, maxWidth, r => RenderRow(r, reserveWindow, reserveCharacter, voice)));
         }
 
         return lines;
     }
 
-    private static string RenderRow(RailRow row, bool reserveWindow, bool reserveCharacter) => row.Kind switch
+    private static string RenderRow(RailRow row, bool reserveWindow, bool reserveCharacter, ChromeInk ink) => row.Kind switch
     {
         RailRowKind.Header => $"[dim]┌ {Glyphs.Connections} CONNECTIONS[/]",
-        RailRowKind.World => Link(row, $"[{Accent(row)}]▚[/] [bold]{Escape(row.Label)}[/]"),
+        RailRowKind.World => Link(row, $"[{Accent(row, ink)}]▚[/] [bold]{Escape(row.Label)}[/]"),
         RailRowKind.Host => $"{Indent(row)}[dim]{Escape(row.Label)}[/]",
         RailRowKind.Empty => $"{Indent(row)}{Link(row, $"[dim]{Escape(row.Label)}[/]")}",
-        RailRowKind.Character => Character(row, reserveCharacter),
-        RailRowKind.Window => Window(row, reserveWindow),
+        RailRowKind.Character => Character(row, reserveCharacter, ink),
+        RailRowKind.Window => Window(row, reserveWindow, ink),
         _ => Escape(row.Label),
     };
 
@@ -108,15 +115,16 @@ internal static class RailRenderer
     /// is the only handle a collapsed rail offers, so if it did not switch character the strip would be
     /// decoration. (It was decoration, and this comment said otherwise, until the rail was wired up.)
     /// </summary>
-    public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows)
+    public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows, ChromeInk? ink = null)
     {
+        var voice = ink ?? ChromeInk.Default;
         var lines = new List<string>();
         foreach (var row in rows)
         {
             switch (row.Kind)
             {
                 case RailRowKind.World:
-                    lines.Add(Link(row, $"[{Accent(row)}]▚[/]"));
+                    lines.Add(Link(row, $"[{Accent(row, voice)}]▚[/]"));
                     break;
                 case RailRowKind.Character:
                     var initial = row.Label.Length > 0
@@ -128,7 +136,7 @@ internal static class RailRenderer
                     // Reserved here too. The collapsed strip is clamped to 4–10 cells, so it moves less —
                     // but it moves, and a strip that widens when a background world says something is the
                     // same reflow as the expanded rail's, on a rail chosen for taking no space.
-                    lines.Add(Link(row, $"[{Accent(row)}]{dot}[/]{name}{UnreadField(row.Unread)}"));
+                    lines.Add(Link(row, $"[{Accent(row, voice)}]{dot}[/]{name}{UnreadField(row.Unread, voice)}"));
                     break;
             }
         }
@@ -156,13 +164,13 @@ internal static class RailRenderer
     /// goes to it.
     /// </para>
     /// </summary>
-    private static string Character(RailRow row, bool reserve)
+    private static string Character(RailRow row, bool reserve, ChromeInk ink)
     {
         var marker = row.Active ? "[bold]▸[/]" : " ";
         var dot = row.Connected ? "●" : "○";
         var name = row.Active ? $"[bold]{Escape(row.Label)}[/]" : Escape(row.Label);
         return $"{Indent(row)}{ChordField(row.Chord, reserve)}"
-            + Link(row, $"{marker} [{Accent(row)}]{dot}[/] {name}{UnreadField(row.Unread)}");
+            + Link(row, $"{marker} [{Accent(row, ink)}]{dot}[/] {name}{UnreadField(row.Unread, ink)}");
     }
 
     /// <summary>
@@ -224,8 +232,8 @@ internal static class RailRenderer
     private const int UnreadFieldWidth = UnreadBadge.FieldWidth;
 
     /// <summary>The pen, or the same width in blanks. See <see cref="UnsentFieldWidth"/>.</summary>
-    private static string Unsent(bool unsent) =>
-        unsent ? $" [#ffd700]{Glyphs.Draft}[/]" : new string(' ', UnsentFieldWidth);
+    private static string Unsent(bool unsent, ChromeInk ink) =>
+        unsent ? $" [{ink.Draft}]{Glyphs.Draft}[/]" : new string(' ', UnsentFieldWidth);
 
     /// <summary>
     /// An unread count in a fixed-width field, right-aligned, blank at zero. Reserved for the same reason
@@ -239,10 +247,10 @@ internal static class RailRenderer
     /// from as well, so the sidebar and the strip cannot come to say different things about one count.
     /// </para>
     /// </summary>
-    private static string UnreadField(int unread) =>
+    private static string UnreadField(int unread, ChromeInk ink) =>
         unread <= 0
             ? new string(' ', UnreadFieldWidth)
-            : $"[{UnreadBadge.Tint}]{UnreadBadge.Format(unread).PadLeft(UnreadFieldWidth)}[/]";
+            : $"[{UnreadBadge.TintFor(ink)}]{UnreadBadge.Format(unread).PadLeft(UnreadFieldWidth)}[/]";
 
     /// <summary>
     /// A window row: how you get to it, then what it is, then its badges.
@@ -270,12 +278,12 @@ internal static class RailRenderer
     /// the two-meanings-in-one-column mistake again.
     /// </para>
     /// </summary>
-    private static string Window(RailRow row, bool reserve)
+    private static string Window(RailRow row, bool reserve, ChromeInk ink)
     {
         var name = Escape(row.Label);
         var closed = row.Closed ? " [dim]closed[/]" : string.Empty;
         return $"{Indent(row)}{ChordField(row.Closed ? null : row.Chord, reserve)}"
-            + Link(row, $"[dim]▪[/] {name}{Unsent(row.Unsent)}{UnreadField(row.Unread)}{closed}");
+            + Link(row, $"[dim]▪[/] {name}{Unsent(row.Unsent, ink)}{UnreadField(row.Unread, ink)}{closed}");
     }
 
     /// <summary>
@@ -291,8 +299,14 @@ internal static class RailRenderer
 
     private static string Indent(RailRow row) => new(' ', row.Indent * 2);
 
-    private static string Accent(RailRow row) =>
+    /// <summary>
+    /// A row's own accent as a markup hex, or the client's when it has none — either way held to the
+    /// legibility floor against the plane the sidebar is drawn on. A world's accent is a colour a user
+    /// picked in F5 and this is where it meets a plane: unlifted, the demo's own <c>#ff9f1c</c> measures
+    /// 1.03:1 on the Light theme's backdrop.
+    /// </summary>
+    private static string Accent(RailRow row, ChromeInk ink) =>
         row.Accent.Kind == TerminalColorKind.Rgb
-            ? $"#{row.Accent.R:x2}{row.Accent.G:x2}{row.Accent.B:x2}"
-            : DefaultAccent;
+            ? ink.Lift(new Rgb(row.Accent.R, row.Accent.G, row.Accent.B))
+            : ink.Accent;
 }

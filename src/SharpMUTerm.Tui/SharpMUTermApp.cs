@@ -46,6 +46,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly SessionManager _sessions = new();
     private readonly TerminalCapabilities _capabilities;
     private readonly Theme _theme;
+
+    /// <summary>
+    /// The colours this client paints in its own voice, resolved from <see cref="_theme"/> and held to
+    /// the legibility floor against the plane they land on — see <see cref="ChromeInk"/>. They were
+    /// hexes written into the markup at each use site, each picked against a dark theme and then painted
+    /// on whatever plane the workspace happened to have.
+    /// </summary>
+    private readonly ChromeInk _ink;
     private readonly MarkupFormatter _formatter;
     private readonly Workspace _workspace;
     private readonly Dictionary<string, MarkupControl> _panes = new(StringComparer.Ordinal);
@@ -569,6 +577,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _messages = _diagnostics.Messages;
         _sessions.Logger = _diagnostics.For("SharpMUTerm.Session");
         _theme = ResolveTheme(config);
+        _ink = WorkspacePalette.Chrome(_theme);
         _formatter = new MarkupFormatter(_theme, config.Text);
         _drafts = new DraftStore(() => config.Input.KeepDrafts);
         _secondBars = new InputBarVisibility(() => config.Input.SecondBar);
@@ -3921,8 +3930,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // bar being rebuilt. Setting them here anyway means a bar is never unpainted between construction
         // and the first chrome refresh.
         PaintInputBands(PaneTint.None);
-        bar.TextColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: false));
-        bar.IdleTextColor = ToColor(WorkspacePalette.IdleInk(_theme));
         bar.HasSibling = () => _second.Visible;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
@@ -4920,7 +4927,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // segment is the same width whatever it says.
         var below = Math.Max(1, panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset);
         var distance = UnreadBadge.Format(below).PadLeft(UnreadBadge.FieldWidth);
-        return $"[#e5c07b]{Glyphs.Scrollback} scrollback[/] [dim]{distance} · ⌃End live[/]";
+        return $"[{_ink.Notice}]{Glyphs.Scrollback} scrollback[/] [dim]{distance} · ⌃End live[/]";
     }
 
     /// <summary>
@@ -4984,10 +4991,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private void PaintInputBands(PaneTint tint)
     {
         _inputBands = (WorkspacePalette.ArmedBand(_theme, tint), WorkspacePalette.IdleBand(_theme, tint));
+
+        // The ink follows the band. A tint moves a band's hue and not its luminance, so this is the same
+        // answer for every character — but it is *not* the same answer for every theme, and that is what
+        // this is for: Solarized's foreground on its own armed band measured 2.43:1, which made the
+        // command line the least readable text in the client on the theme most often chosen for comfort.
+        var armedInk = ToColor(Contrast.Legible(
+            _theme.Resolve(TerminalColor.Default, isBackground: false), _inputBands.Armed));
+        var idleInk = ToColor(Contrast.Legible(WorkspacePalette.IdleInk(_theme), _inputBands.Idle));
+
         foreach (var bar in new[] { _input, _second })
         {
             bar.BandColor = ToColor(_inputBands.Armed);
             bar.IdleBandColor = ToColor(_inputBands.Idle);
+            bar.TextColor = armedInk;
+            bar.IdleTextColor = idleInk;
         }
     }
 
@@ -5806,7 +5824,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             RouteTargets(),
             _system.DesktopDimensions.Width,
             session.Focus(),
-            _system.DesktopDimensions.Height));
+            _system.DesktopDimensions.Height,
+            _theme));
     }
 
     /// <summary>Opens the F3 Aliases screen: the alias list, then the alias's toggles.</summary>
@@ -6100,11 +6119,38 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         return null;
     }
 
-    /// <summary>Renders a <see cref="TerminalColor"/> as a <c>#rrggbb</c> markup colour.</summary>
-    private static string AccentHex(TerminalColor accent) =>
+    /// <summary>
+    /// A world's own accent as <em>text</em>: a markup hex held to the legibility floor against the plane
+    /// the status line and the rail are painted on. A world's accent is a colour a user picked in F5,
+    /// quite possibly against a different theme from the one they are reading in, and this is where it
+    /// meets a plane. Falls back to the client's own accent when the world has none.
+    /// </summary>
+    private string AccentHex(TerminalColor accent) =>
+        accent.Kind == TerminalColorKind.Rgb ? _ink.Lift(new Rgb(accent.R, accent.G, accent.B)) : _ink.Accent;
+
+    /// <summary>
+    /// A world's accent as a <em>fill</em> — the header ribbon's segments. Deliberately <b>not</b> lifted:
+    /// a fill is identity, the same reasoning the pane tints are built on, and holding one to a floor
+    /// against a plane it covers rather than sits on would flatten the ribbon's own hues to a row of
+    /// near-identical pastels. What has to clear the floor is the text on it, which is <see cref="Ink"/>.
+    /// </summary>
+    private string FillHex(TerminalColor accent) =>
         accent.Kind == TerminalColorKind.Rgb
-            ? $"#{accent.R:x2}{accent.G:x2}{accent.B:x2}"
-            : "#00f5b7";
+            ? new Rgb(accent.R, accent.G, accent.B).ToHex()
+            : _ink.Accent;
+
+    /// <summary>
+    /// Text on a known fill, held to the floor against <em>that fill</em> rather than against any plane —
+    /// the ribbon's segment labels and the ● that wears the world's colour on the character chip.
+    /// </summary>
+    private static string Ink(string inkHex, string fillHex) =>
+        ChromeInk.On(ParseHex(inkHex), ParseHex(fillHex));
+
+    /// <summary>A <c>#rrggbb</c> markup colour back as a colour.</summary>
+    private static Rgb ParseHex(string hex) => new(
+        Convert.ToByte(hex.Substring(1, 2), 16),
+        Convert.ToByte(hex.Substring(3, 2), 16),
+        Convert.ToByte(hex.Substring(5, 2), 16));
 
     /// <summary>
     /// Projects live config + workspace state into rail rows: each world (with an accent), its
@@ -7838,8 +7884,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     {
         var rows = BuildRail();
         return _railCollapsed
-            ? RailRenderer.RenderCollapsed(rows)
-            : RailRenderer.Render(rows, RailMaxWidth - RailMargin);
+            ? RailRenderer.RenderCollapsed(rows, _ink)
+            : RailRenderer.Render(rows, RailMaxWidth - RailMargin, _ink);
     }
 
     /// <summary>The narrowest the expanded sidebar goes, so a sparse rail still reads as a column.</summary>
@@ -8001,12 +8047,20 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PaintTabChips(TabControl tabs, bool focused, Rgb plane)
     {
-        var activeBg = ToColor(focused ? WorkspacePalette.ArmedBand(_theme) : plane);
-        var activeFg = ToColor(focused
-            ? _theme.Resolve(TerminalColor.Default, isBackground: false)
-            : WorkspacePalette.IdleInk(_theme));
-        var restBg = ToColor(focused ? WorkspacePalette.Focus(plane) : plane);
-        var restFg = ToColor(WorkspacePalette.IdleInk(_theme));
+        // Each ink is held to the floor against the chip it actually lands on, and the two chips are
+        // different planes. Solarized is the theme that showed why: its foreground on its own armed band
+        // measured 2.43:1, so the active tab and the command line — the two places this pair is used —
+        // were the least readable text in the client on the theme most likely to be chosen for comfort.
+        var activeBgRgb = focused ? WorkspacePalette.ArmedBand(_theme) : plane;
+        var restBgRgb = focused ? WorkspacePalette.Focus(plane) : plane;
+        var activeBg = ToColor(activeBgRgb);
+        var activeFg = ToColor(Contrast.Legible(
+            focused
+                ? _theme.Resolve(TerminalColor.Default, isBackground: false)
+                : WorkspacePalette.IdleInk(_theme),
+            activeBgRgb));
+        var restBg = ToColor(restBgRgb);
+        var restFg = ToColor(Contrast.Legible(WorkspacePalette.IdleInk(_theme), restBgRgb));
 
         tabs.ActiveFocusedBackgroundColor = activeBg;
         tabs.ActiveUnfocusedBackgroundColor = activeBg;
@@ -8035,7 +8089,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             // so a glyph is the only per-pane cue the strip can carry, and it is the shape half of the
             // focus signal — it reads on a monochrome terminal, where a luminance step does not.
             builder.AddTab(
-                TabTitles.For(window, ActiveCharacterKey(), focused && pane.ActiveTab == windowId),
+                TabTitles.For(window, ActiveCharacterKey(), focused && pane.ActiveTab == windowId, _ink),
                 BuildTabContent(pane, windowId, window));
             ids.Add(windowId);
         }
@@ -8159,11 +8213,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The frozen-split chrome colour (design token #c678dd / ANSI 5), resolved through the theme.</summary>
-    private string FrozenAccentHex()
-    {
-        var rgb = _theme.ResolveIndex(5);
-        return $"#{rgb.R:x2}{rgb.G:x2}{rgb.B:x2}";
-    }
+    /// <summary>
+    /// The accent the three boundary bars — <c>▲ FROZEN</c>, the away bar, the restore bar — are drawn in.
+    /// <para>
+    /// It is the theme's own index 5 <em>held to the legibility floor against the pane it lands on</em>,
+    /// and the floor is the whole of a reported defect. Raw, on the default dark theme, that index is
+    /// <c>#800080</c> against a <c>#36363d</c> focused pane: <b>1.27:1</b>, which is a bar the reader was
+    /// told about and could not see. Keeping the theme's index rather than a hue of our own is what lets
+    /// a theme that overrides the base sixteen (Solarized does) contribute its own violet.
+    /// </para>
+    /// </summary>
+    private string FrozenAccentHex() => _ink.Marker;
 
     /// <summary>Rebuilds the pane area from the model and swaps it into the live window.</summary>
     private void RebuildPaneArea()
@@ -9195,7 +9255,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private string MovePromptMarkup()
     {
         var name = _moveWindowId is { } id && _workspace.FindWindow(id) is { } w ? Escape(w.Title) : "window";
-        return $"[#e5c07b]MOVE[/] [bold]{name}[/] [dim]→[/] [#00f5b7]{DropLabel(_moveTargetPaneId, _moveEdge)}[/]"
+        return $"[{_ink.Notice}]MOVE[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(_moveTargetPaneId, _moveEdge)}[/]"
             + "   [dim]1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel[/]";
     }
 
@@ -9498,7 +9558,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private string DragPromptMarkup(string? windowId, string? targetPaneId, Edge? edge)
     {
         var name = windowId is { } id && _workspace.FindWindow(id) is { } window ? Escape(window.Title) : "window";
-        return $"[#e5c07b]DRAG[/] [bold]{name}[/] [dim]→[/] [{PaneDropRenderer.ZoneColor}]{DropLabel(targetPaneId, edge)}[/]"
+        return $"[{_ink.Notice}]DRAG[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(targetPaneId, edge)}[/]"
             + "   [dim]release to drop · Esc cancel[/]";
     }
 
@@ -9537,7 +9597,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private IWindowControl BuildMovePane(PaneNode pane, int ordinal)
     {
         var selected = pane.Id == _moveTargetPaneId;
-        var color = selected ? "#00f5b7" : "#e5c07b";
+        var color = selected ? _ink.Accent : _ink.Notice;
         var lines = new List<string> { string.Empty, string.Empty };
         lines.Add($"     [bold {color}]▛▀▀▜[/]");
         lines.Add($"     [bold {color}]▌ {ordinal} ▐[/]");
@@ -9545,7 +9605,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         lines.Add(string.Empty);
         if (selected)
         {
-            lines.Add($"     [{PaneDropRenderer.ZoneColor}]{DropLabel(pane.Id, _moveEdge)}[/]");
+            lines.Add($"     [{_ink.Accent}]{DropLabel(pane.Id, _moveEdge)}[/]");
             lines.Add(string.Empty);
         }
 
@@ -9850,7 +9910,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 if (page.Tag is string id && _workspace.FindWindow(id) is { } window)
                 {
                     page.Title = TabTitles.For(
-                        window, focusedCharacter, IsFocusedPane(paneId) && activeTab == id);
+                        window, focusedCharacter, IsFocusedPane(paneId) && activeTab == id, _ink);
                     // The × follows the active tab, so keep it in step with every title refresh.
                     page.IsClosable = CanCloseTab(id, activeTab);
                 }
@@ -10193,7 +10253,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var body = severity == MessageSeverity.Error
             ? $"[{ScreenPalette.Warn}]{Escape(text)}[/]"
             : $"[dim]{Escape(text)}[/]";
-        var markup = key is null ? body : $"[#e5c07b]{Escape(key)}[/] {body}";
+        var markup = key is null ? body : $"[{_ink.Notice}]{Escape(key)}[/] {body}";
 
         _notice = markup;
         PaintStatus(markup);
@@ -10276,25 +10336,37 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var caret = _palette is { IsOpen: true } ? "▾" : Glyphs.Menu;
         var dark = Hex(_theme.Resolve(TerminalColor.Default, isBackground: true));
         var headerBg = Hex(_theme.StatusBackground);
-        var chip = "#3f4859"; // dim chrome the character segment sits on
+        // The dim chrome the character segment sits on. Derived rather than the literal #3f4859 it was:
+        // the header is painted on the theme's own chrome band, and a fixed dark chip under a *light*
+        // theme is a plane nothing else on the row is measured against — which is how the world accent
+        // came to be drawn on it at 1.53:1.
+        var chipRgb = WorkspacePalette.HeaderChip(_theme);
+        var chip = chipRgb.ToHex();
 
         // Build the ribbon by hand so only the brand "button" is a link (wrapping the whole bar makes
         // the driver's link highlight repaint every segment and flatten the flowing colours).
-        var brandBg = AccentHex(AccentPalette[2]); // violet
+        // A segment's accent is a *fill* and is not lifted: it is identity, the same reasoning the pane
+        // tints are built on, and lifting a fill would flatten the ribbon's own hues. What has to be
+        // legible is the text *on* it, so each segment's ink is measured against the fill it lands on.
+        var brandBg = FillHex(AccentPalette[2]); // violet
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[link={MenuScheme}toggle][bold {dark} on {brandBg}] {caret} muterm [/][/]");
+        sb.Append($"[link={MenuScheme}toggle][bold {Ink(dark, brandBg)} on {brandBg}] {caret} muterm [/][/]");
 
         var tail = brandBg;
         if (ActiveWorld() is { } active)
         {
-            var worldAccent = AccentHex(active.Accent);
+            var worldAccent = FillHex(active.Accent);
             sb.Append($"[{tail} on {worldAccent}]{Glyphs.PowerRight}[/]");
-            sb.Append($"[bold {dark} on {worldAccent}] {Escape(active.World.Name)} [/]");
+            sb.Append($"[bold {Ink(dark, worldAccent)} on {worldAccent}] {Escape(active.World.Name)} [/]");
             tail = worldAccent;
             if (active.Character is { } name)
             {
                 sb.Append($"[{tail} on {chip}]{Glyphs.PowerRight}[/]");
-                sb.Append($"[{worldAccent} on {chip}] ● {Escape(name)} [/]");
+
+                // The ● wears the world's colour and is *text* here rather than a fill, so it is the one
+                // place on this row the accent has to clear the floor — against the chip, which is the
+                // plane it actually lands on.
+                sb.Append($"[{Ink(worldAccent, chip)} on {chip}] ● {Escape(name)} [/]");
                 tail = chip;
             }
         }
@@ -10311,7 +10383,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         if (_prefixArmed)
         {
             var room = HeaderWidth() - MarkupWidth(leftBar) - 2;
-            return $"{leftBar}  {PrefixPanel.Strip(room)}";
+            return $"{leftBar}  {PrefixPanel.Strip(room, _ink)}";
         }
 
         // Both halves count characters — see ConnectedCharacters for why that is the unit and what it used
@@ -10330,7 +10402,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var logFormat = HeaderLogFormat();
         var log = logFormat == LogFormat.None
             ? $"[dim]{Glyphs.Log} LOG off[/]"
-            : $"[#00f5b7]{Glyphs.Log}[/] [dim]LOG {logFormat.ToString().ToLowerInvariant()}[/]";
+            : $"[{_ink.Accent}]{Glyphs.Log}[/] [dim]LOG {logFormat.ToString().ToLowerInvariant()}[/]";
         // No graphics readout here. Which protocol the probe settled on is decided once at startup and
         // never changes, so a permanent cell of chrome spends the row's scarcest resource on a fact that
         // cannot become news — and it was already said twice elsewhere: the session prints
@@ -10437,7 +10509,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     private string StatusBarMarkup(string character, string state)
     {
-        var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : "#00f5b7";
+        var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
 
         var right = new List<string>();

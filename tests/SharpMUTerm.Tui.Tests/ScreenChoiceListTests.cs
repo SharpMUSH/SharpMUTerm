@@ -272,7 +272,7 @@ public class ScreenChoiceListTests
         var sets = Sets();
         var editor = TriggersScreenRenderer.EditorColumn(sets, 0, Routes[1..], OpenTheRoute(sets).Focus());
 
-        await Assert.That(Entries(editor)).IsEquivalentTo(new[] { "main", "Chat", "pages", "trade" });
+        await Assert.That(Entries(editor)).IsEquivalentTo(new[] { "(none)", "main", "Chat", "pages", "trade" });
         await Assert.That(Marked(editor)).IsEqualTo("Chat");
         await Assert.That(Caption(editor)).Contains(ScreenChrome.OpenChoicesCaption);
     }

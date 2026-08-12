@@ -31,7 +31,14 @@ internal static class UnreadBadge
     /// focused, unread, both or neither, and each of the four states reads distinctly.
     /// </para>
     /// </summary>
-    internal const string Tint = ScreenPalette.Accent;
+    /// <para>
+    /// It is the client's own accent for the active theme rather than a constant, because both surfaces
+    /// it appears on move with the theme: a rail badge lands on the backdrop and a tab badge lands in a
+    /// pane. As a fixed <c>#00f5b7</c> it measured 1.41:1 on the Light theme's backdrop and 1.42:1 on its
+    /// focused pane — a count the reader was shown and could not read.
+    /// </para>
+    /// </summary>
+    internal static string TintFor(ChromeInk? ink) => (ink ?? ChromeInk.Default).Accent;
 
     /// <summary>A count as it is written, capped at <see cref="Max"/>.</summary>
     internal static string Format(int unread) =>

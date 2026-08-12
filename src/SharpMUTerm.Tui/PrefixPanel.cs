@@ -1,3 +1,4 @@
+using System.Globalization;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
 
@@ -210,26 +211,33 @@ internal static class PrefixPanel
     /// narrow is exactly the one where the panel does the explaining a moment later.
     /// </para>
     /// </summary>
-    internal static string Strip(int available)
+    /// <remarks>
+    /// <paramref name="ink"/> is the client's own voice for the active theme. It is a parameter rather
+    /// than a constant because this string lands on the <em>status line</em> — a themed plane — while
+    /// everything else this class draws lands on the prefix overlay's own fixed backdrop. Null means the
+    /// unmeasured base hues, which is what a unit test with no theme wants.
+    /// </remarks>
+    internal static string Strip(int available, ChromeInk? ink = null)
     {
+        var notice = (ink ?? ChromeInk.Default).Notice;
         foreach (var (plain, markup) in Forms)
         {
             if (plain.Length <= available)
             {
-                return markup;
+                return string.Format(CultureInfo.InvariantCulture, markup, notice);
             }
         }
 
-        return Forms[^1].Markup;
+        return string.Format(CultureInfo.InvariantCulture, Forms[^1].Markup, notice);
     }
 
     /// <summary>The strip's spellings, widest first, each as the plain text to measure and the markup to emit.</summary>
     private static readonly (string Plain, string Markup)[] Forms =
     {
         ($"⌃B — awaiting  {StripKeys}  ·  Esc cancels",
-            $"[#e5c07b]⌃B — awaiting[/]  [dim]{StripKeys}  ·  Esc cancels[/]"),
+            $"[{{0}}]⌃B — awaiting[/]  [dim]{StripKeys}  ·  Esc cancels[/]"),
         ($"⌃B  {StripKeys}  Esc",
-            $"[#e5c07b]⌃B[/]  [dim]{StripKeys}  Esc[/]"),
-        ("⌃B — Esc cancels", "[#e5c07b]⌃B[/]  [dim]Esc cancels[/]"),
+            $"[{{0}}]⌃B[/]  [dim]{StripKeys}  Esc[/]"),
+        ("⌃B — Esc cancels", "[{0}]⌃B[/]  [dim]Esc cancels[/]"),
     };
 }

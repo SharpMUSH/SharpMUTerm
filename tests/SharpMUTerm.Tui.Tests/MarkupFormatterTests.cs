@@ -73,8 +73,11 @@ public class MarkupFormatterTests
     [Test]
     public async Task BoldItalic_EmitsAttributeTokens()
     {
+        // Gold rather than red: pure #ff0000 measures 2.998:1 against this theme's reading plane, a
+        // hair under the floor, so it comes out lifted by a single step — correct, and a distraction in
+        // a test about attribute tokens. TheLegibilityFloor* tests below are where that is the subject.
         var style = new TextStyle(
-            TerminalColor.FromRgb(255, 0, 0),
+            TerminalColor.FromRgb(0xff, 0xd7, 0x00),
             TerminalColor.Default,
             TextAttributes.Bold | TextAttributes.Italic);
         var line = StyledLine.FromText("x", style);
@@ -83,7 +86,74 @@ public class MarkupFormatterTests
 
         await Assert.That(markup).Contains("bold");
         await Assert.That(markup).Contains("italic");
-        await Assert.That(markup).Contains("#ff0000");
+        await Assert.That(markup).Contains("#ffd700");
+    }
+
+    [Test]
+    public async Task TheLegibilityFloorLiftsAColourThatCannotBeReadOnThePane()
+    {
+        // ANSI 4 on the default dark theme is #000080 against a #36363d focused pane: 1.34:1, which is
+        // most of what "unreadable colours against our backgrounds" was about. MU* servers send it
+        // constantly, because they are written for black terminals and this one is not black.
+        var line = StyledLine.FromText("x", new TextStyle(
+            TerminalColor.FromIndex(4), TerminalColor.Default, TextAttributes.None));
+
+        var markup = new MarkupFormatter(ThemeLibrary.Dark()).ToMarkup(line);
+
+        await Assert.That(markup).DoesNotContain("#000080");
+        await Assert.That(Contrast.Ratio(
+                Parse(markup), WorkspacePalette.ReadingPlane(ThemeLibrary.Dark())))
+            .IsGreaterThanOrEqualTo(Contrast.Floor);
+    }
+
+    [Test]
+    public async Task TheLegibilityFloorLeavesAColourThatAlreadyReadsAlone()
+    {
+        // Byte-identical, not merely close: the floor must not restyle text that was already fine, which
+        // is most of what any game sends.
+        var line = StyledLine.FromText("x", new TextStyle(
+            TerminalColor.FromRgb(0xff, 0xd7, 0x00), TerminalColor.Default, TextAttributes.None));
+
+        await Assert.That(new MarkupFormatter(ThemeLibrary.Dark()).ToMarkup(line)).Contains("#ffd700");
+    }
+
+    [Test]
+    public async Task AHighlightIsMeasuredAgainstItsOwnBackgroundAndNotThePane()
+    {
+        // A span carrying a background is painted on *that*, so the pane it happens to be in says
+        // nothing about whether it can be read. Dark blue on white is 14.3:1 and must survive untouched;
+        // measured against the pane instead it would be lifted to something unreadable on its own band.
+        var line = StyledLine.FromText("x", new TextStyle(
+            TerminalColor.FromRgb(0x00, 0x00, 0x80),
+            TerminalColor.FromRgb(0xff, 0xff, 0xff),
+            TextAttributes.None));
+
+        var markup = new MarkupFormatter(ThemeLibrary.Dark()).ToMarkup(line);
+
+        await Assert.That(markup).Contains("#000080 on #ffffff");
+    }
+
+    [Test]
+    public async Task TheFloorCanBeSwitchedOffAndThenTheBytesAreExactlyWhatTheyWere()
+    {
+        var line = StyledLine.FromText("x", new TextStyle(
+            TerminalColor.FromIndex(4), TerminalColor.Default, TextAttributes.None));
+
+        var markup = new MarkupFormatter(ThemeLibrary.Dark(), new TextSettings { KeepTextLegible = false })
+            .ToMarkup(line);
+
+        await Assert.That(markup).Contains("#000080");
+    }
+
+    /// <summary>The first <c>#rrggbb</c> in a markup string, as a colour.</summary>
+    private static Rgb Parse(string markup)
+    {
+        var at = markup.IndexOf('#', StringComparison.Ordinal);
+        var hex = markup.Substring(at + 1, 6);
+        return new Rgb(
+            Convert.ToByte(hex[..2], 16),
+            Convert.ToByte(hex[2..4], 16),
+            Convert.ToByte(hex[4..], 16));
     }
 
     [Test]

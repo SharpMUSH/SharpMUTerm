@@ -44,7 +44,10 @@ internal static class TabTitles
     /// reader's eye starts at, and it is on the active tab only, so a pane never shows two.
     /// </param>
     public static string For(
-        WorkspaceWindow window, string? focusedCharacterKey = null, bool focusedPane = false)
+        WorkspaceWindow window,
+        string? focusedCharacterKey = null,
+        bool focusedPane = false,
+        ChromeInk? ink = null)
     {
         ArgumentNullException.ThrowIfNull(window);
 
@@ -77,7 +80,7 @@ internal static class TabTitles
         // is the focus marker and the ✎ / ⌁ behind it are other facts, and a signal that recoloured them
         // would be claiming they had changed too. Zero cells — see the remarks on this class.
         var named = owner + MarkupText.Escape(window.Title) + unread;
-        var body = window.Unread > 0 ? $"[{UnreadBadge.Tint}]{named}[/]" : named;
+        var body = window.Unread > 0 ? $"[{UnreadBadge.TintFor(ink)}]{named}[/]" : named;
 
         return focus + body + pen + cross;
     }

@@ -49,8 +49,8 @@ public class PaneDropRendererTests
     {
         var idle = string.Concat(PaneDropRenderer.Render("main", "x", 40, 20, hovered: false, edge: Edge.Left));
 
-        await Assert.That(idle).DoesNotContain(PaneDropRenderer.ZoneColor);
-        await Assert.That(string.Concat(Hovered(Edge.Left))).Contains(PaneDropRenderer.ZoneColor);
+        await Assert.That(idle).DoesNotContain(ChromeInk.Default.Accent);
+        await Assert.That(string.Concat(Hovered(Edge.Left))).Contains(ChromeInk.Default.Accent);
     }
 
     [Test]

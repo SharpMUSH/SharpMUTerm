@@ -24,6 +24,14 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null)
     private readonly Theme _theme = theme;
     private readonly TextSettings _text = text ?? new TextSettings();
 
+    /// <summary>
+    /// The plane a span carrying no background of its own is read on — computed once per formatter,
+    /// because it is a property of the <em>theme</em> and not of any one pane. See
+    /// <see cref="WorkspacePalette.ReadingPlane"/> for why one plane covers all fourteen a pane can
+    /// wear, and why resolving it per pane would cost a whole-buffer re-format on every focus move.
+    /// </summary>
+    private readonly Rgb _plane = WorkspacePalette.ReadingPlane(theme);
+
     /// <summary>Renders a whole line to a single markup string, with no timestamp gutter.</summary>
     public string ToMarkup(StyledLine line)
     {
@@ -60,9 +68,14 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null)
         var sb = new StringBuilder();
 
         // A trigger-highlighted line gets a 2-col left rule in the trigger's colour (design output view).
+        // Through the floor like every other foreground here: it lands on the pane, and it is the one
+        // mark saying a rule fired at all — the demo's own teal measured 1.42:1 on the Light theme.
         if (line.RuleColor is { } rule)
         {
-            sb.Append('[').Append(Hex(_theme.Resolve(rule, isBackground: false))).Append("]▌[/] ");
+            var ink = _theme.Resolve(rule, isBackground: false);
+            sb.Append('[')
+                .Append(Hex(_text.KeepTextLegible ? Contrast.Legible(ink, _plane) : ink))
+                .Append("]▌[/] ");
         }
 
         foreach (var span in line.Spans)
@@ -134,6 +147,24 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null)
         if (reverse)
         {
             (fg, bg) = (bg, fg);
+        }
+
+        // The legibility floor, applied at the one point in this app that knows both the colour and the
+        // plane it is about to be painted on. A span that carries a background is measured against *it*
+        // — that plane is known exactly, and a highlight's own pair must be judged as a pair; one with
+        // no background emits none (see below) and takes the pane it is drawn on, so it is measured
+        // against the theme's reading plane.
+        //
+        // What this is for: on the default dark theme's focused pane, the ANSI colours a MU* server
+        // sends constantly are blue 1.34:1, red 1.09:1, black 1.75:1 and magenta 1.27:1 — text that is
+        // very nearly the surface twice. It is a *floor* and not a scheme: a colour already clearing
+        // Contrast.Floor comes back byte-identical, which is most of what any game sends.
+        //
+        // Off restores the previous bytes exactly, for a reader who wants their game's palette
+        // untouched or a theme where the floor fights their taste.
+        if (_text.KeepTextLegible)
+        {
+            fg = Contrast.Legible(fg, style.Background.Kind == TerminalColorKind.Default && !reverse ? _plane : bg);
         }
 
         var tokens = new List<string>(6);

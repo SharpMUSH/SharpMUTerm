@@ -381,7 +381,13 @@ public sealed class WorldSession : IAsyncDisposable
             _ = SendRawAsync(response);
         }
 
-        if (!result.Suppress)
+        // A gag suppresses the *default* delivery — the line arriving in this session's own window
+        // because nothing routed it anywhere. It does not cancel a destination a rule asked for: that
+        // has always been true of the spawn loop above, which runs whatever the gag says, and it is now
+        // true of the main window too. So `route: main` plus `gag` keeps the line here and nowhere else,
+        // where before it deleted the line — because `main` was the F2 screen's label for the *absence*
+        // of a route rather than a route.
+        if (result.RouteMain || !result.Suppress)
         {
             Print(shown);
         }

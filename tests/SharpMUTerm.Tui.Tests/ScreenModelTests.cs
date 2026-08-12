@@ -364,17 +364,18 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 14 display rows: 4 section headers + 3 spacers + 7 options. It was 7/4 before WHITESPACE and
+        // 15 display rows: 4 section headers + 3 spacers + 8 options. It was 7/4 before WHITESPACE and
         // its "tab width (spaces)" row, which brought a header and a spacer with it, 10/5 before
-        // "detect links in output" joined the COLOUR section, and 11/6 before ACTIVITY and its
-        // "activity bar holds for (seconds)" row brought a header and a spacer of their own.
-        await Assert.That(screen.Rows.Count).IsEqualTo(14);
+        // "detect links in output" joined the COLOUR section, 11/6 before ACTIVITY and its
+        // "activity bar holds for (seconds)" row brought a header and a spacer of their own, and 14/7
+        // before "keep text legible" joined COLOUR beneath the row it is the other half of.
+        await Assert.That(screen.Rows.Count).IsEqualTo(15);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(7);
+        await Assert.That(model.Sizes[0]).IsEqualTo(8);
     }
 
     /// <summary>
-    /// F7 is five checkboxes and one count. The count is <c>tab width (spaces)</c>, and it is what puts
+    /// F7 is six checkboxes and one count. The count is <c>tab width (spaces)</c>, and it is what puts
     /// <c>⏎ edit</c> back in this screen's header — <c>HasEditableRow</c> was false for as long as every
     /// row here was a toggle. Asserted here rather than only in the renderer test, because the header
     /// advertising a key the screen has no use for is exactly the rule these screens are held to.
@@ -388,18 +389,24 @@ public class ScreenModelTests
         model.ToggleAt(0, 0)!.Value.Flip();
         await Assert.That(text.StripIncomingColour).IsTrue();
 
-        model.ToggleAt(0, 2)!.Value.Flip();
-        await Assert.That(text.UnderlineHyperlinks).IsFalse();
+        // 1 is "keep text legible", which sits directly under the row above because the two are the ends
+        // of one question's range — discard every colour the server sent, or keep them and move the few
+        // that cannot be read.
+        model.ToggleAt(0, 1)!.Value.Flip();
+        await Assert.That(text.KeepTextLegible).IsFalse();
 
         model.ToggleAt(0, 3)!.Value.Flip();
+        await Assert.That(text.UnderlineHyperlinks).IsFalse();
+
+        model.ToggleAt(0, 4)!.Value.Flip();
         await Assert.That(text.DetectLinks).IsFalse();
 
-        model.ToggleAt(0, 5)!.Value.Flip();
+        model.ToggleAt(0, 6)!.Value.Flip();
         await Assert.That(text.EmojiSubstitution).IsFalse();
 
-        // Row 4 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
+        // Row 5 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
         // this screen carry an editable row at all.
-        await Assert.That(model.ToggleAt(0, 4)).IsNull();
+        await Assert.That(model.ToggleAt(0, 5)).IsNull();
         await Assert.That(model.HasEditableRow).IsTrue();
     }
 

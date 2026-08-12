@@ -83,36 +83,56 @@ public class TriggersScreenEditingTests
     {
         var sets = Sets();
 
+        // Two are always offered and they are different things: "(none)" is a rule that delivers
+        // nowhere of its own, "main" is the session's own window as a destination.
         var known = TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value.Choices;
-        await Assert.That(known).IsEquivalentTo(new[] { "main", "Chat", "pages", "trade" });
+        await Assert.That(known).IsEquivalentTo(new[] { "(none)", "main", "Chat", "pages", "trade" });
 
         // A rule pointed at a window the workspace has no record of still offers — and keeps — its own
         // value, rather than being refused by its own field.
         var unknown = TriggersScreenRenderer.Model(sets, 0).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value;
-        await Assert.That(unknown.Choices).IsEquivalentTo(new[] { "main", "Chat" });
+        await Assert.That(unknown.Choices).IsEquivalentTo(new[] { "(none)", "main", "Chat" });
         await Assert.That(unknown.Validate("Chat")).IsNull();
     }
 
     /// <summary>
-    /// <c>main</c> is how a rule stops routing anywhere: it stores null rather than the literal word. The
-    /// <c>undo puts it back</c> half went with the screen-wide revert — a committed route is confirmed work
-    /// and is kept, and only deletions are reviewed on the way out.
+    /// <c>(none)</c> is how a rule stops routing anywhere: it stores null rather than the literal word.
+    /// <c>main</c> stores the word, because it is a destination — the two were one choice, spelt
+    /// <c>main</c>, and the conflation is what made a gagging rule aimed at the main window delete the
+    /// line. The <c>undo puts it back</c> half went with the screen-wide revert — a committed route is
+    /// confirmed work and is kept, and only deletions are reviewed on the way out.
     /// </summary>
     [Test]
-    public async Task ChoosingMainClearsTheSpawnTarget()
+    public async Task ChoosingNoRouteClearsTheSpawnTargetAndChoosingMainDoesNot()
     {
         var sets = Sets();
         var trigger = sets[0].Triggers[0];
         var edits = new ScreenEdits();
 
-        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "main");
+        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "(none)");
         await Assert.That(trigger.Actions.SpawnTarget).IsNull();
+
+        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "main");
+        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo(TriggerActions.MainWindow);
 
         edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "trade");
         await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("trade");
 
+        // Padded, because the two halves of that decision live in different files: the comparison here
+        // is against the bare label, and the trimming is ScreenField.WindowName's (its Set is
+        // `value => set(value.Trim())`). A reviewer read this line alone and concluded a padded
+        // "(none)" would be stored as a capture pane by that name; it is not, and this is what keeps
+        // that true if the field ever stops trimming for us.
+        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "  (none)  ");
+        await Assert.That(trigger.Actions.SpawnTarget).IsNull();
+
+        // And the same for a real destination: what is stored is the name, never the padding, or two
+        // rules aimed at one pane would open two.
+        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "  Chat  ");
+        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("Chat");
+
         edits.Revert();
-        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("trade"); // kept as committed
+        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("Chat"); // the last commit, kept
     }
 
     /// <summary>
@@ -216,13 +236,15 @@ public class TriggersScreenEditingTests
         session.Handle(Key(ConsoleKey.Enter));
         await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("pages");
 
-        // Wrapping backwards off "main" lands on the last window, not on nothing.
+        // Wrapping backwards off the first entry lands on the last window, not on nothing.
         session.Handle(Key(ConsoleKey.Enter));
         session.Handle(Key(ConsoleKey.Tab));
         session.Handle(Key(ConsoleKey.Tab));
         session.Handle(Key(ConsoleKey.UpArrow));
         session.Handle(Key(ConsoleKey.UpArrow));
         await Assert.That(session.Focus().Edit!.Value.Text).IsEqualTo("main");
+        session.Handle(Key(ConsoleKey.UpArrow));
+        await Assert.That(session.Focus().Edit!.Value.Text).IsEqualTo("(none)");
         session.Handle(Key(ConsoleKey.UpArrow));
         await Assert.That(session.Focus().Edit!.Value.Text).IsEqualTo("trade");
     }
