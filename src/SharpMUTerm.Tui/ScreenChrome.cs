@@ -20,9 +20,8 @@ internal static class ScreenChrome
     /// <paramref name="fkey"/> is the F-key that also toggles the screen (<c>F6/Esc close</c>).
     /// <para>
     /// <paramref name="editable"/> comes from the screen's <see cref="ScreenModel"/>, never from the
-    /// screen itself: a header may only claim ⏎ opens an editor when a row actually offers one. While
-    /// an edit *is* open the hints change wholesale — Esc no longer closes the screen, it abandons the
-    /// buffer, and saying otherwise would be the same lie in the other direction.
+    /// screen itself: a header may only claim ⏎ opens an editor when a row offers one. While an edit is
+    /// open the hints change wholesale — Esc abandons the buffer rather than closing the screen.
     /// </para>
     /// </summary>
     internal static string Hints(
@@ -64,15 +63,11 @@ internal static class ScreenChrome
     }
 
     /// <summary>
-    /// The keyboard hints every screen with a list and a checkbox pane shares. Kept in one place so a
-    /// screen can't advertise a key its <see cref="ScreenModel"/> doesn't actually offer.
-    /// <para>
-    /// It names ←→ as well as ⇥ because on a multi-pane screen both change pane, and ←→ was the one
-    /// movement these screens offered that nothing on them mentioned. The single-pane form below
-    /// deliberately does not: with one pane there is nowhere sideways to go, and a screen may not
-    /// advertise a key its model doesn't answer. <see cref="ScreenHintTests"/> pins the pair against
-    /// every screen's real pane count.
-    /// </para>
+    /// The keyboard hints every screen with a list and a checkbox pane shares, kept in one place so a
+    /// screen cannot advertise a key its <see cref="ScreenModel"/> does not offer. It names ←→ as well as
+    /// ⇥ because on a multi-pane screen both change pane; the single-pane form below does not, since
+    /// there is nowhere sideways to go. <see cref="ScreenHintTests"/> pins the pair against every
+    /// screen's real pane count.
     /// </summary>
     internal const string ListHints = "↑↓ select · ←→ ⇥ pane · Space toggle";
 
@@ -85,20 +80,16 @@ internal static class ScreenChrome
     internal const string EditHint = " · ⏎ edit";
 
     /// <summary>
-    /// What a screen adds to its hints when — and only when — a pane offers a way to remove a row. Delete
-    /// is now the <em>only</em> way to run a removal: reaching the drawn row with ↑↓ meant walking the
-    /// cursor past the whole list, which dragged the selection to its last item, so that row is no longer a
-    /// cursor stop at all (<see cref="ScreenModel.Sizes"/>). Delete acts on the row the cursor is already
-    /// on, which is the row the eye is on, and this is where the screen says so.
+    /// What a screen adds to its hints when a pane offers a way to remove a row. Delete is the only way
+    /// to run a removal — the drawn row is not a cursor stop (<see cref="ScreenModel.Sizes"/>) — so it
+    /// acts on the row the cursor is already on, and this is where the screen says so.
     /// </summary>
     internal const string DeleteHint = " · Del remove";
 
     /// <summary>
-    /// What a screen adds to its hints when — and only when — a pane offers a read-only report on the
-    /// selected row. It matters more than <see cref="DeleteHint"/> that this is derived rather than
-    /// written: <c>i</c> is an ordinary letter, so a screen that answered it without saying so would be
-    /// a hidden feature, and one that said so without answering it would look broken on the one pane
-    /// where the key does nothing.
+    /// What a screen adds when a pane offers a read-only report on the selected row. Derived rather than
+    /// written, because <c>i</c> is an ordinary letter: a screen answering it silently is a hidden
+    /// feature, and one claiming it without answering looks broken.
     /// </summary>
     internal const string DetailHint = " · i info";
 
@@ -115,24 +106,17 @@ internal static class ScreenChrome
     internal const string NextFieldHint = " · ⇥ next field";
 
     /// <summary>
-    /// Added to <see cref="EditingHints"/> only while the open field's dropdown actually has entries in
-    /// it — because ↑↓ walk exactly those entries and nothing else. It says <c>pick from list</c> rather
-    /// than the older <c>choose</c> because the list is now on screen: the keys move through what the
-    /// user can see, and put the entry they land on into the field.
-    /// <para>
-    /// It is derived from <see cref="ScreenFieldEdit.VisibleChoices"/>, not from whether the field has
-    /// choices at all, so it disappears the moment a typed value narrows the list to nothing — the
-    /// point at which ↑↓ genuinely stop doing anything (see <see cref="ScreenField.Cycle"/>). A hint
-    /// that stayed up over an empty list would be the same lie the <c>⏎ edit</c> rule already forbids.
-    /// </para>
+    /// Added to <see cref="EditingHints"/> only while the open field's dropdown has entries in it, since
+    /// ↑↓ walk exactly those entries. Derived from <see cref="ScreenFieldEdit.VisibleChoices"/> rather
+    /// than from whether the field has choices at all, so it disappears the moment a typed value narrows
+    /// the list to nothing — the point at which the keys genuinely stop doing anything.
     /// </summary>
     internal const string ChoiceHint = " · ↑↓ pick from list";
 
     /// <summary>
-    /// What the footer's Esc chip does while the screen is navigating. It said <c>Cancel</c> until the
-    /// key stopped cancelling: closing keeps every committed edit, so the footer now agrees with the
-    /// header's <c>Esc close</c> instead of contradicting it in the one place a user looks for the
-    /// consequences of a key. <see cref="ScreenFooterTests"/> pins the two against each other.
+    /// What the footer's Esc chip does while the screen is navigating. Closing keeps every committed
+    /// edit, so it agrees with the header's <c>Esc close</c>; <see cref="ScreenFooterTests"/> pins the
+    /// two against each other.
     /// </summary>
     internal const string CloseAction = "[[Esc]] Close";
 
@@ -163,14 +147,12 @@ internal static class ScreenChrome
     internal const string BindAction = "[[any key]] Bind";
 
     /// <summary>
-    /// The right-hand actions of a footer bar. <paramref name="accent"/> lets a screen with a
-    /// context colour (F5's per-world accent) tint the ⏎ chip; it defaults to the app accent.
+    /// The right-hand actions of a footer bar. <paramref name="accent"/> lets a screen with a context
+    /// colour (F5's per-world accent) tint the ⏎ chip; it defaults to the app accent.
     /// <para>
-    /// <paramref name="focus"/> is read for the same reason <see cref="Hints"/> reads it: while a
-    /// field edit is open, ⏎ commits that field and Esc abandons its buffer — neither closes the
-    /// screen — so an action bar still offering <c>Save</c> and <c>Cancel</c> names two keys that do
-    /// something else at that moment. The footer is the more visible of the two claims, so it has to
-    /// change with the header rather than being left behind.
+    /// <paramref name="focus"/> is read for <see cref="Hints"/>'s reason: while a field edit is open ⏎
+    /// commits that field and Esc abandons its buffer, so a bar still offering <c>Save</c> and
+    /// <c>Cancel</c> would name two keys that do something else.
     /// </para>
     /// </summary>
     internal static string Actions(string? accent = null, ScreenFocus? focus = null)
@@ -206,10 +188,9 @@ internal static class ScreenChrome
         focused ? $"[on {ScreenPalette.CursorBg}]{MarkupText.PadVisible(row, width)}[/]" : row;
 
     /// <summary>
-    /// The cursor band <see cref="Cursor"/> paints, which is what <see cref="Window"/> scrolls to. It is
-    /// found the same way <see cref="Choices"/> finds the block caret, and for the same reason: exactly
-    /// one row of one pane carries it, so a column can locate its own focused row without every renderer
-    /// having to hand back the line number it drew it on.
+    /// The cursor band <see cref="Cursor"/> paints, which is what <see cref="Window"/> scrolls to. Found
+    /// the way <see cref="Choices"/> finds the block caret: exactly one row of one pane carries it, so a
+    /// column can locate its own focused row without every renderer handing back a line number.
     /// </summary>
     private static readonly string CursorMark = $"[on {ScreenPalette.CursorBg}]";
 
@@ -217,18 +198,10 @@ internal static class ScreenChrome
     internal const int ColumnDivider = 2;
 
     /// <summary>
-    /// How wide a two-column screen's list column actually runs, given the width the screen was handed.
-    /// The split used to be a constant on every one of them, which was right at the width they were
-    /// designed at and wrong at every other: at 100 columns the list kept its full share while the
-    /// column beside it — the one carrying the editor, or the binding rows — lost its tail off the
-    /// right-hand edge.
-    /// <para>
-    /// The rule is "<paramref name="desired"/> unless that would starve the other column": the list gets
-    /// what it wants when there is room, gives cells back when there isn't, and never drops below
-    /// <paramref name="minimum"/>, because past that point both columns are unreadable rather than one.
-    /// A caller with no width to spend (the merged <c>Render</c> the unit tests go through) gets the
-    /// desired width unchanged, so the width-agnostic form is exactly what it always was.
-    /// </para>
+    /// How wide a two-column screen's list column runs, given the width the screen was handed:
+    /// <paramref name="desired"/> unless that would starve the column beside it, never below
+    /// <paramref name="minimum"/>, past which both columns are unreadable rather than one. A caller with
+    /// no width to spend gets the desired width unchanged.
     /// </summary>
     /// <param name="width">The whole screen's width, or 0 when the caller has none.</param>
     /// <param name="desired">What the list column takes when the screen can afford it.</param>
@@ -238,15 +211,10 @@ internal static class ScreenChrome
         width <= 0 ? desired : Math.Clamp(width - ColumnDivider - companion, minimum, desired);
 
     /// <summary>
-    /// Drops a block's blank separator rows until it fits in <paramref name="height"/> rows, and hands
-    /// it back. The separators are the first thing a short pane can spare: they carry no content at all,
-    /// and every row they cost at the top is a row the pane loses off the bottom — where the checkboxes,
-    /// the buttons and the rest of the cursor's stops live.
-    /// <para>
-    /// They go from the top down, so the section that compacts is the one already on screen rather than
-    /// the one about to fall off it. A block that already fits, or a caller with no height to fit it
-    /// into, comes back untouched — which is what keeps the wide case looking exactly as it did.
-    /// </para>
+    /// Drops a block's blank separator rows until it fits in <paramref name="height"/> rows. They are
+    /// the first thing a short pane can spare — they carry no content, and every row they cost at the top
+    /// is one the pane loses off the bottom, where the cursor's stops live. They go from the top down, so
+    /// the section that compacts is the one already on screen.
     /// </summary>
     internal static List<string> Compact(List<string> block, int height)
     {
@@ -275,19 +243,12 @@ internal static class ScreenChrome
 
     /// <summary>
     /// Slices a block down to <paramref name="height"/> rows around the row carrying the cursor band, so
-    /// a pane taller than the screen still shows the row the keyboard is on. Without it a cursor can be
-    /// moved onto a row that was never drawn — F5 at 100×24 put its whole CHARACTERS list, and the
-    /// add/duplicate/remove buttons under it, below the fold while ↑↓ walked happily through them.
+    /// a pane taller than the screen still shows the row the keyboard is on — otherwise the cursor walks
+    /// through rows that were never drawn.
     /// <para>
-    /// The window is centred on the focused row rather than scrolled minimally into view, because these
-    /// blocks are rebuilt from scratch on every keystroke and there is no previous offset to scroll from
-    /// — a stateless rule has to be a function of the cursor alone. A block with no cursor in it (the
-    /// keyboard is in another pane) shows its top, which is where its own heading is.
-    /// </para>
-    /// <para>
-    /// The edges say what they are hiding. A row silently missing from a pane is the same failure as a
-    /// cursor stop that was never drawn, one level up: the screen would be showing part of a list and
-    /// claiming it was the list.
+    /// Centred on the focused row rather than scrolled minimally into view: these blocks are rebuilt from
+    /// scratch on every keystroke, so a stateless rule has to be a function of the cursor alone. A block
+    /// with no cursor in it shows its top, where its heading is, and the edges say what they are hiding.
     /// </para>
     /// </summary>
     internal static List<string> Window(List<string> block, int height)
@@ -324,29 +285,20 @@ internal static class ScreenChrome
         $"  [{ScreenPalette.Muted}]{arrow} {count.ToString(CultureInfo.InvariantCulture)} more[/]";
 
     /// <summary>
-    /// Draws a row's editable value: its committed text in a field well when nothing is being typed,
-    /// or — when <paramref name="edit"/> is the open edit for that field — the buffer in that same
-    /// well, a block caret sitting inside it, and the reason the last commit was refused. Every screen
-    /// draws fields, so the affordance lives here rather than being re-invented (and drifting) per
-    /// renderer.
+    /// Draws a row's editable value: its committed text in a field well, or — when
+    /// <paramref name="edit"/> is the open edit for that field — the buffer in that same well with a
+    /// block caret in it and the reason the last commit was refused.
     /// <para>
-    /// The resting well is the whole point of <see cref="ReadOnly"/>'s existence: until it was drawn,
-    /// <c>host  aetherfall.mux</c> and <c>security  TLS on · certs strict</c> were the same row to look
-    /// at, and the only way to find out which one the keyboard could change was to walk the cursor into
-    /// it. A screen may not advertise a key its model doesn't offer; a row may not advertise an editor
-    /// it hasn't got, which is the same rule one level down.
+    /// The resting well is why <see cref="ReadOnly"/> exists: a well means "the keyboard can change this
+    /// here" and its absence means it cannot, so a row may not advertise an editor it has not got.
     /// </para>
     /// <para>
-    /// <paramref name="display"/> is already markup, because a screen decides for itself how a
-    /// committed value reads (a null log directory shows as <c>(default)</c>); the buffer is escaped
-    /// here, since what has been typed is raw text.
-    /// </para>
-    /// <para>
-    /// A <see cref="ScreenFieldEdit.Masked"/> buffer is replaced by <see cref="Mask"/> before any of that
-    /// happens, so a secret has no route into markup at all — not even the character under the caret.
-    /// The mask is per-character rather than fixed-width <em>while typing</em>, because the caret has to
-    /// land where the keys say it does; a resting secret is drawn at a fixed width by its own renderer
-    /// (see <see cref="RestingMask"/>) so a screen nobody is editing doesn't publish its length.
+    /// <paramref name="display"/> is already markup, since a screen decides how a committed value reads;
+    /// the buffer is escaped here, being raw text. A <see cref="ScreenFieldEdit.Masked"/> buffer is
+    /// replaced by <see cref="Mask"/> first, so a secret has no route into markup at all — not even the
+    /// character under the caret. The mask is per-character <em>while typing</em> so the caret lands where
+    /// the keys say; a resting secret is fixed-width (<see cref="RestingMask"/>) so an unedited screen
+    /// does not publish its length.
     /// </para>
     /// </summary>
     internal static string Field(string display, ScreenFieldEdit? edit)
@@ -388,9 +340,8 @@ internal static class ScreenChrome
 
     /// <summary>
     /// An armed key capture: the value is replaced outright by the prompt, in the accent block the caret
-    /// is drawn in, because there is no buffer to show a caret inside — the next keystroke <em>is</em>
-    /// the value. A refused key keeps the capture armed and says why beside it, exactly as a refused
-    /// buffer does, so "that key cannot be bound" and "press another" are one state and not two.
+    /// is drawn in, because there is no buffer to put a caret inside — the next keystroke <em>is</em> the
+    /// value. A refused key keeps the capture armed and says why beside it.
     /// </summary>
     private static string Capture(ScreenFieldEdit open)
     {
@@ -401,18 +352,16 @@ internal static class ScreenChrome
     }
 
     /// <summary>
-    /// The block caret <see cref="Field"/> paints, which is what <see cref="Choices"/> hangs the
-    /// dropdown off. Exactly one field of one row can be open at a time, and only the column that draws
-    /// that field paints this — so finding it is how a column knows the open edit is *its* edit, without
-    /// every renderer having to hand back the line number it drew the value on.
+    /// The block caret <see cref="Field"/> paints, which is what <see cref="Choices"/> hangs the dropdown
+    /// off. One field of one row can be open at a time and only the column drawing it paints this, so
+    /// finding it is how a column knows the open edit is its own.
     /// </summary>
     private static readonly string CaretMark = $"[{ScreenPalette.Ink} on {ScreenPalette.Accent}]";
 
     /// <summary>
-    /// The most candidates a dropdown lists at once. Seventeen colour names is more rows than F2's
-    /// editor pane has to spare beside the pattern, the highlight rows and the three action templates,
-    /// so the list is capped and the caption says what it is capped to (<c>6 of 17</c>) — a list that
-    /// silently showed a third of itself would be worse than no list.
+    /// The most candidates a dropdown lists at once. Seventeen colour names is more rows than F2's editor
+    /// pane can spare, so the list is capped and the caption says what it is capped to (<c>6 of 17</c>) —
+    /// a list silently showing a third of itself would be worse than no list.
     /// </summary>
     internal const int MaxChoiceRows = 6;
 
@@ -423,18 +372,16 @@ internal static class ScreenChrome
     internal const string ClosedChoicesCaption = "these values only";
 
     /// <summary>
-    /// What an open field's dropdown says when the buffer matches none of its entries. It names the
-    /// state as *legal*, because on these fields it is: the spawn windows are defined by what routes to
-    /// them, so a name matching nothing is how the next one is created. An empty list with nothing
-    /// written beside it would read as a refusal.
+    /// What an open field's dropdown says when the buffer matches none of its entries. It names the state
+    /// as legal, because on these fields it is: spawn windows are defined by what routes to them, so a
+    /// name matching nothing is how the next one is created.
     /// </summary>
     internal const string NoMatchOpen = "nothing matches — a new value is allowed";
 
     /// <summary>
-    /// What a closed field's dropdown says instead. It states the fact and stops there: the value is
-    /// refused at ⏎ by the field's own validator, which reports it against the row in
-    /// <see cref="ScreenPalette.Warn"/>, and a second warning drawn before the user has finished typing
-    /// would spend that colour on a value they may still be halfway through.
+    /// What a closed field's dropdown says instead. It states the fact and stops: the value is refused at
+    /// ⏎ by the field's validator, and a second warning before the user has finished typing would spend
+    /// that colour on a value they may be halfway through.
     /// </summary>
     internal const string NoMatchClosed = "nothing matches";
 
@@ -442,24 +389,19 @@ internal static class ScreenChrome
     private const string ChoiceIndent = "  ";
 
     /// <summary>
-    /// Draws an open field's candidate list into <paramref name="column"/>, and hands the column back.
-    /// Every screen calls this once on each block that draws fields; a block that isn't drawing the open
-    /// edit has no caret in it and comes back untouched, so the wiring is one line per column and cannot
-    /// be pointed at the wrong field.
+    /// Draws an open field's candidate list into <paramref name="column"/> and hands the column back. A
+    /// block not drawing the open edit has no caret in it and comes back untouched, so the wiring is one
+    /// line per column and cannot be pointed at the wrong field.
     /// <para>
-    /// The list is an <b>overlay</b>: it replaces the rows next to the field instead of pushing them
-    /// down. Pushing was the obvious shape and is the wrong one here. F5's character form is a grid row
-    /// sized to its own line count, so a list that grew it would resize the whole screen the instant ⏎
-    /// was pressed; F2's editor pane already runs to two dozen rows, so on a short terminal the rows
-    /// pushed off the bottom would include the three checkboxes the cursor can still reach. An overlay
-    /// changes no geometry at all — the rows it covers are visible again the moment the field closes,
-    /// and none of them can be scrolled out of existence in the meantime.
+    /// The list is an <b>overlay</b>, replacing the rows beside the field rather than pushing them down.
+    /// F5's character form is a grid row sized to its own line count, so a list that grew it would resize
+    /// the screen on ⏎; F2's editor pane is long enough that pushing would shove reachable checkboxes off
+    /// a short terminal. An overlay changes no geometry.
     /// </para>
     /// <para>
-    /// It opens downward, and upward when there aren't enough rows below it — F5's log format is the
-    /// second-to-last line of its form, and a list that ran off the end of the block would simply not be
-    /// drawn. The caption keeps its edge against the field either way (<c>▾</c> below, <c>▴</c> above),
-    /// so the block reads as attached to the well rather than as content that happens to be near it.
+    /// It opens downward, and upward when there are not enough rows below — F5's log format sits second
+    /// from the end of its form. The caption keeps its edge against the field either way (<c>▾</c> below,
+    /// <c>▴</c> above), so the block reads as attached to the well.
     /// </para>
     /// </summary>
     /// <param name="column">The block's lines, as the renderer has just built them.</param>
@@ -523,10 +465,9 @@ internal static class ScreenChrome
     }
 
     /// <summary>
-    /// The dropdown's caption and its drawn entries. The entries are the choices the buffer narrows to
-    /// (<see cref="ScreenField.Matching"/>) — the very list ↑↓ walk — windowed to
-    /// <see cref="MaxChoiceRows"/> around the one the buffer names, so the marked entry is always on
-    /// screen however far down a seventeen-colour palette it sits.
+    /// The dropdown's caption and its drawn entries: the choices the buffer narrows to
+    /// (<see cref="ScreenField.Matching"/>), windowed to <see cref="MaxChoiceRows"/> around the one the
+    /// buffer names, so the marked entry is always on screen.
     /// </summary>
     private static (string Caption, List<(string Content, string Background)> Entries) ChoiceContent(
         ScreenFieldEdit open)
@@ -561,10 +502,9 @@ internal static class ScreenChrome
     }
 
     /// <summary>
-    /// One row of the floating block: its own markup, inset from the column's edge, padded to the
-    /// block's shared inner width on a raised background. The block hugs its content rather than
-    /// spanning the pane, because a full-width band is what the pane's own rows look like and the one
-    /// thing this block must not be mistaken for is a row.
+    /// One row of the floating block: its markup, inset from the column's edge, padded to the block's
+    /// inner width on a raised background. It hugs its content rather than spanning the pane, because a
+    /// full-width band is what the pane's own rows look like and this must not be mistaken for one.
     /// </summary>
     private static string MenuLine(string content, string bg, int inner) =>
         $"{ChoiceIndent}[on {bg}] {MarkupText.PadVisible(content, Math.Max(0, inner))} [/]";
@@ -578,14 +518,11 @@ internal static class ScreenChrome
         $"{ChoiceIndent} [on {ScreenPalette.MenuShadow}]{new string(' ', Math.Max(0, inner + 1))}[/]";
 
     /// <summary>
-    /// Draws a value the keyboard cannot change where it is drawn — a world's TLS/certificate line, a
-    /// character's password or session state, a numpad cell mirroring a binding elsewhere. It gets the
-    /// muted ink and, decisively, *no* field well, which is what tells it apart from an editable value
-    /// at rest and without focus. The pair of them is one rule with one implementation: a well means
-    /// "you can change this here", its absence means "you cannot".
+    /// Draws a value the keyboard cannot change where it is drawn. It gets the muted ink and, decisively,
+    /// <em>no</em> field well: a well means "you can change this here", its absence means "you cannot".
     /// <para>
-    /// The rule is scoped to rows that read <c>label   value</c>, which is where the ambiguity lives. A
-    /// checkbox and a radio group already carry an affordance of their own and are left alone.
+    /// Scoped to rows reading <c>label   value</c>, where the ambiguity lives. A checkbox and a radio
+    /// group carry an affordance of their own and are left alone.
     /// </para>
     /// </summary>
     internal static string ReadOnly(string text) => $"[{ScreenPalette.Muted}]{MarkupText.Escape(text)}[/]";
@@ -605,9 +542,7 @@ internal static class ScreenChrome
 
     /// <summary>
     /// A set secret at rest: <see cref="RestingMaskWidth"/> glyphs in the ordinary value ink, so the row
-    /// reads as holding something. It is drawn in a well like any other editable value, because it
-    /// <em>is</em> one — the well is this project's one promise that the keyboard can change a value
-    /// here, and a password that can be typed but is drawn without one would be the same lie in reverse.
+    /// reads as holding something. Drawn in a well like any other editable value, because it is one.
     /// </summary>
     internal static string RestingMask() => $"[{ScreenPalette.Value}]{Mask(RestingMaskWidth)}[/]";
 
@@ -616,16 +551,13 @@ internal static class ScreenChrome
 
     /// <summary>
     /// Spells out the glyphs a list's rows are written in, at the foot of the column that draws them.
-    /// The list screens compress a rule down to single cells — a tick, a set marker, and on F2 a strip
-    /// of action letters — and a compressed value is the one thing that cannot say what its own words
-    /// mean. Nothing on these screens said, anywhere: <c>H</c> could as easily have been "hidden" as
-    /// "highlight".
+    /// These screens compress a rule into single cells, and a compressed value cannot say what its own
+    /// marks mean — <c>H</c> could as easily be "hidden" as "highlight".
     /// <para>
-    /// It goes at the foot of the list, not beside the header: the header names the row's columns
-    /// (<c>on  name / pattern → window</c>) and these are the marks <em>inside</em> them, and the slack
-    /// in a list column is at the bottom — which is exactly the dead space a key is worth spending.
-    /// Entries wrap to <paramref name="width"/> rather than to a fixed count, because the column is a
-    /// function of the screen's width now (see <see cref="SplitWidth"/>).
+    /// At the foot rather than beside the header: the header names the row's columns and these are the
+    /// marks inside them, and the slack in a list column is at the bottom. Entries wrap to
+    /// <paramref name="width"/>, since the column is a function of the screen's width
+    /// (<see cref="SplitWidth"/>).
     /// </para>
     /// </summary>
     /// <param name="label">What the block is called, drawn on its first row only.</param>
@@ -667,16 +599,12 @@ internal static class ScreenChrome
         : $"[{ScreenPalette.Label}]{glyph} {MarkupText.Escape(meaning)}[/]";
 
     /// <summary>
-    /// The one row an <em>empty</em> trigger set gets in a flattened pane. F2, F3, F4 and F6 each draw
-    /// one column of every set's rules, so a set holding none of that kind is drawn nowhere at all — and
-    /// once sets can be created, the very first thing you would look for after making one is the thing
-    /// the screen cannot show you. This says it is there and has nothing in it.
+    /// The one row an <em>empty</em> trigger set gets in a flattened pane. F2, F3, F4 and F6 each draw one
+    /// column of every set's rules, so a set holding none of that kind would be drawn nowhere at all.
     /// <para>
-    /// It is a readout and not a row: the cursor cannot reach it, because it stands for a set rather
-    /// than for an item, and giving it a cursor stop would put a row in the pane that <c>[[- del]]</c>,
-    /// Space and ⏎ would all have to make an exception for. Moving an item into the set — the
-    /// <c>set</c> field on any row (<see cref="ScreenLists.Owner{T}"/>) — is what replaces it with real
-    /// rows.
+    /// A readout and not a row: the cursor cannot reach it, because it stands for a set rather than an
+    /// item, and a cursor stop here would be a row that <c>[[- del]]</c>, Space and ⏎ all had to except.
+    /// Moving an item into the set is what replaces it with real rows.
     /// </para>
     /// </summary>
     /// <param name="set">The set with nothing in it.</param>
@@ -685,19 +613,15 @@ internal static class ScreenChrome
         $"  [{ScreenPalette.Muted}]▪ {MarkupText.Escape(set)} — no {MarkupText.Escape(noun)}[/]";
 
     /// <summary>
-    /// Draws a pane's button rows, appended after its list. The rows come *from* the pane's own
-    /// <see cref="ScreenButton"/>s rather than being written out again per screen, so the label the
-    /// cursor lands on and the command ⏎ runs cannot drift apart — and every screen paints them the
-    /// same, which is the whole reason this lives here rather than in five renderers.
+    /// Draws a pane's button rows, appended after its list. They come from the pane's own
+    /// <see cref="ScreenButton"/>s rather than being written out per screen, so the label the cursor lands
+    /// on and the command ⏎ runs cannot drift apart.
     /// <para>
-    /// The two kinds are drawn differently because they are no longer the same kind of thing. A button
-    /// that <b>builds</b> is a chip in the accent — a place the cursor goes and ⏎ presses, which is what
-    /// brackets mean everywhere else on these screens. A <b>removal</b> is not a cursor stop at all any
-    /// more (<see cref="ScreenModel.Sizes"/> explains why), so drawing it as a chip would be an
-    /// affordance for something the keyboard cannot reach. It is drawn as what it now is: a reading of
-    /// what Delete would take, naming the key and its victim — <c>Del  removes Aetherfall</c>. The row
-    /// still earns its place, because the target is the one thing a destructive key must not leave
-    /// off-screen.
+    /// The two kinds are drawn differently because they are different things. A button that <b>builds</b>
+    /// is a chip in the accent — somewhere the cursor goes and ⏎ presses. A <b>removal</b> is not a cursor
+    /// stop (<see cref="ScreenModel.Sizes"/>), so a chip would be an affordance for something the keyboard
+    /// cannot reach; it is drawn as a reading of what Delete would take — <c>Del  removes Aetherfall</c> —
+    /// because the target is the one thing a destructive key must not leave off-screen.
     /// </para>
     /// </summary>
     /// <param name="buttons">The pane's button rows, in the order the model appends them.</param>
@@ -756,19 +680,17 @@ internal static class ScreenChrome
 
     /// <summary>
     /// Where the cursor is within one of a screen's lists — <c>trigger 1/4</c>, <c>world 2/2</c>. Every
-    /// footer's context line opens with one of these, so the eight screens answer the same question in
-    /// the same words instead of each reporting whatever its author found interesting (F9 used to count
-    /// its own section headers).
+    /// footer's context line opens with one, so the eight screens answer the same question in the same
+    /// words.
     /// </summary>
     internal static string Position(string noun, int index, int count) =>
         $"{noun} {(index + 1).ToString(CultureInfo.InvariantCulture)}"
         + $"/{count.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>
-    /// A footer's context line: a <see cref="Position"/>, then whatever identifies the thing it points
-    /// at (the set a trigger belongs to, the section an option sits under, the name a binding carries).
-    /// Null and empty parts are dropped, so a screen with nothing selected renders an empty context
-    /// rather than a stranded separator.
+    /// A footer's context line: a <see cref="Position"/>, then whatever identifies the thing it points at.
+    /// Null and empty parts are dropped, so a screen with nothing selected renders an empty context rather
+    /// than a stranded separator.
     /// </summary>
     internal static string Context(params string?[] parts)
     {
@@ -793,14 +715,12 @@ internal static class ScreenChrome
     internal static int Rows(int height) => height <= 0 ? 0 : Math.Max(1, height - 2);
 
     /// <summary>
-    /// The frame every two-column settings screen shares: a header band on the first row, an action bar
-    /// on the last, and between them a body of two columns divided by a hairline.
+    /// The frame every two-column settings screen shares: a header band on the first row, an action bar on
+    /// the last, and between them two columns divided by a hairline.
     /// <para>
-    /// The body is <em>sized to its content</em> rather than stretched to fill, which is the single
-    /// change that stops F3, F6 and F4 drawing a thirty-row empty pane under four rows of rules. The
-    /// hairline stops where the columns stop, exactly as F7/F8's options card ends where its options do,
-    /// and the slack below it belongs to the backdrop instead of pretending to be part of a list. A
-    /// caller with no height falls back to the old fill, since there is nothing to size against.
+    /// The body is <em>sized to its content</em> rather than stretched, so a screen with four rules does
+    /// not draw a thirty-row empty pane under them. The hairline stops where the columns stop and the
+    /// slack below belongs to the backdrop. A caller with no height falls back to filling.
     /// </para>
     /// </summary>
     /// <param name="header">The header band.</param>

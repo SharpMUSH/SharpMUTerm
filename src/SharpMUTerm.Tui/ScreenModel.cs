@@ -2,13 +2,8 @@ namespace SharpMUTerm.Tui;
 
 /// <summary>
 /// A checkbox row on a settings screen, bound to the config it shows: how to read the flag, and how to
-/// flip it.
-/// <para>
-/// There is nothing here about putting the old value back, and deliberately so. A flipped checkbox is a
-/// <em>committed</em> edit the moment Space presses it — see <see cref="ScreenEdits"/> for the scope rule
-/// — so nothing ever asks a toggle to undo itself, and a snapshot nothing replayed would be a mechanism
-/// with no driver.
-/// </para>
+/// flip it. Nothing here restores the old value — a flipped checkbox is a <em>committed</em> edit the
+/// moment Space presses it (see <see cref="ScreenEdits"/>), so nothing ever asks a toggle to undo itself.
 /// </summary>
 /// <param name="Get">Reads the flag as the renderer draws it.</param>
 /// <param name="Flip">Inverts the flag.</param>
@@ -30,49 +25,41 @@ internal readonly record struct ScreenToggle(Func<bool> Get, Action Flip)
 /// </summary>
 /// <param name="Undo">
 /// Puts the list back exactly as it was, position included — or null when the press destroyed nothing.
-/// A button that <em>built</em> a row returns null: an addition loses no work by being kept, so it is
-/// never reviewed and never replayed, and an undo action nothing could run would be dead weight
-/// carried by every press. Only the destructive buttons hand one back, which is what makes
-/// <see cref="ScreenEdits"/>' log a log of deletions rather than of everything.
+/// A button that <em>built</em> a row returns null, which is what makes <see cref="ScreenEdits"/>' log a
+/// log of deletions rather than of everything.
 /// </param>
 /// <param name="Select">
-/// The row of the button's own pane the cursor should move to — the row just added, so a new world
-/// opens ready to be named. Null leaves the cursor where it was.
+/// The row of the button's own pane the cursor should move to — the row just added, so a new world opens
+/// ready to be named. Null leaves the cursor where it was.
 /// </param>
 internal readonly record struct ScreenPress(Action? Undo, int? Select = null);
 
 /// <summary>
-/// A command on a settings screen. The building ones are rows the cursor lands on and ⏎ presses —
-/// <c>[+ world]</c>, <c>[⧉ duplicate]</c> — since ⏎ is already "activate the focused row". A
-/// <em>removal</em> is run by Delete on the row it would take, and its own drawn row is not a cursor stop
-/// (see <see cref="ScreenModel.Sizes"/>).
+/// A command on a settings screen. The building ones are rows the cursor lands on and ⏎ presses, since ⏎
+/// is already "activate the focused row". A <em>removal</em> is run by Delete on the row it would take,
+/// and its own drawn row is not a cursor stop (see <see cref="ScreenModel.Sizes"/>).
 /// <para>
-/// <see cref="Run"/> performs the change and *returns* how to undo it, rather than being handed a
-/// snapshot taken beforehand. That is forced by what a removal has to capture: the item <em>and its
-/// index</em>, so the closing review's "put them back" restores a deleted world where it was in the list
-/// rather than on the end — the list's order is what the screen navigates by, and silently reordering it
-/// would be a second, invisible edit. A building press returns no undo at all: an addition destroys
-/// nothing, so nothing reviews or replays it.
+/// <see cref="Run"/> performs the change and <em>returns</em> how to undo it rather than being handed a
+/// snapshot beforehand, because a removal has to capture the item <em>and its index</em> — restoring a
+/// deleted world onto the end of the list would be a second, invisible edit to the order the screen
+/// navigates by.
 /// </para>
 /// </summary>
 /// <param name="Label">What the button is called, for the row the renderer draws.</param>
 /// <param name="Run">Performs the change and returns the undo plus where to leave the cursor.</param>
 /// <param name="Kind">
-/// Whether the button builds or destroys, which is what decides how the row is drawn and whether
-/// Delete runs it. It is carried here rather than inferred from <paramref name="Label"/>, because a
-/// renderer comparing label strings to decide how to paint a row is one rename away from painting a
-/// deletion in the "add" accent.
+/// Whether the button builds or destroys, which decides how the row is drawn and whether Delete runs it.
+/// Carried rather than inferred from <paramref name="Label"/>, because a renderer comparing label strings
+/// is one rename away from painting a deletion in the "add" accent.
 /// </param>
 /// <param name="Target">
-/// The row this button would act on, named on the button's own row so the screen says what is about to
-/// happen. Null for a button that acts on nothing in particular.
+/// The row this button would act on, named on the button's own row. Null for a button that acts on
+/// nothing in particular.
 /// </param>
 /// <param name="Describe">
-/// What this press would destroy, in words, asked <em>before</em> <paramref name="Run"/> — which is the
-/// only moment the answer can still be counted (a world's characters are gone by the time the press
-/// returns). It is what the closing review names, so the question reads <c>Aetherfall and its 2
-/// characters</c> rather than <c>1 deletion</c>; see <see cref="ScreenEditReview"/>. Null on a button
-/// that destroys nothing.
+/// What this press would destroy, in words, asked <em>before</em> <paramref name="Run"/> — the only
+/// moment the answer can still be counted, since a world's characters are gone by the time the press
+/// returns. It is what the closing review names. Null on a button that destroys nothing.
 /// </param>
 internal readonly record struct ScreenButton(
     string Label,
@@ -90,14 +77,11 @@ internal readonly record struct ScreenButton(
     internal const string RemoveKeyLabel = "Del";
 
     /// <summary>
-    /// Appends a new item and leaves the cursor on it — a new row is worth nothing if the next
-    /// keystroke has to go and find it.
+    /// Appends a new item and leaves the cursor on it.
     /// <para>
-    /// <paramref name="offset"/> is how many of the pane's list rows precede <paramref name="list"/>.
-    /// It is zero when the pane <em>is</em> the list (F5's worlds), and non-zero when the pane flattens
-    /// several lists into one (F2/F3/F4/F6 show every set's rules in one column, but a rule is added to
-    /// one particular set), because the cursor is asked for a row of the pane, not an index into the
-    /// list that happens to hold the new item.
+    /// <paramref name="offset"/> is how many of the pane's list rows precede <paramref name="list"/>:
+    /// zero when the pane <em>is</em> the list, non-zero when the pane flattens several lists into one,
+    /// because the cursor is asked for a row of the pane and not an index into the list holding the item.
     /// </para>
     /// </summary>
     internal static ScreenButton Add<T>(
@@ -126,12 +110,11 @@ internal readonly record struct ScreenButton(
     internal const string DetailKeyLabel = "i";
 
     /// <summary>
-    /// Opens a read-only report about the selected row. It is a <see cref="ScreenButton"/> so that the
-    /// row the screen draws and the key that runs it come from one place, exactly as a removal does —
-    /// but it changes nothing, so it returns no undo and moves no cursor, and
-    /// <see cref="SettingsSession"/> runs it <em>outside</em> <see cref="ScreenEdits"/>. Navigation is
-    /// not an edit: routing it through the edit log would persist the configuration and re-periodise
-    /// every running timer every time somebody looked at a world.
+    /// Opens a read-only report about the selected row. A <see cref="ScreenButton"/> so the drawn row and
+    /// the key that runs it come from one place — but it changes nothing, so it returns no undo, moves no
+    /// cursor, and <see cref="SettingsSession"/> runs it <em>outside</em> <see cref="ScreenEdits"/>:
+    /// routing navigation through the edit log would persist the configuration and re-periodise every
+    /// running timer whenever somebody looked at a world.
     /// </summary>
     /// <param name="target">The row this would report on, named on the drawn key-hint row.</param>
     /// <param name="open">Puts the report on the screen.</param>
@@ -151,20 +134,18 @@ internal readonly record struct ScreenButton(
     }
 
     /// <summary>
-    /// Removes the item at <paramref name="index"/>, restoring it *at that index* on undo. The cursor
-    /// stays on the same ordinal, which is now whatever followed the deleted row — the same place the
-    /// eye is. <paramref name="offset"/> means what it does on <see cref="Add"/>.
+    /// Removes the item at <paramref name="index"/>, restoring it <em>at that index</em> on undo. The
+    /// cursor stays on the same ordinal, which is now whatever followed the deleted row.
+    /// <paramref name="offset"/> means what it does on <see cref="Add"/>.
     /// <para>
-    /// It takes no label. A removal is drawn as the key that runs it
-    /// (<see cref="ScreenButton.RemoveKeyLabel"/>) rather than as a chip, because its row is no longer
-    /// somewhere the cursor can go — see <see cref="ScreenModel.Sizes"/> for why, and
-    /// <see cref="ScreenChrome.Buttons"/> for what that row now reads as.
+    /// It takes no label: a removal is drawn as the key that runs it
+    /// (<see cref="ScreenButton.RemoveKeyLabel"/>) rather than as a chip, because its row is not somewhere
+    /// the cursor can go.
     /// </para>
     /// </summary>
     /// <param name="describe">
-    /// What this removal would destroy, in words, for the closing review to name. See
-    /// <see cref="ScreenButton.Describe"/>; it defaults to <paramref name="target"/>, which is the honest
-    /// answer for every row that takes nothing else with it.
+    /// What this removal would destroy, for the closing review to name. Defaults to
+    /// <paramref name="target"/>, the honest answer for a row that takes nothing else with it.
     /// </param>
     internal static ScreenButton Remove<T>(
         IList<T> list, int index, int offset = 0, string? target = null, Func<string>? describe = null)
@@ -218,16 +199,13 @@ internal enum ScreenButtonKind
 }
 
 /// <summary>
-/// One row of a settings screen's navigable shape. A row is a plain stop (neither a checkbox nor
-/// anything to type into), a checkbox, a row of editable fields, a button, or both a checkbox and
-/// fields at once — the keypad's bindings are the last case, where Space enables the macro and ⏎ edits
-/// the command it sends.
+/// One row of a settings screen's navigable shape: a plain stop, a checkbox, a row of editable fields, a
+/// button, or a checkbox and fields at once — the keypad's bindings are the last case, where Space
+/// enables the macro and ⏎ edits the command it sends.
 /// <para>
-/// Fields are an ordered list rather than a single value because a row is a *record*, not a cell: one
-/// world row carries its name, host, port, encoding, and keepalive. ⏎ opens the first, ⇥ steps to the
-/// next, and the renderers draw the open one wherever that field's labelled value already appears. It
-/// also keeps a row's identity stable — giving a row fields never renumbers the rows around it, so a
-/// pane's cursor indices mean the same thing before and after this feature.
+/// Fields are an ordered list rather than a single value because a row is a <em>record</em>: one world row
+/// carries name, host, port, encoding and keepalive. ⏎ opens the first, ⇥ steps to the next. It also keeps
+/// a row's identity stable — giving a row fields never renumbers the rows around it.
 /// </para>
 /// </summary>
 /// <param name="Toggle">The checkbox Space flips, or null when the row has none.</param>
@@ -288,39 +266,31 @@ internal sealed class ScreenModel
 
     /// <summary>
     /// How many rows of each pane the cursor may occupy, in pane order — what
-    /// <see cref="ScreenSelection"/> navigates by. It is <em>not</em> how many rows the pane draws: a
-    /// pane's destructive button is drawn and is not a stop.
+    /// <see cref="ScreenSelection"/> navigates by. <em>Not</em> how many rows the pane draws: a pane's
+    /// destructive button is drawn and is not a stop.
     /// <para>
-    /// That asymmetry is the point, and it is the fix for "only the last world can be deleted". A pane is
-    /// a list followed by its buttons, and reaching a button with ↑↓ means walking the cursor over every
-    /// row of the list on the way — which drags the selection to the last one
-    /// (<see cref="ScreenSelection.Anchor"/>), so a <c>[[- del]]</c> arrived at that way could only ever
-    /// delete the final item. It cannot be fixed by remembering where the cursor has been, because the
-    /// last list row visited on the way to the buttons is *always* the last row of the list; the button
-    /// block structurally cannot know which item was meant.
+    /// That asymmetry is the point. Reaching a button with ↑↓ means walking the cursor over every row of
+    /// the list on the way, which drags the selection to the last one
+    /// (<see cref="ScreenSelection.Anchor"/>) — so a removal arrived at that way could only ever delete
+    /// the final item, and no amount of remembering where the cursor has been can fix it.
     /// </para>
     /// <para>
-    /// So the rule is: <b>an action with no target needs a cursor stop; an action with a target must not
-    /// steal the cursor from the thing it acts on.</b> <c>[[+ world]]</c> stays a stop, because "add" has
-    /// nothing to point at and needs somewhere to be pressed from. A removal has a target — the selected
-    /// row — and is run by Delete on that very row, so its drawn row stops being a place you go and
-    /// becomes a true reading of what Delete would take (<see cref="ScreenChrome.Buttons"/>). Nothing is
-    /// lost: <see cref="ScreenChrome.DeleteHint"/> advertises the key, and it is derived from
-    /// <see cref="HasRemovableRow"/> so it cannot advertise it where there is none.
+    /// The rule: <b>an action with no target needs a cursor stop; an action with a target must not steal
+    /// the cursor from the thing it acts on.</b> <c>[[+ world]]</c> stays a stop; a removal is run by
+    /// Delete on the selected row, and its drawn row becomes a reading of what Delete would take.
+    /// <see cref="ScreenChrome.DeleteHint"/> advertises the key and is derived from
+    /// <see cref="HasRemovableRow"/>, so it cannot advertise it where there is none.
     /// </para>
     /// </summary>
     internal IReadOnlyList<int> Sizes { get; }
 
     /// <summary>
-    /// How many of a pane's rows the cursor may occupy: all of them but the <em>targeted</em> buttons at
-    /// the end. Those are appended last on every screen (a pane reads list → add → duplicate → info →
-    /// remove), so this is a count and not a set of holes — the cursor never has to skip a row in the
-    /// middle, and <see cref="ScreenSelection"/> stays a plain clamp. <c>ScreenModelTests</c> pins the
-    /// count against the drawn rows, and <c>MsspScreenTests.TheInfoRowIsDrawnAndIsNotSomewhereTheCursorCanGo</c>
-    /// pins it for the <see cref="ScreenButtonKind.Detail"/> half.
+    /// How many of a pane's rows the cursor may occupy: all but the <em>targeted</em> buttons at the end.
+    /// Those are appended last on every screen (list → add → duplicate → info → remove), so this is a
+    /// count and not a set of holes and <see cref="ScreenSelection"/> stays a plain clamp.
     /// <para>
-    /// <b>Both non-stop kinds must stay trailing.</b> A <see cref="ScreenButtonKind.Detail"/> row put
-    /// anywhere but among them gives the cursor a hole, and the clamp becomes a skip list.
+    /// <b>Both non-stop kinds must stay trailing.</b> A <see cref="ScreenButtonKind.Detail"/> row anywhere
+    /// but among them gives the cursor a hole, and the clamp becomes a skip list.
     /// </para>
     /// </summary>
     private static int Stops(IReadOnlyList<ScreenRow> rows)
@@ -337,21 +307,17 @@ internal sealed class ScreenModel
 
     /// <summary>
     /// Where each pane is drawn, which is what the arrow keys and ⇥ navigate by. It defaults to
-    /// <see cref="SideBySide"/> — one pane per column, in index order — because that is what every
-    /// screen but F5 actually is: a list beside an editor, or a single card. Under that default
-    /// reading order and index order are the same thing, so ⇥ walks exactly the panes it always did.
+    /// <see cref="SideBySide"/> — one pane per column, in index order — because that is what every screen
+    /// but F5 is, and under that default reading order and index order are the same thing.
     /// <para>
-    /// A screen states its own layout only when the two disagree. F5 is the one that does: its
-    /// security pane is <em>appended</em> (a pane index is a cursor coordinate, so inserting one would
-    /// renumber every stop the screen and its tests navigate by) while being <em>drawn</em> above the
-    /// characters list, in the same column. Left as index order, ⇥ went left-top → right-middle →
-    /// bottom-right and then jumped back up the screen, which is the awkwardness this coordinate
-    /// exists to fix.
+    /// A screen states its own layout only when the two disagree. F5 does: its security pane is
+    /// <em>appended</em> (a pane index is a cursor coordinate, so inserting one would renumber every stop
+    /// the screen and its tests navigate by) while being <em>drawn</em> above the characters list, in the
+    /// same column.
     /// </para>
     /// <para>
-    /// A layout that doesn't name every pane is ignored rather than half-applied: a missing
-    /// coordinate is a pane the arrows could never reach, and silently dropping one stop is worse than
-    /// falling back to a rule that reaches them all.
+    /// A layout not naming every pane is ignored rather than half-applied: a missing coordinate is a pane
+    /// the arrows could never reach.
     /// </para>
     /// </summary>
     internal IReadOnlyList<ScreenPanePlace> Layout
@@ -379,15 +345,13 @@ internal sealed class ScreenModel
     }
 
     /// <summary>
-    /// How many rows of each pane are *list* rows rather than the buttons appended after them. A pane
-    /// is a list followed by its own buttons, and the two mean different things to the cursor: moving
-    /// onto <c>[[+ world]]</c> must not change which world is selected, or the detail column beside it
-    /// would blank the moment the cursor reached for the add button.
-    /// <see cref="ScreenSelection"/> anchors the selection with this.
+    /// How many rows of each pane are <em>list</em> rows rather than the buttons appended after them.
+    /// Moving onto <c>[[+ world]]</c> must not change which world is selected, or the detail column would
+    /// blank the moment the cursor reached for the add button; <see cref="ScreenSelection"/> anchors the
+    /// selection with this.
     /// <para>
-    /// The anchor is <em>not</em> what keeps a removal pointed at the right row — it cannot be, since
-    /// walking down to a button leaves it on the last list row. That is what <see cref="Sizes"/> answers,
-    /// by keeping the cursor out of the removal's row altogether.
+    /// The anchor is <em>not</em> what keeps a removal pointed at the right row — walking down to a button
+    /// leaves it on the last list row. That is what <see cref="Sizes"/> answers.
     /// </para>
     /// </summary>
     internal IReadOnlyList<int> ListSizes

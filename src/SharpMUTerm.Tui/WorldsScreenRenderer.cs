@@ -64,15 +64,10 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
-    /// CHARACTER form draws them in, top to bottom. The name leads, as it does on every list screen.
-    /// <para>
-    /// The password and the connect line are <em>inserted</em> after the name rather than appended past
-    /// the log fields, and the ordinals below them moved to make room. Appending would have left the
-    /// numbering untouched at the cost of ⇥ walking name → on connect → log → log folder and then back
-    /// <em>up</em> the form to the password — the same "three hops forward and one backwards" that
-    /// <see cref="PaneLayout"/> exists to have fixed one level up. Every renderer and every test
-    /// addresses these by name, so the shift is a rename and not a silent renumbering.
-    /// </para>
+    /// CHARACTER form draws them, top to bottom. The name leads, as on every list screen. The password
+    /// and connect line are <em>inserted</em> after it rather than appended, so ⇥ does not walk down the
+    /// form and then back up to reach them; every renderer and test addresses these by name, so the shift
+    /// is a rename rather than a silent renumbering.
     /// </summary>
     internal const int CharacterNameField = 0;
 
@@ -83,14 +78,13 @@ internal static class WorldsScreenRenderer
     internal const int OnConnectField = 3;
 
     /// <summary>
-    /// <see cref="CharacterDefinition.ConnectAtStartup"/>. Inserted here rather than appended for the
-    /// reason above, and here in particular because it belongs with the connection rows it is about: the
-    /// connect line, the on-connect lines and the login readout are all answers to "what happens when
-    /// this character connects", and this one answers "does it, unasked".
+    /// <see cref="CharacterDefinition.ConnectAtStartup"/>, placed with the connection rows it belongs to:
+    /// the connect line, the on-connect lines and the login readout all answer "what happens when this
+    /// character connects", and this one answers "does it, unasked".
     /// <para>
-    /// <b>It stays a field, and that is now load-bearing.</b> A character row draws no checkbox — see
-    /// <see cref="CharacterRow"/> — so a value moved onto the row's toggle is a value with no affordance
-    /// at all. This one has a well, and ⏎ opens it, which is the only reachable way to set it.
+    /// <b>It stays a field, and that is load-bearing.</b> A character row draws no checkbox (see
+    /// <see cref="CharacterRow"/>), so a value moved onto the row's toggle would have no affordance at
+    /// all. This one has a well, and ⏎ opens it.
     /// </para>
     /// </summary>
     internal const int StartupField = 4;
@@ -102,10 +96,8 @@ internal static class WorldsScreenRenderer
     /// <summary>
     /// <see cref="LoggingSettings.RestoreLog"/> — whether this character's panes come back holding their
     /// previous session's content. Appended after the two log rows rather than inserted among them,
-    /// because it is the third answer to "what does this client write down about me" and reads in that
-    /// order: what a transcript is, where it goes, and then whether the panes remember. It is a field
-    /// and not a toggle for the same reason <see cref="StartupField"/> is — a character row draws no
-    /// checkbox, so a value on the row's toggle would have no affordance at all.
+    /// because it is the third answer to "what does this client write down about me". A field and not a
+    /// toggle for <see cref="StartupField"/>'s reason.
     /// </summary>
     internal const int RestoreLogField = 7;
 
@@ -133,17 +125,13 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// Which item of a list a pane's cursor has selected. The cursor also visits the pane's
-    /// <c>[[+ …]]</c> row, which sits past the end of the list, and a cursor parked there must not read
-    /// as "no world selected" — that would blank the detail column and empty the character pane while
-    /// the user was reaching for the add button. A cursor past the end therefore keeps the last item
-    /// selected. A negative cursor still means nothing is selected, which is how a caller says so
-    /// deliberately.
+    /// <c>[[+ …]]</c> row past the end of the list, and a cursor parked there must not read as "nothing
+    /// selected" — that would blank the detail column while the user reached for the add button — so a
+    /// cursor past the end keeps the last item. A negative cursor still means nothing is selected.
     /// <para>
-    /// This clamp is a <em>display</em> rule and never decides what a removal acts on. The live screens
-    /// hand these blocks <see cref="ScreenSelection.SelectionIn"/> — the anchored selection, which never
-    /// runs past its list — and a removal is run by Delete on the selected row, whose own row is not a
-    /// cursor stop at all (see <see cref="ScreenModel.Sizes"/>). It was reading this clamp as the cause of
-    /// "only the last world can be deleted" that pointed one diagnosis at the wrong mechanism.
+    /// A <em>display</em> rule only: it never decides what a removal acts on. The live screens hand these
+    /// blocks <see cref="ScreenSelection.SelectionIn"/>, which never runs past its list, and a removal is
+    /// run by Delete on the selected row.
     /// </para>
     /// </summary>
     private static int Selected(int count, int cursor) => cursor >= count ? count - 1 : cursor;
@@ -231,14 +219,13 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// The screen title on the left, the keyboard hints right-aligned to <paramref name="width"/>. The
-    /// hints are derived from <paramref name="model"/> and <paramref name="focus"/> rather than
-    /// written here, so the header cannot advertise an edit the screen doesn't offer.
+    /// hints are derived from <paramref name="model"/> and <paramref name="focus"/> rather than written
+    /// here, so the header cannot advertise an edit the screen does not offer.
     /// </summary>
     /// <param name="fkey">
-    /// The key that opened the screen, which is the key the header offers to close it with. It is a
-    /// parameter rather than a constant because this screen has two doors: F5, and F9 straight onto the
-    /// selected character's log. A header that always said <c>F5</c> would name a key that, pressed from
-    /// an F9-opened screen, re-opens it somewhere else instead of closing it.
+    /// The key that opened the screen, which is the key the header offers to close it with. A parameter
+    /// because this screen has two doors — F5, and F9 straight onto the selected character's log — and a
+    /// header always saying <c>F5</c> would name a key that re-opens rather than closes.
     /// </param>
     internal static string HeaderLine(
         int width, ScreenModel? model = null, ScreenFocus? focus = null, string fkey = FKey)
@@ -281,14 +268,12 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// The row for <see cref="CharacterDefinition.ConnectAtStartup"/>. Two cells short, because the
-    /// CHARACTER panel is 48 wide and <c>CharField</c> has already spent fourteen of them on the indent
-    /// and the label column — a row that wraps costs the form a line it was never measured for, which is
-    /// how <c>log folder</c> once fell out of the band (see <see cref="StorageNote"/>).
+    /// CHARACTER panel is 48 wide and <c>CharField</c> has spent fourteen on the indent and label column;
+    /// a row that wraps costs the form a line it was never measured for.
     /// <para>
-    /// It says <em>when</em>, and the <c>login</c> row directly under it says <em>what is typed</em>;
-    /// they are adjacent so the difference is read rather than guessed, and neither label contains the
-    /// other's word. <c>at start</c> in particular avoids "auto-": the one thing this must not be called
-    /// is a second kind of login setting.
+    /// It says <em>when</em> and the <c>login</c> row under it says <em>what is typed</em>, adjacent so
+    /// the difference is read rather than guessed. <c>at start</c> avoids "auto-": the one thing this must
+    /// not be called is a second kind of login setting.
     /// </para>
     /// </summary>
     internal const string StartupLabel = "at start";
@@ -356,55 +341,43 @@ internal static class WorldsScreenRenderer
         tint == PaneTint.None ? $"[{Label}]{PaneTint.None}[/]" : $"[{Value}]{tint}[/]";
 
     /// <summary>
-    /// The screen's four navigable panes, in ⇥ order: the WORLDS list (no checkbox on a world's row,
-    /// but ⏎ opens the world's own fields — the ones the detail column lists), the selected world's
-    /// characters (no checkbox on a character's row either — ⏎ edits its name, password, connect line,
-    /// on-connect line, <c>at start</c> and log), the
-    /// <b>trigger sets</b> (Space assigns the selected character to one, ⏎ renames it, and the pane's
-    /// own buttons make and unmake them), and the selected world's two security checkboxes. All but the
-    /// first collapse to empty when there is nothing selected above them, and ⇥ skips empty panes, so
-    /// the cursor never lands somewhere with no rows.
+    /// The screen's four navigable panes, in ⇥ order: the WORLDS list (⏎ opens the world's own fields),
+    /// the selected world's characters (⏎ edits name, password, connect line, on-connect, <c>at start</c>
+    /// and log), the <b>trigger sets</b> (Space assigns the selected character to one, ⏎ renames it, and
+    /// the pane's buttons make and unmake them), and the world's two security checkboxes. All but the
+    /// first collapse to empty when nothing is selected above them, and ⇥ skips empty panes.
     /// <para>
-    /// The trigger-set pane is where sets are <em>managed</em>, not merely assigned — it is the only
-    /// view in the app of sets as objects, because F2, F3, F4 and F6 each flatten one <em>kind</em> of a
-    /// set's contents across all of them and so cannot show a set that holds none of that kind. It still
-    /// needs a selected character, because the other half of every row is that character's opt-in; on a
-    /// configuration with no characters yet there is also nothing a set could apply to.
+    /// The trigger-set pane is where sets are <em>managed</em>, not merely assigned — it is the only view
+    /// of sets as objects, because F2, F3, F4 and F6 each flatten one <em>kind</em> of a set's contents
+    /// and so cannot show a set holding none of that kind. It still needs a selected character, since the
+    /// other half of every row is that character's opt-in.
     /// </para>
     /// <para>
-    /// A world's *typed* values hang off its list row rather than becoming a pane of their own: the
-    /// detail column is a projection of whatever the WORLDS list has selected, so those values already
-    /// belong to that row. Its two booleans cannot — a row carries at most one checkbox, and there are
-    /// two of them — so they are the one thing on this screen that needs a pane, and it is appended
-    /// (see <see cref="SecurityPane"/>) rather than slotted in beside the world it describes.
+    /// A world's typed values hang off its list row rather than forming a pane, because the detail column
+    /// is a projection of whatever WORLDS has selected. Its two booleans cannot — a row carries at most
+    /// one checkbox — so they are appended as <see cref="SecurityPane"/>.
     /// </para>
     /// <para>
-    /// A character's logging is two fields of the character's own row, drawn in the character form. It
-    /// lives here because this is where the character it applies to is: F9 used to edit it on a
-    /// screen of its own that resolved "the active character, or else the first one configured" and
-    /// never said which — so the same screen edited a different character's log depending on what was
-    /// connected. There is no Space-to-start checkbox because a character row draws none at all, and
-    /// <see cref="LogFormat.None"/> already spells "off" as one of the format's own choices — one
-    /// control over one stored value rather than two over one.
+    /// A character's logging is two fields of the character's own row, drawn in the character form, so
+    /// the character it applies to is on screen beside it. There is no Space-to-start checkbox because a
+    /// character row draws none, and <see cref="LogFormat.None"/> already spells "off" as one of the
+    /// format's own choices — one control over one stored value.
     /// </para>
     /// <para>
-    /// Each list pane ends in its own buttons, because a button acts on the list it is drawn under and
-    /// the cursor is already there. A button that would act on nothing is left out rather than drawn
-    /// dead: a world with no characters offers <c>+ add character</c> and nothing else, so ⏎ never
-    /// lands on a row that silently does nothing.
+    /// Each list pane ends in its own buttons, which act on the list they are drawn under. A button that
+    /// would act on nothing is left out rather than drawn dead, so ⏎ never lands on a row that silently
+    /// does nothing.
     /// </para>
     /// </summary>
     /// <param name="selectedSet">
-    /// Which trigger set the third pane has selected — what <c>[[- del]]</c> would remove. It defaults to
-    /// the first, the way every other pane's cursor starts on its first row, so a caller that only wants
-    /// the navigable shape still gets the pane's real buttons.
+    /// Which trigger set the third pane has selected — what <c>[[- del]]</c> would remove. Defaults to the
+    /// first, so a caller wanting only the navigable shape still gets the pane's real buttons.
     /// </param>
     /// <param name="info">
     /// Opens the read-only MSSP report for the world at the given index, or null when this projection has
-    /// nowhere to open one — which is every caller but the live app: the renderer is pure and a screen is
-    /// not something a markup block can put on the screen by itself. Null means the WORLDS pane grows no
-    /// <c>i</c> row, so the header hint (derived from <see cref="ScreenModel.HasDetailRow"/>) does not
-    /// advertise a key that would do nothing.
+    /// nowhere to open one — every caller but the live app, since the renderer is pure. Null means the
+    /// WORLDS pane grows no <c>i</c> row, so the header hint does not advertise a key that would do
+    /// nothing.
     /// </param>
     internal static ScreenModel Model(
         IReadOnlyList<WorldDefinition> worlds,
@@ -484,21 +457,17 @@ internal static class WorldsScreenRenderer
     }
 
     /// <summary>
-    /// Where the four panes actually sit, which is not the order they are numbered in. The WORLDS list
-    /// is the left column on its own; the detail column beside it runs security → characters →
-    /// trigger sets down the screen, with the sets drawn in the editing band across the bottom.
+    /// Where the four panes sit, which is not the order they are numbered in: WORLDS is the left column
+    /// alone, and the detail column beside it runs security → characters → trigger sets down the screen.
     /// <para>
-    /// The mismatch is deliberate and predates this: <see cref="SecurityPane"/> is <em>appended</em>,
-    /// because a pane index is a cursor coordinate and slotting one in beside the world it describes
-    /// would renumber every stop the screen and its tests navigate by. Numbering and drawing therefore
-    /// disagree, and until the panes said where they were, ⇥ believed the numbering: it went WORLDS →
-    /// CHARACTERS → TRIGGER SETS and then jumped back <em>up</em> the screen to the security
-    /// checkboxes. Three hops forward and one backwards is what "the tabbing feels awkward" was.
+    /// The mismatch is deliberate. <see cref="SecurityPane"/> is <em>appended</em>, because a pane index
+    /// is a cursor coordinate and slotting one in beside the world it describes would renumber every stop
+    /// the screen and its tests navigate by. ⇥ therefore follows this layout and not the numbering, or it
+    /// would run down the screen and jump back up to the security checkboxes.
     /// </para>
     /// <para>
     /// Stacking the three detail panes in one column is also what lets ↓ run from the TLS checkbox
-    /// straight through the characters list and on into the trigger sets, which is how the character's
-    /// own row is now arrived at rather than hunted for.
+    /// straight through the characters list and into the trigger sets.
     /// </para>
     /// </summary>
     private static readonly ScreenPanePlace[] PaneLayout =
@@ -527,15 +496,14 @@ internal static class WorldsScreenRenderer
         });
 
     /// <summary>
-    /// Renames a set <em>and every reference to it</em>. This is the one rename on these screens that
-    /// reaches outside the object it is on: a character selects automation by name, so a set renamed on
-    /// its own would leave every character that used it pointing at a set that no longer exists — the
-    /// automation would simply stop, silently, at the next connect. Each reference keeps its position in
-    /// the character's list, because that order is what decides which set wins a conflict.
+    /// Renames a set <em>and every reference to it</em> — the one rename on these screens that reaches
+    /// outside the object it is on. A character selects automation by name, so a set renamed alone would
+    /// leave every character using it pointing at nothing and the automation would stop silently at the
+    /// next connect. Each reference keeps its position, because that order decides which set wins a
+    /// conflict.
     /// <para>
-    /// The references are found by the <em>old</em> name before anything is written, and undo comes for
-    /// free: <see cref="ScreenField.Name"/>'s snapshot replays this same setter with the old name, which
-    /// walks the references back the way it walked them here.
+    /// References are found by the <em>old</em> name before anything is written, which is also what makes
+    /// undo free: <see cref="ScreenField.Name"/>'s snapshot replays this setter with the old name.
     /// </para>
     /// </summary>
     private static void RenameSet(IReadOnlyList<WorldDefinition> worlds, TriggerSet set, string name)
@@ -546,11 +514,9 @@ internal static class WorldsScreenRenderer
     }
 
     /// <summary>
-    /// The trigger-set list's buttons — the only place in the app that makes or unmakes a set. They live
-    /// here because this pane is the only one that shows sets as things in their own right rather than
-    /// as a column of somebody's rules: F2, F3, F4 and F6 each flatten one <em>kind</em> of the set's
-    /// contents across every set, so a set holding none of that kind is invisible on all four, and a set
-    /// you have just made holds nothing at all.
+    /// The trigger-set list's buttons — the only place in the app that makes or unmakes a set, because
+    /// this pane is the only one showing sets as things in their own right rather than as a column of
+    /// somebody's rules.
     /// <para>
     /// A new set is empty and named apart from its neighbours, because its name is a key rather than a
     /// label (<see cref="ScreenField.UniqueName"/>) and two called <c>New Set</c> could not both be
@@ -583,19 +549,13 @@ internal static class WorldsScreenRenderer
     }
 
     /// <summary>
-    /// Deleting a set, which is the destructive edit on these screens with the longest reach: the set
-    /// goes, and so does every character's opt-in to it — a character left holding the name of a set
-    /// that no longer exists would show an assignment that resolves to nothing.
+    /// Deleting a set: the set goes and so does every character's opt-in to it, since a character holding
+    /// the name of a set that no longer exists would show an assignment resolving to nothing.
     /// <para>
-    /// It is a hand-built button rather than <see cref="ScreenButton.Remove{T}"/> because its undo is
-    /// two restorations, not one: the set back at its index, and each stripped reference back at
-    /// <em>its</em> index inside the character that held it. Restoring the set alone would be the
-    /// quieter half of a change nobody agreed to — and the closing review offers exactly that undo, so
-    /// this is the half of it that has to be complete.
-    /// </para>
-    /// <para>
-    /// It is also why the review's question names more than a set's name: what the deletion costs is the
-    /// rules inside it and the characters that used it, and neither is visible once it is gone.
+    /// Hand-built rather than <see cref="ScreenButton.Remove{T}"/> because its undo is two restorations,
+    /// not one: the set back at its index, and each stripped reference back at <em>its</em> index inside
+    /// the character that held it. The closing review offers exactly that undo, so this half has to be
+    /// complete — and it is why the review's question names more than the set's name.
     /// </para>
     /// </summary>
     private static ScreenButton RemoveSet(
@@ -659,16 +619,14 @@ internal static class WorldsScreenRenderer
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
 
     /// <summary>
-    /// The selected world's two security booleans, in the order the WORLD block draws them. They are
-    /// checkboxes rather than one typed value because that is what they are — two independent flags,
-    /// which no single field could offer without inventing a vocabulary for the four combinations of
-    /// them — and they are two rows because a <see cref="ScreenRow"/> carries at most one checkbox.
+    /// The selected world's two security booleans, in the order the WORLD block draws them. Two
+    /// checkboxes rather than one typed value because they are two independent flags, and two rows
+    /// because a <see cref="ScreenRow"/> carries at most one checkbox.
     /// <para>
-    /// Certificate validation is a plain <c>bool</c> here and is deliberately still bound in the
-    /// direction config stores it: the checkbox reads <c>accept invalid certificates</c>, so the
-    /// dangerous state is the *checked* one and the screen can paint it as such (see
-    /// <see cref="CertificateRow"/>). A checkbox showing the inverse of its stored value would read
-    /// more comfortably and would be one negation away from silently turning verification off.
+    /// Certificate validation is bound in the direction config stores it: the checkbox reads
+    /// <c>accept invalid certificates</c>, so the dangerous state is the <em>checked</em> one and the
+    /// screen can paint it as such. A checkbox showing the inverse would read more comfortably and would
+    /// be one negation away from silently turning verification off.
     /// </para>
     /// </summary>
     private static ScreenRow[] SecurityRows(WorldDefinition world) => new[]
@@ -679,16 +637,15 @@ internal static class WorldsScreenRenderer
     };
 
     /// <summary>
-    /// The WORLDS pane's buttons, in the order they are drawn and — decisively — in the order
-    /// <see cref="ScreenModel.Sizes"/> needs them: the cursor stop first, then the two targeted key
-    /// hints. <c>[+ world]</c> has no target and so needs somewhere to be pressed from; <c>i</c> and
-    /// <c>Del</c> both act on the selected row and must not steal the cursor from it, so they trail and
-    /// are trimmed out of the pane's stop count. Put either of them above <c>[+ world]</c> and the
+    /// The WORLDS pane's buttons, in the order <see cref="ScreenModel.Sizes"/> needs them: the cursor
+    /// stop first, then the two targeted key hints. <c>[+ world]</c> needs somewhere to be pressed from;
+    /// <c>i</c> and <c>Del</c> act on the selected row and must not steal the cursor from it, so they
+    /// trail and are trimmed out of the pane's stop count. Put either above <c>[+ world]</c> and the
     /// cursor gains a hole.
     /// <para>
-    /// Both targeted keys are offered only when there is a world under the cursor for them to act on. A
-    /// brand-new world is a blank template, because a world's whole identity is its host and a
-    /// "helpfully" prefilled one would be a guess the user then has to notice and undo.
+    /// Both targeted keys are offered only with a world under the cursor. A new world is a blank
+    /// template, since a world's identity is its host and a prefilled one would be a guess the user has
+    /// to notice and undo.
     /// </para>
     /// </summary>
     private static List<ScreenRow> WorldButtons(
@@ -840,12 +797,10 @@ internal static class WorldsScreenRenderer
     }
 
     /// <param name="height">
-    /// How many rows the column has, or 0 when the caller has none. This is the one pane on these
-    /// screens that draws rows belonging to three of its four cursor panes, so on a short terminal it
-    /// has to give its blanks up and then scroll — see <see cref="ScreenChrome.Compact"/> and
-    /// <see cref="ScreenChrome.Window"/>. At 100×24 it ran to nineteen rows in twelve, and the twelve
-    /// it drew stopped just above the CHARACTERS list, so every character row and every button under
-    /// them was a cursor stop that had never been drawn.
+    /// How many rows the column has, or 0 when the caller has none. This is the one pane drawing rows
+    /// belonging to three of its four cursor panes, so on a short terminal it gives up its blanks and then
+    /// scrolls — see <see cref="ScreenChrome.Compact"/> and <see cref="ScreenChrome.Window"/>. Without
+    /// that, character rows and the buttons under them are cursor stops that were never drawn.
     /// </param>
     internal static List<string> DetailColumn(
         IReadOnlyList<WorldDefinition> worlds,
@@ -866,14 +821,9 @@ internal static class WorldsScreenRenderer
         var world = worlds[selectedWorld];
 
         // The world's own fields are the WORLDS-list row's fields, in this order — the detail column is
-        // where they are displayed, so it is where an open edit draws its caret.
-        //
-        // There is no title strip above them any more. It read
-        // `Aetherfall  aetherfall.mux:4201  TLS on · UTF-8` — and every token of it was repeated in the
-        // five rows immediately underneath, twice over for the address, which the WORLDS list beside it
-        // also carries. A summary directly above the thing it summarises is not a summary; it is the
-        // same row drawn again in a shape you cannot edit, and the two cells it cost were the two rows
-        // the CHARACTERS list needed at 100×24.
+        // where they are displayed, so it is where an open edit draws its caret. No title strip above
+        // them: every token of one would be repeated in the rows underneath and in the WORLDS list beside
+        // it, and the rows it cost are rows the CHARACTERS list needs at 100x24.
         var right = new List<string>
         {
             $"[{accent}]├ WORLD[/]",
@@ -934,16 +884,12 @@ internal static class WorldsScreenRenderer
     }
 
     /// <summary>
-    /// The world's security block: two checkbox rows where a read-only <c>security  TLS on · certs
-    /// strict</c> summary used to sit. The summary said everything and offered nothing — the two flags
-    /// behind it had no UI at all — so it is replaced by the rows themselves rather than kept above
-    /// them. The column's title strip used to repeat the answer a third time (<c>TLS on</c>) and has
-    /// since gone with the rest of its duplications; the checkbox <em>is</em> the one-glance answer, and
-    /// it is the only one that can also be pressed.
+    /// The world's security block: two checkbox rows, in place of a read-only summary of the same two
+    /// flags. The checkbox <em>is</em> the one-glance answer and it is the only one that can also be
+    /// pressed.
     /// <para>
-    /// They keep the <c>security</c> label column so the block still reads as one setting with two
-    /// switches, and so the checkboxes line up under the field wells above them rather than starting at
-    /// the margin.
+    /// They keep the <c>security</c> label column so the block reads as one setting with two switches, and
+    /// so the checkboxes line up under the field wells above them rather than at the margin.
     /// </para>
     /// </summary>
     private static List<string> SecurityColumn(WorldDefinition world, ScreenFocus cursor) => new()
@@ -957,15 +903,14 @@ internal static class WorldsScreenRenderer
     };
 
     /// <summary>
-    /// The certificate checkbox. It is the one row on these screens that can switch off a check the user
-    /// is otherwise entitled to assume is running, so — unlike the encoding beside it — it does not
-    /// stay quiet about it: checked *and* encrypting, it is drawn in <see cref="ScreenPalette.Warn"/>
-    /// with the same <c>▲</c> a refused value gets, and says what the state actually costs rather than
-    /// restating its own label.
+    /// The certificate checkbox — the one row on these screens that can switch off a check the user is
+    /// otherwise entitled to assume is running. Checked <em>and</em> encrypting, it is drawn in
+    /// <see cref="ScreenPalette.Warn"/> with the <c>▲</c> a refused value gets, and says what the state
+    /// costs rather than restating its label.
     /// <para>
-    /// With TLS off it is drawn plainly whatever it holds, and says so: nothing is being validated
-    /// either way, and a warning that fires on a connection carrying no certificates would train the
-    /// eye to ignore the one that matters.
+    /// With TLS off it is drawn plainly whatever it holds: nothing is being validated either way, and a
+    /// warning firing on a connection carrying no certificates would train the eye to ignore the one that
+    /// matters.
     /// </para>
     /// </summary>
     private static string CertificateRow(WorldDefinition world)
@@ -994,49 +939,30 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// The character form — labels left-aligned with their values, one field per row. The editable ones
-    /// are the character row's own fields (name, password, connect line, on-connect, <c>at start</c>,
-    /// the two log values, then <c>restore</c>) and are the only eight drawn in a field well. The other
-    /// two deliberately are not: <c>login</c> is <em>derived</em> from the fields above it and there is
-    /// nothing there to set, and the session line is a report of what the connection is doing rather
-    /// than a setting.
+    /// are the character row's own fields (name, password, connect line, on-connect, <c>at start</c>, the
+    /// two log values, then <c>restore</c>) and are the only eight drawn in a field well. <c>login</c> is
+    /// <em>derived</em> from the fields above it and the session line is a report, so neither gets one.
     /// <para>
     /// <b>A row here draws no checkbox at all</b> (<see cref="CharacterRow"/>), so every settable thing
-    /// about a character is a field on this form and there is nothing Space can reach. That used not to
-    /// be true in the model — the row bound a toggle over <c>autoLogin</c> which the renderer never drew
-    /// — and the defect it caused is the one this whole change is about: the form said <c>auto-login
-    /// no</c> with no well beside it, correctly meaning "not editable here", and there was no "here" to
-    /// go to. A saved password sat inert behind a control that did not exist. The toggle is gone with the
-    /// setting; do not put another one on this row without also drawing it.
+    /// about a character is a field on this form and there is nothing Space can reach. Do not bind a
+    /// toggle on this row without also drawing it: the value would be unreachable behind a control that
+    /// does not exist.
     /// </para>
     /// <para>
-    /// <c>at start</c> is therefore a field and must stay one. A closed two-value choice is the
-    /// next-nearest control the screen already knows, and it lands the setting beside the rows it has to
-    /// be told apart from. It is drawn directly above <c>login</c> on purpose: <c>at start</c> decides
-    /// whether a connection is opened at launch, <c>login</c> reports what gets typed once one exists,
-    /// and neither implies the other.
+    /// <c>at start</c> is therefore a field and must stay one, drawn directly above <c>login</c>: it
+    /// decides whether a connection is opened at launch, <c>login</c> reports what gets typed once one
+    /// exists, and neither implies the other.
     /// </para>
     /// <para>
-    /// The <b>password</b> was a seventh readout until it had somewhere to go. It was drawn without a
-    /// well and labelled <c>keychain</c> — an affordance-free row advertising a credential store that
-    /// does not exist anywhere in this codebase. It is now a real field, masked
-    /// (<see cref="ScreenChrome.RestingMask"/>), and its note says what is actually true: the value is
-    /// written to <c>secrets.json</c> in plaintext, and <em>not</em> into <c>config.json</c> (see
-    /// <see cref="StorageNote"/>). The mask is about shoulders and screenshots, not about storage, and the
-    /// note is what stops it being read as a claim about storage.
+    /// The <b>password</b> is masked (<see cref="ScreenChrome.RestingMask"/>) and its note says where the
+    /// value goes (<see cref="StorageNote"/>). The mask is about shoulders and screenshots, not storage,
+    /// and the note is what stops it being read as a claim about storage.
     /// </para>
     /// <para>
-    /// The <b>connect line</b> is drawn here for the first time, because it is only now a thing worth
-    /// looking at: it is a template (<see cref="ConnectStringTemplate"/>), it holds the two tokens by
-    /// default, and a user who can see it can move their password out of it. While it was an
-    /// interpolated string built in C#, the screen had nothing to show and no way to let anyone edit it,
-    /// which is exactly why the plaintext-in-the-connect-string workaround was the only option on offer.
-    /// </para>
-    /// <para>
-    /// The log rows are here, under a heading that names the character, because logging <em>is</em> per
-    /// character: <c>LoggingSettings</c> hangs off <see cref="CharacterDefinition"/>. On its own screen
-    /// it had to guess whose settings to show and said nothing about the answer; here the question
-    /// cannot come up, and the row says <c>this character only</c> anyway for the reader arriving from
-    /// the F9 it used to live on.
+    /// The log rows are here, under a heading naming the character, because logging <em>is</em> per
+    /// character — <c>LoggingSettings</c> hangs off <see cref="CharacterDefinition"/> — so a screen of
+    /// its own would have to guess whose settings it was showing. The row says <c>this character only</c>
+    /// for the reader arriving from F9.
     /// </para>
     /// </summary>
     internal static List<string> FormColumn(
@@ -1135,37 +1061,24 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// What the password row says about where the value goes: into <c>secrets.json</c>, as plaintext.
-    /// <see cref="CharacterDefinition.Password"/> is saved — just not into <c>config.json</c>, which carries
-    /// only a meaningless GUID (<see cref="CharacterDefinition.PasswordRef"/>). This row is the only place a
-    /// user could learn any of that.
+    /// <see cref="CharacterDefinition.Password"/> is saved — just not into <c>config.json</c>, which
+    /// carries only a meaningless GUID (<see cref="CharacterDefinition.PasswordRef"/>). This row is the
+    /// only place a user could learn any of that.
     /// <para>
-    /// It has said four different things, and the sequence is worth keeping legible because each was true of
-    /// the design it shipped with. It said <c>keychain</c> — a credential store that exists nowhere in this
-    /// codebase, which is the exact class of claim these screens' tests are written to prevent. It said
-    /// <c>this session only — never saved</c>, honest while the field was <c>[JsonIgnore]</c> and a lie the
-    /// moment passwords were persisted. It briefly said <c>saved in config.json, plain text</c>, which was
-    /// honest about a design that put the secret in the file people paste. It now names the file the secret
-    /// is actually in.
+    /// <b>Plainly, not glossed.</b> "Encrypted" would be false, "stored securely" would gloss a plaintext
+    /// file, and saying only <c>saved</c> would let a reader supply the reassuring half themselves. Naming
+    /// the file is what makes the note actionable — someone excluding credentials from a backup knows what
+    /// to open. The owner-only mode and the safety of sharing <c>config.json</c> are in
+    /// <c>docs/design/README.md</c> and <c>--help</c>; neither is something a reader of this row must act
+    /// on.
     /// </para>
     /// <para>
-    /// <b>Plainly, not glossed.</b> "Encrypted" would be false, "stored securely" would be a gloss over a
-    /// plaintext file, and saying only <c>saved</c> would let a reader supply the reassuring half themselves.
-    /// Naming the file is what makes the note actionable — a user who wants to look after their credentials,
-    /// exclude them from a backup or check what is in them now knows what to open. The two things it does not
-    /// have room for are the owner-only mode and the fact that <c>config.json</c> is consequently safe to
-    /// share; both are in <c>docs/design/README.md</c> and in <c>--help</c>, and neither is something a reader
-    /// of this row has to act on.
-    /// </para>
-    /// <para>
-    /// It takes a row of its own, with a blank label, the way the certificate checkbox hangs off the
-    /// <c>security</c> row above it. Beside the value it would have had to share a 48-cell panel
-    /// (<see cref="WorldsScreenView"/>) with a field whose drawn width is the buffer's own — so it wrapped
-    /// the moment a password was set, and a wrapped row costs the form a line it was not measured for and
-    /// pushed <c>log folder</c> out of the band. On its own row it cannot collide with a value of any
-    /// length, and it is drawn while the field is open as well as at rest, which is when it is most worth
-    /// reading. <c>CharField</c> spends 14 of the panel's 47 usable cells on the indent and the label
-    /// column, so this string has 33 to fit in and
-    /// <c>ScreenPasswordFieldTests.EveryFormRowFitsThePanel…</c> is what stops the next edit forgetting it.
+    /// It takes a row of its own with a blank label, the way the certificate checkbox hangs off the
+    /// <c>security</c> row. Beside the value it would share a 48-cell panel with a field whose drawn width
+    /// is the buffer's own, so it would wrap as soon as a password was set — and a wrapped row costs the
+    /// form a line it was not measured for. <c>CharField</c> spends 14 of the panel's 47 usable cells on
+    /// the indent and label column, leaving this string 33;
+    /// <c>ScreenPasswordFieldTests.EveryFormRowFitsThePanel…</c> is the pin.
     /// </para>
     /// </summary>
     internal const string StorageNote = "saved in secrets.json, plaintext";
@@ -1178,23 +1091,18 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// The one line on this screen that says how to get into it. The CHARACTER form draws four field
-    /// wells — the affordance these screens use to mean "the keyboard can change this here" — but the
-    /// cursor stop that opens them is the character's row in the CHARACTERS list, a column and a band
-    /// away. So the wells were honest about being editable and silent about being editable
-    /// <em>from somewhere else</em>, and the way in was reachable, correct and unguessable: the row you
-    /// arrive on by ⇥ is a bare selector with no well of its own, which by this project's own rule reads
-    /// as "nothing to type into here".
+    /// wells — this project's affordance for "the keyboard can change this here" — but the cursor stop
+    /// that opens them is the character's row in the CHARACTERS list, a column and a band away, and that
+    /// row is a bare selector with no well of its own.
     /// <para>
-    /// It is derived from the cursor rather than written once, so it names the key at the moment the key
-    /// would work: <c>⏎ opens these</c> while the cursor is on that character's row, and where to go
-    /// otherwise. Mid-edit it says nothing at all — the header hints have already swapped wholesale to
-    /// <c>⏎ commit · Esc revert</c>, and a second, staler claim beside them would be the disagreement
-    /// those hints exist to prevent.
+    /// Derived from the cursor rather than written once, so it names the key at the moment the key works:
+    /// <c>⏎ opens these</c> while the cursor is on that character's row, and where to go otherwise.
+    /// Mid-edit it says nothing — the header hints have already swapped to <c>⏎ commit · Esc revert</c>,
+    /// and a second, staler claim beside them is the disagreement those hints exist to prevent.
     /// </para>
     /// <para>
     /// It takes the blank row under the heading rather than sitting beside it, so it costs no row and
-    /// cannot be pushed off the form's 48-cell column by a long character name — the heading already
-    /// spends that width on the name itself. It still reads as a separator when it is empty.
+    /// cannot be pushed off the 48-cell column by a long character name.
     /// </para>
     /// </summary>
     private static string FormDoor(ScreenFocus cursor, int selectedCharacter)
@@ -1303,18 +1211,12 @@ internal static class WorldsScreenRenderer
         sets.Count == 0 ? 0 : sets.Max(s => VisibleLength(part(s)));
 
     /// <summary>
-    /// One row of the CHARACTERS list: which character, and nothing else. It is a <em>selector</em> —
-    /// the row you move the cursor onto to bring a character up in the CHARACTER form below — and it
-    /// used to be a four-column table (<c>name  state  login  trigger sets</c>) whose other three
-    /// columns were all drawn again, on the same screen, at the same time: <c>session</c> and
-    /// <c>login</c> are rows of the form directly underneath, and the sets are the pane beside it,
-    /// with checkboxes, descriptions and counts. A list that restates the detail pane is a list you have
-    /// to read to discover it says nothing new — and its column header cost a row that the list itself
-    /// needed on a short screen.
-    /// <para>
-    /// So: the list says which characters there are and which one is selected, and the form owns
-    /// everything about the one that is.
-    /// </para>
+    /// One row of the CHARACTERS list: which character, and nothing else. It is a <em>selector</em> — the
+    /// row you move the cursor onto to bring a character up in the CHARACTER form below — so it carries no
+    /// state, login or trigger-set columns: all three are drawn on the same screen at the same time, by
+    /// the form underneath and the pane beside it. A list restating the detail pane is one you have to
+    /// read to discover it says nothing new, and its header would cost a row the list needs on a short
+    /// screen.
     /// </summary>
     private static string CharacterRow(CharacterDefinition character, bool selected)
     {
@@ -1340,20 +1242,13 @@ internal static class WorldsScreenRenderer
 
     /// <summary>
     /// The <c>login</c> cell: what this character will actually type when it connects, read off
-    /// <see cref="CharacterDefinition.Login"/> rather than off a setting.
-    /// <para>
-    /// <b>This row is the whole reason the screen changed.</b> It replaced an <c>auto-login</c> readout
-    /// that said <c>yes</c> or <c>no</c> about a stored boolean — and a character could sit there with a
-    /// saved password, that flag at its default, and a row cheerfully reading <c>no</c> that never
-    /// explained it was the reason the password did nothing. Two of this repo's own characters were in
-    /// exactly that state. The flag is gone; this row reports the derived answer, so there is no longer a
-    /// setting the screen can agree with while the client disagrees.
-    /// </para>
+    /// <see cref="CharacterDefinition.Login"/> rather than off a setting — so there is no stored flag the
+    /// screen can agree with while the client disagrees.
     /// <para>
     /// <see cref="LoginPlan.PasswordUnused"/> is drawn in <see cref="ScreenPalette.Warn"/>, the ink the
-    /// only other misconfiguration on this screen uses (a world trusting invalid certificates). It is the
-    /// one state here where the user has done something that cannot work: the password field above is
-    /// filled in and the connect line beside it has nowhere to put it.
+    /// only other misconfiguration on this screen uses. It is the one state where the user has done
+    /// something that cannot work: the password field above is filled in and the connect line beside it
+    /// has nowhere to put it.
     /// </para>
     /// </summary>
     internal static string LoginDetail(CharacterDefinition character) => character.Login() switch

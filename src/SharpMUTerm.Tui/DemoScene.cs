@@ -34,6 +34,14 @@ internal static class DemoScene
     /// </summary>
     public static string ChatWindowId => Workspace.SpawnWindowId(ActiveSessionKey, "Chat");
 
+    /// <summary>
+    /// A second routed window, opened only by the <c>tabs</c> view. It is deliberately <em>not</em> in
+    /// <see cref="BuildLastSession"/>: a third window there would put a third row on every frame's rail
+    /// and a second tab in every frame's main pane, and the whole gallery would move to answer one
+    /// view's question.
+    /// </summary>
+    public static string ScenesWindowId => Workspace.SpawnWindowId(ActiveSessionKey, "Scenes");
+
     public static AppConfiguration Build()
     {
         var config = new AppConfiguration();
