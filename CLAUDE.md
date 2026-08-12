@@ -372,6 +372,73 @@ fallbacks) for inline images/maps.
   and never add a "probably a URL" fallback for an untagged payload. The window id is what stops a
   link clicked in a background pane sending to whichever character is focused.
 
+- **No colour this client paints is left below a legibility floor, and the floor is applied where the
+  colour meets the plane it lands on** (`Contrast`, Core; `ChromeInk` + `WorkspacePalette.ReadingPlane`,
+  Tui; F7 ▸ `keep text legible`, default on). The reported defect — "Freeze being purple against a blue
+  background" — was one cell of a grid: the bar took its accent from the theme's index 5 and painted it
+  on the pane, and `#800080` on a `#36363d` focused pane is **1.27:1**. Measured across the grid, **six of
+  the F2 picker's sixteen names fail 3:1 on the dark theme, nine fail on the light one, and only `grey`
+  clears both** — which is the finding the whole design turns on: *a palette of fixed hexes cannot serve
+  two themes*, so the resolution has to happen at the moment of painting rather than the moment of
+  picking.
+  - **`Contrast.Legible(fg, plane)` moves a foreground the smallest distance that clears the floor and
+    returns anything already legible byte-identical.** Direction is the **plane's**, not the colour's — a
+    dark plane lifts, a light plane darkens — which is what lets one function serve all three themes; the
+    pivot is relative luminance against 0.18, because `#808080` looks like half way written down and is
+    0.216. Hue survives while there is headroom and then **desaturates**, and it has to: pure `#0000ff`
+    has a relative luminance of 0.0722 and tops out at 1.88:1 on a dark pane *at full blue*, so a rule
+    holding hue absolutely would leave the commonest unreadable colour in MU\* output unreadable.
+  - **The floor is 3.0:1 and deliberately not 4.5.** A game's own de-emphasis is spoken in exactly the
+    colours a 4.5 floor would erase — bright black for asides, `dim` for a status line nobody is meant to
+    read twice. Three is where a colour stops being invisible, which is the complaint; four and a half is
+    where it stops being quiet, which is not.
+  - **The plane handed to `MarkupFormatter` is per *theme*, not per pane.** A pane's plane depends on its
+    character's tint and on focus, and resolving against *that* would re-format a whole buffer on every
+    focus move — the expensive path this file reserves for one deliberate keystroke. `ReadingPlane` is the
+    **extreme of the fourteen** a pane can wear, in the direction of travel, and that is the worst case
+    rather than an approximation of one: once the foreground is past the background's luminance the ratio
+    is monotone in the background, so clearing the extreme clears all fourteen.
+  - **A span carrying a background is measured against *it*.** That plane is known exactly and a
+    highlight's pair must be judged as a pair; a span with the default background emits none and takes
+    the pane, so it is measured against the reading plane. `reverse` swaps first.
+  - **`ScreenPalette` is deliberately not built this way.** Those constants sit on the settings screens'
+    own fixed backdrop, which no theme moves; measuring them against a theme plane would be measuring
+    them against a plane they are never painted on. `ChromeInk` is the other four — `Accent`, `Notice`,
+    `Draft`, `Marker` — and it carries **the plane it was resolved against**, so a renderer can hold a
+    colour it was *handed* (a world's accent) to the same floor.
+  - **A fill is not text.** A ribbon segment's accent, a pane tint and F2's swatch are identity or
+    sample, and lifting them would flatten the thing they exist to say; what has to clear the floor is
+    the *ink on* them, measured against the fill. `ChromeInk.On` is that, and the header ribbon is where
+    both rules appear side by side.
+  - **The audit that found most of this is a test** (`FrameContrastTests`): every emitted SGR pair over
+    24 views × 3 themes. Reading the source found four of the offenders; the paint found nine. It exempts
+    the powerline wedges and box-drawing rules (fill boundaries and dividers), the solid blocks (a swatch
+    is a colour sample shown as the *pane* will paint it), and the framework's `[dim]`. **The half blocks
+    are not exempt** — `▌` is the trigger left-rule and the focus marker, and one of them was a real
+    defect this caught.
+  - **One thing is outside the floor's reach and is named rather than hidden.** SharpConsoleUI resolves
+    `[dim]` to a fixed `#808080` through no option we hold: 4.01:1 on Dark, **2.52:1** on Solarized Dark's
+    focused pane. Reaching it means giving up `[dim]` across every renderer for an explicit floor-checked
+    grey — a sweep, for a near miss on one theme. The exemption is a named predicate with the number in
+    it, so whoever does that sweep can delete it and watch the test pass.
+- **A trigger's `route` says three things, and the third is "nothing"** (`TriggerActions.MainWindow`,
+  Core; F2's `route` list). `SpawnTarget = null` has always meant *this rule adds no destination — the
+  line follows whatever the other matched rules decided*, which is exactly what a highlight rule wants.
+  F2 labelled it `main`, so it read as a destination, and "highlight it and leave it where it was" looked
+  like something the screen could not express. It is `(none)` now, and it is what a new rule defaults to.
+  - **`main` is a real destination** — the matching session's own window. It earns a **reserved word**
+    rather than being spelt as the window's title because one trigger set is shared by every character
+    that lists it and a title can only name one of them; nothing collides, since a character's session
+    window is titled after the character and `main` is only the rail's label for it.
+  - **Gag suppresses the *default* delivery and nothing else.** Every destination a rule asked for
+    survives it — always true of a spawn pane (`route: Chat` + gag has always meant "only in Chat"), and
+    now true of `main`, so `route: main` + gag keeps the line where it used to delete it.
+  - **Destinations are deduplicated.** They were not, and `WorldSession` raises one `SpawnLine` per
+    entry, so a highlight rule pointed at the same pane as its capture rule delivered every line twice.
+  - **A highlight rule needs no route to reach the pane a capture rule sent the line to.** There is one
+    line and one set of destinations, and every matched rule's highlight is on it. Do not "fix" that into
+    a per-rule delivery.
+
 ## Building and testing
 
 - **.NET 10 SDK**: install via `apt-get install -y dotnet-sdk-10.0` (the Microsoft CDN is often
@@ -398,6 +465,14 @@ dotnet run -c Release --project src/SharpMUTerm.Tui --no-build -- \
   --snapshot --demo-config --view <name> --size 120x32 --out frame.ansi
 python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
 ```
+
+- **`--theme <name>` renders a frame in a built-in flavour** (`Dark` / `Light` / `Solarized Dark`). It
+  exists because the client's chrome is derived from the theme and held to a legibility floor against it,
+  and **every frame in the gallery renders Dark** — which is exactly how the Light theme's accent
+  (1.42:1), draft pen (1.26:1) and notice (1.73:1) stayed unreadable without anybody ever seeing them.
+  It sets `ThemeName` *and* `Theme`: `ResolveTheme` treats an inline theme whose name disagrees with
+  `ThemeName` as a *customised* one and prefers it, so setting the name alone would be overruled by the
+  Dark theme still sitting in `Theme`.
 
 - **`-c Release` on the build, and it is not a formality.** A bare `dotnet build` produces *Debug*,
   `--no-build` runs the *Release* output, and nothing warns you: the snapshot renders happily from a
