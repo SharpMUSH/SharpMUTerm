@@ -132,6 +132,47 @@ public class PaneTintTests
         await Assert.That(app.PaneSurfaceColors.Values.Distinct().Count()).IsEqualTo(2);
     }
 
+    /// <summary>
+    /// <b>A background tab wears the colour of the character whose window it is, not of the pane it sits
+    /// in.</b> A pane can host several characters' windows and paints one rectangle, so the plane behind
+    /// the strip can only ever answer for the window in front; the chips are where the rest of them get
+    /// to say whose they are.
+    /// <para>
+    /// It has to be a frame test. <c>TabControl</c>'s four chip colours belong to the control, so the
+    /// old code was internally consistent — every unselected chip really was the colour it had been
+    /// told to be — and the screen was still wrong. The per-tab colour rides the title's markup, which
+    /// only a painted cell can confirm arrived.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task ABackgroundTabWearsItsOwnCharactersColour()
+    {
+        var config = DemoScene.Build();
+        var app = App(config);
+
+        // `tint-tabs` is the one geometry that can ask this: the same two tinted characters as `tint`,
+        // with no split, so both their windows are tabs of a single pane.
+        var ansi = app.RenderSnapshot("tint-tabs");
+        var cells = FrameGrid.Cells(ansi, 120, 34);
+        var rows = FrameGrid.Decode(ansi, 120, 34);
+
+        // The pane is the focused one (it is the only one), so both chips are recessed from a lit plane.
+        var lit = (PaneTint tint) =>
+            WorkspacePalette.Recessed(WorkspacePalette.Focus(WorkspacePalette.Tint(config.Theme, tint)));
+        var other = config.Worlds[1].Characters[0].Name; // Moss, and the second world's own character
+
+        var strip = rows.Select((text, y) => (text, y)).First(r => r.text.Contains(other, StringComparison.Ordinal));
+        var mine = strip.text.IndexOf("Chat", StringComparison.Ordinal);   // Corvid's spawn window, idle
+        var theirs = strip.text.IndexOf(other, StringComparison.Ordinal);  // the other character's, idle
+        await Assert.That(mine).IsGreaterThan(0);
+
+        await Assert.That(cells[(strip.y, theirs)].Background).IsEqualTo(lit(PaneTint.Moss));
+        await Assert.That(cells[(strip.y, mine)].Background).IsEqualTo(lit(PaneTint.Slate));
+
+        // And they are genuinely two colours, or the frame proves nothing.
+        await Assert.That(cells[(strip.y, theirs)].Background).IsNotEqualTo(cells[(strip.y, mine)].Background);
+    }
+
     // --- composing with focus ---------------------------------------------------------------------
 
     /// <summary>

@@ -511,6 +511,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   wearing it, an armed tinted band over an idle tinted one, and the colour travelling with the focus.
   The moved frame is also the one that shows a bar wearing a character's hue while its prompt reads
   `no connection ›`, which is the composition rule stated in paint: hue says whose, not whether),
+  `tint-tabs` (the same two tinted characters with **no split**, so one pane holds both their windows as
+  tabs — the only geometry where an idle chip can be seen wearing a colour the pane behind it is not,
+  which is the whole of the per-tab chip),
   `deletions`,
   `compose`/`compose-literal` (the F1 composer in each of its two escaping modes — the pair exists
   because ⌥L changes what is *sent* and only the header says which way it is set; the demo has no
@@ -877,6 +880,24 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   **Not fixed here**: the `│` between chips and the `─` filling the rest of the strip are hardcoded
   `Color.Grey` in `TabControl.Rendering.cs`, unthemeable in all three header styles. That is an upstream
   change.
+- **An idle chip wears its *own* character's colour, and that has to be said in the title** (`TabChip`,
+  `SharpMUTermApp.ChipFor`). `TabControl`'s four chip properties belong to the **control**, so every
+  unselected chip in a strip is one colour — and a pane can host several characters' windows as tabs while
+  painting one rectangle, so that one colour is necessarily the *front* window's. The other characters'
+  tabs were therefore drawn in a hue that named the wrong person, which is the one thing the tint exists
+  to prevent. The per-tab channel is the title, because a tag there costs no cells (the entry above), so
+  the chip goes out as `[{ink} on {plane}]` around the same span the bold and the activity tint already
+  cover. Three things hold it together. It runs the **same pipeline as the plane behind it** —
+  `SurfaceToneIn` (tint, then the focus lift if the pane holds focus) then `Recessed` — so a strip whose
+  tabs share an owner is byte-identical to what it was before this existed and only the mixed pane
+  changes; `PaneSurfaceTone` is now one line of that same function, rather than a second arithmetic that
+  would drift. The **selected** tab is never chipped: it is the strip's own colour, which is already its
+  page's plane. And unread stays a **foreground** over the chip, so "whose" and "something new" remain the
+  two channels they are everywhere else. The framework pads each title with one space either side
+  (`" {Title} "`, outside our markup), so the colour hugs the text and the pad keeps the strip's tone.
+  `PaneTintTests.ABackgroundTabWearsItsOwnCharactersColour` is the pin and the `tint-tabs` view is the
+  frame — the old code was internally consistent and the screen was still wrong, so only a painted cell
+  answers this.
 - **One unread count, one spelling: `UnreadBadge`.** The sidebar and the tab strip are two views of
   `WorkspaceWindow.Unread`, and they had two formatters — the rail capped at `99+`, the tab printed the
   raw integer, so a busy channel read `99+` in one place and `(4127)` in the other. Cap, field width and

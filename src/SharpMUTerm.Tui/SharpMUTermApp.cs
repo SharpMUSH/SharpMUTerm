@@ -1418,7 +1418,22 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 SwitchToCharacter($"{tinted[1].Name}.{tinted[1].Characters[0].Name}");
             }
 
-            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            // `tint-tabs` is the same two characters with no split — the one geometry where a pane holds
+            // two characters' windows, which is the only place an idle chip can be seen wearing a colour
+            // the pane behind it is not. Switching back brings the first character's window to the front,
+            // so the frame carries a selected chip beside an idle one in the other character's hue.
+            if (string.Equals(view, "tint-tabs", StringComparison.OrdinalIgnoreCase))
+            {
+                if (tinted.Count > 0)
+                {
+                    SwitchToCharacter($"{tinted[0].Name}.{tinted[0].Characters[0].Name}");
+                }
+            }
+            else
+            {
+                PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            }
+
             RebuildPaneArea();
 
             if (view.StartsWith("tint-input", StringComparison.OrdinalIgnoreCase))
@@ -7841,10 +7856,41 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// tinted pane is exactly as visibly focused as an untinted one and a focused pane still says whose
     /// it is. See <see cref="WorkspacePalette.Tint"/>.
     /// </summary>
-    private Rgb PaneSurfaceTone(string? paneId)
+    private Rgb PaneSurfaceTone(string? paneId) => SurfaceToneIn(paneId, PaneTintOf(paneId));
+
+    /// <summary>
+    /// The tone <paramref name="tint"/> comes out as in <paramref name="paneId"/> — the character's
+    /// plane, lit if that pane holds the focus. Split out from <see cref="PaneSurfaceTone"/> so a tab
+    /// chip can ask the question for a character who is <em>not</em> the pane's occupant and get an
+    /// answer on the same two channels; a second arithmetic would drift from the plane beside it.
+    /// </summary>
+    private Rgb SurfaceToneIn(string? paneId, PaneTint tint)
     {
-        var plane = PanePlane(paneId);
+        var plane = WorkspacePalette.Tint(_theme, tint);
         return paneId is not null && IsFocusedPane(paneId) ? WorkspacePalette.Focus(plane) : plane;
+    }
+
+    /// <summary>
+    /// The chip an <em>unselected</em> tab is painted on: its own character's plane, recessed the same
+    /// step every idle chip has always been recessed by.
+    /// <para>
+    /// <b>Per tab, because the framework cannot say it.</b> <c>TabControl</c>'s four colour properties
+    /// belong to the control, so every unselected chip in a strip is one colour — the front window's,
+    /// recessed — and a pane holding two characters' windows painted the other one's tab in the wrong
+    /// character's hue. The per-tab channel is the title, which is markup and costs no cells.
+    /// </para>
+    /// <para>
+    /// It runs the same pipeline as the plane behind it (<see cref="SurfaceToneIn"/> then
+    /// <see cref="WorkspacePalette.Recessed"/>), so a strip whose tabs share an owner comes out byte for
+    /// byte what it was before this existed, and only the mixed pane changes. A window nobody owns — the
+    /// web view — and a character who has chosen no colour both come out on the plain surface, which is
+    /// the honest answer rather than borrowing the neighbour's hue.
+    /// </para>
+    /// </summary>
+    private TabChip ChipFor(string paneId, WorkspaceWindow window)
+    {
+        var plane = WorkspacePalette.Recessed(SurfaceToneIn(paneId, TintOf(window.SessionKey)));
+        return new TabChip(plane.ToHex(), ChromeInk.On(WorkspacePalette.IdleInk(_theme), plane));
     }
 
     /// <summary>
@@ -8105,7 +8151,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             // terminal, where a luminance step does not.
             var selected = string.Equals(pane.ActiveTab, windowId, StringComparison.Ordinal);
             builder.AddTab(
-                TabTitles.For(window, ActiveCharacterKey(), focused && selected, selected, _ink),
+                TabTitles.For(
+                    window, ActiveCharacterKey(), focused && selected, selected, _ink, ChipFor(pane.Id, window)),
                 BuildTabContent(pane, windowId, window));
             ids.Add(windowId);
         }
@@ -9927,7 +9974,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 {
                     var selected = string.Equals(activeTab, id, StringComparison.Ordinal);
                     page.Title = TabTitles.For(
-                        window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink);
+                        window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
+                        ChipFor(paneId, window));
                     // The × follows the active tab, so keep it in step with every title refresh.
                     page.IsClosable = CanCloseTab(id, activeTab);
                 }
