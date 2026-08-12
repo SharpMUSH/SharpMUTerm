@@ -1,3 +1,6 @@
+using System.Globalization;
+using SharpMUTerm.Core.Text;
+
 namespace SharpMUTerm.Tui.Tests;
 
 /// <summary>
@@ -87,6 +90,132 @@ internal static class FrameGrid
         }
 
         return lines;
+    }
+
+    /// <summary>One painted cell: the glyph on screen and the two colours it was written in.</summary>
+    internal readonly record struct Cell(char Glyph, Rgb? Foreground, Rgb? Background);
+
+    /// <summary>
+    /// The frame as a <c>{(row, column): cell}</c> grid — the glyph <em>and</em> both its colours, which is
+    /// what separates this from <see cref="Decode"/> (glyphs only) and <see cref="Backgrounds"/>
+    /// (backgrounds only).
+    /// <para>
+    /// <b>It is a grid rather than a stream, and that is the point.</b> The frame is cursor-addressed, so
+    /// a walker that reads it linearly counts every glyph the driver <em>wrote</em> rather than the ones
+    /// left <em>on screen</em>; a cell painted and then overwritten would be counted twice, in two
+    /// different colours. That direction of error is safe for a contrast audit — the stream is a superset
+    /// of the screen, so it can raise a false alarm but never miss an offender — and on the 72 frames
+    /// <see cref="FrameContrastTests"/> walks the two agree exactly, glyph for glyph. Asking the grid
+    /// anyway costs nothing and removes the caveat.
+    /// </para>
+    /// <para>
+    /// Only the escape positions are handed to a regex. <c>Regex.Match(input, startat)</c> searches
+    /// <em>forward</em> to the next match anywhere in the rest of the string, so asking at every character
+    /// re-scans each upcoming sequence from progressively later starts — quadratic in the length of every
+    /// unstyled run, and a frame is mostly padding spaces.
+    /// </para>
+    /// </summary>
+    internal static Dictionary<(int Row, int Column), Cell> Cells(string frame, int width, int height)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+
+        var cells = new Dictionary<(int, int), Cell>();
+        Rgb? foreground = null;
+        Rgb? background = null;
+        int row = 0, column = 0, i = 0;
+
+        while (i < frame.Length)
+        {
+            if (frame[i] == '\u001b')
+            {
+                var sgr = SgrPattern.Match(frame, i);
+                if (sgr.Success && sgr.Index == i)
+                {
+                    ApplySgr(sgr.Groups[1].Value, ref foreground, ref background);
+                    i = sgr.Index + sgr.Length;
+                    continue;
+                }
+
+                var csi = CsiPattern.Match(frame, i);
+                if (csi.Success && csi.Index == i)
+                {
+                    if (frame[csi.Index + csi.Length - 1] == 'H')
+                    {
+                        var at = csi.Groups[1].Value.Split(';');
+                        row = at.Length > 0 && at[0].Length > 0 ? int.Parse(at[0], CultureInfo.InvariantCulture) - 1 : 0;
+                        column = at.Length > 1 && at[1].Length > 0 ? int.Parse(at[1], CultureInfo.InvariantCulture) - 1 : 0;
+                    }
+
+                    i = csi.Index + csi.Length;
+                    continue;
+                }
+            }
+
+            var ch = frame[i++];
+            if (ch == '\n')
+            {
+                row++;
+                column = 0;
+                continue;
+            }
+
+            if (ch == '\r')
+            {
+                column = 0;
+                continue;
+            }
+
+            if (row >= 0 && row < height && column >= 0 && column < width)
+            {
+                cells[(row, column)] = new Cell(ch, foreground, background);
+            }
+
+            column++;
+        }
+
+        return cells;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex SgrPattern =
+        new(@"\x1b\[([0-9;]*)m", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex CsiPattern =
+        new(@"\x1b\[([0-9;?]*)[A-Za-z]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Applies one SGR sequence's parameters to the running foreground and background.</summary>
+    private static void ApplySgr(string parameters, ref Rgb? foreground, ref Rgb? background)
+    {
+        var codes = parameters.Split(';')
+            .Where(p => p.Length > 0)
+            .Select(p => int.Parse(p, CultureInfo.InvariantCulture))
+            .ToList();
+
+        for (var i = 0; i < codes.Count;)
+        {
+            if (codes[i] == 0)
+            {
+                foreground = background = null;
+                i++;
+            }
+            else if (codes[i] is 38 or 48 && i + 4 < codes.Count && codes[i + 1] == 2)
+            {
+                var colour = new Rgb((byte)codes[i + 2], (byte)codes[i + 3], (byte)codes[i + 4]);
+                if (codes[i] == 38)
+                {
+                    foreground = colour;
+                }
+                else
+                {
+                    background = colour;
+                }
+
+                i += 5;
+            }
+            else
+            {
+                i++;
+            }
+        }
     }
 
     /// <summary>The truecolor background escape a colour is written as, e.g. <c>48;2;51;57;76</c>.</summary>

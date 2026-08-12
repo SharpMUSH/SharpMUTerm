@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.RegularExpressions;
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Theming;
@@ -26,6 +24,12 @@ namespace SharpMUTerm.Tui.Tests;
 [NotInParallel]
 public class FrameContrastTests
 {
+    /// <summary>The frame the audit renders. Shared with <see cref="Pairs"/>, which decodes a grid of
+    /// exactly this size — a walker told the wrong dimensions drops cells off the edge silently.</summary>
+    private const int Width = 140;
+
+    private const int Height = 36;
+
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
@@ -50,8 +54,22 @@ public class FrameContrastTests
     public async Task NoPaintedTextIsBelowTheLegibilityFloor((string Theme, string View) test)
     {
         var frame = Render(test.Theme, test.View);
+        var pairs = Pairs(frame);
 
-        var failures = Pairs(frame)
+        // A walker handed the wrong dimensions, or one that stopped recognising an escape, decodes
+        // nothing — and an audit over nothing passes every assertion below it. That is the failure
+        // FrameGrid's own remarks warn about ("quietly green on a frame it has misread"), and it is
+        // precisely what a floor assertion cannot notice, so it is asserted separately.
+        //
+        // Counted in *cells* rather than in distinct pairs: a settings screen is painted from the fixed
+        // ScreenPalette and is legitimately down to four colour pairs (F1's composer), while the
+        // thinnest real frame here still paints 201 glyphs. A pair-count floor would be policing how
+        // colourful a view is, which is not what this is for.
+        var painted = pairs.Values.Sum();
+        await Assert.That(painted).IsGreaterThanOrEqualTo(100)
+            .Because($"the frame decoded to {painted} painted cells, too few to be a real one");
+
+        var failures = pairs
             .Select(pair => (pair.Key.Fg, pair.Key.Bg, pair.Value, Ratio: Contrast.Ratio(pair.Key.Fg, pair.Key.Bg)))
             .Where(t => t.Ratio < Contrast.Floor)
             .Where(t => !IsFrameworkDim(t.Fg))
@@ -107,104 +125,35 @@ public class FrameContrastTests
         config.ThemeName = themeName;
         config.Theme = ThemeLibrary.Get(themeName);
 
-        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(140, 36));
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
         return app.RenderSnapshot(view.Length == 0 ? null : view);
     }
 
-    private static readonly Regex Sgr = new(@"\x1b\[([0-9;]*)m", RegexOptions.Compiled);
-
-    private static readonly Regex Csi = new(@"\x1b\[[0-9;?]*[A-Za-z]", RegexOptions.Compiled);
-
     /// <summary>
-    /// Every (foreground, background) pair the frame actually paints a glyph in, with a cell count.
-    /// Spaces are skipped — a space has no foreground to read — and so is everything
-    /// <see cref="IsFill"/> names.
+    /// Every (foreground, background) pair the frame paints a glyph in, with a cell count — read off the
+    /// <em>grid</em> (<see cref="FrameGrid.Cells"/>) rather than the escape stream, because the frame is
+    /// cursor-addressed and a cell that was painted and then overwritten is not on screen. The two agree
+    /// exactly on all 72 frames here; asking the grid is what makes that a fact rather than a hope.
+    /// <para>
+    /// Spaces are skipped — a space has no foreground to read — and so is everything <see cref="IsFill"/>
+    /// names.
+    /// </para>
     /// </summary>
     private static Dictionary<(Rgb Fg, Rgb Bg), int> Pairs(string frame)
     {
         var pairs = new Dictionary<(Rgb, Rgb), int>();
-        Rgb? fg = null;
-        Rgb? bg = null;
 
-        for (var i = 0; i < frame.Length;)
+        foreach (var cell in FrameGrid.Cells(frame, Width, Height).Values)
         {
-            // Only ask the regexes at an escape. `Regex.Match(input, startat)` searches *forward* to the
-            // next match anywhere in the rest of the string, so calling it at every plain character
-            // re-scans the same upcoming sequence from progressively later positions — quadratic in the
-            // length of each unstyled run, and a frame is mostly padding spaces.
-            if (frame[i] != '\u001b')
+            if (cell.Glyph is ' ' or '\n' or '\r' || IsFill(cell.Glyph)
+                || cell.Foreground is not { } ink || cell.Background is not { } plane)
             {
-                Count(pairs, frame[i++], fg, bg);
                 continue;
             }
 
-            var sgr = Sgr.Match(frame, i);
-            if (sgr.Success && sgr.Index == i)
-            {
-                Apply(sgr.Groups[1].Value, ref fg, ref bg);
-                i = sgr.Index + sgr.Length;
-                continue;
-            }
-
-            var csi = Csi.Match(frame, i);
-            if (csi.Success && csi.Index == i)
-            {
-                i = csi.Index + csi.Length;
-                continue;
-            }
-
-            // An escape this walker does not recognise: consume the byte rather than the sequence, which
-            // is the same thing the loop did before and is safe because both patterns are anchored to a
-            // real CSI introducer.
-            Count(pairs, frame[i++], fg, bg);
+            pairs[(ink, plane)] = pairs.GetValueOrDefault((ink, plane)) + 1;
         }
 
         return pairs;
-    }
-
-    /// <summary>Records one painted cell, skipping the ones a text floor does not apply to.</summary>
-    private static void Count(Dictionary<(Rgb, Rgb), int> pairs, char ch, Rgb? fg, Rgb? bg)
-    {
-        if (ch is ' ' or '\n' or '\r' || IsFill(ch) || fg is not { } ink || bg is not { } plane)
-        {
-            return;
-        }
-
-        pairs[(ink, plane)] = pairs.GetValueOrDefault((ink, plane)) + 1;
-    }
-
-    private static void Apply(string parameters, ref Rgb? fg, ref Rgb? bg)
-    {
-        var codes = parameters.Split(';')
-            .Where(p => p.Length > 0)
-            .Select(int.Parse)
-            .ToList();
-
-        for (var i = 0; i < codes.Count;)
-        {
-            if (codes[i] == 0)
-            {
-                fg = bg = null;
-                i++;
-            }
-            else if (codes[i] is 38 or 48 && i + 4 < codes.Count && codes[i + 1] == 2)
-            {
-                var colour = new Rgb((byte)codes[i + 2], (byte)codes[i + 3], (byte)codes[i + 4]);
-                if (codes[i] == 38)
-                {
-                    fg = colour;
-                }
-                else
-                {
-                    bg = colour;
-                }
-
-                i += 5;
-            }
-            else
-            {
-                i++;
-            }
-        }
     }
 }
