@@ -7,7 +7,7 @@ Two reported defects that turn out to share a cause.
 
 > "we are using unreadable colors by default against our backgrounds. Such as Freeze
 > being purple against a blue background."
-
+>
 > "we failed to solve the issue of Triggers — we should be able to Highlight text and
 > send it to the pane where we found it. That way, players can highlight character name
 > text."

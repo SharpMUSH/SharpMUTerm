@@ -118,8 +118,21 @@ public class TriggersScreenEditingTests
         edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "trade");
         await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("trade");
 
+        // Padded, because the two halves of that decision live in different files: the comparison here
+        // is against the bare label, and the trimming is ScreenField.WindowName's (its Set is
+        // `value => set(value.Trim())`). A reviewer read this line alone and concluded a padded
+        // "(none)" would be stored as a capture pane by that name; it is not, and this is what keeps
+        // that true if the field ever stops trimming for us.
+        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "  (none)  ");
+        await Assert.That(trigger.Actions.SpawnTarget).IsNull();
+
+        // And the same for a real destination: what is stored is the name, never the padding, or two
+        // rules aimed at one pane would open two.
+        edits.Apply(TriggersScreenRenderer.Model(sets, 0, Targets).FieldAt(0, 0, TriggersScreenRenderer.RouteField)!.Value, "  Chat  ");
+        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("Chat");
+
         edits.Revert();
-        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("trade"); // kept as committed
+        await Assert.That(trigger.Actions.SpawnTarget).IsEqualTo("Chat"); // the last commit, kept
     }
 
     /// <summary>

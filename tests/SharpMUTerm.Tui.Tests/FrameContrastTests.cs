@@ -128,6 +128,16 @@ public class FrameContrastTests
 
         for (var i = 0; i < frame.Length;)
         {
+            // Only ask the regexes at an escape. `Regex.Match(input, startat)` searches *forward* to the
+            // next match anywhere in the rest of the string, so calling it at every plain character
+            // re-scans the same upcoming sequence from progressively later positions — quadratic in the
+            // length of each unstyled run, and a frame is mostly padding spaces.
+            if (frame[i] != '\u001b')
+            {
+                Count(pairs, frame[i++], fg, bg);
+                continue;
+            }
+
             var sgr = Sgr.Match(frame, i);
             if (sgr.Success && sgr.Index == i)
             {
@@ -143,16 +153,24 @@ public class FrameContrastTests
                 continue;
             }
 
-            var ch = frame[i++];
-            if (ch is ' ' or '\n' or '\r' || IsFill(ch) || fg is not { } ink || bg is not { } plane)
-            {
-                continue;
-            }
-
-            pairs[(ink, plane)] = pairs.GetValueOrDefault((ink, plane)) + 1;
+            // An escape this walker does not recognise: consume the byte rather than the sequence, which
+            // is the same thing the loop did before and is safe because both patterns are anchored to a
+            // real CSI introducer.
+            Count(pairs, frame[i++], fg, bg);
         }
 
         return pairs;
+    }
+
+    /// <summary>Records one painted cell, skipping the ones a text floor does not apply to.</summary>
+    private static void Count(Dictionary<(Rgb, Rgb), int> pairs, char ch, Rgb? fg, Rgb? bg)
+    {
+        if (ch is ' ' or '\n' or '\r' || IsFill(ch) || fg is not { } ink || bg is not { } plane)
+        {
+            return;
+        }
+
+        pairs[(ink, plane)] = pairs.GetValueOrDefault((ink, plane)) + 1;
     }
 
     private static void Apply(string parameters, ref Rgb? fg, ref Rgb? bg)
