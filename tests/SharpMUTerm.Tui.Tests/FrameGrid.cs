@@ -120,6 +120,21 @@ internal static class FrameGrid
         ArgumentNullException.ThrowIfNull(frame);
 
         var cells = new Dictionary<(int, int), Cell>();
+        foreach (var (at, cell) in Walk(frame, width, height))
+        {
+            cells[at] = cell;
+        }
+
+        return cells;
+    }
+
+    /// <summary>
+    /// The one walk: every glyph the frame writes, in order, with the position and the colours in force
+    /// when it was written. Both <see cref="Cells"/> and <see cref="Backgrounds"/> are projections of
+    /// it, so the suite cannot come to two views of one frame.
+    /// </summary>
+    private static IEnumerable<((int Row, int Column) At, Cell Cell)> Walk(string frame, int width, int height)
+    {
         Rgb? foreground = null;
         Rgb? background = null;
         int row = 0, column = 0, i = 0;
@@ -167,13 +182,11 @@ internal static class FrameGrid
 
             if (row >= 0 && row < height && column >= 0 && column < width)
             {
-                cells[(row, column)] = new Cell(ch, foreground, background);
+                yield return ((row, column), new Cell(ch, foreground, background));
             }
 
             column++;
         }
-
-        return cells;
     }
 
     private static readonly System.Text.RegularExpressions.Regex SgrPattern =
@@ -182,9 +195,36 @@ internal static class FrameGrid
     private static readonly System.Text.RegularExpressions.Regex CsiPattern =
         new(@"\x1b\[([0-9;?]*)[A-Za-z]", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    /// <summary>Applies one SGR sequence's parameters to the running foreground and background.</summary>
+    /// <summary>
+    /// Applies one SGR sequence's parameters to the running foreground and background.
+    /// <para>
+    /// <b>Empty parameters are a reset.</b> ECMA-48 makes <c>CSI m</c> equivalent to <c>CSI 0 m</c>, and
+    /// a parser that split an empty string into no codes would run no loop body and leave both colours
+    /// standing — so a glyph after it would be audited in colours it is not wearing. Likewise <c>39</c>
+    /// and <c>49</c>, which return one channel to the terminal's default without touching the other.
+    /// </para>
+    /// <para>
+    /// None of the three appears in any frame this driver emits — it always writes an explicit
+    /// <c>0;38;2;…;48;2;…</c> — so this corrects no live reading. It is here because this walker is the
+    /// one every suite that asks about painted cells goes through, and a parser that quietly mistracks
+    /// state on a legal sequence is the "quietly green on a frame it has misread" failure this file
+    /// warns about, one function down.
+    /// </para>
+    /// <para>
+    /// The indexed forms (<c>38;5;n</c>) are <em>not</em> decoded, and degrade rather than corrupt: the
+    /// <c>2</c> guard below fails, so the code and its arguments fall through as unknowns and the colour
+    /// stays as it was. This driver emits truecolor only; building the 256-colour cube for a sequence
+    /// nothing writes would be inventing coverage.
+    /// </para>
+    /// </summary>
     private static void ApplySgr(string parameters, ref Rgb? foreground, ref Rgb? background)
     {
+        if (parameters.Length == 0)
+        {
+            foreground = background = null;
+            return;
+        }
+
         var codes = parameters.Split(';')
             .Where(p => p.Length > 0)
             .Select(p => int.Parse(p, CultureInfo.InvariantCulture))
@@ -195,6 +235,16 @@ internal static class FrameGrid
             if (codes[i] == 0)
             {
                 foreground = background = null;
+                i++;
+            }
+            else if (codes[i] == 39)
+            {
+                foreground = null;
+                i++;
+            }
+            else if (codes[i] == 49)
+            {
+                background = null;
                 i++;
             }
             else if (codes[i] is 38 or 48 && i + 4 < codes.Count && codes[i + 1] == 2)
@@ -237,48 +287,19 @@ internal static class FrameGrid
     {
         ArgumentNullException.ThrowIfNull(ansi);
 
+        // Derived from Cells rather than walked again. This used to be its own parser, and the two had
+        // already drifted: it tested for the background reset with `parameters.Contains("49")`, which
+        // reads the 49 in a truecolor *argument* — `38;2;49;5;6`, a foreground whose red channel is 49 —
+        // as the reset code, and clears a background that sequence never mentions. Splitting on `;` is
+        // not enough to see that either; only a walk that consumes `38;2;r;g;b` as one unit can tell an
+        // SGR code from a colour argument, and Cells already does.
+        //
+        // Unbounded, as this always was: callers ask about cells at coordinates the frame chose, so
+        // there is no width and height to clamp to here.
         var cells = new Dictionary<(int, int), string?>();
-        var current = (string?)null;
-        var (row, column) = (0, 0);
-
-        foreach (System.Text.RegularExpressions.Match token in
-            System.Text.RegularExpressions.Regex.Matches(ansi, @"\x1b\[([0-9;]*)([A-Za-z])|([^\x1b\r\n])|(\n)"))
+        foreach (var (at, cell) in Walk(ansi, int.MaxValue, int.MaxValue))
         {
-            if (token.Groups[4].Success)
-            {
-                row++;
-                column = 0;
-                continue;
-            }
-
-            if (token.Groups[3].Success)
-            {
-                cells[(row, column)] = current;
-                column++;
-                continue;
-            }
-
-            var parameters = token.Groups[1].Value;
-            switch (token.Groups[2].Value)
-            {
-                case "H":
-                    var at = parameters.Split(';');
-                    row = at[0].Length > 0 ? int.Parse(at[0]) - 1 : 0;
-                    column = at.Length > 1 && at[1].Length > 0 ? int.Parse(at[1]) - 1 : 0;
-                    break;
-                case "m":
-                    if (parameters.Length == 0 || parameters == "0" || parameters.Contains("49"))
-                    {
-                        current = null;
-                    }
-
-                    if (parameters.Contains("48;2;"))
-                    {
-                        current = parameters[parameters.IndexOf("48;2;", StringComparison.Ordinal)..];
-                    }
-
-                    break;
-            }
+            cells[at] = cell.Background is { } bg ? $"48;2;{bg.R};{bg.G};{bg.B}" : null;
         }
 
         return cells;
