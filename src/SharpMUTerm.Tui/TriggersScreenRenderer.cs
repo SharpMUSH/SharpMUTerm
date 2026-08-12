@@ -580,7 +580,11 @@ internal static class TriggersScreenRenderer
     {
         var marker = index == selectedTrigger ? "[bold]▸[/]" : " ";
         var box = trigger.Enabled ? $"[{Accent}]✓[/]" : "[dim]·[/]";
-        var target = trigger.Actions.SpawnTarget ?? "main";
+        // Through Route, not a second reading of the same field. This row had its own `?? "main"`, so
+        // after the route field learned that a null target is *no destination* rather than the main
+        // window, the list would have gone on calling it `main` — the two surfaces disagreeing about one
+        // rule, which is the shape of the confusion the rename exists to remove.
+        var target = Route(trigger);
         return $"{marker} {box} [bold]{Escape(trigger.Name)}[/] [dim]{Escape(trigger.Pattern)}[/] [dim]→ {Escape(target)}[/]";
     }
 
