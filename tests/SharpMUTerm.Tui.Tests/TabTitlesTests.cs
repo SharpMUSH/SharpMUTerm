@@ -151,6 +151,47 @@ public class TabTitlesTests
         await Assert.That(label).IsEqualTo("pages ⌁");
     }
 
+    // ---- the idle chip -----------------------------------------------------------------------
+    //
+    // A strip's unselected chips are one colour to TabControl, so a tab that wants to name its own
+    // character has to do it in its title. These pin the shape of that markup and, more importantly,
+    // that it stays free: the title is measured by MarkupParser.StripLength everywhere the strip is
+    // laid out or hit-tested, so a tag here must move nothing.
+
+    private static readonly TabChip Chip = new("#101418", "#9aa5b1");
+
+    [Test]
+    public async Task IdleTab_WearsTheChipItIsHanded()
+    {
+        var window = new WorkspaceWindow("w1", "Chat", WindowKind.Spawn, sessionKey: "Aetherfall.Rookery");
+        await Assert.That(TabTitles.For(window, chip: Chip)).IsEqualTo("[#9aa5b1 on #101418]Chat[/]");
+    }
+
+    /// <summary>
+    /// Unread stays a <em>foreground</em> on a chipped tab: the plane says whose window it is and the
+    /// accent says it has something new, which are two facts on two channels. Writing the plane over the
+    /// activity tint would have made a background tab's colour mean either.
+    /// </summary>
+    [Test]
+    public async Task AnUnreadIdleTabKeepsItsActivityTintOverTheChip()
+    {
+        var chat = Background("Chat", 2);
+        await Assert.That(TabTitles.For(chat, chip: Chip))
+            .IsEqualTo($"[{UnreadBadge.TintFor(null)} on #101418]Chat (2)[/]");
+    }
+
+    /// <summary>
+    /// The invariant the strip's geometry rests on. Every width a tab is measured by is
+    /// <c>StripLength</c>, so a chip costs no cells and moves no click target.
+    /// </summary>
+    [Test]
+    public async Task AChipCostsNoCells()
+    {
+        var chat = Background("Chat", 3);
+        await Assert.That(MarkupParser.StripLength(TabTitles.For(chat, chip: Chip)))
+            .IsEqualTo(MarkupParser.StripLength(TabTitles.For(chat)));
+    }
+
     [Test]
     public async Task SameCharacter_HasNoCrossMarker()
     {

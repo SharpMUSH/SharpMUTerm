@@ -209,6 +209,43 @@ public class RailModelTests
         }
     }
 
+    /// <summary>
+    /// <b>The indent ladder skips no level.</b> Every cell of indent is width the sidebar takes out of the
+    /// panes — and the sidebar's width is announced to every connected server over NAWS — so a depth
+    /// nothing is ever drawn at is columns spent saying nothing. Characters sat at 2 under a world at 0,
+    /// which reserved a level 1 that no row has ever used and pushed every window row two cells right.
+    /// </summary>
+    [Test]
+    public async Task TheIndentLadderSkipsNoLevel()
+    {
+        var rows = RailModel.Build(new[] { TwoCharacterWorld(), new RailWorld("Empties", "h", 1, Accent, Array.Empty<RailCharacter>()) });
+
+        var previous = 0;
+        foreach (var row in rows)
+        {
+            await Assert.That(row.Indent).IsLessThanOrEqualTo(previous + 1)
+                .Because($"a {row.Kind} row ('{row.Label}') at indent {row.Indent} follows one at {previous}");
+            previous = row.Indent;
+        }
+
+        await Assert.That(rows.Max(r => r.Indent)).IsEqualTo(2); // world → character → window, and no more
+
+        // The ladder above is monotonic and could still be nonsense — an empty row at 0 satisfies it — so
+        // each kind is held to its own depth. An Empty row stands where a character would, and takes a
+        // character's indent.
+        foreach (var row in rows)
+        {
+            var depth = row.Kind switch
+            {
+                RailRowKind.Header or RailRowKind.World => 0,
+                RailRowKind.Character or RailRowKind.Empty or RailRowKind.Host => 1,
+                _ => 2,
+            };
+
+            await Assert.That(row.Indent).IsEqualTo(depth).Because($"{row.Kind} ('{row.Label}')");
+        }
+    }
+
     private static RailWorld TwoCharacterWorld() => new("Aetherfall", "aetherfall.mux", 4201, Accent, new[]
     {
         new RailCharacter("Corvid", "Aetherfall.Corvid", Connected: true, Active: true, Unread: 3, new[]

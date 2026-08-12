@@ -242,6 +242,32 @@ public class RailWindowRowTests
     }
 
     /// <summary>
+    /// <b>The sidebar spends at most one blank column past its widest row.</b> The other half of the width
+    /// invariant: the rail must be wide enough for its rows (above) and no wider, because everything it
+    /// keeps is taken off the panes. One column and not two — a divider and a one-cell spacer already stand
+    /// between the rail's last cell and the first pane, so a second margin cell separates nothing from
+    /// nothing. Asserted on the demo, whose widest row is comfortably past <c>RailMinWidth</c>, so what is
+    /// being read is the margin rather than the floor.
+    /// </summary>
+    [Test]
+    public async Task TheRailSpendsAtMostOneBlankColumnPastItsWidestRow()
+    {
+        var app = App();
+        app.RenderSnapshot();
+
+        var widest = Rail(app).Max(SharpMUTermApp.MarkupWidth);
+        await Assert.That(widest).IsGreaterThan(16); // else the floor is what is being measured
+        await Assert.That(app.RailColumnWidth).IsEqualTo(widest + 1);
+
+        // And the layout spent exactly that. The line above is arithmetic over the rows and would still
+        // pass if nothing applied the answer, so the claim is closed against the arranged pane rectangle:
+        // a pane starts past the rail, its divider and the one-cell spacer beside it
+        // (SharpMUTermApp.BuildWorkspaceRow), which is also the geometry per-pane NAWS is derived from.
+        var rect = app.PaneOutputRects()[app.FocusedPaneId];
+        await Assert.That(rect.X).IsEqualTo(app.RailColumnWidth + 2);
+    }
+
+    /// <summary>
     /// Shortening the rows narrows the sidebar again, rather than leaving it as wide as the widest thing it
     /// ever held: the columns the rail gives back are columns the panes get, and per-pane NAWS is derived
     /// from the pane rectangle.

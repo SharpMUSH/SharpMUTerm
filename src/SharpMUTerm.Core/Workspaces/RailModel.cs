@@ -107,6 +107,12 @@ public sealed record RailWindow(string Title, string Id, string? Chord, int Unre
 /// filter exists.
 /// </para>
 /// <para>
+/// <b>Indent is one level per depth</b> — world 0, character 1, window 2 — and the view spends two cells
+/// on each. Characters used to sit at 2, reserving a level nothing was ever drawn at and pushing every
+/// window row two cells right; the sidebar's width is its widest row and comes out of the panes, which
+/// every connected session is told over NAWS, so a skipped level is columns spent saying nothing.
+/// </para>
+/// <para>
 /// Every row that names somewhere you can go also carries the <see cref="RailRow.Target"/> a click
 /// dispatches. The ids are the shell's own (<see cref="CommandIds"/>), so the rail is a second door
 /// onto the ⌃P surface's actions rather than a second implementation of switching.
@@ -137,7 +143,7 @@ public static class RailModel
             if (world.Characters.Count == 0)
             {
                 rows.Add(new RailRow(
-                    RailRowKind.Empty, 2, "no characters", Target: NoCharactersTarget(world.Name)));
+                    RailRowKind.Empty, 1, "no characters", Target: NoCharactersTarget(world.Name)));
                 continue;
             }
 
@@ -145,7 +151,7 @@ public static class RailModel
             {
                 rows.Add(new RailRow(
                     RailRowKind.Character,
-                    2,
+                    1,
                     character.Name,
                     Accent: world.Accent,
                     Active: character.Active,
@@ -163,7 +169,7 @@ public static class RailModel
                 {
                     rows.Add(new RailRow(
                         RailRowKind.Window,
-                        3,
+                        2,
                         window.Title,
                         Accent: world.Accent,
                         Unsent: window.HasUnsent,

@@ -17,6 +17,14 @@ namespace SharpMUTerm.Tui;
 /// <para>The close affordance is <em>not</em> here. A <c>✕</c> in the label is just text the hit test
 /// reads as part of the title; the real button is <c>TabPage.IsClosable</c>.</para>
 /// </remarks>
+/// <summary>
+/// The plane an idle tab's chip is painted on and the ink that lands on it, as <c>#rrggbb</c> markup
+/// tokens. It exists because <c>TabControl</c>'s four chip colours are properties of the <em>control</em>
+/// — one answer for every unselected tab in a strip — so a tab that wants to say whose window it is has
+/// to say it in the only per-tab channel there is: its title, which is markup.
+/// </summary>
+internal readonly record struct TabChip(string Plane, string Ink);
+
 internal static class TabTitles
 {
     /// <param name="window">The window the tab stands for.</param>
@@ -32,12 +40,18 @@ internal static class TabTitles
     /// survives a flattened palette. Independent of <paramref name="focusedPane"/>: an unfocused pane
     /// still has a tab in front of it.
     /// </param>
+    /// <param name="chip">
+    /// The plane this tab is drawn on when it is <em>not</em> the one its pane is showing, so a pane
+    /// holding two characters' windows says whose each background tab is. Ignored on the selected tab,
+    /// which the strip paints in its page's own plane.
+    /// </param>
     public static string For(
         WorkspaceWindow window,
         string? focusedCharacterKey = null,
         bool focusedPane = false,
         bool selected = false,
-        ChromeInk? ink = null)
+        ChromeInk? ink = null,
+        TabChip? chip = null)
     {
         ArgumentNullException.ThrowIfNull(window);
 
@@ -71,6 +85,14 @@ internal static class TabTitles
             (false, true) => UnreadBadge.TintFor(ink),
             _ => null,
         };
+
+        // The chip is the tab's own plane, which only an unselected tab carries — the selected one is
+        // painted by the strip, in the plane its page is on. Foreground first so an unread tab keeps its
+        // accent: the plane says whose window this is, the accent says it has something new.
+        if (chip is { } tile && !selected)
+        {
+            style = $"{style ?? tile.Ink} on {tile.Plane}";
+        }
         var body = style is null ? named : $"[{style}]{named}[/]";
 
         return focus + body + pen + cross;
