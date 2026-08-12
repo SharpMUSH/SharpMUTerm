@@ -185,7 +185,7 @@ public class RailRendererTests
         var line = RailRenderer.Render(rows).Single(l => l.Contains("no characters"));
 
         await Assert.That(line).Contains("[link=rail:no-characters:Od%5Dd]");
-        await Assert.That(SharpMUTermApp.MarkupWidth(line)).IsEqualTo("    no characters".Length);
+        await Assert.That(SharpMUTermApp.MarkupWidth(line)).IsEqualTo("  no characters".Length);
     }
 
     // --- the width trap: nothing volatile may cost a cell ------------------------------------------

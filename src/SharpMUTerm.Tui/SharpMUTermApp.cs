@@ -7923,8 +7923,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>The widest it goes, so one long world or window name cannot run away with the layout.</summary>
     private const int RailMaxWidth = 44;
 
-    /// <summary>Breathing room between the widest row and the divider beside it.</summary>
-    private const int RailMargin = 2;
+    /// <summary>
+    /// Breathing room between the widest row and the divider beside it. One cell, not two: the divider
+    /// column and the <c>_railSpacer</c> beside it (see <see cref="BuildWorkspaceRow"/>) already separate
+    /// the rail from the panes, so a second margin cell is a column taken off every pane to no effect.
+    /// </summary>
+    private const int RailMargin = 1;
 
     /// <summary>
     /// The rail column width: the widest row's visible width plus a small margin, clamped. Collapsed, it
