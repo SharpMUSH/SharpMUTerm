@@ -46,6 +46,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly SessionManager _sessions = new();
     private readonly TerminalCapabilities _capabilities;
     private readonly Theme _theme;
+
+    /// <summary>
+    /// The colours this client paints in its own voice, resolved from <see cref="_theme"/> and held to
+    /// the legibility floor against the plane they land on — see <see cref="ChromeInk"/>. They were
+    /// hexes written into the markup at each use site, each picked against a dark theme and then painted
+    /// on whatever plane the workspace happened to have.
+    /// </summary>
+    private readonly ChromeInk _ink;
     private readonly MarkupFormatter _formatter;
     private readonly Workspace _workspace;
     private readonly Dictionary<string, MarkupControl> _panes = new(StringComparer.Ordinal);
@@ -569,6 +577,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _messages = _diagnostics.Messages;
         _sessions.Logger = _diagnostics.For("SharpMUTerm.Session");
         _theme = ResolveTheme(config);
+        _ink = WorkspacePalette.Chrome(_theme);
         _formatter = new MarkupFormatter(_theme, config.Text);
         _drafts = new DraftStore(() => config.Input.KeepDrafts);
         _secondBars = new InputBarVisibility(() => config.Input.SecondBar);
@@ -4920,7 +4929,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // segment is the same width whatever it says.
         var below = Math.Max(1, panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset);
         var distance = UnreadBadge.Format(below).PadLeft(UnreadBadge.FieldWidth);
-        return $"[#e5c07b]{Glyphs.Scrollback} scrollback[/] [dim]{distance} · ⌃End live[/]";
+        return $"[{_ink.Notice}]{Glyphs.Scrollback} scrollback[/] [dim]{distance} · ⌃End live[/]";
     }
 
     /// <summary>
@@ -5806,7 +5815,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             RouteTargets(),
             _system.DesktopDimensions.Width,
             session.Focus(),
-            _system.DesktopDimensions.Height));
+            _system.DesktopDimensions.Height,
+            _theme));
     }
 
     /// <summary>Opens the F3 Aliases screen: the alias list, then the alias's toggles.</summary>
@@ -6101,10 +6111,16 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>Renders a <see cref="TerminalColor"/> as a <c>#rrggbb</c> markup colour.</summary>
-    private static string AccentHex(TerminalColor accent) =>
+    /// <summary>
+    /// A world's own accent as a markup hex, or the app's when it has none. Held to the legibility floor
+    /// against the plane the status line and the rail are painted on — a world's accent is a colour a
+    /// user picked in F5, quite possibly against a different theme from the one they are reading in, and
+    /// this is the only place it meets the plane it lands on.
+    /// </summary>
+    private string AccentHex(TerminalColor accent) =>
         accent.Kind == TerminalColorKind.Rgb
-            ? $"#{accent.R:x2}{accent.G:x2}{accent.B:x2}"
-            : "#00f5b7";
+            ? Contrast.Legible(new Rgb(accent.R, accent.G, accent.B), WorkspacePalette.ChromePlane(_theme)).ToHex()
+            : _ink.Accent;
 
     /// <summary>
     /// Projects live config + workspace state into rail rows: each world (with an accent), its
@@ -7838,8 +7854,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     {
         var rows = BuildRail();
         return _railCollapsed
-            ? RailRenderer.RenderCollapsed(rows)
-            : RailRenderer.Render(rows, RailMaxWidth - RailMargin);
+            ? RailRenderer.RenderCollapsed(rows, _ink)
+            : RailRenderer.Render(rows, RailMaxWidth - RailMargin, _ink);
     }
 
     /// <summary>The narrowest the expanded sidebar goes, so a sparse rail still reads as a column.</summary>
@@ -8159,11 +8175,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The frozen-split chrome colour (design token #c678dd / ANSI 5), resolved through the theme.</summary>
-    private string FrozenAccentHex()
-    {
-        var rgb = _theme.ResolveIndex(5);
-        return $"#{rgb.R:x2}{rgb.G:x2}{rgb.B:x2}";
-    }
+    /// <summary>
+    /// The accent the three boundary bars — <c>▲ FROZEN</c>, the away bar, the restore bar — are drawn in.
+    /// <para>
+    /// It is the theme's own index 5 <em>held to the legibility floor against the pane it lands on</em>,
+    /// and the floor is the whole of a reported defect. Raw, on the default dark theme, that index is
+    /// <c>#800080</c> against a <c>#36363d</c> focused pane: <b>1.27:1</b>, which is a bar the reader was
+    /// told about and could not see. Keeping the theme's index rather than a hue of our own is what lets
+    /// a theme that overrides the base sixteen (Solarized does) contribute its own violet.
+    /// </para>
+    /// </summary>
+    private string FrozenAccentHex() => _ink.Marker;
 
     /// <summary>Rebuilds the pane area from the model and swaps it into the live window.</summary>
     private void RebuildPaneArea()
@@ -9195,7 +9217,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private string MovePromptMarkup()
     {
         var name = _moveWindowId is { } id && _workspace.FindWindow(id) is { } w ? Escape(w.Title) : "window";
-        return $"[#e5c07b]MOVE[/] [bold]{name}[/] [dim]→[/] [#00f5b7]{DropLabel(_moveTargetPaneId, _moveEdge)}[/]"
+        return $"[{_ink.Notice}]MOVE[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(_moveTargetPaneId, _moveEdge)}[/]"
             + "   [dim]1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel[/]";
     }
 
@@ -9498,7 +9520,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private string DragPromptMarkup(string? windowId, string? targetPaneId, Edge? edge)
     {
         var name = windowId is { } id && _workspace.FindWindow(id) is { } window ? Escape(window.Title) : "window";
-        return $"[#e5c07b]DRAG[/] [bold]{name}[/] [dim]→[/] [{PaneDropRenderer.ZoneColor}]{DropLabel(targetPaneId, edge)}[/]"
+        return $"[{_ink.Notice}]DRAG[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(targetPaneId, edge)}[/]"
             + "   [dim]release to drop · Esc cancel[/]";
     }
 
@@ -9537,7 +9559,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private IWindowControl BuildMovePane(PaneNode pane, int ordinal)
     {
         var selected = pane.Id == _moveTargetPaneId;
-        var color = selected ? "#00f5b7" : "#e5c07b";
+        var color = selected ? _ink.Accent : _ink.Notice;
         var lines = new List<string> { string.Empty, string.Empty };
         lines.Add($"     [bold {color}]▛▀▀▜[/]");
         lines.Add($"     [bold {color}]▌ {ordinal} ▐[/]");
@@ -9545,7 +9567,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         lines.Add(string.Empty);
         if (selected)
         {
-            lines.Add($"     [{PaneDropRenderer.ZoneColor}]{DropLabel(pane.Id, _moveEdge)}[/]");
+            lines.Add($"     [{_ink.Accent}]{DropLabel(pane.Id, _moveEdge)}[/]");
             lines.Add(string.Empty);
         }
 
@@ -10193,7 +10215,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var body = severity == MessageSeverity.Error
             ? $"[{ScreenPalette.Warn}]{Escape(text)}[/]"
             : $"[dim]{Escape(text)}[/]";
-        var markup = key is null ? body : $"[#e5c07b]{Escape(key)}[/] {body}";
+        var markup = key is null ? body : $"[{_ink.Notice}]{Escape(key)}[/] {body}";
 
         _notice = markup;
         PaintStatus(markup);
@@ -10311,7 +10333,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         if (_prefixArmed)
         {
             var room = HeaderWidth() - MarkupWidth(leftBar) - 2;
-            return $"{leftBar}  {PrefixPanel.Strip(room)}";
+            return $"{leftBar}  {PrefixPanel.Strip(room, _ink)}";
         }
 
         // Both halves count characters — see ConnectedCharacters for why that is the unit and what it used
@@ -10330,7 +10352,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var logFormat = HeaderLogFormat();
         var log = logFormat == LogFormat.None
             ? $"[dim]{Glyphs.Log} LOG off[/]"
-            : $"[#00f5b7]{Glyphs.Log}[/] [dim]LOG {logFormat.ToString().ToLowerInvariant()}[/]";
+            : $"[{_ink.Accent}]{Glyphs.Log}[/] [dim]LOG {logFormat.ToString().ToLowerInvariant()}[/]";
         // No graphics readout here. Which protocol the probe settled on is decided once at startup and
         // never changes, so a permanent cell of chrome spends the row's scarcest resource on a fact that
         // cannot become news — and it was already said twice elsewhere: the session prints
@@ -10437,7 +10459,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     private string StatusBarMarkup(string character, string state)
     {
-        var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : "#00f5b7";
+        var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
 
         var right = new List<string>();

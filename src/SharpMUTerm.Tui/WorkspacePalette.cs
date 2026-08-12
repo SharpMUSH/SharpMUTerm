@@ -361,6 +361,98 @@ internal static class WorkspacePalette
     /// <summary>The one-cell hairline a split draws between two panes, and beside the rail.</summary>
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);
 
+    /// <summary>
+    /// Every plane a pane's output can be painted on: the untinted surface and all six tints, each
+    /// focused and not. Fourteen colours, and what matters about them is that they form a <em>band</em>
+    /// — the whole set sits on one side of mid-scale, because every one of them is one theme background
+    /// put through a darkening and a brightening.
+    /// </summary>
+    private static IEnumerable<Rgb> PanePlanes(Theme theme)
+    {
+        foreach (var tint in Enum.GetValues<PaneTint>())
+        {
+            var plane = Tint(theme, tint);
+            yield return plane;
+            yield return Focus(plane);
+        }
+    }
+
+    /// <summary>
+    /// The one plane a foreground has to clear for it to be legible on <em>every</em> pane — the extreme
+    /// of <see cref="PanePlanes"/> in the direction a foreground on this theme is moved.
+    /// <para>
+    /// <b>It is the worst case rather than an approximation of one.</b> A lift pushes a foreground away
+    /// from the band; once it is past the band the contrast ratio is monotone in the background's
+    /// luminance, so the plane hardest to clear is the one furthest in the direction of travel — the
+    /// brightest on a dark theme, the darkest on a light one. Clearing it clears all fourteen.
+    /// </para>
+    /// <para>
+    /// <b>It is per theme, and that is the whole reason it exists.</b> A pane's actual plane depends on
+    /// its character's tint and on whether it holds focus, and resolving a colour against <em>that</em>
+    /// would mean re-formatting a whole buffer on every focus move — the expensive whole-buffer path
+    /// this codebase reserves for one deliberate keystroke. One plane per theme means a lifted colour is
+    /// decided once, when the line is formatted, and never revisited.
+    /// </para>
+    /// </summary>
+    internal static Rgb ReadingPlane(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Extreme(PanePlanes(theme), Surface(theme));
+    }
+
+    /// <summary>
+    /// The same worst case for the colours the <em>client</em> paints in its own voice, which land on
+    /// the <see cref="Backdrop"/> — the status line, the rail — as well as on panes. It is
+    /// <see cref="ReadingPlane"/>'s band with the backdrop added, so one ink is legible wherever the
+    /// chrome puts it: a status-line segment and a pane overlay must not need two different teals.
+    /// </summary>
+    internal static Rgb ChromePlane(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Extreme(PanePlanes(theme).Append(Backdrop(theme)), Surface(theme));
+    }
+
+    /// <summary>
+    /// The member of <paramref name="planes"/> hardest for a foreground to clear, given that the
+    /// direction of travel is decided by <paramref name="reference"/>: brightest when the theme is dark,
+    /// darkest when it is light.
+    /// </summary>
+    private static Rgb Extreme(IEnumerable<Rgb> planes, Rgb reference) =>
+        Contrast.RelativeLuminance(reference) < LightPlaneLuminance
+            ? planes.MaxBy(Contrast.RelativeLuminance)
+            : planes.MinBy(Contrast.RelativeLuminance);
+
+    /// <summary>
+    /// Mid-scale in relative luminance — 0.18, the sRGB middle grey. A theme whose planes sit below it
+    /// is dark and its text is lifted; above it and the text is darkened. Measured in luminance and not
+    /// in bytes because <c>#808080</c> looks like half way when written down and is not: its relative
+    /// luminance is 0.216, and a byte pivot would call it dark and push text <em>toward</em> it.
+    /// </summary>
+    private const double LightPlaneLuminance = 0.18;
+
+    /// <summary>
+    /// The colours this client paints in its own voice, resolved against the theme and held to
+    /// <see cref="Contrast.Floor"/> on the plane they land on. See <see cref="ChromeInk"/> for what each
+    /// one is for, and what it measured before it was measured against anything.
+    /// </summary>
+    internal static ChromeInk Chrome(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        var plane = ChromePlane(theme);
+
+        // The marker's hue is the theme's own index 5, so a theme that overrides the base palette
+        // (Solarized does) contributes its violet rather than xterm's. What is *not* the theme's to
+        // decide is whether that colour can be read: on the default dark theme index 5 is #800080
+        // against a #36363d pane, which is 1.27:1 — the reported "freeze is purple on a blue
+        // background", and very nearly the same colour twice.
+        return new ChromeInk(
+            Contrast.Legible(ChromeInk.BaseAccent, plane).ToHex(),
+            Contrast.Legible(ChromeInk.BaseNotice, plane).ToHex(),
+            Contrast.Legible(ChromeInk.BaseDraft, plane).ToHex(),
+            Contrast.Legible(theme.ResolveIndex(5), plane).ToHex());
+    }
+
     /// <summary>Linear blend of two colours, <paramref name="t"/> of the way from <paramref name="from"/> to <paramref name="to"/>.</summary>
     private static Rgb Mix(Rgb from, Rgb to, double t) => new(
         Channel(from.R + ((to.R - from.R) * t)),

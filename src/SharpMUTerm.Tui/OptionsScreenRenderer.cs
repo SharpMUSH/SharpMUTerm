@@ -261,6 +261,14 @@ internal static class OptionsScreenRenderer
             new("├ COLOUR", null, null),
             new("strip incoming ANSI colour", null, settings.StripIncomingColour, null,
                 ScreenToggle.Bind(() => settings.StripIncomingColour, v => settings.StripIncomingColour = v)),
+
+            // Directly under the row above, because the two are answers to one question — what to do
+            // about a colour this terminal cannot show well — and they are the ends of its range: that
+            // one discards every colour the server sent, this one keeps them all and moves only the few
+            // that cannot be read. Unticking it is not "no policy"; it is the policy this client had
+            // before anything was measured.
+            new("keep text legible", null, settings.KeepTextLegible, null,
+                ScreenToggle.Bind(() => settings.KeepTextLegible, v => settings.KeepTextLegible = v)),
             new("allow blink", null, settings.AllowBlink, null,
                 ScreenToggle.Bind(() => settings.AllowBlink, v => settings.AllowBlink = v)),
             new("underline hyperlinks", null, settings.UnderlineHyperlinks, null,

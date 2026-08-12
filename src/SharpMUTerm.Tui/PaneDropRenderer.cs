@@ -11,8 +11,12 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal static class PaneDropRenderer
 {
-    /// <summary>The highlight for the live drop zone (the app's teal accent).</summary>
-    internal const string ZoneColor = "#00f5b7";
+    /// <summary>
+    /// The highlight for the live drop zone — the app's teal accent, for the theme the caller is drawing
+    /// in. It is a parameter and no longer a constant because this lands <em>in a pane</em>: measured
+    /// against the plane it is painted on, the old literal is 1.42:1 on the Light theme.
+    /// </summary>
+    private static string Zone(ChromeInk? ink) => (ink ?? ChromeInk.Default).Accent;
 
     /// <summary>
     /// Renders one pane of the drag preview to <paramref name="height"/> markup rows of
@@ -26,8 +30,10 @@ internal static class PaneDropRenderer
         int height,
         bool hovered,
         Edge? edge,
-        double edgeFraction = DropZones.DefaultEdgeFraction)
+        double edgeFraction = DropZones.DefaultEdgeFraction,
+        ChromeInk? ink = null)
     {
+        var zoneColor = Zone(ink);
         width = Math.Max(1, width);
         height = Math.Max(1, height);
 
@@ -38,7 +44,7 @@ internal static class PaneDropRenderer
         for (var row = 0; row < height; row++)
         {
             var characters = row == textRow ? text : new string(' ', width);
-            lines.Add(RenderRow(characters, row, width, height, hovered, edge, edgeFraction));
+            lines.Add(RenderRow(characters, row, width, height, hovered, edge, edgeFraction, zoneColor));
         }
 
         return lines;
@@ -88,7 +94,8 @@ internal static class PaneDropRenderer
         int height,
         bool hovered,
         Edge? edge,
-        double edgeFraction)
+        double edgeFraction,
+        string zoneColor)
     {
         var builder = new StringBuilder();
         var open = false;
@@ -104,7 +111,7 @@ internal static class PaneDropRenderer
                     builder.Append("[/]");
                 }
 
-                builder.Append(zone ? $"[black on {ZoneColor}]" : "[dim]");
+                builder.Append(zone ? $"[black on {zoneColor}]" : "[dim]");
                 open = true;
                 highlighted = zone;
             }

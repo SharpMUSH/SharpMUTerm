@@ -33,6 +33,29 @@ public sealed class TextSettings
     public bool AllowBlink { get; set; }
 
     /// <summary>
+    /// Hold every foreground this client paints to <see cref="Text.Contrast.Floor"/> against the plane
+    /// it lands on — moving it the smallest distance that clears the floor, and leaving anything already
+    /// legible byte-identical.
+    /// <para>
+    /// On by default, because what it replaces is not a stylistic state. On the default dark theme's
+    /// focused pane the colours a MU* server sends constantly measure blue <b>1.34:1</b>, red
+    /// <b>1.09:1</b>, black <b>1.75:1</b> and magenta <b>1.27:1</b> — very nearly the surface painted
+    /// twice. Games are written for black terminals; this one is not black.
+    /// </para>
+    /// <para>
+    /// It is a <em>render-time</em> decision, which is what lets it repaint history: the stored colour is
+    /// untouched and only the markup a control is fed changes. That places it with the timestamp gutter
+    /// rather than with <see cref="StripIncomingColour"/> and <see cref="DetectLinks"/>, which are
+    /// ingest-time and reach only the next line.
+    /// </para>
+    /// <para>
+    /// Off emits exactly the bytes this client emitted before the floor existed — for a reader who wants
+    /// their game's own palette untouched, or a theme where the floor fights their taste.
+    /// </para>
+    /// </summary>
+    public bool KeepTextLegible { get; set; } = true;
+
+    /// <summary>
     /// How many spaces a tab in server output is drawn as. Zero removes tabs entirely.
     /// <para>
     /// A tab used to travel the pipeline as one character, so the wrap, the pane width and

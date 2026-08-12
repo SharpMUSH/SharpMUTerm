@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Core.Configuration;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -21,7 +22,8 @@ internal static class TriggersScreenView
         IReadOnlyList<string> routeTargets,
         int width,
         ScreenFocus? focus = null,
-        int height = 0)
+        int height = 0,
+        Theme? theme = null)
     {
         var header = ScreenChrome.Band(
             TriggersScreenRenderer.HeaderLine(
@@ -41,7 +43,8 @@ internal static class TriggersScreenView
         var body = ScreenChrome.Rows(height);
         var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules);
         var right = TriggersScreenRenderer.EditorColumn(
-            sets, selectedTrigger, routeTargets, focus, width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body);
+            sets, selectedTrigger, routeTargets, focus,
+            width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme);
 
         var rulesCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, body)));
         var editorCol = ScreenChrome.Stretch(new MarkupControl(

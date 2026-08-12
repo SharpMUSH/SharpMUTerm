@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Text;
@@ -522,7 +523,8 @@ internal static class TriggersScreenRenderer
         IReadOnlyList<string> routeTargets,
         ScreenFocus? focus = null,
         int width = ColumnWidth,
-        int height = 0)
+        int height = 0,
+        Theme? theme = null)
     {
         ArgumentNullException.ThrowIfNull(sets);
         ArgumentNullException.ThrowIfNull(routeTargets);
@@ -537,7 +539,8 @@ internal static class TriggersScreenRenderer
                 cursor,
                 selectedTrigger,
                 width,
-                height)
+                height,
+                theme is null ? null : WorkspacePalette.ReadingPlane(theme))
             : new List<string>();
     }
 
@@ -615,7 +618,8 @@ internal static class TriggersScreenRenderer
         ScreenFocus cursor,
         int index,
         int width = ColumnWidth,
-        int height = 0)
+        int height = 0,
+        Rgb? plane = null)
     {
         var name = cursor.EditOn(0, index, NameField);
         var set = cursor.EditOn(0, index, SetField);
@@ -681,8 +685,8 @@ internal static class TriggersScreenRenderer
         // caption only knew about colours it flatly lied about a bold-only rule.
         lines.Add(string.Empty);
         lines.Add(Heading("highlight", foreground ?? background ?? attributes, HighlightCaption(fg, bg, attrs)));
-        lines.Add(HighlightRow("fg", fg, foreground));
-        lines.Add(HighlightRow("bg", bg, background));
+        lines.Add(HighlightRow("fg", fg, foreground, plane));
+        lines.Add(HighlightRow("bg", bg, background, plane));
         lines.Add(AttributeRow(attrs, attributes));
         lines.AddRange(AttributeLegend(attributes?.Text ?? ScreenField.FormatFlags(attrs)));
 
@@ -763,12 +767,39 @@ internal static class TriggersScreenRenderer
     /// buffer and caret here. An unset colour gets a hollow swatch rather than none at all, so the row
     /// is visibly a place a colour goes.
     /// </summary>
-    private static string HighlightRow(string label, TerminalColor? colour, ScreenFieldEdit? edit)
+    /// <remarks>
+    /// <paramref name="plane"/> is the pane plane this colour will actually be painted on, when the
+    /// caller knows the theme. The swatch is drawn in the colour <em>as the pane will show it</em> —
+    /// through the same legibility floor <c>MarkupFormatter</c> applies — because a picker that shows
+    /// one colour while the output shows another is a picker that lies, and this screen has exactly one
+    /// job. Null keeps the raw colour, which is what a unit test with no theme wants.
+    /// </remarks>
+    private static string HighlightRow(
+        string label, TerminalColor? colour, ScreenFieldEdit? edit, Rgb? plane)
     {
-        var swatch = colour is { } set ? $"[{ScreenColours.Hex(set, Accent)}]████[/]" : $"[{Rule}]░░░░[/]";
+        var swatch = colour is { } set ? $"[{Painted(set, plane)}]████[/]" : $"[{Rule}]░░░░[/]";
         var name = ScreenColours.Format(colour);
         var display = colour is null ? $"[dim]{name}[/]" : $"[{Value}]{Escape(name)}[/]";
         return $"  {swatch} {PadVisible(label, HighlightLabelWidth)} {ScreenChrome.Field(display, edit)}";
+    }
+
+    /// <summary>
+    /// A highlight colour's markup hex as the output pane will paint it: the colour resolved, then held
+    /// to <see cref="Contrast.Floor"/> against <paramref name="plane"/>.
+    /// </summary>
+    private static string Painted(TerminalColor colour, Rgb? plane)
+    {
+        var hex = ScreenColours.Hex(colour, Accent);
+        if (plane is not { } surface || !hex.StartsWith('#'))
+        {
+            return hex;
+        }
+
+        var rgb = new Rgb(
+            Convert.ToByte(hex.Substring(1, 2), 16),
+            Convert.ToByte(hex.Substring(3, 2), 16),
+            Convert.ToByte(hex.Substring(5, 2), 16));
+        return Contrast.Legible(rgb, surface).ToHex();
     }
 
     /// <summary>
