@@ -136,7 +136,7 @@ internal static class RailRenderer
                     // Reserved here too. The collapsed strip is clamped to 4–10 cells, so it moves less —
                     // but it moves, and a strip that widens when a background world says something is the
                     // same reflow as the expanded rail's, on a rail chosen for taking no space.
-                    lines.Add(Link(row, $"[{Accent(row, voice)}]{dot}[/]{name}{UnreadField(row.Unread)}"));
+                    lines.Add(Link(row, $"[{Accent(row, voice)}]{dot}[/]{name}{UnreadField(row.Unread, voice)}"));
                     break;
             }
         }
@@ -170,7 +170,7 @@ internal static class RailRenderer
         var dot = row.Connected ? "●" : "○";
         var name = row.Active ? $"[bold]{Escape(row.Label)}[/]" : Escape(row.Label);
         return $"{Indent(row)}{ChordField(row.Chord, reserve)}"
-            + Link(row, $"{marker} [{Accent(row, ink)}]{dot}[/] {name}{UnreadField(row.Unread)}");
+            + Link(row, $"{marker} [{Accent(row, ink)}]{dot}[/] {name}{UnreadField(row.Unread, ink)}");
     }
 
     /// <summary>
@@ -247,10 +247,10 @@ internal static class RailRenderer
     /// from as well, so the sidebar and the strip cannot come to say different things about one count.
     /// </para>
     /// </summary>
-    private static string UnreadField(int unread) =>
+    private static string UnreadField(int unread, ChromeInk ink) =>
         unread <= 0
             ? new string(' ', UnreadFieldWidth)
-            : $"[{UnreadBadge.Tint}]{UnreadBadge.Format(unread).PadLeft(UnreadFieldWidth)}[/]";
+            : $"[{UnreadBadge.TintFor(ink)}]{UnreadBadge.Format(unread).PadLeft(UnreadFieldWidth)}[/]";
 
     /// <summary>
     /// A window row: how you get to it, then what it is, then its badges.
@@ -283,7 +283,7 @@ internal static class RailRenderer
         var name = Escape(row.Label);
         var closed = row.Closed ? " [dim]closed[/]" : string.Empty;
         return $"{Indent(row)}{ChordField(row.Closed ? null : row.Chord, reserve)}"
-            + Link(row, $"[dim]▪[/] {name}{Unsent(row.Unsent, ink)}{UnreadField(row.Unread)}{closed}");
+            + Link(row, $"[dim]▪[/] {name}{Unsent(row.Unsent, ink)}{UnreadField(row.Unread, ink)}{closed}");
     }
 
     /// <summary>
@@ -299,8 +299,14 @@ internal static class RailRenderer
 
     private static string Indent(RailRow row) => new(' ', row.Indent * 2);
 
+    /// <summary>
+    /// A row's own accent as a markup hex, or the client's when it has none — either way held to the
+    /// legibility floor against the plane the sidebar is drawn on. A world's accent is a colour a user
+    /// picked in F5 and this is where it meets a plane: unlifted, the demo's own <c>#ff9f1c</c> measures
+    /// 1.03:1 on the Light theme's backdrop.
+    /// </summary>
     private static string Accent(RailRow row, ChromeInk ink) =>
         row.Accent.Kind == TerminalColorKind.Rgb
-            ? $"#{row.Accent.R:x2}{row.Accent.G:x2}{row.Accent.B:x2}"
+            ? ink.Lift(new Rgb(row.Accent.R, row.Accent.G, row.Accent.B))
             : ink.Accent;
 }

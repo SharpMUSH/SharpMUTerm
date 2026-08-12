@@ -36,7 +36,7 @@ public class TabTitlesTests
         var ws = new Workspace();
         ws.RouteSpawn("Chat");
         var chat = ws.RouteSpawn("Chat"); // two background routes → unread 2
-        await Assert.That(TabTitles.For(chat)).IsEqualTo($"[{UnreadBadge.Tint}]Chat (2)[/]");
+        await Assert.That(TabTitles.For(chat)).IsEqualTo($"[{UnreadBadge.TintFor(null)}]Chat (2)[/]");
     }
 
     /// <summary>
@@ -52,7 +52,7 @@ public class TabTitlesTests
     {
         var window = Background("Mannaz", unread);
         await Assert.That(window.Unread).IsEqualTo(unread);
-        await Assert.That(TabTitles.For(window)).IsEqualTo($"[{UnreadBadge.Tint}]Mannaz ({badge})[/]");
+        await Assert.That(TabTitles.For(window)).IsEqualTo($"[{UnreadBadge.TintFor(null)}]Mannaz ({badge})[/]");
     }
 
     /// <summary>
@@ -66,7 +66,7 @@ public class TabTitlesTests
         var window = Background("Mannaz", 36);
         var label = TabTitles.For(window, focusedPane: true);
 
-        await Assert.That(label).IsEqualTo($"{Glyphs.FocusedPane} [{UnreadBadge.Tint}]Mannaz (36)[/]");
+        await Assert.That(label).IsEqualTo($"{Glyphs.FocusedPane} [{UnreadBadge.TintFor(null)}]Mannaz (36)[/]");
         await Assert.That(label.StartsWith(Glyphs.FocusedPane, StringComparison.Ordinal)).IsTrue();
     }
 
@@ -101,7 +101,7 @@ public class TabTitlesTests
         var ws = new Workspace();
         var chat = ws.RouteSpawn("Chat"); // unread 1, background
         ws.SetUnsentInput(chat.Id, true);
-        await Assert.That(TabTitles.For(chat)).IsEqualTo($"[{UnreadBadge.Tint}]Chat (1)[/] {Glyphs.Draft}");
+        await Assert.That(TabTitles.For(chat)).IsEqualTo($"[{UnreadBadge.TintFor(null)}]Chat (1)[/] {Glyphs.Draft}");
     }
 
     [Test]
@@ -130,7 +130,7 @@ public class TabTitlesTests
         chat.OwnerLabel = "Corvid";
         ws.SetUnsentInput(chat.Id, true);
         await Assert.That(TabTitles.For(chat))
-            .IsEqualTo($"[{UnreadBadge.Tint}]Corvid - Chat (1)[/] {Glyphs.Draft}");
+            .IsEqualTo($"[{UnreadBadge.TintFor(null)}]Corvid - Chat (1)[/] {Glyphs.Draft}");
     }
 
     [Test]

@@ -36,12 +36,18 @@ namespace SharpMUTerm.Tui;
 /// ⌃B strip, a which-key entry's chord.
 /// </param>
 /// <param name="Draft">The gold pen marking a rail row whose window holds an unsent draft.</param>
+/// <param name="Plane">
+/// The plane these were measured against — carried so a renderer can hold a colour it is <em>handed</em>
+/// to the same floor. A world's own accent is the case: it is a colour a user picked in F5, quite
+/// possibly against a different theme from the one they are reading in, and the rail and the header are
+/// where it meets a plane.
+/// </param>
 /// <param name="Marker">
 /// The boundary bars' accent — <c>▲ FROZEN</c>, the away bar, the restore bar. It is the one of the
 /// four that is drawn from the <em>theme's</em> palette (index 5) rather than from a base hue here,
 /// because a theme that overrides the base sixteen has an opinion about its own violet.
 /// </param>
-internal readonly record struct ChromeInk(string Accent, string Notice, string Draft, string Marker)
+internal readonly record struct ChromeInk(string Accent, string Notice, string Draft, string Marker, Rgb Plane)
 {
     /// <summary>The app's teal accent, before a theme has said how light it needs to be.</summary>
     internal static readonly Rgb BaseAccent = new(0x00, 0xf5, 0xb7);
@@ -62,5 +68,19 @@ internal readonly record struct ChromeInk(string Accent, string Notice, string D
         BaseAccent.ToHex(),
         BaseNotice.ToHex(),
         BaseDraft.ToHex(),
-        AnsiPalette.ToRgb(5).ToHex());
+        AnsiPalette.ToRgb(5).ToHex(),
+        new Rgb(0x22, 0x22, 0x26));
+
+    /// <summary>
+    /// A colour this client was <em>handed</em> — a world's accent, a rail row's — held to the floor
+    /// against <see cref="Plane"/>, as a markup hex.
+    /// </summary>
+    internal string Lift(Rgb colour) => Contrast.Legible(colour, Plane).ToHex();
+
+    /// <summary>
+    /// Text that has to be read on a known fill rather than on the plane: the ink on an accent chip, the
+    /// glyph on the header's character segment. Measured against <paramref name="fill"/>, because that
+    /// is what it lands on and the plane says nothing about it.
+    /// </summary>
+    internal static string On(Rgb ink, Rgb fill) => Contrast.Legible(ink, fill).ToHex();
 }

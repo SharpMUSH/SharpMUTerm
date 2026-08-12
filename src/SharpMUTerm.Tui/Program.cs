@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Theming;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Telnet.Mssp;
@@ -47,6 +48,19 @@ internal static class Program
             // No save action: a snapshot renders, it does not edit. The settings screens persist each
             // committed change now, and a --view that drives keys into a field would otherwise write the
             // demo worlds straight over the real configuration.
+            // --theme names a built-in flavour for this render only. It exists because the client's own
+            // chrome is derived from the theme and held to a legibility floor against it, and every frame
+            // in the gallery renders Dark — which is exactly how the Light theme's accent (1.42:1), draft
+            // pen (1.26:1) and notice (1.73:1) stayed unreadable without anybody seeing them.
+            if (GetOption(args, "--theme") is { } themeName)
+            {
+                // Both, because ResolveTheme treats an inline Theme whose Name disagrees with ThemeName
+                // as a customised one and prefers it — so setting the name alone would select the built-in
+                // and then be overruled by the default Dark still sitting in Theme.
+                config.ThemeName = themeName;
+                config.Theme = ThemeLibrary.Get(themeName);
+            }
+
             var (width, height) = ParseSize(args);
             var app = new SharpMUTermApp(config, capabilities, new HeadlessConsoleDriver(width, height));
             var frame = app.RenderSnapshot(GetOption(args, "--view"));

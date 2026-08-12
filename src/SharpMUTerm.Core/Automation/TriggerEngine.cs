@@ -15,7 +15,8 @@ public sealed class TriggerResult
         IReadOnlyList<string> responses,
         IReadOnlyList<string> spawnTargets,
         IReadOnlyList<TriggerScriptInvocation> scriptInvocations,
-        IReadOnlyList<Trigger> matched)
+        IReadOnlyList<Trigger> matched,
+        bool routeMain = false)
     {
         Line = line;
         Suppress = suppress;
@@ -23,13 +24,35 @@ public sealed class TriggerResult
         SpawnTargets = spawnTargets;
         ScriptInvocations = scriptInvocations;
         Matched = matched;
+        RouteMain = routeMain;
     }
 
     /// <summary>The (possibly highlighted/rewritten) line to display.</summary>
     public StyledLine Line { get; }
 
-    /// <summary>True if the line should be gagged (not displayed in the main window).</summary>
+    /// <summary>
+    /// True if a matched rule gagged the line — it is not delivered to the destination it would have
+    /// reached on its own.
+    /// <para>
+    /// <b>It suppresses the default delivery and nothing else.</b> Every destination a rule
+    /// <em>asked</em> for survives it, which has always been true of a spawn pane (<c>route: Chat</c>
+    /// plus gag has always meant "only in Chat") and is now true of <see cref="RouteMain"/> as well.
+    /// That is what "gag means only where I routed it" amounts to.
+    /// </para>
+    /// </summary>
     public bool Suppress { get; }
+
+    /// <summary>
+    /// True when a matched rule asked for the session's own main window by name
+    /// (<see cref="TriggerActions.MainWindow"/>) — a destination, and therefore not cancelled by
+    /// <see cref="Suppress"/>.
+    /// <para>
+    /// It is kept apart from <see cref="SpawnTargets"/> rather than being an entry in it because the
+    /// main window is not a capture pane and must never be looked up as one: routing to a spawn called
+    /// <c>main</c> is exactly what this replaces.
+    /// </para>
+    /// </summary>
+    public bool RouteMain { get; }
 
     /// <summary>Commands to send back to the server, in order.</summary>
     public IReadOnlyList<string> Responses { get; }
@@ -217,6 +240,7 @@ public sealed class TriggerEngine
 
         var current = line;
         var suppress = false;
+        var routeMain = false;
         List<string>? responses = null;
         List<string>? spawns = null;
         List<TriggerScriptInvocation>? scripts = null;
@@ -288,7 +312,19 @@ public sealed class TriggerEngine
             if (!string.IsNullOrEmpty(actions.SpawnTarget) &&
                 ResolveSpawnTarget(actions.SpawnTarget, match) is { } target)
             {
-                (spawns ??= new List<string>()).Add(target);
+                if (string.Equals(target, TriggerActions.MainWindow, StringComparison.OrdinalIgnoreCase))
+                {
+                    // A reserved word a user types into a field, so it is matched without regard to case.
+                    routeMain = true;
+                }
+                else if (!(spawns ??= new List<string>()).Contains(target, StringComparer.Ordinal))
+                {
+                    // Deduplicated, because a destination is a place and not an event: two rules naming
+                    // one pane deliver one line. They delivered two — the list was bare and the session
+                    // raises one event per entry — so a highlight rule pointed at the same pane as its
+                    // capture rule doubled every line it touched.
+                    spawns.Add(target);
+                }
             }
 
             if (!string.IsNullOrEmpty(actions.ScriptCallback))
@@ -321,7 +357,8 @@ public sealed class TriggerEngine
             (IReadOnlyList<string>?)responses ?? Array.Empty<string>(),
             (IReadOnlyList<string>?)spawns ?? Array.Empty<string>(),
             (IReadOnlyList<TriggerScriptInvocation>?)scripts ?? Array.Empty<TriggerScriptInvocation>(),
-            (IReadOnlyList<Trigger>?)matched ?? Array.Empty<Trigger>());
+            (IReadOnlyList<Trigger>?)matched ?? Array.Empty<Trigger>(),
+            routeMain);
     }
 
     /// <summary>

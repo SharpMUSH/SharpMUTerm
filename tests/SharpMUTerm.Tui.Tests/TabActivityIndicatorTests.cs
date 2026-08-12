@@ -141,13 +141,13 @@ public class TabActivityIndicatorTests
 
         // The rail's own rows carry the same badge, right-aligned in the field it reserves for one.
         var railRows = app.RailLines
-            .Where(l => Regex.IsMatch(l, $@"\[{Regex.Escape(UnreadBadge.Tint)}\]\s*\d+\+?\[/\]"))
+            .Where(l => Regex.IsMatch(l, $@"\[{Regex.Escape(UnreadBadge.TintFor(null))}\]\s*\d+\+?\[/\]"))
             .ToList();
         await Assert.That(railRows).IsNotEmpty();
         foreach (var railRow in railRows)
         {
             await Assert.That(railRow)
-                .Contains($"[{UnreadBadge.Tint}]{badge.PadLeft(UnreadBadge.FieldWidth)}[/]");
+                .Contains($"[{UnreadBadge.TintFor(null)}]{badge.PadLeft(UnreadBadge.FieldWidth)}[/]");
         }
 
         // Once the cap has bitten, the uncapped number is on neither surface. This is the assertion that
@@ -212,16 +212,16 @@ public class TabActivityIndicatorTests
         // wide margin — so it reads whichever pane the tab is in.
         foreach (var plane in planes)
         {
-            await Assert.That(plane).IsNotEqualTo(UnreadBadge.Tint);
-            await Assert.That(Contrast(UnreadBadge.Tint, plane)).IsGreaterThan(4.5);
+            await Assert.That(plane).IsNotEqualTo(UnreadBadge.TintFor(null));
+            await Assert.That(Contrast(UnreadBadge.TintFor(null), plane)).IsGreaterThan(4.5);
         }
 
         // The tinted cells are all drawn on one background — the focused chip's — which is what makes the
         // point: same cells, two channels, and the background is doing the focus half on its own.
         var chip = tinted.Select(c => c.Background).Distinct().ToList();
         await Assert.That(chip.Count).IsEqualTo(1);
-        await Assert.That(chip[0]).IsNotEqualTo(UnreadBadge.Tint);
-        await Assert.That(Contrast(UnreadBadge.Tint, chip[0]!)).IsGreaterThan(4.5);
+        await Assert.That(chip[0]).IsNotEqualTo(UnreadBadge.TintFor(null));
+        await Assert.That(Contrast(UnreadBadge.TintFor(null), chip[0]!)).IsGreaterThan(4.5);
     }
 
     /// <summary>
@@ -238,7 +238,7 @@ public class TabActivityIndicatorTests
 
         var cells = Cells(app.RenderWholeFrame());
         var marker = cells.Values.Single(c => c.Row == StripRow(app) && c.Char == Glyphs.FocusedPane[0]);
-        await Assert.That(marker.Foreground).IsNotEqualTo(UnreadBadge.Tint);
+        await Assert.That(marker.Foreground).IsNotEqualTo(UnreadBadge.TintFor(null));
     }
 
     // --- the NAWS trap ----------------------------------------------------------------------------
@@ -394,7 +394,7 @@ public class TabActivityIndicatorTests
 
         await Assert.That(app.UnreadOf(Main)).IsEqualTo(0);
         await Assert.That(MainTabLabel(app)).DoesNotContain("(");
-        await Assert.That(MainTabLabel(app)).DoesNotContain(UnreadBadge.Tint);
+        await Assert.That(MainTabLabel(app)).DoesNotContain(UnreadBadge.TintFor(null));
         await Assert.That(RailShowsABadge(app)).IsFalse();
     }
 
@@ -405,7 +405,7 @@ public class TabActivityIndicatorTests
     /// </summary>
     private static bool RailShowsABadge(SharpMUTermApp app) =>
         app.RailLines.Any(l => Regex.IsMatch(
-            l, $@"\[{Regex.Escape(UnreadBadge.Tint)}\]\s*\d+\+?\[/\]"));
+            l, $@"\[{Regex.Escape(UnreadBadge.TintFor(null))}\]\s*\d+\+?\[/\]"));
 
     // --- frame decoding ---------------------------------------------------------------------------
 
@@ -485,7 +485,7 @@ public class TabActivityIndicatorTests
     /// <summary>
     /// The tinted cells on one row, in column order and within that pane's own columns.
     /// <para>
-    /// Scoped rather than swept, because <see cref="UnreadBadge.Tint"/> is the <em>app accent</em> and the
+    /// Scoped rather than swept, because <see cref="UnreadBadge.TintFor(null)"/> is the <em>app accent</em> and the
     /// chrome already uses it elsewhere — the header's connected ●, the rail's world spine ▚ and its status
     /// dots are all painted in it. That is fine where it is: those are fixed decorations in fixed places,
     /// and inside a tab strip nothing else is accent-coloured, so on this row the tint is unambiguous. But
@@ -499,7 +499,7 @@ public class TabActivityIndicatorTests
         return cells.Values
             .Where(c => c.Row == row
                         && c.Column >= rect.X && c.Column < rect.X + rect.Width
-                        && c.Foreground == UnreadBadge.Tint)
+                        && c.Foreground == UnreadBadge.TintFor(null))
             .OrderBy(c => c.Column)
             .ToList();
     }

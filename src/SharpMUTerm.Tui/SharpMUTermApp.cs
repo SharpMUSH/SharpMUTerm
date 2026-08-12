@@ -3930,8 +3930,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // bar being rebuilt. Setting them here anyway means a bar is never unpainted between construction
         // and the first chrome refresh.
         PaintInputBands(PaneTint.None);
-        bar.TextColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: false));
-        bar.IdleTextColor = ToColor(WorkspacePalette.IdleInk(_theme));
         bar.HasSibling = () => _second.Visible;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
@@ -4993,10 +4991,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private void PaintInputBands(PaneTint tint)
     {
         _inputBands = (WorkspacePalette.ArmedBand(_theme, tint), WorkspacePalette.IdleBand(_theme, tint));
+
+        // The ink follows the band. A tint moves a band's hue and not its luminance, so this is the same
+        // answer for every character — but it is *not* the same answer for every theme, and that is what
+        // this is for: Solarized's foreground on its own armed band measured 2.43:1, which made the
+        // command line the least readable text in the client on the theme most often chosen for comfort.
+        var armedInk = ToColor(Contrast.Legible(
+            _theme.Resolve(TerminalColor.Default, isBackground: false), _inputBands.Armed));
+        var idleInk = ToColor(Contrast.Legible(WorkspacePalette.IdleInk(_theme), _inputBands.Idle));
+
         foreach (var bar in new[] { _input, _second })
         {
             bar.BandColor = ToColor(_inputBands.Armed);
             bar.IdleBandColor = ToColor(_inputBands.Idle);
+            bar.TextColor = armedInk;
+            bar.IdleTextColor = idleInk;
         }
     }
 
@@ -6110,17 +6119,38 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         return null;
     }
 
-    /// <summary>Renders a <see cref="TerminalColor"/> as a <c>#rrggbb</c> markup colour.</summary>
     /// <summary>
-    /// A world's own accent as a markup hex, or the app's when it has none. Held to the legibility floor
-    /// against the plane the status line and the rail are painted on — a world's accent is a colour a
-    /// user picked in F5, quite possibly against a different theme from the one they are reading in, and
-    /// this is the only place it meets the plane it lands on.
+    /// A world's own accent as <em>text</em>: a markup hex held to the legibility floor against the plane
+    /// the status line and the rail are painted on. A world's accent is a colour a user picked in F5,
+    /// quite possibly against a different theme from the one they are reading in, and this is where it
+    /// meets a plane. Falls back to the client's own accent when the world has none.
     /// </summary>
     private string AccentHex(TerminalColor accent) =>
+        accent.Kind == TerminalColorKind.Rgb ? _ink.Lift(new Rgb(accent.R, accent.G, accent.B)) : _ink.Accent;
+
+    /// <summary>
+    /// A world's accent as a <em>fill</em> — the header ribbon's segments. Deliberately <b>not</b> lifted:
+    /// a fill is identity, the same reasoning the pane tints are built on, and holding one to a floor
+    /// against a plane it covers rather than sits on would flatten the ribbon's own hues to a row of
+    /// near-identical pastels. What has to clear the floor is the text on it, which is <see cref="Ink"/>.
+    /// </summary>
+    private string FillHex(TerminalColor accent) =>
         accent.Kind == TerminalColorKind.Rgb
-            ? Contrast.Legible(new Rgb(accent.R, accent.G, accent.B), WorkspacePalette.ChromePlane(_theme)).ToHex()
+            ? new Rgb(accent.R, accent.G, accent.B).ToHex()
             : _ink.Accent;
+
+    /// <summary>
+    /// Text on a known fill, held to the floor against <em>that fill</em> rather than against any plane —
+    /// the ribbon's segment labels and the ● that wears the world's colour on the character chip.
+    /// </summary>
+    private static string Ink(string inkHex, string fillHex) =>
+        ChromeInk.On(ParseHex(inkHex), ParseHex(fillHex));
+
+    /// <summary>A <c>#rrggbb</c> markup colour back as a colour.</summary>
+    private static Rgb ParseHex(string hex) => new(
+        Convert.ToByte(hex.Substring(1, 2), 16),
+        Convert.ToByte(hex.Substring(3, 2), 16),
+        Convert.ToByte(hex.Substring(5, 2), 16));
 
     /// <summary>
     /// Projects live config + workspace state into rail rows: each world (with an accent), its
@@ -8017,12 +8047,20 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PaintTabChips(TabControl tabs, bool focused, Rgb plane)
     {
-        var activeBg = ToColor(focused ? WorkspacePalette.ArmedBand(_theme) : plane);
-        var activeFg = ToColor(focused
-            ? _theme.Resolve(TerminalColor.Default, isBackground: false)
-            : WorkspacePalette.IdleInk(_theme));
-        var restBg = ToColor(focused ? WorkspacePalette.Focus(plane) : plane);
-        var restFg = ToColor(WorkspacePalette.IdleInk(_theme));
+        // Each ink is held to the floor against the chip it actually lands on, and the two chips are
+        // different planes. Solarized is the theme that showed why: its foreground on its own armed band
+        // measured 2.43:1, so the active tab and the command line — the two places this pair is used —
+        // were the least readable text in the client on the theme most likely to be chosen for comfort.
+        var activeBgRgb = focused ? WorkspacePalette.ArmedBand(_theme) : plane;
+        var restBgRgb = focused ? WorkspacePalette.Focus(plane) : plane;
+        var activeBg = ToColor(activeBgRgb);
+        var activeFg = ToColor(Contrast.Legible(
+            focused
+                ? _theme.Resolve(TerminalColor.Default, isBackground: false)
+                : WorkspacePalette.IdleInk(_theme),
+            activeBgRgb));
+        var restBg = ToColor(restBgRgb);
+        var restFg = ToColor(Contrast.Legible(WorkspacePalette.IdleInk(_theme), restBgRgb));
 
         tabs.ActiveFocusedBackgroundColor = activeBg;
         tabs.ActiveUnfocusedBackgroundColor = activeBg;
@@ -8051,7 +8089,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             // so a glyph is the only per-pane cue the strip can carry, and it is the shape half of the
             // focus signal — it reads on a monochrome terminal, where a luminance step does not.
             builder.AddTab(
-                TabTitles.For(window, ActiveCharacterKey(), focused && pane.ActiveTab == windowId),
+                TabTitles.For(window, ActiveCharacterKey(), focused && pane.ActiveTab == windowId, _ink),
                 BuildTabContent(pane, windowId, window));
             ids.Add(windowId);
         }
@@ -9872,7 +9910,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 if (page.Tag is string id && _workspace.FindWindow(id) is { } window)
                 {
                     page.Title = TabTitles.For(
-                        window, focusedCharacter, IsFocusedPane(paneId) && activeTab == id);
+                        window, focusedCharacter, IsFocusedPane(paneId) && activeTab == id, _ink);
                     // The × follows the active tab, so keep it in step with every title refresh.
                     page.IsClosable = CanCloseTab(id, activeTab);
                 }
@@ -10298,25 +10336,37 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var caret = _palette is { IsOpen: true } ? "▾" : Glyphs.Menu;
         var dark = Hex(_theme.Resolve(TerminalColor.Default, isBackground: true));
         var headerBg = Hex(_theme.StatusBackground);
-        var chip = "#3f4859"; // dim chrome the character segment sits on
+        // The dim chrome the character segment sits on. Derived rather than the literal #3f4859 it was:
+        // the header is painted on the theme's own chrome band, and a fixed dark chip under a *light*
+        // theme is a plane nothing else on the row is measured against — which is how the world accent
+        // came to be drawn on it at 1.53:1.
+        var chipRgb = WorkspacePalette.HeaderChip(_theme);
+        var chip = chipRgb.ToHex();
 
         // Build the ribbon by hand so only the brand "button" is a link (wrapping the whole bar makes
         // the driver's link highlight repaint every segment and flatten the flowing colours).
-        var brandBg = AccentHex(AccentPalette[2]); // violet
+        // A segment's accent is a *fill* and is not lifted: it is identity, the same reasoning the pane
+        // tints are built on, and lifting a fill would flatten the ribbon's own hues. What has to be
+        // legible is the text *on* it, so each segment's ink is measured against the fill it lands on.
+        var brandBg = FillHex(AccentPalette[2]); // violet
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[link={MenuScheme}toggle][bold {dark} on {brandBg}] {caret} muterm [/][/]");
+        sb.Append($"[link={MenuScheme}toggle][bold {Ink(dark, brandBg)} on {brandBg}] {caret} muterm [/][/]");
 
         var tail = brandBg;
         if (ActiveWorld() is { } active)
         {
-            var worldAccent = AccentHex(active.Accent);
+            var worldAccent = FillHex(active.Accent);
             sb.Append($"[{tail} on {worldAccent}]{Glyphs.PowerRight}[/]");
-            sb.Append($"[bold {dark} on {worldAccent}] {Escape(active.World.Name)} [/]");
+            sb.Append($"[bold {Ink(dark, worldAccent)} on {worldAccent}] {Escape(active.World.Name)} [/]");
             tail = worldAccent;
             if (active.Character is { } name)
             {
                 sb.Append($"[{tail} on {chip}]{Glyphs.PowerRight}[/]");
-                sb.Append($"[{worldAccent} on {chip}] ● {Escape(name)} [/]");
+
+                // The ● wears the world's colour and is *text* here rather than a fill, so it is the one
+                // place on this row the accent has to clear the floor — against the chip, which is the
+                // plane it actually lands on.
+                sb.Append($"[{Ink(worldAccent, chip)} on {chip}] ● {Escape(name)} [/]");
                 tail = chip;
             }
         }

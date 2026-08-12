@@ -362,6 +362,29 @@ internal static class WorkspacePalette
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);
 
     /// <summary>
+    /// The dim chrome the header ribbon's character segment sits on — the theme's chrome band lifted
+    /// toward its own foreground, so the segment reads as a distinct chip against the band it ends on.
+    /// <para>
+    /// Derived rather than the fixed <c>#3f4859</c> it was. That literal was picked against a dark theme
+    /// and is a <em>dark</em> chip whatever the theme, so under Light the world's accent — text on this
+    /// chip — was drawn at 1.53:1 while everything around it had been resolved for a light plane.
+    /// </para>
+    /// </summary>
+    internal static Rgb HeaderChip(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Mix(theme.StatusBackground, theme.Foreground, ChipLift);
+    }
+
+    /// <summary>
+    /// How far the header chip is lifted off the chrome band toward the theme's ink. Enough that the
+    /// wedge between the two is visible as a shape — the segment boundary is the only thing that says
+    /// where one part of the ribbon ends — and no further, because this is a background for a name and
+    /// not a highlight.
+    /// </summary>
+    private const double ChipLift = 0.22;
+
+    /// <summary>
     /// Every plane a pane's output can be painted on: the untinted surface and all six tints, each
     /// focused and not. Fourteen colours, and what matters about them is that they form a <em>band</em>
     /// — the whole set sits on one side of mid-scale, because every one of them is one theme background
@@ -450,7 +473,8 @@ internal static class WorkspacePalette
             Contrast.Legible(ChromeInk.BaseAccent, plane).ToHex(),
             Contrast.Legible(ChromeInk.BaseNotice, plane).ToHex(),
             Contrast.Legible(ChromeInk.BaseDraft, plane).ToHex(),
-            Contrast.Legible(theme.ResolveIndex(5), plane).ToHex());
+            Contrast.Legible(theme.ResolveIndex(5), plane).ToHex(),
+            plane);
     }
 
     /// <summary>Linear blend of two colours, <paramref name="t"/> of the way from <paramref name="from"/> to <paramref name="to"/>.</summary>

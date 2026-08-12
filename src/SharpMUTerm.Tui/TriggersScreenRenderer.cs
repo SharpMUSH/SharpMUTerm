@@ -42,10 +42,25 @@ internal static class TriggersScreenRenderer
     internal const int MinEditorWidth = 48;
 
     /// <summary>
-    /// What the route list calls "no spawn window" — a rule with a null <c>SpawnTarget</c> goes to the
-    /// main output. It is a real choice in the radio group, not the absence of one.
+    /// What the route list calls a rule that <b>delivers nowhere of its own</b> — a null
+    /// <c>SpawnTarget</c>. The line goes wherever the other matched rules send it, and to this session's
+    /// own window if none of them sends it anywhere.
+    /// <para>
+    /// It is the default for a new rule, and it is what a highlight rule wants: recolour the match and
+    /// leave the line where it was. This choice used to be spelt <c>main</c>, which read as a
+    /// destination and was not one — so "highlight it and leave it where it was" looked like something
+    /// this screen could not express, and a rule that gagged while routed to <c>main</c> deleted the
+    /// line instead of keeping it there.
+    /// </para>
     /// </summary>
-    internal const string MainWindow = "main";
+    internal const string NoRoute = "(none)";
+
+    /// <summary>
+    /// The session's own main window, as a real destination — <see cref="TriggerActions.MainWindow"/>.
+    /// Distinct from <see cref="NoRoute"/> in exactly the way a place is distinct from no place: a gag
+    /// leaves this delivery standing and cancels the other.
+    /// </summary>
+    internal const string MainWindow = TriggerActions.MainWindow;
 
     /// <summary>
     /// The rule row's field ordinals, in the order ⇥ steps through them. The name leads, as it does on
@@ -117,7 +132,7 @@ internal static class TriggersScreenRenderer
     private const string NewTriggerPattern = "text to match";
 
     /// <summary>The window a rule routes to, as the route field reads and writes it.</summary>
-    private static string Route(Trigger trigger) => trigger.Actions.SpawnTarget ?? MainWindow;
+    private static string Route(Trigger trigger) => trigger.Actions.SpawnTarget ?? NoRoute;
 
     /// <summary>
     /// The destinations offered as ↑↓ suggestions on the route field: the main output, every window a
@@ -135,7 +150,9 @@ internal static class TriggersScreenRenderer
     {
         ArgumentNullException.ThrowIfNull(trigger);
 
-        var routes = new List<string> { MainWindow };
+        // Both of the two that are always offered, in the order a reader meets them: the commonest
+        // answer first, then the one that is a place.
+        var routes = new List<string> { NoRoute, MainWindow };
         foreach (var target in (routeTargets ?? Array.Empty<string>()).Append(Route(trigger)))
         {
             if (!string.IsNullOrEmpty(target) && !routes.Contains(target, StringComparer.Ordinal))
@@ -286,7 +303,7 @@ internal static class TriggersScreenRenderer
             ScreenField.WindowName(
                 "route",
                 () => Route(entry.Trigger),
-                v => entry.Trigger.Actions.SpawnTarget = v == MainWindow ? null : v.Trim(),
+                v => entry.Trigger.Actions.SpawnTarget = v == NoRoute ? null : v.Trim(),
                 Routes(entry.Trigger, routeTargets)),
             ScreenField.Colour(
                 "highlight fg",

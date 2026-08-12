@@ -45,12 +45,37 @@ public sealed class TriggerActions
     public string? SendResponse { get; set; }
 
     /// <summary>
-    /// Route the line to a named spawn window instead of the main output; null routes to the main
-    /// window. Settable so the F2 screen's route-to list can re-point a rule live — the engine reads
-    /// it per match and <see cref="TriggerEngine"/> keeps no routing table of its own, so a change
-    /// applies to the next line.
+    /// Where this rule delivers the line, or null when it delivers it nowhere of its own — see
+    /// <see cref="MainWindow"/> for the three states this field has.
+    /// <para>
+    /// Settable so the F2 screen's route-to list can re-point a rule live: the engine reads it per match
+    /// and <see cref="TriggerEngine"/> keeps no routing table of its own, so a change applies to the
+    /// next line. Capture groups are expanded (<c>Channel $1</c>), which is what lets one rule feed a
+    /// pane per channel.
+    /// </para>
     /// </summary>
     public string? SpawnTarget { get; set; }
+
+    /// <summary>
+    /// The reserved target naming <b>the session's own main window</b> — the window the line was going
+    /// to anyway.
+    /// <para>
+    /// <b>It is a destination, and null is the absence of one.</b> Those are different things and the
+    /// distinction is the whole of a reported defect. A null target means the rule adds nothing and the
+    /// line goes wherever the other matched rules send it — which is what a highlight rule wants, and
+    /// what "highlight it and leave it where it was" asks for. This target means the rule <em>delivers
+    /// there</em>, which matters because <see cref="Gag"/> suppresses only the default delivery: a
+    /// gagging rule routed here keeps the line in the main window, where before it deleted it, since
+    /// <c>main</c> was a label on the absence of a route rather than a route.
+    /// </para>
+    /// <para>
+    /// <b>Reserved, and safely so.</b> No window is titled <c>main</c> — a character's session window is
+    /// titled after the character, and <c>main</c> is only the rail's label for it — so this collides
+    /// with nothing. A configuration that already said <c>main</c> conjured a capture pane by that name;
+    /// it now reaches the window whoever wrote it meant.
+    /// </para>
+    /// </summary>
+    public const string MainWindow = "main";
 
     /// <summary>
     /// Invoke this named script callback (resolved by the scripting layer). Null or empty means the

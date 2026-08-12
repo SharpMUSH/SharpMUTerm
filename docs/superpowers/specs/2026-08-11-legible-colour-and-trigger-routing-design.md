@@ -167,6 +167,32 @@ a capture rule sent the line to. There is one line and one set of destinations, 
 matched rule's highlight is on it — which is what the user's own framing asked for ("it
 should still follow the original route, as long as it does not change where it routes to").
 
+## What the frame audit found that reading the source did not
+
+The design above was implemented and then the *paint* was measured — every emitted SGR pair, over 24
+views × 3 themes. Five more offenders, each with a plausible-looking call site:
+
+| what | measured | why the source looked fine |
+|---|---|---|
+| the trigger left-rule `▌` | 1.42 (Light) | `MarkupFormatter` resolved it a dozen lines above the floor it applies to every other foreground |
+| the header ribbon's chip | 1.53 (Light) | a fixed `#3f4859` — a *dark* chip whatever the theme, so the world accent on it was resolved for the wrong plane |
+| a world's own accent on the rail | 1.03 (Light) | only the *fallback* accent had been derived; a row carrying its own RGB went through raw |
+| the unread badge on a tab | 1.42 (Light) | `UnreadBadge.Tint` was a `const` pointing at `ScreenPalette.Accent` |
+| the command line's ink | 2.43 (Solarized) | the band was derived and the ink on it was not — the least readable text in the client, on the theme most often chosen for comfort |
+
+`FrameContrastTests` is that audit as a test. It exempts three things, each for its own reason and not
+because it was failing: the powerline wedges and box-drawing rules (fill boundaries and dividers, not
+text), the solid blocks (F2's swatch is a colour *sample*, shown as the pane will paint it), and the
+framework's `[dim]`. The half blocks are deliberately **not** exempt — `▌` is the trigger rule and the
+focus marker, and one of them was a real defect this found.
+
+**One thing is outside the floor's reach and is named rather than hidden.** SharpConsoleUI resolves the
+`[dim]` tag to a fixed `#808080` of its own, through no option we hold: 4.01:1 on the default dark theme
+and **2.52:1** on Solarized Dark's focused pane. Reaching it means giving up `[dim]` across every
+renderer in favour of an explicit floor-checked grey — a sweep, for a near miss on one theme. The
+exemption is a named predicate with the number in it, so whoever does that sweep can delete it and watch
+the test still pass.
+
 ## Testing
 
 **Core.**

@@ -68,9 +68,14 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null)
         var sb = new StringBuilder();
 
         // A trigger-highlighted line gets a 2-col left rule in the trigger's colour (design output view).
+        // Through the floor like every other foreground here: it lands on the pane, and it is the one
+        // mark saying a rule fired at all — the demo's own teal measured 1.42:1 on the Light theme.
         if (line.RuleColor is { } rule)
         {
-            sb.Append('[').Append(Hex(_theme.Resolve(rule, isBackground: false))).Append("]▌[/] ");
+            var ink = _theme.Resolve(rule, isBackground: false);
+            sb.Append('[')
+                .Append(Hex(_text.KeepTextLegible ? Contrast.Legible(ink, _plane) : ink))
+                .Append("]▌[/] ");
         }
 
         foreach (var span in line.Spans)
