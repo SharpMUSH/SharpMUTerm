@@ -108,6 +108,36 @@ public class ComposeWindowTests
         await Assert.That(world.Telnet.Lines).IsEquivalentTo(new[] { "100%% \\[sure\\]" });
     }
 
+    /// <summary>
+    /// A composed post is recallable afterwards, like anything else the user wrote and sent. It is the
+    /// <em>built</em> line that is kept, not the editor's buffer: history holds sendable commands, and a
+    /// recalled entry lands on a one-command bar that the raw multi-line buffer would not fit.
+    /// </summary>
+    [Test]
+    public async Task AComposedPostIsRecallableFromTheCommandHistory()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+        world.App.Composer.SimulateTyping("+bbpost 12=Title\nfirst\nsecond");
+
+        world.App.Composer.SimulateKey(CtrlS);
+
+        await Assert.That(world.App.HistoryEntries(InputBar.Primary))
+            .Contains("+bbpost 12=Title%rfirst%rsecond");
+    }
+
+    /// <summary>A post that was refused is a post the user still has; nothing was sent, so nothing is recalled.</summary>
+    [Test]
+    public async Task ARefusedPostEntersNoHistory()
+    {
+        var world = await Connected();
+        world.App.SimulateKey(Key(ConsoleKey.F1));
+
+        world.App.Composer.SimulateKey(CtrlS);
+
+        await Assert.That(world.App.HistoryEntries(InputBar.Primary)).IsEmpty();
+    }
+
     [Test]
     public async Task SendingAnEmptyComposerSaysSoAndSendsNothing()
     {

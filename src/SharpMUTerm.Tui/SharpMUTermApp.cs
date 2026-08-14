@@ -3642,9 +3642,26 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         ?? (_workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner ? owner : null);
 
     /// <summary>
-    /// Sends a composed post as one line, through the ordinary command path — so it is echoed, recorded
-    /// in history and alias-expanded exactly like the same text typed on the command line, which is what
-    /// the buffer <em>is</em>. The window closes on success and keeps the post on a refusal.
+    /// Sends a composed post as one line — echoed, alias-expanded and recorded in history exactly like the
+    /// same text typed on the command line, which is what the buffer <em>is</em>. The window closes on
+    /// success and keeps the post on a refusal.
+    /// <para>
+    /// It reaches the session directly rather than through <see cref="OnCommandEntered"/>, and so records
+    /// the history entry itself. That seam is the command <em>line's</em>: it clears that window's bar
+    /// draft, moves the unsent-input marker and owns the <c>/web</c>, <c>/graphics</c> and <c>/triggers</c>
+    /// branches, none of which belong to a post written in a different window. The doc here claimed the
+    /// ordinary path for as long as the composer existed, and two thirds of the claim were true — the echo
+    /// and the alias expansion come free from <c>SendUserInputAsync</c>, and the history did not, which is
+    /// how a composed post became the one user-authored command in this client with no recall route at all.
+    /// </para>
+    /// <para>
+    /// The <em>built</em> line is what is kept, not <see cref="ComposeResult.Body"/>: history holds
+    /// sendable commands, and a recalled entry lands on a one-command bar the raw multi-line buffer would
+    /// not fit. Through <see cref="InputHistory.Add"/> like every other entry, so a post carrying a connect
+    /// line meets the same secret gate — that gate lives inside <c>Add</c> precisely so no caller can get
+    /// round it. On the armed bar's list, because that is where ⌥↑ and ⌃R will look from where the user is
+    /// standing.
+    /// </para>
     /// </summary>
     private void SendComposed(ComposeResult result)
     {
@@ -3669,6 +3686,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // was opened, already sent.
         _composer.Close();
         _composeDrafts.Remove(session.SessionKey);
+        HistoryFor(BarKind(ActiveBar())).Add(line);
         _ = session.SendUserInputAsync(line);
     }
 
