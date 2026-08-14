@@ -143,7 +143,14 @@ internal static class Program
             logRoot: logRoot,
             restore: restore,
             mssp: mssp,
-            openUrl: ExternalBrowser.Open);
+            openUrl: ExternalBrowser.Open,
+
+            // The one place a real clipboard is reached. SharpConsoleUI's helper writes OSC 52 *and*
+            // mirrors to the platform tool (wl-copy / xclip / pbcopy / Win32), so a copy lands whether the
+            // client is local or on the far end of an ssh session. Supplied here rather than reached for
+            // inside the app for the reason logRoot and the browser launcher are: nothing that is not this
+            // entry point may touch the developer's clipboard, least of all the test suite.
+            clipboard: SharpConsoleUI.Helpers.ClipboardHelper.SetText);
         var exitCode = liveApp.Run(startup); // blocks on the SharpConsoleUI main loop until exit
 
         // Persist the workspace so the next launch resumes where this one left off.
@@ -300,6 +307,7 @@ internal static class Program
         usage.WriteLine("character's saved password and connect line — F5's 'login' row says which.");
         usage.WriteLine();
         usage.WriteLine("In-app: Up/Down history · Ctrl+N next tab · Ctrl+W close · Ctrl+P palette · Ctrl+Q quit.");
+        usage.WriteLine("Selection: drag across a pane's output to select it, Ctrl+C to copy.");
         // The composer earns a line of its own because what it *sends* is not guessable from the window:
         // the buffer is one command and its line breaks are written %r, which is what a MUSH board or
         // mail body wants. Naming the send chord matters for the same reason — Ctrl+Enter is what a

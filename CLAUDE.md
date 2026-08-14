@@ -136,6 +136,58 @@ fallbacks) for inline images/maps.
   - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
     first frame, and every line would otherwise count as missed — so any frame that later made such a
     window visible carried an activity bar reporting the client's own setup as news.
+- **A pane's output can be selected with the mouse and copied with `⌃C`, and almost all of it is the
+  framework's** (`MarkupControl.EnableSelection`, shipped in the pinned 2.5.14 and **off by default**).
+  Drag, double-click word, triple-click line, drag-autoscroll through the `ScrollablePanelControl` each
+  pane already sits in, one-selection-per-window arbitration and a wrap-aware copy all come from the
+  package. This is the rare case where the answer was to *switch something on* rather than build it; what
+  had to be ours is the colour, the clipboard, and what happens to a selection when the buffer moves.
+  - **The terminal's own selection cannot do this job, which is `UrlDetector`'s argument one layer over.**
+    Under `?1003` — which this client needs for the wheel, tab and rail clicks and pane drag-and-drop — a
+    plain drag belongs to the application, and the emulator's escape hatch (kitty's ⇧-drag) selects a
+    terminal **row**: on a vertical split that row crosses the divider into another pane's output, and
+    since a pane is narrower than the row a logical line wraps and comes back with newlines injected at
+    the wrap points. The framework's copy walks the painted cells and breaks a line only where a row is
+    not a soft-wrap continuation. There is no partial retreat from `?1003` that keeps the wheel.
+  - **The selection band is one pair per theme, and for a different reason than `ReadingPlane`'s.** There
+    it is cost; here it is meaning. A pane's plane already says whose connection this is (hue) and where
+    the keyboard is (luminance), and a selection is neither — it is the client answering a gesture being
+    made *now*, in exactly one pane at a time, so a highlight that changed colour with whose pane it
+    landed in would report a fact nobody asked about. `WorkspacePalette.SelectionBand` is `ReadingPlane`
+    pushed *further* in the direction of travel — brighter on a dark theme, darker on a light one — then
+    leaned toward `Theme.Prompt`, the same anchor `ArmedBand` uses. It is held to a **fill** floor against
+    all fourteen planes (1.5:1; tightest measured 2.70:1) and `SelectionInk` to `Contrast.Floor` on the
+    band, which matters more here than anywhere: the highlight replaces the world's *foreground* too, so
+    that one ink is what all selected output is read in.
+  - **The clipboard writer is caller-supplied and null by default** — the `save:`/`logRoot:`/`openUrl:`
+    family, and here it also buys a *single* copy path. The framework's own ⌃C writes straight to the
+    system clipboard through a static helper no caller can substitute, so a test run would replace
+    whatever the developer had copied and the one path that could not be injected would be the one under
+    test. `CopyEnabled = false` on the pane controls and the chord is answered by
+    `SharpMUTermApp.CopyFocusedSelection` instead; `Program` supplies `ClipboardHelper.SetText`, which
+    covers OSC 52 *and* the platform tool, so a copy lands locally and over ssh alike.
+  - **⌃C is claimed in the main window's key chain, not in `MacroKeys.AppShortcuts`.** A global shortcut
+    runs ahead of *every* window including the composer, whose `MultilineEditControl` has its own ⌃C and
+    is a real editor. Being in the chain also puts it after `DispatchMacro`, so a macro bound to ⌃C wins —
+    the same relationship ⌃←/→ has with pane selection, and the reason `Verdict` needs no special case.
+  - **A selection is dropped whenever the rows under it move**, in `RepaintPane` — the one seam that
+    re-feeds a pane. Chrome rows go in and out mid-buffer (the freeze bar, the away bar, `NEW`, the search
+    bar) and the timestamp toggle re-feeds whole buffers; a selection is anchored to display rows, so one
+    left alone across an insert highlights text nobody dragged over.
+  - **`NewPaneControl` is the one place a pane's control is made**, and it exists because enabling
+    selection on `PaneContentFor` alone left the **main** window — the pane most people are looking at —
+    unable to select anything. That control is built in the constructor, before a workspace exists; every
+    other one is built on demand. Two creation paths, and the trap announced itself immediately.
+  - **`SimulatePaneDrag` is the test seam**, for `SimulatePaneClick`'s reason: the framework registers its
+    driver-mouse handler inside `Run()`, which no test calls. The drag flag rides *with* the button flag,
+    because SGR encodes motion-while-held as `Button1Pressed | Button1Dragged` and a seam sending the bare
+    form would exercise a path the terminal never produces. The `selection` view is the frame, and it is
+    in `FrameContrastTests`' list — a colour nothing renders is a colour nobody checks.
+  - **Not fixed, and known**: chrome rows live in the same buffer and are selectable (a terminal selection
+    would take them too); OSC 52 caps at ~74 KB and `Osc52.BuildSequence` returns null past it, so a very
+    large copy lands locally and **silently** does not travel over ssh; GNU screen has OSC 52 disabled
+    upstream; tmux needs `allow-passthrough on`. The Windows mouse path is a separate ad-hoc parser in
+    `NetConsoleDriver` and nothing here can verify it — treat Windows drag-select as unproven.
 - **Coming back to a window you were not watching leaves a bar where you left off, and that covers two
   different absences.** The *window* one is `NEW` and is the common case: a line lands while the window
   is not `Workspace.IsCaughtUp` — visible **and** at its live tail — and `_missedFrom` records the index
@@ -539,7 +591,12 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a viewport row), `activity-bar` (the *other* absence — a window the reader was not watching: three
   lines land in the main window while Chat is in front of it, and picking main back lands on the `NEW`
   bar with those three under it. Separate from `away` because the two are separate facts with separate
-  wording, and this is the one that happens many times an hour), `prefix-panel` (the ⌃B which-key
+  wording, and this is the one that happens many times an hour),
+  `selection` (a real ⌃-drag across the main window's output, through `SimulatePaneDrag` and the control's
+  own hit test rather than a highlight posed by hand — the only frame carrying `WorkspacePalette.SelectionBand`,
+  which is why it is in `FrameContrastTests`' list: the band is the one plane this client invents rather
+  than derives from a pane, and its ink replaces the world's own on every selected cell),
+  `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
   beside an unfocused one and an armed bar above an idle one, before and after a real ⌃→),

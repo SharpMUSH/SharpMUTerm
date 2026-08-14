@@ -185,6 +185,64 @@ public class LegiblePaletteTests
         }
     }
 
+    /// <summary>
+    /// A selection has to be seen against the pane it is drawn in, and every pane is a different plane.
+    /// The band is one pair per theme rather than one per pane for <see cref="WorkspacePalette.ReadingPlane"/>'s
+    /// reason, so it has to stand clear of the whole band, not of the plane it happened to be derived from.
+    /// <para>
+    /// The floor here is a <em>fill against a fill</em> and is deliberately not <see cref="Contrast.Floor"/>:
+    /// three to one is where text stops being invisible, and two backgrounds that differed that hard would
+    /// make a selected line shout. What is held to the text floor is the ink on it, below.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task TheSelectionBandStandsClearOfEveryPlaneAPaneCanWear()
+    {
+        var failures = new List<string>();
+
+        foreach (var theme in Themes())
+        {
+            var band = WorkspacePalette.SelectionBand(theme);
+            foreach (var (name, plane) in Planes(theme))
+            {
+                var ratio = Contrast.Ratio(band, plane);
+                if (ratio < SelectionSeparation)
+                {
+                    failures.Add($"{theme.Name}/{name}: {ratio:0.00}:1");
+                }
+            }
+        }
+
+        await Assert.That(failures).IsEmpty();
+    }
+
+    /// <summary>
+    /// The ink painted <em>on</em> that band, held to the text floor — the rule the whole file exists for,
+    /// applied to the one plane the client invents rather than inherits. It matters more here than
+    /// elsewhere: the highlight replaces the game's own foreground on every selected cell, so this single
+    /// colour is what all selected output is read in.
+    /// </summary>
+    [Test]
+    public async Task TheSelectionInkIsLegibleOnItsOwnBand()
+    {
+        foreach (var theme in Themes())
+        {
+            var band = WorkspacePalette.SelectionBand(theme);
+            await Assert.That(Contrast.Ratio(WorkspacePalette.SelectionInk(theme), band))
+                .IsGreaterThanOrEqualTo(Contrast.Floor)
+                .Because($"{theme.Name}'s selection ink must be readable on its own band");
+        }
+    }
+
+    /// <summary>
+    /// How far a selection's fill must sit from a pane's own fill to be seen as a band. Below the text
+    /// floor deliberately (see <see cref="TheSelectionBandStandsClearOfEveryPlaneAPaneCanWear"/>) and far
+    /// enough above 1:1 that it cannot be a rounding artefact. The band as built clears it with room —
+    /// the tightest cell measured across the three themes is 2.70:1, on Dark's focused untinted pane —
+    /// so this is the property being asserted rather than the number that happens to hold today.
+    /// </summary>
+    private const double SelectionSeparation = 1.5;
+
     private static Rgb ParseHex(string hex) => new(
         Convert.ToByte(hex.Substring(1, 2), 16),
         Convert.ToByte(hex.Substring(3, 2), 16),

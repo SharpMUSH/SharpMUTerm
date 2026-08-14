@@ -42,6 +42,11 @@ public class FrameContrastTests
         "", "freeze", "away", "highlight", "scrollback", "links", "connections", "tint", "tint-input",
         "characters", "compose", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
         "logging", "startup", "history", "prefix-panel", "keypad",
+
+        // The selection band is the one plane this client invents rather than derives from a pane, and
+        // its ink replaces the world's own colour on every selected cell — so it is the pair with the
+        // most to lose from a theme it was not measured against.
+        "selection",
     ];
 
     public static IEnumerable<(string Theme, string View)> Cases() =>

@@ -287,6 +287,64 @@ internal static class WorkspacePalette
     }
 
     /// <summary>
+    /// The band a selected run of a pane's output is painted on.
+    /// <para>
+    /// <b>One pair per theme, not per pane</b>, and for a reason of its own rather than
+    /// <see cref="ReadingPlane"/>'s. There it is cost; here it is meaning. A pane's plane says two things
+    /// already — whose connection this is, in hue, and where the keyboard is, in luminance — and a
+    /// selection is neither. It is the client answering a gesture the user is making *now*, it exists in
+    /// exactly one pane at a time, and a highlight that changed colour depending on whose pane it landed in
+    /// would be reporting a fact nobody asked it about.
+    /// </para>
+    /// <para>
+    /// Built from <see cref="ReadingPlane"/> — the extreme of the fourteen in the direction of travel —
+    /// pushed <em>further</em> that way, so it clears the whole band rather than the one plane it was
+    /// derived from, and then leaned toward <see cref="Theme.Prompt"/>. The lean is what makes it read as
+    /// the client's own mark instead of a pane that has gone brighter, and it is the same anchor
+    /// <see cref="ArmedBand(Theme)"/> uses, which is the other place this client says "your keystrokes are
+    /// about this".
+    /// </para>
+    /// </summary>
+    internal static Rgb SelectionBand(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        // Away from the panes, whichever way that is. On a dark theme the reading plane is the brightest of
+        // the fourteen and the selection goes brighter still; on a light one it is the darkest and the
+        // selection goes darker. Scaling the wrong way would land the band *inside* the band it has to
+        // stand clear of — the exact failure Extreme exists to describe, one step further out.
+        var plane = ReadingPlane(theme);
+        var dark = Contrast.RelativeLuminance(Surface(theme)) < LightPlaneLuminance;
+        return Mix(Scale(plane, dark ? SelectionScale : 1.0 / SelectionScale), theme.Prompt, SelectionTint);
+    }
+
+    /// <summary>
+    /// The one colour every selected cell's text is painted in, held to <see cref="Contrast.Floor"/> on
+    /// <see cref="SelectionBand"/>.
+    /// <para>
+    /// The framework's highlight replaces the foreground as well as the background on every selected cell,
+    /// so a world's own colours are gone for the duration and this single ink is what all selected output
+    /// is read in. That makes it the one place in this client where failing the floor would make text
+    /// unreadable rather than merely quiet.
+    /// </para>
+    /// </summary>
+    internal static Rgb SelectionInk(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(theme.Foreground, SelectionBand(theme));
+    }
+
+    /// <summary>
+    /// How far past the reading plane the selection band sits. Larger than <see cref="FocusScale"/> on
+    /// purpose: the focus step separates a pane from its neighbours, and a selection has to separate itself
+    /// from a pane that may already have taken that step.
+    /// </summary>
+    private const double SelectionScale = 1.9;
+
+    /// <summary>How much of the prompt hue the band carries — enough to be recognised, not a wash.</summary>
+    private const double SelectionTint = 0.35;
+
+    /// <summary>
     /// The same worst case for the colours the <em>client</em> paints in its own voice, which land on the
     /// backdrop and on tab chips as well as on panes — so one ink is legible wherever the chrome puts it.
     /// </summary>
