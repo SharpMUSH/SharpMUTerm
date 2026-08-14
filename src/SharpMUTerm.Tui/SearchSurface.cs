@@ -139,11 +139,13 @@ internal sealed class SearchSurface
 
         // Sized once and never again, HistorySurface's rule: narrowing must pad the list area rather than
         // shrink the window, so the rows and the footer stay where the eye left them. There is no
-        // unfiltered list to size to here — an empty query matches nothing — so the height is the room
-        // there is rather than the room the results need.
+        // unfiltered list to size to here — an empty query matches nothing — so *both* dimensions are the
+        // room there is rather than the room the results need. The height always was; the width was
+        // measured against the only content an empty surface has, which is its own footer, so it opened
+        // at eighty-odd cells on any terminal and every result was elided to fit a window sized by a key
+        // hint. What the surface holds is a game's own lines, and they are wider than that by design.
         _listRows = Math.Max(3, desktop.Height - ChromeRows - 6);
-        _contentWidth = Math.Clamp(
-            SearchPrompt.MaxWidth(Lines) + 2, MinimumWidth, Math.Max(MinimumWidth, desktop.Width - 6));
+        _contentWidth = Math.Max(MinimumWidth, desktop.Width - 6);
 
         var width = _contentWidth + 2; // + the 1-cell left/right border
         var height = Math.Min(_listRows + ChromeRows + 2, Math.Max(ChromeRows + 3, desktop.Height - 2));

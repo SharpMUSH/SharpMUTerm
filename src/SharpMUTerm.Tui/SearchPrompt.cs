@@ -67,6 +67,15 @@ internal static class SearchPrompt
     private const int DefaultEntryWidth = 72;
 
     /// <summary>
+    /// The widest the window column is drawn in <c>⌥A</c> scope. Every row is padded to the widest label
+    /// in the list, so an unbounded column is a column one long title can spend the whole row on — and a
+    /// title is not this client's text to trust: <c>Snippet</c> caps it at sixty cells, which was sixty
+    /// cells of blank against a twenty-cell result. A label past this is elided, which is the rail's rule
+    /// (<c>RailRenderer</c>) one surface over.
+    /// </summary>
+    internal const int MaxLabelWidth = 18;
+
+    /// <summary>
     /// What one keystroke does, and the state it leaves behind. <paramref name="count"/> is how many rows
     /// are listed, so the pointer wraps within what is actually on screen.
     /// <para>
@@ -174,7 +183,9 @@ internal static class SearchPrompt
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(query);
 
-        var labelWidth = all ? rows.Select(r => VisibleLength(Escape(r.WindowLabel))).DefaultIfEmpty(0).Max() : 0;
+        var labelWidth = all
+            ? Math.Min(MaxLabelWidth, rows.Select(r => r.WindowLabel.Length).DefaultIfEmpty(0).Max())
+            : 0;
         var entryWidth = (width > 0 ? width : DefaultEntryWidth) - 4 - (labelWidth > 0 ? labelWidth + 2 : 0);
 
         var lines = new List<string>
@@ -230,18 +241,6 @@ internal static class SearchPrompt
         return Math.Clamp(top, 0, count - listRows);
     }
 
-    /// <summary>The visible width of the widest rendered line — used to size the surface to its content.</summary>
-    internal static int MaxWidth(IReadOnlyList<string> lines)
-    {
-        var max = 0;
-        foreach (var line in lines)
-        {
-            max = Math.Max(max, VisibleLength(line));
-        }
-
-        return max;
-    }
-
     /// <summary>
     /// The two toggles and what they currently mean, in words rather than in glyphs: the surface has to
     /// be able to say <em>which way they are set</em>, because both change what a query finds and neither
@@ -273,9 +272,7 @@ internal static class SearchPrompt
     private static string Row(SearchRow row, bool selected, int entryWidth, int labelWidth, int width)
     {
         var (text, matchStart, matchLength) = Elide(row, entryWidth);
-        var label = labelWidth > 0
-            ? Escape(row.WindowLabel).PadRight(labelWidth) + "  "
-            : string.Empty;
+        var label = labelWidth > 0 ? LabelCell(row.WindowLabel, labelWidth) : string.Empty;
 
         if (selected)
         {
@@ -298,6 +295,18 @@ internal static class SearchPrompt
         var hit = Escape(text.Substring(matchStart, matchLength));
         var after = Escape(text[(matchStart + matchLength)..]);
         return $"{prefix}[{Value}]{before}[/][bold {Accent}]{hit}[/][{Value}]{after}[/]";
+    }
+
+    /// <summary>
+    /// One window-column cell: the label elided to the column and padded out to it, then the two-cell
+    /// gap. Padded by <em>visible</em> width, because a window may be called <c>[Chat]</c> and an escaped
+    /// bracket is two characters standing for one cell — <c>PadRight</c> shortened the column by one per
+    /// bracket and left that row's text a cell adrift of every other row's.
+    /// </summary>
+    private static string LabelCell(string label, int labelWidth)
+    {
+        var shown = label.Length <= labelWidth ? label : label[..(labelWidth - 1)] + "…";
+        return PadVisible(Escape(shown), labelWidth) + "  ";
     }
 
     /// <summary>

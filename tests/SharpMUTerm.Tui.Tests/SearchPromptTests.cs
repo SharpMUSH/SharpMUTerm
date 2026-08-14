@@ -228,6 +228,66 @@ public class SearchPromptTests
         await Assert.That(lines.Any(l => l.Contains("[bold ") && l.Contains("goblin"))).IsTrue();
     }
 
+    /// <summary>
+    /// Every row is padded to the widest label, so an unbounded window column is one long title spending
+    /// the whole row. The reported frame had a sixty-cell column of blank against a twenty-cell result:
+    /// a restore log the workspace could not place was searched under its raw
+    /// <c>spawn:24:World|Character:Target</c> id. <see cref="SearchEndToEndTests"/> keeps such a window
+    /// out of the corpus; this is the bound that holds whatever a title turns out to be.
+    /// </summary>
+    [Test]
+    public async Task ALongWindowNameIsElidedRatherThanSpendingTheRowOnItself()
+    {
+        var rows = new[]
+        {
+            new SearchRow("main", "main", 12, "The goblin snarls at you.", 4, 6),
+            new SearchRow(
+                "spawn:24:Convergence MUSH|Mannaz:O-Gatecrashers",
+                "spawn:24:Convergence MUSH|Mannaz:O-Gatecrashers",
+                3,
+                "<OOC> Ana: goblin room is bugged",
+                11,
+                6),
+        };
+
+        var listed = SearchPrompt.Render(rows, "gob", null, false, true, "main", 10, -1, width: 100)
+            .Where(l => l.Contains("goblin"))
+            .Select(MarkupText.Plain)
+            .ToArray();
+
+        await Assert.That(listed.Length).IsEqualTo(2);
+        await Assert.That(string.Join('\n', listed)).DoesNotContain("O-Gatecrashers");
+
+        // The column is the bound rather than the label: three cells of pointer, the column, two of gap.
+        await Assert.That(listed[0].IndexOf("The goblin", StringComparison.Ordinal))
+            .IsEqualTo(SearchPrompt.MaxLabelWidth + 5);
+        await Assert.That(listed[1].IndexOf("<OOC>", StringComparison.Ordinal))
+            .IsEqualTo(SearchPrompt.MaxLabelWidth + 5);
+    }
+
+    /// <summary>
+    /// A window may be called <c>[Chat]</c>. Escaping turns each bracket into two characters standing for
+    /// one cell, so a column padded by <c>string.Length</c> comes up a cell short per bracket and leaves
+    /// that row's text adrift of every other row's.
+    /// </summary>
+    [Test]
+    public async Task ABracketedWindowNamePadsToTheSameColumnAsEveryOtherRow()
+    {
+        var rows = new[]
+        {
+            new SearchRow("main", "[Chat]", 12, "The goblin snarls at you.", 4, 6),
+            new SearchRow("spawn:chat", "Ansible", 3, "The goblin room is bugged", 4, 6),
+        };
+
+        var listed = SearchPrompt.Render(rows, "gob", null, false, true, "main", 10, -1, width: 100)
+            .Where(l => l.Contains("goblin"))
+            .Select(l => MarkupText.Plain(l).IndexOf("The goblin", StringComparison.Ordinal))
+            .ToArray();
+
+        await Assert.That(listed.Length).IsEqualTo(2);
+        await Assert.That(listed[0]).IsEqualTo(listed[1]);
+    }
+
     [Test]
     public async Task ScrollKeepsThePointedAtRowInsideTheListArea()
     {

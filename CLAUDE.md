@@ -112,6 +112,20 @@ fallbacks) for inline images/maps.
     search would find nothing in exactly the windows people search hardest. The bound is *stated* —
     `12 found · 4,812 lines held` — so a reader who cannot find an old line sees why rather than
     concluding the search is broken.
+  - **Only windows a pane holds are searched**, `Workspace.WindowsFor`'s rule and for its reason: `⏎`
+    takes the reader to the hit, and `ActivateWindow` refuses a window no pane holds. `_lines` is wider
+    than the workspace deliberately — `RestorePreviousSession` buffers a restore log the workspace cannot
+    place under its own id, so its pane refills if that channel speaks again — and such a window has no
+    `WorkspaceWindow` to be titled from, so `WindowTitle` handed back the raw
+    `spawn:24:World|Character:Target` id. That was the reported "the results take up a small amount of
+    room": a sixty-cell window column of blank against a twenty-cell result. `GoToSearchHit` now honours
+    `Activate`'s answer as well, rather than inserting its bar into a buffer nothing paints.
+  - **Both dimensions are the room there is.** There is no unfiltered list to size to — an empty query
+    matches nothing — so the width used to be measured against the only content an empty surface has,
+    which is its own footer, and the surface opened at eighty-odd cells on any terminal while eliding
+    every result to fit a window sized by a key hint. The height always took the desktop; the width does
+    now too. `SearchPrompt.MaxLabelWidth` bounds the window column on top of that, because a title is not
+    this client's text to trust and every row is padded to the widest one.
   - **`PaneLine.Plain` is held, not derived.** Matching runs over the visible text so a colour change
     mid-word cannot split a match and `#ff0000` cannot find every red line (`UrlDetector`'s rule, one
     layer down) — and it is computed once at append, because the surface refilters over every line of
