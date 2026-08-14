@@ -169,6 +169,48 @@ public class SpawnWindowIdUpgradeTests
     }
 
     /// <summary>
+    /// …and ⌃F does not offer it. Those lines are buffered under an id no pane holds, so ⏎ on one has
+    /// nowhere to take the reader — <c>Workspace.ActivateWindow</c> refuses a window with no pane, and
+    /// the surface would insert its bar into a buffer nothing paints. It was also drawing them under the
+    /// raw <c>spawn:24:World|Character:Target</c> id, which padded the window column to sixty cells and
+    /// left every result squeezed into what was left: the reported "the results take up a small amount
+    /// of room". <see cref="SearchEndToEndTests"/> holds the rest of ⌥A; this is the corpus it looks in.
+    /// </summary>
+    [Test]
+    public async Task ABufferedWindowNoPaneHoldsIsNotSearched()
+    {
+        using var root = new TempRoot();
+        SeedLegacyLog(root);
+        using (var seed = new RestoreLog(root.Path))
+        {
+            seed.Append("spawn:Tells", "Tells", StyledLine.FromText("Rivane pages: hello", TextStyle.Default), "09:24");
+        }
+
+        var config = OldConfiguration();
+        using var log = new RestoreLog(root.Path, config.RestoreLog);
+        Console.SetIn(TextReader.Null);
+        await using var app = new SharpMUTermApp(
+            config, Headless, new HeadlessConsoleDriver(Width, Height), restore: log);
+
+        // The placed window's restored lines are found, so an empty result for the other one is the pane
+        // rule at work rather than a search that finds nothing restored at all.
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F, false, false, true));
+        app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
+        app.SimulateSearchTyping("crypt run");
+        await Assert.That(app.SearchRows.Count).IsEqualTo(1);
+
+        foreach (var _ in "crypt run")
+        {
+            app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.Backspace, false, false, false));
+        }
+
+        app.SimulateSearchTyping("Rivane pages");
+
+        await Assert.That(app.SearchRows).IsEmpty();
+        await Assert.That(log.Read().Any(w => w.WindowId == "spawn:Tells")).IsTrue();
+    }
+
+    /// <summary>
     /// And the fix survives the round trip it is most likely to be undone by. Two characters capture one
     /// target, the workspace is saved and reopened, and each still has a pane of their own holding their
     /// own conversation — the ids are stable across a restart, and the restore log's per-window keying

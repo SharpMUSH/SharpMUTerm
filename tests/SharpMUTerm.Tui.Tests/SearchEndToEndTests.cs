@@ -42,6 +42,29 @@ public class SearchEndToEndTests
 
     private static ConsoleKeyInfo Bare(ConsoleKey key) => new('\0', key, false, false, false);
 
+    /// <summary>
+    /// The surface opens at the room the terminal has, not at the width of its own footer. It has no
+    /// unfiltered list to size to — an empty query matches nothing — so it used to measure the only
+    /// content it had, which is the key hints, and open at eighty-odd cells on any terminal; the results
+    /// were then elided to fit a window sized by a hint. The height has always taken the room there is,
+    /// and this is the other half of that rule.
+    /// </summary>
+    [Test]
+    public async Task TheSurfaceOpensAtTheRoomTheTerminalHasRatherThanAtItsFootersWidth()
+    {
+        var (app, session) = Bound();
+        session.PrintSystem("*** the vault key is behind the bar");
+
+        app.SimulateKey(Ctrl(ConsoleKey.F));
+        app.SimulateSearchTyping("vault");
+        var rows = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+
+        var footer = rows.Single(r => r.Contains("type to search", StringComparison.Ordinal));
+        await Assert.That(footer.TrimEnd().Length).IsGreaterThan(Width - 8);
+        await Assert.That(rows.Any(r => r.Contains("vault key is behind the bar", StringComparison.Ordinal)))
+            .IsTrue();
+    }
+
     [Test]
     public async Task CtrlFOpensTheSurfaceAndCtrlFAgainClosesIt()
     {

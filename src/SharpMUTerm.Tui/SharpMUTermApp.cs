@@ -3367,7 +3367,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        Activate(row.WindowId);
+        // Honoured, not fired and forgotten: a window no pane holds cannot be activated, and going on
+        // would insert the bar into a buffer nothing paints and then scroll a pane that is not there.
+        // SearchableWindows already keeps such a window out of the corpus; this is the second line.
+        if (!Activate(row.WindowId))
+        {
+            RefuseCommand($"{Snippet(WindowTitle(row.WindowId))} is not in any pane");
+            return;
+        }
 
         var at = Math.Clamp(row.LineIndex, 0, buffer.Count);
         InsertChromeRow(row.WindowId, at, SearchBarRenderer.Bar(query, ordinal, total, FrozenAccentHex()));
@@ -3987,6 +3994,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// activity boundary and <c>RepaintPanes</c> make. Labels go through <see cref="Snippet"/>: a window
     /// title can be a <em>world's</em> text (the web view is titled from the page it loaded).
     /// </para>
+    /// <para>
+    /// <b>Only windows a pane actually holds are searched</b> — <see cref="Workspace.WindowsFor"/>'s rule,
+    /// and for its reason: ⏎ takes the reader to the hit, and <see cref="Workspace.ActivateWindow"/>
+    /// refuses a window no pane holds, so a hit in one is a row that can never be shown. <c>_lines</c> is
+    /// wider than the workspace on purpose — <see cref="RestorePreviousSession"/> buffers a restore log
+    /// the workspace cannot place under its own id, so its pane refills if that channel speaks again —
+    /// and those ids have no <see cref="WorkspaceWindow"/> to be titled from, so
+    /// <see cref="WindowTitle"/> gave back the raw <c>spawn:24:World|Character:Target</c> id. That is
+    /// what padded the window column to sixty cells and squeezed every result into the twenty that were
+    /// left: the reported "the results take up a small amount of room".
+    /// </para>
     /// </summary>
     private IReadOnlyList<SearchCorpus> SearchableWindows(bool all)
     {
@@ -3995,6 +4013,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             : new[] { ActiveWindowId() }.Where(_lines.ContainsKey);
 
         return ids
+            .Where(id => _workspace.Layout.FindWindow(id) is not null)
             .Select(id => new SearchCorpus(
                 id,
                 Snippet(WindowTitle(id)),
