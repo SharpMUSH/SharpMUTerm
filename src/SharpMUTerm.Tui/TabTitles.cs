@@ -45,21 +45,23 @@ internal static class TabTitles
     /// holding two characters' windows says whose each background tab is. Ignored on the selected tab,
     /// which the strip paints in its page's own plane.
     /// </param>
+    /// <param name="nameBudget">
+    /// How many cells the name may spend, from <see cref="TabStripFit"/>; zero or more than it wants
+    /// means draw it whole. Only the name is ever cut — see that class for why, and
+    /// <see cref="Name"/> for what counts as one.
+    /// </param>
     public static string For(
         WorkspaceWindow window,
         string? focusedCharacterKey = null,
         bool focusedPane = false,
         bool selected = false,
         ChromeInk? ink = null,
-        TabChip? chip = null)
+        TabChip? chip = null,
+        int nameBudget = 0)
     {
         ArgumentNullException.ThrowIfNull(window);
 
-        // A child window carries its owner as a prefix so it stays traceable once dragged into another
-        // pane; a character's own main window needs none, the focused-character context names it.
-        var owner = window.Kind != WindowKind.Main && !string.IsNullOrEmpty(window.OwnerLabel)
-            ? MarkupText.Escape(window.OwnerLabel) + " - "
-            : string.Empty;
+        var name = MarkupText.Escape(Elide(window, nameBudget));
 
         // Capped through the sidebar's own formatter, so the two surfaces reading one number cannot print
         // different answers and a count from the wire cannot push a narrow strip's later tabs off the end.
@@ -77,7 +79,7 @@ internal static class TabTitles
 
         // Tint and weight cover the name and count only: the ▌ ahead and the ✎ / ⌁ behind are other
         // facts. One tag rather than two nested, because a selected tab can also be unread.
-        var named = owner + MarkupText.Escape(window.Title) + unread;
+        var named = name + unread;
         var style = (selected, window.Unread > 0) switch
         {
             (true, true) => $"bold {UnreadBadge.TintFor(ink)}",
@@ -96,5 +98,45 @@ internal static class TabTitles
         var body = style is null ? named : $"[{style}]{named}[/]";
 
         return focus + body + pen + cross;
+    }
+
+    /// <summary>
+    /// The part of a tab's label that is its <em>name</em> — the owner prefix a child window carries so
+    /// it stays traceable once dragged into another pane, and the window's own title. Unescaped, because
+    /// this is what is measured and cut: an escaped bracket is two characters standing for one cell, and
+    /// a budget spent in the wrong units cuts the wrong number of them.
+    /// <para>
+    /// Public so <c>SharpMUTermApp</c> can cost a tab without re-deriving the rule. What the strip
+    /// spends on everything <em>else</em> is measured off a rendered title instead, so the decorations
+    /// have exactly one definition — this one's counterpart would be a second.
+    /// </para>
+    /// </summary>
+    public static string Name(WorkspaceWindow window)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+
+        var owner = window.Kind != WindowKind.Main && !string.IsNullOrEmpty(window.OwnerLabel)
+            ? window.OwnerLabel + " - "
+            : string.Empty;
+
+        return owner + window.Title;
+    }
+
+    /// <summary>
+    /// A name cut to its budget. <b>The owner prefix goes before the window's own name is touched</b>:
+    /// the chip behind the tab already says whose window this is, and cutting from the front would spend
+    /// the surviving cells on <c>Corvid…</c> — the half that every other tab in the strip repeats.
+    /// </summary>
+    private static string Elide(WorkspaceWindow window, int budget)
+    {
+        var name = Name(window);
+        if (budget <= 0 || name.Length <= budget)
+        {
+            return name;
+        }
+
+        return window.Title.Length <= budget
+            ? window.Title
+            : window.Title[..Math.Max(1, budget - 1)] + "…";
     }
 }
