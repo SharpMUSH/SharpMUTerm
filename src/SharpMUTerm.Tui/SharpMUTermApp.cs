@@ -447,6 +447,19 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly Action<string>? _openUrl;
 
     /// <summary>
+    /// Where a copied selection goes, or null when this app may not reach a clipboard at all.
+    /// <para>
+    /// The <c>save</c>/<c>logRoot</c>/<c>openUrl</c> family, for the family's reason: only <c>Program</c>
+    /// knows it is the live client, so a snapshot and a test provably leave the developer's real clipboard
+    /// holding whatever it held. It also means there is <em>one</em> copy path — the framework's own ⌃C
+    /// handler writes straight to the system clipboard and is switched off on these controls, because a
+    /// second writer would be a second answer and the one that could not be injected would be the one that
+    /// ran under test.
+    /// </para>
+    /// </summary>
+    private readonly Action<string>? _clipboard;
+
+    /// <summary>
     /// The directory session transcripts are written under, or null for an app that owns no log
     /// directory — which is the default, and is what every test and every snapshot gets. See the
     /// <c>logRoot</c> constructor parameter for why it is handed in rather than resolved here.
@@ -562,11 +575,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         RestoreLog? restore = null,
         MsspCache? mssp = null,
         bool? focusReporting = null,
-        Action<string>? openUrl = null)
+        Action<string>? openUrl = null,
+        Action<string>? clipboard = null)
     {
         _config = config;
         _save = save;
         _openUrl = openUrl;
+        _clipboard = clipboard;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
         _mssp = mssp ?? new MsspCache();
@@ -638,9 +653,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _header.FocusedLinkBackgroundColor = ToColor(new Rgb(brand.R, brand.G, brand.B));
         _header.FocusedLinkForegroundColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: true));
 
-        var main = new MarkupControl(new List<string>());
-        main.LinkClicked += (_, e) => OnLinkClicked(MainWindowId, e.Url);
-        _panes[MainWindowId] = main;
+        var main = NewPaneControl(MainWindowId);
 
         // The connection rail (worlds → characters → windows) sits left of the pane area, joined by
         // a splitter. RailModel/RailRenderer keep the projection + markup tested; this just hosts it.
@@ -1019,6 +1032,18 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                     AppendWindowLine(MainWindowId, _formatter.ToMarkup(line), StampNow());
                 }
             }
+        }
+
+        // A live selection over the main window's output. It exists because the selection band is the one
+        // plane this client invents rather than derives from a pane, and a colour nothing renders is a
+        // colour nobody checks — this frame is what puts the pair in front of FrameContrastTests and in
+        // front of a reader. The drag is the real gesture through the real control (SimulatePaneDrag), not
+        // a highlight painted in by hand, because the thing worth seeing is what a drag actually produces.
+        if (string.Equals(view, "selection", StringComparison.OrdinalIgnoreCase))
+        {
+            RenderWholeFrame(); // the grid has to be painted before a hit test can land on it
+            SimulatePaneDrag(MainWindowId, 0, 1, 46, 3);
+            ReArmWholeFrame();
         }
 
         // Move mode needs a split to have multiple target panes; set it up then arm move mode.
@@ -2678,6 +2703,16 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             markup.Add(Compose(buffer[start + i]));
         }
 
+        // Every row this control holds is being replaced, so a selection anchored to the old ones has
+        // nothing left to describe. Here rather than at the call sites because this is the one function
+        // that replaces a pane control's content — RepaintPane is not the only caller, and clearing there
+        // left freeze and thaw re-feeding under a live selection. It matters most on the way *back*:
+        // freezing leaves the live control empty, so a stale anchor merely yields nothing, but after a
+        // thaw the rows exist again and it hands over real text nobody dragged across.
+        //
+        // MarkupControl.SetContent does not do this itself — only its append path does
+        // (OnContentAppended) — so it cannot be left to the framework.
+        control.ClearSelection();
         control.SetContent(markup);
     }
 
@@ -6605,6 +6640,45 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
+    /// Drags across a window's output pane, from one cell to another measured from the control's own
+    /// top-left — press, move, release, the three events a terminal really sends.
+    /// <para>
+    /// It exists for the reason <see cref="SimulatePaneClick"/> does, and it is the same limitation stated
+    /// for a gesture with more than one event in it: the framework subscribes its driver-mouse handler
+    /// inside <c>Run()</c>, which no test calls, so nothing reaches a control here unless it is handed
+    /// over directly. The drag flag rides <em>with</em> the button flag because that is how the SGR
+    /// encoding arrives — a move with the button still down is <c>Button1Pressed | Button1Dragged</c>, not
+    /// a bare drag, and a seam that sent the bare form would exercise a path the terminal never produces.
+    /// </para>
+    /// </summary>
+    internal void SimulatePaneDrag(string windowId, int fromX, int fromY, int toX, int toY)
+    {
+        if (!_panes.TryGetValue(windowId, out var pane))
+        {
+            return;
+        }
+
+        Send(new List<MouseFlags> { MouseFlags.Button1Pressed }, fromX, fromY);
+        Send(new List<MouseFlags> { MouseFlags.Button1Pressed, MouseFlags.Button1Dragged }, toX, toY);
+        Send(new List<MouseFlags> { MouseFlags.Button1Released }, toX, toY);
+
+        void Send(List<MouseFlags> flags, int x, int y)
+        {
+            var local = new System.Drawing.Point(x, y);
+            var onWindow = new System.Drawing.Point(pane.ActualX + x, pane.ActualY + y);
+            pane.ProcessMouseEvent(new MouseEventArgs(flags, local, onWindow, onWindow, _window));
+        }
+    }
+
+    /// <summary>
+    /// What a window's pane currently has selected, as the text a copy would put on the clipboard, or
+    /// empty when nothing is. Reads the control rather than any state of ours, because the selection
+    /// belongs to the framework and a second record of it would be a second answer.
+    /// </summary>
+    internal string PaneSelection(string windowId) =>
+        _panes.TryGetValue(windowId, out var pane) && pane.HasSelection ? pane.GetSelectedText() : string.Empty;
+
+    /// <summary>
     /// The markup a window's output pane currently holds, one string per row. Internal so a test can read
     /// a link payload off the pane the app really drew instead of writing the expected one down — the
     /// payload is the thing under test, and a hand-copied one would pass whatever the formatter emitted.
@@ -6774,6 +6848,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             case "term:input2-off":
                 ToggleSecondBar();
                 return true;
+            case "term:copy":
+                return CopySelection();
             case "term:messages":
                 if (!ComposerIsInTheWay("the client messages"))
                 {
@@ -7632,9 +7708,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             return existing;
         }
 
-        var control = new MarkupControl(new List<string>());
-        control.LinkClicked += (_, e) => OnLinkClicked(id, e.Url);
-        _panes[id] = control;
+        var control = NewPaneControl(id);
 
         if (_lines.TryGetValue(id, out var buffer) && buffer.Count > 0)
         {
@@ -7642,6 +7716,104 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
 
         return control;
+    }
+
+    /// <summary>
+    /// Builds a window's output control and records it — the one place a pane's <see cref="MarkupControl"/>
+    /// is made.
+    /// <para>
+    /// It is a factory rather than two similar blocks because there really are two callers, and they are
+    /// not interchangeable: the <em>main</em> window's control is built in the constructor, before any
+    /// workspace exists, while every other one is built on demand. That split is why enabling selection
+    /// on the on-demand path alone left the main window — the pane most people are looking at — unable to
+    /// select anything, which is how this trap announced itself.
+    /// </para>
+    /// </summary>
+    private MarkupControl NewPaneControl(string windowId)
+    {
+        var control = new MarkupControl(new List<string>());
+        control.LinkClicked += (_, e) => OnLinkClicked(windowId, e.Url);
+        EnableSelection(control);
+        _panes[windowId] = control;
+        return control;
+    }
+
+    /// <summary>
+    /// Lets a pane's output be selected with the mouse and copied with ⌃C.
+    /// <para>
+    /// <b>The framework already does all of this and ships it switched off</b> —
+    /// <c>MarkupControl</c> implements <c>ISelectableControl</c>, <c>ICopyableControl</c> and
+    /// <c>IDragAutoScrollTarget</c>, so drag, double-click word, triple-click line, autoscroll past the
+    /// pane's edge and the clipboard write (local tool <em>and</em> OSC 52) come from the pinned package.
+    /// What could not be inherited is the part that is this client's: which colours, and what happens to a
+    /// selection when the buffer under it moves.
+    /// </para>
+    /// <para>
+    /// <b>Why not leave it to the terminal.</b> Under <c>?1003</c> — which this app needs for the wheel,
+    /// the tab and rail clicks and pane drag-and-drop — a plain drag belongs to the application, and the
+    /// emulator's escape hatch (⇧-drag in kitty) selects a terminal <em>row</em>. On a vertical split that
+    /// row spans two panes and the divider between them, and since a pane is narrower than the row a
+    /// logical line wraps and comes back with newlines injected at the wrap points. The framework's copy
+    /// walks the painted cells and emits a newline only where a row is not a soft-wrap continuation, which
+    /// is the thing no terminal selection can do.
+    /// </para>
+    /// <para>
+    /// <b>Rendered, not Source.</b> <c>Source</c> returns the original markup lines — a reader who dragged
+    /// across a red word would be handed <c>[bold #ff0000]</c> and the tag it closes with.
+    /// </para>
+    /// </summary>
+    private void EnableSelection(MarkupControl control)
+    {
+        control.EnableSelection = true;
+        control.CopyMode = MarkupCopyMode.Rendered;
+        control.SelectionBackgroundColor = ToColor(WorkspacePalette.SelectionBand(_theme));
+        control.SelectionForegroundColor = ToColor(WorkspacePalette.SelectionInk(_theme));
+
+        // The framework's own ⌃C is switched off here and answered by this app instead (see _clipboard).
+        // Its handler writes straight to the system clipboard through a static helper, which is not
+        // something a caller can supply — so a test run would replace whatever the developer had copied,
+        // and the one code path that could not be injected would be the one running under test. Turning it
+        // off leaves one copy path rather than two. The composer keeps the framework's ⌃C: it is a
+        // separate modal window with its own key handling, and an editor's copy is the editor's.
+        control.CopyEnabled = false;
+    }
+
+    /// <summary>
+    /// Puts the selected text on the clipboard (⌃C, and ⌃P ▸ <c>Copy the selection</c>).
+    /// <para>
+    /// <b>It asks the window's <c>SelectionManager</c>, not the focused pane.</b> That manager owns the one
+    /// active selection and clears the previous owner when a new one starts, so it is the thing that knows
+    /// — and the focused pane is emphatically not. Pane selection moves on ⌃arrows, ⌃O and a tab click, and
+    /// a press in a pane's <em>body</em> moves none of them, so a drag in the pane beside the focused one
+    /// left the copy looking in the wrong place and reporting nothing selected — a feature that appeared
+    /// simply not to work. It also retires the special case for a frozen pane: one selection, one owner,
+    /// whichever control that turns out to be.
+    /// </para>
+    /// <para>
+    /// Both empty cases speak. Nothing selected is the state ⌃C is pressed in by accident; no writer at all
+    /// is a client that cannot copy, which is a fact about how it was built and must not look like a
+    /// gesture that failed.
+    /// </para>
+    /// </summary>
+    private bool CopySelection()
+    {
+        var text = _window.SelectionManager.GetSelectedText() ?? string.Empty;
+
+        if (text.Length == 0)
+        {
+            RefuseCommand("nothing selected — drag across a pane's output to select it");
+            return true;
+        }
+
+        if (_clipboard is null)
+        {
+            RefuseCommand("no clipboard is configured, so nothing was copied");
+            return true;
+        }
+
+        _clipboard(text);
+        Notice($"copied {text.Length} characters", MessageSeverity.Info);
+        return true;
     }
 
     /// <summary>
@@ -8292,6 +8464,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         var control = new MarkupControl(new List<string>());
         control.LinkClicked += (_, e) => OnLinkClicked(windowId, e.Url);
+        EnableSelection(control); // a frozen pane is the one people most want to copy out of
         _frozenPanes[windowId] = control;
         return control;
     }
@@ -8991,6 +9164,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 return null;
             }
 
+            // ⌃C: copy the focused pane's selection. Here and not in MacroKeys.AppShortcuts, and the
+            // difference is load-bearing — a global shortcut runs ahead of *every* window, including the
+            // composer, whose MultilineEditControl has its own ⌃C and is a real editor. This chain belongs
+            // to the main window alone, so the composer keeps its copy and the panes get theirs.
+            //
+            // After DispatchMacro like everything else below it: a macro the user bound to ⌃C wins, which
+            // is the same relationship ⌃←/→ has with pane selection and is what lets MacroKeys.Verdict go
+            // on telling the truth about the chord without a special case.
+            if (e.KeyInfo.Modifiers == ConsoleModifiers.Control && e.KeyInfo.Key == ConsoleKey.C)
+            {
+                e.Handled = true;
+                CopySelection();
+                return null;
+            }
+
             // Ctrl+arrows: move between panes, and at the bottom edge into the command lines. Ahead of
             // both the scrollback keys and recall because it is a workspace gesture rather than a move
             // inside one, and ahead of the command line because the bars would otherwise eat it —
@@ -9582,6 +9770,28 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// the claim that the reported rows exclude the chrome.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The window in front of each realised pane, keyed by <em>pane</em> id. It exists because those two
+    /// ids are different namespaces that are both strings, and a caller holding one of them cannot use it
+    /// where the other is wanted: <see cref="PaneOutputRects"/> is keyed by pane, while
+    /// <see cref="SimulatePaneDrag"/> and <see cref="PaneSelection"/> take a window. A test that passed a
+    /// pane id to the drag seam simply selected nothing, which reads as a broken feature rather than a
+    /// mistyped argument.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> PaneWindows()
+    {
+        var windows = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (paneId, _, _) in RealisedPanes())
+        {
+            if (_workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId)
+            {
+                windows[paneId] = windowId;
+            }
+        }
+
+        return windows;
+    }
+
     internal IReadOnlyDictionary<string, PaneRect> PaneOutputRects()
     {
         var rects = new Dictionary<string, PaneRect>(StringComparer.Ordinal);

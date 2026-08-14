@@ -200,6 +200,13 @@ public static class CommandCatalog
             "term:restore-purge",
             "deletes every pane's saved content"));
 
+        // Copying output. Listed unconditionally and subtitled with the *gesture* as well as the chord,
+        // because the gesture is the part nobody can guess: under mouse reporting a plain drag belongs to
+        // the application, so a user who has learnt that their terminal needs ⇧-drag has no reason to try
+        // dragging here. It refuses out loud with nothing selected, which is what earns it a row at all.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Copy the selection", "term:copy", "⌃C · drag across a pane to select"));
+
         // The client's own messages — the status-line notices that dismiss themselves — kept out of the
         // output window (and so out of the session log) and readable here instead.
         items.Add(new CommandItem(
