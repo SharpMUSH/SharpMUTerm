@@ -618,7 +618,10 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `tabs` (**two tabs in the pane that does *not* hold the focus** — the one geometry that can show a
   strip saying which tab is in front, since every other view has at most one tab in an unfocused pane.
   It opens a third window for itself alone, and re-activates the main window before splitting, because
-  opening brings a window to the front and a split carries the tabs that are not), plus the
+  opening brings a window to the front and a split carries the tabs that are not),
+  `tabs-many` (**more tabs than the strip can hold** — five of one character's captures in a split pane,
+  which is the state every other tab view is too small to reach. Without eliding, that pane draws two
+  tabs and half of a third and says nothing about the rest), plus the
   default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
@@ -996,6 +999,43 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `PaneTintTests.ABackgroundTabWearsItsOwnCharactersColour` is the pin and the `tint-tabs` view is the
   frame — the old code was internally consistent and the screen was still wrong, so only a painted cell
   answers this.
+- **A tab strip shrinks its labels to fit its pane, because the framework clips and does not scroll**
+  (`TabStripFit`; `SharpMUTermApp.RetitlePane`/`SyncTabStripWidths`; the `tabs-many` view).
+  `TabControl` draws its tabs left to right from index 0 and writes each clipped to the header rectangle
+  — there is **no first-visible-tab offset anywhere in the control** — so a strip narrower than its tabs
+  simply stops drawing. The tabs past the edge are gone, **the selected one included**, and with them the
+  `×`, the separator and the framework's own `← →` hint, which is drawn only when there is slack left to
+  draw it in *and* the strip has keyboard focus (which it never has here: focus is pinned to the armed
+  command line). Measured: five captures in a split pane drew two tabs and half of a third.
+  - **The owner prefix goes first, and goes for the whole strip.** A pane full of one character's
+    captures repeats `Corvid - ` on every tab; it is the cheapest thing there is to lose and the most
+    there is of it, and what it said is still said twice over — by the chip the tab is painted on, and by
+    the `⌁` a window belonging to another character wears. Dropping it alone is often the whole fix.
+  - **Then names share by water-filling, not in proportion.** A cap is lowered until the strip fits and
+    every name longer than it is cut to it, so a strip holding `Chat` beside `O-Gatecrashers` takes the
+    cells from the long one and leaves the short one whole.
+  - **The selected tab is spared, with a floor of its own (`MinimumSelectedName`) when it cannot be.** It
+    is the tab the strip exists to name. A strip whose every label including that one is three letters
+    and an ellipsis has stopped answering the question it is for.
+  - **Only the name shrinks.** The badge, the pen, the `⌁` and the focus `▌` are facts about the window,
+    each one or two cells against a name that is routinely twenty.
+  - **Past the floors the tabs really do overflow, and that is left alone.** Eight tabs cannot be drawn
+    in forty cells however they are labelled; the answer is the floors and the framework clips the
+    remainder — the state that existed before this, reached later. Making the *last* tab visible is a
+    scroll offset, which is upstream work.
+  - **A tab's fixed cost is measured off a rendered title, never re-derived.** `VisibleLength(title)`
+    less the name, plus the framework's own cells (the space either side, the `×`, the `│`). A second
+    arithmetic for the decorations would drift from `TabTitles.For` and overflow the pane while every
+    pure test still passed — which is why `TabStripElisionTests` asserts the sum against a real
+    `PaneOutputRects` width and not against its own model.
+  - **The width is synced on `PostBufferPaint` and there is no loop in it.** `TabControl.CalculateSize`
+    returns the *constraint's* width, never its content's, so a title cannot widen or narrow the pane it
+    is drawn in — the dependency runs one way. Re-titling is gated on the width having actually moved,
+    and goes through `RetitlePane` rather than `RefreshTabTitles` so it does not drag `RefreshRail` with
+    it: the rail resizes the sidebar's column, which changes the pane widths, which is the very thing
+    that triggered the sync.
+  - **A width of zero means "not arranged yet", not "no room".** Eliding against it would cut every title
+    on the first frame and undo it on the second.
 - **One unread count, one spelling: `UnreadBadge`.** The sidebar and the tab strip are two views of
   `WorkspaceWindow.Unread`, and they had two formatters — the rail capped at `99+`, the tab printed the
   raw integer, so a busy channel read `99+` in one place and `(4127)` in the other. Cap, field width and

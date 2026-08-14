@@ -42,6 +42,17 @@ internal static class DemoScene
     /// </summary>
     public static string ScenesWindowId => Workspace.SpawnWindowId(ActiveSessionKey, "Scenes");
 
+    /// <summary>
+    /// The channels the <c>tabs-many</c> view opens, and the reason that view exists: named the length a
+    /// real client's captures are named, so the strip wants far more cells than a split pane has. Kept
+    /// out of <see cref="BuildLastSession"/> for <see cref="ScenesWindowId"/>'s reason — seven more rows
+    /// on every frame's rail would move the whole gallery to answer one view's question.
+    /// </summary>
+    public static readonly string[] CrowdedChannels =
+    {
+        "Public", "O-Gatecrashers", "Radio Umi", "Tells",
+    };
+
     public static AppConfiguration Build()
     {
         var config = new AppConfiguration();

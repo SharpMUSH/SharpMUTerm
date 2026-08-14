@@ -170,6 +170,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly Dictionary<string, TabControl> _paneTabs = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// The cells each pane's tab strip was last arranged with, which is what the labels are elided to.
+    /// A pane with no entry has not been laid out yet, and <see cref="TabStripFit"/> reads that as "draw
+    /// the names whole" rather than as "no room".
+    /// </summary>
+    private readonly Dictionary<string, int> _stripWidths = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Guards <see cref="_paneTabs"/>. Everything else touches it on the UI thread, but a mouse frame
     /// arrives on the driver's input thread and has to read it to locate the panes — enumerating it
     /// while a rebuild clears and refills it would throw.
@@ -774,7 +781,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // repaints. One hook therefore covers the lot, and none of them can be forgotten later.
         // (The event's adder is a silent no-op while a window has no renderer; this one has had one
         // since its constructor ran, and NawsPaneReportTests fails loudly if that ever stops holding.)
-        _window.PostBufferPaint += (_, _, _) => ReportPaneSizes();
+        _window.PostBufferPaint += (_, _, _) =>
+        {
+            ReportPaneSizes();
+            SyncTabStripWidths();
+        };
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level
         // handler would only ever see the *source* pane. The driver stream carries every frame in
@@ -961,6 +972,36 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
             RebuildPaneArea();
+        }
+
+        // More tabs than the strip can hold, which is the state every other tab view is too small to
+        // show. The channels are named the way a real client's are — a character's captures, carrying
+        // their owner as a prefix — and there are seven of them in a split pane, so the strip wants far
+        // more cells than the pane has. Without eliding, TabControl draws them left to right and stops:
+        // the later tabs are simply not there, and neither is any word about them.
+        if (string.Equals(view, "tabs-many", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var channel in DemoScene.CrowdedChannels)
+            {
+                var window = _workspace.OpenWindow(
+                    Workspace.SpawnWindowId(DemoScene.ActiveSessionKey, channel),
+                    channel,
+                    WindowKind.Spawn,
+                    DemoScene.ActiveSessionKey);
+                window.OwnerLabel = DemoScene.MainCharacterName;
+                AppendWindowLine(window.Id, MarkupText.Escape($"<{channel}> Rivane: the road is quiet tonight"));
+            }
+
+            // The character's own window back in front, so the frame shows a *selected* tab keeping its
+            // name while its siblings give theirs up — which is the rule, and the half a strip of
+            // uniformly stubbed labels would not show. The split is what makes the pane narrower than
+            // the terminal, which is where this bites in a real client.
+            _workspace.ActivateWindow(MainWindowId);
+            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            _workspace.NoteActivity(Workspace.SpawnWindowId(DemoScene.ActiveSessionKey, DemoScene.CrowdedChannels[1]));
+
+            RebuildPaneArea();
+            RefreshRail();
         }
 
         // The tab strip's own question — *which tab am I looking at* — in the one geometry that can
@@ -10218,23 +10259,125 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var focusedCharacter = ActiveCharacterKey();
         foreach (var (paneId, tabs) in _paneTabs)
         {
-            var activeTab = _workspace.Layout.FindPane(paneId)?.ActiveTab;
-            foreach (var page in tabs.TabPages)
-            {
-                if (page.Tag is string id && _workspace.FindWindow(id) is { } window)
-                {
-                    var selected = string.Equals(activeTab, id, StringComparison.Ordinal);
-                    page.Title = TabTitles.For(
-                        window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
-                        ChipFor(paneId, window));
-                    // The × follows the active tab, so keep it in step with every title refresh.
-                    page.IsClosable = CanCloseTab(id, activeTab);
-                }
-            }
+            RetitlePane(paneId, tabs, focusedCharacter);
         }
 
         RefreshRail();
         UpdateInputChrome();
+    }
+
+    /// <summary>
+    /// One strip's labels, elided to the pane it has to fit in (<see cref="TabStripFit"/>). Split out of
+    /// <see cref="RefreshTabTitles"/> because the width sync calls it per pane and must <em>not</em> take
+    /// the rail with it: <see cref="RefreshRail"/> resizes the sidebar's own column, which changes the
+    /// pane widths, which is the very thing that triggered the sync — a loop that would settle, but only
+    /// after repainting its way there.
+    /// <para>
+    /// A tab's fixed cost is measured off its rendered title (<c>VisibleLength</c> less the name) rather
+    /// than re-derived from the window, so the badge, the pen, the <c>⌁</c> and the focus <c>▌</c> keep
+    /// exactly one definition — <see cref="TabTitles.For"/>'s. Added to it are the framework's own cells:
+    /// the space either side of every title, the <c>×</c> a closable tab draws, and the <c>│</c> between
+    /// one tab and the next (<c>TabControl.Rendering.cs</c>).
+    /// </para>
+    /// </summary>
+    private void RetitlePane(string paneId, TabControl tabs, string? focusedCharacter)
+    {
+        var activeTab = _workspace.Layout.FindPane(paneId)?.ActiveTab;
+        var pages = tabs.TabPages;
+        var costs = new List<TabCost>(pages.Count);
+        var windows = new WorkspaceWindow?[pages.Count];
+        var full = new string?[pages.Count];
+
+        for (var i = 0; i < pages.Count; i++)
+        {
+            var page = pages[i];
+            var id = page.Tag as string;
+            var window = id is not null ? _workspace.FindWindow(id) : null;
+            var selected = id is not null && string.Equals(activeTab, id, StringComparison.Ordinal);
+
+            // The × follows the active tab, so keep it in step with every title refresh — and it has to
+            // be settled before the strip is costed, because it is one of the cells being counted.
+            if (id is not null && window is not null)
+            {
+                page.IsClosable = CanCloseTab(id, activeTab);
+            }
+
+            var frame = 2 + (page.IsClosable ? 1 : 0) + (i < pages.Count - 1 ? 1 : 0);
+            if (window is null)
+            {
+                costs.Add(new TabCost(0, 0, MarkupText.VisibleLength(page.Title) + frame, selected));
+                continue;
+            }
+
+            var title = TabTitles.For(
+                window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
+                ChipFor(paneId, window));
+            var name = TabTitles.Name(window).Length;
+
+            windows[i] = window;
+            full[i] = title;
+            costs.Add(new TabCost(
+                name, window.Title.Length, MarkupText.VisibleLength(title) - name + frame, selected));
+        }
+
+        var budgets = TabStripFit.Budgets(costs, _stripWidths.GetValueOrDefault(paneId));
+        for (var i = 0; i < pages.Count; i++)
+        {
+            if (windows[i] is not { } window)
+            {
+                continue;
+            }
+
+            var selected = costs[i].Selected;
+            pages[i].Title = budgets[i] >= costs[i].NameLength
+                ? full[i]!
+                : TabTitles.For(
+                    window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
+                    ChipFor(paneId, window), budgets[i]);
+        }
+    }
+
+    /// <summary>
+    /// Re-measures each strip against the pane it was just arranged into, and re-titles the ones that
+    /// moved. It rides <c>PostBufferPaint</c> beside <see cref="ReportPaneSizes"/> and for that
+    /// entry's reason: pane rectangles exist only while an arranged layout does, and every change that
+    /// could move one repaints.
+    /// <para>
+    /// <b>There is no loop in this, and that is a property of the framework rather than luck.</b>
+    /// <c>TabControl.CalculateSize</c> returns the constraint's own width, never its content's, so a
+    /// title cannot widen or narrow the pane it is drawn in — the dependency runs one way. Re-titling is
+    /// gated on the width having actually changed regardless, so a steady layout writes nothing per
+    /// frame.
+    /// </para>
+    /// </summary>
+    private void SyncTabStripWidths()
+    {
+        List<string>? moved = null;
+        foreach (var (paneId, tabs, rect) in RealisedPanes())
+        {
+            var width = Math.Max(0, rect.Width - tabs.Margin.Left - tabs.Margin.Right);
+            if (_stripWidths.TryGetValue(paneId, out var was) && was == width)
+            {
+                continue;
+            }
+
+            _stripWidths[paneId] = width;
+            (moved ??= new List<string>()).Add(paneId);
+        }
+
+        if (moved is null)
+        {
+            return;
+        }
+
+        var focusedCharacter = ActiveCharacterKey();
+        foreach (var paneId in moved)
+        {
+            if (_paneTabs.TryGetValue(paneId, out var tabs))
+            {
+                RetitlePane(paneId, tabs, focusedCharacter);
+            }
+        }
     }
 
     /// <summary>
