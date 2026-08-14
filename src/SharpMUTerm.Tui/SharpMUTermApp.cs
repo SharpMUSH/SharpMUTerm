@@ -10591,9 +10591,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </para>
     /// <para>
     /// <b>Reading order and drop order are separate, and have to be.</b> The row reads
-    /// <c>pane · size · line</c> — the two pane chords together, then the bars — while <em>size</em> is the
-    /// first thing given up. A generator that dropped from the end of the reading order would have to put
-    /// size last, which reorders a row nobody asked to have reordered.
+    /// <c>pane · tab · size · line</c> — the pane chords together, then the bars — while <em>size</em> is
+    /// the first thing given up. A generator that dropped from the end of the reading order would have to
+    /// put size last, which reorders a row nobody asked to have reordered.
+    /// </para>
+    /// <para>
+    /// <b><c>⌃N tab</c> is surrendered second</b>, and that is the one ranking here worth arguing. A pane's
+    /// tabs are drawn as a strip the reader can see, so this hint names a shortcut to something already on
+    /// the screen — while nothing at all says how to reach another pane or the second command line. Where
+    /// you are outlives everything.
     /// </para>
     /// </summary>
     private string[] FocusHints()
