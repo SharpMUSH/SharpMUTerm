@@ -105,7 +105,12 @@ internal static class MacroKeys
     private static AppShortcut[] Fixed() => new AppShortcut[]
     {
         new(ConsoleModifiers.Control, ConsoleKey.Q, "asks whether to quit"),
-        new(ConsoleModifiers.Control, ConsoleKey.N, "picks the next window"),
+        // "the next tab in this pane", not "the next window", and the wording is the point. A tab *is* a
+        // window — but ⌥N goes to a numbered window anywhere in the workspace, and this walks the strip of
+        // the pane in front of you, so two keys described in the same noun read as two spellings of one
+        // action. F4, --help, the ⌃P entry and the status row all say tab now; they said window here and
+        // tab everywhere else, which is the drift the numbering vocabularies are kept apart to avoid.
+        new(ConsoleModifiers.Control, ConsoleKey.N, "goes to the next tab in this pane"),
         // ⌃Tab is deliberately absent, and its absence is measured rather than assumed: a terminal writes
         // 0x09 for it, byte-identical to a bare Tab (read off a pty with `kitten @ send-key`), so the
         // parser reports ConsoleKey.Tab with no Control bit and this claim could never once have matched.

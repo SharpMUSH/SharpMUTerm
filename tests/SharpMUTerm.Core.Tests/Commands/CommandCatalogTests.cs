@@ -49,6 +49,21 @@ public class CommandCatalogTests
     }
 
     /// <summary>
+    /// The tab cycle is listed, and it is listed on a workspace whose panes each hold one tab — the same
+    /// rule the directional pane entries follow, because this surface is where a reader learns that a pane
+    /// holds tabs at all. The chord it names is the one that runs it.
+    /// </summary>
+    [Test]
+    public async Task TheTabCycleIsListedWithItsChord()
+    {
+        var catalog = CommandCatalog.Build(new Workspace(), Characters, null, new CommandContext());
+
+        var entry = catalog.Single(c => c.Id == "layout:next-tab");
+        await Assert.That(entry.Title).IsEqualTo("Focus the next tab");
+        await Assert.That(entry.Subtitle).IsEqualTo("⌃N");
+    }
+
+    /// <summary>
     /// The numbered pane entries: one per pane that exists, in <c>Panes</c> order (which is the order the
     /// move overlay badges them in), and only when there is more than one pane. The first nine carry
     /// their chord — <c>⌃B N</c>, since ⌥N goes to a window now — and a tenth pane has none, because an
