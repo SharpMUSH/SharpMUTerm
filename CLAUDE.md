@@ -170,10 +170,25 @@ fallbacks) for inline images/maps.
     runs ahead of *every* window including the composer, whose `MultilineEditControl` has its own ⌃C and
     is a real editor. Being in the chain also puts it after `DispatchMacro`, so a macro bound to ⌃C wins —
     the same relationship ⌃←/→ has with pane selection, and the reason `Verdict` needs no special case.
-  - **A selection is dropped whenever the rows under it move**, in `RepaintPane` — the one seam that
-    re-feeds a pane. Chrome rows go in and out mid-buffer (the freeze bar, the away bar, `NEW`, the search
-    bar) and the timestamp toggle re-feeds whole buffers; a selection is anchored to display rows, so one
-    left alone across an insert highlights text nobody dragged over.
+  - **A selection is dropped whenever the rows under it move, and the clear belongs in `FeedRange`** — the
+    one function that actually replaces a pane control's content. `RepaintPane` is *not* the only caller:
+    `BuildFrozenContent` feeds both halves of a frozen pane and `ToggleFreeze`'s thaw branch pours the whole
+    buffer back, so clearing at the repaint site alone left freeze and thaw re-feeding under a live
+    selection. The thaw is the case with teeth — freezing leaves the live control empty, so a stale anchor
+    merely yields nothing, while after a thaw the rows exist again and ⌃C hands over real text nobody
+    dragged across (`FreezingAndThawingDropsTheSelectionRatherThanReAnchoringIt` copied `The Grand Plaza…`
+    before this moved). **`MarkupControl.SetContent` does not clear a selection** — only its append path
+    does (`OnContentAppended`) — so this cannot be left to the framework.
+  - **The copy asks the window's `SelectionManager`, never the focused pane.** That manager owns the one
+    active selection and clears the previous owner when a new one starts. The focused pane is the wrong
+    question: pane selection moves on ⌃arrows, ⌃O and a tab click, and a press in a pane's *body* moves
+    none of them — so a drag in the pane beside the focused one left the copy looking elsewhere and
+    reporting `nothing selected`, which reads as a feature that does not work. It also retires the special
+    case for a frozen pane: one selection, one owner, whichever control that is.
+  - **A pane id and a window id are different namespaces that are both strings**, and this is where that
+    bites: `PaneOutputRects` is keyed by *pane*, while `SimulatePaneDrag` and `PaneSelection` take a
+    *window*. `PaneWindows()` maps between them, and exists because a test that passed a pane id to the
+    drag seam selected nothing — indistinguishable from the feature being broken.
   - **`NewPaneControl` is the one place a pane's control is made**, and it exists because enabling
     selection on `PaneContentFor` alone left the **main** window — the pane most people are looking at —
     unable to select anything. That control is built in the constructor, before a workspace exists; every

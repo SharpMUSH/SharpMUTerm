@@ -2703,6 +2703,16 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             markup.Add(Compose(buffer[start + i]));
         }
 
+        // Every row this control holds is being replaced, so a selection anchored to the old ones has
+        // nothing left to describe. Here rather than at the call sites because this is the one function
+        // that replaces a pane control's content — RepaintPane is not the only caller, and clearing there
+        // left freeze and thaw re-feeding under a live selection. It matters most on the way *back*:
+        // freezing leaves the live control empty, so a stale anchor merely yields nothing, but after a
+        // thaw the rows exist again and it hands over real text nobody dragged across.
+        //
+        // MarkupControl.SetContent does not do this itself — only its append path does
+        // (OnContentAppended) — so it cannot be left to the framework.
+        control.ClearSelection();
         control.SetContent(markup);
     }
 
@@ -2776,10 +2786,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             return;
         }
-
-        // Every row this pane holds is about to be replaced, so a selection anchored to the old ones has
-        // nothing left to describe.
-        ClearPaneSelection(windowId);
 
         if (_freezePoints.TryGetValue(windowId, out var point))
         {
@@ -6843,7 +6849,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 ToggleSecondBar();
                 return true;
             case "term:copy":
-                return CopyFocusedSelection();
+                return CopySelection();
             case "term:messages":
                 if (!ComposerIsInTheWay("the client messages"))
                 {
@@ -7773,13 +7779,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Puts the focused window's selected text on the clipboard (⌃C, and ⌃P ▸ <c>Copy the selection</c>).
+    /// Puts the selected text on the clipboard (⌃C, and ⌃P ▸ <c>Copy the selection</c>).
     /// <para>
-    /// The <em>focused window's</em>, resolved the way everything else in this client resolves a window —
-    /// a selection lives in one pane at a time and the framework already arbitrates that, so this asks the
-    /// pane the keyboard is aimed at rather than hunting for whichever control happens to hold one.
-    /// A frozen pane is asked too: a pane someone has deliberately stopped is the one they are most likely
-    /// to be copying out of.
+    /// <b>It asks the window's <c>SelectionManager</c>, not the focused pane.</b> That manager owns the one
+    /// active selection and clears the previous owner when a new one starts, so it is the thing that knows
+    /// — and the focused pane is emphatically not. Pane selection moves on ⌃arrows, ⌃O and a tab click, and
+    /// a press in a pane's <em>body</em> moves none of them, so a drag in the pane beside the focused one
+    /// left the copy looking in the wrong place and reporting nothing selected — a feature that appeared
+    /// simply not to work. It also retires the special case for a frozen pane: one selection, one owner,
+    /// whichever control that turns out to be.
     /// </para>
     /// <para>
     /// Both empty cases speak. Nothing selected is the state ⌃C is pressed in by accident; no writer at all
@@ -7787,16 +7795,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// gesture that failed.
     /// </para>
     /// </summary>
-    private bool CopyFocusedSelection()
+    private bool CopySelection()
     {
-        var windowId = ActiveWindowId();
-        var text = PaneSelection(windowId);
-        if (text.Length == 0
-            && _frozenPanes.TryGetValue(windowId, out var frozen)
-            && frozen.HasSelection)
-        {
-            text = frozen.GetSelectedText();
-        }
+        var text = _window.SelectionManager.GetSelectedText() ?? string.Empty;
 
         if (text.Length == 0)
         {
@@ -7813,30 +7814,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _clipboard(text);
         Notice($"copied {text.Length} characters", MessageSeverity.Info);
         return true;
-    }
-
-    /// <summary>
-    /// Drops any live selection in a pane. Called wherever the buffer under one moves: a chrome row going
-    /// in or coming out (the freeze bar, the away bar, the <c>NEW</c> divider) and the whole-buffer re-feed
-    /// behind the timestamp column.
-    /// <para>
-    /// The selection is anchored to display rows, and this client mutates buffers mid-stream — so a
-    /// selection left alone across an insert describes rows that have shifted under it, and the highlight
-    /// on screen then marks text nobody dragged over. Dropping is the honest answer: a gesture whose
-    /// subject has moved is a gesture that is over.
-    /// </para>
-    /// </summary>
-    private void ClearPaneSelection(string windowId)
-    {
-        if (_panes.TryGetValue(windowId, out var pane))
-        {
-            pane.ClearSelection();
-        }
-
-        if (_frozenPanes.TryGetValue(windowId, out var frozen))
-        {
-            frozen.ClearSelection();
-        }
     }
 
     /// <summary>
@@ -9198,7 +9175,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             if (e.KeyInfo.Modifiers == ConsoleModifiers.Control && e.KeyInfo.Key == ConsoleKey.C)
             {
                 e.Handled = true;
-                CopyFocusedSelection();
+                CopySelection();
                 return null;
             }
 
@@ -9793,6 +9770,28 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// the claim that the reported rows exclude the chrome.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The window in front of each realised pane, keyed by <em>pane</em> id. It exists because those two
+    /// ids are different namespaces that are both strings, and a caller holding one of them cannot use it
+    /// where the other is wanted: <see cref="PaneOutputRects"/> is keyed by pane, while
+    /// <see cref="SimulatePaneDrag"/> and <see cref="PaneSelection"/> take a window. A test that passed a
+    /// pane id to the drag seam simply selected nothing, which reads as a broken feature rather than a
+    /// mistyped argument.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> PaneWindows()
+    {
+        var windows = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (paneId, _, _) in RealisedPanes())
+        {
+            if (_workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId)
+            {
+                windows[paneId] = windowId;
+            }
+        }
+
+        return windows;
+    }
+
     internal IReadOnlyDictionary<string, PaneRect> PaneOutputRects()
     {
         var rects = new Dictionary<string, PaneRect>(StringComparer.Ordinal);

@@ -99,6 +99,58 @@ public class PaneSelectionTests
         await Assert.That(app.StatusMarkup).Contains("no clipboard");
     }
 
+    /// <summary>
+    /// A drag in a pane the keyboard is <em>not</em> aimed at still copies. Pane selection is moved by
+    /// ⌃arrows, ⌃O and a tab click — never by a press in a pane's body — so a copy resolved through
+    /// <c>ActiveWindowId</c> looked in the wrong pane and reported nothing selected, which is the shape of
+    /// a feature that does not work. The framework's <c>SelectionManager</c> already arbitrates one
+    /// selection per window; asking it is asking the thing that knows.
+    /// </summary>
+    [Test]
+    public async Task ADragInAPaneThatDoesNotHoldTheFocusIsStillWhatGetsCopied()
+    {
+        var (app, copied) = WithClipboard();
+        app.RenderSnapshot("split");
+
+        // By window, not by pane: the two are separate id namespaces and the drag seam takes a window.
+        var elsewhere = app.PaneWindows().Values.First(id => id != app.ActiveWindowId());
+
+        app.SimulatePaneDrag(elsewhere, 0, 0, 20, 1);
+        app.SimulateKey(CtrlC);
+
+        await Assert.That(app.ActiveWindowId()).IsNotEqualTo(elsewhere);
+        await Assert.That(copied).HasSingleItem();
+        await Assert.That(copied[0]).IsEqualTo(app.PaneSelection(elsewhere));
+    }
+
+    /// <summary>
+    /// Freezing rebuilds the pane into a pinned half and a live half and re-feeds both, so a selection
+    /// anchored to the rows before the split describes a grid that no longer exists. It is a second
+    /// re-feed seam beside <c>RepaintPane</c>, which is why the clearing lives in <c>FeedRange</c> — the
+    /// one function that actually replaces a control's content — rather than at the call sites.
+    /// </summary>
+    /// <summary>
+    /// Freeze is a second re-feed seam beside <c>RepaintPane</c> — it rebuilds the pane into a pinned half
+    /// and a live half and feeds both — and unfreezing pours the whole buffer back. That round trip is the
+    /// one with teeth: freezing alone leaves the live control <em>empty</em>, so a stale anchor yields
+    /// nothing and the client refuses for the wrong reason, while after an unfreeze the rows exist again
+    /// and a stale anchor hands over real text nobody dragged across.
+    /// </summary>
+    [Test]
+    public async Task FreezingAndThawingDropsTheSelectionRatherThanReAnchoringIt()
+    {
+        var (app, copied) = WithClipboard();
+        app.SimulatePaneDrag(SharpMUTermApp.MainWindowId, 0, 0, 20, 1);
+        await Assert.That(app.PaneSelection(SharpMUTermApp.MainWindowId)).IsNotEmpty();
+
+        app.DispatchCommand("term:freeze");
+        app.DispatchCommand("term:unfreeze");
+        app.SimulateKey(CtrlC);
+
+        await Assert.That(copied).IsEmpty();
+        await Assert.That(app.StatusMarkup).Contains("nothing selected");
+    }
+
     /// <summary>The ⌃P entry and the chord are one action, and the entry is how the chord is found at all.</summary>
     [Test]
     public async Task TheCommandSurfaceCopiesTheSameText()
