@@ -299,7 +299,7 @@ internal static class Program
         usage.WriteLine("'at start' only opens the connection. What is typed once one is open follows from the");
         usage.WriteLine("character's saved password and connect line — F5's 'login' row says which.");
         usage.WriteLine();
-        usage.WriteLine("In-app: Up/Down history · Ctrl+N next window · Ctrl+W close · Ctrl+P palette · Ctrl+Q quit.");
+        usage.WriteLine("In-app: Up/Down history · Ctrl+N next tab · Ctrl+W close · Ctrl+P palette · Ctrl+Q quit.");
         // The composer earns a line of its own because what it *sends* is not guessable from the window:
         // the buffer is one command and its line breaks are written %r, which is what a MUSH board or
         // mail body wants. Naming the send chord matters for the same reason — Ctrl+Enter is what a

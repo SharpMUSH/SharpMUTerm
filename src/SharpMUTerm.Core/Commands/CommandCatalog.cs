@@ -250,6 +250,17 @@ public static class CommandCatalog
         items.Add(new CommandItem(CommandGroup.Layout, "Focus pane down", "layout:focus-down", "⌃↓"));
         items.Add(new CommandItem(CommandGroup.Layout, "Focus the next pane", "layout:cycle", "⌃O · ⌃B o"));
 
+        // The tab cycle, beside the pane cycle it rhymes with. Listed unconditionally for the same reason
+        // the four directional entries above are: this surface is where the keyboard is learnt, and a
+        // reader whose panes each hold one window has no other way to find out that a pane holds tabs at
+        // all. ⌃N has always done this and was named on F4 and nowhere else.
+        //
+        // Listing it obliges it to answer, which the directional entries pay for by refusing out loud and
+        // this one did not — it returned in silence on a pane with one tab, which is what a dead key looks
+        // like. The refusal is the host's (SharpMUTermApp.NextWindow); the entry is only allowed to exist
+        // because it is there.
+        items.Add(new CommandItem(CommandGroup.Layout, "Focus the next tab", "layout:next-tab", "⌃N"));
+
         // Numbered pane jumps, one entry per pane that exists — the one group here that is *not* listed
         // unconditionally, because "Go to pane 4" on a workspace with two panes names a place there is no
         // way to make. The number is the one the move and drag overlays badge each pane with, so the entry

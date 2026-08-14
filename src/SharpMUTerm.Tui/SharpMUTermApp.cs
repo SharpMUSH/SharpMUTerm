@@ -6757,6 +6757,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
                 CyclePane();
                 return true;
+            case "layout:next-tab":
+                NextWindow(); // refuses out loud on a pane with one tab, the same as the chord does
+                return true;
             case "term:newline":
                 // The same edit Alt+⏎ makes, through the same key table, so the surface cannot drift from
                 // the chord it advertises.
@@ -8319,13 +8322,33 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>The TabControl of the focused pane, or null if none is realised.</summary>
     private TabControl? FocusedTabs() => _paneTabs.GetValueOrDefault(_workspace.Layout.FocusedPaneId);
 
-    /// <summary>Cycles to the next window tab in the focused pane, wrapping (⌃N).</summary>
+    /// <summary>
+    /// Why ⌃N can refuse. Named beside the pane cycle's own wording (<see cref="PrefixPanel.NoCycleRefusal"/>)
+    /// and phrased to match it, because the two keys are one gesture at two scales and a reader who has met
+    /// one should recognise the other.
+    /// </summary>
+    private const string NoTabCycleRefusal = "nowhere to cycle to — this pane has one tab";
+
+    /// <summary>
+    /// Cycles to the next window tab in the focused pane, wrapping (⌃N, and ⌃P ▸ <c>Focus the next tab</c>).
+    /// <para>
+    /// A pane holding a single tab is refused <em>out loud</em>. It used to return in silence, which was
+    /// tolerable only while the chord was advertised nowhere but F4 — the moment the ⌃P surface lists it,
+    /// the key is held to the same rule as the directional pane entries beside it, every one of which says
+    /// why nothing happened. A key that is dead and a key that has nowhere to go look identical otherwise,
+    /// and this one is a wrap: on two tabs it always moves, so the state it is silent in is the state a
+    /// first-time reader is most likely to try it in.
+    /// </para>
+    /// </summary>
     private void NextWindow()
     {
-        if (FocusedTabs() is { TabCount: > 1 } tabs)
+        if (FocusedTabs() is not { TabCount: > 1 } tabs)
         {
-            tabs.ActiveTabIndex = (tabs.ActiveTabIndex + 1) % tabs.TabCount;
+            RefuseCommand(NoTabCycleRefusal);
+            return;
         }
+
+        tabs.ActiveTabIndex = (tabs.ActiveTabIndex + 1) % tabs.TabCount;
     }
 
     /// <summary>
@@ -10561,26 +10584,50 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// navigation one, instead of losing both because the pair no longer fitted. The chord is still named
     /// on the ⌃P surface and in <c>--help</c> either way.
     /// </para>
+    /// <para>
+    /// <b>The ladder is generated, not written out per combination.</b> Three independent conditions is
+    /// eight cases, each needing its own ordered candidates, and eight hand-written ladders is eight
+    /// chances for one of them to drop the wrong segment.
+    /// </para>
+    /// <para>
+    /// <b>Reading order and drop order are separate, and have to be.</b> The row reads
+    /// <c>pane · size · line</c> — the two pane chords together, then the bars — while <em>size</em> is the
+    /// first thing given up. A generator that dropped from the end of the reading order would have to put
+    /// size last, which reorders a row nobody asked to have reordered.
+    /// </para>
     /// </summary>
     private string[] FocusHints()
     {
         var panes = _workspace.Layout.Panes.Count > 1 && _workspace.Layout.ZoomedPaneId is null;
         var bars = _second.Visible;
-        return (panes, bars) switch
+        var tabs = FocusedTabs() is { TabCount: > 1 };
+
+        // In reading order, each with the rank it is surrendered at — lowest goes first.
+        //
+        // Size is rank 0 as it always was: the longest claim for the least urgent fact. The tab cycle
+        // follows it, and that is the one judgement here worth stating — a pane's tabs are drawn as a
+        // strip the reader can see, so this hint names a shortcut to something already visible, while
+        // nothing at all on the screen says how to move between panes or how to reach the second command
+        // line. Where you are outlives everything.
+        (string Text, int Rank)?[] ordered =
         {
-            (true, true) => new[]
-            {
-                "[dim]⌃←→↑↓ pane · ⌥⇧←→↑↓ size · ⇥ line[/]",
-                "[dim]⌃←→↑↓ pane · ⇥ line[/]",
-            },
-            (true, false) => new[]
-            {
-                "[dim]⌃←→↑↓ pane · ⌥⇧←→↑↓ size[/]",
-                "[dim]⌃←→↑↓ pane[/]",
-            },
-            (false, true) => new[] { "[dim]⇥ · ⌃↑↓ line[/]" },
-            _ => Array.Empty<string>(),
+            panes ? ("⌃←→↑↓ pane", 3) : null,
+            tabs ? ("⌃N tab", 1) : null,
+            panes ? ("⌥⇧←→↑↓ size", 0) : null,
+
+            // ⌃↑↓ is only worth naming where the pane arrows have not already said it.
+            bars ? (panes ? "⇥ line" : "⇥ · ⌃↑↓ line", 2) : null,
         };
+
+        var segments = ordered.OfType<(string Text, int Rank)>().ToList();
+        var candidates = new List<string>(segments.Count);
+        while (segments.Count > 0)
+        {
+            candidates.Add($"[dim]{string.Join(" · ", segments.Select(s => s.Text))}[/]");
+            segments.Remove(segments.MinBy(s => s.Rank));
+        }
+
+        return candidates.ToArray();
     }
 
     /// <summary>

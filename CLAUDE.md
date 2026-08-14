@@ -724,6 +724,32 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `TryRecallKey` now matches on — **exactly**, so `⌥⇧↑` (the pane resize) still reaches its own
     handler. A macro bound to `Alt+Up` wins over recall, because `DispatchMacro` runs first: the same
     relationship `Ctrl+←/→` has with pane selection.
+  - **`⌃N` walks the focused pane's tab strip, and it stays `⌃N` because the familiar spellings do not
+    exist here.** Asked for "an easy key-combination to tab through the tabs of the active pane", the
+    obvious candidates were measured at a raw reader with `kitten @ send-key` before anything was built:
+    `⌃Tab` is `09`, byte-identical to a bare Tab (already in `MacroKeys.ControlBytes`); `⌃⇧Tab` is
+    `CSI Z`, byte-identical to plain `⇧Tab`; and **`⌥Tab` is `ESC` + `09`**, which is `ESC` + a *control*
+    byte and so arrives as **two** key events rather than an Alt chord (`AnsiInputParser.ProcessEscape`).
+    A `TryAltEnter`-style reassembly could pair them, but Tab is already spent as
+    `TerminalFocusWatcher`'s disguised focus-in — and `send-key` writes into the pty, so it says nothing
+    about the *compositor*, which takes `⌥Tab` unconditionally on Windows, GNOME and KDE. `⌃PgUp`/`⌃PgDn`
+    is the one familiar pair that does arrive (`CSI 5;5~` / `CSI 6;5~`, decoded by `DispatchTilde`, and
+    free because `TryScrollKey` matches PageUp/PageDown only at `ctrl: false`) — kept in reserve rather
+    than spent, since the reported problem was that `⌃N` could not be *found*, not that it was wrong.
+  - **So the fix was discoverability, and the chord had to earn it by answering.** `⌃N` was named on F4
+    and nowhere else. It is now a ⌃P entry (`layout:next-tab`, listed unconditionally like the
+    directional pane entries, because this surface is where a reader learns a pane holds tabs at all) and
+    a status-row segment (`⌃N tab`, shown exactly while the focused pane has a second tab, the same
+    contextual rule its neighbours follow). Listing a key obliges it to answer: `NextWindow` **returned
+    in silence** on a single-tab pane, which is indistinguishable from a dead key, and now refuses out
+    loud beside `PrefixPanel.NoCycleRefusal`'s wording. Every surface says **tab**, not "window" — F4 and
+    `--help` said window while everything else said tab, and `⌥N` already owns the window noun.
+  - **`FocusHints` separates reading order from drop order.** Three independent conditions is eight
+    cases, so the ladder is generated; but the row reads `pane · size · line` while *size* is the first
+    thing surrendered, so a generator that dropped from the end of the reading order would silently
+    reorder a row nobody asked to reorder. The tab segment is given up second, and that judgement is
+    written down: a pane's tabs are drawn as a strip you can see, so the hint names a shortcut to
+    something already visible, while nothing on screen says how to reach another pane or the second bar.
   - **Known and not fixed here**: `⌃N` and `⌃O` have no reverse (the character cycle does — `⌥J`/`⌥K`),
     and `⌃W` and `⌃B x` are two chords for one action. Both are shape complaints rather than defects,
     and both are behaviour changes rather than modifier moves.

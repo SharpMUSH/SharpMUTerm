@@ -425,7 +425,7 @@ count on the tab, the rail character, and the rail world.
 
 `⌃P` command surface · `⌃F` search the output (`⌥G` next hit) · `⌥F` freeze/resume in focused pane ·
 `⌃R` command-history search ·
-`⌃N` next window · `⌥D`/`⌥R` disconnect/reconnect · `⌥↑`/`⌥↓` command history (`↑`/`↓` do it too,
+`⌃N` next tab in the focused pane · `⌥D`/`⌥R` disconnect/reconnect · `⌥↑`/`⌥↓` command history (`↑`/`↓` do it too,
 where the caret has nowhere further to go) · `⌥⏎`, or `⌃L`, newline in input · `F1` composer ·
 `F2`–`F9` config · `Esc` close overlay.
 
