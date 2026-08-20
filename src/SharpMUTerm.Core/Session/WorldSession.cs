@@ -153,10 +153,21 @@ public sealed class WorldSession : IAsyncDisposable
     /// by a user who knows what that server speaks, and a negotiation must not overrule them.
     /// </para>
     /// <para>
-    /// The old parser is flushed first, so a partial line already buffered is delivered under the
-    /// rules it arrived under rather than being re-read as markup by a parser that never saw its
-    /// beginning. Style does not carry across: MXP's own RESET is how a server re-establishes it, and
-    /// inventing a carry-over would make the first line after negotiation depend on parser internals.
+    /// The old parser is flushed first, so whatever it still holds — in practice just open style/tag
+    /// state, since <see cref="OnOutputReceived"/> already feeds and flushes it on every call and
+    /// leaves nothing genuinely undelivered between one call and the next — is emitted under the rules
+    /// it arrived under rather than being silently dropped. Style does not carry across the swap:
+    /// MXP's own RESET is how a server re-establishes it, and inventing a carry-over would make the
+    /// first line after negotiation depend on parser internals.
+    /// </para>
+    /// <para>
+    /// <b>This is not what protects a line that straddles the negotiation moment.</b> That hazard lives
+    /// one layer down, in <c>TelnetSession._pending</c>: bytes received before and after MXP negotiates
+    /// can still be accumulated there and submitted together as one <c>OutputReceived</c> chunk, which
+    /// this session then parses wholesale with whichever parser is current at that point — potentially
+    /// re-reading pre-negotiation text as MXP. Fixing that is out of this method's scope (it needs its
+    /// own buffering change and test story at the telnet layer); the flush here is cheap, correct for
+    /// what it does cover, and is the right call to keep regardless.
     /// </para>
     /// </remarks>
     private void OnMxpEnabled(object? sender, EventArgs e)
