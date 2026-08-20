@@ -104,6 +104,16 @@ public sealed class MxpParser : ILineParser
     private const string ClientName = "SharpMUTerm";
 
     /// <summary>
+    /// Spec: "the response is sent as a secure-tagged line: <c>&lt;ESC&gt;[1z</c> prefix with newline
+    /// suffix, ensuring the MUD recognizes it as client-generated rather than player-controlled input."
+    /// Only the prefix belongs here — <c>WorldSession.SendRawAsync</c>'s send path
+    /// (<c>TelnetSession.SendLineAsync</c>, whose own doc comment says the terminator is the library's
+    /// to add) already appends the line terminator, so adding one here would double it, exactly the bug
+    /// that doc comment warns against for a plain command.
+    /// </summary>
+    private const string SecureLinePrefix = "\x1b[1z";
+
+    /// <summary>
     /// The tags this parser genuinely implements, in the spec's <c>+tag</c> form.
     /// </summary>
     /// <remarks>
@@ -724,14 +734,36 @@ public sealed class MxpParser : ILineParser
         }
     }
 
+    /// <summary>
+    /// Spec's exact attribute order: <c>MXP=mxpversion STYLE=styleversion CLIENT=clientname
+    /// VERSION=clientversion REGISTERED=yes/no</c>, with only <c>REGISTERED</c> optional.
+    /// </summary>
+    /// <remarks>
+    /// Values chosen deliberately, not copied from any example:
+    /// <list type="bullet">
+    /// <item><c>MXP=1.0</c> is the protocol revision this parser's own mechanism — the OPEN/SECURE/LOCKED
+    /// line-security model, RESET, TEMP SECURE — implements against the spec dated "Version 1.0
+    /// (12-Mar-03)", which is the whole spec's own ceiling; this is not a claim about tag coverage,
+    /// which <see cref="SupportedTags"/> answers separately and honestly via SUPPORTS.</item>
+    /// <item><c>STYLE=0</c>: "the current version of the optional style sheet[,] set by [the MUD]
+    /// sending the <c>&lt;VERSION styleversion&gt;</c> tag to the client." This parser tracks no such
+    /// state — no style sheet is ever in effect — so 0 says exactly that rather than inventing a
+    /// version number for a mechanism that does not exist here.</item>
+    /// <item><c>VERSION=1</c>: this client carries no build/assembly version reachable from this layer
+    /// without assembly reflection, which does not belong in a line parser. Kept as a fixed placeholder
+    /// rather than manufactured.</item>
+    /// <item><c>REGISTERED</c> omitted: it is the one optional field and there is no registration
+    /// concept for this client to report.</item>
+    /// </list>
+    /// </remarks>
     private void HandleVersionRequest()
     {
-        ClientReply?.Invoke(this, $"<VERSION CLIENT={ClientName} VERSION=1 MXP=1.0>");
+        ClientReply?.Invoke(this, $"{SecureLinePrefix}<VERSION MXP=1.0 STYLE=0 CLIENT={ClientName} VERSION=1>");
     }
 
     private void HandleSupportRequest()
     {
-        ClientReply?.Invoke(this, $"<SUPPORTS {string.Join(' ', SupportedTags)}>");
+        ClientReply?.Invoke(this, $"{SecureLinePrefix}<SUPPORTS {string.Join(' ', SupportedTags)}>");
     }
 
     private void OpenFormatting(string name, TextAttributes attribute)

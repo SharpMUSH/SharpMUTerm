@@ -505,9 +505,10 @@ public class MxpParserTests
 
         parser.Feed("\x1b[1z<VERSION>\n");
 
+        // Spec: "the response is sent as a secure-tagged line" (ESC[1z prefix), and the tag's exact
+        // attribute order is MXP, STYLE, CLIENT, VERSION, with REGISTERED optional and here omitted.
         await Assert.That(replies).Count().IsEqualTo(1);
-        await Assert.That(replies[0]).StartsWith("<VERSION ");
-        await Assert.That(replies[0]).Contains("CLIENT=SharpMUTerm");
+        await Assert.That(replies[0]).IsEqualTo("\x1b[1z<VERSION MXP=1.0 STYLE=0 CLIENT=SharpMUTerm VERSION=1>");
     }
 
     /// <summary>A VERSION request on an open line is a player's, not the server's, and is refused.</summary>
@@ -534,8 +535,30 @@ public class MxpParserTests
         parser.Feed("\x1b[1z<SUPPORT>\n");
 
         await Assert.That(replies).Count().IsEqualTo(1);
-        await Assert.That(replies[0]).StartsWith("<SUPPORTS ");
+        await Assert.That(replies[0]).StartsWith("\x1b[1z<SUPPORTS ");
         await Assert.That(replies[0]).Contains("+send");
         await Assert.That(replies[0]).Contains("+color");
+    }
+
+    /// <summary>
+    /// Spec: "the response is sent as a secure-tagged line: &lt;ESC&gt;[1z prefix with newline suffix,
+    /// ensuring the MUD recognizes it as client-generated rather than player-controlled input." Pinned
+    /// as its own test, apart from the two above, so a later refactor that strips the prefix fails
+    /// loudly here rather than silently making these replies invisible to a server that itself enforces
+    /// MXP's line-security model — precisely the servers this feature exists to answer.
+    /// </summary>
+    [Test]
+    public async Task ClientReplies_AreSentAsSecureLines()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("\x1b[1z<VERSION>\n");
+        parser.Feed("\x1b[1z<SUPPORT>\n");
+
+        await Assert.That(replies).Count().IsEqualTo(2);
+        await Assert.That(replies[0]).StartsWith("\x1b[1z<VERSION");
+        await Assert.That(replies[1]).StartsWith("\x1b[1z<SUPPORTS");
     }
 }
