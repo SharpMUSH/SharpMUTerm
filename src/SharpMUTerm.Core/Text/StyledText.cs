@@ -123,6 +123,72 @@ public static class StyledText
     /// ignorant of user preferences. Lines already in scrollback keep the width they were expanded at.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Cuts a line to <paramref name="maxLength"/> cells, marking the cut with an ellipsis that is
+    /// counted <em>within</em> the budget, so the result is never wider than asked for.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Truncating the styled line rather than the markup it becomes is the whole point: markup is a
+    /// stream of tags around text, so cutting it by character count can land inside a <c>[#rrggbb]</c>
+    /// or orphan a <c>[/]</c>, and the result is either a parse error or a colour that leaks to the end
+    /// of the row. Cutting here means every span that survives keeps its own style and its own
+    /// interaction, and the tags are generated afterwards from what is left.
+    /// </para>
+    /// <para>
+    /// The ellipsis inherits the style of the span it ends in, so a cut mid-colour does not paint a
+    /// stray default-coloured character onto the end of a coloured run.
+    /// </para>
+    /// </remarks>
+    /// <param name="line">The line to cut.</param>
+    /// <param name="maxLength">The budget in characters. Zero or less yields an empty line.</param>
+    /// <param name="ellipsis">What marks the cut. Pass an empty string for a hard cut.</param>
+    public static StyledLine Truncate(StyledLine line, int maxLength, string ellipsis = "…")
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        ArgumentNullException.ThrowIfNull(ellipsis);
+
+        if (maxLength <= 0)
+        {
+            return StyledLine.Empty;
+        }
+
+        if (line.Text.Length <= maxLength)
+        {
+            return line;
+        }
+
+        // The ellipsis has to fit inside the budget, not beside it. A budget too small to hold even
+        // the marker spends all of it on the marker rather than overflowing by the difference.
+        var keep = Math.Max(0, maxLength - ellipsis.Length);
+        var spans = new List<StyledSpan>();
+        var taken = 0;
+        var lastStyle = TextStyle.Default;
+
+        foreach (var span in line.Spans)
+        {
+            if (taken >= keep)
+            {
+                break;
+            }
+
+            var room = keep - taken;
+            var text = span.Text.Length <= room ? span.Text : span.Text[..room];
+            spans.Add(new StyledSpan(text, span.Style, span.Interaction));
+            lastStyle = span.Style;
+            taken += text.Length;
+        }
+
+        if (ellipsis.Length > 0)
+        {
+            // Deliberately carries no interaction: half of a link is not a link, and a clickable
+            // ellipsis would send whatever the truncated span's target was.
+            spans.Add(new StyledSpan(ellipsis[..Math.Min(ellipsis.Length, maxLength)], lastStyle));
+        }
+
+        return new StyledLine(spans, line.RuleColor);
+    }
+
     public static StyledLine ExpandTabs(StyledLine line, int width)
     {
         ArgumentNullException.ThrowIfNull(line);

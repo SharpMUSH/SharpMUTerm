@@ -55,6 +55,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly ChromeInk _ink;
     private readonly MarkupFormatter _formatter;
+    private readonly MarkupFormatter _promptFormatter;
     private readonly Workspace _workspace;
     private readonly Dictionary<string, MarkupControl> _panes = new(StringComparer.Ordinal);
 
@@ -165,6 +166,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly Window _window;
     private readonly MarkupControl _header;
     private readonly MarkupControl _statusBar;
+
+    /// <summary>
+    /// The server's own prompt, on its own row directly above the command line. See
+    /// <see cref="PromptRowRenderer"/> for why it is not a line of output and why it is always
+    /// exactly one row.
+    /// </summary>
+    private readonly MarkupControl _promptRow;
     private readonly MarkupControl _rail;
     private readonly MarkupControl _railSpacer = new(new List<string>());
     private readonly Dictionary<string, TabControl> _paneTabs = new(StringComparer.Ordinal);
@@ -601,6 +609,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _theme = ResolveTheme(config);
         _ink = WorkspacePalette.Chrome(_theme);
         _formatter = new MarkupFormatter(_theme, config.Text);
+
+        // A second formatter for the one thing this client paints outside a pane: the prompt row sits
+        // on the idle input band, and the contrast floor is only meaningful against the fill the ink
+        // lands on. Built once beside the first rather than per prompt — it reads the same live
+        // TextSettings object, so an F7 edit reaches both.
+        _promptFormatter = new MarkupFormatter(_theme, config.Text, WorkspacePalette.IdleBand(_theme));
         _drafts = new DraftStore(() => config.Input.KeepDrafts);
         _secondBars = new InputBarVisibility(() => config.Input.SecondBar);
 
@@ -680,6 +694,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         _statusBar = Controls.Markup("[dim]not connected[/]").StickyBottom().Build();
 
+        // Sticky-bottom, added ahead of the bars so it sits above them, and hidden until a prompt
+        // arrives: most sessions never see one, and a permanently blank row would cost every pane a
+        // row for nothing.
+        _promptRow = Controls.Markup(PromptRowRenderer.Empty).StickyBottom().Build();
+        _promptRow.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _promptRow.Visible = false;
+
         // The window paints the backdrop, not the text background: everything that is not a pane — the
         // connection rail, the status line, the gaps a split leaves — sits on it, so the panes read as
         // raised surfaces and an empty one is still a visible rectangle. See WorkspacePalette.
@@ -707,6 +728,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             .WithColors(fg, bg)
             .AddControl(_header)
             .AddControl(_workspaceRow)
+            .AddControl(_promptRow)
             .AddControl(_input)
             .AddControl(_second)
             .AddControl(_statusBar)
@@ -1073,6 +1095,18 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                     AppendWindowLine(MainWindowId, _formatter.ToMarkup(line), StampNow());
                 }
             }
+        }
+
+        // The server's own prompt, on its row above the command line. The demo has no live session, so
+        // the prompt is written straight onto the row the way WorldSession's PromptChanged handler
+        // would — and PromptRowTests pins the two together, because a demo that fakes state the live
+        // writer produces differently is a frame that shows something nobody will ever see.
+        if (string.Equals(view, "prompt", StringComparison.OrdinalIgnoreCase))
+        {
+            var parser = new AnsiParser();
+            var prompt = parser.Feed("\x1b[0;33mDo you want to be listed at right, Pemberton (Y/N)?\x1b[0m ")
+                .FirstOrDefault() ?? parser.Flush() ?? StyledLine.Empty;
+            ShowPromptRow(prompt);
         }
 
         // A live selection over the main window's output. It exists because the selection band is the one
@@ -2332,7 +2366,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
 
         session.LinePrinted += (_, line) => OnUi(() => OnLine(session, windowId, line));
-        session.PromptChanged += (_, _) => OnUi(UpdateStatus);
+        session.PromptChanged += (_, _) => OnUi(() =>
+        {
+            UpdateStatus();
+            RefreshPromptRow();
+        });
 
         // Every connect reports the automation it is running — see ReportAutomation. Hung off the state
         // change rather than off the two call sites that dial (StartAsync and ReconnectAsync), for the
@@ -4232,7 +4270,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private int ChromeRows() =>
         InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth())
-        + InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth());
+        + InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth())
+        // One, not WrappedRows: the prompt row is elided to a single row by construction, precisely so
+        // that a long prompt cannot take a second row off the panes. See PromptRowRenderer.
+        + (_promptRow.Visible ? 1 : 0);
 
     /// <summary>
     /// The input area following a change of visible window: the second bar's visibility, both drafts,
@@ -10269,7 +10310,53 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         ChangeWindow();
         RefreshPaneFocus(); // and, through RefreshTabTitles, the tab labels, the rail and the input chrome
         SyncScrollbackState();
+        RefreshPromptRow();
         ReportPaneSizes();
+    }
+
+    /// <summary>
+    /// Repaints the prompt row from the focused window's own session, and shows or hides it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Resolved through <see cref="WindowSession"/> and never <c>_active</c>, for the reason every
+    /// other resolver here is: a background pane's prompt displayed above the command line would be
+    /// asking the reader to answer a question the ⏎ they press is not aimed at. A focused window whose
+    /// owner has no session shows no prompt rather than the last one that happened to arrive.
+    /// </para>
+    /// <para>
+    /// Called before <c>ReportPaneSizes</c> in <see cref="SyncToFocusedPane"/>: showing or hiding the
+    /// row changes every pane's rectangle, and the NAWS report has to be of the layout that results
+    /// rather than the one before it.
+    /// </para>
+    /// </remarks>
+    private void RefreshPromptRow() =>
+        ShowPromptRow(WindowSession(ActiveWindowId())?.CurrentPrompt);
+
+    /// <summary>
+    /// Puts one prompt on the row. The single place the row's content and visibility are decided, so
+    /// the snapshot view and the live <c>PromptChanged</c> handler cannot render it two different ways.
+    /// </summary>
+    internal void ShowPromptRow(StyledLine? prompt)
+    {
+        var markup = PromptRowRenderer.Row(
+            prompt, _promptFormatter, HeaderWidth(), WorkspacePalette.IdleBand(_theme).ToHex());
+        var show = markup.Length > 0;
+
+        if (show)
+        {
+            _promptRow.SetContent(new List<string> { markup });
+        }
+
+        if (_promptRow.Visible == show)
+        {
+            return;
+        }
+
+        // Visibility first: SyncInputHeights measures the chrome through ChromeRows, which reads it.
+        _promptRow.Visible = show;
+        SyncInputHeights(_second.Visible);
+        _window.ForceRebuildLayout();
     }
 
     /// <summary>Repaints every pane's tab headers from window titles + unread/unsent badges.</summary>
