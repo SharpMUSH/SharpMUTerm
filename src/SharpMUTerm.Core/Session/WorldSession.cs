@@ -25,7 +25,7 @@ public sealed class WorldSession : IAsyncDisposable
         new(TerminalColor.FromIndex(6), TerminalColor.Default, TextAttributes.Italic);
 
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
-    private readonly ILineParser _parser;
+    private ILineParser _parser;
     private readonly EmojiSubstitutor? _emoji;
     private ILogSink? _log;
     private readonly TextSettings? _text;
@@ -142,6 +142,37 @@ public sealed class WorldSession : IAsyncDisposable
         ContentFormat.Pueblo => new PuebloParser(),
         _ => new AnsiParser(),
     };
+
+    /// <summary>
+    /// Upgrades to the MXP parser when the option negotiates.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only from <see cref="ContentFormat.Ansi"/>, which is the default and therefore means "nobody
+    /// chose" rather than "somebody chose ANSI". A world explicitly set to Pueblo has been configured
+    /// by a user who knows what that server speaks, and a negotiation must not overrule them.
+    /// </para>
+    /// <para>
+    /// The old parser is flushed first, so a partial line already buffered is delivered under the
+    /// rules it arrived under rather than being re-read as markup by a parser that never saw its
+    /// beginning. Style does not carry across: MXP's own RESET is how a server re-establishes it, and
+    /// inventing a carry-over would make the first line after negotiation depend on parser internals.
+    /// </para>
+    /// </remarks>
+    private void OnMxpEnabled(object? sender, EventArgs e)
+    {
+        if (World.ContentFormat != ContentFormat.Ansi || _parser is MxpParser)
+        {
+            return;
+        }
+
+        if (_parser.Flush() is { } tail)
+        {
+            ProcessOutputLine(tail);
+        }
+
+        _parser = new MxpParser();
+    }
 
     /// <summary>
     /// Where this session's diagnostics go — its own, and the telnet stack's, which
@@ -282,6 +313,7 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.MsspReceived += (_, e) => MsspReceived?.Invoke(this, e);
         telnet.EncodingChanged += OnEncodingChanged;
         telnet.Disconnected += OnDisconnected;
+        telnet.MxpEnabled += OnMxpEnabled;
 
         try
         {

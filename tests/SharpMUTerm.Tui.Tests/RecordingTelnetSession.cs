@@ -63,6 +63,7 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     public event EventHandler<GmcpMessageEventArgs>? GmcpReceived;
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
+    public event EventHandler? MxpEnabled;
 #pragma warning restore CS0067
 
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;

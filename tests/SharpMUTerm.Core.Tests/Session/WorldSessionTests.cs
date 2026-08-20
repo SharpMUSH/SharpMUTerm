@@ -274,4 +274,52 @@ public class WorldSessionTests
         await Assert.That(states).Contains(ConnectionState.Connecting);
         await Assert.That(states).Contains(ConnectionState.Connected);
     }
+
+    /// <summary>
+    /// MXP is a negotiated telnet option, so the client learns it is in force from the wire and not
+    /// from a config field a user has to know to set. NukeFire sent IAC WILL MXP, this client
+    /// answered DO, and then parsed the stream with AnsiParser anyway — which is why its prompt
+    /// showed a literal "<send>Y</send>".
+    /// </summary>
+    [Test]
+    public async Task Mxp_NegotiationSwitchesTheParser()
+    {
+        var (session, telnet) = Create(World());
+        await session.ConnectAsync();
+
+        telnet.EmitLine("<B>before</B>");
+        telnet.RaiseMxpEnabled();
+        telnet.EmitLine("<B>after</B>");
+
+        var lines = session.Scrollback.Snapshot();
+        await Assert.That(lines.Any(l => l.Text == "<B>before</B>")).IsTrue();
+        await Assert.That(lines.Any(l => l.Text == "after")).IsTrue();
+    }
+
+    /// <summary>
+    /// A world explicitly set to Pueblo is a user's decision about a server that speaks a different
+    /// markup, and a stray MXP negotiation must not overrule it.
+    /// </summary>
+    /// <remarks>
+    /// This deliberately does not reuse <c>&lt;B&gt;...&lt;/B&gt;</c> from the test above: both
+    /// <c>PuebloParser</c> and <c>MxpParser</c> treat B as always-open and strip it to plain "after"
+    /// either way, so that content can't tell "still Pueblo" apart from "wrongly swapped to Mxp". SEND
+    /// is a secure-only MXP tag (<see cref="MxpTagCategory"/>) that a freshly-negotiated (unsecured)
+    /// <c>MxpParser</c> refuses and echoes back literally, brackets included — while
+    /// <c>PuebloParser</c> has no such concept and strips it to plain "after" like any other anchor.
+    /// Seeing "after" here is therefore proof the session is still parsing with Pueblo's rules.
+    /// </remarks>
+    [Test]
+    public async Task Mxp_NegotiationDoesNotOverrideAnExplicitContentFormat()
+    {
+        var world = World();
+        world.ContentFormat = ContentFormat.Pueblo;
+        var (session, telnet) = Create(world);
+        await session.ConnectAsync();
+
+        telnet.RaiseMxpEnabled();
+        telnet.EmitLine("<SEND>after</SEND>");
+
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "after")).IsTrue();
+    }
 }

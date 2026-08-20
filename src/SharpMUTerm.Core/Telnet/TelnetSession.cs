@@ -352,6 +352,7 @@ public sealed class TelnetSession : ITelnetSession
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
     public event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
+    public event EventHandler? MxpEnabled;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -408,7 +409,7 @@ public sealed class TelnetSession : ITelnetSession
                 onPrompt: OnPromptAsync,
                 charsetOrder: _options.CharsetOrder,
                 onCompressionEnabled: OnCompressionAsync,
-                onMXPEnabled: static () => ValueTask.CompletedTask);
+                onMXPEnabled: OnMxpEnabledAsync);
 
         // An idle keepalive, when the world asks for one: IAC NOP after the configured silence, so a
         // NAT or load balancer doesn't evict a connection that is merely quiet. It is filler traffic,
@@ -591,6 +592,13 @@ public sealed class TelnetSession : ITelnetSession
     private ValueTask OnCompressionAsync(int version, bool enabled)
     {
         _logger.LogInformation("MCCP{Version} compression {State}.", version, enabled ? "enabled" : "disabled");
+        return ValueTask.CompletedTask;
+    }
+
+    private ValueTask OnMxpEnabledAsync()
+    {
+        _logger.LogInformation("MXP negotiated.");
+        MxpEnabled?.Invoke(this, EventArgs.Empty);
         return ValueTask.CompletedTask;
     }
 
