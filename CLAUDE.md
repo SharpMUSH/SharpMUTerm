@@ -1299,6 +1299,66 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **What is still ours**: a server that sends no boundary marker at all — no GA, no EOR, no newline
     — still leaves a prompt in `_pending`, because nothing here flushes on idle. That is a real gap
     and a deliberate non-decision, not something the library can fix.
+- **MXP's line-security model is the parser's real job, and the allow-list is chosen deliberately over
+  a deny-list** (`MxpLineMode`, `MxpTagCategory`, `MxpParser` — the eight `ESC[#z` line tags: OPEN,
+  SECURE, LOCKED, TEMP SECURE, and LOCK OPEN/SECURE/LOCKED plus RESET). The spec draws its own line in
+  one sentence — "Only the tags described in this section are OPEN tags. All other MXP tags are SECURE
+  tags" — so `MxpTagCategory.IsOpen` enumerates the *few* tags a player-controlled open line may use
+  and refuses everything else, including a tag the spec adds tomorrow: unknown is secure by omission,
+  which is the safe direction for a deny-list to fail in and the wrong one for an allow-list, which is
+  why it has to stay an allow-list rather than being "simplified" into its opposite. A refused tag is
+  not swallowed — it is echoed as **literal text, byte-for-byte from the raw tag body** the parser was
+  accumulating when it was refused — so a `<SEND>` a player typed into a `say` comes back as exactly
+  the bytes they typed, rather than vanishing (which would teach an attacker that nothing survives a
+  round trip) or being reinterpreted (which would teach them what does). Two exploits surfaced and were
+  closed during review, both the shape "a refusal that doesn't fully refuse": TEMP SECURE (`ESC[4z`)
+  staying armed across intervening text instead of being spent on the very next tag only, and a refused
+  *closing* tag leaving its frame open on the stack, so a deferred `<SEND>` kept absorbing the player's
+  own following text into its own command. Get either wrong again and the failure is silent — nothing
+  throws, the line just renders as something other than what arrived.
+- **ANSI is decoded inside `MxpParser` itself, through the newly-shared `SgrCodes.Apply`, because
+  nothing chains it with `AnsiParser`.** `WorldSession.CreateParser` hands a session one parser or the
+  other for the life of the connection, never both, so an `MxpParser` that understood only MXP markup
+  would have to either swallow a server's ESC sequences or print them as literal text — and it used to
+  do the latter: a capture against a real MXP server lost every colour, because the class's own doc
+  comment claimed ANSI was "handled upstream" when there is no upstream to hand it to.
+  `SgrCodes.Apply(TextStyle, string)` is the SGR table `AnsiParser` already had, extracted so both
+  parsers decode from the same place instead of two that can quietly drift apart; `MxpParser` now
+  decodes CSI, OSC, DCS and the two-byte intermediate escape forms at parity with `AnsiParser`, and
+  treats anything else in that space as either a `z`-suffixed line tag or discards it.
+- **Which parser a session uses is decided by what the connection negotiates, not by
+  `WorldDefinition.ContentFormat`** (`TelnetSession.MxpEnabled`, `WorldSession.OnMxpEnabled`). The
+  session used to answer a server's `IAC WILL MXP` with `DO` and then keep parsing the stream with
+  whatever `ContentFormat` said — `Ansi`, by default, since nothing sets it — so a live capture against
+  a real MXP server showed its `<SEND>` tags rendering as literal text under a parser that had never
+  heard of them; `onMXPEnabled` was a callback that did nothing but return a completed task, discarding
+  the fact that MXP had negotiated at all. `TelnetSession` now raises `MxpEnabled` once the option
+  negotiates, and `WorldSession` swaps in a fresh `MxpParser` on it — but **only** when the session
+  started from `ContentFormat.Ansi`, which is the default and therefore means "nobody chose" rather
+  than "somebody chose ANSI": a world explicitly configured for Pueblo is a user's decision about what
+  that server speaks, and a stray negotiation must never overrule it. The old parser is flushed first,
+  so whatever partial line it still held is delivered under the rules it arrived under rather than
+  silently dropped; style does not carry across the swap, because MXP's own RESET is how a server
+  re-establishes it and inventing a carry-over would make the first line after negotiation depend on
+  parser internals nobody else needs to know. **What this does not cover**: `TelnetSession._pending`
+  can still batch pre- and post-negotiation bytes into one `OutputReceived` chunk, so text sent before
+  MXP was advertised can be re-read as MXP by whichever parser is current when that chunk is finally
+  parsed. Bounded by the line-security model above, not fixed by it — the replayed text lands on an
+  OPEN line, where a secure tag is refused and echoed literally, so the worst case is a stripped
+  formatting tag rather than an injected command. Closing it needs its own buffering change at the
+  telnet layer and is out of this scope.
+- **`<VERSION>`/`<SUPPORT>` are answered, and the `SUPPORTS` list is held to the same rule as the MTTS
+  bit vector: an honest claim, not an aspirational one.** The spec requires both replies to go out as a
+  secure-tagged line (`ESC[1z` prefix, `MxpParser.SecureLinePrefix`) specifically so a server can tell
+  a client's own answer apart from anything a player typed; a server running the same line-security
+  model this client implements would refuse an unsecured reply outright, so that prefix is not
+  decoration — it is what makes the reply legible to the peer this client is trying hardest to be
+  correct for. What `SUPPORTS` lists (`SupportedTags`) names only tags `HandleOpener` actually has a
+  case for: `+high` was left off even though `H`/`HIGH` sits on `MxpTagCategory`'s open allow-list,
+  because being allow-listed only means the tag is *let through* — `HandleOpener`'s default arm still
+  drops it on the floor, unhandled. Claiming `+high` would tell a server to send markup this client
+  silently discards, exactly the failure mode the MTTS bit vector is already held to; add a tag to this
+  list only once the handler for it exists, never once the tag is merely accepted.
 - **MSSP is read by the library, not by us — since 2.6.5, and that is the standing example of the
   rule above.** 2.6.0's reader destroyed the protocol's own array notation inside the library:
   `PORT "80" "23" "4201"` arrived as the integer `80234201`, `REFERRAL` (array-only) arrived null,
