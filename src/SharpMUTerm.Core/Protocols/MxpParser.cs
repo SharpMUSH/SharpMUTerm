@@ -177,7 +177,7 @@ public sealed class MxpParser : ILineParser
 
             case Mode.EscapeIntermediate:
                 // Consume the single trailing byte of e.g. ESC ( B and return to text.
-                _mode = Mode.Text;
+                EndSequence();
                 break;
 
             case Mode.Csi:
@@ -190,13 +190,36 @@ public sealed class MxpParser : ILineParser
 
             case Mode.OscEscape:
                 // Inside an OSC string we saw ESC; a following '\' is the ST terminator.
-                _mode = ch == '\\' ? Mode.Text : Mode.Osc;
+                if (ch == '\\')
+                {
+                    EndSequence();
+                }
+                else
+                {
+                    _mode = Mode.Osc;
+                }
+
                 break;
         }
     }
 
     private void ProcessText(char ch)
     {
+        // Spec: TEMP SECURE "must be immediately followed by a '<' character to start a tag." That
+        // "immediately" is the whole of it — an arming that survives the server's own prose is spent
+        // by the first tag a *player* wrote into that prose, and
+        // "\x1b[4zRivane says, '<SEND HREF=\"@shutdown\">click</SEND>'" becomes a clickable
+        // @shutdown on a line the server never secured.
+        //
+        // ESC is the sole exception, because it may still be resolving a line tag; every escape that
+        // turns out to be something else disarms for itself in <see cref="EndSequence"/>. On a locked
+        // line no character starts a tag, not even '<', so there every character disarms — which is
+        // what closes the ESC[7z … ESC[4z … ESC[0z route through the unlock.
+        if (_tempSecure && ch != '\x1b' && (ch != '<' || _lineMode == MxpLineMode.Locked))
+        {
+            _tempSecure = false;
+        }
+
         // A locked line is not parsed: "no MXP or HTML commands are allowed in the line. The line is
         // not parsed for any tags at all." Newline still ends the line, or nothing ever would — and
         // ESC is exempt because ESC[#z is the only way a server can leave locked mode again, which
@@ -283,22 +306,26 @@ public sealed class MxpParser : ILineParser
     {
         if (ch is >= '\x40' and <= '\x7e')
         {
+            if (ch == 'z')
+            {
+                // The MXP line tag — the one CSI sequence that changes what this parser trusts, and
+                // the only one that may leave a pending TEMP SECURE armed.
+                ApplyLineTag(_seq.ToString());
+                _seq.Clear();
+                _mode = Mode.Text;
+                return;
+            }
+
             if (ch == 'm')
             {
                 // Text accumulated so far keeps the pre-change style.
                 FlushRun();
                 _current = SgrCodes.Apply(_current, _seq.ToString());
             }
-            else if (ch == 'z')
-            {
-                // The MXP line tag — the one CSI sequence that changes what this parser trusts.
-                ApplyLineTag(_seq.ToString());
-            }
 
             // Every other final byte — cursor movement, erase — is discarded, which is what a
             // line-oriented view can do with it.
-            _seq.Clear();
-            _mode = Mode.Text;
+            EndSequence();
             return;
         }
 
@@ -313,6 +340,17 @@ public sealed class MxpParser : ILineParser
         }
 
         // A control character inside the sequence aborts it as malformed.
+        EndSequence();
+    }
+
+    /// <summary>
+    /// Returns to text from an escape sequence that was <em>not</em> an <c>ESC[#z</c> line tag.
+    /// TEMP SECURE requires the very next thing to be a <c>&lt;</c>, so anything else the server put
+    /// in between disarms it — see <see cref="ProcessText"/>.
+    /// </summary>
+    private void EndSequence()
+    {
+        _tempSecure = false;
         _seq.Clear();
         _mode = Mode.Text;
     }
@@ -383,7 +421,7 @@ public sealed class MxpParser : ILineParser
         switch (ch)
         {
             case '\x07': // BEL terminator
-                _mode = Mode.Text;
+                EndSequence();
                 break;
 
             case '\x1b': // possible ST (ESC \)
@@ -553,15 +591,24 @@ public sealed class MxpParser : ILineParser
         if (trimmed[0] == '/')
         {
             // A closing tag takes the category of the element it closes, so the slash comes off
-            // before the gate sees the name.
+            // before the gate sees the name. The gate is consulted unconditionally because a close is
+            // still "the next tag" and must spend a pending TEMP SECURE either way.
             var closing = Canonical(trimmed[1..].Trim());
-            if (!TagIsAllowed(closing))
+            var allowed = TagIsAllowed(closing);
+
+            // A close that matches something open is honoured whatever the mode, because closing can
+            // only ever *reduce* privilege. Refusing it leaves the frame open, and a deferred
+            // <send> — one with no HREF, whose command is its enclosed text — then absorbs every span
+            // to the end of the line, so "\x1b[4z<send>Y</send> Rivane says, 'hi'" finalised as the
+            // command "Y</send> Rivane says, 'hi'" with the player supplying the tail. The worst a
+            // player achieves under this rule is truncating a clickable region the server drew.
+            if (allowed || FindOpenFrame(closing) >= 0)
             {
-                EmitLiteralTag(raw);
+                CloseTag(closing);
                 return;
             }
 
-            CloseTag(closing);
+            EmitLiteralTag(raw);
             return;
         }
 
@@ -717,18 +764,26 @@ public sealed class MxpParser : ILineParser
         });
     }
 
-    private void CloseTag(string name)
+    /// <summary>
+    /// The index of the innermost open frame for <paramref name="name"/>, or <c>-1</c> when the
+    /// element is not open.
+    /// </summary>
+    private int FindOpenFrame(string name)
     {
-        var idx = -1;
         for (var i = _stack.Count - 1; i >= 0; i--)
         {
             if (_stack[i].Name == name)
             {
-                idx = i;
-                break;
+                return i;
             }
         }
 
+        return -1;
+    }
+
+    private void CloseTag(string name)
+    {
+        var idx = FindOpenFrame(name);
         if (idx < 0)
         {
             // Stray/unbalanced closer — ignored (does not throw).

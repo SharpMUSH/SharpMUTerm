@@ -185,6 +185,135 @@ public class MxpLineModeTests
         await Assert.That(line.Spans[0].IsInteractive).IsTrue();
     }
 
+    /// <summary>
+    /// Spec: TEMP SECURE "must be immediately followed by a '&lt;' character to start a tag." The
+    /// arming may not survive the server's own prose, or the first tag a <em>player</em> wrote into
+    /// that prose spends it — which is this exploit, on a line the server never secured.
+    /// </summary>
+    [Test]
+    public async Task TempSecure_IsSpentByInterveningText_NotByAPlayersTag()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(TempSecure + "Rivane says, '<SEND HREF=\"@shutdown\">click</SEND>'\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("Rivane says, '<SEND HREF=\"@shutdown\">click</SEND>'");
+        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>
+    /// The same arming must not survive a locked stretch either: on a locked line no character can
+    /// start a tag, so every one of them disarms, and the tag after the unlock is the player's.
+    /// </summary>
+    [Test]
+    public async Task TempSecure_IsSpentByLockedText_NotBySurvivingTheUnlock()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(
+            LockLocked + "Rivane says, " + TempSecure + "hello"
+            + Open + "<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
+
+        await Assert.That(line.Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>
+    /// A non-line-tag escape between the arming and the tag disarms too — it is "something other
+    /// than a '&lt;'". <c>ESC[0m</c> is the one a server is most likely to emit there.
+    /// </summary>
+    [Test]
+    public async Task TempSecure_IsSpentByAnEscapeThatIsNotALineTag()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(TempSecure + "\x1b[0m<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
+
+        await Assert.That(line.Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>
+    /// A refused close would leave the frame open, and a deferred <c>&lt;send&gt;</c> — one with no
+    /// HREF, whose command is its enclosed text — absorbs every span to the end of the line. The
+    /// player's speech would become the tail of the command the server's own tag runs.
+    /// </summary>
+    [Test]
+    public async Task ARefusedCloseCannotFeedPlayerTextIntoADeferredSendsCommand()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(TempSecure + "<send>Y</send> Rivane says, 'hi'\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("Y Rivane says, 'hi'");
+
+        // The server's own one-tag send survives, with exactly the command it wrote.
+        var commands = line.Spans.Where(s => s.IsInteractive).Select(s => s.Interaction!.Target).ToList();
+        await Assert.That(commands).IsEquivalentTo(new[] { "Y" });
+        await Assert.That(commands.Any(c => c.Contains("Rivane"))).IsFalse();
+        await Assert.That(commands.Any(c => c.Contains("send"))).IsFalse();
+    }
+
+    /// <summary>
+    /// The same shape without TEMP SECURE: the server secures its opener and drops to Open for the
+    /// content, which is a real pattern (the NukeFire prompt is this with LOCKED for the content).
+    /// </summary>
+    [Test]
+    public async Task ACloseIsHonouredOnAnOpenLineWhenItsElementIsStillOpen()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(Secure + "<send>" + Open + "Y</send> Rivane says, 'hi'\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("Y Rivane says, 'hi'");
+        await Assert.That(line.Spans.Where(s => s.IsInteractive).Select(s => s.Interaction!.Target))
+            .IsEquivalentTo(new[] { "Y" });
+    }
+
+    /// <summary>A close matching nothing open is still refused, and still echoed byte for byte.</summary>
+    [Test]
+    public async Task ACloseMatchingNothingOpenIsStillRefused()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("Rivane says, '</SEND>'\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("Rivane says, '</SEND>'");
+        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>A pending TEMP SECURE dies with the line rather than arming the next line's first tag.</summary>
+    [Test]
+    public async Task TempSecure_DoesNotSurviveTheNewline()
+    {
+        var parser = new MxpParser();
+
+        var lines = parser.Feed(TempSecure + "\n<SEND HREF=\"@shutdown\">click</SEND>\n");
+
+        await Assert.That(lines[1].Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(lines[1].Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>
+    /// <see cref="MxpParser.Reset"/> clears all three mode fields. Each alone would let a SEND
+    /// through here: the default and the current mode are both Secure when Reset is called, and the
+    /// arming is pending.
+    /// </summary>
+    [Test]
+    public async Task Reset_ClearsEveryModeField()
+    {
+        var parser = new MxpParser();
+        parser.Feed(LockSecure + "a\n");
+        parser.Feed(TempSecure);
+
+        parser.Reset();
+
+        var line = parser.Feed("<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
+
+        await Assert.That(line.Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
     /// <summary>Open mode is the default, so <c>ESC[0z</c> is a no-op on a fresh parser.</summary>
     [Test]
     public async Task OpenLineTag_RefusesASecureTag()
