@@ -219,18 +219,72 @@ public class MxpLineModeTests
     }
 
     /// <summary>
-    /// A non-line-tag escape between the arming and the tag disarms too — it is "something other
-    /// than a '&lt;'". <c>ESC[0m</c> is the one a server is most likely to emit there.
+    /// An escape between the arming and the tag disarms too — it is "something other than a
+    /// '&lt;'". One case per exit from the escape state machine, because the disarm is a property of
+    /// <em>how the sequence ended</em> and each exit had to be told separately: miss one and the
+    /// exploit above comes back with that escape in front of it.
+    /// <para>
+    /// Written <c>\u001b</c> rather than <c>\x1b</c> deliberately: <c>\x</c> is greedy over hex
+    /// digits, so <c>"\x1bc"</c> is the single character U+01BC and not ESC followed by 'c'.
+    /// </para>
     /// </summary>
     [Test]
-    public async Task TempSecure_IsSpentByAnEscapeThatIsNotALineTag()
+    [Arguments("\u001bc")] // RIS — ProcessEscape's two-byte default arm
+    [Arguments("\u001b7")] // save cursor — same arm
+    [Arguments("\u001bM")] // reverse index — same arm
+    [Arguments("\u001b(B")] // designate charset — the intermediate arm
+    [Arguments("\u001b[0m")] // SGR — a CSI final byte that is not 'z'
+    [Arguments("\u001b[2J")] // erase — a CSI final byte that is discarded
+    [Arguments("\u001b[1\u0001z")] // a control byte mid-sequence — the malformed-abort arm
+    [Arguments("\u001b]0;title\u0007")] // OSC, BEL-terminated
+    [Arguments("\u001b]0;title\u001b\\")] // OSC, ST-terminated
+    public async Task TempSecure_IsSpentByAnyEscapeThatIsNotALineTag(string escape)
     {
         var parser = new MxpParser();
 
-        var line = parser.Feed(TempSecure + "\x1b[0m<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
+        var line = parser.Feed(TempSecure + escape + "<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
 
         await Assert.That(line.Text).Contains("<SEND HREF=\"@shutdown\">");
         await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>
+    /// And a <em>line</em> tag between the arming and the tag disarms as well. Only <c>ESC[4z</c>
+    /// leaves an arming standing, so the model is uniform with every other kind of sequence. Not
+    /// player-reachable — anyone who can emit <c>ESC[0z</c> can emit <c>ESC[1z</c> and skip the
+    /// mechanism — but a rule with one exception is easier to keep right than a rule with two.
+    /// </summary>
+    /// <remarks>
+    /// Every case leaves the line in Open mode — <c>ESC[2z</c> and <c>ESC[6z</c> are left out on
+    /// purpose, because a locked or secured line refuses or honours the SEND for its <em>own</em>
+    /// reason and the arming would go untested. Nothing follows the line tag but the tag itself, so
+    /// the only thing that can have disarmed is the line tag under test.
+    /// </remarks>
+    [Test]
+    [Arguments("\u001b[0z")] // OPEN
+    [Arguments("\u001b[5z")] // LOCK OPEN
+    [Arguments("\u001b[99z")] // a number with no meaning
+    [Arguments("\u001b[z")] // no number at all
+    public async Task TempSecure_IsSpentByAnyLineTagButItself(string lineTag)
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(TempSecure + lineTag + "<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
+
+        await Assert.That(line.Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>A repeated <c>ESC[4z</c> does not disarm itself — the exception is exactly one tag wide.</summary>
+    [Test]
+    public async Task TempSecure_SurvivesARepeatOfItself()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed(TempSecure + TempSecure + "<SEND HREF=\"look\">a</SEND>\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("a");
+        await Assert.That(line.Spans[0].IsInteractive).IsTrue();
     }
 
     /// <summary>
@@ -295,23 +349,27 @@ public class MxpLineModeTests
     }
 
     /// <summary>
-    /// <see cref="MxpParser.Reset"/> clears all three mode fields. Each alone would let a SEND
-    /// through here: the default and the current mode are both Secure when Reset is called, and the
-    /// arming is pending.
+    /// <see cref="MxpParser.Reset"/> clears all three mode fields, and it takes <em>two</em> lines to
+    /// say so. Line one catches <c>_lineMode</c> and <c>_tempSecure</c>; only line two catches
+    /// <c>_defaultMode</c>, because <c>_lineMode</c> is re-read from it in <c>CompleteLine</c> and
+    /// nowhere else — so a Reset that forgot the default alone would still refuse the first SEND.
     /// </summary>
     [Test]
     public async Task Reset_ClearsEveryModeField()
     {
         var parser = new MxpParser();
-        parser.Feed(LockSecure + "a\n");
-        parser.Feed(TempSecure);
+        parser.Feed(LockSecure + "a\n"); // default and current mode both Secure
+        parser.Feed(TempSecure); // and an arming pending
 
         parser.Reset();
 
-        var line = parser.Feed("<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
+        var lines = parser.Feed(
+            "<SEND HREF=\"@shutdown\">one</SEND>\n<SEND HREF=\"@shutdown\">two</SEND>\n");
 
-        await Assert.That(line.Text).Contains("<SEND HREF=\"@shutdown\">");
-        await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+        await Assert.That(lines[0].Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(lines[0].Spans.Any(s => s.IsInteractive)).IsFalse();
+        await Assert.That(lines[1].Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(lines[1].Spans.Any(s => s.IsInteractive)).IsFalse();
     }
 
     /// <summary>Open mode is the default, so <c>ESC[0z</c> is a no-op on a fresh parser.</summary>

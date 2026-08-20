@@ -296,8 +296,9 @@ public sealed class MxpParser : ILineParser
                 break;
 
             default:
-                // Two-byte escape (ESC c, ESC M, ...) — consumed and ignored.
-                _mode = Mode.Text;
+                // Two-byte escape (ESC c, ESC M, ...) — consumed and ignored. It is not a line tag,
+                // so like every other non-ESC[#z sequence it disarms a pending TEMP SECURE.
+                EndSequence();
                 break;
         }
     }
@@ -364,7 +365,19 @@ public sealed class MxpParser : ILineParser
     {
         // NumberStyles.None: digits and nothing else. Integer would accept a sign and surrounding
         // whitespace, and a spelling the spec does not have is a spelling nothing should act on.
-        if (!int.TryParse(parameters, NumberStyles.None, CultureInfo.InvariantCulture, out var tag))
+        var known = int.TryParse(parameters, NumberStyles.None, CultureInfo.InvariantCulture, out var tag);
+
+        // Only ESC[4z itself leaves a pending TEMP SECURE armed. Every other line tag — and every
+        // ESC[#z this client cannot read — is "something other than a '<'", so it disarms, which is
+        // the same rule <see cref="EndSequence"/> applies to the sequences that do not come through
+        // here. Defence in depth rather than a reachable hole: only a server can emit a line tag, and
+        // one that can emit ESC[0z can emit ESC[1z and skip the mechanism entirely.
+        if (!known || tag != 4)
+        {
+            _tempSecure = false;
+        }
+
+        if (!known)
         {
             return;
         }
