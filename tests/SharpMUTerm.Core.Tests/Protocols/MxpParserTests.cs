@@ -5,6 +5,15 @@ namespace SharpMUTerm.Core.Tests.Protocols;
 
 public class MxpParserTests
 {
+    /// <summary>
+    /// The <c>ESC[1z</c> SECURE line tag. Every test below that exercises a *secure* element —
+    /// SEND, A, BR, and the unsupported tags that are consumed rather than rendered — has to say so,
+    /// because on an open line the parser now (correctly) echoes such a tag as literal text instead
+    /// of honouring it. That refusal is <see cref="MxpLineModeTests"/>'s subject; these tests are
+    /// about what the element does once the server has secured it.
+    /// </summary>
+    private const string Secure = "\x1b[1z";
+
     private static StyledLine ParseSingleLine(string input)
     {
         var parser = new MxpParser();
@@ -189,7 +198,7 @@ public class MxpParserTests
     [Test]
     public async Task Send_WithHref_ProducesSendCommand()
     {
-        var line = ParseSingleLine("<SEND HREF=\"look\">here</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"look\">here</SEND>\n");
         await Assert.That(line.Spans).HasSingleItem();
         var span = line.Spans[0];
         await Assert.That(span.Text).IsEqualTo("here");
@@ -201,7 +210,7 @@ public class MxpParserTests
     [Test]
     public async Task Send_WithoutHref_UsesEnclosedTextAsCommand()
     {
-        var line = ParseSingleLine("<SEND>north</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND>north</SEND>\n");
         var span = line.Spans[0];
         await Assert.That(span.Text).IsEqualTo("north");
         await Assert.That(span.Interaction!.Kind).IsEqualTo(InteractionKind.SendCommand);
@@ -211,21 +220,21 @@ public class MxpParserTests
     [Test]
     public async Task Send_CapturesHint()
     {
-        var line = ParseSingleLine("<SEND HREF=\"look\" HINT=\"examine\">x</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"look\" HINT=\"examine\">x</SEND>\n");
         await Assert.That(line.Spans[0].Interaction!.Hint).IsEqualTo("examine");
     }
 
     [Test]
     public async Task Send_MultiCommandHref_UsesFirstAsPrimary()
     {
-        var line = ParseSingleLine("<SEND HREF=\"a|b|c\">x</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"a|b|c\">x</SEND>\n");
         await Assert.That(line.Spans[0].Interaction!.Target).IsEqualTo("a");
     }
 
     [Test]
     public async Task Send_PromptFlag_SetsPromptOnly()
     {
-        var line = ParseSingleLine("<SEND HREF=\"cast spell\" PROMPT>x</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"cast spell\" PROMPT>x</SEND>\n");
         await Assert.That(line.Spans[0].Interaction!.PromptOnly).IsTrue();
     }
 
@@ -233,7 +242,9 @@ public class MxpParserTests
     public async Task Send_BareWithoutClose_ClosesAtEndOfLine()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("<SEND HREF=\"go\">walk\nnext line\n");
+        // Only the first line is secured: the mode reverts at the newline, which is exactly the
+        // boundary the interaction must not survive.
+        var lines = parser.Feed(Secure + "<SEND HREF=\"go\">walk\nnext line\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Spans[0].Interaction!.Target).IsEqualTo("go");
         await Assert.That(lines[1].Spans[0].IsInteractive).IsFalse();
@@ -242,7 +253,7 @@ public class MxpParserTests
     [Test]
     public async Task Anchor_WithHref_ProducesHyperlink()
     {
-        var line = ParseSingleLine("<A HREF=\"https://example.com\">site</A>\n");
+        var line = ParseSingleLine(Secure + "<A HREF=\"https://example.com\">site</A>\n");
         var span = line.Spans[0];
         await Assert.That(span.Text).IsEqualTo("site");
         await Assert.That(span.Interaction!.Kind).IsEqualTo(InteractionKind.Hyperlink);
@@ -287,14 +298,14 @@ public class MxpParserTests
     [Test]
     public async Task UnknownTag_IsConsumedNotLeaked()
     {
-        var line = ParseSingleLine("a<VAR NAME=hp>b\n");
+        var line = ParseSingleLine(Secure + "a<VAR NAME=hp>b\n");
         await Assert.That(line.Text).IsEqualTo("ab");
     }
 
     [Test]
     public async Task UnsupportedTags_AreStripped()
     {
-        var line = ParseSingleLine("<H1>Title</H1><P>text<IMG SRC=\"x.png\">end\n");
+        var line = ParseSingleLine(Secure + "<H1>Title</H1><P>text<IMG SRC=\"x.png\">end\n");
         await Assert.That(line.Text).IsEqualTo("Titletextend");
     }
 
@@ -302,7 +313,8 @@ public class MxpParserTests
     public async Task Br_ProducesLineBreak()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("first<BR>second\n");
+        // BR is not one of the spec's open tags, so it needs securing like any other.
+        var lines = parser.Feed(Secure + "first<BR>second\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("first");
         await Assert.That(lines[1].Text).IsEqualTo("second");
@@ -351,7 +363,7 @@ public class MxpParserTests
     public async Task SelfClosingBr_IsHandled()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("a<BR/>b\n");
+        var lines = parser.Feed(Secure + "a<BR/>b\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("a");
     }
@@ -419,7 +431,7 @@ public class MxpParserTests
     [Test]
     public async Task Send_WithFormattingInside_KeepsInteractionOnAllSpans()
     {
-        var line = ParseSingleLine("<SEND HREF=\"go\"><B>walk</B> now</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"go\"><B>walk</B> now</SEND>\n");
         await Assert.That(line.Spans).Count().IsEqualTo(2);
         await Assert.That(line.Spans[0].Interaction!.Target).IsEqualTo("go");
         await Assert.That(line.Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsTrue();

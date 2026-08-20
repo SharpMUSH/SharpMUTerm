@@ -17,9 +17,10 @@ namespace SharpMUTerm.Core.Protocols;
 ///
 /// <para>Scope notes for v1:</para>
 /// <list type="bullet">
-/// <item>Input is treated as MXP "secure/open" line mode — every tag is processed. The
-/// telnet MXP line-mode security state machine (mode-change tags <c>&lt;RESET&gt;</c>,
-/// line tags <c>[1z]</c> etc.) is <b>not</b> implemented here.</item>
+/// <item>The line-security model (<c>ESC[#z</c> line tags, open/secure/locked, RESET, TEMP SECURE
+/// and the three LOCK modes) <b>is</b> implemented — see <see cref="MxpLineMode"/>. A secure tag on
+/// an open line is emitted as literal text rather than honoured, which is what stops a player's
+/// <c>&lt;SEND&gt;</c> becoming a clickable command in someone else's client.</item>
 /// <item>Inline <c>&lt;IMG&gt;</c> rendering is out of scope (graphics live elsewhere); the
 /// tag is parsed and ignored gracefully.</item>
 /// <item>ANSI SGR is decoded here, through <see cref="SharpMUTerm.Core.Text.SgrCodes"/>, because the
@@ -27,7 +28,9 @@ namespace SharpMUTerm.Core.Protocols;
 /// <em>or</em> <see cref="SharpMUTerm.Core.Text.AnsiParser"/>, never both. Other CSI sequences are
 /// consumed and discarded.</item>
 /// <item>Unknown/unsupported tags (<c>&lt;VAR&gt;</c>, <c>&lt;EXPIRE&gt;</c>, <c>&lt;H1&gt;</c>,
-/// <c>&lt;P&gt;</c>, …) are consumed and discarded — they never leak into the output.</item>
+/// <c>&lt;P&gt;</c>, …) are consumed and discarded on a line allowed to use them. They are all
+/// secure tags, so on an open line they are echoed literally like any other refused tag rather
+/// than silently dropped.</item>
 /// <item>A stray <c>&lt;</c> that cannot begin a tag, or a stray <c>&amp;</c> that cannot begin
 /// an entity, is emitted literally (xterm-like leniency). Tag/entity buffers are length
 /// capped to avoid runaway on malformed input.</item>
@@ -67,6 +70,16 @@ public sealed class MxpParser : ILineParser
     }
 
     private Mode _mode = Mode.Text;
+
+    /// <summary>The mode a line starts in; moved only by the three LOCK line tags and by RESET.</summary>
+    private MxpLineMode _defaultMode = MxpLineMode.Open;
+
+    /// <summary>The mode in force right now; reverts to <see cref="_defaultMode"/> at each newline.</summary>
+    private MxpLineMode _lineMode = MxpLineMode.Open;
+
+    /// <summary>Set by TEMP SECURE (<c>ESC[4z</c>) and consumed by the very next tag.</summary>
+    private bool _tempSecure;
+
     private TextStyle _current = TextStyle.Default;
     private SpanInteraction? _interaction;
     private readonly StringBuilder _run = new();
@@ -129,6 +142,9 @@ public sealed class MxpParser : ILineParser
     public void Reset()
     {
         _mode = Mode.Text;
+        _defaultMode = MxpLineMode.Open;
+        _lineMode = MxpLineMode.Open;
+        _tempSecure = false;
         _current = TextStyle.Default;
         _interaction = null;
         _run.Clear();
@@ -181,6 +197,16 @@ public sealed class MxpParser : ILineParser
 
     private void ProcessText(char ch)
     {
+        // A locked line is not parsed: "no MXP or HTML commands are allowed in the line. The line is
+        // not parsed for any tags at all." Newline still ends the line, or nothing ever would — and
+        // ESC is exempt because ESC[#z is the only way a server can leave locked mode again, which
+        // the NukeFire prompt does between every one of its own tags.
+        if (_lineMode == MxpLineMode.Locked && ch != '\n' && ch != '\r' && ch != '\x1b')
+        {
+            _run.Append(ch);
+            return;
+        }
+
         switch (ch)
         {
             case '<':
@@ -263,9 +289,14 @@ public sealed class MxpParser : ILineParser
                 FlushRun();
                 _current = SgrCodes.Apply(_current, _seq.ToString());
             }
+            else if (ch == 'z')
+            {
+                // The MXP line tag — the one CSI sequence that changes what this parser trusts.
+                ApplyLineTag(_seq.ToString());
+            }
 
-            // 'z' is the MXP line tag and is handled in Task 3. Every other final byte — cursor
-            // movement, erase — is discarded, which is what a line-oriented view can do with it.
+            // Every other final byte — cursor movement, erase — is discarded, which is what a
+            // line-oriented view can do with it.
             _seq.Clear();
             _mode = Mode.Text;
             return;
@@ -284,6 +315,67 @@ public sealed class MxpParser : ILineParser
         // A control character inside the sequence aborts it as malformed.
         _seq.Clear();
         _mode = Mode.Text;
+    }
+
+    /// <summary>
+    /// Applies an <c>ESC[#z</c> line tag. An unparseable or unknown number is ignored rather than
+    /// guessed at: a mode this client invents is a mode the server did not ask for, and the
+    /// consequences run in the direction of trusting text that was not meant to be trusted.
+    /// </summary>
+    private void ApplyLineTag(string parameters)
+    {
+        // NumberStyles.None: digits and nothing else. Integer would accept a sign and surrounding
+        // whitespace, and a spelling the spec does not have is a spelling nothing should act on.
+        if (!int.TryParse(parameters, NumberStyles.None, CultureInfo.InvariantCulture, out var tag))
+        {
+            return;
+        }
+
+        switch (tag)
+        {
+            case 0: _lineMode = MxpLineMode.Open; break;
+            case 1: _lineMode = MxpLineMode.Secure; break;
+            case 2: _lineMode = MxpLineMode.Locked; break;
+            case 3: ApplyReset(); break;
+            case 4: _tempSecure = true; break;
+            case 5: _defaultMode = _lineMode = MxpLineMode.Open; break;
+            case 6: _defaultMode = _lineMode = MxpLineMode.Secure; break;
+            case 7: _defaultMode = _lineMode = MxpLineMode.Locked; break;
+        }
+    }
+
+    /// <summary>Spec: "close all open tags. Set mode to Open. Set text color and properties to default."</summary>
+    private void ApplyReset()
+    {
+        FlushRun();
+        CloseInteractionsAtBoundary();
+        _stack.Clear();
+        _current = TextStyle.Default;
+        _interaction = null;
+        _tempSecure = false;
+        _defaultMode = _lineMode = MxpLineMode.Open;
+    }
+
+    /// <summary>
+    /// Whether a tag may act on this line, per the mode. A tag that may not is written out as the
+    /// literal text it arrived as, so an injection attempt is visible to the player rather than
+    /// silently swallowed.
+    /// </summary>
+    /// <param name="name">
+    /// The canonical element name with any leading slash already stripped. Canonical is safe to gate
+    /// on because <see cref="Canonical"/> only ever folds an open tag's alternative spellings onto
+    /// another open tag (BOLD → B, C → COLOR); no secure tag can canonicalise into the allow-list.
+    /// </param>
+    private bool TagIsAllowed(string name)
+    {
+        if (_lineMode == MxpLineMode.Secure || _tempSecure)
+        {
+            // TEMP SECURE is spent by the next tag whatever that tag turns out to be.
+            _tempSecure = false;
+            return true;
+        }
+
+        return MxpTagCategory.IsOpen(name);
     }
 
     private void ProcessOsc(char ch)
@@ -443,6 +535,13 @@ public sealed class MxpParser : ILineParser
         };
     }
 
+    /// <param name="raw">
+    /// The exact tag body as it arrived, everything between the <c>&lt;</c> and the <c>&gt;</c>.
+    /// It is kept unmodified all the way to <see cref="EmitLiteralTag"/> so a refused tag is echoed
+    /// byte for byte: re-serialising it from the parsed name and attributes would normalise case,
+    /// spacing and quoting, and every character the round trip normalises is one a player could use
+    /// to smuggle something past a reader being shown "what the other player typed".
+    /// </param>
     private void ProcessTag(string raw)
     {
         var trimmed = raw.Trim();
@@ -453,7 +552,16 @@ public sealed class MxpParser : ILineParser
 
         if (trimmed[0] == '/')
         {
-            CloseTag(Canonical(trimmed[1..].Trim()));
+            // A closing tag takes the category of the element it closes, so the slash comes off
+            // before the gate sees the name.
+            var closing = Canonical(trimmed[1..].Trim());
+            if (!TagIsAllowed(closing))
+            {
+                EmitLiteralTag(raw);
+                return;
+            }
+
+            CloseTag(closing);
             return;
         }
 
@@ -475,9 +583,21 @@ public sealed class MxpParser : ILineParser
         }
 
         var name = Canonical(trimmed[..nameEnd]);
+        if (!TagIsAllowed(name))
+        {
+            EmitLiteralTag(raw);
+            return;
+        }
+
         var attrs = nameEnd < trimmed.Length ? trimmed[(nameEnd + 1)..] : string.Empty;
         HandleOpener(name, attrs);
     }
+
+    /// <summary>
+    /// Writes a tag the mode refused out as the literal text it arrived as, angle brackets and all,
+    /// so an injection attempt is shown to the player rather than silently swallowed.
+    /// </summary>
+    private void EmitLiteralTag(string raw) => _run.Append('<').Append(raw).Append('>');
 
     private void HandleOpener(string name, string attrs)
     {
@@ -720,6 +840,11 @@ public sealed class MxpParser : ILineParser
         var line = _lineSpans.Count == 0 ? StyledLine.Empty : new StyledLine(_lineSpans);
         _lineSpans.Clear();
         (_emit ??= new List<StyledLine>()).Add(line);
+
+        // Spec: "when a newline is received from the MUD, the mode reverts back to the Default mode."
+        // A pending TEMP SECURE dies with the line rather than arming the first tag of the next one.
+        _lineMode = _defaultMode;
+        _tempSecure = false;
     }
 
     private void FlushRun()

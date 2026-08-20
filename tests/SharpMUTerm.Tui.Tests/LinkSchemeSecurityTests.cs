@@ -39,6 +39,15 @@ public class LinkSchemeSecurityTests
     private const int Height = 40;
     private const string MainWindow = "main";
 
+    /// <summary>
+    /// The <c>ESC[1z</c> SECURE line tag. MXP's <c>&lt;A&gt;</c> and <c>&lt;SEND&gt;</c> are both secure
+    /// elements, so a server has to secure the line before either is honoured — without it the parser
+    /// renders the tag as literal text and there is no link to click at all. That refusal is
+    /// <c>MxpLineModeTests</c>'s subject; every test here is about what a link a server legitimately
+    /// drew can and cannot make this client do. Pueblo has no such model and needs no prefix.
+    /// </summary>
+    private const string Secure = "\x1b[1z";
+
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
@@ -53,7 +62,7 @@ public class LinkSchemeSecurityTests
     public async Task AnMxpAnchorSpellingTheSendScheme_SendsNothing()
     {
         var world = await Connected(ContentFormat.Mxp);
-        world.Receive("<A HREF=\"mux:send:@shutdown\">click me</A>\n");
+        world.Receive(Secure + "<A HREF=\"mux:send:@shutdown\">click me</A>\n");
 
         await Assert.That(ClickLink(world, "click me")).IsTrue(); // the link really is clickable
 
@@ -81,7 +90,7 @@ public class LinkSchemeSecurityTests
     public async Task AnMxpAnchorSpellingThePromptScheme_DoesNotTouchTheCommandLine()
     {
         var world = await Connected(ContentFormat.Mxp);
-        world.Receive("<A HREF=\"mux:prompt:@shutdown\">click me</A>\n");
+        world.Receive(Secure + "<A HREF=\"mux:prompt:@shutdown\">click me</A>\n");
 
         await Assert.That(ClickLink(world, "click me")).IsTrue();
 
@@ -99,7 +108,7 @@ public class LinkSchemeSecurityTests
     public async Task AForgedScheme_IsTreatedAsTheHyperlinkItIs()
     {
         var world = await Connected(ContentFormat.Mxp);
-        world.Receive("<A HREF=\"mux:send:@shutdown\">click me</A>\n");
+        world.Receive(Secure + "<A HREF=\"mux:send:@shutdown\">click me</A>\n");
 
         ClickLink(world, "click me");
 
@@ -117,7 +126,7 @@ public class LinkSchemeSecurityTests
     {
         const string href = "https://x/?a=][bold red]owned[/";
         var world = await Connected(ContentFormat.Mxp);
-        world.Receive($"<A HREF=\"{href}\">click me</A>\n");
+        world.Receive(Secure + $"<A HREF=\"{href}\">click me</A>\n");
 
         var link = LinkFor(world, "click me");
 
@@ -139,7 +148,7 @@ public class LinkSchemeSecurityTests
     public async Task ALegitimateSendLink_StillSends()
     {
         var world = await Connected(ContentFormat.Mxp);
-        world.Receive("<SEND HREF=\"look\">the door</SEND>\n");
+        world.Receive(Secure + "<SEND HREF=\"look\">the door</SEND>\n");
 
         await Assert.That(ClickLink(world, "the door")).IsTrue();
 
@@ -151,7 +160,7 @@ public class LinkSchemeSecurityTests
     public async Task ALegitimateSendPromptLink_StillFillsTheCommandLine()
     {
         var world = await Connected(ContentFormat.Mxp);
-        world.Receive("<SEND HREF=\"cast spell\" PROMPT>the wand</SEND>\n");
+        world.Receive(Secure + "<SEND HREF=\"cast spell\" PROMPT>the wand</SEND>\n");
 
         await Assert.That(ClickLink(world, "the wand")).IsTrue();
 
@@ -170,7 +179,7 @@ public class LinkSchemeSecurityTests
     {
         var opened = new List<string>();
         var world = await Connected(ContentFormat.Mxp, opened.Add);
-        world.Receive("<A HREF=\"http://127.0.0.1:1/page?q=1&r=2\">the site</A>\n");
+        world.Receive(Secure + "<A HREF=\"http://127.0.0.1:1/page?q=1&r=2\">the site</A>\n");
 
         await Assert.That(ClickLink(world, "the site")).IsTrue();
 
@@ -296,7 +305,7 @@ public class LinkSchemeSecurityTests
         var two = await TwoConnectedWorlds();
 
         // Quiet's window carries the link; Loud is the focused one, in the other half of the split.
-        Receive(two, two.Quiet, "<SEND HREF=\"look\">the door</SEND>\n");
+        Receive(two, two.Quiet, Secure + "<SEND HREF=\"look\">the door</SEND>\n");
         two.App.RenderNextFrame();
         await Assert.That(two.App.DispatchCommand("layout:split-right")).IsTrue();
         two.App.RenderNextFrame();
@@ -320,7 +329,7 @@ public class LinkSchemeSecurityTests
         var two = await TwoConnectedWorlds();
 
         // Quiet's own trigger routes the line to a spawn window, which is therefore Quiet's.
-        Receive(two, two.Quiet, "[Chat] <SEND HREF=\"look\">the door</SEND>\n");
+        Receive(two, two.Quiet, Secure + "[Chat] <SEND HREF=\"look\">the door</SEND>\n");
         two.App.RenderNextFrame();
 
         var spawn = two.App.WindowIds().Single(id => id.StartsWith("spawn:", StringComparison.Ordinal));

@@ -35,7 +35,9 @@ public class WorldSessionContentTests
         var (session, telnet) = Create(world);
         await session.ConnectAsync();
 
-        telnet.EmitLine("<SEND HREF=\"look\">here</SEND>");
+        // SEND is a secure MXP element; the ESC[1z is the server saying this line is its own.
+        // Without it the parser correctly renders the tag as text (see MxpLineModeTests).
+        telnet.EmitLine("\x1b[1z<SEND HREF=\"look\">here</SEND>");
 
         var line = FindLine(session, "here");
         var span = line.Spans.First(s => s.Text.Contains("here"));
