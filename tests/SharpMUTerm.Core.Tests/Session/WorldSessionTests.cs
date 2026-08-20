@@ -138,6 +138,42 @@ public class WorldSessionTests
         await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "HP:100 >")).IsFalse();
     }
 
+    /// <summary>
+    /// A prompt is a live connection's question. Left standing after a disconnect it is a dead
+    /// server's question sitting above a command line that can no longer answer it.
+    /// </summary>
+    [Test]
+    public async Task Prompt_IsClearedOnDisconnect()
+    {
+        var (session, telnet) = Create(World());
+        var cleared = false;
+        await session.ConnectAsync();
+        telnet.EmitPrompt("Enter name: ");
+        session.PromptChanged += (_, p) => cleared = p is null;
+
+        await session.DisconnectAsync();
+
+        await Assert.That(session.CurrentPrompt).IsNull();
+        await Assert.That(cleared).IsTrue();
+    }
+
+    /// <summary>
+    /// A session that was never prompted reports no change on the way out: an event claiming the
+    /// prompt cleared, raised where there was never one, is a repaint nobody asked for.
+    /// </summary>
+    [Test]
+    public async Task Disconnect_WithNoPrompt_RaisesNoPromptChange()
+    {
+        var (session, _) = Create(World());
+        var raised = false;
+        await session.ConnectAsync();
+        session.PromptChanged += (_, _) => raised = true;
+
+        await session.DisconnectAsync();
+
+        await Assert.That(raised).IsFalse();
+    }
+
     [Test]
     public async Task UserInput_IsEchoedAndSent()
     {

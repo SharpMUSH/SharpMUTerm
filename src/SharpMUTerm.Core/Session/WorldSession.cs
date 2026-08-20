@@ -644,8 +644,35 @@ public sealed class WorldSession : IAsyncDisposable
     private void OnDisconnected(object? sender, SessionDisconnectedEventArgs e)
     {
         StopTimers();
+        ClearPrompt();
         SetState(e.IsClean ? ConnectionState.Disconnected : ConnectionState.Faulted, e.Error);
         PrintSystem(e.IsClean ? "*** Disconnected." : $"*** Connection lost: {e.Error?.Message}");
+    }
+
+    /// <summary>
+    /// Drops the prompt, because a prompt is a live connection's question and a dead one is not
+    /// asking it.
+    /// </summary>
+    /// <remarks>
+    /// Cleared before the state change rather than after, so anything that repaints on
+    /// <see cref="StateChanged"/> already sees no prompt and the two never disagree for a frame. Only
+    /// raises <see cref="PromptChanged"/> when there was something to clear: a session that
+    /// disconnects without ever having been prompted must not report a change it did not make.
+    /// <para>
+    /// The disconnect path is the only place this is needed, because it is the only way out of a
+    /// connection: <c>TelnetSession</c> raises <c>Disconnected</c> from the <c>finally</c> of its read
+    /// loop, so a clean close and a faulted one both arrive here.
+    /// </para>
+    /// </remarks>
+    private void ClearPrompt()
+    {
+        if (CurrentPrompt is null)
+        {
+            return;
+        }
+
+        CurrentPrompt = null;
+        PromptChanged?.Invoke(this, null);
     }
 
     public async Task DisconnectAsync()
