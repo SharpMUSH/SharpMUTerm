@@ -44,7 +44,10 @@ public sealed class MxpParser : ILineParser
         Tag,
         Entity,
         Escape,
+        EscapeIntermediate,
         Csi,
+        Osc,
+        OscEscape,
     }
 
     private const int MaxSequenceLength = 128;
@@ -156,8 +159,22 @@ public sealed class MxpParser : ILineParser
                 ProcessEscape(ch);
                 break;
 
+            case Mode.EscapeIntermediate:
+                // Consume the single trailing byte of e.g. ESC ( B and return to text.
+                _mode = Mode.Text;
+                break;
+
             case Mode.Csi:
                 ProcessCsi(ch);
+                break;
+
+            case Mode.Osc:
+                ProcessOsc(ch);
+                break;
+
+            case Mode.OscEscape:
+                // Inside an OSC string we saw ESC; a following '\' is the ST terminator.
+                _mode = ch == '\\' ? Mode.Text : Mode.Osc;
                 break;
         }
     }
@@ -198,15 +215,42 @@ public sealed class MxpParser : ILineParser
 
     private void ProcessEscape(char ch)
     {
-        if (ch == '[')
+        switch (ch)
         {
-            _seq.Clear();
-            _mode = Mode.Csi;
-            return;
-        }
+            case '[':
+                _seq.Clear();
+                _mode = Mode.Csi;
+                break;
 
-        // Two-byte escapes (ESC c, ESC M, …) are consumed and ignored, as in AnsiParser.
-        _mode = Mode.Text;
+            case ']':
+                _seq.Clear();
+                _mode = Mode.Osc;
+                break;
+
+            case '(':
+            case ')':
+            case '*':
+            case '+':
+            case '#':
+            case '%':
+                _mode = Mode.EscapeIntermediate;
+                break;
+
+            case 'P': // DCS
+            case 'X': // SOS
+            case '^': // PM
+            case '_': // APC
+                // String sequences terminated by ST (ESC \) — consume like an OSC so their
+                // payloads never leak into the output as text.
+                _seq.Clear();
+                _mode = Mode.Osc;
+                break;
+
+            default:
+                // Two-byte escape (ESC c, ESC M, ...) — consumed and ignored.
+                _mode = Mode.Text;
+                break;
+        }
     }
 
     private void ProcessCsi(char ch)
@@ -240,6 +284,28 @@ public sealed class MxpParser : ILineParser
         // A control character inside the sequence aborts it as malformed.
         _seq.Clear();
         _mode = Mode.Text;
+    }
+
+    private void ProcessOsc(char ch)
+    {
+        switch (ch)
+        {
+            case '\x07': // BEL terminator
+                _mode = Mode.Text;
+                break;
+
+            case '\x1b': // possible ST (ESC \)
+                _mode = Mode.OscEscape;
+                break;
+
+            default:
+                if (_seq.Length < MaxSequenceLength)
+                {
+                    _seq.Append(ch);
+                }
+
+                break;
+        }
     }
 
     private void ProcessTagChar(char ch)

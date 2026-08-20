@@ -445,4 +445,38 @@ public class MxpParserTests
         parser.Feed("partial");
         await Assert.That(parser.HasPendingContent).IsTrue();
     }
+
+    /// <summary>
+    /// OSC (ESC ]) sets a terminal property (window title, most commonly) and is terminated by
+    /// either BEL or ST (ESC backslash). Before this fix, only CSI (ESC [) was recognised; an OSC
+    /// payload fell through the generic two-byte-escape branch a character at a time and leaked
+    /// into the line as literal text. Mirrors AnsiParser.ProcessOsc's BEL arm exactly.
+    /// </summary>
+    [Test]
+    public async Task Osc_BelTerminatedSequenceIsDiscarded()
+    {
+        var line = ParseSingleLine("a\x1b]0;title\u0007b\n");
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>The ST form of an OSC terminator (ESC backslash) rather than BEL.</summary>
+    [Test]
+    public async Task Osc_StTerminatedSequenceIsDiscarded()
+    {
+        var line = ParseSingleLine("a\x1b]0;title\x1b\\b\n");
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>
+    /// A two-byte-intermediate escape (ESC ( B, "select G0 as US-ASCII") is a three-byte unit:
+    /// ESC, the intermediate, then a trailing byte that ends it. Before this fix the intermediate
+    /// byte sent the parser straight back to Text, leaving the trailing byte to print as if it
+    /// were ordinary output.
+    /// </summary>
+    [Test]
+    public async Task Escape_ThreeByteIntermediateIsConsumedAndDiscarded()
+    {
+        var line = ParseSingleLine("a\x1b(Bb\n");
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
 }
