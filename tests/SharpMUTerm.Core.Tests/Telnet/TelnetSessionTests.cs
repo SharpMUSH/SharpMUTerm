@@ -11,6 +11,7 @@ public class TelnetSessionTests
     private const byte EOR = 239;
     private const byte NAWS = 31;
     private const byte ECHO = 1;
+    private const byte SGA = 3;
 
     /// <summary>Collects output events and lets a test await a matching one.</summary>
     private sealed class OutputWaiter
@@ -57,6 +58,20 @@ public class TelnetSessionTests
             lock (_gate)
             {
                 return _events.First(predicate);
+            }
+        }
+
+        /// <summary>
+        /// Everything raised so far. For asserting a <em>negative</em> — that some event never
+        /// happened — which <see cref="WaitAsync"/> cannot express: a test waits for a later event
+        /// it does expect and then reads this, so the absence is checked at a deterministic point
+        /// rather than after a sleep.
+        /// </summary>
+        public IReadOnlyList<TelnetOutputEventArgs> Snapshot()
+        {
+            lock (_gate)
+            {
+                return _events.ToList();
             }
         }
     }
@@ -162,6 +177,90 @@ public class TelnetSessionTests
 
         var evt = await waiter.WaitAsync(e => e.IsPrompt);
         await Assert.That(evt.Text).IsEqualTo("Enter name: ");
+        await session.DisconnectAsync();
+    }
+
+    /// <summary>
+    /// The other boundary, and the one most MU* servers actually use: a default NVT that negotiates
+    /// neither EOR nor SUPPRESS-GO-AHEAD ends its prompts with <c>IAC GA</c> and nothing else, which
+    /// RFC 854 requires of it. Only the EOR half of this was ever pinned, which is how a login screen
+    /// that never appeared reached a release — the prompt sat in <c>_pending</c> with nothing to
+    /// flush it, and the session read as a server that had stopped answering.
+    /// </summary>
+    [Test]
+    public async Task Prompt_TerminatedByGoAhead_IsSurfacedAsPrompt()
+    {
+        var transport = new FakeTransport();
+        await using var session = new TelnetSession(transport);
+        var waiter = new OutputWaiter();
+        waiter.Attach(session);
+        await session.ConnectAsync();
+
+        // No negotiation at all — the default NVT. Prompt ended by IAC GA (255 249).
+        var prompt = new List<byte>();
+        prompt.AddRange(Encoding.ASCII.GetBytes("Enter name: "));
+        prompt.AddRange(new byte[] { IAC, GA });
+        transport.FeedInbound(prompt.ToArray());
+
+        var evt = await waiter.WaitAsync(e => e.IsPrompt);
+        await Assert.That(evt.Text).IsEqualTo("Enter name: ");
+        await session.DisconnectAsync();
+    }
+
+    /// <summary>
+    /// RFC 858: once SUPPRESS-GO-AHEAD is in effect a GA "should be treated as a NOP if received".
+    /// A server that promised not to send one and sends it anyway must not split a line that has not
+    /// ended.
+    /// </summary>
+    [Test]
+    public async Task Prompt_GoAheadIsIgnoredOnceSuppressGoAheadIsNegotiated()
+    {
+        var transport = new FakeTransport();
+        await using var session = new TelnetSession(transport);
+        var waiter = new OutputWaiter();
+        waiter.Attach(session);
+        await session.ConnectAsync();
+
+        // Server offers SUPPRESS-GO-AHEAD (IAC WILL 3) and then sends a GA anyway, mid-line. One
+        // feed rather than two: the interpreter reads its bytes in order off a single channel and
+        // awaits each transition, so the negotiation has completed by the time the GA is processed —
+        // which is a stronger ordering than sleeping between two feeds and hoping.
+        var stream = new List<byte>();
+        stream.AddRange(new byte[] { IAC, WILL, SGA });
+        stream.AddRange(Encoding.ASCII.GetBytes("Enter name: "));
+        stream.AddRange(new byte[] { IAC, GA });
+        stream.AddRange(Encoding.ASCII.GetBytes("still the same line\r\n"));
+        transport.FeedInbound(stream.ToArray());
+
+        // Wait for the line the GA did not end, then assert no prompt was ever raised. Waiting for a
+        // later event we do expect is what makes the absence deterministic rather than a sleep.
+        await waiter.WaitAsync(e => e.Text.Contains("still the same line"));
+        await Assert.That(waiter.Snapshot().Any(e => e.IsPrompt)).IsFalse();
+        await session.DisconnectAsync();
+    }
+
+    /// <summary>
+    /// The mirror rule, RFC 885: "When the END-OF-RECORD option is not in effect, the IAC EOR command
+    /// should be treated as a NOP if received."
+    /// </summary>
+    [Test]
+    public async Task Prompt_UnnegotiatedEndOfRecord_IsNotSurfacedAsPrompt()
+    {
+        var transport = new FakeTransport();
+        await using var session = new TelnetSession(transport);
+        var waiter = new OutputWaiter();
+        waiter.Attach(session);
+        await session.ConnectAsync();
+
+        // No IAC WILL EOR first, so the option is not in effect.
+        var stream = new List<byte>();
+        stream.AddRange(Encoding.ASCII.GetBytes("Enter name: "));
+        stream.AddRange(new byte[] { IAC, EOR });
+        stream.AddRange(Encoding.ASCII.GetBytes("still the same line\r\n"));
+        transport.FeedInbound(stream.ToArray());
+
+        await waiter.WaitAsync(e => e.Text.Contains("still the same line"));
+        await Assert.That(waiter.Snapshot().Any(e => e.IsPrompt)).IsFalse();
         await session.DisconnectAsync();
     }
 
