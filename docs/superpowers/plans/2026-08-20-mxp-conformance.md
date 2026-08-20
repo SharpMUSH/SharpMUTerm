@@ -1088,9 +1088,13 @@ The `--view prompt` snapshot added with the prompt row uses the NukeFire prompt 
 dotnet build -c Release SharpMUTerm.slnx
 dotnet run -c Release --project src/SharpMUTerm.Tui --no-build -- \
   --snapshot --demo-config --view prompt --size 120x32 --out frame.ansi
-python3 tools/ansi_frame_to_image.py frame.ansi frame.html
+python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # for your own inspection
+python3 tools/ansi_frame_to_image.py frame.ansi frame.svg    # this is the one you hand over
 ```
-Look at the frame. A claim about what the screen shows is not backed by reading the markup.
+Look at the frame yourself in the `.html` — a claim about what the screen shows is not backed by
+reading the markup — then show the `.svg` to your human partner. The repo's rule is that the SVG is
+what gets handed over and the HTML is what you inspect: Chromium clips the bottom of a bare `.svg`
+through aspect-ratio scaling, so inspecting that one sends you chasing a layout bug that isn't there.
 
 - [ ] **Step 3: Write the CLAUDE.md entry**
 

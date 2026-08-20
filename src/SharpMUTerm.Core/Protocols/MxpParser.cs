@@ -522,16 +522,24 @@ public sealed class MxpParser : ILineParser
     }
 
     /// <summary>
-    /// Whether a tag may act on this line, per the mode. A tag that may not is written out as the
-    /// literal text it arrived as, so an injection attempt is visible to the player rather than
-    /// silently swallowed.
+    /// Whether a tag may act on this line, per the mode — and, if a TEMP SECURE arming is what allows
+    /// it, <b>spends that arming</b>. Named for the side effect rather than for the answer, because a
+    /// reader who takes this for a pure predicate will eventually add a second call.
     /// </summary>
+    /// <remarks>
+    /// The whole TEMP SECURE rule is "the next tag, and only the next tag", so its correctness is
+    /// exactly the property that this runs once per tag. It does today — <c>ProcessTag</c> calls it
+    /// once on the closing path and once on the opening one, and those are the only call sites. A
+    /// pre-check, a log line or an assertion added later would silently spend the arming and turn a
+    /// server-secured tag into a refused one, and there is no test that could name that mistake
+    /// because the tag simply renders as text.
+    /// </remarks>
     /// <param name="name">
     /// The canonical element name with any leading slash already stripped. Canonical is safe to gate
     /// on because <see cref="Canonical"/> only ever folds an open tag's alternative spellings onto
     /// another open tag (BOLD → B, C → COLOR); no secure tag can canonicalise into the allow-list.
     /// </param>
-    private bool TagIsAllowed(string name)
+    private bool ConsumeAuthorizationFor(string name)
     {
         if (_lineMode == MxpLineMode.Secure || _tempSecure)
         {
@@ -721,7 +729,7 @@ public sealed class MxpParser : ILineParser
             // before the gate sees the name. The gate is consulted unconditionally because a close is
             // still "the next tag" and must spend a pending TEMP SECURE either way.
             var closing = Canonical(trimmed[1..].Trim());
-            var allowed = TagIsAllowed(closing);
+            var allowed = ConsumeAuthorizationFor(closing);
 
             // A close that matches something open is honoured whatever the mode, because closing can
             // only ever *reduce* privilege. Refusing it leaves the frame open, and a deferred
@@ -757,7 +765,7 @@ public sealed class MxpParser : ILineParser
         }
 
         var name = Canonical(trimmed[..nameEnd]);
-        if (!TagIsAllowed(name))
+        if (!ConsumeAuthorizationFor(name))
         {
             EmitLiteralTag(raw);
             return;

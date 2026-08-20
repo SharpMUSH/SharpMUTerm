@@ -378,6 +378,30 @@ public class WorldSessionTests
     }
 
     /// <summary>
+    /// The positive half, and it exists because this cohort had only the negative one. Every test
+    /// around it asserts that a reply does <em>not</em> go out, which a dropped
+    /// <c>ClientReply</c> subscription satisfies perfectly — so the whole set stays green if
+    /// <c>NewParser</c> ever builds a parser without wiring it. The upgrade path is the one every
+    /// negotiating session takes, which makes it the one worth a test that fails when it breaks.
+    /// </summary>
+    [Test]
+    public async Task Mxp_ASecureVersionRequestFromTheServerIsAnswered()
+    {
+        var (session, telnet) = Create(World());
+        await session.ConnectAsync();
+        telnet.RaiseMxpEnabled();
+
+        telnet.EmitLine("\x1b[1z<VERSION>");
+
+        var reply = telnet.SentLines.SingleOrDefault(l => l.Contains("<VERSION MXP="));
+        await Assert.That(reply).IsNotNull();
+
+        // Secure-tagged, per the spec: a server running the same line-security model refuses an
+        // unsecured reply, so the prefix is what makes the answer legible to the peer.
+        await Assert.That(reply!.StartsWith("\x1b[1z", StringComparison.Ordinal)).IsTrue();
+    }
+
+    /// <summary>
     /// Parser state is per connection, and a reconnect is the obvious thing a user does when the
     /// client starts behaving oddly. A server that sent <c>ESC[6z</c> used to leave the <em>next</em>
     /// connection starting in secure default, so an unsecured <c>&lt;SEND&gt;</c> was honoured on a
