@@ -114,4 +114,80 @@ public class StyledTextTests
 
         await Assert.That(StyledText.StripColour(line).RuleColor).IsEqualTo(TerminalColor.FromIndex(14));
     }
+
+    [Test]
+    public async Task Truncate_LeavesAShortLineAlone()
+    {
+        var line = StyledLine.FromText("short", TextStyle.Default);
+
+        await Assert.That(StyledText.Truncate(line, 80)).IsSameReferenceAs(line);
+    }
+
+    /// <summary>The ellipsis is inside the budget, not beside it — the caller asked for a width.</summary>
+    [Test]
+    public async Task Truncate_CountsTheEllipsisWithinTheBudget()
+    {
+        var line = StyledLine.FromText(new string('x', 50), TextStyle.Default);
+
+        await Assert.That(StyledText.Truncate(line, 10).Text).IsEqualTo("xxxxxxxxx…");
+    }
+
+    [Test]
+    public async Task Truncate_WithNoEllipsisCutsHard()
+    {
+        var line = StyledLine.FromText("abcdef", TextStyle.Default);
+
+        await Assert.That(StyledText.Truncate(line, 3, string.Empty).Text).IsEqualTo("abc");
+    }
+
+    [Test]
+    public async Task Truncate_ToNothingIsEmpty()
+    {
+        var line = StyledLine.FromText("abcdef", TextStyle.Default);
+
+        await Assert.That(StyledText.Truncate(line, 0).IsEmpty).IsTrue();
+    }
+
+    /// <summary>
+    /// Cutting the styled line rather than the markup is the point: every surviving span keeps its
+    /// own style, and the ellipsis takes the style of the span it ends in rather than painting a
+    /// stray default-coloured character onto the end of a coloured run.
+    /// </summary>
+    [Test]
+    public async Task Truncate_KeepsPerSpanStyleAndStylesTheEllipsis()
+    {
+        var red = new TextStyle(TerminalColor.FromIndex(1), TerminalColor.Default, TextAttributes.None);
+        var blue = new TextStyle(TerminalColor.FromIndex(4), TerminalColor.Default, TextAttributes.None);
+        var line = new StyledLine(new[] { new StyledSpan("aaa", red), new StyledSpan("bbbbbb", blue) });
+
+        var cut = StyledText.Truncate(line, 6);
+
+        await Assert.That(cut.Text).IsEqualTo("aaabb…");
+        await Assert.That(cut.Spans[0].Style).IsEqualTo(red);
+        await Assert.That(cut.Spans[^1].Style).IsEqualTo(blue);
+    }
+
+    /// <summary>Half of a link is not a link: a clickable ellipsis would send a truncated target.</summary>
+    [Test]
+    public async Task Truncate_DoesNotMakeTheEllipsisClickable()
+    {
+        var line = new StyledLine(new[]
+        {
+            new StyledSpan("click me please", TextStyle.Default, new SpanInteraction(InteractionKind.SendCommand, "look")),
+        });
+
+        var cut = StyledText.Truncate(line, 6);
+
+        await Assert.That(cut.Spans[^1].Interaction).IsNull();
+    }
+
+    [Test]
+    public async Task Truncate_KeepsTheRuleColour()
+    {
+        var line = new StyledLine(
+            new[] { new StyledSpan("a long highlighted line", TextStyle.Default) },
+            TerminalColor.FromIndex(14));
+
+        await Assert.That(StyledText.Truncate(line, 5).RuleColor).IsEqualTo(TerminalColor.FromIndex(14));
+    }
 }

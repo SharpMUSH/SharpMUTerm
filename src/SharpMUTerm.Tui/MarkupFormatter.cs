@@ -19,7 +19,7 @@ namespace SharpMUTerm.Tui;
 /// which is what the unit tests want.
 /// </para>
 /// </summary>
-internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null)
+internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null, Rgb? plane = null)
 {
     private readonly Theme _theme = theme;
     private readonly TextSettings _text = text ?? new TextSettings();
@@ -29,8 +29,14 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null)
     /// because it is a property of the <em>theme</em> and not of any one pane. See
     /// <see cref="WorkspacePalette.ReadingPlane"/> for why one plane covers all fourteen a pane can
     /// wear, and why resolving it per pane would cost a whole-buffer re-format on every focus move.
+    /// <para>
+    /// <paramref name="plane"/> overrides it for output that is painted somewhere other than a pane —
+    /// the prompt row, which sits on the idle input band. The floor is only meaningful against the
+    /// fill the ink actually lands on, so a formatter writing onto a different band has to be told
+    /// which one, or it holds the game's colours to a contrast they are never read at.
+    /// </para>
     /// </summary>
-    private readonly Rgb _plane = WorkspacePalette.ReadingPlane(theme);
+    private readonly Rgb _plane = plane ?? WorkspacePalette.ReadingPlane(theme);
 
     /// <summary>Renders a whole line to a single markup string, with no timestamp gutter.</summary>
     public string ToMarkup(StyledLine line)
