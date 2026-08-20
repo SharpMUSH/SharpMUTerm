@@ -131,14 +131,27 @@ public class MxpLineModeTests
         await Assert.That(line.Spans.Count(s => s.IsInteractive)).IsEqualTo(2);
     }
 
+    /// <summary>
+    /// Spec: LOCK OPEN sets "open mode. Mode remains in effect until changed" — so the assertion has
+    /// to be on a <em>later</em> line than the one carrying the tag. Asserting only on the tag's own
+    /// line proves the current-line effect and nothing else: it passes just as happily against a
+    /// <c>case 5:</c> that moves the line mode and leaves the default alone, because that line would
+    /// refuse the SEND too and the next one would revert to Secure unnoticed.
+    /// </summary>
     [Test]
     public async Task LockOpen_MakesOpenTheDefaultAgain()
     {
         var parser = new MxpParser();
 
-        var lines = parser.Feed(LockSecure + "a\n" + LockOpen + "<SEND href=\"x\">b</SEND>\n");
+        var lines = FeedLines(
+            parser,
+            LockSecure + "a",
+            LockOpen + "<SEND href=\"x\">b</SEND>",
+            "<SEND href=\"y\">c</SEND>");
 
-        await Assert.That(lines[1].Text).Contains("<SEND");
+        await Assert.That(lines[1].Text).Contains("<SEND href=\"x\">");
+        await Assert.That(lines[2].Text).Contains("<SEND href=\"y\">");
+        await Assert.That(lines[2].Spans.Any(sp => sp.IsInteractive)).IsFalse();
     }
 
     [Test]
@@ -382,5 +395,169 @@ public class MxpLineModeTests
 
         await Assert.That(line.Text).Contains("<SEND href=\"x\">");
         await Assert.That(line.Spans.Any(s => s.IsInteractive)).IsFalse();
+    }
+
+    // ---- The boundary a live session actually reaches ------------------------------------------
+
+    /// <summary>
+    /// Feeds each string as its own line the way a live session does: <c>Feed(text)</c> then
+    /// <c>Flush()</c>, with no <c>'\n'</c> anywhere. The telnet layer strips the terminator before
+    /// this parser sees it, so a test that puts <c>"\n"</c> inside one <c>Feed</c> call is exercising
+    /// an input shape the product never produces — which is how a line-mode revert that only ever ran
+    /// on an embedded newline shipped with a green suite.
+    /// </summary>
+    private static IReadOnlyList<StyledLine> FeedLines(MxpParser parser, params string[] lines)
+    {
+        var result = new List<StyledLine>();
+        foreach (var text in lines)
+        {
+            parser.Feed(text);
+            result.Add(parser.Flush() ?? StyledLine.Empty);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The Critical, at the parser layer: a server's own <c>ESC[1z</c> must not leave the session
+    /// secure for every line after it. Servers rely on the newline revert the spec promises and do not
+    /// bother closing with <c>ESC[0z</c>, so this is the common case rather than a corner of one.
+    /// </summary>
+    [Test]
+    public async Task TheModeRevertsAtAFlushBoundary_NotOnlyAtAnEmbeddedNewline()
+    {
+        var parser = new MxpParser();
+
+        var lines = FeedLines(
+            parser,
+            Secure + "<SEND href=\"north\">north</SEND>",
+            "Rivane says, '<SEND HREF=\"@shutdown\">click me</SEND>'");
+
+        await Assert.That(lines[0].Spans[0].IsInteractive).IsTrue();
+        await Assert.That(lines[1].Text).IsEqualTo("Rivane says, '<SEND HREF=\"@shutdown\">click me</SEND>'");
+        await Assert.That(lines[1].Spans.Any(sp => sp.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>And LOCK SECURE still survives that boundary — the revert is to the default, not to Open.</summary>
+    [Test]
+    public async Task LockSecure_SurvivesAFlushBoundary()
+    {
+        var parser = new MxpParser();
+
+        var lines = FeedLines(parser, LockSecure + "<SEND href=\"look\">a</SEND>", "<SEND href=\"look\">b</SEND>");
+
+        await Assert.That(lines[0].Spans[0].IsInteractive).IsTrue();
+        await Assert.That(lines[1].Spans[0].IsInteractive).IsTrue();
+    }
+
+    /// <summary>A pending TEMP SECURE dies at the real boundary too, not only at an embedded newline.</summary>
+    [Test]
+    public async Task TempSecure_DoesNotSurviveAFlushBoundary()
+    {
+        var parser = new MxpParser();
+
+        var lines = FeedLines(parser, "prompt>" + TempSecure, "<SEND HREF=\"@shutdown\">click</SEND>");
+
+        await Assert.That(lines[1].Text).Contains("<SEND HREF=\"@shutdown\">");
+        await Assert.That(lines[1].Spans.Any(sp => sp.IsInteractive)).IsFalse();
+    }
+
+    // ---- The spec's auto-close of unclosed OPEN tags -------------------------------------------
+
+    /// <summary>
+    /// Spec: "when in OPEN mode, any unclosed OPEN tags are automatically closed when a newline is
+    /// received from the MUD." This is the spec's own bound on how far player-authored markup reaches,
+    /// and it is why the spec is willing to call COLOR an open tag at all — without it a
+    /// <c>&lt;COLOR FORE=black BACK=black&gt;</c> typed into a public channel paints every later line
+    /// of the session black on black, and the tag stack grows without bound.
+    /// </summary>
+    [Test]
+    public async Task AnUnclosedOpenTagIsAutoClosedAtTheLineBoundary()
+    {
+        var parser = new MxpParser();
+
+        var lines = FeedLines(
+            parser,
+            "Rivane says, '<COLOR FORE=black BACK=black>'",
+            "the next line");
+
+        await Assert.That(lines[1].Text).IsEqualTo("the next line");
+        await Assert.That(lines[1].Spans[0].Style.Foreground).IsEqualTo(TerminalColor.Default);
+        await Assert.That(lines[1].Spans[0].Style.Background).IsEqualTo(TerminalColor.Default);
+        await Assert.That(parser.CurrentStyle).IsEqualTo(TextStyle.Default);
+    }
+
+    /// <summary>
+    /// Spec: "when the mode is changed from OPEN mode to any other mode, any unclosed OPEN tags (tags
+    /// that were used while in open mode) are automatically closed." The player's colour stops at the
+    /// moment the server takes the line back, without waiting for the end of it.
+    /// </summary>
+    [Test]
+    public async Task AnUnclosedOpenTagIsAutoClosedWhenTheModeLeavesOpen()
+    {
+        var parser = new MxpParser();
+
+        var line = FeedLines(parser, "says '<COLOR FORE=black>' " + Secure + "server text")[0];
+
+        await Assert.That(line.Spans[^1].Text).IsEqualTo("server text");
+        await Assert.That(line.Spans[^1].Style.Foreground).IsEqualTo(TerminalColor.Default);
+    }
+
+    /// <summary>
+    /// The other half of the same sentence, and the reason it is a marker on the frame rather than a
+    /// property of the tag: spec, "note that secure tags are never automatically closed". A formatting
+    /// tag the <em>server</em> opened on a secure line spans lines exactly as it always did.
+    /// </summary>
+    [Test]
+    public async Task AnOpenTagOpenedOnASecureLineIsNotAutoClosed()
+    {
+        var parser = new MxpParser();
+
+        var lines = FeedLines(parser, LockSecure + "<B>bold", "still bold");
+
+        await Assert.That(lines[1].Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsTrue();
+    }
+
+    /// <summary>The stack does not grow without bound either — that was the second half of the defect.</summary>
+    [Test]
+    public async Task RepeatedUnclosedOpenTagsDoNotAccumulate()
+    {
+        var parser = new MxpParser();
+
+        for (var i = 0; i < 50; i++)
+        {
+            FeedLines(parser, "says '<B><I><U><COLOR FORE=red>'");
+        }
+
+        var line = FeedLines(parser, "plain")[0];
+
+        await Assert.That(line.Spans[0].Style).IsEqualTo(TextStyle.Default);
+    }
+
+    // ---- An unterminated escape string may not eat the next line -------------------------------
+
+    /// <summary>
+    /// A bare <c>ESC ]</c> — or <c>ESC P</c>/<c>X</c>/<c>^</c>/<c>_</c> — puts the parser in the
+    /// string-consuming state, which swallows everything until a BEL or ST that a player who typed one
+    /// into a public channel need never send. Measured before the fix: the following line came back
+    /// null, the whole line gone. Both boundaries are asserted because only the second one exists on a
+    /// live connection, and only the first exists in a multi-line chunk.
+    /// </summary>
+    [Test]
+    [Arguments("\u001b]")] // OSC
+    [Arguments("\u001bP")] // DCS
+    [Arguments("\u001bX")] // SOS
+    [Arguments("\u001b^")] // PM
+    [Arguments("\u001b_")] // APC
+    [Arguments("\u001b[1")] // a CSI with no final byte
+    [Arguments("\u001b")] // a lone ESC, whose next byte would otherwise be eaten
+    public async Task AnUnterminatedEscapeStringDoesNotEatTheNextLine(string escape)
+    {
+        var atFlushBoundary = FeedLines(new MxpParser(), "says '" + escape, "the next line");
+        await Assert.That(atFlushBoundary[1].Text).IsEqualTo("the next line");
+
+        var embedded = new MxpParser().Feed("says '" + escape + "\nthe next line\n");
+        await Assert.That(embedded).Count().IsEqualTo(2);
+        await Assert.That(embedded[1].Text).IsEqualTo("the next line");
     }
 }

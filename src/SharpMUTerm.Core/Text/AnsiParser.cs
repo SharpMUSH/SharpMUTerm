@@ -13,6 +13,14 @@ namespace SharpMUTerm.Core.Text;
 /// the common rendition attributes. Non-SGR CSI sequences (cursor movement, erase),
 /// OSC strings, and other escapes are recognised and discarded rather than leaking
 /// into the output as stray text.
+///
+/// <para>
+/// A line boundary abandons any sequence still in flight — both a <c>'\n'</c> in the text and
+/// <see cref="Flush"/>, which is the boundary a live session actually reaches (the telnet layer
+/// strips the terminator). Without that, an unterminated string escape swallows everything after it,
+/// line boundaries included. <see cref="SharpMUTerm.Core.Protocols.MxpParser"/> carries a near-duplicate
+/// of this escape state machine, deliberately unconsolidated: a fix to one belongs in both.
+/// </para>
 /// </summary>
 public sealed class AnsiParser : ILineParser
 {
@@ -66,6 +74,12 @@ public sealed class AnsiParser : ILineParser
     public StyledLine? Flush()
     {
         FlushRun();
+
+        // Flush is the line boundary a live session reaches — the telnet layer strips the terminator,
+        // so OnOutputReceived feeds a line with no '\n' in it and then flushes. An escape sequence
+        // left in flight must be abandoned here or it consumes the *next* line as its payload.
+        AbandonSequence();
+
         if (_lineSpans.Count == 0)
         {
             return null;
@@ -88,6 +102,17 @@ public sealed class AnsiParser : ILineParser
 
     private void Process(char ch, ref List<StyledLine>? lines)
     {
+        // A newline ends the line whatever sequence is in flight. Without this an unterminated string
+        // escape — a bare ESC ] , ESC P, ESC X, ESC ^ or ESC _ , which a *player* can type into a
+        // public channel — consumes every following character, line boundaries included, until a BEL
+        // or ST it need never send: the rest of the session's output disappears. CSI already treats a
+        // control byte as malformed but was consuming the newline with it, and a two-byte escape would
+        // otherwise swallow the newline as its second byte.
+        if (ch == '\n' && _state != State.Ground)
+        {
+            AbandonSequence();
+        }
+
         switch (_state)
         {
             case State.Ground:
@@ -116,6 +141,13 @@ public sealed class AnsiParser : ILineParser
                 _state = ch == '\\' ? State.Ground : State.Osc;
                 break;
         }
+    }
+
+    /// <summary>Drops a partly-read escape sequence and returns to ground.</summary>
+    private void AbandonSequence()
+    {
+        _seq.Clear();
+        _state = State.Ground;
     }
 
     private void ProcessGround(char ch, ref List<StyledLine>? lines)

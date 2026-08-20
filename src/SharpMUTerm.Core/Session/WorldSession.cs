@@ -156,10 +156,40 @@ public sealed class WorldSession : IAsyncDisposable
         var parser = CreateParser(format);
         if (parser is MxpParser mxp)
         {
-            mxp.ClientReply += (_, reply) => _ = SendRawAsync(reply);
+            mxp.ClientReply += (_, reply) => SendProtocolReply(reply);
         }
 
         return parser;
+    }
+
+    /// <summary>
+    /// Sends a parser-generated protocol reply, observing the result.
+    /// </summary>
+    /// <remarks>
+    /// Nothing can await this — it is raised from the parser while the read loop is walking a line —
+    /// so it is fire-and-forget by necessity, but not unobserved: a bare <c>_ = SendRawAsync(reply)</c>
+    /// leaves a faulted send as an unobserved task exception, and this is the one send path the user
+    /// cannot see fail. There is no line in the scrollback for it, no echo, and no error: a server that
+    /// asked for <c>&lt;VERSION&gt;</c> and got nothing simply guesses at what this client supports.
+    /// The diagnostics log is the only place it can surface.
+    /// </remarks>
+    private void SendProtocolReply(string reply)
+    {
+        _ = Send();
+
+        async Task Send()
+        {
+            try
+            {
+                await SendRawAsync(reply).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // The reply body is deliberately not logged: it is prefixed with a live ESC[1z, and
+                // the diagnostics log is a file a human reads.
+                Logger.LogWarning(ex, "Sending an MXP protocol reply to {Host}:{Port} failed", World.Host, World.Port);
+            }
+        }
     }
 
     /// <summary>
@@ -331,6 +361,15 @@ public sealed class WorldSession : IAsyncDisposable
             await _telnet.DisposeAsync().ConfigureAwait(false);
             _telnet = null;
         }
+
+        // A parser carries per-connection state — MXP's security modes and default mode, its open-tag
+        // stack, the current style — and none of it means anything to the next connection. Left alone,
+        // a server that sent ESC[6z made the *following* session start in secure default, and a
+        // <COLOR FORE=black BACK=black> a player typed survived the reconnect that was the obvious way
+        // to get rid of it. Rebuilt rather than Reset(), because the negotiated MXP upgrade is parser
+        // state too: ContentFormat is what the next connection starts from, and MXP has to be
+        // negotiated again to take it back off ANSI.
+        _parser = NewParser(World.ContentFormat);
 
         SetState(ConnectionState.Connecting, null);
         PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");

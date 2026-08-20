@@ -20,6 +20,25 @@ public class WorldSessionTests
 
     private static WorldDefinition World() => new() { Name = "T", Host = "h", Port = 1, LocalEcho = true };
 
+    /// <summary>
+    /// A session whose factory hands out a <em>fresh</em> fake per connect, the way a real one does,
+    /// and a <c>dial</c> that connects and returns the fake now on the wire. Reusing one fake across a
+    /// reconnect is not the shipping shape: <c>ConnectAsync</c> disposes the old
+    /// <see cref="ITelnetSession"/> and subscribes to the new one, so with a single instance every
+    /// handler is attached twice and each emitted line is parsed twice.
+    /// </summary>
+    private static (WorldSession session, Func<Task<FakeTelnetSession>> dial) CreateReconnectable(WorldDefinition world)
+    {
+        FakeTelnetSession? current = null;
+        var session = new WorldSession(world, sessionFactory: _ => current = new FakeTelnetSession());
+        return (session, async () =>
+        {
+            await session.ConnectAsync();
+            return current!;
+        }
+        );
+    }
+
     [Test]
     public async Task OutputLine_IsAppendedToScrollbackAndRaisesEvent()
     {
@@ -321,5 +340,87 @@ public class WorldSessionTests
         telnet.EmitLine("<SEND>after</SEND>");
 
         await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "after")).IsTrue();
+    }
+
+    /// <summary>
+    /// The Critical, end to end through a real session: a server's own <c>ESC[1z</c> line must not
+    /// leave every following line secure. This is the shape the product actually produces and the one
+    /// no parser test reached — the telnet layer strips the terminator, so <c>OnOutputReceived</c>
+    /// feeds a line with no <c>'\n'</c> in it and then flushes, and a revert that lived only in
+    /// <c>CompleteLine</c> never ran. Servers rely on the newline revert the spec promises rather than
+    /// closing with <c>ESC[0z</c>, so one secure line was enough to make the rest of the connection
+    /// trusted: a <c>&lt;SEND&gt;</c> a player typed into a public channel became a clickable
+    /// <c>@shutdown</c>, and a <c>&lt;VERSION&gt;</c> they typed put a reply on the wire.
+    /// </summary>
+    [Test]
+    public async Task Mxp_ASecureLineFromTheServerDoesNotSecureTheLinesAfterIt()
+    {
+        var (session, telnet) = Create(World());
+        await session.ConnectAsync();
+        telnet.RaiseMxpEnabled();
+
+        telnet.EmitLine("\x1b[1z<SEND HREF=\"north\">north</SEND>");
+        telnet.EmitLine("Rivane says, '<SEND HREF=\"@shutdown\">click me</SEND>'");
+        telnet.EmitLine("Rivane says, '<VERSION>'");
+
+        var lines = session.Scrollback.Snapshot();
+
+        // The server's own secure line is honoured, so the test cannot pass by MXP being off.
+        await Assert.That(lines.Any(l => l.Spans.Any(sp => sp.Interaction?.Target == "north"))).IsTrue();
+
+        // The player's is refused and echoed, brackets and all.
+        var chat = lines.Single(l => l.Text.Contains("click me"));
+        await Assert.That(chat.Text).IsEqualTo("Rivane says, '<SEND HREF=\"@shutdown\">click me</SEND>'");
+        await Assert.That(chat.Spans.Any(sp => sp.IsInteractive)).IsFalse();
+
+        // And nothing a player typed reaches the wire as a protocol reply.
+        await Assert.That(telnet.SentLines.Any(l => l.Contains("<VERSION"))).IsFalse();
+    }
+
+    /// <summary>
+    /// Parser state is per connection, and a reconnect is the obvious thing a user does when the
+    /// client starts behaving oddly. A server that sent <c>ESC[6z</c> used to leave the <em>next</em>
+    /// connection starting in secure default, so an unsecured <c>&lt;SEND&gt;</c> was honoured on a
+    /// fresh socket that had never been told anything.
+    /// </summary>
+    [Test]
+    public async Task Mxp_TheSecureDefaultDoesNotSurviveAReconnect()
+    {
+        var (session, dial) = CreateReconnectable(World());
+
+        var first = await dial();
+        first.RaiseMxpEnabled();
+        first.EmitLine("\x1b[6zthe server locks secure mode on");
+
+        await session.DisconnectAsync();
+        var second = await dial();
+        second.RaiseMxpEnabled();
+        second.EmitLine("Rivane says, '<SEND HREF=\"@shutdown\">click me</SEND>'");
+
+        var chat = session.Scrollback.Snapshot().Single(l => l.Text.Contains("click me"));
+        await Assert.That(chat.Spans.Any(sp => sp.IsInteractive)).IsFalse();
+    }
+
+    /// <summary>
+    /// The negotiated upgrade is parser state too. <c>ContentFormat</c> is what a connection starts
+    /// from, and MXP has to be negotiated again to take it off ANSI — otherwise a reconnect to a
+    /// server that never offers MXP goes on parsing the stream as MXP for ever.
+    /// </summary>
+    [Test]
+    public async Task Mxp_TheNegotiatedUpgradeDoesNotSurviveAReconnect()
+    {
+        var (session, dial) = CreateReconnectable(World());
+
+        var first = await dial();
+        first.RaiseMxpEnabled();
+        first.EmitLine("<B>upgraded</B>");
+
+        await session.DisconnectAsync();
+        var second = await dial();
+        second.EmitLine("<B>after</B>");
+
+        var lines = session.Scrollback.Snapshot();
+        await Assert.That(lines.Any(l => l.Text == "upgraded")).IsTrue();
+        await Assert.That(lines.Any(l => l.Text == "<B>after</B>")).IsTrue();
     }
 }

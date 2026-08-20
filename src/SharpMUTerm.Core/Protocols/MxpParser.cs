@@ -15,6 +15,13 @@ namespace SharpMUTerm.Core.Protocols;
 /// lines completed within the chunk, <see cref="Flush"/> yields a buffered partial line
 /// (e.g. an unterminated prompt), and colour/attribute state is preserved between calls.
 ///
+/// <para>
+/// <b><see cref="Flush"/> is the line boundary, not <c>'\n'</c>.</b> The telnet layer strips the
+/// terminator before this parser sees it, so <c>WorldSession</c> feeds a line's text and then flushes;
+/// a rule keyed on a newline in the text never fires on a real connection. <see cref="EndLine"/> is
+/// the one place the end of a line is defined, and both routes go through it.
+/// </para>
+///
 /// <para>Scope notes for v1:</para>
 /// <list type="bullet">
 /// <item>The line-security model (<c>ESC[#z</c> line tags, open/secure/locked, RESET, TEMP SECURE
@@ -67,6 +74,14 @@ public sealed class MxpParser : ILineParser
         public string? Hint { get; init; }
         public bool PromptOnly { get; init; }
         public int SpanStart { get; init; }
+
+        /// <summary>
+        /// True when the element was opened while the line was in <see cref="MxpLineMode.Open"/> —
+        /// i.e. it is one of the spec's "tags that were used while in open mode", the only ones it
+        /// closes automatically. Secure tags are "never automatically closed", so this is what keeps
+        /// a server's own markup spanning lines while a player's is bounded by theirs.
+        /// </summary>
+        public bool OpenedInOpenMode { get; init; }
     }
 
     private Mode _mode = Mode.Text;
@@ -153,15 +168,19 @@ public sealed class MxpParser : ILineParser
     }
 
     /// <summary>
-    /// Returns the buffered partial line (e.g. a prompt not terminated by a newline) and
-    /// clears it, or <c>null</c> if nothing is buffered. Any open interaction is finalised
-    /// so a flushed prompt's clickable spans carry their command; colour/attribute state and
-    /// formatting tags are preserved.
+    /// Returns the buffered partial line (e.g. a prompt not terminated by a newline) and clears it,
+    /// or <c>null</c> if nothing is buffered.
     /// </summary>
+    /// <remarks>
+    /// <b>This is the line boundary</b>, not just a drain: the telnet layer strips the terminator, so
+    /// on a real connection a line arrives as <c>Feed(text)</c> with no <c>'\n'</c> in it followed by
+    /// this call. Everything the end of a line does — the security mode reverting to the default, the
+    /// spec's auto-close of open-mode tags, finalising an open interaction, abandoning an unterminated
+    /// escape sequence — therefore happens here. See <see cref="EndLine"/>.
+    /// </remarks>
     public StyledLine? Flush()
     {
-        FlushRun();
-        CloseInteractionsAtBoundary();
+        EndLine();
         if (_lineSpans.Count == 0)
         {
             return null;
@@ -191,6 +210,19 @@ public sealed class MxpParser : ILineParser
 
     private void Process(char ch)
     {
+        // A newline ends the line whatever sequence is in flight. Without this an unterminated
+        // string escape — a bare ESC ] , ESC P, ESC X, ESC ^ or ESC _ , which a *player* can type
+        // into a public channel — consumes every following character, line boundaries included,
+        // until a BEL or ST it need never send: the rest of the session's output disappears. CSI
+        // already treats a control byte as malformed, and a two-byte escape would otherwise swallow
+        // the newline as its second byte; routing all of them through here makes one rule of it.
+        // AnsiParser carries the same three lines — the two escape state machines are near
+        // duplicates and are deliberately not consolidated, so a fix to one belongs in both.
+        if (ch == '\n' && IsEscapeMode(_mode))
+        {
+            EndSequence();
+        }
+
         switch (_mode)
         {
             case Mode.Text:
@@ -236,6 +268,10 @@ public sealed class MxpParser : ILineParser
                 break;
         }
     }
+
+    /// <summary>True while the parser is part-way through an escape sequence rather than reading text.</summary>
+    private static bool IsEscapeMode(Mode mode) =>
+        mode is Mode.Escape or Mode.EscapeIntermediate or Mode.Csi or Mode.Osc or Mode.OscEscape;
 
     private void ProcessText(char ch)
     {
@@ -418,14 +454,58 @@ public sealed class MxpParser : ILineParser
 
         switch (tag)
         {
-            case 0: _lineMode = MxpLineMode.Open; break;
-            case 1: _lineMode = MxpLineMode.Secure; break;
-            case 2: _lineMode = MxpLineMode.Locked; break;
+            case 0: SetLineMode(MxpLineMode.Open); break;
+            case 1: SetLineMode(MxpLineMode.Secure); break;
+            case 2: SetLineMode(MxpLineMode.Locked); break;
             case 3: ApplyReset(); break;
             case 4: _tempSecure = true; break;
-            case 5: _defaultMode = _lineMode = MxpLineMode.Open; break;
-            case 6: _defaultMode = _lineMode = MxpLineMode.Secure; break;
-            case 7: _defaultMode = _lineMode = MxpLineMode.Locked; break;
+            case 5: SetLineMode(MxpLineMode.Open); _defaultMode = MxpLineMode.Open; break;
+            case 6: SetLineMode(MxpLineMode.Secure); _defaultMode = MxpLineMode.Secure; break;
+            case 7: SetLineMode(MxpLineMode.Locked); _defaultMode = MxpLineMode.Locked; break;
+        }
+    }
+
+    /// <summary>
+    /// Moves the current line's mode, honouring the spec's first auto-close rule: "when the mode is
+    /// changed from OPEN mode to any other mode, any unclosed OPEN tags (tags that were used while in
+    /// open mode) are automatically closed."
+    /// </summary>
+    /// <remarks>
+    /// This is the spec's own bound on how far player-authored markup reaches, and it is why the spec
+    /// is willing to call <c>COLOR</c> an open tag at all: without it a
+    /// <c>&lt;COLOR FORE=black BACK=black&gt;</c> typed into a public channel paints the rest of the
+    /// session black on black, and the tag stack grows without bound. TEMP SECURE is deliberately not
+    /// a mode change — it arms the next tag and leaves <see cref="_lineMode"/> alone.
+    /// </remarks>
+    private void SetLineMode(MxpLineMode mode)
+    {
+        if (_lineMode == MxpLineMode.Open && mode != MxpLineMode.Open)
+        {
+            CloseOpenModeTags();
+        }
+
+        _lineMode = mode;
+    }
+
+    /// <summary>
+    /// Closes every still-open tag that was opened while the line was in OPEN mode.
+    /// </summary>
+    /// <remarks>
+    /// Done by closing the <em>outermost</em> such frame: everything nested inside it goes with it,
+    /// which is the same rule <see cref="CloseTag"/> applies to an explicit closer, and it is the only
+    /// rule that can restore a coherent style — a secure tag opened <em>inside</em> a player's open one
+    /// cannot outlive it, however the spec words the exemption.
+    /// </remarks>
+    private void CloseOpenModeTags()
+    {
+        for (var i = 0; i < _stack.Count; i++)
+        {
+            if (_stack[i].OpenedInOpenMode)
+            {
+                FlushRun();
+                CloseFramesFrom(i);
+                return;
+            }
         }
     }
 
@@ -846,6 +926,7 @@ public sealed class MxpParser : ILineParser
             Hint = hint,
             PromptOnly = promptOnly,
             SpanStart = _lineSpans.Count,
+            OpenedInOpenMode = _lineMode == MxpLineMode.Open,
         });
     }
 
@@ -876,7 +957,17 @@ public sealed class MxpParser : ILineParser
         }
 
         FlushRun();
+        CloseFramesFrom(idx);
+    }
 
+    /// <summary>
+    /// Pops every frame at or above <paramref name="idx"/>, finalising any deferred interaction among
+    /// them, and restores the style and interaction that were in force before frame
+    /// <paramref name="idx"/> opened. Callers flush the pending run first, so the text written under
+    /// those frames keeps their rendition.
+    /// </summary>
+    private void CloseFramesFrom(int idx)
+    {
         var matched = _stack[idx];
         for (var i = _stack.Count - 1; i >= idx; i--)
         {
@@ -974,12 +1065,51 @@ public sealed class MxpParser : ILineParser
 
     private void CompleteLine()
     {
-        FlushRun();
-        CloseInteractionsAtBoundary();
+        EndLine();
 
         var line = _lineSpans.Count == 0 ? StyledLine.Empty : new StyledLine(_lineSpans);
         _lineSpans.Clear();
         (_emit ??= new List<StyledLine>()).Add(line);
+    }
+
+    /// <summary>
+    /// Everything the end of a line does to parser state, short of emitting the line itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Called from <see cref="CompleteLine"/> <em>and</em> from <see cref="Flush"/>, because
+    /// <see cref="Flush"/> is the line boundary this parser actually sees in production: the telnet
+    /// layer strips the terminator, so <c>WorldSession.OnOutputReceived</c> feeds a line's text with
+    /// no <c>'\n'</c> in it and then flushes. A revert that lived only in <see cref="CompleteLine"/>
+    /// therefore never ran on a real connection — one <c>ESC[1z</c> from the server and every
+    /// following line of the session stayed SECURE, so a <c>&lt;SEND&gt;</c> a player typed into a
+    /// public channel became a clickable command. <see cref="Flush"/> was already the boundary for
+    /// the tag stack (<see cref="CloseInteractionsAtBoundary"/>); this makes it the boundary for
+    /// everything, which is the property that cannot be forgotten by a future caller — a consumer
+    /// that does not flush gets no output at all, whereas one that forgot to call an
+    /// <c>EndLine()</c> on <c>ILineParser</c> would silently reproduce exactly this bug.
+    /// </para>
+    /// </remarks>
+    private void EndLine()
+    {
+        FlushRun();
+
+        // Spec: "when in OPEN mode, any unclosed OPEN tags are automatically closed when a newline is
+        // received from the MUD." Only open-mode ones: "secure tags are never automatically closed",
+        // which is why a server's markup may span lines and a player's may not.
+        if (_lineMode == MxpLineMode.Open)
+        {
+            CloseOpenModeTags();
+        }
+
+        CloseInteractionsAtBoundary();
+
+        // An escape sequence cannot span the boundary either — see Process. In production this is the
+        // only place it can be aborted, since the terminator the '\n' rule keys on never arrives.
+        if (IsEscapeMode(_mode))
+        {
+            EndSequence();
+        }
 
         // Spec: "when a newline is received from the MUD, the mode reverts back to the Default mode."
         // A pending TEMP SECURE dies with the line rather than arming the first tag of the next one.
