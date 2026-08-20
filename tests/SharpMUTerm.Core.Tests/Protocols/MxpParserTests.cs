@@ -356,11 +356,64 @@ public class MxpParserTests
         await Assert.That(lines[0].Text).IsEqualTo("a");
     }
 
+    /// <summary>
+    /// Was <c>EscapeByte_IsPassedThrough</c>, asserting that <c>"a\x1bb\n"</c> produced the literal
+    /// text <c>"a\x1bb"</c> — i.e. that an ESC byte, and whatever followed it, fell straight into the
+    /// span text unparsed. Two things were wrong with it. That pass-through was the bug this task
+    /// fixes: an MXP world's ANSI (or any other escape) rendered as garbage instead of being decoded
+    /// or discarded. And separately, C#'s <c>\x</c> escape is greedy over up to four hex digits, so
+    /// <c>"\x1bb"</c> was never ESC followed by <c>'b'</c> at all — it compiled to the single
+    /// character U+01BB, which the old test's "pass everything through" assertion could not have told
+    /// apart from a real ESC anyway. <c>\u001b</c> is exactly four digits and does not swallow what
+    /// follows it, which is used below and is now this file's ESC spelling. Fixed, "\u001bb" reads as
+    /// the two-byte escape "ESC b", which AnsiParser also consumes and ignores, so only "a" survives.
+    /// </summary>
     [Test]
-    public async Task EscapeByte_IsPassedThrough()
+    public async Task EscapeByte_TwoByteEscapeIsConsumedAndDiscarded()
     {
-        var line = ParseSingleLine("a\x1bb\n");
-        await Assert.That(line.Text).IsEqualTo("a\x1bb");
+        var line = ParseSingleLine("a\u001bb\n");
+        await Assert.That(line.Text).IsEqualTo("a");
+    }
+
+    /// <summary>
+    /// The spec permits ANSI inside MXP — "ANSI and VT100 codes can still be used as normal" — and
+    /// nothing upstream of this parser strips it: WorldSession picks MxpParser *or* AnsiParser, never
+    /// both. Before this, an SGR sequence was appended to the line as literal text and its colour was
+    /// lost, so an MXP world rendered "<ESC>[0;33mYellow" in place of yellow text.
+    /// </summary>
+    [Test]
+    public async Task Ansi_SgrSetsTheStyleAndLeavesNoEscapeInTheText()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("\x1b[33mYellow\x1b[0m plain\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("Yellow plain");
+        await Assert.That(line.Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(3));
+        await Assert.That(line.Spans[^1].Style.Foreground).IsEqualTo(TerminalColor.Default);
+    }
+
+    /// <summary>A non-SGR CSI is consumed and discarded, exactly as AnsiParser does with it.</summary>
+    [Test]
+    public async Task Ansi_NonSgrCsiIsDiscarded()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("a\x1b[2Kb\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>ANSI and MXP compose: the tag applies on top of the SGR colour.</summary>
+    [Test]
+    public async Task Ansi_AndMxpTagsCompose()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("\x1b[33m<B>both</B>\n")[0];
+
+        await Assert.That(line.Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(3));
+        await Assert.That(line.Spans[0].Style.Attributes.HasFlag(TextAttributes.Bold)).IsTrue();
     }
 
     [Test]

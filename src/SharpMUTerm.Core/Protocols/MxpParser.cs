@@ -22,8 +22,10 @@ namespace SharpMUTerm.Core.Protocols;
 /// line tags <c>[1z]</c> etc.) is <b>not</b> implemented here.</item>
 /// <item>Inline <c>&lt;IMG&gt;</c> rendering is out of scope (graphics live elsewhere); the
 /// tag is parsed and ignored gracefully.</item>
-/// <item>Raw ANSI SGR is assumed to have been handled upstream. An ESC byte (0x1b) seen
-/// here is passed through untouched into the span text.</item>
+/// <item>ANSI SGR is decoded here, through <see cref="SharpMUTerm.Core.Text.SgrCodes"/>, because the
+/// spec permits ANSI inside MXP and nothing upstream strips it — a session runs this parser
+/// <em>or</em> <see cref="SharpMUTerm.Core.Text.AnsiParser"/>, never both. Other CSI sequences are
+/// consumed and discarded.</item>
 /// <item>Unknown/unsupported tags (<c>&lt;VAR&gt;</c>, <c>&lt;EXPIRE&gt;</c>, <c>&lt;H1&gt;</c>,
 /// <c>&lt;P&gt;</c>, …) are consumed and discarded — they never leak into the output.</item>
 /// <item>A stray <c>&lt;</c> that cannot begin a tag, or a stray <c>&amp;</c> that cannot begin
@@ -41,7 +43,11 @@ public sealed class MxpParser : ILineParser
         Text,
         Tag,
         Entity,
+        Escape,
+        Csi,
     }
+
+    private const int MaxSequenceLength = 128;
 
     /// <summary>A single open MXP element on the tag stack.</summary>
     private sealed class Frame
@@ -63,6 +69,7 @@ public sealed class MxpParser : ILineParser
     private readonly StringBuilder _run = new();
     private readonly StringBuilder _tag = new();
     private readonly StringBuilder _entity = new();
+    private readonly StringBuilder _seq = new();
     private readonly List<StyledSpan> _lineSpans = new();
     private readonly List<Frame> _stack = new();
     private List<StyledLine>? _emit;
@@ -124,6 +131,7 @@ public sealed class MxpParser : ILineParser
         _run.Clear();
         _tag.Clear();
         _entity.Clear();
+        _seq.Clear();
         _lineSpans.Clear();
         _stack.Clear();
     }
@@ -142,6 +150,14 @@ public sealed class MxpParser : ILineParser
 
             case Mode.Entity:
                 ProcessEntityChar(ch);
+                break;
+
+            case Mode.Escape:
+                ProcessEscape(ch);
+                break;
+
+            case Mode.Csi:
+                ProcessCsi(ch);
                 break;
         }
     }
@@ -168,11 +184,62 @@ public sealed class MxpParser : ILineParser
                 // Carriage returns are dropped; scrollback is line-based.
                 break;
 
+            case '\x1b':
+                _seq.Clear();
+                _mode = Mode.Escape;
+                break;
+
             default:
-                // Anything else (including a passed-through ESC 0x1b) is literal text.
+                // Anything else is literal text.
                 _run.Append(ch);
                 break;
         }
+    }
+
+    private void ProcessEscape(char ch)
+    {
+        if (ch == '[')
+        {
+            _seq.Clear();
+            _mode = Mode.Csi;
+            return;
+        }
+
+        // Two-byte escapes (ESC c, ESC M, …) are consumed and ignored, as in AnsiParser.
+        _mode = Mode.Text;
+    }
+
+    private void ProcessCsi(char ch)
+    {
+        if (ch is >= '\x40' and <= '\x7e')
+        {
+            if (ch == 'm')
+            {
+                // Text accumulated so far keeps the pre-change style.
+                FlushRun();
+                _current = SgrCodes.Apply(_current, _seq.ToString());
+            }
+
+            // 'z' is the MXP line tag and is handled in Task 3. Every other final byte — cursor
+            // movement, erase — is discarded, which is what a line-oriented view can do with it.
+            _seq.Clear();
+            _mode = Mode.Text;
+            return;
+        }
+
+        if (ch is >= '\x20' and <= '\x3f')
+        {
+            if (_seq.Length < MaxSequenceLength)
+            {
+                _seq.Append(ch);
+            }
+
+            return;
+        }
+
+        // A control character inside the sequence aborts it as malformed.
+        _seq.Clear();
+        _mode = Mode.Text;
     }
 
     private void ProcessTagChar(char ch)
