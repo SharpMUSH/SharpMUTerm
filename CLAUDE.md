@@ -49,7 +49,8 @@ fallbacks) for inline images/maps.
   paged off an ephemeral per-session cache under `$XDG_CACHE_HOME`; absolute line indices, ranged
   reads capped at `MaxRangeLines`, and any disk failure degrades to memory-only. Emphatically **not**
   the session log — that stays `PlainTextLogSink`/`HtmlLogSink`, opt-in and kept),
-  `TcpTransport` (TLS + IPv6), `TelnetSession` (wraps TelnetNegotiationCore **2.7.0**),
+  `TcpTransport` (TLS + IPv6), `TelnetSession` (wraps TelnetNegotiationCore — the version is
+  `Directory.Packages.props` and is deliberately not restated here),
   trigger/alias/macro engines + `IntervalScheduler`, plain-text + HTML logging, versioned JSON
   config (worlds → characters + shared trigger sets, with migration),
   `Theme`/`ThemeLibrary`, and `WorldSession`/`SessionManager` orchestration.
@@ -1253,8 +1254,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
 
 ## Other dependency notes
 
-- **TelnetNegotiationCore 2.8.1** (repo owner is its author — extend it by PR rather than working
-  around it). Fluent builder API; negotiates MCCP/MSDP/MXP itself; ships the keepalive interpreter
+- **TelnetNegotiationCore** — the pinned version is `Directory.Packages.props` and is deliberately
+  not restated in prose, which is how the *Repository state* section came to claim 2.7.0 while the
+  pin said 2.8.1. The notes below say which release changed what, never what we are on. (Repo owner
+  is its author — extend it by PR rather than working around it.)
+  Fluent builder API; negotiates MCCP/MSDP/MXP itself; ships the keepalive interpreter
   (`WithKeepAlive(TimeSpan?, …)`, default 30s, clamped to 1s–24h). `TelnetSession` sets the
   init-only `CallbackOnByteAsync` reflectively to see raw bytes including unterminated prompts — a
   first-class `OnByte` builder hook remains a good upstream PR. It handles the option handshake
@@ -1267,6 +1271,34 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     in `ApplyTerminalTypes` was replaced with it. Plaintext MSSP-REQUEST is now an opt-in plugin
     (`MSSPPlaintextProtocol`) rather than a hidden library fallback. `fix(line)`: the library now
     submits genuinely blank lines instead of silently dropping them.
+  - **Releases published since, and what taking them buys:** **2.9.0** adds `IsNegotiated` beside
+    `IsEnabled`, which never meant what its name suggests — `InitializeAsync` sets it true the moment
+    a plugin is registered, before a byte has crossed the wire, so anything reading it as "did the
+    peer agree" was reading a constant. **2.9.1** gives `IAC GA` and a bare `IAC` mid-negotiation
+    permitted transitions from `StartNegotiation`; before it each one hit `OnUnhandledTriggerAsync`,
+    logging Critical and recovering through `Trigger.Error`, which on some interleavings ate the
+    sequence behind it. **2.10.0** carries the raw bytes of each MSSP value beside the decoded
+    string. **2.11.0** is the prompt-marker fix below.
+- **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
+  of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
+  unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
+  does not report leaves that prompt in the buffer for ever. Both halves were wrong in the library
+  and were fixed upstream rather than worked around here (PR #90):
+  - **GA is the boundary a default NVT uses**, and most MU\* servers are one. RFC 854 makes it
+    mandatory in the server-to-user direction — a process that "cannot proceed without input from the
+    other end" must send GA — so a server that negotiates neither EOR nor SUPPRESS-GO-AHEAD ends every
+    prompt with `IAC GA` and nothing else. The library accepted the byte and discarded it. Measured on
+    `tdome.nukefire.org:4000`: the character-creation prompt arrived, sat in `_pending`, and the
+    session read as a server that had stopped answering.
+  - **RFC 858 is the only thing that takes GA's meaning away** — once SUPPRESS-GO-AHEAD is in effect
+    a GA is a NOP. EOR does not: RFC 885 is a different marker and says nothing about Go-Ahead.
+  - **An `IAC EOR` that arrives while the option was never negotiated is a NOP too** (RFC 885), and
+    was not: the library gated that prompt on `IsEnabled`, which is the always-true flag above.
+  - Nothing on our side changes for any of it. `AddDefaultMUDProtocols(onPrompt: OnPromptAsync)`
+    already wires one callback to both plugins, so the signal arrives on the version bump.
+  - **What is still ours**: a server that sends no boundary marker at all — no GA, no EOR, no newline
+    — still leaves a prompt in `_pending`, because nothing here flushes on idle. That is a real gap
+    and a deliberate non-decision, not something the library can fix.
 - **MSSP is read by the library, not by us — since 2.6.5, and that is the standing example of the
   rule above.** 2.6.0's reader destroyed the protocol's own array notation inside the library:
   `PORT "80" "23" "4201"` arrived as the integer `80234201`, `REFERRAL` (array-only) arrived null,
