@@ -491,4 +491,51 @@ public class MxpParserTests
         var line = ParseSingleLine("a\x1b(Bb\n");
         await Assert.That(line.Text).IsEqualTo("ab");
     }
+
+    /// <summary>
+    /// Spec: the client "sends the version information back to the MUD in the format of a SECURE
+    /// &lt;VERSION&gt; MXP tag". A server that asks and gets nothing has to guess what we support.
+    /// </summary>
+    [Test]
+    public async Task Version_IsAnswered()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("\x1b[1z<VERSION>\n");
+
+        await Assert.That(replies).Count().IsEqualTo(1);
+        await Assert.That(replies[0]).StartsWith("<VERSION ");
+        await Assert.That(replies[0]).Contains("CLIENT=SharpMUTerm");
+    }
+
+    /// <summary>A VERSION request on an open line is a player's, not the server's, and is refused.</summary>
+    [Test]
+    public async Task Version_OnAnOpenLine_IsNotAnswered()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("<VERSION>\n");
+
+        await Assert.That(replies).IsEmpty();
+    }
+
+    /// <summary>Spec: the client returns a SECURE &lt;SUPPORTS&gt; tag naming what it implements.</summary>
+    [Test]
+    public async Task Support_IsAnsweredWithTheTagsThisParserImplements()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("\x1b[1z<SUPPORT>\n");
+
+        await Assert.That(replies).Count().IsEqualTo(1);
+        await Assert.That(replies[0]).StartsWith("<SUPPORTS ");
+        await Assert.That(replies[0]).Contains("+send");
+        await Assert.That(replies[0]).Contains("+color");
+    }
 }

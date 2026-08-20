@@ -93,6 +93,30 @@ public sealed class MxpParser : ILineParser
     /// <summary>The rendition state that will apply to the next printed character.</summary>
     public TextStyle CurrentStyle => _current;
 
+    /// <summary>
+    /// A line this parser owes the server — the answer to a <c>&lt;VERSION&gt;</c> or
+    /// <c>&lt;SUPPORT&gt;</c> request. An event rather than a return value because it is not output:
+    /// nothing about it belongs in the scrollback, and the session sends it as a line.
+    /// </summary>
+    public event EventHandler<string>? ClientReply;
+
+    /// <summary>What this client answers a VERSION request with.</summary>
+    private const string ClientName = "SharpMUTerm";
+
+    /// <summary>
+    /// The tags this parser genuinely implements, in the spec's <c>+tag</c> form.
+    /// </summary>
+    /// <remarks>
+    /// An honest list, and deliberately not an aspirational one: a SUPPORTS answer is a claim a
+    /// server acts on, so naming a tag we ignore makes it send markup we will render as text. Add to
+    /// this only when the handler exists — the same rule the MTTS bit vector is held to.
+    /// <c>H</c>/<c>HIGH</c> is on <see cref="MxpTagCategory"/>'s open allow-list but
+    /// <see cref="HandleOpener"/> has no case for it — it falls to the default and is silently
+    /// dropped — so it is deliberately not claimed here.
+    /// </remarks>
+    private static readonly string[] SupportedTags =
+        ["+b", "+i", "+u", "+s", "+color", "+font", "+send", "+a", "+br"];
+
     /// <summary>True when a partial line, an open tag/entity, or unclosed markup is buffered.</summary>
     public bool HasPendingContent =>
         _run.Length > 0 || _lineSpans.Count > 0 || _mode != Mode.Text;
@@ -688,10 +712,26 @@ public sealed class MxpParser : ILineParser
             case "BR":
                 CompleteLine();
                 break;
+            case "VERSION":
+                HandleVersionRequest();
+                break;
+            case "SUPPORT":
+                HandleSupportRequest();
+                break;
             default:
                 // Unknown/unsupported tag (VAR, EXPIRE, IMG, H1, P, …) — consumed and ignored.
                 break;
         }
+    }
+
+    private void HandleVersionRequest()
+    {
+        ClientReply?.Invoke(this, $"<VERSION CLIENT={ClientName} VERSION=1 MXP=1.0>");
+    }
+
+    private void HandleSupportRequest()
+    {
+        ClientReply?.Invoke(this, $"<SUPPORTS {string.Join(' ', SupportedTags)}>");
     }
 
     private void OpenFormatting(string name, TextAttributes attribute)

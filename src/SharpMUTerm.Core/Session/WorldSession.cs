@@ -81,7 +81,7 @@ public sealed class WorldSession : IAsyncDisposable
         _text = text;
         _input = input;
         _charsetOrder = charsetOrder;
-        _parser = CreateParser(world.ContentFormat);
+        _parser = NewParser(world.ContentFormat);
         _emoji = world.Emoji.Enabled
             ? new EmojiSubstitutor(world.Emoji.Emoticons, world.Emoji.Shortcodes)
             : null;
@@ -144,6 +144,25 @@ public sealed class WorldSession : IAsyncDisposable
     };
 
     /// <summary>
+    /// The one place a parser is constructed for this session. Wraps <see cref="CreateParser"/> so
+    /// the two sites that build one — the constructor and <see cref="OnMxpEnabled"/>'s upgrade path —
+    /// cannot diverge on what an <see cref="MxpParser"/> is wired up to: its
+    /// <see cref="MxpParser.ClientReply"/> answers to a server's <c>&lt;VERSION&gt;</c>/<c>&lt;SUPPORT&gt;</c>
+    /// request must reach the wire on both paths, since the upgrade path is the one every session that
+    /// actually negotiates MXP takes.
+    /// </summary>
+    private ILineParser NewParser(ContentFormat format)
+    {
+        var parser = CreateParser(format);
+        if (parser is MxpParser mxp)
+        {
+            mxp.ClientReply += (_, reply) => _ = SendRawAsync(reply);
+        }
+
+        return parser;
+    }
+
+    /// <summary>
     /// Upgrades to the MXP parser when the option negotiates.
     /// </summary>
     /// <remarks>
@@ -182,7 +201,7 @@ public sealed class WorldSession : IAsyncDisposable
             ProcessOutputLine(tail);
         }
 
-        _parser = new MxpParser();
+        _parser = NewParser(ContentFormat.Mxp);
     }
 
     /// <summary>
