@@ -5,6 +5,15 @@ namespace SharpMUTerm.Core.Tests.Protocols;
 
 public class MxpParserTests
 {
+    /// <summary>
+    /// The <c>ESC[1z</c> SECURE line tag. Every test below that exercises a *secure* element —
+    /// SEND, A, BR, and the unsupported tags that are consumed rather than rendered — has to say so,
+    /// because on an open line the parser now (correctly) echoes such a tag as literal text instead
+    /// of honouring it. That refusal is <see cref="MxpLineModeTests"/>'s subject; these tests are
+    /// about what the element does once the server has secured it.
+    /// </summary>
+    private const string Secure = "\x1b[1z";
+
     private static StyledLine ParseSingleLine(string input)
     {
         var parser = new MxpParser();
@@ -189,7 +198,7 @@ public class MxpParserTests
     [Test]
     public async Task Send_WithHref_ProducesSendCommand()
     {
-        var line = ParseSingleLine("<SEND HREF=\"look\">here</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"look\">here</SEND>\n");
         await Assert.That(line.Spans).HasSingleItem();
         var span = line.Spans[0];
         await Assert.That(span.Text).IsEqualTo("here");
@@ -201,7 +210,7 @@ public class MxpParserTests
     [Test]
     public async Task Send_WithoutHref_UsesEnclosedTextAsCommand()
     {
-        var line = ParseSingleLine("<SEND>north</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND>north</SEND>\n");
         var span = line.Spans[0];
         await Assert.That(span.Text).IsEqualTo("north");
         await Assert.That(span.Interaction!.Kind).IsEqualTo(InteractionKind.SendCommand);
@@ -211,21 +220,21 @@ public class MxpParserTests
     [Test]
     public async Task Send_CapturesHint()
     {
-        var line = ParseSingleLine("<SEND HREF=\"look\" HINT=\"examine\">x</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"look\" HINT=\"examine\">x</SEND>\n");
         await Assert.That(line.Spans[0].Interaction!.Hint).IsEqualTo("examine");
     }
 
     [Test]
     public async Task Send_MultiCommandHref_UsesFirstAsPrimary()
     {
-        var line = ParseSingleLine("<SEND HREF=\"a|b|c\">x</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"a|b|c\">x</SEND>\n");
         await Assert.That(line.Spans[0].Interaction!.Target).IsEqualTo("a");
     }
 
     [Test]
     public async Task Send_PromptFlag_SetsPromptOnly()
     {
-        var line = ParseSingleLine("<SEND HREF=\"cast spell\" PROMPT>x</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"cast spell\" PROMPT>x</SEND>\n");
         await Assert.That(line.Spans[0].Interaction!.PromptOnly).IsTrue();
     }
 
@@ -233,7 +242,9 @@ public class MxpParserTests
     public async Task Send_BareWithoutClose_ClosesAtEndOfLine()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("<SEND HREF=\"go\">walk\nnext line\n");
+        // Only the first line is secured: the mode reverts at the newline, which is exactly the
+        // boundary the interaction must not survive.
+        var lines = parser.Feed(Secure + "<SEND HREF=\"go\">walk\nnext line\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Spans[0].Interaction!.Target).IsEqualTo("go");
         await Assert.That(lines[1].Spans[0].IsInteractive).IsFalse();
@@ -242,7 +253,7 @@ public class MxpParserTests
     [Test]
     public async Task Anchor_WithHref_ProducesHyperlink()
     {
-        var line = ParseSingleLine("<A HREF=\"https://example.com\">site</A>\n");
+        var line = ParseSingleLine(Secure + "<A HREF=\"https://example.com\">site</A>\n");
         var span = line.Spans[0];
         await Assert.That(span.Text).IsEqualTo("site");
         await Assert.That(span.Interaction!.Kind).IsEqualTo(InteractionKind.Hyperlink);
@@ -287,14 +298,14 @@ public class MxpParserTests
     [Test]
     public async Task UnknownTag_IsConsumedNotLeaked()
     {
-        var line = ParseSingleLine("a<VAR NAME=hp>b\n");
+        var line = ParseSingleLine(Secure + "a<VAR NAME=hp>b\n");
         await Assert.That(line.Text).IsEqualTo("ab");
     }
 
     [Test]
     public async Task UnsupportedTags_AreStripped()
     {
-        var line = ParseSingleLine("<H1>Title</H1><P>text<IMG SRC=\"x.png\">end\n");
+        var line = ParseSingleLine(Secure + "<H1>Title</H1><P>text<IMG SRC=\"x.png\">end\n");
         await Assert.That(line.Text).IsEqualTo("Titletextend");
     }
 
@@ -302,7 +313,8 @@ public class MxpParserTests
     public async Task Br_ProducesLineBreak()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("first<BR>second\n");
+        // BR is not one of the spec's open tags, so it needs securing like any other.
+        var lines = parser.Feed(Secure + "first<BR>second\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("first");
         await Assert.That(lines[1].Text).IsEqualTo("second");
@@ -351,22 +363,75 @@ public class MxpParserTests
     public async Task SelfClosingBr_IsHandled()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("a<BR/>b\n");
+        var lines = parser.Feed(Secure + "a<BR/>b\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("a");
     }
 
+    /// <summary>
+    /// Was <c>EscapeByte_IsPassedThrough</c>, asserting that <c>"a\x1bb\n"</c> produced the literal
+    /// text <c>"a\x1bb"</c> — i.e. that an ESC byte, and whatever followed it, fell straight into the
+    /// span text unparsed. Two things were wrong with it. That pass-through was the bug this task
+    /// fixes: an MXP world's ANSI (or any other escape) rendered as garbage instead of being decoded
+    /// or discarded. And separately, C#'s <c>\x</c> escape is greedy over up to four hex digits, so
+    /// <c>"\x1bb"</c> was never ESC followed by <c>'b'</c> at all — it compiled to the single
+    /// character U+01BB, which the old test's "pass everything through" assertion could not have told
+    /// apart from a real ESC anyway. <c>\u001b</c> is exactly four digits and does not swallow what
+    /// follows it, which is used below and is now this file's ESC spelling. Fixed, "\u001bb" reads as
+    /// the two-byte escape "ESC b", which AnsiParser also consumes and ignores, so only "a" survives.
+    /// </summary>
     [Test]
-    public async Task EscapeByte_IsPassedThrough()
+    public async Task EscapeByte_TwoByteEscapeIsConsumedAndDiscarded()
     {
-        var line = ParseSingleLine("a\x1bb\n");
-        await Assert.That(line.Text).IsEqualTo("a\x1bb");
+        var line = ParseSingleLine("a\u001bb\n");
+        await Assert.That(line.Text).IsEqualTo("a");
+    }
+
+    /// <summary>
+    /// The spec permits ANSI inside MXP — "ANSI and VT100 codes can still be used as normal" — and
+    /// nothing upstream of this parser strips it: WorldSession picks MxpParser *or* AnsiParser, never
+    /// both. Before this, an SGR sequence was appended to the line as literal text and its colour was
+    /// lost, so an MXP world rendered "<ESC>[0;33mYellow" in place of yellow text.
+    /// </summary>
+    [Test]
+    public async Task Ansi_SgrSetsTheStyleAndLeavesNoEscapeInTheText()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("\x1b[33mYellow\x1b[0m plain\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("Yellow plain");
+        await Assert.That(line.Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(3));
+        await Assert.That(line.Spans[^1].Style.Foreground).IsEqualTo(TerminalColor.Default);
+    }
+
+    /// <summary>A non-SGR CSI is consumed and discarded, exactly as AnsiParser does with it.</summary>
+    [Test]
+    public async Task Ansi_NonSgrCsiIsDiscarded()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("a\x1b[2Kb\n")[0];
+
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>ANSI and MXP compose: the tag applies on top of the SGR colour.</summary>
+    [Test]
+    public async Task Ansi_AndMxpTagsCompose()
+    {
+        var parser = new MxpParser();
+
+        var line = parser.Feed("\x1b[33m<B>both</B>\n")[0];
+
+        await Assert.That(line.Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(3));
+        await Assert.That(line.Spans[0].Style.Attributes.HasFlag(TextAttributes.Bold)).IsTrue();
     }
 
     [Test]
     public async Task Send_WithFormattingInside_KeepsInteractionOnAllSpans()
     {
-        var line = ParseSingleLine("<SEND HREF=\"go\"><B>walk</B> now</SEND>\n");
+        var line = ParseSingleLine(Secure + "<SEND HREF=\"go\"><B>walk</B> now</SEND>\n");
         await Assert.That(line.Spans).Count().IsEqualTo(2);
         await Assert.That(line.Spans[0].Interaction!.Target).IsEqualTo("go");
         await Assert.That(line.Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsTrue();
@@ -391,5 +456,109 @@ public class MxpParserTests
         var parser = new MxpParser();
         parser.Feed("partial");
         await Assert.That(parser.HasPendingContent).IsTrue();
+    }
+
+    /// <summary>
+    /// OSC (ESC ]) sets a terminal property (window title, most commonly) and is terminated by
+    /// either BEL or ST (ESC backslash). Before this fix, only CSI (ESC [) was recognised; an OSC
+    /// payload fell through the generic two-byte-escape branch a character at a time and leaked
+    /// into the line as literal text. Mirrors AnsiParser.ProcessOsc's BEL arm exactly.
+    /// </summary>
+    [Test]
+    public async Task Osc_BelTerminatedSequenceIsDiscarded()
+    {
+        var line = ParseSingleLine("a\x1b]0;title\u0007b\n");
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>The ST form of an OSC terminator (ESC backslash) rather than BEL.</summary>
+    [Test]
+    public async Task Osc_StTerminatedSequenceIsDiscarded()
+    {
+        var line = ParseSingleLine("a\x1b]0;title\x1b\\b\n");
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>
+    /// A two-byte-intermediate escape (ESC ( B, "select G0 as US-ASCII") is a three-byte unit:
+    /// ESC, the intermediate, then a trailing byte that ends it. Before this fix the intermediate
+    /// byte sent the parser straight back to Text, leaving the trailing byte to print as if it
+    /// were ordinary output.
+    /// </summary>
+    [Test]
+    public async Task Escape_ThreeByteIntermediateIsConsumedAndDiscarded()
+    {
+        var line = ParseSingleLine("a\x1b(Bb\n");
+        await Assert.That(line.Text).IsEqualTo("ab");
+    }
+
+    /// <summary>
+    /// Spec: the client "sends the version information back to the MUD in the format of a SECURE
+    /// &lt;VERSION&gt; MXP tag". A server that asks and gets nothing has to guess what we support.
+    /// </summary>
+    [Test]
+    public async Task Version_IsAnswered()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("\x1b[1z<VERSION>\n");
+
+        // Spec: "the response is sent as a secure-tagged line" (ESC[1z prefix), and the tag's exact
+        // attribute order is MXP, STYLE, CLIENT, VERSION, with REGISTERED optional and here omitted.
+        await Assert.That(replies).Count().IsEqualTo(1);
+        await Assert.That(replies[0]).IsEqualTo("\x1b[1z<VERSION MXP=1.0 STYLE=0 CLIENT=SharpMUTerm VERSION=1>");
+    }
+
+    /// <summary>A VERSION request on an open line is a player's, not the server's, and is refused.</summary>
+    [Test]
+    public async Task Version_OnAnOpenLine_IsNotAnswered()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("<VERSION>\n");
+
+        await Assert.That(replies).IsEmpty();
+    }
+
+    /// <summary>Spec: the client returns a SECURE &lt;SUPPORTS&gt; tag naming what it implements.</summary>
+    [Test]
+    public async Task Support_IsAnsweredWithTheTagsThisParserImplements()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("\x1b[1z<SUPPORT>\n");
+
+        await Assert.That(replies).Count().IsEqualTo(1);
+        await Assert.That(replies[0]).StartsWith("\x1b[1z<SUPPORTS ");
+        await Assert.That(replies[0]).Contains("+send");
+        await Assert.That(replies[0]).Contains("+color");
+    }
+
+    /// <summary>
+    /// Spec: "the response is sent as a secure-tagged line: &lt;ESC&gt;[1z prefix with newline suffix,
+    /// ensuring the MUD recognizes it as client-generated rather than player-controlled input." Pinned
+    /// as its own test, apart from the two above, so a later refactor that strips the prefix fails
+    /// loudly here rather than silently making these replies invisible to a server that itself enforces
+    /// MXP's line-security model — precisely the servers this feature exists to answer.
+    /// </summary>
+    [Test]
+    public async Task ClientReplies_AreSentAsSecureLines()
+    {
+        var parser = new MxpParser();
+        var replies = new List<string>();
+        parser.ClientReply += (_, r) => replies.Add(r);
+
+        parser.Feed("\x1b[1z<VERSION>\n");
+        parser.Feed("\x1b[1z<SUPPORT>\n");
+
+        await Assert.That(replies).Count().IsEqualTo(2);
+        await Assert.That(replies[0]).StartsWith("\x1b[1z<VERSION");
+        await Assert.That(replies[1]).StartsWith("\x1b[1z<SUPPORTS");
     }
 }

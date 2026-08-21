@@ -12,7 +12,9 @@ public class ParserBoundaryTests
     public async Task Mxp_BareSend_DoesNotLeakToNextLine()
     {
         var parser = new MxpParser();
-        var lines = parser.Feed("<SEND HREF=\"go\">walk\nmore\n");
+        // SEND is a secure element: without the ESC[1z the tag would be echoed as literal text and
+        // this test would pass without ever opening the interaction it exists to watch leak.
+        var lines = parser.Feed("\x1b[1z<SEND HREF=\"go\">walk\nmore\n");
         var second = lines[1];
         await Assert.That(second.Spans.All(s => !s.IsInteractive)).IsTrue();
     }
@@ -22,7 +24,7 @@ public class ParserBoundaryTests
     {
         var parser = new MxpParser();
         // Bold opened inside the SEND and closed on the next line must not resurrect the command.
-        var lines = parser.Feed("<SEND HREF=\"go\"><B>walk\nmore</B> tail\n");
+        var lines = parser.Feed("\x1b[1z<SEND HREF=\"go\"><B>walk\nmore</B> tail\n");
         var second = lines[1];
         await Assert.That(second.Spans.All(s => !s.IsInteractive)).IsTrue();
     }

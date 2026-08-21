@@ -1299,6 +1299,123 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **What is still ours**: a server that sends no boundary marker at all — no GA, no EOR, no newline
     — still leaves a prompt in `_pending`, because nothing here flushes on idle. That is a real gap
     and a deliberate non-decision, not something the library can fix.
+- **MXP's line-security model is the parser's real job, and the allow-list is chosen deliberately over
+  a deny-list** (`MxpLineMode`, `MxpTagCategory`, `MxpParser` — the eight `ESC[#z` line tags: OPEN,
+  SECURE, LOCKED, TEMP SECURE, and LOCK OPEN/SECURE/LOCKED plus RESET). The spec draws its own line in
+  one sentence — "Only the tags described in this section are OPEN tags. All other MXP tags are SECURE
+  tags" — so `MxpTagCategory.IsOpen` enumerates the *few* tags a player-controlled open line may use
+  and refuses everything else, including a tag the spec adds tomorrow: unknown is secure by omission,
+  which is the safe direction for a deny-list to fail in and the wrong one for an allow-list, which is
+  why it has to stay an allow-list rather than being "simplified" into its opposite. A refused tag is
+  not swallowed — it is echoed as **literal text, byte-for-byte from the raw tag body** the parser was
+  accumulating when it was refused — so a `<SEND>` a player typed into a `say` comes back as exactly
+  the bytes they typed, rather than vanishing (which would teach an attacker that nothing survives a
+  round trip) or being reinterpreted (which would teach them what does). Two exploits surfaced and were
+  closed during review, both the shape "a refusal that doesn't fully refuse": TEMP SECURE (`ESC[4z`)
+  staying armed across intervening text instead of being spent on the very next tag only, and a refused
+  *closing* tag leaving its frame open on the stack, so a deferred `<SEND>` kept absorbing the player's
+  own following text into its own command. Get either wrong again and the failure is silent — nothing
+  throws, the line just renders as something other than what arrived.
+  - **`Flush()` is the line boundary this parser actually sees, not `'\n'`** (`MxpParser.EndLine`), and
+    that is the non-obvious fact behind the worst bug this file has had. The telnet layer strips the
+    terminator before the parser is fed, so `WorldSession.OnOutputReceived` calls `Feed(e.Text)` — with
+    no newline anywhere in it — and then `Flush()`. Everything the end of a line does therefore has to
+    hang off `Flush()`: the mode reverting to the default, the spec's auto-close, finalising an open
+    interaction, abandoning an unterminated escape. It lived in `CompleteLine()` (the `'\n'` arm of
+    `ProcessText`) instead, so on a real connection **it never ran** — one `ESC[1z` from the server and
+    the session stayed SECURE for the rest of the connection, which is a player's `<SEND>` becoming a
+    clickable command. Every cross-line test in `MxpLineModeTests` had put `"\n"` inside a single
+    `Feed` call, an input shape the product never produces, and so agreed with the code while the
+    client disagreed; the pins are now written `Feed` + `Flush` (`FeedLines`), and a new test must be
+    too. `Flush()` was *already* the boundary for the tag stack (`CloseInteractionsAtBoundary`), so
+    this is one call being a boundary for everything rather than for half of it. Deliberately **not**
+    an `EndLine()` on `ILineParser`: a consumer that forgets to call one silently reproduces exactly
+    this bug, where a consumer that does not flush gets no output at all.
+  - **The spec auto-closes unclosed *open* tags, and that is the bound on how far a player's markup
+    reaches** (`Frame.OpenedInOpenMode`, `CloseOpenModeTags`). Two rules, both verbatim: "when the mode
+    is changed from OPEN mode to any other mode, any unclosed OPEN tags (tags that were used while in
+    open mode) are automatically closed", and "when in OPEN mode, any unclosed OPEN tags are
+    automatically closed when a newline is received from the MUD". Neither was implemented, and the
+    comment where the second belonged said the opposite — that formatting tags survive a boundary
+    because "MXP tags may span lines". The spec inverts that: "secure tags are **never** automatically
+    closed", open ones always are. Which is why it is a flag on the *frame* (was the line in OPEN mode
+    when this element opened?) rather than a property of the tag name. Without it a player typing
+    `<COLOR FORE=black BACK=black>` into a public channel paints every later line of the session black
+    on black and the tag stack grows without bound — and it is why the spec is willing to call `COLOR`
+    an open tag at all.
+  - **The threat model is not "a player emits `ESC[1z`".** They cannot; only the server writes line
+    tags, and anyone who could emit `ESC[1z` has already bypassed the whole model (that residual is
+    recorded and accepted). What a player needs is for **the server to have emitted one earlier and
+    never cleared it** — which servers routinely do, because they rely on the newline revert the spec
+    promises rather than closing with `ESC[0z`. So every rule that *ends* a stretch of elevated trust
+    is load-bearing in a way the rules that begin one are not: the revert at the boundary, TEMP SECURE
+    being spent by the very next tag, the auto-close, and a reconnect starting clean. Three of the four
+    have already shipped broken.
+  - **Parser state is per connection.** `WorldSession.ConnectAsync` rebuilds the parser from
+    `World.ContentFormat` rather than calling `ILineParser.Reset()`, because the negotiated MXP upgrade
+    is parser state too: MXP has to be negotiated again on the new socket to take the session off ANSI.
+    Left alone, a server's `ESC[6z` made the *next* connection start in secure default, and the black-on-black
+    above survived the reconnect that is the obvious way a user tries to get rid of it.
+  - **`AnsiParser` and `MxpParser` hold near-duplicate escape state machines, deliberately
+    unconsolidated — so a fix to one has to be applied to the other, with its own test in each suite.**
+    (Same states, same CSI ranges, same OSC/DCS/ST handling; `MxpParser`'s differs only by the `z`
+    line-tag arm and by disarming TEMP SECURE on the way out.) This was weighed and kept: extracting a
+    shared scanner is a structural refactor, and it was not going into a fix wave that already carried
+    a Critical. The duplication has already cost once — the OSC gap `MxpParser` shipped with was
+    `AnsiParser`'s behaviour never copied across — and again with the newline-aborts-an-unterminated-string
+    fix, which is three lines in each. Whoever consolidates them should delete this paragraph.
+- **ANSI is decoded inside `MxpParser` itself, through the newly-shared `SgrCodes.Apply`, because
+  nothing chains it with `AnsiParser`.** `WorldSession.CreateParser` hands a session **one** parser,
+  never a chain of two — it may be swapped for another when MXP negotiates (the entry two below), but at
+  any moment exactly one parser sees the stream — so an `MxpParser` that understood only MXP markup
+  would have to either swallow a server's ESC sequences or print them as literal text — and it used to
+  do the latter: a capture against a real MXP server lost every colour, because the class's own doc
+  comment claimed ANSI was "handled upstream" when there is no upstream to hand it to.
+  `SgrCodes.Apply(TextStyle, string)` is the SGR table `AnsiParser` already had, extracted so both
+  parsers decode from the same place instead of two that can quietly drift apart; `MxpParser` now
+  decodes CSI, OSC, DCS and the two-byte intermediate escape forms at parity with `AnsiParser`, and
+  treats anything else in that space as either a `z`-suffixed line tag or discards it.
+- **Which parser a session uses is decided by what the connection negotiates, not by
+  `WorldDefinition.ContentFormat`** (`TelnetSession.MxpEnabled`, `WorldSession.OnMxpEnabled`). The
+  session used to answer a server's `IAC WILL MXP` with `DO` and then keep parsing the stream with
+  whatever `ContentFormat` said — `Ansi`, by default, since nothing sets it — so a live capture against
+  a real MXP server showed its `<SEND>` tags rendering as literal text under a parser that had never
+  heard of them; `onMXPEnabled` was a callback that did nothing but return a completed task, discarding
+  the fact that MXP had negotiated at all. `TelnetSession` now raises `MxpEnabled` once the option
+  negotiates, and `WorldSession` swaps in a fresh `MxpParser` on it — but **only** when the session
+  started from `ContentFormat.Ansi`, which is the default and therefore means "nobody chose" rather
+  than "somebody chose ANSI": a world explicitly configured for Pueblo is a user's decision about what
+  that server speaks, and a stray negotiation must never overrule it. The old parser is flushed first,
+  so whatever partial line it still held is delivered under the rules it arrived under rather than
+  silently dropped; style does not carry across the swap, because MXP's own RESET is how a server
+  re-establishes it and inventing a carry-over would make the first line after negotiation depend on
+  parser internals nobody else needs to know. **What this does not cover**: `TelnetSession._pending`
+  can still batch pre- and post-negotiation bytes into one `OutputReceived` chunk, so text sent before
+  MXP was advertised can be re-read as MXP by whichever parser is current when that chunk is finally
+  parsed. Bounded by the line-security model above, not fixed by it — the replayed text lands on an
+  OPEN line, where a secure tag is refused and echoed literally, so the worst case is a stripped
+  formatting tag rather than an injected command. **That bound depends on the boundary revert**: it was
+  written while the mode never reverted in production, where "lands on an OPEN line" was not true of a
+  session a server had ever secured. Closing the buffering hole itself needs its own change at the
+  telnet layer and is out of this scope.
+- **`PuebloParser` decodes no ANSI, and nothing else decodes it for it.** Its header used to say escapes
+  were "handled upstream" — the same false premise `MxpParser` carried, in the same words, and there is
+  no upstream either way: a session gets one parser. So a Pueblo world's colour arrives on screen as a
+  literal `<ESC>[0;33m`. The behaviour clause was accurate; only the justification was invented. The fix
+  is the one `MxpParser` already had — its own escape state machine over `SgrCodes` — and until someone
+  does it this is a known gap rather than a design.
+- **`<VERSION>`/`<SUPPORT>` are answered, and the `SUPPORTS` list is held to the same rule as the MTTS
+  bit vector: an honest claim, not an aspirational one.** The spec requires both replies to go out as a
+  secure-tagged line (`ESC[1z` prefix, `MxpParser.SecureLinePrefix`) specifically so a server can tell
+  a client's own answer apart from anything a player typed; a server running the same line-security
+  model this client implements would refuse an unsecured reply outright, so that prefix is not
+  decoration — it is what makes the reply legible to the peer this client is trying hardest to be
+  correct for. What `SUPPORTS` lists (`SupportedTags`) names only tags `HandleOpener` actually has a
+  case for: `+high` was left off even though `H`/`HIGH` sits on `MxpTagCategory`'s open allow-list,
+  because being allow-listed only means the tag is *let through* — `HandleOpener`'s default arm still
+  drops it on the floor, unhandled. Claiming `+high` would tell a server to send markup this client
+  silently discards, exactly the failure mode the MTTS bit vector is already held to; add a tag to this
+  list only once the handler for it exists, never once the tag is merely accepted.
 - **MSSP is read by the library, not by us — since 2.6.5, and that is the standing example of the
   rule above.** 2.6.0's reader destroyed the protocol's own array notation inside the library:
   `PORT "80" "23" "4201"` arrived as the integer `80234201`, `REFERRAL` (array-only) arrived null,

@@ -256,4 +256,38 @@ public class AnsiParserTests
         await Assert.That(second.Foreground).IsEqualTo(TerminalColor.Default);
         await Assert.That(second.HasAttribute(TextAttributes.Bold)).IsTrue();
     }
+
+    /// <summary>
+    /// An unterminated string escape must not swallow the rest of the session. A bare <c>ESC ]</c> —
+    /// or <c>ESC P</c>/<c>X</c>/<c>^</c>/<c>_</c> — is five bytes a player can type into a public
+    /// channel, and the state it puts the parser into consumes everything until a BEL or ST they need
+    /// never send. Both boundaries are asserted because only the second exists on a live connection:
+    /// the telnet layer strips the terminator, so <c>WorldSession</c> feeds a line and then flushes,
+    /// and a rule keyed on a <c>'\n'</c> in the text would never fire.
+    /// <para>
+    /// <see cref="SharpMUTerm.Core.Protocols.MxpParser"/> carries a near-duplicate of this escape state
+    /// machine and a matching test, deliberately: the two are not consolidated, so a fix to one has to
+    /// be applied to the other and each needs its own pin.
+    /// </para>
+    /// </summary>
+    [Test]
+    [Arguments("\u001b]")] // OSC
+    [Arguments("\u001bP")] // DCS
+    [Arguments("\u001bX")] // SOS
+    [Arguments("\u001b^")] // PM
+    [Arguments("\u001b_")] // APC
+    [Arguments("\u001b[1")] // a CSI with no final byte
+    [Arguments("\u001b")] // a lone ESC, whose next byte would otherwise be eaten
+    public async Task AnUnterminatedEscapeStringDoesNotEatTheNextLine(string escape)
+    {
+        var atFlushBoundary = new AnsiParser();
+        atFlushBoundary.Feed("says '" + escape);
+        atFlushBoundary.Flush();
+        atFlushBoundary.Feed("the next line");
+        await Assert.That(atFlushBoundary.Flush()?.Text).IsEqualTo("the next line");
+
+        var embedded = new AnsiParser().Feed("says '" + escape + "\nthe next line\n");
+        await Assert.That(embedded).Count().IsEqualTo(2);
+        await Assert.That(embedded[1].Text).IsEqualTo("the next line");
+    }
 }

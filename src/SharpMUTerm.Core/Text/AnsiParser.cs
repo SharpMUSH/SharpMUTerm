@@ -13,6 +13,14 @@ namespace SharpMUTerm.Core.Text;
 /// the common rendition attributes. Non-SGR CSI sequences (cursor movement, erase),
 /// OSC strings, and other escapes are recognised and discarded rather than leaking
 /// into the output as stray text.
+///
+/// <para>
+/// A line boundary abandons any sequence still in flight — both a <c>'\n'</c> in the text and
+/// <see cref="Flush"/>, which is the boundary a live session actually reaches (the telnet layer
+/// strips the terminator). Without that, an unterminated string escape swallows everything after it,
+/// line boundaries included. <see cref="SharpMUTerm.Core.Protocols.MxpParser"/> carries a near-duplicate
+/// of this escape state machine, deliberately unconsolidated: a fix to one belongs in both.
+/// </para>
 /// </summary>
 public sealed class AnsiParser : ILineParser
 {
@@ -66,6 +74,12 @@ public sealed class AnsiParser : ILineParser
     public StyledLine? Flush()
     {
         FlushRun();
+
+        // Flush is the line boundary a live session reaches — the telnet layer strips the terminator,
+        // so OnOutputReceived feeds a line with no '\n' in it and then flushes. An escape sequence
+        // left in flight must be abandoned here or it consumes the *next* line as its payload.
+        AbandonSequence();
+
         if (_lineSpans.Count == 0)
         {
             return null;
@@ -88,6 +102,17 @@ public sealed class AnsiParser : ILineParser
 
     private void Process(char ch, ref List<StyledLine>? lines)
     {
+        // A newline ends the line whatever sequence is in flight. Without this an unterminated string
+        // escape — a bare ESC ] , ESC P, ESC X, ESC ^ or ESC _ , which a *player* can type into a
+        // public channel — consumes every following character, line boundaries included, until a BEL
+        // or ST it need never send: the rest of the session's output disappears. CSI already treats a
+        // control byte as malformed but was consuming the newline with it, and a two-byte escape would
+        // otherwise swallow the newline as its second byte.
+        if (ch == '\n' && _state != State.Ground)
+        {
+            AbandonSequence();
+        }
+
         switch (_state)
         {
             case State.Ground:
@@ -116,6 +141,13 @@ public sealed class AnsiParser : ILineParser
                 _state = ch == '\\' ? State.Ground : State.Osc;
                 break;
         }
+    }
+
+    /// <summary>Drops a partly-read escape sequence and returns to ground.</summary>
+    private void AbandonSequence()
+    {
+        _seq.Clear();
+        _state = State.Ground;
     }
 
     private void ProcessGround(char ch, ref List<StyledLine>? lines)
@@ -257,184 +289,6 @@ public sealed class AnsiParser : ILineParser
     {
         // Text accumulated so far keeps the pre-change style.
         FlushRun();
-
-        if (parameters.Length == 0)
-        {
-            _current = TextStyle.Default;
-            return;
-        }
-
-        var tokens = parameters.Split(';');
-        for (var i = 0; i < tokens.Length; i++)
-        {
-            var token = tokens[i];
-
-            // Colon-delimited extended colour, e.g. "38:5:196" or "38:2:255:0:0".
-            if (token.IndexOf(':') >= 0)
-            {
-                ApplyColonColor(token);
-                continue;
-            }
-
-            if (!int.TryParse(token, out var code))
-            {
-                code = 0; // An empty parameter is treated as 0 (reset).
-            }
-
-            switch (code)
-            {
-                case 0:
-                    _current = TextStyle.Default;
-                    break;
-                case 1:
-                    _current = _current.AddAttribute(TextAttributes.Bold);
-                    break;
-                case 2:
-                    _current = _current.AddAttribute(TextAttributes.Faint);
-                    break;
-                case 3:
-                    _current = _current.AddAttribute(TextAttributes.Italic);
-                    break;
-                case 4:
-                    _current = _current.AddAttribute(TextAttributes.Underline);
-                    break;
-                case 5:
-                case 6:
-                    _current = _current.AddAttribute(TextAttributes.Blink);
-                    break;
-                case 7:
-                    _current = _current.AddAttribute(TextAttributes.Reverse);
-                    break;
-                case 8:
-                    _current = _current.AddAttribute(TextAttributes.Conceal);
-                    break;
-                case 9:
-                    _current = _current.AddAttribute(TextAttributes.Strikethrough);
-                    break;
-                case 21:
-                case 22:
-                    _current = _current.RemoveAttribute(TextAttributes.Bold | TextAttributes.Faint);
-                    break;
-                case 23:
-                    _current = _current.RemoveAttribute(TextAttributes.Italic);
-                    break;
-                case 24:
-                    _current = _current.RemoveAttribute(TextAttributes.Underline);
-                    break;
-                case 25:
-                    _current = _current.RemoveAttribute(TextAttributes.Blink);
-                    break;
-                case 27:
-                    _current = _current.RemoveAttribute(TextAttributes.Reverse);
-                    break;
-                case 28:
-                    _current = _current.RemoveAttribute(TextAttributes.Conceal);
-                    break;
-                case 29:
-                    _current = _current.RemoveAttribute(TextAttributes.Strikethrough);
-                    break;
-                case >= 30 and <= 37:
-                    _current = _current.WithForeground(TerminalColor.FromIndex(code - 30));
-                    break;
-                case 38:
-                    _current = _current.WithForeground(ParseExtendedColor(tokens, ref i) ?? _current.Foreground);
-                    break;
-                case 39:
-                    _current = _current.WithForeground(TerminalColor.Default);
-                    break;
-                case >= 40 and <= 47:
-                    _current = _current.WithBackground(TerminalColor.FromIndex(code - 40));
-                    break;
-                case 48:
-                    _current = _current.WithBackground(ParseExtendedColor(tokens, ref i) ?? _current.Background);
-                    break;
-                case 49:
-                    _current = _current.WithBackground(TerminalColor.Default);
-                    break;
-                case >= 90 and <= 97:
-                    _current = _current.WithForeground(TerminalColor.FromIndex(code - 90 + 8));
-                    break;
-                case >= 100 and <= 107:
-                    _current = _current.WithBackground(TerminalColor.FromIndex(code - 100 + 8));
-                    break;
-                default:
-                    // Unknown SGR code — ignored.
-                    break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Parses the semicolon-form extended colour that follows a 38/48 code, advancing
-    /// <paramref name="i"/> past the consumed tokens. Returns null if malformed.
-    /// </summary>
-    private static TerminalColor? ParseExtendedColor(string[] tokens, ref int i)
-    {
-        if (i + 1 >= tokens.Length || !int.TryParse(tokens[i + 1], out var mode))
-        {
-            return null;
-        }
-
-        switch (mode)
-        {
-            case 5 when i + 2 < tokens.Length && int.TryParse(tokens[i + 2], out var idx) && idx is >= 0 and <= 255:
-                i += 2;
-                return TerminalColor.FromIndex(idx);
-
-            case 2 when i + 4 < tokens.Length &&
-                        byte.TryParse(tokens[i + 2], out var r) &&
-                        byte.TryParse(tokens[i + 3], out var g) &&
-                        byte.TryParse(tokens[i + 4], out var b):
-                i += 4;
-                return TerminalColor.FromRgb(r, g, b);
-
-            default:
-                return null;
-        }
-    }
-
-    /// <summary>Parses a single colon-delimited extended colour token and applies it.</summary>
-    private void ApplyColonColor(string token)
-    {
-        var parts = token.Split(':');
-        if (parts.Length < 3 || !int.TryParse(parts[0], out var target))
-        {
-            return;
-        }
-
-        var isForeground = target == 38;
-        if (target is not (38 or 48))
-        {
-            return;
-        }
-
-        if (!int.TryParse(parts[1], out var mode))
-        {
-            return;
-        }
-
-        TerminalColor? colour = null;
-        if (mode == 5 && int.TryParse(parts[2], out var idx) && idx is >= 0 and <= 255)
-        {
-            colour = TerminalColor.FromIndex(idx);
-        }
-        else if (mode == 2 && parts.Length >= 5)
-        {
-            // ISO form may carry a colour-space id at parts[2]; the RGB triple is the last three.
-            var baseIndex = parts.Length >= 6 ? parts.Length - 3 : 2;
-            if (byte.TryParse(parts[baseIndex], out var r) &&
-                byte.TryParse(parts[baseIndex + 1], out var g) &&
-                byte.TryParse(parts[baseIndex + 2], out var b))
-            {
-                colour = TerminalColor.FromRgb(r, g, b);
-            }
-        }
-
-        if (colour is null)
-        {
-            return;
-        }
-
-        _current = isForeground ? _current.WithForeground(colour.Value) : _current.WithBackground(colour.Value);
+        _current = SgrCodes.Apply(_current, parameters);
     }
 }

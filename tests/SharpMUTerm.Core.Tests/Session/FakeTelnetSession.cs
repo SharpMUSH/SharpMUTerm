@@ -22,6 +22,7 @@ internal sealed class FakeTelnetSession : ITelnetSession
 #pragma warning restore CS0067
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
     public event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
+    public event EventHandler? MxpEnabled;
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -70,4 +71,6 @@ internal sealed class FakeTelnetSession : ITelnetSession
         CurrentEncoding = encoding;
         EncodingChanged?.Invoke(this, new SessionEncodingEventArgs(encoding));
     }
+
+    public void RaiseMxpEnabled() => MxpEnabled?.Invoke(this, EventArgs.Empty);
 }

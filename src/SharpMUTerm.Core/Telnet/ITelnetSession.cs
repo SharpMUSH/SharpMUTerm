@@ -33,6 +33,12 @@ public interface ITelnetSession : IAsyncDisposable
     /// <summary>Raised when the connection ends.</summary>
     event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
 
+    /// <summary>
+    /// Raised once the peer has negotiated MXP (RFC-less option 91). A consumer uses this to decide
+    /// how to parse the stream: MXP is a property of the connection, not of the user's configuration.
+    /// </summary>
+    event EventHandler? MxpEnabled;
+
     /// <summary>Connects the transport and begins negotiation and the receive loop.</summary>
     Task ConnectAsync(CancellationToken cancellationToken = default);
 

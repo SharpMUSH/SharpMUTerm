@@ -19,9 +19,18 @@ namespace SharpMUTerm.Core.Protocols;
 ///
 /// Out of scope: the Pueblo activation handshake (the <c>&lt;!-- --&gt;</c> /
 /// "This world is Pueblo …" enabling exchange). This class parses the <i>markup</i> only;
-/// deciding whether a world is Pueblo-enabled is a session concern handled elsewhere. ANSI/VT
-/// escape sequences are handled upstream, so an ESC (0x1b) byte is passed through untouched into
-/// the span text rather than being interpreted here.
+/// deciding whether a world is Pueblo-enabled is a session concern handled elsewhere.
+///
+/// <para>
+/// <b>ANSI/VT escape sequences are not decoded, and nothing else decodes them either.</b> An ESC
+/// (0x1b) byte is passed through untouched into the span text — so a Pueblo world's colour arrives on
+/// screen as a literal <c>&lt;ESC&gt;[0;33m</c>. This used to claim the escapes were "handled
+/// upstream"; there is no upstream. <c>WorldSession.CreateParser</c> hands a session <i>one</i> parser
+/// for its content format, never a chain, which is the same false premise
+/// <see cref="MxpParser"/> carried until it grew its own escape state machine (through
+/// <see cref="SharpMUTerm.Core.Text.SgrCodes"/>). Doing the same here is the fix; it is a known gap
+/// rather than a design, and the behaviour clause above is what actually happens today.
+/// </para>
 /// </summary>
 public sealed class PuebloParser : ILineParser
 {

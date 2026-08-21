@@ -25,7 +25,7 @@ public sealed class WorldSession : IAsyncDisposable
         new(TerminalColor.FromIndex(6), TerminalColor.Default, TextAttributes.Italic);
 
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
-    private readonly ILineParser _parser;
+    private ILineParser _parser;
     private readonly EmojiSubstitutor? _emoji;
     private ILogSink? _log;
     private readonly TextSettings? _text;
@@ -81,7 +81,7 @@ public sealed class WorldSession : IAsyncDisposable
         _text = text;
         _input = input;
         _charsetOrder = charsetOrder;
-        _parser = CreateParser(world.ContentFormat);
+        _parser = NewParser(world.ContentFormat);
         _emoji = world.Emoji.Enabled
             ? new EmojiSubstitutor(world.Emoji.Emoticons, world.Emoji.Shortcodes)
             : null;
@@ -142,6 +142,97 @@ public sealed class WorldSession : IAsyncDisposable
         ContentFormat.Pueblo => new PuebloParser(),
         _ => new AnsiParser(),
     };
+
+    /// <summary>
+    /// The one place a parser is constructed for this session. Wraps <see cref="CreateParser"/> so
+    /// the two sites that build one — the constructor and <see cref="OnMxpEnabled"/>'s upgrade path —
+    /// cannot diverge on what an <see cref="MxpParser"/> is wired up to: its
+    /// <see cref="MxpParser.ClientReply"/> answers to a server's <c>&lt;VERSION&gt;</c>/<c>&lt;SUPPORT&gt;</c>
+    /// request must reach the wire on both paths, since the upgrade path is the one every session that
+    /// actually negotiates MXP takes.
+    /// </summary>
+    private ILineParser NewParser(ContentFormat format)
+    {
+        var parser = CreateParser(format);
+        if (parser is MxpParser mxp)
+        {
+            mxp.ClientReply += (_, reply) => SendProtocolReply(reply);
+        }
+
+        return parser;
+    }
+
+    /// <summary>
+    /// Sends a parser-generated protocol reply, observing the result.
+    /// </summary>
+    /// <remarks>
+    /// Nothing can await this — it is raised from the parser while the read loop is walking a line —
+    /// so it is fire-and-forget by necessity, but not unobserved: a bare <c>_ = SendRawAsync(reply)</c>
+    /// leaves a faulted send as an unobserved task exception, and this is the one send path the user
+    /// cannot see fail. There is no line in the scrollback for it, no echo, and no error: a server that
+    /// asked for <c>&lt;VERSION&gt;</c> and got nothing simply guesses at what this client supports.
+    /// The diagnostics log is the only place it can surface.
+    /// </remarks>
+    private void SendProtocolReply(string reply)
+    {
+        _ = Send();
+
+        async Task Send()
+        {
+            try
+            {
+                await SendRawAsync(reply).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // The reply body is deliberately not logged: it is prefixed with a live ESC[1z, and
+                // the diagnostics log is a file a human reads.
+                Logger.LogWarning(ex, "Sending an MXP protocol reply to {Host}:{Port} failed", World.Host, World.Port);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Upgrades to the MXP parser when the option negotiates.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only from <see cref="ContentFormat.Ansi"/>, which is the default and therefore means "nobody
+    /// chose" rather than "somebody chose ANSI". A world explicitly set to Pueblo has been configured
+    /// by a user who knows what that server speaks, and a negotiation must not overrule them.
+    /// </para>
+    /// <para>
+    /// The old parser is flushed first, so whatever it still holds — in practice just open style/tag
+    /// state, since <see cref="OnOutputReceived"/> already feeds and flushes it on every call and
+    /// leaves nothing genuinely undelivered between one call and the next — is emitted under the rules
+    /// it arrived under rather than being silently dropped. Style does not carry across the swap:
+    /// MXP's own RESET is how a server re-establishes it, and inventing a carry-over would make the
+    /// first line after negotiation depend on parser internals.
+    /// </para>
+    /// <para>
+    /// <b>This is not what protects a line that straddles the negotiation moment.</b> That hazard lives
+    /// one layer down, in <c>TelnetSession._pending</c>: bytes received before and after MXP negotiates
+    /// can still be accumulated there and submitted together as one <c>OutputReceived</c> chunk, which
+    /// this session then parses wholesale with whichever parser is current at that point — potentially
+    /// re-reading pre-negotiation text as MXP. Fixing that is out of this method's scope (it needs its
+    /// own buffering change and test story at the telnet layer); the flush here is cheap, correct for
+    /// what it does cover, and is the right call to keep regardless.
+    /// </para>
+    /// </remarks>
+    private void OnMxpEnabled(object? sender, EventArgs e)
+    {
+        if (World.ContentFormat != ContentFormat.Ansi || _parser is MxpParser)
+        {
+            return;
+        }
+
+        if (_parser.Flush() is { } tail)
+        {
+            ProcessOutputLine(tail);
+        }
+
+        _parser = NewParser(ContentFormat.Mxp);
+    }
 
     /// <summary>
     /// Where this session's diagnostics go — its own, and the telnet stack's, which
@@ -271,6 +362,15 @@ public sealed class WorldSession : IAsyncDisposable
             _telnet = null;
         }
 
+        // A parser carries per-connection state — MXP's security modes and default mode, its open-tag
+        // stack, the current style — and none of it means anything to the next connection. Left alone,
+        // a server that sent ESC[6z made the *following* session start in secure default, and a
+        // <COLOR FORE=black BACK=black> a player typed survived the reconnect that was the obvious way
+        // to get rid of it. Rebuilt rather than Reset(), because the negotiated MXP upgrade is parser
+        // state too: ContentFormat is what the next connection starts from, and MXP has to be
+        // negotiated again to take it back off ANSI.
+        _parser = NewParser(World.ContentFormat);
+
         SetState(ConnectionState.Connecting, null);
         PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");
 
@@ -282,6 +382,7 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.MsspReceived += (_, e) => MsspReceived?.Invoke(this, e);
         telnet.EncodingChanged += OnEncodingChanged;
         telnet.Disconnected += OnDisconnected;
+        telnet.MxpEnabled += OnMxpEnabled;
 
         try
         {
