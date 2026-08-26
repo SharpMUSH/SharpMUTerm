@@ -142,7 +142,7 @@ public class WorldSessionTests
     }
 
     [Test]
-    public async Task Prompt_UpdatesCurrentPrompt_WithoutScrollback()
+    public async Task Prompt_UpdatesCurrentPromptAndLandsInScrollback()
     {
         var (session, telnet) = Create(World());
         StyledLine? promptEvt = null;
@@ -154,7 +154,7 @@ public class WorldSessionTests
         await Assert.That(session.CurrentPrompt).IsNotNull();
         await Assert.That(session.CurrentPrompt!.Text).IsEqualTo("HP:100 >");
         await Assert.That(promptEvt).IsNotNull();
-        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "HP:100 >")).IsFalse();
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "HP:100 >")).IsTrue();
     }
 
     /// <summary>
