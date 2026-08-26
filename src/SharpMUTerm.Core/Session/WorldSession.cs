@@ -411,14 +411,11 @@ public sealed class WorldSession : IAsyncDisposable
             CurrentPrompt = prompt;
             PromptChanged?.Invoke(this, prompt);
 
-            // And into the pane, which is where a reader actually looks for it. Before this, a prompt
-            // was stored and shown nowhere: 22bd97f deleted the status-bar render that was the only
-            // consumer of CurrentPrompt, and PromptChanged's one remaining subscriber rebuilds the
-            // input-bar label from the character and world without ever reading the prompt. A prompt
-            // is a line the server sent — it belongs in the scrollback, in the search index and in
-            // front of the triggers, which is where Mudlet puts it too. `raw`, not `prompt`: this
-            // takes `ProcessOutputLine` through StripIncomingColour/ExpandTabs/triggers/ApplyEmoji
-            // itself, and handing it the already-substituted line would substitute twice.
+            // And into the pane, which is where a reader actually looks for it. A prompt is a line
+            // the server sent — it belongs in the scrollback, in the search index and in front of
+            // the triggers, which is where Mudlet puts it too. `raw`, not `prompt`: this takes
+            // `ProcessOutputLine` through StripIncomingColour/ExpandTabs/triggers/ApplyEmoji itself,
+            // and handing it the already-substituted line would substitute twice.
             ProcessOutputLine(raw);
             return;
         }

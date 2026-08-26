@@ -1278,7 +1278,19 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     permitted transitions from `StartNegotiation`; before it each one hit `OnUnhandledTriggerAsync`,
     logging Critical and recovering through `Trigger.Error`, which on some interleavings ate the
     sequence behind it. **2.10.0** carries the raw bytes of each MSSP value beside the decoded
-    string. **2.11.0** is the prompt-marker fix below.
+    string. **2.11.0** is the prompt-marker fix below. **2.12.0** is the one that actually motivated
+    a further jump: it ships **`PacketPatchProtocol`**, included in `AddDefaultMUDProtocols`
+    automatically (an appended, defaulted `packetPatchHoldTime` parameter this codebase doesn't set),
+    which infers a prompt boundary from 500ms of silence for the servers that mark none at all, and is
+    what delivers the connect-screen prompt on both `tdome.nukefire.org` and `starwars.d20mud.com` —
+    neither negotiates GA, EOR or SUPPRESS-GO-AHEAD, so both go through the packet-patch heuristic,
+    confirmed by a ~700–790ms gap between the last banner line and the prompt (the 500ms hold time plus
+    network round-trips), not an instant marker. `IProtocolContext` gained three members in 2.12.0, one
+    of them binary-breaking (`TakePartialLineAsPrompt` now returns `bool`) — this codebase never
+    implements that interface directly, only consumes the library's own `TelnetInterpreter`, so it
+    doesn't apply. The `CallbackOnByteAsync` property this file reaches by reflection is unchanged
+    across the whole jump: still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }`
+    on `TelnetInterpreter`, confirmed by reading the 2.12.0 source rather than assumed.
 - **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
   of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
   unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
@@ -1446,11 +1458,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   2066 settles on — and naming one is an *override*: still offered at the head of the order so a
   cooperative server agrees, but used regardless of what it says. Four things about this library will
   bite you, and all four already have:
-  - **`TelnetInterpreter.CurrentEncoding` defaults to `Encoding.ASCII`**, and that default is not inert:
-    it is handed to `CallbackOnByteAsync`/`CallbackOnSubmitAsync` for every byte and used for GMCP, MSDP
-    and everything we send. On a server that never negotiates CHARSET — most MU\* servers — every
-    byte above 0x7F became `?`. `TelnetSession` seeds that property (reflectively, `internal set`, the
-    same way `CharsetProtocol` itself writes it) with the head of the stated order.
+  - **`TelnetInterpreter.CurrentEncoding` defaults to `Encoding.UTF8`** (`TelnetStandardInterpreter.cs:46`),
+    and that default is not something to rely on unseeded: it is handed to
+    `CallbackOnByteAsync`/`CallbackOnSubmitAsync` for every byte and used for GMCP, MSDP and everything
+    we send, before this session's own encoding decision (an override, or the head of `CharsetOrder`)
+    has had any say. `TelnetSession` seeds that property (reflectively, `internal set`, the same way
+    `CharsetProtocol` itself writes it) with the head of the stated order — otherwise a world pinned to
+    a non-UTF-8 override, or a server that never negotiates CHARSET at all, would decode against
+    whichever encoding the library happens to default to rather than what this session decided.
     **MSSP fields were decoded as `Encoding.ASCII` through 2.6.x** (fixed in 2.7.0, pinned by
     `MsspParsingTests`); treat non-ASCII in an MSSP field from an older library as unrecoverable.
     Two consequences worth knowing from the pre-fix era: the plaintext `MSSP-REQUEST` fallback went
