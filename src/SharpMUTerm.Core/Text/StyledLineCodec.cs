@@ -18,7 +18,7 @@ namespace SharpMUTerm.Core.Text;
 /// 7-bit-length-prefixed UTF-8, so text needs no escaping and may contain any character including
 /// control bytes and newlines):
 /// <code>
-/// byte    flags            bit 0: a RuleColor follows
+/// byte    flags            bit 0: a RuleColor follows; bit 1: line.IsPrompt
 /// colour  ruleColor        (present only when bit 0 is set)
 /// 7bit    spanCount
 /// spanCount times:
@@ -45,6 +45,14 @@ public static class StyledLineCodec
     private const byte FlagHasRuleColor = 1 << 0;
 
     /// <summary>
+    /// A previously-unused bit added for <see cref="StyledLine.IsPrompt"/>. Backward-compatible by
+    /// construction, so this did not need a <c>RestoreLog</c> format-version bump: a record written
+    /// before this bit existed always has it clear, and reading that as "not a prompt" is simply
+    /// correct — that data genuinely predates the concept, not a value being reinterpreted.
+    /// </summary>
+    private const byte FlagIsPrompt = 1 << 1;
+
+    /// <summary>
     /// The encoding used for every string field. Replacement (not exception) fallback, so an
     /// unpaired surrogate — which nothing in the inbound pipeline can produce, since text is decoded
     /// from bytes through an <see cref="Encoding"/> — degrades to U+FFFD instead of failing a write.
@@ -57,7 +65,7 @@ public static class StyledLineCodec
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(line);
 
-        var flags = (byte)(line.RuleColor is null ? 0 : FlagHasRuleColor);
+        var flags = (byte)((line.RuleColor is null ? 0 : FlagHasRuleColor) | (line.IsPrompt ? FlagIsPrompt : 0));
         writer.Write(flags);
         if (line.RuleColor is { } rule)
         {
@@ -102,6 +110,7 @@ public static class StyledLineCodec
 
         var flags = reader.ReadByte();
         TerminalColor? rule = (flags & FlagHasRuleColor) != 0 ? ReadColor(reader) : null;
+        var isPrompt = (flags & FlagIsPrompt) != 0;
 
         var spanCount = reader.Read7BitEncodedInt();
         if (spanCount < 0)
@@ -111,7 +120,8 @@ public static class StyledLineCodec
 
         if (spanCount == 0)
         {
-            return rule is null ? StyledLine.Empty : StyledLine.Empty.WithRule(rule.Value);
+            var empty = rule is null ? StyledLine.Empty : StyledLine.Empty.WithRule(rule.Value);
+            return empty.WithPrompt(isPrompt);
         }
 
         var spans = new StyledSpan[spanCount];
@@ -136,7 +146,7 @@ public static class StyledLineCodec
             spans[i] = new StyledSpan(text, style, interaction);
         }
 
-        return new StyledLine(spans, rule);
+        return new StyledLine(spans, rule, isPrompt);
     }
 
     /// <summary>Encodes one line's payload to a fresh array (convenience for tests and callers off the hot path).</summary>

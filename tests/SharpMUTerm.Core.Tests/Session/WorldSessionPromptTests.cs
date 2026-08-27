@@ -1,6 +1,7 @@
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Session;
+using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Core.Tests.Session;
 
@@ -46,5 +47,60 @@ public class WorldSessionPromptTests
         await Assert.That(spawned).IsNotNull();
         await Assert.That(spawned!.Target).IsEqualTo("Vitals");
         await Assert.That(spawned!.Line.Text).IsEqualTo("HP:100>");
+    }
+
+    [Test]
+    public async Task APromptIsFlaggedAsAPromptAndAnOrdinaryLineIsNot()
+    {
+        var (session, telnet) = Create(World());
+        StyledLine? printed = null;
+        session.LinePrinted += (_, l) => printed = l;
+        await session.ConnectAsync();
+
+        telnet.EmitLine("You see a troll.");
+        await Assert.That(printed).IsNotNull();
+        await Assert.That(printed!.IsPrompt).IsFalse();
+
+        printed = null;
+        telnet.EmitPrompt("HP:100>");
+
+        await Assert.That(printed).IsNotNull();
+        await Assert.That(printed!.IsPrompt).IsTrue();
+        await Assert.That(session.CurrentPrompt!.IsPrompt).IsTrue();
+    }
+
+    [Test]
+    public async Task AStyleOnlyPromptUpdatesCurrentPromptButPrintsNoLine()
+    {
+        var (session, telnet) = Create(World());
+        StyledLine? printed = null;
+        var printedCount = 0;
+        session.LinePrinted += (_, l) =>
+        {
+            printed = l;
+            printedCount++;
+        };
+        StyledLine? changed = null;
+        session.PromptChanged += (_, p) => changed = p;
+        await session.ConnectAsync();
+
+        // Reset past the "*** Connecting..."/"*** Connected." system lines ConnectAsync
+        // itself prints — those raise LinePrinted too, and would otherwise be mistaken for
+        // the bug under test.
+        printed = null;
+        printedCount = 0;
+
+        // A prompt boundary that carries only an SGR reset and nothing printable — the shape
+        // AnsiParser.Flush() reports as "nothing buffered" (returns null), which is the case
+        // WorldSession.OnOutputReceived must not paper over with a blank StyledLine.Empty print.
+        telnet.EmitPrompt("[0m");
+
+        await Assert.That(printedCount).IsEqualTo(0);
+        await Assert.That(printed).IsNull();
+        await Assert.That(session.CurrentPrompt).IsNotNull();
+        await Assert.That(session.CurrentPrompt!.Text).IsEqualTo(string.Empty);
+        await Assert.That(session.CurrentPrompt!.IsPrompt).IsTrue();
+        await Assert.That(changed).IsNotNull();
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == string.Empty)).IsFalse();
     }
 }

@@ -11,11 +11,12 @@ public sealed class StyledLine
     private readonly StyledSpan[] _spans;
     private string? _text;
 
-    public StyledLine(IEnumerable<StyledSpan> spans, TerminalColor? ruleColor = null)
+    public StyledLine(IEnumerable<StyledSpan> spans, TerminalColor? ruleColor = null, bool isPrompt = false)
     {
         ArgumentNullException.ThrowIfNull(spans);
         _spans = spans.Where(s => s.Length > 0).ToArray();
         RuleColor = ruleColor;
+        IsPrompt = isPrompt;
     }
 
     /// <summary>
@@ -24,8 +25,26 @@ public sealed class StyledLine
     /// </summary>
     public TerminalColor? RuleColor { get; }
 
+    /// <summary>
+    /// True when this line <em>is</em> a prompt — a telnet <c>IAC GA</c>/<c>EOR</c> boundary, or
+    /// TelnetNegotiationCore's packet-patch silence heuristic, rather than a line the server
+    /// terminated with its own newline (<see cref="WorldSession.OnOutputReceived"/>).
+    /// <para>
+    /// Set once, at the end of <c>WorldSession.ProcessOutputLine</c>, on the line actually delivered
+    /// to <c>LinePrinted</c>/<c>SpawnLine</c> — not threaded through <c>StripColour</c>,
+    /// <c>ExpandTabs</c>, the trigger engine or emoji substitution, none of which are asked to
+    /// preserve it. A consumer can tell a prompt from an ordinary line; as of this flag's
+    /// introduction nothing yet treats one differently (what gags, logs, restores, searches or
+    /// badges is unchanged).
+    /// </para>
+    /// </summary>
+    public bool IsPrompt { get; }
+
     /// <summary>Returns a copy of this line carrying the given trigger-highlight rule colour.</summary>
-    public StyledLine WithRule(TerminalColor color) => new(_spans, color);
+    public StyledLine WithRule(TerminalColor color) => new(_spans, color, IsPrompt);
+
+    /// <summary>Returns a copy of this line with <see cref="IsPrompt"/> set to <paramref name="isPrompt"/>.</summary>
+    public StyledLine WithPrompt(bool isPrompt) => isPrompt == IsPrompt ? this : new(_spans, RuleColor, isPrompt);
 
     /// <summary>An empty line (a blank row of output).</summary>
     public static StyledLine Empty { get; } = new(Array.Empty<StyledSpan>());

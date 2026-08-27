@@ -406,8 +406,10 @@ public sealed class WorldSession : IAsyncDisposable
         if (e.IsPrompt)
         {
             _parser.Feed(e.Text);
-            var raw = _parser.Flush() ?? StyledLine.Empty;
-            var prompt = ApplyEmoji(_text?.StripIncomingColour == true ? StyledText.StripColour(raw) : raw);
+            var flushed = _parser.Flush();
+            var raw = flushed ?? StyledLine.Empty;
+            var prompt = ApplyEmoji(_text?.StripIncomingColour == true ? StyledText.StripColour(raw) : raw)
+                .WithPrompt(true);
             CurrentPrompt = prompt;
             PromptChanged?.Invoke(this, prompt);
 
@@ -416,7 +418,21 @@ public sealed class WorldSession : IAsyncDisposable
             // the triggers, which is where Mudlet puts it too. `raw`, not `prompt`: this takes
             // `ProcessOutputLine` through StripIncomingColour/ExpandTabs/triggers/ApplyEmoji itself,
             // and handing it the already-substituted line would substitute twice.
-            ProcessOutputLine(raw);
+            //
+            // Only when the parser actually buffered a printable run. A prompt boundary can arrive
+            // with nothing but style codes ahead of it — a bare `ESC[0m`, an erase sequence, a burst
+            // that ends in SGR and then goes quiet for the hold — and `AnsiParser.Flush()` returns
+            // null for exactly that: nothing was ever appended to `_lineSpans`. That is a boundary,
+            // not a blank line the server sent, so nothing is printed for it (CurrentPrompt and
+            // PromptChanged still update above). This is the opposite case from `fix(line)`
+            // (TelnetNegotiationCore 2.8.1, see CLAUDE.md): that one is the library submitting a
+            // genuinely blank *line*, which does belong in the pane via the
+            // `ProcessOutputLine(StyledLine.Empty)` call below — do not merge the two.
+            if (flushed is not null)
+            {
+                ProcessOutputLine(raw, isPrompt: true);
+            }
+
             return;
         }
 
@@ -449,7 +465,14 @@ public sealed class WorldSession : IAsyncDisposable
         0,
         TextSettings.MaxTabWidth);
 
-    private void ProcessOutputLine(StyledLine line)
+    /// <summary>
+    /// Runs one line through colour-stripping, tab expansion, the trigger engine, link detection and
+    /// emoji substitution, then delivers it to whatever destinations the triggers decided on.
+    /// <paramref name="isPrompt"/> is <em>not</em> threaded through any of those steps — none of them
+    /// are asked to preserve <see cref="StyledLine.IsPrompt"/> — it is applied once, at the end, to
+    /// the line actually delivered, so it survives regardless of what the pipeline did internally.
+    /// </summary>
+    private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {
         // Colour is stripped from what the *server* sent, before the triggers run: a highlight rule
         // and this client's own system/echo lines are not "incoming ANSI colour" and keep theirs.
@@ -477,7 +500,7 @@ public sealed class WorldSession : IAsyncDisposable
         // rather than before it, so a link's target is exactly the text under it — a span whose visible
         // text and destination disagree is the shape of a phishing link, and this client should not be
         // in the business of manufacturing one.
-        var shown = ApplyLinks(ApplyEmoji(result.Line));
+        var shown = ApplyLinks(ApplyEmoji(result.Line)).WithPrompt(isPrompt);
 
         foreach (var target in result.SpawnTargets)
         {
