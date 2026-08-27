@@ -439,8 +439,10 @@ public sealed class TelnetSession : ITelnetSession
         if (InterpreterEncodingProperty is null)
         {
             _logger.LogWarning(
-                "TelnetInterpreter.CurrentEncoding is not writable; pre-negotiation payloads will decode as UTF-8 "
-                + "regardless of this session's own encoding decision.");
+                "TelnetInterpreter.CurrentEncoding is not writable; pre-negotiation GMCP/MSDP/MSSP payloads and "
+                + "outbound bytes the library encodes for itself will decode/encode against its unseeded UTF-8 "
+                + "default regardless of this session's own encoding decision. Ordinary output lines are "
+                + "unaffected — OnSubmitAsync decodes those with this session's own CurrentEncoding.Encoding.");
             return;
         }
 
