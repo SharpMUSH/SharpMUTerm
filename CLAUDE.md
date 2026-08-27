@@ -1305,9 +1305,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     a further jump: it ships **`PacketPatchProtocol`**, included in `AddDefaultMUDProtocols`
     automatically (an appended, defaulted `packetPatchHoldTime` parameter this codebase doesn't set)
     and infers a prompt boundary from 500ms of silence for servers that mark none at all.
-    `IProtocolContext` gained three members in 2.12.0, one of them binary-breaking
-    (`TakePartialLineAsPrompt` now returns `bool`) — this codebase never implements that interface
-    directly, only consumes the library's own `TelnetInterpreter`, so it doesn't apply. The
+    `IProtocolContext` is unchanged in 2.12.0: the prompt-boundary members
+    (`TakePartialLineAsPrompt`, `HasPartialLine`, `HasSeenMarkedPrompt`) are public on
+    `TelnetInterpreter`, reachable through the interface's existing `Interpreter` property, so there
+    is no public break to migrate for. The
     `CallbackOnByteAsync` property this file reaches by reflection is unchanged across the whole jump:
     still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }` on
     `TelnetInterpreter`.

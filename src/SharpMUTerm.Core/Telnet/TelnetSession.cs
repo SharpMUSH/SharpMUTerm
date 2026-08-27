@@ -243,8 +243,9 @@ public sealed class TelnetSession : ITelnetSession
     // TelnetInterpreter.CurrentEncoding has an internal setter, which CharsetProtocol itself writes
     // through reflection once negotiation settles. We seed it the same way at connect time, for two
     // reasons. It *defaults to Encoding.UTF8* (TelnetStandardInterpreter.cs:46), and that default is
-    // not inert: it is handed to CallbackOnByteAsync/CallbackOnSubmitAsync for every byte, and used to
-    // decode GMCP, MSDP and MSSP payloads and to encode everything we send — so before negotiation, a
+    // not inert: it is handed to CallbackOnByteAsync once per byte and to CallbackOnSubmitAsync once
+    // per submitted line, and used to decode GMCP, MSDP and MSSP payloads and to encode everything we
+    // send — so before negotiation, a
     // world pinned to a non-UTF-8 override, or a server that never implements RFC 2066 at all, would
     // decode against UTF-8 regardless of what this session decided. And because the seed is an
     // instance nothing else can produce, "has CHARSET settled?" becomes an exact reference comparison
