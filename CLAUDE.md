@@ -42,11 +42,7 @@ fallbacks) for inline images/maps.
 ## Repository state
 
 **M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all ten projects on
-`net10.0`, with the full test suite passing — **on this machine.** On a clean checkout that is not
-yet true: TelnetNegotiationCore 2.12.0 is not published to nuget.org as of this writing, and restore
-fails `NU1101` until it is. This machine only builds because `~/.nuget/packages/telnetnegotiationcore/2.12.0/`
-was populated from a local feed; see the TNC 2.12.0 entry under *Other dependency notes* for the
-publish-day trap that follows from that. In place:
+`net10.0`, with the full test suite passing. In place:
 
 - **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
   in-memory ring plus a **file-backed spill**, `FileScrollbackSpill`, so history deeper than memory is
@@ -1320,13 +1316,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
     fragment was merely glued to the head of the next line, which reads as a cosmetic wrap issue rather
     than lost text. Revert both together or neither.
-  - **Not yet published to nuget.org as of this writing, and there is a publish-day trap.** A clean
-    checkout's restore fails `NU1101` until 2.12.0 is published — this machine only builds because
-    `~/.nuget/packages/telnetnegotiationcore/2.12.0/` was populated from a local feed. Once the real
-    package is published, if its bits differ at all from the locally-built nupkg this cache holds, restore
-    on this machine fails `NU1403` (package content mismatch) until that cache directory is deleted; a
-    clean checkout with no such cache is unaffected. **Do not commit a `nuget.config` pointing at `/tmp`**
-    or any other local-feed workaround as a fix for either failure — delete the stale cache instead.
+  - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A
+    pin that only resolves from a local `nuget.config` builds here and fails `NU1101` everywhere else;
+    if a locally-built nupkg of that version is already in `~/.nuget/packages/`, the real package
+    publishing later fails `NU1403` (content mismatch) until that cache directory is deleted. Delete
+    the stale cache; do not commit a `nuget.config` pointing at `/tmp`.
 - **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
   of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
   unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
