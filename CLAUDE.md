@@ -42,7 +42,11 @@ fallbacks) for inline images/maps.
 ## Repository state
 
 **M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all ten projects on
-`net10.0`, with the full test suite passing. In place:
+`net10.0`, with the full test suite passing — **on this machine.** On a clean checkout that is not
+yet true: TelnetNegotiationCore 2.12.0 is not published to nuget.org as of this writing, and restore
+fails `NU1101` until it is. This machine only builds because `~/.nuget/packages/telnetnegotiationcore/2.12.0/`
+was populated from a local feed; see the TNC 2.12.0 entry under *Other dependency notes* for the
+publish-day trap that follows from that. In place:
 
 - **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
   in-memory ring plus a **file-backed spill**, `FileScrollbackSpill`, so history deeper than memory is
@@ -520,6 +524,36 @@ fallbacks) for inline images/maps.
   - **A highlight rule needs no route to reach the pane a capture rule sent the line to.** There is one
     line and one set of destinations, and every matched rule's highlight is on it. Do not "fix" that into
     a per-rule delivery.
+- **A prompt reaches the pane again, and everywhere a line reaches** (`WorldSession.OnOutputReceived`,
+  Core; `fix(prompt)`, `cd06e8b`). `22bd97f`'s header/status-bar rewrite deleted the one render that ever
+  read `CurrentPrompt` and left `PromptChanged`'s sole remaining subscriber rebuilding the input-bar label
+  from the character and world, never from the prompt it was handed — so from that commit until this fix,
+  every prompt a server sent (an `IAC GA`/`EOR`, or TelnetNegotiationCore's packet-patch silence heuristic)
+  was parsed, stored in `CurrentPrompt`, and shown nowhere: not the pane, not the scrollback, not
+  `FileScrollbackSpill`, not a transcript, not `RestoreLog`, not `⌃F`'s search index, and no trigger ever
+  saw it. **A prompt is now an ordinary line through `ProcessOutputLine`**, the same function every other
+  line of output runs through, so it reaches all of those surfaces exactly as a line the server terminated
+  with its own newline would — scrollback and the spill, `PlainTextLogSink`/`HtmlLogSink`, `RestoreLog`,
+  `OutputSearch`, the trigger/alias/macro engines, and the unread/activity/away bars, which see it as
+  arriving content like any other. **On a MUD that prompts after every command, this is one extra line per
+  command** — stated rather than hidden, because that is the cost of the fix and not a defect in it; Mudlet
+  does the same and it is what "searchable and trigger-visible" requires. Two decisions not to relitigate.
+  **It lands exactly once.** `ProcessOutputLine` is handed the pre-emoji `raw` line, not the
+  already-substituted one built for `CurrentPrompt`/`PromptChanged` — `ProcessOutputLine` runs
+  `StripIncomingColour`/`ExpandTabs`/triggers/`ApplyEmoji` itself, and handing it the substituted line
+  would substitute twice. **A prompt boundary with no printable run prints no line.** A burst that ends in
+  bare SGR (`ESC[0m`) or an erase sequence and then goes quiet for the hold buffers nothing in
+  `AnsiParser`, so `Flush()` returns null; `CurrentPrompt`/`PromptChanged` still update (to an empty,
+  prompt-flagged line), but `ProcessOutputLine` is not called — that is a boundary, not a blank line the
+  server sent, and is the opposite case from `fix(line)`'s genuinely blank line above, which does print.
+  Getting this backwards means a blank line lands in every buffer once per prompt, forever.
+  - **The line carries `StyledLine.IsPrompt`**, set once at the end of `ProcessOutputLine` on the line
+    actually delivered — not threaded through `StripColour`/`ExpandTabs`/the trigger engine/emoji
+    substitution, none of which are asked to preserve it. It travels through `LinePrinted` and
+    `SpawnLineEventArgs` for free, since both already carry a `StyledLine`, and round-trips through
+    `StyledLineCodec` (a previously-unused flag bit, so no `RestoreLog` format-version bump). **Wired,
+    not yet acted on**: nothing today gags, logs, restores, searches or badges a prompt any differently
+    from an ordinary line because of this bit. That is a decision the owner has not made.
 
 ## Building and testing
 
@@ -1291,6 +1325,18 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     doesn't apply. The `CallbackOnByteAsync` property this file reaches by reflection is unchanged
     across the whole jump: still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }`
     on `TelnetInterpreter`, confirmed by reading the 2.12.0 source rather than assumed.
+  - **`cd06e8b` (the prompt render) and `04e0e26` (this 2.12.0 bump) must not be separated.** Reverting
+    the render alone while 2.12.0 stays pinned sends every packet-patch-inferred prompt fragment to
+    `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
+    fragment was merely glued to the head of the next line, which reads as a cosmetic wrap issue rather
+    than lost text. Revert both together or neither.
+  - **Not yet published to nuget.org as of this writing, and there is a publish-day trap.** A clean
+    checkout's restore fails `NU1101` until 2.12.0 is published — this machine only builds because
+    `~/.nuget/packages/telnetnegotiationcore/2.12.0/` was populated from a local feed. Once the real
+    package is published, if its bits differ at all from the locally-built nupkg this cache holds, restore
+    on this machine fails `NU1403` (package content mismatch) until that cache directory is deleted; a
+    clean checkout with no such cache is unaffected. **Do not commit a `nuget.config` pointing at `/tmp`**
+    or any other local-feed workaround as a fix for either failure — delete the stale cache instead.
 - **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
   of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
   unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
