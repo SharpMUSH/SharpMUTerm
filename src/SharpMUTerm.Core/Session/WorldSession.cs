@@ -413,21 +413,13 @@ public sealed class WorldSession : IAsyncDisposable
             CurrentPrompt = prompt;
             PromptChanged?.Invoke(this, prompt);
 
-            // And into the pane, which is where a reader actually looks for it. A prompt is a line
-            // the server sent — it belongs in the scrollback, in the search index and in front of
-            // the triggers, which is where Mudlet puts it too. `raw`, not `prompt`: this takes
-            // `ProcessOutputLine` through StripIncomingColour/ExpandTabs/triggers/ApplyEmoji itself,
-            // and handing it the already-substituted line would substitute twice.
+            // Uses raw, not prompt: ProcessOutputLine runs StripIncomingColour/ExpandTabs/triggers/
+            // ApplyEmoji itself, so the already-substituted line would double-substitute.
             //
-            // Only when the parser actually buffered a printable run. A prompt boundary can arrive
-            // with nothing but style codes ahead of it — a bare `ESC[0m`, an erase sequence, a burst
-            // that ends in SGR and then goes quiet for the hold — and `AnsiParser.Flush()` returns
-            // null for exactly that: nothing was ever appended to `_lineSpans`. That is a boundary,
-            // not a blank line the server sent, so nothing is printed for it (CurrentPrompt and
-            // PromptChanged still update above). This is the opposite case from `fix(line)`
-            // (TelnetNegotiationCore 2.8.1, see CLAUDE.md): that one is the library submitting a
-            // genuinely blank *line*, which does belong in the pane via the
-            // `ProcessOutputLine(StyledLine.Empty)` call below — do not merge the two.
+            // Only when flushed is not null. A prompt boundary with no printable run (a bare SGR
+            // reset, an erase sequence) makes Flush() return null — that is a boundary, not a blank
+            // line the server sent, unlike the deliberate ProcessOutputLine(StyledLine.Empty) call
+            // below. Do not merge the two.
             if (flushed is not null)
             {
                 ProcessOutputLine(raw, isPrompt: true);
@@ -466,11 +458,8 @@ public sealed class WorldSession : IAsyncDisposable
         TextSettings.MaxTabWidth);
 
     /// <summary>
-    /// Runs one line through colour-stripping, tab expansion, the trigger engine, link detection and
-    /// emoji substitution, then delivers it to whatever destinations the triggers decided on.
-    /// <paramref name="isPrompt"/> is <em>not</em> threaded through any of those steps — none of them
-    /// are asked to preserve <see cref="StyledLine.IsPrompt"/> — it is applied once, at the end, to
-    /// the line actually delivered, so it survives regardless of what the pipeline did internally.
+    /// <paramref name="isPrompt"/> is not threaded through the pipeline below (colour-strip, tab
+    /// expand, triggers, emoji) — it is applied once, at the end, to the line actually delivered.
     /// </summary>
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {

@@ -526,34 +526,27 @@ publish-day trap that follows from that. In place:
     a per-rule delivery.
 - **A prompt reaches the pane again, and everywhere a line reaches** (`WorldSession.OnOutputReceived`,
   Core; `fix(prompt)`, `cd06e8b`). `22bd97f`'s header/status-bar rewrite deleted the one render that ever
-  read `CurrentPrompt` and left `PromptChanged`'s sole remaining subscriber rebuilding the input-bar label
-  from the character and world, never from the prompt it was handed — so from that commit until this fix,
-  every prompt a server sent (an `IAC GA`/`EOR`, or TelnetNegotiationCore's packet-patch silence heuristic)
-  was parsed, stored in `CurrentPrompt`, and shown nowhere: not the pane, not the scrollback, not
-  `FileScrollbackSpill`, not a transcript, not `RestoreLog`, not `⌃F`'s search index, and no trigger ever
-  saw it. **A prompt is now an ordinary line through `ProcessOutputLine`**, the same function every other
-  line of output runs through, so it reaches all of those surfaces exactly as a line the server terminated
-  with its own newline would — scrollback and the spill, `PlainTextLogSink`/`HtmlLogSink`, `RestoreLog`,
-  `OutputSearch`, the trigger/alias/macro engines, and the unread/activity/away bars, which see it as
-  arriving content like any other. **On a MUD that prompts after every command, this is one extra line per
-  command** — stated rather than hidden, because that is the cost of the fix and not a defect in it; Mudlet
-  does the same and it is what "searchable and trigger-visible" requires. Two decisions not to relitigate.
+  read `CurrentPrompt`, so a prompt was parsed and stored but shown nowhere. **A prompt is now an ordinary
+  line through `ProcessOutputLine`**, the same function every other line of output runs through, so it
+  reaches scrollback and the spill, `PlainTextLogSink`/`HtmlLogSink`, `RestoreLog`, `OutputSearch`, the
+  trigger/alias/macro engines, and the unread/activity/away bars, exactly as a line the server terminated
+  with its own newline would. **On a MUD that prompts after every command, this is one extra line per
+  command** — the cost of the fix, not a defect in it; Mudlet does the same, and it is what
+  "searchable and trigger-visible" requires. Two decisions not to relitigate.
   **It lands exactly once.** `ProcessOutputLine` is handed the pre-emoji `raw` line, not the
-  already-substituted one built for `CurrentPrompt`/`PromptChanged` — `ProcessOutputLine` runs
-  `StripIncomingColour`/`ExpandTabs`/triggers/`ApplyEmoji` itself, and handing it the substituted line
-  would substitute twice. **A prompt boundary with no printable run prints no line.** A burst that ends in
-  bare SGR (`ESC[0m`) or an erase sequence and then goes quiet for the hold buffers nothing in
-  `AnsiParser`, so `Flush()` returns null; `CurrentPrompt`/`PromptChanged` still update (to an empty,
-  prompt-flagged line), but `ProcessOutputLine` is not called — that is a boundary, not a blank line the
-  server sent, and is the opposite case from `fix(line)`'s genuinely blank line above, which does print.
-  Getting this backwards means a blank line lands in every buffer once per prompt, forever.
+  already-substituted one built for `CurrentPrompt`/`PromptChanged` — handing it the substituted line
+  would run emoji substitution twice. **A prompt boundary with no printable run prints no line.** A burst
+  that ends in bare SGR (`ESC[0m`) or an erase sequence and then goes quiet for the hold buffers nothing in
+  `AnsiParser`, so `Flush()` returns null; `CurrentPrompt`/`PromptChanged` still update, but
+  `ProcessOutputLine` is not called — that is a boundary, not a blank line the server sent, and is the
+  opposite case from `fix(line)`'s genuinely blank line, which does print. Getting this backwards means a
+  blank line lands in every buffer once per prompt, forever.
   - **The line carries `StyledLine.IsPrompt`**, set once at the end of `ProcessOutputLine` on the line
     actually delivered — not threaded through `StripColour`/`ExpandTabs`/the trigger engine/emoji
-    substitution, none of which are asked to preserve it. It travels through `LinePrinted` and
-    `SpawnLineEventArgs` for free, since both already carry a `StyledLine`, and round-trips through
-    `StyledLineCodec` (a previously-unused flag bit, so no `RestoreLog` format-version bump). **Wired,
-    not yet acted on**: nothing today gags, logs, restores, searches or badges a prompt any differently
-    from an ordinary line because of this bit. That is a decision the owner has not made.
+    substitution. It travels through `LinePrinted` and `SpawnLineEventArgs` for free, since both already
+    carry a `StyledLine`, and round-trips through `StyledLineCodec` (a previously-unused flag bit, so no
+    `RestoreLog` format-version bump). **Wired, not yet acted on**: nothing today gags, logs, restores,
+    searches or badges a prompt any differently from an ordinary line because of this bit.
 
 ## Building and testing
 
@@ -1314,17 +1307,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     sequence behind it. **2.10.0** carries the raw bytes of each MSSP value beside the decoded
     string. **2.11.0** is the prompt-marker fix below. **2.12.0** is the one that actually motivated
     a further jump: it ships **`PacketPatchProtocol`**, included in `AddDefaultMUDProtocols`
-    automatically (an appended, defaulted `packetPatchHoldTime` parameter this codebase doesn't set),
-    which infers a prompt boundary from 500ms of silence for the servers that mark none at all, and is
-    what delivers the connect-screen prompt on both `tdome.nukefire.org` and `starwars.d20mud.com` —
-    neither negotiates GA, EOR or SUPPRESS-GO-AHEAD, so both go through the packet-patch heuristic,
-    confirmed by a ~700–790ms gap between the last banner line and the prompt (the 500ms hold time plus
-    network round-trips), not an instant marker. `IProtocolContext` gained three members in 2.12.0, one
-    of them binary-breaking (`TakePartialLineAsPrompt` now returns `bool`) — this codebase never
-    implements that interface directly, only consumes the library's own `TelnetInterpreter`, so it
-    doesn't apply. The `CallbackOnByteAsync` property this file reaches by reflection is unchanged
-    across the whole jump: still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }`
-    on `TelnetInterpreter`, confirmed by reading the 2.12.0 source rather than assumed.
+    automatically (an appended, defaulted `packetPatchHoldTime` parameter this codebase doesn't set)
+    and infers a prompt boundary from 500ms of silence for servers that mark none at all.
+    `IProtocolContext` gained three members in 2.12.0, one of them binary-breaking
+    (`TakePartialLineAsPrompt` now returns `bool`) — this codebase never implements that interface
+    directly, only consumes the library's own `TelnetInterpreter`, so it doesn't apply. The
+    `CallbackOnByteAsync` property this file reaches by reflection is unchanged across the whole jump:
+    still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }` on
+    `TelnetInterpreter`.
   - **`cd06e8b` (the prompt render) and `04e0e26` (this 2.12.0 bump) must not be separated.** Reverting
     the render alone while 2.12.0 stays pinned sends every packet-patch-inferred prompt fragment to
     `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
