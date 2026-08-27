@@ -520,6 +520,29 @@ fallbacks) for inline images/maps.
   - **A highlight rule needs no route to reach the pane a capture rule sent the line to.** There is one
     line and one set of destinations, and every matched rule's highlight is on it. Do not "fix" that into
     a per-rule delivery.
+- **A prompt reaches the pane again, and everywhere a line reaches** (`WorldSession.OnOutputReceived`,
+  Core; `fix(prompt)`, `cd06e8b`). `22bd97f`'s header/status-bar rewrite deleted the one render that ever
+  read `CurrentPrompt`, so a prompt was parsed and stored but shown nowhere. **A prompt is now an ordinary
+  line through `ProcessOutputLine`**, the same function every other line of output runs through, so it
+  reaches scrollback and the spill, `PlainTextLogSink`/`HtmlLogSink`, `RestoreLog`, `OutputSearch`, the
+  trigger/alias/macro engines, and the unread/activity/away bars, exactly as a line the server terminated
+  with its own newline would. **On a MUD that prompts after every command, this is one extra line per
+  command** — the cost of the fix, not a defect in it; Mudlet does the same, and it is what
+  "searchable and trigger-visible" requires. Two decisions not to relitigate.
+  **It lands exactly once.** `ProcessOutputLine` is handed the pre-emoji `raw` line, not the
+  already-substituted one built for `CurrentPrompt`/`PromptChanged` — handing it the substituted line
+  would run emoji substitution twice. **A prompt boundary with no printable run prints no line.** A burst
+  that ends in bare SGR (`ESC[0m`) or an erase sequence and then goes quiet for the hold buffers nothing in
+  `AnsiParser`, so `Flush()` returns null; `CurrentPrompt`/`PromptChanged` still update, but
+  `ProcessOutputLine` is not called — that is a boundary, not a blank line the server sent, and is the
+  opposite case from `fix(line)`'s genuinely blank line, which does print. Getting this backwards means a
+  blank line lands in every buffer once per prompt, forever.
+  - **The line carries `StyledLine.IsPrompt`**, set once at the end of `ProcessOutputLine` on the line
+    actually delivered — not threaded through `StripColour`/`ExpandTabs`/the trigger engine/emoji
+    substitution. It travels through `LinePrinted` and `SpawnLineEventArgs` for free, since both already
+    carry a `StyledLine`, and round-trips through `StyledLineCodec` (a previously-unused flag bit, so no
+    `RestoreLog` format-version bump). **Wired, not yet acted on**: nothing today gags, logs, restores,
+    searches or badges a prompt any differently from an ordinary line because of this bit.
 
 ## Building and testing
 
@@ -1278,7 +1301,27 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     permitted transitions from `StartNegotiation`; before it each one hit `OnUnhandledTriggerAsync`,
     logging Critical and recovering through `Trigger.Error`, which on some interleavings ate the
     sequence behind it. **2.10.0** carries the raw bytes of each MSSP value beside the decoded
-    string. **2.11.0** is the prompt-marker fix below.
+    string. **2.11.0** is the prompt-marker fix below. **2.12.0** is the one that actually motivated
+    a further jump: it ships **`PacketPatchProtocol`**, included in `AddDefaultMUDProtocols`
+    automatically (an appended, defaulted `packetPatchHoldTime` parameter this codebase doesn't set)
+    and infers a prompt boundary from 500ms of silence for servers that mark none at all.
+    `IProtocolContext` is unchanged in 2.12.0: the prompt-boundary members
+    (`TakePartialLineAsPrompt`, `HasPartialLine`, `HasSeenMarkedPrompt`) are public on
+    `TelnetInterpreter`, reachable through the interface's existing `Interpreter` property, so there
+    is no public break to migrate for. The
+    `CallbackOnByteAsync` property this file reaches by reflection is unchanged across the whole jump:
+    still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }` on
+    `TelnetInterpreter`.
+  - **`cd06e8b` (the prompt render) and `04e0e26` (this 2.12.0 bump) must not be separated.** Reverting
+    the render alone while 2.12.0 stays pinned sends every packet-patch-inferred prompt fragment to
+    `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
+    fragment was merely glued to the head of the next line, which reads as a cosmetic wrap issue rather
+    than lost text. Revert both together or neither.
+  - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A
+    pin that only resolves from a local `nuget.config` builds here and fails `NU1101` everywhere else;
+    if a locally-built nupkg of that version is already in `~/.nuget/packages/`, the real package
+    publishing later fails `NU1403` (content mismatch) until that cache directory is deleted. Delete
+    the stale cache; do not commit a `nuget.config` pointing at `/tmp`.
 - **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
   of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
   unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
@@ -1446,11 +1489,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   2066 settles on — and naming one is an *override*: still offered at the head of the order so a
   cooperative server agrees, but used regardless of what it says. Four things about this library will
   bite you, and all four already have:
-  - **`TelnetInterpreter.CurrentEncoding` defaults to `Encoding.ASCII`**, and that default is not inert:
-    it is handed to `CallbackOnByteAsync`/`CallbackOnSubmitAsync` for every byte and used for GMCP, MSDP
-    and everything we send. On a server that never negotiates CHARSET — most MU\* servers — every
-    byte above 0x7F became `?`. `TelnetSession` seeds that property (reflectively, `internal set`, the
-    same way `CharsetProtocol` itself writes it) with the head of the stated order.
+  - **`TelnetInterpreter.CurrentEncoding` defaults to `Encoding.UTF8`** (`TelnetStandardInterpreter.cs:46`),
+    and that default is not something to rely on unseeded: it is handed to
+    `CallbackOnByteAsync`/`CallbackOnSubmitAsync` for every byte and used for GMCP, MSDP and everything
+    we send, before this session's own encoding decision (an override, or the head of `CharsetOrder`)
+    has had any say. `TelnetSession` seeds that property (reflectively, `internal set`, the same way
+    `CharsetProtocol` itself writes it) with the head of the stated order — otherwise a world pinned to
+    a non-UTF-8 override, or a server that never negotiates CHARSET at all, would decode against
+    whichever encoding the library happens to default to rather than what this session decided.
     **MSSP fields were decoded as `Encoding.ASCII` through 2.6.x** (fixed in 2.7.0, pinned by
     `MsspParsingTests`); treat non-ASCII in an MSSP field from an older library as unrecoverable.
     Two consequences worth knowing from the pre-fix era: the plaintext `MSSP-REQUEST` fallback went

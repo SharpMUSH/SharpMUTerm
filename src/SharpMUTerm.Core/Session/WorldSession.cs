@@ -406,10 +406,25 @@ public sealed class WorldSession : IAsyncDisposable
         if (e.IsPrompt)
         {
             _parser.Feed(e.Text);
-            var raw = _parser.Flush() ?? StyledLine.Empty;
-            var prompt = ApplyEmoji(_text?.StripIncomingColour == true ? StyledText.StripColour(raw) : raw);
+            var flushed = _parser.Flush();
+            var raw = flushed ?? StyledLine.Empty;
+            var prompt = ApplyEmoji(_text?.StripIncomingColour == true ? StyledText.StripColour(raw) : raw)
+                .WithPrompt(true);
             CurrentPrompt = prompt;
             PromptChanged?.Invoke(this, prompt);
+
+            // Uses raw, not prompt: ProcessOutputLine runs StripIncomingColour/ExpandTabs/triggers/
+            // ApplyEmoji itself, so the already-substituted line would double-substitute.
+            //
+            // Only when flushed is not null. A prompt boundary with no printable run (a bare SGR
+            // reset, an erase sequence) makes Flush() return null — that is a boundary, not a blank
+            // line the server sent, unlike the deliberate ProcessOutputLine(StyledLine.Empty) call
+            // below. Do not merge the two.
+            if (flushed is not null)
+            {
+                ProcessOutputLine(raw, isPrompt: true);
+            }
+
             return;
         }
 
@@ -442,7 +457,11 @@ public sealed class WorldSession : IAsyncDisposable
         0,
         TextSettings.MaxTabWidth);
 
-    private void ProcessOutputLine(StyledLine line)
+    /// <summary>
+    /// <paramref name="isPrompt"/> is not threaded through the pipeline below (colour-strip, tab
+    /// expand, triggers, emoji) — it is applied once, at the end, to the line actually delivered.
+    /// </summary>
+    private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {
         // Colour is stripped from what the *server* sent, before the triggers run: a highlight rule
         // and this client's own system/echo lines are not "incoming ANSI colour" and keep theirs.
@@ -470,7 +489,7 @@ public sealed class WorldSession : IAsyncDisposable
         // rather than before it, so a link's target is exactly the text under it — a span whose visible
         // text and destination disagree is the shape of a phishing link, and this client should not be
         // in the business of manufacturing one.
-        var shown = ApplyLinks(ApplyEmoji(result.Line));
+        var shown = ApplyLinks(ApplyEmoji(result.Line)).WithPrompt(isPrompt);
 
         foreach (var target in result.SpawnTargets)
         {

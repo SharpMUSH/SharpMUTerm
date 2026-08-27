@@ -21,6 +21,7 @@ public class StyledLineCodecTests
         }
 
         await Assert.That(decoded.RuleColor).IsEqualTo(line.RuleColor);
+        await Assert.That(decoded.IsPrompt).IsEqualTo(line.IsPrompt);
     }
 
     [Test]
@@ -35,6 +36,20 @@ public class StyledLineCodecTests
     {
         var line = StyledLine.Empty.WithRule(TerminalColor.FromRgb(1, 2, 3));
         await AssertRoundTrips(line);
+    }
+
+    [Test]
+    public async Task PromptFlag_RoundTrips()
+    {
+        await AssertRoundTrips(StyledLine.FromText("HP:100>", TextStyle.Default).WithPrompt(true));
+    }
+
+    [Test]
+    public async Task PromptFlag_RoundTripsOnAnEmptyLineWithARule()
+    {
+        var line = StyledLine.Empty.WithRule(TerminalColor.FromRgb(1, 2, 3)).WithPrompt(true);
+        await AssertRoundTrips(line);
+        await Assert.That(StyledLineCodec.Decode(StyledLineCodec.Encode(line)).IsEmpty).IsTrue();
     }
 
     [Test]
