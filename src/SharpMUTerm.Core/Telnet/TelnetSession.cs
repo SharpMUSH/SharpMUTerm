@@ -242,12 +242,13 @@ public sealed class TelnetSession : ITelnetSession
 
     // TelnetInterpreter.CurrentEncoding has an internal setter, which CharsetProtocol itself writes
     // through reflection once negotiation settles. We seed it the same way at connect time, for two
-    // reasons. It *defaults to Encoding.ASCII*, and that default is not inert: it is handed to
-    // CallbackOnByteAsync/CallbackOnSubmitAsync for every byte, and used to decode GMCP, MSDP and MSSP
-    // payloads and to encode everything we send — so before negotiation, or on the many MU* servers
-    // that never implement RFC 2066 at all, every byte above 0x7F became '?'. And because the seed is
-    // an instance nothing else can produce, "has CHARSET settled?" becomes an exact reference
-    // comparison rather than a guess about a value that might legitimately be ASCII.
+    // reasons. It *defaults to Encoding.UTF8* (TelnetStandardInterpreter.cs:46), and that default is
+    // not inert: it is handed to CallbackOnByteAsync/CallbackOnSubmitAsync for every byte, and used to
+    // decode GMCP, MSDP and MSSP payloads and to encode everything we send — so before negotiation, a
+    // world pinned to a non-UTF-8 override, or a server that never implements RFC 2066 at all, would
+    // decode against UTF-8 regardless of what this session decided. And because the seed is an
+    // instance nothing else can produce, "has CHARSET settled?" becomes an exact reference comparison
+    // rather than a guess about a value that might legitimately be UTF-8.
     private static readonly PropertyInfo? InterpreterEncodingProperty =
         typeof(TelnetInterpreter).GetProperty(nameof(TelnetInterpreter.CurrentEncoding)) is { CanWrite: true } p
             ? p
@@ -291,8 +292,10 @@ public sealed class TelnetSession : ITelnetSession
     /// <para>
     /// Precedence is override, then negotiation, then the head of the stated preference order. The
     /// last arm is what a server that never speaks CHARSET lands on: the app's first preference,
-    /// normally UTF-8. It is emphatically <em>not</em> the interpreter's own <c>Encoding.ASCII</c>
-    /// default, which is what used to reach the decode path and mangle every non-ASCII byte.
+    /// normally UTF-8. It is emphatically <em>not</em> the interpreter's own unseeded
+    /// <c>Encoding.UTF8</c> default (<c>TelnetStandardInterpreter.cs:46</c>) reached before this
+    /// session's own decision — an override to a non-UTF-8 charset, or the head of a non-default
+    /// <see cref="TelnetSessionOptions.CharsetOrder"/> — has had any say.
     /// </para>
     /// </summary>
     public SessionEncoding CurrentEncoding
@@ -423,17 +426,21 @@ public sealed class TelnetSession : ITelnetSession
     }
 
     /// <summary>
-    /// Replaces the interpreter's <see cref="Encoding.ASCII"/> default with what this session would
-    /// otherwise assume, so nothing decodes as ASCII merely because negotiation hasn't happened yet —
-    /// including the GMCP/MSDP/MSSP payloads and outbound bytes the library encodes for itself. The
-    /// library overwrites this the moment CHARSET settles.
+    /// Replaces the interpreter's unseeded <see cref="Encoding.UTF8"/> default
+    /// (<c>TelnetStandardInterpreter.cs:46</c>) with what this session would otherwise assume, so
+    /// nothing decodes against that default merely because negotiation hasn't happened yet —
+    /// including the GMCP/MSDP/MSSP payloads and outbound bytes the library encodes for itself. A
+    /// world pinned to a non-UTF-8 override is exactly the case this protects: without seeding, its
+    /// bytes would decode as UTF-8 until CHARSET settles or forever on a server that never negotiates
+    /// it. The library overwrites this the moment CHARSET settles.
     /// </summary>
     private void SeedInterpreterEncoding(TelnetInterpreter interpreter)
     {
         if (InterpreterEncodingProperty is null)
         {
             _logger.LogWarning(
-                "TelnetInterpreter.CurrentEncoding is not writable; pre-negotiation payloads will decode as ASCII.");
+                "TelnetInterpreter.CurrentEncoding is not writable; pre-negotiation payloads will decode as UTF-8 "
+                + "regardless of this session's own encoding decision.");
             return;
         }
 
