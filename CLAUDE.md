@@ -445,6 +445,34 @@ fallbacks) for inline images/maps.
     a macro test that used F1 as "a free function key" had to move to F12.
   - **The footer names ⌃S, ⌥L and Esc and nothing else.** No `⌃F find`: the control has a find *API* and
     no chord bound to it, and this screen is held to the same honesty rule as the settings screens.
+- **An MXP `<IMAGE>` is drawn in the output pane as rows of markup under the line that named it**
+  (`MxpParser.HandleImage` + `MxpImageSource`, Core; `InlineImageHost`/`InlineImageRows`/`InlineImageLayout`,
+  Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
+  the request; the span keeps an enclosing `<SEND>`'s action (the spec's own `<SEND showmap><IMAGE …>` example)
+  and otherwise links to the picture. That span **is** the text-only fallback, so logs, search, triggers and a
+  terminal with no graphics all see the same thing. Decisions not to relitigate:
+  - **A picture is pane rows, never a control.** Kitty placeholders (`U+10EEEE` + row/column diacritics, the
+    image id in the foreground) and half-blocks are both plain markup a `MarkupControl` already draws, so a
+    picture scrolls, clips, freezes and trims with the text around it and nothing that indexes a pane buffer
+    had to learn a new kind of row. The web view's `ImageControl` blocks could not be reused: a pane is one
+    control, and splitting it would break every index into its buffer.
+  - **The rows bypass `MarkupFormatter`.** Its legibility floor moves a dark foreground, and a placeholder's
+    foreground is the image id — a "corrected" one names a different image.
+  - **Rows find their line by `PaneLine.ImageAnchor`, not by index.** A picture lands after its line, by
+    which time trims and bars have moved it; `InsertImageRows` moves every index at or past the insertion
+    point (freeze, away, missed, search) so a boundary never splits a picture from its line.
+  - **Kitty goes through `IGraphicsProtocol.TransmitRawRgb`** (zlib, `q=2`, virtual placement), under the
+    driver's own lock, on the UI thread just before the rows are painted. Ids start at `0xC00000` so they
+    never meet the framework's own (numbered from 1). Repeats of a picture reuse the transmitted id.
+  - **Sixel and iTerm2 inline images are not offered**, for the reason Sixel is blocked above: both paint at
+    the cursor outside the cell model and the next frame overwrites them. Detection therefore stops at
+    Kitty (the framework's own `a=q` probe plus our environment probe) → half-block → link.
+  - **Nothing is fetched unless something can be drawn**, nothing is fetched from a restore log, only http(s)
+    and `data:` are fetched (`WebImageLoader`'s rules), two fetches run at once and sixteen lines may wait.
+    `IMAGE` is a secure tag, so a player cannot make the room's clients fetch a URL.
+  - **Known and not fixed**: rows are sized to the pane when they arrive and are not re-laid out when it
+    narrows, so a later split wraps them; a cell is assumed 8×16 px because the framework owns the input
+    stream a `CSI 16 t` reply would arrive on; `ISMAP`/`ALIGN`/`HSPACE`/`VSPACE` are read and ignored.
 - **Every `[link=…]` payload a pane carries is scheme-tagged by `InteractionKind`** (`LinkPayload`:
   `mux:send:` / `mux:prompt:` / `mux:web:`), and the panes' handler takes the *window id* the click
   came from. Both are security properties, not tidiness. The tagging is disjoint because the
@@ -645,6 +673,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   lines land in the main window while Chat is in front of it, and picking main back lands on the `NEW`
   bar with those three under it. Separate from `away` because the two are separate facts with separate
   wording, and this is the one that happens many times an hour),
+  `mxp-image` (an MXP `<IMAGE>` inside a `<SEND>`, through the real parser and pane path, with a line
+  arriving after it — the link alone with no graphics, the picture under its own line with
+  `SHARPMUTERM_GRAPHICS=halfblock`),
   `selection` (a real ⌃-drag across the main window's output, through `SimulatePaneDrag` and the control's
   own hit test rather than a highlight posed by hand — the only frame carrying `WorkspacePalette.SelectionBand`,
   which is why it is in `FrameContrastTests`' list: the band is the one plane this client invents rather

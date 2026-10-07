@@ -179,4 +179,29 @@ public class InlineImagePolicyTests
         await Assert.That(() => InlineImagePolicy.Select(Caps(GraphicsProtocol.Kitty), null!))
             .Throws<ArgumentNullException>();
     }
+
+    [Test]
+    public async Task AnAnsweredKittyQueryUpgradesWhatTheEnvironmentMissed()
+    {
+        var upgraded = InlineImagePolicy.WithKittyProbe(Caps(GraphicsProtocol.HalfBlock), answered: true, overridden: false);
+
+        await Assert.That(upgraded.Protocol).IsEqualTo(GraphicsProtocol.Kitty);
+        await Assert.That(upgraded.SupportsKittyGraphics).IsTrue();
+    }
+
+    [Test]
+    public async Task AnOverrideIsNeverUpgraded()
+    {
+        var caps = Caps(GraphicsProtocol.HalfBlock);
+
+        await Assert.That(InlineImagePolicy.WithKittyProbe(caps, answered: true, overridden: true)).IsSameReferenceAs(caps);
+    }
+
+    [Test]
+    public async Task NoAnswerChangesNothing()
+    {
+        var caps = Caps(GraphicsProtocol.None);
+
+        await Assert.That(InlineImagePolicy.WithKittyProbe(caps, answered: false, overridden: false)).IsSameReferenceAs(caps);
+    }
 }

@@ -28,8 +28,10 @@ namespace SharpMUTerm.Core.Protocols;
 /// and the three LOCK modes) <b>is</b> implemented — see <see cref="MxpLineMode"/>. A secure tag on
 /// an open line is emitted as literal text rather than honoured, which is what stops a player's
 /// <c>&lt;SEND&gt;</c> becoming a clickable command in someone else's client.</item>
-/// <item>Inline <c>&lt;IMG&gt;</c> rendering is out of scope (graphics live elsewhere); the
-/// tag is parsed and ignored gracefully.</item>
+/// <item><c>&lt;IMAGE&gt;</c> becomes a <c>[image: name]</c> span carrying an
+/// <see cref="InlineImageRequest"/> on its interaction; drawing the picture is the UI's job, and the
+/// span is what a terminal that cannot draw one shows. It is a secure tag, so a player cannot make
+/// another client fetch a URL of their choosing.</item>
 /// <item>ANSI SGR is decoded here, through <see cref="SharpMUTerm.Core.Text.SgrCodes"/>, because the
 /// spec permits ANSI inside MXP and nothing upstream strips it — a session runs this parser
 /// <em>or</em> <see cref="SharpMUTerm.Core.Text.AnsiParser"/>, never both. Other CSI sequences are
@@ -140,7 +142,7 @@ public sealed class MxpParser : ILineParser
     /// dropped — so it is deliberately not claimed here.
     /// </remarks>
     private static readonly string[] SupportedTags =
-        ["+b", "+i", "+u", "+s", "+color", "+font", "+send", "+a", "+br"];
+        ["+b", "+i", "+u", "+s", "+color", "+font", "+send", "+a", "+br", "+image"];
 
     /// <summary>True when a partial line, an open tag/entity, or unclosed markup is buffered.</summary>
     public bool HasPendingContent =>
@@ -816,8 +818,11 @@ public sealed class MxpParser : ILineParser
             case "SUPPORT":
                 HandleSupportRequest();
                 break;
+            case "IMAGE":
+                HandleImage(attrs);
+                break;
             default:
-                // Unknown/unsupported tag (VAR, EXPIRE, IMG, H1, P, …) — consumed and ignored.
+                // Unknown/unsupported tag (VAR, EXPIRE, H1, P, …) — consumed and ignored.
                 break;
         }
     }
@@ -852,6 +857,56 @@ public sealed class MxpParser : ILineParser
     private void HandleSupportRequest()
     {
         ClientReply?.Invoke(this, $"{SecureLinePrefix}<SUPPORTS {string.Join(' ', SupportedTags)}>");
+    }
+
+    /// <summary>
+    /// <c>&lt;IMAGE fname [URL=url] [T=type] [H=height] [W=width] …&gt;</c>: emits the placeholder span
+    /// <c>[image: fname]</c> with the request attached. Inside a <c>&lt;SEND&gt;</c> or <c>&lt;A&gt;</c>
+    /// the span keeps that element's action (the spec's own example is
+    /// <c>&lt;SEND showmap&gt;&lt;IMAGE map.jpg ISMAP&gt;&lt;/SEND&gt;</c>); on its own it links to the
+    /// picture. HSPACE, VSPACE, ALIGN and ISMAP are read and ignored — a cell grid has no float, and a
+    /// click carries no pixel position to append.
+    /// </summary>
+    private void HandleImage(string attrs)
+    {
+        var parsed = ParseAttributes(attrs);
+        var fileName = GetAttr(parsed, "FNAME") ?? FirstPositionalExcept(parsed, "ISMAP");
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return;
+        }
+
+        var url = MxpImageSource.Resolve(fileName, GetAttr(parsed, "URL"), GetAttr(parsed, "T"));
+        var name = MxpImageSource.DisplayName(fileName);
+        ImageExtent? width = ImageExtent.TryParse(GetAttr(parsed, "W"), out var w) ? w : null;
+        ImageExtent? height = ImageExtent.TryParse(GetAttr(parsed, "H"), out var h) ? h : null;
+
+        var enclosing = _interaction;
+        SpanInteraction? interaction = enclosing;
+        if (url is not null)
+        {
+            var request = new InlineImageRequest(url, name, width, height);
+            interaction = (enclosing ?? SpanInteraction.Link(url)) with { Image = request };
+        }
+
+        FlushRun();
+        _interaction = interaction;
+        _run.Append("[image: ").Append(name).Append(']');
+        FlushRun();
+        _interaction = enclosing;
+    }
+
+    private static string? FirstPositionalExcept(List<(string? Key, string Value)> attrs, string flag)
+    {
+        foreach (var (k, v) in attrs)
+        {
+            if (k is null && !string.Equals(v, flag, StringComparison.OrdinalIgnoreCase))
+            {
+                return v;
+            }
+        }
+
+        return null;
     }
 
     private void OpenFormatting(string name, TextAttributes attribute)
