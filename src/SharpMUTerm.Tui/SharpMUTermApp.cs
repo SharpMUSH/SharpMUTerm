@@ -3837,7 +3837,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             // Appended to the window rather than routed through the session, so it still answers
             // when nothing is connected — which is exactly when someone is checking their terminal.
-            var report = InlineImagePolicy.Describe(GraphicsCapabilities(), WebGraphicsSurface());
+            var report = InlineImagePolicy.Describe(_capabilities, WebGraphicsSurface());
             AppendWindowLine(windowId, $"[dim]*** Graphics: {Escape(report)}.[/]");
             foreach (var line in WebImageReport.Describe(_webPage, DecodedWebImages(), ResolveInlineImagePresentation()))
             {
@@ -7875,18 +7875,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>The presentation the degradation chain settles on for this terminal and this view.</summary>
     private InlineImagePresentation ResolveInlineImagePresentation() =>
-        InlineImagePolicy.Select(GraphicsCapabilities(), WebGraphicsSurface());
-
-    /// <summary>
-    /// What the terminal can draw: the environment probe, upgraded to Kitty when the driver's own
-    /// start-up query was answered (<see cref="InlineImagePolicy.WithKittyProbe"/>). Asked fresh for the
-    /// same reason as <see cref="WebGraphicsSurface"/>.
-    /// </summary>
-    private TerminalCapabilities GraphicsCapabilities() =>
-        InlineImagePolicy.WithKittyProbe(
-            _capabilities,
-            answered: _system.ConsoleDriver is IGraphicsProtocol { SupportsKittyGraphics: true },
-            overridden: !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(CapabilityProbe.OverrideVariable)));
+        InlineImagePolicy.Select(_capabilities, WebGraphicsSurface());
 
     /// <summary>
     /// Builds the web tab: the page's markup split around whichever images decoded, stacked in a

@@ -72,26 +72,6 @@ public sealed class GraphicsSurface
 public static class InlineImagePolicy
 {
     /// <summary>
-    /// Folds an active probe's answer into what the environment said. The environment probe reads
-    /// variables, and over ssh or inside a multiplexer the ones that name Kitty are often missing while
-    /// the terminal still answers a Kitty graphics query (<c>a=q</c>) — which the console driver sends
-    /// at start-up. A terminal that answered is a terminal that speaks it, so the answer upgrades the
-    /// protocol. An explicit override is never upgraded: whoever set <c>SHARPMUTERM_GRAPHICS</c> asked
-    /// for exactly that.
-    /// </summary>
-    public static TerminalCapabilities WithKittyProbe(TerminalCapabilities capabilities, bool answered, bool overridden)
-    {
-        ArgumentNullException.ThrowIfNull(capabilities);
-        if (!answered || overridden || capabilities.Protocol >= GraphicsProtocol.Kitty)
-        {
-            return capabilities;
-        }
-
-        return new TerminalCapabilities(
-            GraphicsProtocol.Kitty, capabilities.SupportsTrueColor, supportsKittyGraphics: true, capabilities.SupportsSixel);
-    }
-
-    /// <summary>
     /// Picks the best presentation the terminal <em>and</em> the host can both manage.
     /// </summary>
     /// <remarks>

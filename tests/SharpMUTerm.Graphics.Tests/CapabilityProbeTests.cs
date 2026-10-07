@@ -67,11 +67,23 @@ public class CapabilityProbeTests
     }
 
     [Test]
-    public async Task Kitty_ViaWezTerm()
+    public async Task Kitty_ViaGhosttyTerm()
+    {
+        var caps = Detect(("TERM", "xterm-ghostty"));
+        await Assert.That(caps.Protocol).IsEqualTo(GraphicsProtocol.Kitty);
+    }
+
+    /// <summary>
+    /// WezTerm speaks the Kitty protocol's direct placements but not its Unicode placeholders, which is
+    /// the only part a compositor can use: placeholder cells would come out as literal glyphs. It is a
+    /// Sixel terminal as far as this probe is concerned.
+    /// </summary>
+    [Test]
+    public async Task WezTermIsNotOfferedKittyPlaceholders()
     {
         var caps = Detect(("TERM_PROGRAM", "WezTerm"));
-        await Assert.That(caps.SupportsKittyGraphics).IsTrue();
-        await Assert.That(caps.Protocol).IsEqualTo(GraphicsProtocol.Kitty);
+        await Assert.That(caps.SupportsKittyGraphics).IsFalse();
+        await Assert.That(caps.Protocol).IsEqualTo(GraphicsProtocol.Sixel);
     }
 
     [Test]

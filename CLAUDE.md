@@ -464,9 +464,15 @@ fallbacks) for inline images/maps.
   - **Kitty goes through `IGraphicsProtocol.TransmitRawRgb`** (zlib, `q=2`, virtual placement), under the
     driver's own lock, on the UI thread just before the rows are painted. Ids start at `0xC00000` so they
     never meet the framework's own (numbered from 1). Repeats of a picture reuse the transmitted id.
+  - **"Kitty" means Unicode placeholders, and only kitty and Ghostty implement them** (checked October
+    2026: WezTerm's support is an open PR, wezterm#7924; Warp's is warp#16312; xterm.js has an open issue).
+    WezTerm, Konsole, iTerm2 and Warp answer the `a=q` query and accept direct placements, but draw
+    placeholder cells as literal glyphs, so `CapabilityProbe` names only kitty and Ghostty and an `a=q`
+    answer is never taken as enough. The framework's own `ImageControl` (the web view) still trusts that
+    answer — an upstream issue.
   - **Sixel and iTerm2 inline images are not offered**, for the reason Sixel is blocked above: both paint at
-    the cursor outside the cell model and the next frame overwrites them. Detection therefore stops at
-    Kitty (the framework's own `a=q` probe plus our environment probe) → half-block → link.
+    the cursor outside the cell model and the next frame overwrites them. WezTerm, foot, Konsole, Windows
+    Terminal and the rest of the Sixel terminals therefore get half-blocks.
   - **Nothing is fetched unless something can be drawn**, nothing is fetched from a restore log, only http(s)
     and `data:` are fetched (`WebImageLoader`'s rules), two fetches run at once and sixteen lines may wait.
     `IMAGE` is a secure tag, so a player cannot make the room's clients fetch a URL.
