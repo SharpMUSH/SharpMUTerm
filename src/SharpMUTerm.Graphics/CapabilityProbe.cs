@@ -41,11 +41,17 @@ public static class CapabilityProbe
         var supportsTrueColor =
             Equals(colorTerm, "truecolor") || Equals(colorTerm, "24bit");
 
+        // Kitty here means the Unicode-placeholder part of the protocol (a=p,U=1 and U+10EEEE cells),
+        // because that is the only part a compositor can use: both this client's MXP images and the
+        // framework's ImageControl draw through placeholder cells. Only kitty and Ghostty implement it.
+        // WezTerm, Konsole, iTerm2 and Warp accept direct placements and answer the a=q query, but draw
+        // placeholder cells as literal glyphs, so they are deliberately not listed (WezTerm falls to its
+        // Sixel entry below, which inside the TUI degrades to half-blocks).
         var supportsKitty =
             Contains(term, "kitty") ||
             !string.IsNullOrEmpty(Get(environment, "KITTY_WINDOW_ID")) ||
-            Equals(termProgram, "ghostty") ||
-            Equals(termProgram, "WezTerm");
+            Contains(term, "ghostty") ||
+            Equals(termProgram, "ghostty");
 
         var supportsSixel =
             Contains(term, "sixel") ||

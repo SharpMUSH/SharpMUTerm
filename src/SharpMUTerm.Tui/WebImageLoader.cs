@@ -55,7 +55,7 @@ internal sealed class WebImageLoader : IDisposable
     public async Task<PixelBuffer?> LoadAsync(
         string url, int availableColumns, CancellationToken cancellationToken = default)
     {
-        var bytes = await FetchAsync(url, cancellationToken).ConfigureAwait(false);
+        var bytes = await FetchBytesAsync(url, cancellationToken).ConfigureAwait(false);
         if (bytes is null)
         {
             return null;
@@ -115,7 +115,12 @@ internal sealed class WebImageLoader : IDisposable
         }
     }
 
-    private async Task<byte[]?> FetchAsync(string url, CancellationToken cancellationToken)
+    /// <summary>
+    /// Fetches an image's bytes under this loader's rules (http(s) and base64 <c>data:</c> only, an
+    /// image content type, <see cref="MaxImageBytes"/>, the client timeout), or null. Shared with the
+    /// output panes' MXP images, which want the same limits and decode differently.
+    /// </summary>
+    public async Task<byte[]?> FetchBytesAsync(string url, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(url))
         {

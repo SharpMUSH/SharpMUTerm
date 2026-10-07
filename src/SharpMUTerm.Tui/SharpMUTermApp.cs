@@ -6,6 +6,7 @@ using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Input;
 using SharpMUTerm.Core.Logging;
+using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Telnet;
 using SharpMUTerm.Core.Telnet.Mssp;
@@ -211,6 +212,18 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly GmcpStats _stats = new();
     private readonly SharpMUTerm.Web.WebPageFetcher _fetcher = new();
     private readonly WebImageLoader _imageLoader = new();
+
+    /// <summary>
+    /// Draws a world's MXP <c>&lt;IMAGE&gt;</c>s into the output panes, as rows inserted under the line
+    /// that named them (<see cref="InsertImageRows"/>).
+    /// </summary>
+    private readonly InlineImageHost _inlineImages;
+
+    /// <summary>
+    /// The last anchor handed to a line waiting on pictures. A line's index moves (a trim, a bar
+    /// inserted above it), so the rows that arrive later find their line by this number instead.
+    /// </summary>
+    private long _nextImageAnchor;
 
     /// <summary>
     /// The web page currently in the web tab, its markup lines, and the images that decoded — keyed
@@ -599,6 +612,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _clipboard = clipboard;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
+        _inlineImages = new InlineImageHost(
+            (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
+            OnUi);
         _mssp = mssp ?? new MsspCache();
         _capabilities = capabilities;
         _time = time ?? TimeProvider.System;
@@ -986,6 +1002,31 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                     AppendDemoLine(MainWindowId, line);
                 }
             }
+        }
+
+        // An MXP <IMAGE> in the main pane, through the real parser and the real pane path: the line's
+        // [image: …] link, and under it whatever this host settles on drawing. With no graphics that is
+        // the link alone; with SHARPMUTERM_GRAPHICS=halfblock it is the decoded picture as half-blocks.
+        // Kitty needs a Kitty terminal, which a snapshot is not. The picture is a data: URI, so nothing
+        // leaves the machine.
+        if (string.Equals(view, "mxp-image", StringComparison.OrdinalIgnoreCase))
+        {
+            var mxp = new MxpParser();
+            foreach (var text in new[]
+            {
+                "\x1b[1zThe survey office has pinned up a map of the coast road:",
+                $"\x1b[1z<SEND \"look map\"><IMAGE \"{DemoImageDataUri}\" W=40c></SEND>",
+                "A clerk glances up from the ledger.",
+            })
+            {
+                mxp.Feed(text);
+                if (mxp.Flush() is { } line)
+                {
+                    AppendSessionLine(MainWindowId, line, StampNow());
+                }
+            }
+
+            _inlineImages.Pending.GetAwaiter().GetResult();
         }
 
         // Split the workspace: Aardwolf (main) stays in the left pane, the Chat window moves to the
@@ -2247,6 +2288,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     internal Func<ConnectionOptions, ITelnetSession>? TelnetFactory { get; set; }
 
     /// <summary>
+    /// Replaces the network fetch behind MXP images, so a test can hold a picture in flight while
+    /// lines keep arriving, or count what was fetched. Null in every real run.
+    /// </summary>
+    internal Func<string, CancellationToken, Task<byte[]?>>? ImageFetch { get; set; }
+
+    /// <summary>Completes when every MXP picture asked for so far has been delivered or given up on.</summary>
+    internal Task InlineImagesSettled => _inlineImages.Pending;
+
+    /// <summary>
     /// Opens the character's log sink for this session, per its <see cref="LoggingSettings"/> — the
     /// two fields F5 draws on the character's own row. <see cref="LogFormat.None"/> (the default)
     /// opens nothing, and a folder that can't be written is reported as a system line rather than
@@ -2631,7 +2681,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// passes one, because only a world's output is what the timestamp column describes.
     /// </para>
     /// </summary>
-    private void AppendWindowLine(string windowId, string markup, string? stamp = null)
+    private void AppendWindowLine(string windowId, string markup, string? stamp = null, long imageAnchor = 0)
     {
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
@@ -2658,7 +2708,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
         // every line of every window (see PaneLine.Plain).
-        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup)));
+        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor));
 
 
         // Cap the UI-side buffer at the configured scrollback so a long session doesn't grow without
@@ -3247,6 +3297,141 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
+    /// Appends one of a world's lines to a window and, when it names pictures this terminal can draw,
+    /// starts loading them. The pictures arrive later and are inserted under the line
+    /// (<see cref="InsertImageRows"/>); until then, and for good on a terminal that cannot draw them, the
+    /// line's own <c>[image: name]</c> link is what stands in for each.
+    /// <para>
+    /// Only live output loads pictures. A restored line comes back as its link: fetching every
+    /// picture in a restore log on launch would contact every host it names before anyone has looked.
+    /// </para>
+    /// </summary>
+    private void AppendSessionLine(string windowId, StyledLine line, string stamp)
+    {
+        var requests = InlineImageHost.RequestsIn(line);
+        var presentation = requests.Count == 0
+            ? InlineImagePresentation.TextPlaceholder
+            : ResolveInlineImagePresentation();
+        var anchor = presentation is InlineImagePresentation.Kitty or InlineImagePresentation.HalfBlock
+            ? ++_nextImageAnchor
+            : 0;
+
+        AppendWindowLine(windowId, _formatter.ToMarkup(line), stamp, anchor);
+        if (anchor == 0)
+        {
+            return;
+        }
+
+        _inlineImages.Load(
+            requests,
+            presentation,
+            InlineImageColumns(windowId),
+            () => _system.ConsoleDriver as IGraphicsProtocol,
+            rows => InsertImageRows(windowId, anchor, rows));
+    }
+
+    /// <summary>
+    /// How wide a picture in this window may be: the pane's viewport, because a row wider than that
+    /// wraps, and a wrapped placeholder row is a picture cut in strips. Bounded by the Kitty diacritic
+    /// table, which numbers at most that many columns.
+    /// </summary>
+    private int InlineImageColumns(string windowId)
+    {
+        var width = _paneScrolls.GetValueOrDefault(windowId) is { ViewportWidth: > 0 } panel
+            ? panel.ViewportWidth
+            : WebImageColumns();
+        return Math.Clamp(width, 1, KittyGraphicsProtocol.RowColumnDiacritics.Length);
+    }
+
+    /// <summary>
+    /// Inserts a picture's rows under the line that named it, after any picture of that line already
+    /// there, and moves every index into the buffer at or past that point down by the rows it took.
+    /// <para>
+    /// The rows are found a home by the line's anchor, not by an index taken when it arrived: lines
+    /// land, trims remove the top and bars come and go while a picture is in flight. A line trimmed
+    /// away before its picture arrived takes the picture with it.
+    /// </para>
+    /// <para>
+    /// Like chrome rows they carry no plain text, so a search cannot land on a picture, and they are
+    /// never sent to the restore log. Unlike chrome they belong to the line before them, so a boundary
+    /// standing exactly where they go — the freeze point, the away bar, the first missed line — moves
+    /// below them rather than splitting a picture from its line.
+    /// </para>
+    /// </summary>
+    private void InsertImageRows(string windowId, long anchor, IReadOnlyList<string> rows)
+    {
+        if (rows.Count == 0 || !_lines.TryGetValue(windowId, out var buffer))
+        {
+            return;
+        }
+
+        var at = -1;
+        for (var i = buffer.Count - 1; i >= 0; i--)
+        {
+            if (buffer[i].ImageAnchor == anchor || buffer[i].ImageAnchor == -anchor)
+            {
+                at = i + 1;
+                break;
+            }
+        }
+
+        if (at < 0)
+        {
+            return;
+        }
+
+        var n = rows.Count;
+        buffer.InsertRange(at, rows.Select(row => new PaneLine(row, ImageAnchor: -anchor)));
+
+        static int Moved(int index, int at, int n) => index >= at ? index + n : index;
+
+        if (_freezePoints.TryGetValue(windowId, out var freeze))
+        {
+            _freezePoints[windowId] = Moved(freeze, at, n);
+        }
+
+        if (_awayPending.TryGetValue(windowId, out var pending))
+        {
+            _awayPending[windowId] = Moved(pending, at, n);
+        }
+
+        if (_awayBoundary.TryGetValue(windowId, out var boundary))
+        {
+            _awayBoundary[windowId] = Moved(boundary, at, n);
+        }
+
+        if (_missedFrom.TryGetValue(windowId, out var missed))
+        {
+            _missedFrom[windowId] = Moved(missed, at, n);
+        }
+
+        if (_awayMarks.TryGetValue(windowId, out var mark))
+        {
+            mark.Index = Moved(mark.Index, at, n);
+        }
+
+        if (_searchMark is { } search && string.Equals(search.WindowId, windowId, StringComparison.Ordinal))
+        {
+            _searchMark = (windowId, Moved(search.Index, at, n));
+        }
+
+        // The common case is a picture under the newest line of a live pane: append, as a line would.
+        // Anywhere else the rows went mid-buffer and the pane is re-fed, once per picture.
+        if (at == buffer.Count - n && !_freezePoints.ContainsKey(windowId) &&
+            _panes.TryGetValue(windowId, out var control))
+        {
+            foreach (var row in rows)
+            {
+                control.AppendLine(row);
+            }
+        }
+        else
+        {
+            RepaintPane(windowId);
+        }
+    }
+
+    /// <summary>
     /// Puts one row of the client's own chrome into a window's line buffer, and moves everything that
     /// indexes into that buffer past it up by the row it took.
     /// <para>
@@ -3553,7 +3738,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private void OnLine(WorldSession session, string windowId, StyledLine line)
     {
         var stamp = StampNow();
-        AppendWindowLine(windowId, _formatter.ToMarkup(line), stamp);
+        AppendSessionLine(windowId, line, stamp);
         RecordForRestore(session, windowId, WindowTitle(windowId), line, stamp);
 
         if (!_workspace.IsCaughtUp(windowId))
@@ -3612,7 +3797,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // a spawn window's content never reaches WorldSession.Scrollback, so a restore built on session
         // scrollback would bring the main windows back and leave every channel pane empty.
         var stamp = StampNow();
-        AppendWindowLine(window.Id, _formatter.ToMarkup(line), stamp);
+        AppendSessionLine(window.Id, line, stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
 
         // A first-seen destination adds a tab to its pane, so rebuild; otherwise just refresh badges.
@@ -11207,6 +11392,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _prefixTimer?.Dispose();    // and no window left to float a which-key panel over
         _webImageCts?.Cancel();
         _webImageCts?.Dispose();
+        _inlineImages.Dispose();
         _imageLoader.Dispose();
         _fetcher.Dispose();
         await _sessions.DisposeAsync().ConfigureAwait(false);

@@ -46,4 +46,10 @@ namespace SharpMUTerm.Tui;
 /// ⌥G walk between them, and they are not output.
 /// </para>
 /// </param>
-internal readonly record struct PaneLine(string Markup, string? Stamp = null, string Plain = "");
+/// <param name="ImageAnchor">
+/// Ties a line to the MXP pictures it named: positive on the line itself, the same number negated on
+/// each row of picture drawn under it, zero on everything else. A picture arrives after its line, by
+/// which time the line's index may have moved, so the rows find their place by this
+/// (<c>SharpMUTermApp.InsertImageRows</c>).
+/// </param>
+internal readonly record struct PaneLine(string Markup, string? Stamp = null, string Plain = "", long ImageAnchor = 0);
