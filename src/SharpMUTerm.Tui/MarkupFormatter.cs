@@ -92,6 +92,59 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null, Rg
         return sb.ToString();
     }
 
+    /// <summary>
+    /// A line's markup cut at <paramref name="cuts"/> — ranges of its text, in order and not overlapping —
+    /// into the pieces between them and the pieces they cover, alternately: before the first, the first,
+    /// between the first and second, and so on to after the last. Joined, the pieces are
+    /// <see cref="ToMarkup(StyledLine)"/>; a piece can be swapped for something else of its width, which is
+    /// how a picture is drawn in the cells a server left blank for it.
+    /// </summary>
+    public string[] ToMarkupPieces(StyledLine line, IReadOnlyList<(int Start, int Length)> cuts)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        ArgumentNullException.ThrowIfNull(cuts);
+        var bounds = new List<int>(cuts.Count * 2);
+        foreach (var (start, length) in cuts)
+        {
+            bounds.Add(start);
+            bounds.Add(start + length);
+        }
+
+        var pieces = new string[bounds.Count + 1];
+        var sb = new StringBuilder();
+        // The trigger left-rule, if any, is ahead of everything, so it is the start of the first piece.
+        sb.Append(ToMarkupCore(new StyledLine(Array.Empty<StyledSpan>(), line.RuleColor)));
+        var piece = 0;
+        var at = 0;
+        foreach (var span in line.Spans)
+        {
+            var from = 0;
+            while (from < span.Text.Length)
+            {
+                while (piece < bounds.Count && bounds[piece] <= at + from)
+                {
+                    pieces[piece++] = sb.ToString();
+                    sb.Clear();
+                }
+
+                var to = piece < bounds.Count ? Math.Min(span.Text.Length, bounds[piece] - at) : span.Text.Length;
+                AppendSpan(sb, new StyledSpan(span.Text[from..to], span.Style, span.Interaction));
+                from = to;
+            }
+
+            at += span.Text.Length;
+        }
+
+        while (piece < bounds.Count)
+        {
+            pieces[piece++] = sb.ToString();
+            sb.Clear();
+        }
+
+        pieces[piece] = sb.ToString();
+        return pieces;
+    }
+
     private void AppendSpan(StringBuilder sb, StyledSpan span)
     {
         if (span.Text.Length == 0)

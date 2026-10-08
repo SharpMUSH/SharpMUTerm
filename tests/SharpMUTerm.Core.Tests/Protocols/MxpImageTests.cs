@@ -162,4 +162,59 @@ public class MxpImageTests
         await Assert.That(name.Length).IsEqualTo(MxpImageSource.MaxNameLength);
         await Assert.That(name).EndsWith("…");
     }
+
+    /// <summary>
+    /// A figure row as a server that lays pictures out writes it: the tag sized in cells, then that many
+    /// blanks. The label takes the place of blanks, so the line keeps the width the box was drawn at.
+    /// </summary>
+    [Test]
+    public async Task ALabelTakesThePlaceOfTheBlanksAPictureIsGiven()
+    {
+        var blanks = new string(' ', 20);
+        var line = Line(Secure + "| <IMAGE map.png URL=\"http://mud.example/\" W=20c H=4c>" + blanks + " |");
+
+        await Assert.That(line.Text).IsEqualTo("| [image: map.png]     |");
+        await Assert.That(line.Text.Length).IsEqualTo(("| " + blanks + " |").Length);
+        await Assert.That(ImageSpan(line).Interaction!.Image!.Reserved).IsTrue();
+    }
+
+    [Test]
+    public async Task ALabelWiderThanItsCellsIsElidedToThem()
+    {
+        var line = Line(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=6c H=2c>      |");
+
+        await Assert.That(line.Text).IsEqualTo("[imag…|");
+        await Assert.That(ImageSpan(line).Interaction!.Image!.Reserved).IsTrue();
+    }
+
+    /// <summary>Text where the blanks should be means nothing was left for the picture: no blank is taken but the ones there are.</summary>
+    [Test]
+    public async Task WithoutTheBlanksThePictureIsNotReserved()
+    {
+        var line = Line(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=20c H=4c> A dark room.");
+
+        await Assert.That(line.Text).IsEqualTo("[image: map.png]A dark room.");
+        await Assert.That(ImageSpan(line).Interaction!.Image!.Reserved).IsFalse();
+    }
+
+    [Test]
+    public async Task APictureSizedInPixelsTakesNoBlanks()
+    {
+        var line = Line(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=200 H=4c>   |");
+
+        await Assert.That(line.Text).IsEqualTo("[image: map.png]   |");
+        await Assert.That(ImageSpan(line).Interaction!.Image!.Reserved).IsFalse();
+    }
+
+    /// <summary>Blanks are owed only on the line the picture is on.</summary>
+    [Test]
+    public async Task TheBlanksOwedEndWithTheLine()
+    {
+        var parser = new MxpParser();
+        parser.Feed(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=20c H=4c>");
+        parser.Flush();
+        parser.Feed("   next");
+
+        await Assert.That(parser.Flush()!.Text).IsEqualTo("   next");
+    }
 }

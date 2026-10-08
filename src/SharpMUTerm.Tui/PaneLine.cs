@@ -52,4 +52,14 @@ namespace SharpMUTerm.Tui;
 /// which time the line's index may have moved, so the rows find their place by this
 /// (<c>SharpMUTermApp.InsertImageRows</c>).
 /// </param>
-internal readonly record struct PaneLine(string Markup, string? Stamp = null, string Plain = "", long ImageAnchor = 0);
+/// <param name="Pictures">
+/// The cells on this line a server left blank for pictures, or null for none. When a picture arrives it is
+/// drawn there and <see cref="Markup"/> is rebuilt from these; <see cref="Plain"/> keeps the text the
+/// server sent, so a search still finds the picture's label.
+/// </param>
+internal readonly record struct PaneLine(
+    string Markup,
+    string? Stamp = null,
+    string Plain = "",
+    long ImageAnchor = 0,
+    PictureSlots? Pictures = null);

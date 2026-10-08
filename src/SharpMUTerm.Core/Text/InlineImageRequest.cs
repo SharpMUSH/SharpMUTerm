@@ -78,4 +78,12 @@ public sealed record InlineImageRequest(
     string Url,
     string Name,
     ImageExtent? Width = null,
-    ImageExtent? Height = null);
+    ImageExtent? Height = null)
+{
+    /// <summary>
+    /// The server left <see cref="Width"/> × <see cref="Height"/> blank cells for the picture, starting
+    /// where its label is, on this line and the ones under it — a figure laid out inside a box. Drawn there,
+    /// the picture keeps what is beside it in place; drawn under the line, it would break the box apart.
+    /// </summary>
+    public bool Reserved { get; init; }
+}

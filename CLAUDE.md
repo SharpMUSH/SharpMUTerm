@@ -476,6 +476,17 @@ fallbacks) for inline images/maps.
   - **Nothing is fetched unless something can be drawn**, nothing is fetched from a restore log, only http(s)
     and `data:` are fetched (`WebImageLoader`'s rules), two fetches run at once and sixteen lines may wait.
     `IMAGE` is a secure tag, so a player cannot make the room's clients fetch a URL.
+  - **A picture the server left cells for is drawn in them, never under its line** (`InlineImageRequest.Reserved`,
+    `PictureSlots`; the `mxp-figure` view). A server that lays pictures out — a figure inside a box — sends the
+    tag sized in cells both ways (`W=16c H=8c`) followed by that many blanks, and leaves the same columns
+    blank on the rows under it. Inserting rows under the line there split the box, and the label *added to*
+    the blanks pushed its right edge off the line; that was the reported "box drawing around the image is not
+    right". So the parser lets the label **take the place of** blanks (elided to the width) and marks the
+    request reserved only once it has really consumed them — text where the blanks should be means nothing
+    was left, and the picture goes under the line as before. The pane line is held in pieces around the
+    cells (`MarkupFormatter.ToMarkupPieces`) so the picture replaces exactly the blanks; each following line
+    takes its row while those columns are blank, and the first that is not ends the picture. The picture can
+    land before its lower rows do, so a reservation remembers what arrived and draws the rest as they land.
   - **Known and not fixed**: rows are sized to the pane when they arrive and are not re-laid out when it
     narrows, so a later split wraps them; a cell is assumed 8×16 px because the framework owns the input
     stream a `CSI 16 t` reply would arrive on; `ISMAP`/`ALIGN`/`HSPACE`/`VSPACE` are read and ignored.
@@ -682,6 +693,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `mxp-image` (an MXP `<IMAGE>` inside a `<SEND>`, through the real parser and pane path, with a line
   arriving after it — the link alone with no graphics, the picture under its own line with
   `SHARPMUTERM_GRAPHICS=halfblock`),
+  `mxp-figure` (a figure inside a box, the way a server that lays pictures out sends it — the tag sized in
+  cells and those cells left blank, text beside them — so the frame shows the picture drawn in the box with
+  both edges intact, or the label sitting in the cells with no graphics),
   `selection` (a real ⌃-drag across the main window's output, through `SimulatePaneDrag` and the control's
   own hit test rather than a highlight posed by hand — the only frame carrying `WorkspacePalette.SelectionBand`,
   which is why it is in `FrameContrastTests`' list: the band is the one plane this client invents rather

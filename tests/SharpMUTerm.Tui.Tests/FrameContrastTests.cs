@@ -39,7 +39,7 @@ public class FrameContrastTests
     /// </summary>
     private static readonly string[] Views =
     [
-        "", "freeze", "away", "highlight", "scrollback", "links", "mxp-image", "connections", "tint", "tint-input",
+        "", "freeze", "away", "highlight", "scrollback", "links", "mxp-image", "mxp-figure", "connections", "tint", "tint-input",
         "characters", "compose", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
         "logging", "startup", "history", "prefix-panel", "keypad",
 

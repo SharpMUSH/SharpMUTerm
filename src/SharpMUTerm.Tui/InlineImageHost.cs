@@ -93,7 +93,8 @@ internal sealed class InlineImageHost : IDisposable
         InlineImagePresentation presentation,
         int availableColumns,
         Func<IGraphicsProtocol?> kitty,
-        Action<IReadOnlyList<string>> deliver)
+        Action<IReadOnlyList<string>> deliver,
+        int maxRows = InlineImageLayout.MaxRows)
     {
         ArgumentNullException.ThrowIfNull(requests);
         ArgumentNullException.ThrowIfNull(kitty);
@@ -123,7 +124,7 @@ internal sealed class InlineImageHost : IDisposable
             {
                 foreach (var request in requests)
                 {
-                    var rows = await RowsForAsync(request, presentation, availableColumns, kitty).ConfigureAwait(false);
+                    var rows = await RowsForAsync(request, presentation, availableColumns, maxRows, kitty).ConfigureAwait(false);
                     if (rows is not null && !_cts.IsCancellationRequested)
                     {
                         _onUi(() => deliver(rows));
@@ -157,9 +158,10 @@ internal sealed class InlineImageHost : IDisposable
         InlineImageRequest request,
         InlineImagePresentation presentation,
         int availableColumns,
+        int maxRows,
         Func<IGraphicsProtocol?> kitty)
     {
-        var key = $"{presentation}|{availableColumns}|{request.Width}|{request.Height}|{request.Url}";
+        var key = $"{presentation}|{availableColumns}|{maxRows}|{request.Width}|{request.Height}|{request.Url}";
         if (Cached(key) is { } hit)
         {
             return hit;
@@ -180,7 +182,7 @@ internal sealed class InlineImageHost : IDisposable
             _fetches.Release();
         }
 
-        var picture = bytes is null ? null : Decode(bytes, request, availableColumns);
+        var picture = bytes is null ? null : Decode(bytes, request, availableColumns, maxRows);
         if (picture is null)
         {
             return null;
@@ -206,7 +208,11 @@ internal sealed class InlineImageHost : IDisposable
     /// Kitty the terminal scales into the box, so anything past <see cref="InlineImageLayout.CellPixelWidth"/>
     /// per column is bytes on the wire for nothing.
     /// </summary>
-    internal static DecodedPicture? Decode(byte[] bytes, InlineImageRequest request, int availableColumns)
+    internal static DecodedPicture? Decode(
+        byte[] bytes,
+        InlineImageRequest request,
+        int availableColumns,
+        int maxRows = InlineImageLayout.MaxRows)
     {
         PixelBuffer source;
         try
@@ -219,7 +225,7 @@ internal sealed class InlineImageHost : IDisposable
             return null;
         }
 
-        var box = InlineImageLayout.Fit(source.Width, source.Height, request.Width, request.Height, availableColumns);
+        var box = InlineImageLayout.Fit(source.Width, source.Height, request.Width, request.Height, availableColumns, maxRows);
         if (box.Columns <= 0 || box.Rows <= 0)
         {
             return null;

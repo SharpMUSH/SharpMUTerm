@@ -226,6 +226,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private long _nextImageAnchor;
 
     /// <summary>
+    /// Per window, the reserved pictures whose rows are still to come in the lines under them
+    /// (<see cref="ContinueReservedPictures"/>).
+    /// </summary>
+    private readonly Dictionary<string, List<ReservedPicture>> _reservedPictures = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// The web page currently in the web tab, its markup lines, and the images that decoded — keyed
     /// by index into <see cref="SharpMUTerm.Web.WebPage.Images"/>. Together these are everything
     /// <see cref="BuildWebContent"/> needs; an empty image map means the tab is the plain text-mode
@@ -1018,6 +1024,42 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 $"\x1b[1z<SEND \"look map\"><IMAGE \"{DemoImageDataUri}\" W=40c></SEND>",
                 "A clerk glances up from the ledger.",
             })
+            {
+                mxp.Feed(text);
+                if (mxp.Flush() is { } line)
+                {
+                    AppendSessionLine(MainWindowId, line, StampNow());
+                }
+            }
+
+            _inlineImages.Pending.GetAwaiter().GetResult();
+        }
+
+        // A figure inside a box, as a server that lays pictures out sends it over MXP: the tag sized in
+        // cells, and those cells left blank on its row and the eight under it, with text beside them. The
+        // picture is drawn in the cells, so the box keeps its rows and both its edges; with no graphics the
+        // label sits in them instead.
+        if (string.Equals(view, "mxp-figure", StringComparison.OrdinalIgnoreCase))
+        {
+            const int inner = 50;
+            const int picture = 16;
+            var beside = new[]
+            {
+                "The survey office has", "pinned up a map of the", "coast road. Someone has",
+                "circled the old lighthouse", "in red ink.", "", "A clerk glances up from", "the ledger.",
+            };
+            var rows = new List<string> { "\x1b[0;36m╭─ pose 3 " + new string('─', inner - 9) + "╮\x1b[0m" };
+            for (var row = 0; row < beside.Length; row++)
+            {
+                var cells = row == 0
+                    ? $"\x1b[1z<IMAGE \"{DemoImageDataUri}\" W={picture}c H={beside.Length}c>" + new string(' ', picture)
+                    : new string(' ', picture);
+                rows.Add("\x1b[0;36m│\x1b[0m " + cells + "  " + beside[row].PadRight(inner - picture - 4) + " \x1b[0;36m│\x1b[0m");
+            }
+
+            rows.Add("\x1b[0;36m╰" + new string('─', inner) + "╯\x1b[0m");
+            var mxp = new MxpParser();
+            foreach (var text in rows)
             {
                 mxp.Feed(text);
                 if (mxp.Flush() is { } line)
@@ -2681,7 +2723,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// passes one, because only a world's output is what the timestamp column describes.
     /// </para>
     /// </summary>
-    private void AppendWindowLine(string windowId, string markup, string? stamp = null, long imageAnchor = 0)
+    private void AppendWindowLine(
+        string windowId,
+        string markup,
+        string? stamp = null,
+        long imageAnchor = 0,
+        PictureSlots? pictures = null)
     {
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
@@ -2708,7 +2755,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
         // every line of every window (see PaneLine.Plain).
-        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor));
+        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor, pictures));
 
 
         // Cap the UI-side buffer at the configured scrollback so a long session doesn't grow without
@@ -3298,9 +3345,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Appends one of a world's lines to a window and, when it names pictures this terminal can draw,
-    /// starts loading them. The pictures arrive later and are inserted under the line
-    /// (<see cref="InsertImageRows"/>); until then, and for good on a terminal that cannot draw them, the
-    /// line's own <c>[image: name]</c> link is what stands in for each.
+    /// starts loading them. Until a picture arrives, and for good on a terminal that cannot draw it, the
+    /// line's own <c>[image: name]</c> link is what stands in for it.
+    /// <para>
+    /// A picture the server left cells for (<see cref="InlineImageRequest.Reserved"/>) is drawn in them:
+    /// over its label and the blanks after it on this line, and over the same columns of the lines under
+    /// it while those are blank (<see cref="ContinueReservedPictures"/>). That is a figure inside a box, and
+    /// drawing it anywhere else would push the box's edges apart. Any other picture is inserted under its
+    /// line (<see cref="InsertImageRows"/>).
+    /// </para>
     /// <para>
     /// Only live output loads pictures. A restored line comes back as its link: fetching every
     /// picture in a restore log on launch would contact every host it names before anyone has looked.
@@ -3312,22 +3365,227 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var presentation = requests.Count == 0
             ? InlineImagePresentation.TextPlaceholder
             : ResolveInlineImagePresentation();
-        var anchor = presentation is InlineImagePresentation.Kitty or InlineImagePresentation.HalfBlock
-            ? ++_nextImageAnchor
-            : 0;
+        var drawable = presentation is InlineImagePresentation.Kitty or InlineImagePresentation.HalfBlock;
 
-        AppendWindowLine(windowId, _formatter.ToMarkup(line), stamp, anchor);
-        if (anchor == 0)
+        var slots = new List<(long Picture, int Row, int Columns, int Start)>();
+        var arrived = ContinueReservedPictures(windowId, line.Text, slots);
+
+        var reserved = new List<(long Picture, InlineImageRequest Request, int Columns, int Rows)>();
+        var inline = new List<InlineImageRequest>();
+        if (drawable)
+        {
+            var at = 0;
+            foreach (var span in line.Spans)
+            {
+                if (span.Interaction?.Image is { } request)
+                {
+                    if (ReservedCells(line.Text, at, span.Text.Length, request) is { } cells
+                        && !Overlaps(slots, at, cells.Columns))
+                    {
+                        var picture = ++_nextImageAnchor;
+                        slots.Add((picture, 0, cells.Columns, at));
+                        reserved.Add((picture, request, cells.Columns, cells.Rows));
+                        if (cells.Rows > 1)
+                        {
+                            if (!_reservedPictures.TryGetValue(windowId, out var open))
+                            {
+                                _reservedPictures[windowId] = open = new List<ReservedPicture>();
+                            }
+
+                            open.Add(new ReservedPicture(picture, at, cells.Columns, cells.Rows));
+                        }
+                    }
+                    else
+                    {
+                        inline.Add(request);
+                    }
+                }
+
+                at += span.Text.Length;
+            }
+        }
+
+        var anchor = inline.Count > 0 ? ++_nextImageAnchor : 0;
+        PictureSlots? pictures = null;
+        string markup;
+        if (slots.Count == 0)
+        {
+            markup = _formatter.ToMarkup(line);
+        }
+        else
+        {
+            slots.Sort((a, b) => a.Start.CompareTo(b.Start));
+            pictures = new PictureSlots(
+                _formatter.ToMarkupPieces(line, slots.Select(slot => (slot.Start, slot.Columns)).ToArray()),
+                slots.Select(slot => (slot.Picture, slot.Row, slot.Columns)).ToArray());
+            foreach (var picture in arrived)
+            {
+                pictures.Draw(picture.Id, picture.Drawn!);
+            }
+
+            markup = pictures.Compose();
+        }
+
+        AppendWindowLine(windowId, markup, stamp, anchor, pictures);
+
+        IGraphicsProtocol? Kitty() => _system.ConsoleDriver as IGraphicsProtocol;
+        if (anchor != 0)
+        {
+            _inlineImages.Load(
+                inline,
+                presentation,
+                InlineImageColumns(windowId),
+                Kitty,
+                rows => InsertImageRows(windowId, anchor, rows));
+        }
+
+        foreach (var (picture, request, columns, rows) in reserved)
+        {
+            _inlineImages.Load(
+                [request],
+                presentation,
+                columns,
+                Kitty,
+                drawn => DrawReservedPicture(windowId, picture, drawn),
+                rows);
+        }
+    }
+
+    /// <summary>
+    /// The cells a reserved picture labelled at <paramref name="start"/> may be drawn in, or null when the
+    /// line does not have them: the label and blanks to the picture's width. Bounded by the Kitty diacritic
+    /// table, which numbers at most that many rows and columns.
+    /// </summary>
+    private static (int Columns, int Rows)? ReservedCells(string text, int start, int label, InlineImageRequest request)
+    {
+        if (!request.Reserved
+            || request.Width is not { Unit: ImageExtentUnit.Characters } width
+            || request.Height is not { Unit: ImageExtentUnit.Characters } height)
+        {
+            return null;
+        }
+
+        var limit = KittyGraphicsProtocol.RowColumnDiacritics.Length;
+        var columns = Math.Min(width.Value, limit);
+        if (label > columns || start + columns > text.Length || !IsBlank(text, start + label, columns - label))
+        {
+            return null;
+        }
+
+        return (columns, Math.Min(height.Value, limit));
+    }
+
+    /// <summary>
+    /// Gives this line its row of each picture still drawing down the window: the next row of it, over the
+    /// same columns, while those columns are blank. A line that has text there ends the picture — the
+    /// server did not leave it the room, or something else came between its rows.
+    /// </summary>
+    /// <returns>The pictures given a row here that have already arrived, to be drawn in it at once.</returns>
+    private List<ReservedPicture> ContinueReservedPictures(
+        string windowId,
+        string text,
+        List<(long Picture, int Row, int Columns, int Start)> slots)
+    {
+        var arrived = new List<ReservedPicture>();
+        if (!_reservedPictures.TryGetValue(windowId, out var open))
+        {
+            return arrived;
+        }
+
+        for (var i = 0; i < open.Count; i++)
+        {
+            var picture = open[i];
+            if (picture.Start + picture.Columns <= text.Length
+                && IsBlank(text, picture.Start, picture.Columns)
+                && !Overlaps(slots, picture.Start, picture.Columns))
+            {
+                slots.Add((picture.Id, picture.Next, picture.Columns, picture.Start));
+                picture.Next++;
+                if (picture.Drawn is not null)
+                {
+                    arrived.Add(picture);
+                }
+            }
+            else
+            {
+                picture.Next = picture.Rows;
+            }
+        }
+
+        open.RemoveAll(picture => picture.Next >= picture.Rows);
+        if (open.Count == 0)
+        {
+            _reservedPictures.Remove(windowId);
+        }
+
+        return arrived;
+    }
+
+    private static bool IsBlank(string text, int start, int length)
+    {
+        for (var i = start; i < start + length; i++)
+        {
+            if (text[i] != ' ')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool Overlaps(List<(long Picture, int Row, int Columns, int Start)> slots, int start, int columns) =>
+        slots.Any(slot => start < slot.Start + slot.Columns && slot.Start < start + columns);
+
+    /// <summary>
+    /// Draws a reserved picture's rows into the lines holding its cells, and repaints the window once.
+    /// Lines trimmed away before the picture arrived take their rows with them; lines still to come are
+    /// drawn as they land.
+    /// </summary>
+    private void DrawReservedPicture(string windowId, long picture, IReadOnlyList<string> rows)
+    {
+        if (_reservedPictures.GetValueOrDefault(windowId)?.Find(open => open.Id == picture) is { } pending)
+        {
+            pending.Drawn = rows;
+        }
+
+        if (!_lines.TryGetValue(windowId, out var buffer))
         {
             return;
         }
 
-        _inlineImages.Load(
-            requests,
-            presentation,
-            InlineImageColumns(windowId),
-            () => _system.ConsoleDriver as IGraphicsProtocol,
-            rows => InsertImageRows(windowId, anchor, rows));
+        var changed = false;
+        for (var i = 0; i < buffer.Count; i++)
+        {
+            if (buffer[i].Pictures is { } slots && slots.Holds(picture) && slots.Draw(picture, rows))
+            {
+                buffer[i] = buffer[i] with { Markup = slots.Compose() };
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            RepaintPane(windowId);
+        }
+    }
+
+    /// <summary>A reserved picture whose rows are still to come, one per line, down a window.</summary>
+    private sealed class ReservedPicture(long id, int start, int columns, int rows)
+    {
+        public long Id { get; } = id;
+
+        public int Start { get; } = start;
+
+        public int Columns { get; } = columns;
+
+        public int Rows { get; } = rows;
+
+        /// <summary>The row the next line holds.</summary>
+        public int Next { get; set; } = 1;
+
+        /// <summary>The picture's rows, once it has arrived.</summary>
+        public IReadOnlyList<string>? Drawn { get; set; }
     }
 
     /// <summary>
