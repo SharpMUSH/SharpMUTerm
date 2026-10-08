@@ -44,7 +44,7 @@ public class SnapshotViewEmptyConfigTests
         "connections", "characters", "tint", "tint-input", "tint-input-moved",
         "compose", "compose-literal", "deletions", "textansi", "input", "keypad", "password",
         "startup", "logging", "set", "triggers", "route", "highlight", "worlds", "settings", "mssp",
-        "mssp-none", "mssp-never", "mxp-image",
+        "mssp-none", "mssp-never", "mxp-image", "mxp-figure",
     ];
 
     /// <summary>

@@ -107,6 +107,16 @@ public sealed class MxpParser : ILineParser
     private readonly List<Frame> _stack = new();
     private List<StyledLine>? _emit;
 
+    /// <summary>
+    /// Blanks still owed to a reserved picture's label (<see cref="HandleImage"/>): the spaces the server
+    /// left for the picture that the label now stands in, so the line keeps the width the server laid it
+    /// out at. Zero when nothing is owed.
+    /// </summary>
+    private int _owedBlanks;
+
+    /// <summary>Where in <see cref="_lineSpans"/> the label owed those blanks sits.</summary>
+    private int _owedBy = -1;
+
     /// <summary>The rendition state that will apply to the next printed character.</summary>
     public TextStyle CurrentStyle => _current;
 
@@ -200,6 +210,8 @@ public sealed class MxpParser : ILineParser
         _defaultMode = MxpLineMode.Open;
         _lineMode = MxpLineMode.Open;
         _tempSecure = false;
+        _owedBlanks = 0;
+        _owedBy = -1;
         _current = TextStyle.Default;
         _interaction = null;
         _run.Clear();
@@ -329,9 +341,41 @@ public sealed class MxpParser : ILineParser
 
             default:
                 // Anything else is literal text.
+                if (_owedBlanks > 0)
+                {
+                    if (ch == ' ')
+                    {
+                        PayBlank();
+                        break;
+                    }
+
+                    _owedBlanks = 0;
+                }
+
                 _run.Append(ch);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Takes one of the blanks a reserved picture's label stands in for. When the last is taken the server
+    /// has been shown to have left the cells, and the label's request says so.
+    /// </summary>
+    private void PayBlank()
+    {
+        if (--_owedBlanks > 0 || _owedBy < 0 || _owedBy >= _lineSpans.Count)
+        {
+            return;
+        }
+
+        var label = _lineSpans[_owedBy];
+        if (label.Interaction is { Image: { } request } interaction)
+        {
+            _lineSpans[_owedBy] = new StyledSpan(label.Text, label.Style,
+                interaction with { Image = request with { Reserved = true } });
+        }
+
+        _owedBy = -1;
     }
 
     private void ProcessEscape(char ch)
@@ -643,6 +687,18 @@ public sealed class MxpParser : ILineParser
             var replacement = ResolveEntity(content);
             if (replacement is not null)
             {
+                // An entity is text like any other: &nbsp; pays a blank a picture's label owes, anything else ends the debt.
+                if (_owedBlanks > 0)
+                {
+                    if (replacement == " ")
+                    {
+                        PayBlank();
+                        return;
+                    }
+
+                    _owedBlanks = 0;
+                }
+
                 _run.Append(replacement);
             }
             else
@@ -889,11 +945,26 @@ public sealed class MxpParser : ILineParser
             interaction = (enclosing ?? SpanInteraction.Link(url)) with { Image = request };
         }
 
+        // Sized in cells both ways, a picture may be one the server laid out: it left that many blank cells
+        // here and on the rows below for the picture to be drawn in. The label then takes the place of
+        // blanks rather than adding to them, and if the blanks are there the request is marked reserved,
+        // so a client that draws it does so in those cells rather than under the line.
+        var label = $"[image: {name}]";
+        var reserving = url is not null && width is { Unit: ImageExtentUnit.Characters }
+            && height is { Unit: ImageExtentUnit.Characters };
+        if (reserving)
+        {
+            var cells = width!.Value.Value;
+            label = label.Length <= cells ? label : cells > 1 ? label[..(cells - 1)] + "…" : label[..cells];
+        }
+
         FlushRun();
         _interaction = interaction;
-        _run.Append("[image: ").Append(name).Append(']');
+        _run.Append(label);
         FlushRun();
         _interaction = enclosing;
+        _owedBlanks = reserving ? label.Length : 0;
+        _owedBy = reserving ? _lineSpans.Count - 1 : -1;
     }
 
     private static string? FirstPositionalExcept(List<(string? Key, string Value)> attrs, string flag)
@@ -1156,6 +1227,8 @@ public sealed class MxpParser : ILineParser
     private void EndLine()
     {
         FlushRun();
+        _owedBlanks = 0;
+        _owedBy = -1;
 
         // Spec: "when in OPEN mode, any unclosed OPEN tags are automatically closed when a newline is
         // received from the MUD." Only open-mode ones: "secure tags are never automatically closed",

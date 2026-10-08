@@ -5,6 +5,7 @@ using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Text;
+using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Graphics;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -217,6 +218,139 @@ public class MxpImageTests
 
         await Assert.That(run.App.PaneLines(MainWindow).Any(l => l.Contains('▀'))).IsFalse();
         await Assert.That(run.App.PaneLines(MainWindow).Any(l => l.Contains("[image: map.png]"))).IsTrue();
+    }
+
+    // ---- In cells the server left -------------------------------------------------------------
+
+    /// <summary>
+    /// A figure inside a box, as a server that lays pictures out sends it: the tag sized in cells, and
+    /// those cells left blank on its row and the rows under it. The picture is drawn there, so the box keeps
+    /// its rows and both its edges.
+    /// </summary>
+    [Test]
+    public async Task APictureTheServerLeftCellsForIsDrawnInThemAndAddsNoRows()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (_, _) => Task.FromResult<byte[]?>(Png(64, 48));
+        var before = run.App.PaneLines(MainWindow).Count;
+
+        var blanks = new string(' ', 8);
+        run.Receive("+----------+");
+        run.Receive(Secure + "| <IMAGE map.png URL=\"https://mud.example/\" W=8c H=3c>" + blanks + " |");
+        run.Receive("| " + blanks + " |");
+        run.Receive("| " + blanks + " |");
+        run.Receive("+----------+");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).Skip(before).ToList();
+        await Assert.That(lines.Count).IsEqualTo(5);
+        foreach (var row in lines.Skip(1).Take(3))
+        {
+            var plain = MarkupText.Plain(row);
+            await Assert.That(plain.Length).IsEqualTo(12);
+            await Assert.That(plain).StartsWith("| ").And.EndsWith(" |");
+            await Assert.That(plain.Count(c => c == '▀')).IsEqualTo(8);
+        }
+    }
+
+    /// <summary>
+    /// The picture can land before the rows under its line do, or after; either way each row holds its own
+    /// part of it.
+    /// </summary>
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task EveryRowIsDrawnWhicheverArrivesFirst(bool pictureFirst)
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        var gate = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        run.App.ImageFetch = (_, _) => gate.Task;
+        var before = run.App.PaneLines(MainWindow).Count;
+
+        var blanks = new string(' ', 8);
+        run.Receive(Secure + "| <IMAGE map.png URL=\"https://mud.example/\" W=8c H=3c>" + blanks + " |");
+        if (pictureFirst)
+        {
+            gate.SetResult(Png(64, 48));
+            await run.App.InlineImagesSettled;
+            run.App.RenderNextFrame();
+        }
+
+        run.Receive("| " + blanks + " |");
+        run.Receive("| " + blanks + " |");
+        gate.TrySetResult(Png(64, 48));
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).Skip(before).ToList();
+        await Assert.That(lines.Count).IsEqualTo(3);
+        foreach (var row in lines)
+        {
+            await Assert.That(MarkupText.Plain(row).Count(c => c == '▀')).IsEqualTo(8);
+        }
+    }
+
+    /// <summary>Text where the picture's next row would go ends the picture there, rather than drawing over the text.</summary>
+    [Test]
+    public async Task APictureStopsAtTheFirstLineWithoutItsCells()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (_, _) => Task.FromResult<byte[]?>(Png(64, 48));
+        var before = run.App.PaneLines(MainWindow).Count;
+
+        var blanks = new string(' ', 8);
+        run.Receive(Secure + "| <IMAGE map.png URL=\"https://mud.example/\" W=8c H=3c>" + blanks + " |");
+        run.Receive("| " + blanks + " |");
+        run.Receive("| A town guard |");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).Skip(before).ToList();
+        await Assert.That(lines.Count).IsEqualTo(3);
+        await Assert.That(lines[0]).Contains("▀");
+        await Assert.That(lines[1]).Contains("▀");
+        await Assert.That(MarkupText.Plain(lines[2])).IsEqualTo("| A town guard |");
+    }
+
+    /// <summary>With nothing to draw with, the label sits in the cells and the box is the width it was laid out at.</summary>
+    [Test]
+    public async Task OnATextOnlyTerminalTheLabelSitsInTheCells()
+    {
+        await using var run = await Start(GraphicsProtocol.None);
+        var before = run.App.PaneLines(MainWindow).Count;
+
+        run.Receive(Secure + "| <IMAGE map.png URL=\"https://mud.example/\" W=20c H=3c>" + new string(' ', 20) + " |");
+        await run.App.InlineImagesSettled;
+
+        var line = MarkupText.Plain(run.App.PaneLines(MainWindow)[before]);
+        await Assert.That(line).IsEqualTo("| [image: map.png]     |");
+    }
+
+    [Test]
+    public async Task PiecesJoinToTheWholeLine()
+    {
+        var formatter = new MarkupFormatter(ThemeLibrary.Dark());
+        var line = new StyledLine(new[]
+        {
+            new StyledSpan("ab", TextStyle.Default),
+            new StyledSpan("cdef", TextStyle.Default.WithForeground(TerminalColor.FromIndex(1))),
+            new StyledSpan("gh", TextStyle.Default),
+        });
+
+        var pieces = formatter.ToMarkupPieces(line, new[] { (1, 2), (5, 2) });
+
+        await Assert.That(pieces.Length).IsEqualTo(5);
+        await Assert.That(string.Concat(pieces.Select(MarkupText.Plain))).IsEqualTo("abcdefgh");
+        await Assert.That(pieces.Select(MarkupText.Plain).ToArray()).IsEquivalentTo(new[] { "a", "bc", "de", "fg", "h" });
+    }
+
+    [Test]
+    public async Task AKittyPlaceholderIsOneCell()
+    {
+        var rows = InlineImageRows.Kitty(0xC00001, columns: 5, rows: 1);
+
+        await Assert.That(PictureSlots.Cells(rows[0])).IsEqualTo(5);
     }
 
     // ---- Harness ------------------------------------------------------------------------------
