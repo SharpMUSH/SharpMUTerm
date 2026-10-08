@@ -10590,6 +10590,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _drafts.Forget(id);        // both bars: a closed window keeps neither of its two drafts
         _secondBars.Forget(id);    // and a same-id window later starts from F8's default again
         _lines.Remove(id);         // don't resurrect old scrollback if a same-id spawn reopens
+        _reservedPictures.Remove(id);
         _freezePoints.Remove(id);
         _workspace.CloseWindow(id);
         RebuildPaneArea();

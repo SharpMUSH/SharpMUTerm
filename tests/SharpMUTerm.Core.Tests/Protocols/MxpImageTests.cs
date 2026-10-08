@@ -179,6 +179,15 @@ public class MxpImageTests
     }
 
     [Test]
+    public async Task ANonBreakingSpacePaysABlank()
+    {
+        var line = Line(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=6c H=2c>&nbsp;     |");
+
+        await Assert.That(line.Text).IsEqualTo("[imag…|");
+        await Assert.That(ImageSpan(line).Interaction!.Image!.Reserved).IsTrue();
+    }
+
+    [Test]
     public async Task ALabelWiderThanItsCellsIsElidedToThem()
     {
         var line = Line(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=6c H=2c>      |");

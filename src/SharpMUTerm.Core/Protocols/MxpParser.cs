@@ -687,6 +687,18 @@ public sealed class MxpParser : ILineParser
             var replacement = ResolveEntity(content);
             if (replacement is not null)
             {
+                // An entity is text like any other: &nbsp; pays a blank a picture's label owes, anything else ends the debt.
+                if (_owedBlanks > 0)
+                {
+                    if (replacement == " ")
+                    {
+                        PayBlank();
+                        return;
+                    }
+
+                    _owedBlanks = 0;
+                }
+
                 _run.Append(replacement);
             }
             else
