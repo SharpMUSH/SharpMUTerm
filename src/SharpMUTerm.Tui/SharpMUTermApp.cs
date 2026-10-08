@@ -3511,6 +3511,15 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             buffer[at] = buffer[at] with { Markup = rows[0] };
             InsertImageRows(windowId, anchor, rows.Skip(1).ToArray(), repaint: true);
         }
+        else if (string.IsNullOrWhiteSpace(rest.Text) && at + 1 < buffer.Count && buffer[at + 1].ImageAnchor == -anchor)
+        {
+            // The last label of a line holding only pictures, with the earlier ones already under it. This
+            // picture cannot take the line, or it would sit above them; the first row under the line moves
+            // up into it instead, so no blank row is left above the pictures.
+            buffer[at] = buffer[at] with { Markup = buffer[at + 1].Markup };
+            RemoveChromeRow(windowId, at + 1);
+            InsertImageRows(windowId, anchor, rows, repaint: true);
+        }
         else
         {
             buffer[at] = buffer[at] with { Markup = _formatter.ToMarkup(rest) };

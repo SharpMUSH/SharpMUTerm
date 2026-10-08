@@ -166,6 +166,35 @@ public class MxpImageTests
         await Assert.That(lines.Any(l => l.Contains("[image:", StringComparison.Ordinal))).IsFalse();
     }
 
+    /// <summary>
+    /// A line of nothing but two pictures leaves no blank row above them once both are drawn, and they keep
+    /// the order the line named them in.
+    /// </summary>
+    [Test]
+    public async Task TwoPicturesOnALineOfTheirOwnLeaveNoBlankRow()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (url, _) => Task.FromResult<byte[]?>(url.EndsWith("a.png", StringComparison.Ordinal) ? Png(32, 32) : Png(32, 64));
+        run.Receive("Before.");
+
+        run.Receive(Secure + "<IMAGE a.png URL=\"https://mud.example/\"> <IMAGE b.png URL=\"https://mud.example/\">");
+        run.Receive("After.");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).ToList();
+        var at = lines.FindIndex(l => l.Contains("Before.", StringComparison.Ordinal));
+        var a = LinkPayload.For(SpanInteraction.Link("https://mud.example/a.png"))!;
+        var b = LinkPayload.For(SpanInteraction.Link("https://mud.example/b.png"))!;
+        var expected = new[] { a, a, b, b, b, b }; // 32×32 px is two rows, 32×64 four
+        for (var i = 0; i < expected.Length; i++)
+        {
+            await Assert.That(lines[at + 1 + i]).Contains('▀').And.Contains(expected[i]);
+        }
+
+        await Assert.That(lines[at + 1 + expected.Length]).Contains("After.");
+    }
+
     /// <summary>A picture inside a <c>&lt;SEND&gt;</c> sends that command when clicked, as its label did.</summary>
     [Test]
     public async Task APictureInsideASendIsThatCommand()
