@@ -195,6 +195,38 @@ public class MxpImageTests
         await Assert.That(lines[at + 1 + expected.Length]).Contains("After.");
     }
 
+    /// <summary>
+    /// A picture in a box that the server could not size in time comes as one row of description inside the
+    /// box. Drawn under that row it would cut the box open; it takes the row's place instead, the box's edges
+    /// go down either side of it, and it is held to the room between them.
+    /// </summary>
+    [Test]
+    public async Task APictureInABoxKeepsTheBoxsEdges()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (_, _) => Task.FromResult<byte[]?>(Png(320, 160));
+        var before = run.App.PaneLines(MainWindow).Count;
+
+        run.Receive("┌" + new string('─', 18) + "┐");
+        run.Receive(Secure + "│ <IMAGE map.png URL=\"https://mud.example/\">" + new string(' ', 16) + " │");
+        run.Receive("│ Nothing to see.  │");
+        run.Receive("└" + new string('─', 18) + "┘");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).Skip(before).Select(MarkupText.Plain).ToList();
+        await Assert.That(lines.Select(l => l.Length).Distinct().ToArray()).IsEquivalentTo(new[] { 20 });
+        var picture = lines.Skip(1).TakeWhile(l => l.Contains('▀')).ToList();
+        await Assert.That(picture.Count).IsGreaterThan(1);
+        foreach (var row in picture)
+        {
+            await Assert.That(row).StartsWith("│ ").And.EndsWith("│");
+        }
+
+        await Assert.That(lines[1 + picture.Count]).IsEqualTo("│ Nothing to see.  │");
+        await Assert.That(lines.Any(l => l.Contains("[image:", StringComparison.Ordinal))).IsFalse();
+    }
+
     /// <summary>A picture inside a <c>&lt;SEND&gt;</c> sends that command when clicked, as its label did.</summary>
     [Test]
     public async Task APictureInsideASendIsThatCommand()
