@@ -3434,11 +3434,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         IGraphicsProtocol? Kitty() => _system.ConsoleDriver as IGraphicsProtocol;
         if (anchor != 0)
         {
-            var shown = new InlinePictureLine(line, inline);
+            var edges = inline.Count == 1 ? BoxEdgesAround(line, inline[0]) : null;
+            var shown = new InlinePictureLine(line, inline, edges);
             _inlineImages.Load(
                 inline.Select(index => line.Spans[index].Interaction!.Image!).ToArray(),
                 presentation,
-                InlineImageColumns(windowId),
+                Math.Min(InlineImageColumns(windowId), edges?.Columns ?? int.MaxValue),
                 Kitty,
                 (index, rows) => PlaceInlinePicture(windowId, anchor, shown, index, rows));
         }
@@ -3487,6 +3488,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         var span = shown.Labels[index];
         rows = Linked(rows, shown.Line.Spans[span].Interaction);
+        if (shown.Edges is { } edges)
+        {
+            rows = rows.Select(row =>
+                edges.Before + row + new string(' ', Math.Max(0, edges.Columns - PictureSlots.Cells(row))) + edges.After).ToArray();
+        }
 
         // A line that also has cells a server left for a picture is held in pieces around them
         // (PaneLine.Pictures), and rebuilding it from its spans would undo what was drawn there. It keeps
@@ -3504,14 +3510,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             shown.Line.RuleColor,
             shown.Line.IsPrompt);
 
+        // A line inside a box is empty once its label goes when all that is left is the box's edges.
+        var empty = string.IsNullOrWhiteSpace(shown.Edges is null ? rest.Text : WithoutEdges(rest.Text));
+
         // Plain keeps the text the server sent, as a reserved picture's line does, so ⌃F still finds a
         // picture by its name.
-        if (first && string.IsNullOrWhiteSpace(rest.Text))
+        if (first && empty)
         {
             buffer[at] = buffer[at] with { Markup = rows[0] };
             InsertImageRows(windowId, anchor, rows.Skip(1).ToArray(), repaint: true);
         }
-        else if (string.IsNullOrWhiteSpace(rest.Text) && at + 1 < buffer.Count && buffer[at + 1].ImageAnchor == -anchor)
+        else if (empty && at + 1 < buffer.Count && buffer[at + 1].ImageAnchor == -anchor)
         {
             // The last label of a line holding only pictures, with the earlier ones already under it. This
             // picture cannot take the line, or it would sit above them; the first row under the line moves
@@ -3527,10 +3536,75 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The edges of the box a picture's label sits in, when it sits in one: the line's text either side of
+    /// the label with everything but the box's upright edges blanked, and the blank columns the server left
+    /// after the label. A picture that went under such a line without them would cut the box open for as
+    /// many rows as the picture is tall; with them the box grows around the picture, and the picture is held
+    /// to the room inside it.
+    /// <para>
+    /// This is the picture the server could not size in time, so it laid out one row of description rather
+    /// than the picture's cells (<see cref="InlineImageRequest.Reserved"/> is the case where it could).
+    /// </para>
+    /// </summary>
+    private BoxEdges? BoxEdgesAround(StyledLine line, int label)
+    {
+        var start = line.Spans.Take(label).Sum(span => span.Text.Length);
+        var end = start + line.Spans[label].Text.Length;
+        var text = line.Text;
+        var blanks = 0;
+        while (end + blanks < text.Length && text[end + blanks] == ' ')
+        {
+            blanks++;
+        }
+
+        if (blanks == 0 || !text[..start].Any(IsUprightEdge) || !text[(end + blanks)..].Any(IsUprightEdge))
+        {
+            return null;
+        }
+
+        return new BoxEdges(
+            _formatter.ToMarkup(EdgesOf(line, 0, start)),
+            _formatter.ToMarkup(EdgesOf(line, end + blanks, text.Length)),
+            Math.Min(blanks, KittyGraphicsProtocol.RowColumnDiacritics.Length));
+    }
+
+    /// <summary>The characters a box's left and right sides are drawn in.</summary>
+    private static bool IsUprightEdge(char c) => c is '|' or '│' or '┃' or '║' or '╎' or '╏' or '┆' or '┇' or '┊' or '┋' or '▏' or '▕';
+
+    private static string WithoutEdges(string text) => new(text.Select(c => IsUprightEdge(c) ? ' ' : c).ToArray());
+
+    /// <summary>The part of <paramref name="line"/> from <paramref name="from"/> to <paramref name="to"/>, keeping its styles and upright edges and blanking every other character.</summary>
+    private static StyledLine EdgesOf(StyledLine line, int from, int to)
+    {
+        var spans = new List<StyledSpan>();
+        var at = 0;
+        foreach (var span in line.Spans)
+        {
+            var a = Math.Max(from, at);
+            var b = Math.Min(to, at + span.Text.Length);
+            if (a < b)
+            {
+                var part = span.Text[(a - at)..(b - at)];
+                spans.Add(new StyledSpan(new string(part.Select(c => IsUprightEdge(c) ? c : ' ').ToArray()), span.Style));
+            }
+
+            at += span.Text.Length;
+        }
+
+        return new StyledLine(spans);
+    }
+
+    /// <summary>A box's edges either side of a picture, as markup, and the columns between them.</summary>
+    private sealed record BoxEdges(string Before, string After, int Columns);
+
     /// <summary>A line whose inline pictures are on their way: which of its spans are their labels, and which have arrived.</summary>
-    private sealed class InlinePictureLine(StyledLine line, IReadOnlyList<int> labels)
+    private sealed class InlinePictureLine(StyledLine line, IReadOnlyList<int> labels, BoxEdges? edges)
     {
         public StyledLine Line { get; } = line;
+
+        /// <summary>The box the line's one picture sits in, when it sits in one.</summary>
+        public BoxEdges? Edges { get; } = edges;
 
         /// <summary>The span holding each picture's label, in the order the pictures were asked for.</summary>
         public IReadOnlyList<int> Labels { get; } = labels;

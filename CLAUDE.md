@@ -455,6 +455,9 @@ fallbacks) for inline images/maps.
   (`PlaceInlinePicture`, `Linked`); a line that was only the picture becomes the picture's first row. This
   happens when the picture *arrives*, never at append time, because a picture that fails keeps its label as
   the only thing standing for it. `PaneLine.Plain` keeps the label, so ⌃F still finds a picture by name.
+  **A picture under a line inside a box carries the box's edges down either side of it** (`BoxEdgesAround`)
+  and is held to the blank columns between them. That is a figure the server could not size in time, sent as
+  one row of description; without the edges its rows cut the box open for as many rows as it is tall.
   Decisions not to relitigate:
   - **A picture is pane rows, never a control.** Kitty placeholders (`U+10EEEE` + row/column diacritics, the
     image id in the foreground) and half-blocks are both plain markup a `MarkupControl` already draws, so a
