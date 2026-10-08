@@ -450,7 +450,12 @@ fallbacks) for inline images/maps.
   Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
   the request; the span keeps an enclosing `<SEND>`'s action (the spec's own `<SEND showmap><IMAGE …>` example)
   and otherwise links to the picture. That span **is** the text-only fallback, so logs, search, triggers and a
-  terminal with no graphics all see the same thing. Decisions not to relitigate:
+  terminal with no graphics all see the same thing. **Once the picture is drawn it takes the label's place on
+  screen** and carries the label's link, so clicking the picture opens it or sends the `<SEND>`
+  (`PlaceInlinePicture`, `Linked`); a line that was only the picture becomes the picture's first row. This
+  happens when the picture *arrives*, never at append time, because a picture that fails keeps its label as
+  the only thing standing for it. `PaneLine.Plain` keeps the label, so ⌃F still finds a picture by name.
+  Decisions not to relitigate:
   - **A picture is pane rows, never a control.** Kitty placeholders (`U+10EEEE` + row/column diacritics, the
     image id in the foreground) and half-blocks are both plain markup a `MarkupControl` already draws, so a
     picture scrolls, clips, freezes and trims with the text around it and nothing that indexes a pane buffer
