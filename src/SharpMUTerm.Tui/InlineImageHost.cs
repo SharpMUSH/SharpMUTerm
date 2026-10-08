@@ -84,7 +84,8 @@ internal sealed class InlineImageHost : IDisposable
 
     /// <summary>
     /// Loads a line's pictures in order and delivers each one's rows through <paramref name="deliver"/>
-    /// on the UI thread. <paramref name="kitty"/> is asked on the UI thread, at delivery: it is the
+    /// on the UI thread, with its index in <paramref name="requests"/>: a picture that fails delivers
+    /// nothing, so the order alone does not say which one arrived. <paramref name="kitty"/> is asked on the UI thread, at delivery: it is the
     /// driver, and the transmit has to happen just before the rows that point at it are painted.
     /// </summary>
     /// <returns>False when the queue is full and nothing was started.</returns>
@@ -93,7 +94,7 @@ internal sealed class InlineImageHost : IDisposable
         InlineImagePresentation presentation,
         int availableColumns,
         Func<IGraphicsProtocol?> kitty,
-        Action<IReadOnlyList<string>> deliver,
+        Action<int, IReadOnlyList<string>> deliver,
         int maxRows = InlineImageLayout.MaxRows)
     {
         ArgumentNullException.ThrowIfNull(requests);
@@ -122,12 +123,13 @@ internal sealed class InlineImageHost : IDisposable
             await started.Task.ConfigureAwait(false);
             try
             {
-                foreach (var request in requests)
+                for (var i = 0; i < requests.Count; i++)
                 {
-                    var rows = await RowsForAsync(request, presentation, availableColumns, maxRows, kitty).ConfigureAwait(false);
+                    var index = i;
+                    var rows = await RowsForAsync(requests[index], presentation, availableColumns, maxRows, kitty).ConfigureAwait(false);
                     if (rows is not null && !_cts.IsCancellationRequested)
                     {
-                        _onUi(() => deliver(rows));
+                        _onUi(() => deliver(index, rows));
                     }
                 }
             }

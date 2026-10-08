@@ -129,10 +129,89 @@ public class MxpImageTests
         run.App.RenderNextFrame();
 
         var lines = run.App.PaneLines(MainWindow).ToList();
-        var at = lines.FindIndex(l => l.Contains("[image: map.png]", StringComparison.Ordinal));
+        var at = lines.FindIndex(l => l.Contains("A map:", StringComparison.Ordinal));
         await Assert.That(at).IsGreaterThanOrEqualTo(0);
         var picture = lines.Skip(at + 1).TakeWhile(l => l.Contains('▀')).Count();
         await Assert.That(picture).IsEqualTo(4); // 64×64 px is 8×4 cells
+        await Assert.That(lines.Any(l => l.Contains("[image:", StringComparison.Ordinal))).IsFalse()
+            .Because("a picture that is drawn takes its label's place");
+    }
+
+    /// <summary>
+    /// A line that was nothing but its picture is replaced by the picture, rather than left as an empty row
+    /// above it, and the picture is the link the label was.
+    /// </summary>
+    [Test]
+    public async Task APictureOnALineOfItsOwnIsTheLineAndItsLink()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (_, _) => Task.FromResult<byte[]?>(Png(64, 64));
+        run.Receive("Before.");
+
+        run.Receive(Secure + "<IMAGE map.png URL=\"https://mud.example/\">");
+        run.Receive("After.");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).ToList();
+        var at = lines.FindIndex(l => l.Contains("Before.", StringComparison.Ordinal));
+        var picture = lines.Skip(at + 1).Take(4).ToList();
+        foreach (var row in picture)
+        {
+            await Assert.That(row).Contains('▀');
+            await Assert.That(row).Contains(LinkPayload.For(SpanInteraction.Link("https://mud.example/map.png"))!);
+        }
+
+        await Assert.That(lines[at + 5]).Contains("After.");
+        await Assert.That(lines.Any(l => l.Contains("[image:", StringComparison.Ordinal))).IsFalse();
+    }
+
+    /// <summary>
+    /// A line of nothing but two pictures leaves no blank row above them once both are drawn, and they keep
+    /// the order the line named them in.
+    /// </summary>
+    [Test]
+    public async Task TwoPicturesOnALineOfTheirOwnLeaveNoBlankRow()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (url, _) => Task.FromResult<byte[]?>(url.EndsWith("a.png", StringComparison.Ordinal) ? Png(32, 32) : Png(32, 64));
+        run.Receive("Before.");
+
+        run.Receive(Secure + "<IMAGE a.png URL=\"https://mud.example/\"> <IMAGE b.png URL=\"https://mud.example/\">");
+        run.Receive("After.");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).ToList();
+        var at = lines.FindIndex(l => l.Contains("Before.", StringComparison.Ordinal));
+        var a = LinkPayload.For(SpanInteraction.Link("https://mud.example/a.png"))!;
+        var b = LinkPayload.For(SpanInteraction.Link("https://mud.example/b.png"))!;
+        var expected = new[] { a, a, b, b, b, b }; // 32×32 px is two rows, 32×64 four
+        for (var i = 0; i < expected.Length; i++)
+        {
+            await Assert.That(lines[at + 1 + i]).Contains('▀').And.Contains(expected[i]);
+        }
+
+        await Assert.That(lines[at + 1 + expected.Length]).Contains("After.");
+    }
+
+    /// <summary>A picture inside a <c>&lt;SEND&gt;</c> sends that command when clicked, as its label did.</summary>
+    [Test]
+    public async Task APictureInsideASendIsThatCommand()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (_, _) => Task.FromResult<byte[]?>(Png(32, 32));
+
+        run.Receive(Secure + "<SEND \"look map\"><IMAGE map.png URL=\"https://mud.example/\"></SEND>");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var rows = run.App.PaneLines(MainWindow).Where(l => l.Contains('▀')).ToList();
+        await Assert.That(rows.Count).IsEqualTo(2);
+        foreach (var row in rows)
+        {
+            await Assert.That(row).Contains(LinkPayload.For(SpanInteraction.Command("look map", null, false))!);
+        }
     }
 
     /// <summary>
@@ -154,10 +233,9 @@ public class MxpImageTests
         run.App.RenderNextFrame();
 
         var lines = run.App.PaneLines(MainWindow).ToList();
-        var at = lines.FindIndex(l => l.Contains("[image: map.png]", StringComparison.Ordinal));
+        var at = lines.FindIndex(l => l.Contains('▀'));
         await Assert.That(lines[at + 1]).Contains("▀");
-        await Assert.That(lines[at + 2]).Contains("▀");
-        await Assert.That(lines[at + 3]).Contains("A town guard stands watch.");
+        await Assert.That(lines[at + 2]).Contains("A town guard stands watch.");
         await Assert.That(lines[^1]).Contains("The fountain burbles.");
     }
 
@@ -251,6 +329,7 @@ public class MxpImageTests
             await Assert.That(plain.Length).IsEqualTo(12);
             await Assert.That(plain).StartsWith("| ").And.EndsWith(" |");
             await Assert.That(plain.Count(c => c == '▀')).IsEqualTo(8);
+            await Assert.That(row).Contains(LinkPayload.WebScheme).Because("clicking the picture opens it, as its label did");
         }
     }
 

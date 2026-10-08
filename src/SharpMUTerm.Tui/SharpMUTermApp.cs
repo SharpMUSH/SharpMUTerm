@@ -3345,14 +3345,16 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Appends one of a world's lines to a window and, when it names pictures this terminal can draw,
-    /// starts loading them. Until a picture arrives, and for good on a terminal that cannot draw it, the
-    /// line's own <c>[image: name]</c> link is what stands in for it.
+    /// starts loading them. Until a picture arrives, and for good on a terminal that cannot draw it or a
+    /// picture that fails, the line's own <c>[image: name]</c> link is what stands in for it. A picture
+    /// that arrives takes its label's place, so the reader sees the picture and not its name as well, and
+    /// clicking the picture does what clicking the label did (<see cref="Linked"/>).
     /// <para>
     /// A picture the server left cells for (<see cref="InlineImageRequest.Reserved"/>) is drawn in them:
     /// over its label and the blanks after it on this line, and over the same columns of the lines under
     /// it while those are blank (<see cref="ContinueReservedPictures"/>). That is a figure inside a box, and
     /// drawing it anywhere else would push the box's edges apart. Any other picture is inserted under its
-    /// line (<see cref="InsertImageRows"/>).
+    /// line and its label taken off the line (<see cref="PlaceInlinePicture"/>).
     /// </para>
     /// <para>
     /// Only live output loads pictures. A restored line comes back as its link: fetching every
@@ -3370,21 +3372,22 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var slots = new List<(long Picture, int Row, int Columns, int Start)>();
         var arrived = ContinueReservedPictures(windowId, line.Text, slots);
 
-        var reserved = new List<(long Picture, InlineImageRequest Request, int Columns, int Rows)>();
-        var inline = new List<InlineImageRequest>();
+        var reserved = new List<(long Picture, InlineImageRequest Request, SpanInteraction Interaction, int Columns, int Rows)>();
+        var inline = new List<int>();
         if (drawable)
         {
             var at = 0;
-            foreach (var span in line.Spans)
+            for (var index = 0; index < line.Spans.Count; index++)
             {
-                if (span.Interaction?.Image is { } request)
+                var span = line.Spans[index];
+                if (span.Interaction is { Image: { } request } interaction)
                 {
                     if (ReservedCells(line.Text, at, span.Text.Length, request) is { } cells
                         && !Overlaps(slots, at, cells.Columns))
                     {
                         var picture = ++_nextImageAnchor;
                         slots.Add((picture, 0, cells.Columns, at));
-                        reserved.Add((picture, request, cells.Columns, cells.Rows));
+                        reserved.Add((picture, request, interaction, cells.Columns, cells.Rows));
                         if (cells.Rows > 1)
                         {
                             if (!_reservedPictures.TryGetValue(windowId, out var open))
@@ -3397,7 +3400,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                     }
                     else
                     {
-                        inline.Add(request);
+                        inline.Add(index);
                     }
                 }
 
@@ -3431,24 +3434,109 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         IGraphicsProtocol? Kitty() => _system.ConsoleDriver as IGraphicsProtocol;
         if (anchor != 0)
         {
+            var shown = new InlinePictureLine(line, inline);
             _inlineImages.Load(
-                inline,
+                inline.Select(index => line.Spans[index].Interaction!.Image!).ToArray(),
                 presentation,
                 InlineImageColumns(windowId),
                 Kitty,
-                rows => InsertImageRows(windowId, anchor, rows));
+                (index, rows) => PlaceInlinePicture(windowId, anchor, shown, index, rows));
         }
 
-        foreach (var (picture, request, columns, rows) in reserved)
+        foreach (var (picture, request, interaction, columns, rows) in reserved)
         {
             _inlineImages.Load(
                 [request],
                 presentation,
                 columns,
                 Kitty,
-                drawn => DrawReservedPicture(windowId, picture, drawn),
+                (_, drawn) => DrawReservedPicture(windowId, picture, Linked(drawn, interaction)),
                 rows);
         }
+    }
+
+    /// <summary>
+    /// A picture's rows as the link its label was, so that clicking a picture does what clicking its
+    /// <c>[image: name]</c> did: opens it, or runs the <c>&lt;SEND&gt;</c> it was inside. The link is
+    /// structural markup and takes no cell, so the rows are as wide as they were.
+    /// </summary>
+    private static IReadOnlyList<string> Linked(IReadOnlyList<string> rows, SpanInteraction? interaction) =>
+        LinkPayload.For(interaction) is { } link ? rows.Select(row => $"[link={link}]{row}[/]").ToArray() : rows;
+
+    /// <summary>
+    /// Puts an inline picture under its line and takes its label off the line, so the picture is shown
+    /// and its name is not. A line that was nothing but this picture is replaced by it outright, rather
+    /// than left behind as an empty row above it.
+    /// <para>
+    /// Done when the picture arrives and not before, because one that never arrives — a failed fetch, a
+    /// full queue, a client closing — leaves its label as the only thing standing for it.
+    /// </para>
+    /// </summary>
+    private void PlaceInlinePicture(string windowId, long anchor, InlinePictureLine shown, int index, IReadOnlyList<string> rows)
+    {
+        if (rows.Count == 0 || !_lines.TryGetValue(windowId, out var buffer))
+        {
+            return;
+        }
+
+        var at = buffer.FindIndex(l => l.ImageAnchor == anchor);
+        if (at < 0)
+        {
+            return;
+        }
+
+        var span = shown.Labels[index];
+        rows = Linked(rows, shown.Line.Spans[span].Interaction);
+
+        // A line that also has cells a server left for a picture is held in pieces around them
+        // (PaneLine.Pictures), and rebuilding it from its spans would undo what was drawn there. It keeps
+        // its labels; the picture still goes under it.
+        if (buffer[at].Pictures is not null)
+        {
+            InsertImageRows(windowId, anchor, rows);
+            return;
+        }
+
+        var first = shown.Drawn.Count == 0;
+        shown.Drawn.Add(span);
+        var rest = new StyledLine(
+            shown.Line.Spans.Where((_, i) => !shown.Drawn.Contains(i)).ToArray(),
+            shown.Line.RuleColor,
+            shown.Line.IsPrompt);
+
+        // Plain keeps the text the server sent, as a reserved picture's line does, so ⌃F still finds a
+        // picture by its name.
+        if (first && string.IsNullOrWhiteSpace(rest.Text))
+        {
+            buffer[at] = buffer[at] with { Markup = rows[0] };
+            InsertImageRows(windowId, anchor, rows.Skip(1).ToArray(), repaint: true);
+        }
+        else if (string.IsNullOrWhiteSpace(rest.Text) && at + 1 < buffer.Count && buffer[at + 1].ImageAnchor == -anchor)
+        {
+            // The last label of a line holding only pictures, with the earlier ones already under it. This
+            // picture cannot take the line, or it would sit above them; the first row under the line moves
+            // up into it instead, so no blank row is left above the pictures.
+            buffer[at] = buffer[at] with { Markup = buffer[at + 1].Markup };
+            RemoveChromeRow(windowId, at + 1);
+            InsertImageRows(windowId, anchor, rows, repaint: true);
+        }
+        else
+        {
+            buffer[at] = buffer[at] with { Markup = _formatter.ToMarkup(rest) };
+            InsertImageRows(windowId, anchor, rows, repaint: true);
+        }
+    }
+
+    /// <summary>A line whose inline pictures are on their way: which of its spans are their labels, and which have arrived.</summary>
+    private sealed class InlinePictureLine(StyledLine line, IReadOnlyList<int> labels)
+    {
+        public StyledLine Line { get; } = line;
+
+        /// <summary>The span holding each picture's label, in the order the pictures were asked for.</summary>
+        public IReadOnlyList<int> Labels { get; } = labels;
+
+        /// <summary>The labels whose pictures have arrived.</summary>
+        public HashSet<int> Drawn { get; } = new();
     }
 
     /// <summary>
@@ -3616,10 +3704,20 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// below them rather than splitting a picture from its line.
     /// </para>
     /// </summary>
-    private void InsertImageRows(string windowId, long anchor, IReadOnlyList<string> rows)
+    private void InsertImageRows(string windowId, long anchor, IReadOnlyList<string> rows, bool repaint = false)
     {
-        if (rows.Count == 0 || !_lines.TryGetValue(windowId, out var buffer))
+        if (!_lines.TryGetValue(windowId, out var buffer))
         {
+            return;
+        }
+
+        if (rows.Count == 0)
+        {
+            if (repaint)
+            {
+                RepaintPane(windowId);
+            }
+
             return;
         }
 
@@ -3674,8 +3772,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
 
         // The common case is a picture under the newest line of a live pane: append, as a line would.
-        // Anywhere else the rows went mid-buffer and the pane is re-fed, once per picture.
-        if (at == buffer.Count - n && !_freezePoints.ContainsKey(windowId) &&
+        // Anywhere else the rows went mid-buffer, or the caller changed a line already painted, and the
+        // pane is re-fed, once per picture.
+        if (!repaint && at == buffer.Count - n && !_freezePoints.ContainsKey(windowId) &&
             _panes.TryGetValue(windowId, out var control))
         {
             foreach (var row in rows)
