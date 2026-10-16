@@ -399,21 +399,24 @@ public sealed class TelnetSession : ITelnetSession
 
     private Task<TelnetInterpreter> BuildInterpreterAsync()
     {
-        var builder = new TelnetInterpreterBuilder()
+        TelnetInterpreterBuilder builder = new TelnetInterpreterBuilder()
             .UseMode(TelnetInterpreter.TelnetMode.Client)
             .UseLogger(_logger)
             .OnNegotiation(WriteToTransportAsync)
             .OnSubmit(OnSubmitAsync)
-            .AddDefaultMUDProtocols(
-                onNAWS: static (_, _) => ValueTask.CompletedTask,
-                onGMCPMessage: OnGmcpAsync,
-                onMSSP: OnMsspAsync,
-                msspConfig: static () => new MSSPConfig(),
-                onMSDPMessage: OnMsdpAsync,
-                onPrompt: OnPromptAsync,
-                charsetOrder: _options.CharsetOrder,
-                onCompressionEnabled: OnCompressionAsync,
-                onMXPEnabled: OnMxpEnabledAsync);
+            // Explicit defaults let NAWS observe negotiation completion, so an early pane report
+            // is retained and sent on DO NAWS rather than silently discarded by the base plugin.
+            .AddPlugin(new WindowSizeProtocol().OnNAWS(static (_, _) => ValueTask.CompletedTask))
+            .AddPlugin<GMCPProtocol>().OnGMCPMessage(OnGmcpAsync)
+            .AddPlugin<MSDPProtocol>().OnMSDPMessage(OnMsdpAsync)
+            .AddPlugin<MSSPProtocol>().OnMSSP(OnMsspAsync).WithMSSPConfig(static () => new MSSPConfig())
+            .AddPlugin<TerminalTypeProtocol>()
+            .AddPlugin<CharsetProtocol>().WithCharsetOrder(_options.CharsetOrder)
+            .AddPlugin<EORProtocol>().OnPrompt(OnPromptAsync)
+            .AddPlugin<SuppressGoAheadProtocol>().OnPrompt(OnPromptAsync)
+            .AddPlugin<PacketPatchProtocol>().OnPrompt(OnPromptAsync)
+            .AddPlugin<MXPProtocol>().OnMXPEnabled(OnMxpEnabledAsync)
+            .AddPlugin<MCCPProtocol>().OnCompressionEnabled(OnCompressionAsync);
 
         // An idle keepalive, when the world asks for one: IAC NOP after the configured silence, so a
         // NAT or load balancer doesn't evict a connection that is merely quiet. It is filler traffic,
@@ -689,10 +692,9 @@ public sealed class TelnetSession : ITelnetSession
     public ValueTask SetWindowSizeAsync(int width, int height)
     {
         var interpreter = _interpreter ?? throw new InvalidOperationException("Session is not connected.");
-        // SendNAWS was removed in 2.8.1. The NAWS plugin now owns the send, reports the full
-        // RFC 1073 unsigned-16 range, and takes int to avoid the caller having to cast.
-        return interpreter.PluginManager?.GetPlugin<NAWSProtocol>()?.SendWindowSizeAsync(width, height)
-            ?? ValueTask.CompletedTask;
+        var protocol = interpreter.PluginManager?.GetPlugin<NAWSProtocol>() as WindowSizeProtocol
+            ?? throw new InvalidOperationException("Window size protocol is not configured.");
+        return protocol.ReportAsync(width, height);
     }
 
     public async Task DisconnectAsync()

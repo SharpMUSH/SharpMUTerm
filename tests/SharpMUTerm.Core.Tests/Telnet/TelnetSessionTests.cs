@@ -10,6 +10,7 @@ public class TelnetSessionTests
     private const byte GA = 249;
     private const byte EOR = 239;
     private const byte NAWS = 31;
+    private const byte DO = 253;
     private const byte ECHO = 1;
     private const byte SGA = 3;
 
@@ -90,6 +91,69 @@ public class TelnetSessionTests
         }
 
         return condition();
+    }
+
+    [Test]
+    public async Task WindowSizeBeforeNegotiation_IsSentWhenServerEnablesNaws()
+    {
+        var transport = new FakeTransport();
+        await using var session = new TelnetSession(transport);
+        await session.ConnectAsync();
+        await session.SetWindowSizeAsync(140, 45);
+        await session.SetWindowSizeAsync(150, 46);
+        await Assert.That(Contains(transport.SentBytes, IAC, 250, NAWS)).IsFalse();
+
+        // Fragmented DO, with no following text or resize to trigger a retry.
+        transport.FeedInbound(IAC);
+        transport.FeedInbound(DO);
+        transport.FeedInbound(NAWS);
+        await Assert.That(await WaitUntilAsync(() =>
+            Contains(transport.SentBytes, IAC, 250, NAWS, 0, 150, 0, 46, IAC, 240))).IsTrue();
+        await Assert.That(Contains(transport.SentBytes, IAC, 250, NAWS, 0, 140)).IsFalse();
+    }
+
+    [Test]
+    public async Task WindowSizeAfterNegotiation_SendsEscapedDimensionsAndSkipsDuplicates()
+    {
+        var transport = new FakeTransport();
+        await using var session = new TelnetSession(transport);
+        var waiter = new OutputWaiter();
+        waiter.Attach(session);
+        await session.ConnectAsync();
+        transport.FeedInbound(IAC, DO, NAWS, (byte)'o', (byte)'k', 13, 10);
+        await waiter.WaitAsync(e => e.Text == "ok");
+
+        await session.SetWindowSizeAsync(255, 240);
+        await Assert.That(Contains(transport.SentBytes,
+            IAC, 250, NAWS, 0, IAC, IAC, 0, 240, IAC, 240)).IsTrue();
+        var length = transport.SentBytes.Length;
+        await session.SetWindowSizeAsync(255, 240);
+        await Assert.That(transport.SentBytes.Length).IsEqualTo(length);
+    }
+
+    [Test]
+    [Arguments(140, 45)]
+    [Arguments(160, 50)]
+    public async Task NawsDisabledThenEnabled_ReportsLatestSizeAgain(int width, int height)
+    {
+        var transport = new FakeTransport();
+        await using var session = new TelnetSession(transport);
+        var waiter = new OutputWaiter();
+        waiter.Attach(session);
+        await session.ConnectAsync();
+        await session.SetWindowSizeAsync(140, 45);
+        transport.FeedInbound(IAC, DO, NAWS);
+        await Assert.That(await WaitUntilAsync(() =>
+            Contains(transport.SentBytes, IAC, 250, NAWS, 0, 140, 0, 45, IAC, 240))).IsTrue();
+
+        transport.FeedInbound(IAC, 254, NAWS, (byte)'o', (byte)'f', (byte)'f', 13, 10);
+        await waiter.WaitAsync(e => e.Text == "off");
+        var length = transport.SentBytes.Length;
+        await session.SetWindowSizeAsync(width, height);
+        await Assert.That(transport.SentBytes.Length).IsEqualTo(length);
+        transport.FeedInbound(IAC, DO, NAWS);
+        await Assert.That(await WaitUntilAsync(() =>
+            Contains(transport.SentBytes.Skip(length).ToArray(), IAC, 250, NAWS, 0, (byte)width, 0, (byte)height, IAC, 240))).IsTrue();
     }
 
     [Test]

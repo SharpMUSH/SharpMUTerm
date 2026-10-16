@@ -51,7 +51,10 @@ public interface ITelnetSession : IAsyncDisposable
     /// <summary>Sends a GMCP message.</summary>
     ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>Reports the terminal window size to the server via NAWS.</summary>
+    /// <summary>
+    /// Reports the terminal window size via NAWS. Before the server enables NAWS, retains the latest
+    /// size and reports it automatically when negotiation completes; unchanged sizes are not resent.
+    /// </summary>
     ValueTask SetWindowSizeAsync(int width, int height);
 
     /// <summary>Closes the session.</summary>
