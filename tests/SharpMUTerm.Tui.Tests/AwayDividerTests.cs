@@ -270,7 +270,7 @@ public class AwayDividerTests
     public async Task ABarTrimmedOffTheTopOfTheBufferIsForgotten()
     {
         var config = Quiet();
-        config.ScrollbackLines = 40;
+        config.PaneLines = 40;
         var (app, session, _) = Bound(config);
 
         app.SimulateKey(Key(ConsoleKey.End));
@@ -283,9 +283,6 @@ public class AwayDividerTests
             session.PrintSystem($"*** and life went on {i}");
         }
 
-        // The buffer is the assertion and the control is not: MarkupControl accumulates every line it
-        // was ever appended and is only pruned by a re-feed, so its text still holds rows the buffer has
-        // dropped. That is true of the game's own trimmed output as much as of this bar.
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
 

@@ -31,6 +31,20 @@ public sealed class AppConfiguration
     public int ScrollbackLines { get; set; } = SharpMUTerm.Core.Text.ScrollbackBuffer.DefaultCapacity;
 
     /// <summary>
+    /// Lines an output pane holds on screen, per window. Separate from <see cref="ScrollbackLines"/>
+    /// because the two cost different things: the session's ring is a plain array, while a pane's lines
+    /// all sit in one markup control that re-parses every one of them on each frame that follows a new
+    /// line. Measured against SharpConsoleUI 2.5.14, each held line adds roughly 40 µs to that frame, so
+    /// ten thousand held lines is ~0.4 s per arriving line and a pane is unusable well before it gets
+    /// there. Older lines are not lost by this cap: they stay in the session's scrollback and its
+    /// on-disk spill, the restore log and any transcript.
+    /// </summary>
+    public int PaneLines { get; set; } = DefaultPaneLines;
+
+    /// <summary>The default for <see cref="PaneLines"/>: about 10 ms of parsing per frame.</summary>
+    public const int DefaultPaneLines = 2_000;
+
+    /// <summary>
     /// How much history beyond <see cref="ScrollbackLines"/> is kept in a per-session disk cache so
     /// the view can scroll further back than memory holds. An ephemeral cache, deleted when the
     /// session closes — not a session transcript, which is the separate, opt-in

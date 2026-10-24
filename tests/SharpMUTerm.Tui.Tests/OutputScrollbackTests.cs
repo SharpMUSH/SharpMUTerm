@@ -297,6 +297,92 @@ public class OutputScrollbackTests
         await Assert.That(rows.Any(r => r.Contains("The Grand Plaza", StringComparison.Ordinal))).IsTrue();
     }
 
+    /// <summary>The demo app with a pane cap small enough for a test to cross it.</summary>
+    private static SharpMUTermApp CappedApp(int paneLines)
+    {
+        Console.SetIn(TextReader.Null);
+        var config = DemoScene.Build();
+        config.PaneLines = paneLines;
+        return new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
+    }
+
+    /// <summary>
+    /// The control is trimmed with the buffer. It used to be appended to for ever while only the buffer
+    /// was trimmed, and the control re-parses everything it holds on the frame after each new line, so
+    /// every line arriving cost more than the one before it — the reported slowdown.
+    /// </summary>
+    [Test]
+    public async Task APanesControlIsTrimmedWithItsBuffer()
+    {
+        var app = CappedApp(100);
+        app.LoadLongScene(Main, 1000);
+
+        var held = app.PaneLines(Main);
+        await Assert.That(held.Count).IsGreaterThanOrEqualTo(100);
+        await Assert.That(held.Count).IsLessThanOrEqualTo(125);
+        await Assert.That(held[^1]).IsEqualTo(SharpMUTermApp.ScrollbackSceneLine(1000));
+    }
+
+    /// <summary>
+    /// A trim takes rows off the top of a viewport's content, and a viewport's offset counts rows from
+    /// the top — so a reader sitting in their scrollback would be carried forward by however many rows
+    /// went. They stay on the lines they were reading.
+    /// </summary>
+    [Test]
+    public async Task AReaderInTheirScrollbackStaysOnTheSameLinesThroughATrim()
+    {
+        var app = CappedApp(200);
+        app.LoadLongScene(Main, 240);
+        SettledRows(app);
+        app.SimulateKey(Chord(ConsoleKey.PageUp));
+        app.SimulateKey(Chord(ConsoleKey.PageUp));
+        var before = VisibleLines(Rows(app.RenderWholeFrame()));
+
+        app.LoadLongScene(Main, 60, first: 5001);
+        await Assert.That(app.PaneLines(Main).Count).IsLessThanOrEqualTo(250); // a trim did happen
+
+        var after = VisibleLines(SettledRows(app));
+        await Assert.That(before.Count).IsGreaterThan(0);
+        await Assert.That(after).IsEquivalentTo(before);
+    }
+
+    /// <summary>
+    /// A frozen pane is two viewports over one buffer, and a trim comes off the pinned half. What the
+    /// reader froze stays where they froze it while the live tail below it carries on.
+    /// </summary>
+    [Test]
+    public async Task AFrozenPaneKeepsItsPinnedLinesThroughATrim()
+    {
+        var app = CappedApp(200);
+        app.LoadLongScene(Main, 240);
+        SettledRows(app);
+        app.SimulateKey(new ConsoleKeyInfo('f', ConsoleKey.F, false, true, false));
+        var before = VisibleLines(SettledRows(app));
+
+        // The demo's lines and these 240, plus 60, cross the cap and its slack (250), so this trims
+        // from the pinned half.
+        app.LoadLongScene(Main, 60, first: 5001);
+        await Assert.That(app.PaneLines(Main).Count).IsEqualTo(60); // the live tail is untouched
+
+        var after = VisibleLines(SettledRows(app)).Where(n => n < 5001).ToList();
+        await Assert.That(before.Count).IsGreaterThan(0);
+        await Assert.That(after).IsEquivalentTo(before);
+    }
+
+    /// <summary>And a pane following its live tail is still on it after a trim re-feeds it.</summary>
+    [Test]
+    public async Task AFollowingPaneShowsTheNewestLineAfterATrim()
+    {
+        var app = CappedApp(100);
+        app.LoadLongScene(Main, 110);
+        SettledRows(app);
+        var held = app.PaneLines(Main).Count;
+
+        app.LoadLongScene(Main, 126 - held, first: 7001);
+        await Assert.That(app.PaneLines(Main).Count).IsEqualTo(100); // the last of them trimmed
+        await Assert.That(Shows(Rows(app.RenderWholeFrame()), 7000 + 126 - held)).IsTrue();
+    }
+
     /// <summary>
     /// ⌃End does not merely jump to the bottom, it goes back to <em>following</em> it: output arriving
     /// afterwards is on screen. A one-shot scroll to the end would pass a "the newest line is visible"

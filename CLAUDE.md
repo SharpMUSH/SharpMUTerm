@@ -1017,6 +1017,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   version), so never "refresh" a pane by re-`SetContent`-ing the full buffer on a scroll or a frame.
   `BindSession`'s scrollback replay used to be a third route, painting straight onto the control; the
   buffer and the control then disagreed and the next thing to re-feed that pane dropped those lines.
+- **What a pane holds is `AppConfiguration.PaneLines` (2,000), not `ScrollbackLines`, and the control is
+  trimmed with the buffer.** Each line a control holds adds ~40 µs to the frame after every new line, and
+  the control used to be appended to for ever while only the buffer was trimmed (to the 10,000-line
+  session cap), so a client got slower with every line it received — 0.4 s a line at 10,000 held, 1.2 s
+  at 30,000. `AppendWindowLine` now trims once the buffer is a quarter past the cap and re-feeds the pane
+  (`RepaintPane`), so the re-feed is paid once per 500 lines. A viewport in its scrollback is moved up by
+  the measured height of what went (`RowsToKeepReadingPosition`), because its offset counts rows from
+  the top; a frozen window's trim comes off the pinned half. Older lines stay in the session's ring and
+  spill, the restore log and any transcript; the pane does not reach them.
 - **A buffered line is a `PaneLine` — markup plus, held apart from it, when the line arrived** — and the
   timestamp gutter is glued on in `Compose`, on the way to a control. That is what makes *show
   timestamps* a render-time decision: it repaints history in every window, including spawn windows,
