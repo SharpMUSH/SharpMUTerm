@@ -39,8 +39,11 @@ fallbacks) for inline images/maps.
   - **Keys are filtered, never passed wholesale.** The editor's table is a document's — ⌃A select-all,
     ⌃C/⌃X straight to the system clipboard through a static helper nothing can substitute, ⌃D duplicate
     line, ⌥↑/↓ move line, ⇥ indent, Esc out of edit mode. None of those may reach it: ⌃C is
-    `CopyFocusedSelection`'s through the window's `SelectionManager`, ⌃A is readline's, and a claimed Esc
-    is one `TryAltEnter` never sees. `IInteractiveControl`, `IMouseAwareControl`, `ILogicalCursorProvider`
+    `CopyFocusedSelection`'s through the window's `SelectionManager`, and a claimed Esc is one
+    `TryAltEnter` never sees. ⌃A and ⌃X are the bar's own (the maintainer asked for both): ⌃A goes through
+    `SelectRange`, because the editor's select-all never tells the `SelectionManager` and ⌃C would not find
+    it; ⌃X hands the text to `CutTo` (the app's injectable clipboard) and deletes it only if that took it,
+    so a client with no clipboard refuses rather than deleting. ⌃A used to be readline's start of buffer. `IInteractiveControl`, `IMouseAwareControl`, `ILogicalCursorProvider`
     and `ISelectableControl` are **re-implemented** on the subclass so the framework's calls arrive at the
     filtered members, not the editor's.
   - **The wrapped row count is read by reflection** (`GetWrappedLines(int)`), because the public measure
@@ -242,7 +245,8 @@ fallbacks) for inline images/maps.
   adding a second** (the editor's own selection, registered with the window's `SelectionManager`; the
   `input-selection` view). ⇧←/→ and ⇧Home/End extend from the caret through the same moves the bare keys make; a drag or a
   double-click does it with the mouse; typing, paste, Backspace and Delete replace what is selected; any
-  bare move drops it. ⇧↑/↓ stay the scrollback keys, so a selection across rows is ⇧Home/End or the mouse.
+  bare move drops it. ⇧↑/↓ stay the scrollback keys, so a selection across rows is ⇧Home/End, ⌃A or the
+  mouse. ⌃X cuts it.
   The bar registers with the window's `SelectionManager` exactly as a pane's `MarkupControl` does, so
   starting a selection in one clears the other and `CopySelection` needed no change at all — **do not give
   the bar its own ⌃C path**. The band is `WorkspacePalette.InputSelectionBand`: `SelectionBand`'s recipe
@@ -924,7 +928,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Deliberately left on Ctrl**, because the convention is worth more than the pattern: `⌃R`
     (readline's reverse history search), `⌃P` (command surface), `⌃Q` (quit — and safe here because
     `TerminalRawMode` clears `IXON`, so it is not XON), `⌃B` (tmux's prefix), `⌃O` (pane cycle),
-    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A`/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
+    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A` (select all)/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
     would be as wrong as one that moved nothing.
   - **Freeze is `⌥F`, and `⌃F` is find** — the search surface, above. Freeze was on `⌃F` and left it for
     exactly the reason the keys above stay where they are: `⌃F` means *find* to everyone who has used a

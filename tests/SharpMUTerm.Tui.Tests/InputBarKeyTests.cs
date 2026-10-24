@@ -266,7 +266,8 @@ public class InputBarKeyTests
         Type(bar, "one");
         bar.ProcessKey(Chord(ConsoleKey.L, ctrl: true));
         Type(bar, "two");
-        bar.ProcessKey(Chord(ConsoleKey.A, ctrl: true)); // the start of the buffer, not of the row
+        bar.ProcessKey(Chord(ConsoleKey.UpArrow));
+        bar.ProcessKey(Chord(ConsoleKey.Home));
         bar.ProcessKey(Chord(ConsoleKey.RightArrow));
 
         await Assert.That(bar.ProcessKey(Chord(ConsoleKey.K, ctrl: true))).IsTrue();
@@ -282,14 +283,12 @@ public class InputBarKeyTests
     }
 
     /// <summary>
-    /// The editor's own Ctrl table is a document's: ⌃A selects all, ⌃C/⌃X write the system clipboard
-    /// directly, ⌃D duplicates a line. None of them may reach it — ⌃C is the app's, through the
-    /// selection owner, and the rest mean nothing on a command line — so each is declined and the text
-    /// is left alone.
+    /// The editor's own Ctrl table is a document's: ⌃C writes the system clipboard directly, ⌃D duplicates
+    /// a line. Neither may reach it — ⌃C is the app's, through the selection owner, and ⌃D means nothing
+    /// on a command line — so each is declined and the text is left alone.
     /// </summary>
     [Test]
     [Arguments(ConsoleKey.C)]
-    [Arguments(ConsoleKey.X)]
     [Arguments(ConsoleKey.V)]
     [Arguments(ConsoleKey.D)]
     public async Task TheEditorsDocumentChordsAreDeclined(ConsoleKey key)
@@ -302,17 +301,52 @@ public class InputBarKeyTests
         await Assert.That(bar.Text).IsEqualTo("look");
     }
 
-    /// <summary>⌃A is the start of the line, as readline has it, not the editor's select-all.</summary>
+    /// <summary>⌃A selects the whole buffer, every row of it, and typing then replaces it.</summary>
     [Test]
-    public async Task CtrlAMovesRatherThanSelects()
+    public async Task CtrlASelectsEverything()
     {
         var bar = Bar();
-        Type(bar, "look");
+        Type(bar, "one");
+        bar.ProcessKey(Chord(ConsoleKey.L, ctrl: true));
+        Type(bar, "two");
 
         await Assert.That(bar.ProcessKey(Chord(ConsoleKey.A, ctrl: true))).IsTrue();
-        await Assert.That(bar.HasSelection).IsFalse();
+        await Assert.That(bar.GetSelectedText().ReplaceLineEndings("\n")).IsEqualTo("one\ntwo");
         Type(bar, ">");
-        await Assert.That(bar.Text).IsEqualTo(">look");
+        await Assert.That(bar.Text).IsEqualTo(">");
+    }
+
+    /// <summary>
+    /// ⌃X hands the selection over and deletes it once it is taken, as one undo step. Refused, it deletes
+    /// nothing: a cut that reaches no clipboard is a delete.
+    /// </summary>
+    [Test]
+    public async Task CtrlXCutsTheSelectionOnlyIfItWasTaken()
+    {
+        var bar = Bar();
+        var taken = new List<string>();
+        var accept = false;
+        bar.CutTo = text =>
+        {
+            taken.Add(text);
+            return accept;
+        };
+        Type(bar, "say hello");
+        foreach (var _ in "hello")
+        {
+            bar.ProcessKey(Chord(ConsoleKey.LeftArrow, shift: true));
+        }
+
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.X, ctrl: true))).IsTrue();
+        await Assert.That(bar.Text).IsEqualTo("say hello").Because("the cut was refused");
+
+        accept = true;
+        bar.ProcessKey(Chord(ConsoleKey.X, ctrl: true));
+        await Assert.That(taken).IsEquivalentTo(new[] { "hello", "hello" });
+        await Assert.That(bar.Text).IsEqualTo("say ");
+
+        bar.ProcessKey(Chord(ConsoleKey.Z, ctrl: true));
+        await Assert.That(bar.Text).IsEqualTo("say hello");
     }
 
     /// <summary>

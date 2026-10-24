@@ -36,16 +36,17 @@ namespace SharpMUTerm.Tui;
 /// paint and so runs a frame behind every resize.</item>
 /// <item><b>The prompt is a gutter</b> (<see cref="PromptGutter"/>) as wide as the prompt, written on
 /// the first row and blank under it, so every row of text indents past it.</item>
-/// <item><b>Copy goes through the app.</b> The editor's ⌃C and ⌃X write to the system clipboard through
-/// a static helper nothing can substitute, so a test would overwrite the developer's clipboard. They are
-/// never passed on: ⌃C is answered by <c>SharpMUTermApp.CopyFocusedSelection</c>, which asks the
-/// window's selection owner — this bar, when the selection is here.</item>
+/// <item><b>Copy and cut go through the app.</b> The editor's ⌃C and ⌃X write to the system clipboard
+/// through a static helper nothing can substitute, so a test would overwrite the developer's clipboard.
+/// They are never passed on: ⌃C is answered by <c>SharpMUTermApp.CopyFocusedSelection</c>, which asks the
+/// window's selection owner — this bar, when the selection is here — and ⌃X hands the selection to
+/// <see cref="CutTo"/> and deletes it only once that says the text is on the clipboard.</item>
 /// </list>
 /// <para>
 /// <b>Every arm in <see cref="ProcessKey"/> matches the modifiers it wants exactly, and declines
 /// everything else.</b> Returning <c>true</c> for a chord this control has no meaning for is how the old
 /// bar once swallowed <c>Alt+Shift+←</c>, the pane-resize chord, as a caret move. The editor's own table
-/// is wider than a command line's (⌃A select-all, ⌃D duplicate line, ⌥↑ move line, ⇥ indent), so it only
+/// is wider than a command line's (⌃D duplicate line, ⌥↑ move line, ⇥ indent), so it only
 /// ever sees a key this table has decided it should.
 /// </para>
 /// </summary>
@@ -97,6 +98,13 @@ internal sealed class InputBarControl : MultilineEditControl,
 
     /// <summary>Raised when ⇥ should hand the caret to the bar after this one.</summary>
     internal event Action? CycleRequested;
+
+    /// <summary>
+    /// Where ⌃X puts the selection. True means it reached the clipboard and may be deleted; false (no
+    /// clipboard, or nothing selected) leaves the text where it is, because a cut that lands nowhere is a
+    /// delete.
+    /// </summary>
+    internal Func<string, bool> CutTo { get; set; } = _ => false;
 
     /// <summary>Whether ⇥ has somewhere to go — false while this is the only bar on screen.</summary>
     internal Func<bool> HasSibling { get; set; } = () => false;
@@ -308,11 +316,11 @@ internal sealed class InputBarControl : MultilineEditControl,
     /// </para>
     /// <para>
     /// <b>Word movement is Alt+←/→</b> (Ctrl+←/→ is pane selection), handed to the editor as its Ctrl
-    /// form. <b>⌃A/⌃E/⌃K/⌃U are readline's</b>: start and end of the buffer, kill to the end and to the
-    /// start. ⌃A is not select-all, for the reason it never was — Ctrl+Shift+A is indistinguishable from
-    /// it, so there is nowhere to move line-start to. The kills go through the editor's own delete, so
-    /// ⌃Z puts them back. <b>⌃Z/⌃Y are undo and redo.</b> There is no ⌃W: <c>CloseActiveWindow</c> claims
-    /// it as a global shortcut, ahead of any window.
+    /// form. <b>⌃A selects everything and ⌃X cuts the selection</b> (<see cref="CutTo"/>), as an editor
+    /// does; ⌃A used to be readline's start-of-buffer, which Home still is. <b>⌃E/⌃K/⌃U are readline's</b>:
+    /// end of the buffer, kill to the end and to the start. Cuts and kills go through the editor's own
+    /// delete, so ⌃Z puts them back. <b>⌃Z/⌃Y are undo and redo.</b> There is no ⌃W:
+    /// <c>CloseActiveWindow</c> claims it as a global shortcut, ahead of any window.
     /// </para>
     /// <para>
     /// <b>Selection is ⇧←/→ and ⇧Home/End, and a drag or double-click.</b> ⇧↑/↓ are the scrollback keys
@@ -376,7 +384,8 @@ internal sealed class InputBarControl : MultilineEditControl,
             switch (key.Key)
             {
                 case ConsoleKey.L: return Claim(ConsoleKey.Enter);
-                case ConsoleKey.A: return Claim(ConsoleKey.Home, ConsoleModifiers.Control);
+                case ConsoleKey.A: return SelectAll();
+                case ConsoleKey.X: return Cut();
                 case ConsoleKey.E: return Claim(ConsoleKey.End, ConsoleModifiers.Control);
                 case ConsoleKey.K: return Kill(toEnd: true);
                 case ConsoleKey.U: return Kill(toEnd: false);
@@ -439,6 +448,32 @@ internal sealed class InputBarControl : MultilineEditControl,
             modifiers.HasFlag(ConsoleModifiers.Control)));
 
     private void Pass(ConsoleKeyInfo key) => base.ProcessKey(key);
+
+    /// <summary>
+    /// ⌃A. Through <see cref="MultilineEditControl.SelectRange"/> rather than the editor's own ⌃A, which
+    /// sets the selection without telling the window's <c>SelectionManager</c> — so ⌃C would not find it and
+    /// a pane's selection would stay up beside it.
+    /// </summary>
+    private bool SelectAll()
+    {
+        if (Text.Length > 0)
+        {
+            SelectRange(0, 0, LineCount - 1, int.MaxValue);
+        }
+
+        return true;
+    }
+
+    /// <summary>⌃X: the selection to <see cref="CutTo"/>, then deleted as one undo step if it got there.</summary>
+    private bool Cut()
+    {
+        if (CutTo(HasSelection ? GetSelectedText() : string.Empty) && HasSelection)
+        {
+            Pass(ConsoleKey.Delete);
+        }
+
+        return true;
+    }
 
     /// <summary>⌃K and ⌃U: select from the caret to an end of the buffer and delete it, as one undo step.</summary>
     private bool Kill(bool toEnd)

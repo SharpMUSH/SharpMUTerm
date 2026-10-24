@@ -16,16 +16,19 @@ public class InputSelectionTests
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-    private static ConsoleKeyInfo CtrlC => new('\0', ConsoleKey.C, shift: false, alt: false, control: true);
+    private static ConsoleKeyInfo CtrlC => Ctrl(ConsoleKey.C);
+
+    private static ConsoleKeyInfo Ctrl(ConsoleKey key) => new('\0', key, shift: false, alt: false, control: true);
 
     private static ConsoleKeyInfo Shifted(ConsoleKey key) => new('\0', key, shift: true, alt: false, control: false);
 
-    private static (SharpMUTermApp App, List<string> Copied) App(string draft)
+    private static (SharpMUTermApp App, List<string> Copied) App(string draft, bool clipboard = true)
     {
         Console.SetIn(TextReader.Null);
         var copied = new List<string>();
         var app = new SharpMUTermApp(
-            DemoScene.Build(), Headless, new HeadlessConsoleDriver(120, 32), clipboard: copied.Add);
+            DemoScene.Build(), Headless, new HeadlessConsoleDriver(120, 32),
+            clipboard: clipboard ? copied.Add : null);
         app.RenderSnapshot();
 
         // The demo seeds a draft; send it away so the bar holds exactly what the test types.
@@ -87,5 +90,47 @@ public class InputSelectionTests
         app.SimulateKey(CtrlC);
 
         await Assert.That(copied).IsEquivalentTo(new[] { "say hello", pane });
+    }
+
+    /// <summary>
+    /// ⌃A selects the command line through the window's one selection, so ⌃C finds it and a pane's
+    /// selection gives way to it.
+    /// </summary>
+    [Test]
+    public async Task CtrlAThenCtrlCCopiesTheWholeCommandLine()
+    {
+        var (app, copied) = App("page Ann=see you at the docks");
+        app.SimulatePaneDrag(SharpMUTermApp.MainWindowId, 0, 0, 25, 1);
+
+        app.SimulateKey(Ctrl(ConsoleKey.A));
+        await Assert.That(app.PaneSelection(SharpMUTermApp.MainWindowId)).IsEmpty();
+        app.SimulateKey(CtrlC);
+
+        await Assert.That(copied).IsEquivalentTo(new[] { "page Ann=see you at the docks" });
+    }
+
+    [Test]
+    public async Task CtrlXCutsTheCommandLinesSelectionToTheClipboard()
+    {
+        var (app, copied) = App("say hello there");
+        var prompt = SharpConsoleUI.Parsing.MarkupParser.StripLength(app.PrimaryPromptMarkup);
+
+        app.SimulateInputDrag(prompt + 3, 0, prompt + 9, 0);
+        app.SimulateKey(Ctrl(ConsoleKey.X));
+
+        await Assert.That(copied).IsEquivalentTo(new[] { " hello" });
+        await Assert.That(app.ArmedInputText).IsEqualTo("say there");
+    }
+
+    /// <summary>With no clipboard to put it on, a cut would only delete, so it refuses and keeps the text.</summary>
+    [Test]
+    public async Task CtrlXWithNoClipboardDeletesNothing()
+    {
+        var (app, _) = App("say hello", clipboard: false);
+
+        app.SimulateKey(Ctrl(ConsoleKey.A));
+        app.SimulateKey(Ctrl(ConsoleKey.X));
+
+        await Assert.That(app.ArmedInputText).IsEqualTo("say hello");
     }
 }

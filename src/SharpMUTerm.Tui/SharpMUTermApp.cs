@@ -4881,6 +4881,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         bar.HasSibling = () => _second.Visible;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
+        bar.CutTo = CutToClipboard;
         bar.ActivationRequested += ArmBar;
         bar.CycleRequested += () => ArmBar(ReferenceEquals(bar, _input) ? _second : _input);
     }
@@ -5250,7 +5251,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <b>Why Ctrl+←/→ is no longer word-movement on the command line.</b> It was, and that was the one
     /// real cost of this feature; word movement is now Alt+←/→, which this host delivers just as reliably
     /// (the parser reads the Alt bit out of <c>CSI 1;3 D</c>) and which is the more widely-used spelling
-    /// of the two. The readline set (⌃A ⌃E ⌃K ⌃U) is untouched.
+    /// of the two. The readline set (⌃E ⌃K ⌃U) is untouched.
     /// </para>
     /// <para>
     /// <b>What "focus" means here, given the pin.</b> This app has two focus facts and they are separate
@@ -8699,14 +8700,36 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             return true;
         }
 
+        ToClipboard(text, "copied");
+        return true;
+    }
+
+    /// <summary>
+    /// ⌃X in a command line: the bar's selection to the clipboard. The bar deletes the text only on
+    /// <c>true</c>, so a client with no clipboard refuses rather than turning the cut into a delete.
+    /// </summary>
+    private bool CutToClipboard(string text)
+    {
+        if (text.Length == 0)
+        {
+            RefuseCommand("nothing selected — ⌃A, ⇧← ⇧→ or a drag in the command line selects");
+            return false;
+        }
+
+        return ToClipboard(text, "cut");
+    }
+
+    /// <summary>Writes <paramref name="text"/> to the clipboard and says so, or says there is none.</summary>
+    private bool ToClipboard(string text, string verb)
+    {
         if (_clipboard is null)
         {
-            RefuseCommand("no clipboard is configured, so nothing was copied");
-            return true;
+            RefuseCommand($"no clipboard is configured, so nothing was {verb}");
+            return false;
         }
 
         _clipboard(text);
-        Notice($"copied {text.Length} characters", MessageSeverity.Info);
+        Notice($"{verb} {text.Length} characters", MessageSeverity.Info);
         return true;
     }
 
