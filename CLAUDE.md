@@ -811,6 +811,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   on "too few painted cells" at once; a public frame accessor on the headless driver is the upstream fix.
 - **Image decoding is StbImageSharp since 2.7** (`0e10ef8d`), and ImageSharp is no longer a transitive
   dependency. Tests that need real PNG bytes encode them with `StbImageWriteSharp` (`TestPng`).
+  **StbImageSharp reads no WebP**, and the bump silently turned every WebP picture (all of SharpMUSH's)
+  back into its label. `ImageDecoder` is the one decode path for panes and the web view: the framework
+  first, then ImageSharp 3.1 configured with the **WebP module only and metadata skipped**. That narrowing
+  is what keeps the 3.1.12 advisories (TIFF codecs, ICC/EXIF) unreachable and is why they are
+  `NuGetAuditSuppress`ed by id; 4.x fixes them but will not build without a Six Labors license key.
 - **Controls default to `HorizontalAlignment.Left`, which self-sizes to content** instead of filling
   the slot. This is the single biggest cause of "why doesn't this fill the width?" Use
   `.WithAlignment(HorizontalAlignment.Stretch)`. A `.Flex(n)` column only fills if the grid is

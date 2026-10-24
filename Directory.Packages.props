@@ -15,6 +15,17 @@
     <!-- Sandboxed Lua scripting (pure-managed, no native deps). -->
     <PackageVersion Include="MoonSharp" Version="2.0.0" />
 
+    <!--
+      Image decoding for what SharpConsoleUI's own decoder (StbImageSharp since 2.7) refuses — WebP
+      above all. Six Labors Split License: Apache 2.0 for open-source use, which this is. Held at 3.1:
+      4.x refuses to build without a Six Labors license key.
+
+      The advisories NuGet reports against 3.1.12 are all in the TIFF codecs or in ICC/EXIF parsing.
+      ImageDecoder registers the WebP module alone and skips metadata, so none is reachable from here;
+      they are suppressed by id so that a *new* advisory still warns. Re-check before suppressing more.
+    -->
+    <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.12" />
+
     <!-- Pure-managed HTML5 parser for the in-TUI web view. -->
     <PackageVersion Include="AngleSharp" Version="1.7.1" />
 
@@ -36,6 +47,14 @@
 
     <!-- Test stack: TUnit (source-generated, runs on Microsoft.Testing.Platform). -->
     <PackageVersion Include="TUnit" Version="1.61.38" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" />
   </ItemGroup>
 
 </Project>

@@ -79,8 +79,7 @@ internal sealed class WebImageLoader : IDisposable
         PixelBuffer decoded;
         try
         {
-            using var stream = new MemoryStream(imageBytes, writable: false);
-            decoded = PixelBuffer.FromStream(stream);
+            decoded = ImageDecoder.Decode(imageBytes);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -170,7 +169,7 @@ internal sealed class WebImageLoader : IDisposable
 
     /// <summary>
     /// True for raster image media types the decoder can actually handle. SVG is excluded: it is an
-    /// <c>image/*</c> type that ImageSharp cannot rasterise, so accepting it would only ever produce
+    /// <c>image/*</c> type that nothing here can rasterise, so accepting it would only ever produce
     /// a failed decode.
     /// </summary>
     public static bool IsDecodableImageType(string mediaType) =>
