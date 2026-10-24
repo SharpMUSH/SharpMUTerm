@@ -218,6 +218,21 @@ fallbacks) for inline images/maps.
     large copy lands locally and **silently** does not travel over ssh; GNU screen has OSC 52 disabled
     upstream; tmux needs `allow-passthrough on`. The Windows mouse path is a separate ad-hoc parser in
     `NetConsoleDriver` and nothing here can verify it — treat Windows drag-select as unproven.
+- **The command line can be selected and copied too, and it joins the panes' one selection rather than
+  adding a second** (`InputBuffer` anchor + `InputBarControl : ISelectableControl`; the `input-selection`
+  view). ⇧←/→ and ⇧Home/End extend from the caret through the same moves the bare keys make; a drag or a
+  double-click does it with the mouse; typing, paste, Backspace and Delete replace what is selected; any
+  bare move drops it. ⇧↑/↓ stay the scrollback keys, so a selection across rows is ⇧Home/End or the mouse.
+  The bar registers with the window's `SelectionManager` exactly as a pane's `MarkupControl` does, so
+  starting a selection in one clears the other and `CopySelection` needed no change at all — **do not give
+  the bar its own ⌃C path**. The band is `WorkspacePalette.InputSelectionBand`: `SelectionBand`'s recipe
+  stepped off the *armed input band*, because the pane band measured against the bar it sat on was 1.7:1.
+  A bare Pressed elsewhere mid-drag is a new press (`PaneDragTracker`'s auto-repeat rule).
+- **History recall is per character, per bar** (`SharpMUTermApp._histories`, keyed by `HistoryOwner()` and
+  `InputBar`). The owner is resolved the way the bar's colour is — `SendTarget`, else the window's recorded
+  owner, never `_active` — so a disconnected character keeps their list and gets it back with their window;
+  an unowned window (the web view) shares the empty key. A global list put the line just sent to one
+  character under ↑ in another's window, one ⏎ from misdelivery. ⌃R says whose list it is showing.
 - **Coming back to a window you were not watching leaves a bar where you left off, and that covers two
   different absences.** The *window* one is `NEW` and is the common case: a line lands while the window
   is not `Workspace.IsCaughtUp` — visible **and** at its live tail — and `_missedFrom` records the index
@@ -704,6 +719,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `mxp-figure` (a figure inside a box, the way a server that lays pictures out sends it — the tag sized in
   cells and those cells left blank, text beside them — so the frame shows the picture drawn in the box with
   both edges intact, or the label sitting in the cells with no graphics),
+  `input-selection` (a real drag across the command line's draft, through the bar's own mouse handler — the
+  only frame carrying `InputSelectionBand`, and in `FrameContrastTests`' list for that reason),
   `selection` (a real ⌃-drag across the main window's output, through `SimulatePaneDrag` and the control's
   own hit test rather than a highlight posed by hand — the only frame carrying `WorkspacePalette.SelectionBand`,
   which is why it is in `FrameContrastTests`' list: the band is the one plane this client invents rather

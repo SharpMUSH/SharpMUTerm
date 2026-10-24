@@ -77,14 +77,16 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private readonly Dictionary<string, MarkupControl> _frozenPanes = new(StringComparer.Ordinal);
     private readonly DraftStore _drafts;
     private readonly InputBarVisibility _secondBars;
-    private readonly InputHistory _history;
 
     /// <summary>
-    /// The second bar's own recall list. The bars exist to keep two lines apart (an IC one and an OOC
-    /// one), and a shared history would put the other bar's sends under ↑ on both — which is the same
-    /// mixing the second bar was added to stop.
+    /// The recall lists, one per character and per bar. Per character because ↑ on Corvid recalling what
+    /// was just typed to Ann is a line one keystroke away from being sent to the wrong person — the
+    /// misdelivery <see cref="SendTarget"/> exists to prevent, arriving by recall instead of by ⏎. Per bar
+    /// because the bars exist to keep two lines apart (an IC one and an OOC one), and a shared history
+    /// would put the other bar's sends under ↑ on both. Keyed by <see cref="HistoryOwner"/>; a window
+    /// nobody owns (the web view) shares the one list under the empty key.
     /// </summary>
-    private readonly InputHistory _secondHistory;
+    private readonly Dictionary<(string Owner, InputBar Bar), InputHistory> _histories = new();
 
     // Per-window markup line buffer (the scrollback source of truth) and, per frozen pane, the buffer
     // length of its active window at the moment it froze — the split point between pinned scrollback and
@@ -644,8 +646,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // call site that adds to them: the rule is an invariant of what history may contain, and a store
         // that trusted its callers would be one bad call away from holding a password. The setting is read
         // per line (see InputHistory's ctor), so unticking it takes effect on the next command.
-        _history = new InputHistory(ignore: IgnoreForHistory);
-        _secondHistory = new InputHistory(ignore: IgnoreForHistory);
         _armed = _input;
 
         // Resume the last session's workspace (panes/windows/focus) when the config carries one;
@@ -1204,6 +1204,17 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ReArmWholeFrame();
         }
 
+        // A selection in the command line: the same band on the bar the panes use, made by a real drag
+        // through the bar's own mouse handler across part of the demo's draft. In FrameContrastTests'
+        // list for "selection"'s reason, and because here the band sits on a tinted input row instead.
+        if (string.Equals(view, "input-selection", StringComparison.OrdinalIgnoreCase))
+        {
+            RenderWholeFrame();
+            var promptWidth = SharpConsoleUI.Parsing.MarkupParser.StripLength(ActiveBar().Prompt);
+            SimulateInputDrag(promptWidth + 4, 0, promptWidth + 20, 0);
+            ReArmWholeFrame();
+        }
+
         // Move mode needs a split to have multiple target panes; set it up then arm move mode.
         if (string.Equals(view, "move", StringComparison.OrdinalIgnoreCase))
         {
@@ -1390,9 +1401,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // shows a recalled line and the gutter shows the "history · ↓ back to draft" affordance.
         if (string.Equals(view, "history", StringComparison.OrdinalIgnoreCase))
         {
-            _history.Add("look");
-            _history.Add("say Well met, traveller.");
-            if (_history.Recall("wh") is { } recalled)
+            var history = HistoryFor(InputBar.Primary);
+            history.Add("look");
+            history.Add("say Well met, traveller.");
+            if (history.Recall("wh") is { } recalled)
             {
                 _input.Text = recalled;
                 UpdateInputChrome();
@@ -1417,12 +1429,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 "score",
             })
             {
-                _history.Add(command);
+                HistoryFor(InputBar.Primary).Add(command);
             }
 
             // A line nobody should find in the surface, entered exactly as a user would enter it. It is
             // seeded here on purpose: the frame is where "the password is not in the list" is visible.
-            _history.Add("connect Corvid hunter2");
+            HistoryFor(InputBar.Primary).Add("connect Corvid hunter2");
 
             _historySearch.OpenForSnapshot();
             if (view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase))
@@ -4521,8 +4533,32 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private InputBar BarKind(InputBarControl bar) =>
         ReferenceEquals(bar, _second) ? InputBar.Secondary : InputBar.Primary;
 
-    /// <summary>The recall list belonging to a bar. Each keeps its own; see <see cref="_secondHistory"/>.</summary>
-    private InputHistory HistoryFor(InputBar bar) => bar == InputBar.Secondary ? _secondHistory : _history;
+    /// <summary>
+    /// The recall list for a bar under the focused window's character; see <see cref="_histories"/>.
+    /// Created on first use, so a character nobody has typed to holds nothing.
+    /// </summary>
+    private InputHistory HistoryFor(InputBar bar)
+    {
+        var key = (HistoryOwner(), bar);
+        if (!_histories.TryGetValue(key, out var history))
+        {
+            // IgnoreForHistory is asked per line, so a list created late follows the setting as it is now.
+            history = new InputHistory(ignore: IgnoreForHistory);
+            _histories[key] = history;
+        }
+
+        return history;
+    }
+
+    /// <summary>
+    /// Whose history ↑ walks: the character behind the focused window, resolved exactly as the command
+    /// line's colour is (<see cref="InputTint"/>) — the session ⏎ reaches, else the owner the workspace
+    /// records for the window. Never <c>_active</c>, for <see cref="SendTarget"/>'s reason. The recorded
+    /// owner is the fallback so a character's history survives a disconnect and is there again when
+    /// their window is: the list is the character's, not the socket's. Empty for a window nobody owns.
+    /// </summary>
+    private string HistoryOwner() =>
+        SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey ?? string.Empty;
 
     /// <summary>
     /// Whether a sent line must be kept out of history — the F8 switch over
@@ -4542,8 +4578,29 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// list, and a surface that did not say which one it was showing would be indistinguishable from a
     /// surface showing the wrong one.
     /// </summary>
-    private string HistoryBarLabel() =>
-        BarKind(ActiveBar()) == InputBar.Secondary ? "second command line" : "command line";
+    private string HistoryBarLabel()
+    {
+        var bar = BarKind(ActiveBar()) == InputBar.Secondary ? "second command line" : "command line";
+        return HistoryOwnerName() is { } name ? $"{name}'s {bar}" : bar;
+    }
+
+    /// <summary>
+    /// The character whose history is in use, as the rail names them, or null for a window nobody owns.
+    /// The list is per character now, so the surface showing it has to say whose it is — the same reason
+    /// it already said which bar.
+    /// </summary>
+    private string? HistoryOwnerName()
+    {
+        var owner = HistoryOwner();
+        if (owner.Length == 0)
+        {
+            return null;
+        }
+
+        // The character's own name, which is how a reader knows them; the key itself for a world with no
+        // character. Bounded through Snippet like every other configured name on a fixed-width surface.
+        return Snippet(CharacterFor(owner)?.Name ?? owner);
+    }
 
     /// <summary>
     /// Puts a history entry on the armed command line — what ⏎ in the ⌃R surface does, and the only thing
@@ -4908,8 +4965,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void RecallDrafts(string windowId)
     {
-        _history.ResetCursor();
-        _secondHistory.ResetCursor();
+        // Every list, not only the window's own: one left mid-recall would hand ↓ a draft from another
+        // window when its character's window is next in front.
+        foreach (var history in _histories.Values)
+        {
+            history.ResetCursor();
+        }
+
         _input.Text = _drafts.Recall(windowId, InputBar.Primary);
         _second.Text = _drafts.Recall(windowId, InputBar.Secondary);
     }
@@ -5820,6 +5882,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             bar.IdleBandColor = ToColor(_inputBands.Idle);
             bar.TextColor = armedInk;
             bar.IdleTextColor = idleInk;
+
+            // The pane recipe stepped off the armed band rather than the reading plane: see InputSelectionBand.
+            bar.SelectionColor = ToColor(WorkspacePalette.InputSelectionBand(_theme, tint));
+            bar.SelectionTextColor = ToColor(WorkspacePalette.InputSelectionInk(_theme, tint));
         }
     }
 
@@ -7388,6 +7454,29 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
+    /// Drags across the armed command line, from one cell to another measured from the bar's own top-left,
+    /// as <see cref="SimulatePaneDrag"/> drags across a pane and for its reason: no test runs the loop that
+    /// would deliver the driver's mouse frames.
+    /// </summary>
+    internal void SimulateInputDrag(int fromX, int fromY, int toX, int toY)
+    {
+        var bar = ActiveBar();
+        Send(new List<MouseFlags> { MouseFlags.Button1Pressed }, fromX, fromY);
+        Send(new List<MouseFlags> { MouseFlags.Button1Pressed, MouseFlags.Button1Dragged }, toX, toY);
+        Send(new List<MouseFlags> { MouseFlags.Button1Released }, toX, toY);
+
+        void Send(List<MouseFlags> flags, int x, int y)
+        {
+            var local = new System.Drawing.Point(x, y);
+            var onWindow = new System.Drawing.Point(bar.ActualX + x, bar.ActualY + y);
+            bar.ProcessMouseEvent(new MouseEventArgs(flags, local, onWindow, onWindow, _window));
+        }
+    }
+
+    /// <summary>What the armed command line has selected, or empty when nothing is.</summary>
+    internal string InputSelection => ActiveBar().GetSelectedText();
+
+    /// <summary>
     /// What a window's pane currently has selected, as the text a copy would put on the clipboard, or
     /// empty when nothing is. Reads the control rather than any state of ours, because the selection
     /// belongs to the framework and a second record of it would be a second answer.
@@ -8518,7 +8607,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         if (text.Length == 0)
         {
-            RefuseCommand("nothing selected — drag across a pane's output to select it");
+            RefuseCommand("nothing selected — drag across output, or ⇧← ⇧→ in the command line, to select");
             return true;
         }
 

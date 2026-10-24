@@ -168,4 +168,75 @@ public class InputBarKeyTests
 
         await Assert.That(bar.Text).IsEqualTo("one\ntwo\nthree");
     }
+
+    [Test]
+    public async Task ShiftArrowsAndShiftHomeSelect()
+    {
+        var bar = Bar();
+        Type(bar, "say hello");
+
+        bar.ProcessKey(Chord(ConsoleKey.LeftArrow, shift: true));
+        await Assert.That(bar.GetSelectedText()).IsEqualTo("o");
+
+        bar.ProcessKey(Chord(ConsoleKey.Home, shift: true));
+        await Assert.That(bar.HasSelection).IsTrue();
+        await Assert.That(bar.GetSelectedText()).IsEqualTo("say hello");
+    }
+
+    [Test]
+    public async Task TypingOverASelectionReplacesItAndReportsTheEdit()
+    {
+        var bar = Bar();
+        Type(bar, "say hello");
+        string? changed = null;
+        bar.Changed += text => changed = text;
+
+        bar.ProcessKey(Chord(ConsoleKey.Home, shift: true));
+        Type(bar, "x");
+
+        await Assert.That(bar.Text).IsEqualTo("x");
+        await Assert.That(changed).IsEqualTo("x");
+    }
+
+    [Test]
+    public async Task ABareArrowDropsTheSelection()
+    {
+        var bar = Bar();
+        Type(bar, "look");
+        bar.ProcessKey(Chord(ConsoleKey.LeftArrow, shift: true));
+
+        bar.ProcessKey(Chord(ConsoleKey.LeftArrow));
+
+        await Assert.That(bar.HasSelection).IsFalse();
+        await Assert.That(bar.Text).IsEqualTo("look");
+    }
+
+    /// <summary>
+    /// Shift alone, exactly. Alt+Shift+← is the pane resize, and a selection arm that took it would be the
+    /// swallowed-chord defect this key table has paid for before.
+    /// </summary>
+    [Test]
+    public async Task AltShiftArrowIsStillDeclined()
+    {
+        var bar = Bar();
+        Type(bar, "look");
+
+        var claimed = bar.ProcessKey(new ConsoleKeyInfo('\0', ConsoleKey.LeftArrow, true, true, false));
+
+        await Assert.That(claimed).IsFalse();
+        await Assert.That(bar.HasSelection).IsFalse();
+    }
+
+    [Test]
+    public async Task ClearSelectionFromTheWindowDropsIt()
+    {
+        var bar = Bar();
+        Type(bar, "look");
+        bar.ProcessKey(Chord(ConsoleKey.Home, shift: true));
+
+        bar.ClearSelection();
+
+        await Assert.That(bar.HasSelection).IsFalse();
+        await Assert.That(bar.Text).IsEqualTo("look");
+    }
 }

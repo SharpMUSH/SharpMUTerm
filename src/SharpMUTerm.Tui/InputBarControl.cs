@@ -29,7 +29,7 @@ namespace SharpMUTerm.Tui;
 /// </para>
 /// </summary>
 internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocusableControl,
-    IMouseAwareControl, ILogicalCursorProvider, ICursorShapeProvider, IPasteTarget
+    IMouseAwareControl, ILogicalCursorProvider, ICursorShapeProvider, IPasteTarget, ISelectableControl
 {
     /// <summary>The buffer this bar edits. Public so the app can read the draft without a round trip.</summary>
     internal InputBuffer Buffer { get; } = new();
@@ -39,6 +39,11 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     private int _minRows = 3;
     private int _maxRows = 8;
     private int _scroll;
+
+    // True between a button press on the text and its release, so motion with the button held extends
+    // the selection from where the press landed.
+    private bool _dragging;
+    private Point _dragAt;
 
     /// <summary>Raised when ⏎ sends the line. The payload is the text as it was, newlines included.</summary>
     internal event Action<string>? Entered;
@@ -104,6 +109,12 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     /// <summary>The colour typed text is drawn in on the bar ⏎ will not send from.</summary>
     internal Color IdleTextColor { get; set; } = new(0x8a, 0x8f, 0x9e, 255);
 
+    /// <summary>The band behind selected text — the same one a pane's selection is drawn on.</summary>
+    internal Color SelectionColor { get; set; } = new(0x4a, 0x5a, 0x8a, 255);
+
+    /// <summary>The ink selected text is drawn in, held to the floor against <see cref="SelectionColor"/>.</summary>
+    internal Color SelectionTextColor { get; set; } = new(0xff, 0xff, 0xff, 255);
+
     /// <summary>The whole buffer. Setting it is a recall, not a keystroke: it raises no change event.</summary>
     internal string Text
     {
@@ -141,6 +152,8 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
         {
             return false;
         }
+
+        Deselected(Buffer.Deselect());
 
         Invalidate(Invalidation.Repaint);
         return true;
@@ -219,11 +232,14 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     /// function key, which is a decision about which meaning wins rather than a repair.
     /// </para>
     /// <para>
-    /// Selection is wanted and unbuilt. What it actually needs, if it is picked up: an anchor+extent on
-    /// <c>InputBuffer</c>, selection painting in <see cref="PaintDOM"/>, ⌃C copying via
-    /// <c>ClipboardHelper</c>, typing and paste replacing the selection, and Shift+arrows to extend it —
-    /// a selection you can only create and never adjust is worse than none. It wants its own chord, one
-    /// this host <em>can</em> deliver: a function key, or a ⌃B-prefixed one. Do not half-build it.
+    /// <b>Selection is ⇧←/→ and ⇧Home/End, and a drag or double-click with the mouse.</b> The shifted
+    /// keys extend from wherever the caret is, through the same moves the bare keys make; typing, paste,
+    /// Backspace and Delete replace what is selected; any bare move drops it. ⇧↑/↓ are not here — they
+    /// are the scrollback keys, and the window takes them before the bar sees them — so a selection
+    /// across rows is made with ⇧Home/End or the mouse. The bar is an <see cref="ISelectableControl"/>
+    /// and registers with the window's <c>SelectionManager</c>, so it and the panes share one selection:
+    /// starting one here clears a pane's, and the app's ⌃C copies whichever exists, without learning that
+    /// the bar is a second place text can be selected.
     /// </para>
     /// <para>
     /// <b>Every arm below matches the modifiers it wants exactly, and declines everything else.</b> The
@@ -254,8 +270,21 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
         {
             switch (key.Key)
             {
-                case ConsoleKey.LeftArrow: return Move(Buffer.MoveWordLeft());
-                case ConsoleKey.RightArrow: return Move(Buffer.MoveWordRight());
+                case ConsoleKey.LeftArrow: return Move(b => b.MoveWordLeft());
+                case ConsoleKey.RightArrow: return Move(b => b.MoveWordRight());
+            }
+        }
+
+        // Shift and nothing else extends a selection. Exact for the reason the Alt block above is: Alt+Shift
+        // is the pane resize, and ⇧↑/↓ never arrive here (the scrollback keys are taken first).
+        if (key.Modifiers == ConsoleModifiers.Shift)
+        {
+            switch (key.Key)
+            {
+                case ConsoleKey.LeftArrow: return Extend(b => b.MoveLeft());
+                case ConsoleKey.RightArrow: return Extend(b => b.MoveRight());
+                case ConsoleKey.Home: return Extend(b => b.MoveHome(FieldWidth()));
+                case ConsoleKey.End: return Extend(b => b.MoveEnd(FieldWidth()));
             }
         }
 
@@ -264,8 +293,8 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
             switch (key.Key)
             {
                 case ConsoleKey.L: return Edit(Buffer.InsertNewline());
-                case ConsoleKey.A: return Move(Buffer.MoveTo(0));
-                case ConsoleKey.E: return Move(Buffer.MoveTo(Buffer.Text.Length));
+                case ConsoleKey.A: return Move(b => b.MoveTo(0));
+                case ConsoleKey.E: return Move(b => b.MoveTo(b.Text.Length));
                 case ConsoleKey.K: return Edit(Buffer.KillToEnd());
                 case ConsoleKey.U: return Edit(Buffer.KillToStart());
             }
@@ -294,10 +323,10 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
         {
             switch (key.Key)
             {
-                case ConsoleKey.Home: return Move(Buffer.MoveHome(FieldWidth()));
-                case ConsoleKey.End: return Move(Buffer.MoveEnd(FieldWidth()));
-                case ConsoleKey.LeftArrow: return Move(Buffer.MoveLeft());
-                case ConsoleKey.RightArrow: return Move(Buffer.MoveRight());
+                case ConsoleKey.Home: return Move(b => b.MoveHome(FieldWidth()));
+                case ConsoleKey.End: return Move(b => b.MoveEnd(FieldWidth()));
+                case ConsoleKey.LeftArrow: return Move(b => b.MoveLeft());
+                case ConsoleKey.RightArrow: return Move(b => b.MoveRight());
                 case ConsoleKey.UpArrow: return TryMoveRow(-1);
                 case ConsoleKey.DownArrow: return TryMoveRow(1);
             }
@@ -339,16 +368,83 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
         return true;
     }
 
-    /// <summary>Commits a caret move: repaint only, and no draft change — the text did not move.</summary>
-    private bool Move(bool moved)
+    /// <summary>
+    /// Commits a caret move: repaint only, and no draft change — the text did not move. A bare move drops
+    /// the selection, so it repaints when that is all it did.
+    /// </summary>
+    private bool Move(Func<InputBuffer, bool> move)
     {
-        if (moved)
+        var deselected = Buffer.Deselect();
+        if (move(Buffer) || deselected)
         {
             Invalidate(Invalidation.Repaint);
         }
 
+        Deselected(deselected);
         return true;
     }
+
+    /// <summary>Commits a shifted move: the caret moves and the anchor stays where the selection began.</summary>
+    private bool Extend(Func<InputBuffer, bool> move)
+    {
+        if (Buffer.Extend(move))
+        {
+            Invalidate(Invalidation.Repaint);
+            SelectionMoved();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Tells the window this bar holds the selection now, and anyone listening what it is. Through the
+    /// window's <c>SelectionManager</c>, the same call a pane makes, which is what clears a pane's
+    /// selection when one starts here and what lets ⌃C ask one place for the text.
+    /// </summary>
+    private void SelectionMoved()
+    {
+        if (!Buffer.HasSelection)
+        {
+            SelectionChanged?.Invoke(this, string.Empty);
+            return;
+        }
+
+        this.GetParentWindow()?.SelectionManager.SetActiveSelection(this);
+        SelectionChanged?.Invoke(this, Buffer.SelectedText);
+    }
+
+    /// <summary>Reports a selection that a move or a recall dropped.</summary>
+    private void Deselected(bool had)
+    {
+        if (had)
+        {
+            Invalidate(Invalidation.Repaint);
+            SelectionChanged?.Invoke(this, string.Empty);
+        }
+    }
+
+    #region ISelectableControl
+
+    /// <inheritdoc/>
+    public bool HasSelection => Buffer.HasSelection;
+
+    /// <inheritdoc/>
+    public event EventHandler<string>? SelectionChanged;
+
+    /// <inheritdoc/>
+    public string GetSelectedText() => Buffer.SelectedText;
+
+    /// <summary>
+    /// Drops the selection when another control's starts. Called by the window's <c>SelectionManager</c>,
+    /// so it must not call back into it — it only resets this bar and repaints.
+    /// </summary>
+    public void ClearSelection()
+    {
+        _dragging = false;
+        Deselected(Buffer.Deselect());
+    }
+
+    #endregion
 
     /// <summary>Pastes at the caret. Newlines are kept: this bar has rows for them.</summary>
     public void Paste(string text)
@@ -358,6 +454,7 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
             return;
         }
 
+        _dragging = false;
         Edit(Buffer.Insert(text.Replace("\r\n", "\n").Replace('\r', '\n')));
     }
 
@@ -419,13 +516,22 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     /// <inheritdoc/>
     public void SetLogicalCursorPosition(Point position)
     {
-        var rows = InputLayout.Wrap(Buffer.Text, FieldWidth());
-        var row = Math.Clamp(position.Y - Margin.Top + _scroll, 0, rows.Count - 1);
-        var column = position.X - Margin.Left - MarkupParser.StripLength(_prompt);
-        if (Buffer.MoveTo(InputLayout.Offset(rows, row, column)))
+        var deselected = Buffer.Deselect();
+        if (Buffer.MoveTo(OffsetAt(position)) || deselected)
         {
             Invalidate(Invalidation.Repaint);
         }
+
+        Deselected(deselected);
+    }
+
+    /// <summary>The buffer offset under a point in this control's own coordinates, clamped into the text.</summary>
+    private int OffsetAt(Point position)
+    {
+        var rows = InputLayout.Wrap(Buffer.Text, FieldWidth());
+        var row = Math.Clamp(position.Y - Margin.Top + _scroll, 0, rows.Count - 1);
+        var column = position.X - Margin.Left - MarkupParser.StripLength(_prompt);
+        return InputLayout.Offset(rows, row, column);
     }
 
     /// <inheritdoc/>
@@ -457,6 +563,7 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
         var fieldWidth = Math.Max(1, bounds.Width - Margin.Left - Margin.Right - promptWidth);
 
         var (rows, _, _, height) = Geometry(fieldWidth, bounds.Height - Margin.Top - Margin.Bottom);
+        var (selStart, selLength) = Buffer.Selection;
 
         for (var line = 0; line < height; line++)
         {
@@ -493,7 +600,12 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
                 var x = textX + i;
                 if (x >= clipRect.X && x < clipRect.Right && x < bounds.Right - Margin.Right)
                 {
-                    buffer.SetNarrowCell(x, y, Buffer.Text[row.Start + i], ink, band);
+                    var offset = row.Start + i;
+                    var selected = offset >= selStart && offset < selStart + selLength;
+                    buffer.SetNarrowCell(
+                        x, y, Buffer.Text[offset],
+                        selected ? SelectionTextColor : ink,
+                        selected ? SelectionColor : band);
                 }
             }
         }
@@ -593,27 +705,87 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
             MouseRightClick?.Invoke(this, args);
         }
 
+        // A double-click selects the word under it. Before the press arm below, because the framework
+        // reports the second press of a double-click with both flags.
         if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1DoubleClicked))
         {
+            Arm();
+            _dragging = false;
+            if (Buffer.SelectWordAt(OffsetAt(args.Position)))
+            {
+                Invalidate(Invalidation.Repaint);
+            }
+
+            SelectionMoved();
             MouseDoubleClick?.Invoke(this, args);
+            args.Handled = true;
+            return true;
         }
 
-        if (!args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked)
-            && !args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Pressed))
+        // Motion with the button held, which SGR reports as Pressed|Dragged: extend from where the press
+        // landed. A bare Pressed at the cell the gesture is already on is the host's auto-repeat of a held
+        // button (PaneDragTracker has the details) and continues it; a bare Pressed anywhere else is a new
+        // press after a release this control never saw, and starts over.
+        var pressed = args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Pressed);
+        if (_dragging
+            && (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Dragged)
+                || (pressed && args.Position == _dragAt)))
         {
-            return false;
+            _dragAt = args.Position;
+            var target = OffsetAt(args.Position);
+            Extend(b => b.MoveTo(target));
+            args.Handled = true;
+            return true;
         }
 
+        if (pressed)
+        {
+            Arm();
+            SetLogicalCursorPosition(args.Position);
+            _dragging = true;
+            _dragAt = args.Position;
+            args.Handled = true;
+            return true;
+        }
+
+        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Released)
+            || args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked))
+        {
+            // A click that ends a drag leaves the selection the drag made. A click with no press before
+            // it (some drivers report only the click) places the caret, as a click always has.
+            var wasDragging = _dragging;
+            _dragging = false;
+            if (!args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked))
+            {
+                return false;
+            }
+
+            if (!wasDragging)
+            {
+                Arm();
+                SetLogicalCursorPosition(args.Position);
+            }
+
+            MouseClick?.Invoke(this, args);
+            args.Handled = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// What any press on a bar does first: take the focus and ask to be the bar ⏎ sends from — the second
+    /// way (after ⇥) to say which line that is.
+    /// </summary>
+    private void Arm()
+    {
         if (!HasFocus && CanFocusWithMouse)
         {
             this.GetParentWindow()?.FocusManager.SetFocus(this, FocusReason.Mouse);
         }
 
         ActivationRequested?.Invoke(this);
-        SetLogicalCursorPosition(args.Position);
-        MouseClick?.Invoke(this, args);
-        args.Handled = true;
-        return true;
     }
 
     #endregion

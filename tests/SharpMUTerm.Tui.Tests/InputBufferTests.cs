@@ -104,4 +104,76 @@ public class InputBufferTests
         await Assert.That(buffer.Set("look")).IsFalse();
         await Assert.That(buffer.Caret).IsEqualTo(4);
     }
+
+    [Test]
+    public async Task Extend_SelectsFromWhereTheCaretWas()
+    {
+        var buffer = new InputBuffer();
+        buffer.Set("say hello");
+        buffer.Extend(b => b.MoveLeft());
+        buffer.Extend(b => b.MoveWordLeft());
+
+        await Assert.That(buffer.HasSelection).IsTrue();
+        await Assert.That(buffer.SelectedText).IsEqualTo("hello");
+        await Assert.That(buffer.Caret).IsEqualTo(4);
+    }
+
+    [Test]
+    public async Task Extend_BackOverTheAnchorLeavesNothingSelected()
+    {
+        var buffer = new InputBuffer();
+        buffer.Set("look");
+        buffer.Extend(b => b.MoveLeft());
+        buffer.Extend(b => b.MoveRight());
+
+        await Assert.That(buffer.HasSelection).IsFalse();
+        await Assert.That(buffer.SelectedText).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task Insert_ReplacesTheSelection()
+    {
+        var buffer = new InputBuffer();
+        buffer.Set("say hello");
+        buffer.Select(4, 9);
+        buffer.Insert("there");
+
+        await Assert.That(buffer.Text).IsEqualTo("say there");
+        await Assert.That(buffer.HasSelection).IsFalse();
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task BackspaceAndDelete_RemoveTheSelectionAndNothingElse(bool backspace)
+    {
+        var buffer = new InputBuffer();
+        buffer.Set("say hello there");
+        buffer.Select(10, 4);
+
+        await Assert.That(backspace ? buffer.Backspace() : buffer.Delete()).IsTrue();
+        await Assert.That(buffer.Text).IsEqualTo("say there");
+        await Assert.That(buffer.Caret).IsEqualTo(4);
+    }
+
+    [Test]
+    public async Task Set_DropsTheSelection()
+    {
+        var buffer = new InputBuffer();
+        buffer.Set("look");
+        buffer.Select(0, 4);
+        buffer.Set("score");
+
+        await Assert.That(buffer.HasSelection).IsFalse();
+    }
+
+    [Test]
+    public async Task SelectWordAt_TakesTheRunOfNonSpaceUnderTheOffset()
+    {
+        var buffer = new InputBuffer();
+        buffer.Set("page Ann=hello there");
+        buffer.SelectWordAt(7);
+
+        await Assert.That(buffer.SelectedText).IsEqualTo("Ann=hello");
+    }
 }
