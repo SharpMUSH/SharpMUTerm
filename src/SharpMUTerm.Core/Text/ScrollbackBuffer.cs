@@ -43,19 +43,16 @@ public sealed class ScrollbackBuffer : IDisposable
     /// otherwise. The single definition, so the config default, the session default and this buffer's
     /// own default cannot drift apart.
     /// <para>
-    /// Ten thousand, not the twenty thousand it was. The number is not free: the TUI feeds a window's
-    /// whole buffer to one markup control whose parse cache is keyed on a content version, and
-    /// appending a line bumps that version — so <em>one</em> arriving line re-parses the entire buffer.
-    /// Measured against SharpConsoleUI 2.5.14 that is ~11 ms at 1,000 lines, ~50 ms at 5,000 and
-    /// 88–116 ms at 20,000: at twenty thousand a busy room drops the client below a frame a second.
-    /// Halving the cap is a mitigation, not the fix — a windowed feed (giving the control the visible
-    /// slice instead of everything) is what removes the coupling — but a default nobody can survive is
-    /// not one to keep in the meantime, and ten thousand lines is still hours of a room's traffic.
+    /// Ten thousand, not the twenty thousand it was, from when this was also what a pane held: the TUI
+    /// fed the whole buffer to one markup control that re-parses everything it holds on the frame after
+    /// each new line (~11 ms at 1,000 lines, ~50 ms at 5,000 against SharpConsoleUI 2.5.14). That
+    /// coupling is gone — a pane holds <c>AppConfiguration.PaneLines</c>, a separate and much smaller
+    /// cap — so this one governs only the session's own ring, and what a pane is refilled from when a
+    /// session is bound to it.
     /// </para>
     /// <para>
     /// Deeper history is not lost when a <see cref="IScrollbackSpill"/> is supplied — it is paged off
-    /// disk instead, so this cap governs what stays in <em>memory</em> (and therefore what the markup
-    /// control can be asked to hold), not how far back the user can scroll.
+    /// disk instead, so this cap governs what stays in <em>memory</em>, not how much history is kept.
     /// </para>
     /// </summary>
     public const int DefaultCapacity = 10_000;

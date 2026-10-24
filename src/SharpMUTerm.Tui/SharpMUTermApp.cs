@@ -2758,12 +2758,18 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor, pictures));
 
 
-        // Cap the UI-side buffer at the configured scrollback so a long session doesn't grow without
-        // bound (and freeze rebuilds stay cheap); shift the freeze point down by whatever we trimmed.
-        var cap = Math.Max(1, _config.ScrollbackLines);
-        if (buffer.Count > cap)
+        // Cap what the pane holds, and trim its control with it. The control re-parses every line it
+        // holds on the frame after each new one, so what it holds is what every line costs; it used to
+        // be appended to for ever while only this buffer was trimmed, so a long session (and a restart,
+        // which starts with a replayed history) got slower with every line. The trim waits for a slack
+        // past the cap, so the whole-pane re-feed it costs happens once per that many lines rather than
+        // on every one. Older lines are not lost: they are in the session's scrollback, its spill, the
+        // restore log and any transcript.
+        var cap = PaneLineCap;
+        if (buffer.Count > cap + PaneTrimSlack(cap))
         {
             var excess = buffer.Count - cap;
+            var keep = RowsToKeepReadingPosition(windowId, buffer, excess);
             buffer.RemoveRange(0, excess);
             if (_freezePoints.TryGetValue(windowId, out var point))
             {
@@ -2806,11 +2812,91 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 var moved = search.Index - excess;
                 _searchMark = moved < 0 ? null : (windowId, moved);
             }
+
+            // The web view's pane is not fed from this buffer (RepaintPane skips it), so it takes the
+            // line the ordinary way below.
+            if (!string.Equals(windowId, WebWindowId, StringComparison.Ordinal))
+            {
+                RepaintPane(windowId);
+                KeepReadingPosition(windowId, keep);
+                return;
+            }
         }
 
         if (_panes.TryGetValue(windowId, out var control))
         {
             control.AppendLine(Compose(buffer[^1]));
+        }
+    }
+
+    /// <summary>The most lines a pane's buffer (and so its control) is trimmed back to.</summary>
+    private int PaneLineCap => Math.Max(1, _config.PaneLines);
+
+    /// <summary>
+    /// How far past <see cref="PaneLineCap"/> a buffer may grow before it is trimmed. A quarter of the
+    /// cap: enough that the re-feed a trim costs is rare, small enough that the control never holds
+    /// much more than it was asked to.
+    /// </summary>
+    private static int PaneTrimSlack(int cap) => Math.Max(1, cap / 4);
+
+    /// <summary>
+    /// How many display rows each of a window's scroll viewports has to move up by to stay on the same
+    /// text once the first <paramref name="excess"/> lines are trimmed, measured before they go. A
+    /// viewport following its live tail needs nothing — it is re-pinned to the bottom — and neither does
+    /// one with no width yet, which has no position to keep. A frozen window is two viewports over one
+    /// buffer, split at the freeze point, so the lines above it come off the pinned half and any beyond
+    /// it off the live tail.
+    /// </summary>
+    private List<(ScrollablePanelControl Panel, int Rows)> RowsToKeepReadingPosition(
+        string windowId, List<PaneLine> buffer, int excess)
+    {
+        var result = new List<(ScrollablePanelControl, int)>();
+        if (_freezePoints.TryGetValue(windowId, out var point))
+        {
+            var fromFrozen = Math.Clamp(point, 0, excess);
+            Measure(_paneScrolls.GetValueOrDefault(FrozenRegionKey(windowId)), 0, fromFrozen,
+                _frozenPanes.GetValueOrDefault(windowId));
+            Measure(_paneScrolls.GetValueOrDefault(windowId), fromFrozen, excess - fromFrozen,
+                _panes.GetValueOrDefault(windowId));
+        }
+        else
+        {
+            Measure(_paneScrolls.GetValueOrDefault(windowId), 0, excess, _panes.GetValueOrDefault(windowId));
+        }
+
+        return result;
+
+        void Measure(ScrollablePanelControl? panel, int from, int count, MarkupControl? like)
+        {
+            if (panel is null || count <= 0 || panel.AutoScroll || panel.ViewportWidth <= 0)
+            {
+                return;
+            }
+
+            var rows = MeasureRows(buffer, from, panel.ViewportWidth, like, count);
+            if (rows > 0)
+            {
+                result.Add((panel, rows));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Puts a window's viewports back on the text they were showing before a trim re-fed them, and
+    /// re-pins a following one: a whole-buffer re-feed leaves its offset a frame behind (the same
+    /// pairing <see cref="MarkMissedLines"/> makes after an insert).
+    /// </summary>
+    private void KeepReadingPosition(string windowId, List<(ScrollablePanelControl Panel, int Rows)> keep)
+    {
+        foreach (var (panel, rows) in keep)
+        {
+            // Upwards only, so the clamp against a viewport not yet re-arranged cannot bite.
+            panel.ScrollVerticalBy(-rows);
+        }
+
+        if (_paneScrolls.GetValueOrDefault(windowId) is { AutoScroll: true } following)
+        {
+            following.ScrollToBottom();
         }
     }
 
@@ -3264,8 +3350,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// How many display rows a window's buffer occupies from <paramref name="from"/> to its end, at
-    /// <paramref name="width"/> cells, as the framework will wrap it.
+    /// How many display rows a window's buffer occupies from <paramref name="from"/> to its end (or
+    /// across <paramref name="count"/> lines), at <paramref name="width"/> cells, as the framework will
+    /// wrap it.
     /// <para>
     /// Measured through a throwaway <see cref="MarkupControl"/> and its public <c>MeasureDOM</c> rather
     /// than by counting characters here: word wrapping, markup tags that occupy no cells and wide
@@ -3274,11 +3361,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// the same reason — measuring with a different one would measure a different control.
     /// </para>
     /// </summary>
-    private int MeasureRows(List<PaneLine> buffer, int from, int width, MarkupControl? like)
+    private int MeasureRows(List<PaneLine> buffer, int from, int width, MarkupControl? like, int count = int.MaxValue)
     {
         var start = Math.Clamp(from, 0, buffer.Count);
-        var markup = new List<string>(buffer.Count - start);
-        for (var i = start; i < buffer.Count; i++)
+        var end = start + Math.Clamp(count, 0, buffer.Count - start);
+        var markup = new List<string>(end - start);
+        for (var i = start; i < end; i++)
         {
             markup.Add(Compose(buffer[i]));
         }
