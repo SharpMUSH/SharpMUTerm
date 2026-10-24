@@ -7,8 +7,6 @@ using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Graphics;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace SharpMUTerm.Tui.Tests;
 
@@ -466,21 +464,8 @@ public class MxpImageTests
 
     // ---- Harness ------------------------------------------------------------------------------
 
-    private static byte[] Png(int width, int height)
-    {
-        using var image = new Image<Rgb24>(width, height);
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                image[x, y] = x < width / 2 ? new Rgb24(200, 40, 40) : new Rgb24(40, 40, 200);
-            }
-        }
-
-        using var stream = new MemoryStream();
-        image.SaveAsPng(stream);
-        return stream.ToArray();
-    }
+    private static byte[] Png(int width, int height) =>
+        TestPng.Encode(width, height, (x, y) => x < width / 2 ? ((byte)200, (byte)40, (byte)40) : ((byte)40, (byte)40, (byte)200));
 
     private sealed record Run(SharpMUTermApp App, RecordingTelnetSession Telnet) : IAsyncDisposable
     {

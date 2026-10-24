@@ -1,5 +1,3 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Tui.Tests;
@@ -12,21 +10,8 @@ namespace SharpMUTerm.Tui.Tests;
 public class WebImageLoaderTests
 {
     /// <summary>A real PNG of the given size, so the decode path runs on genuine image bytes.</summary>
-    private static byte[] SamplePng(int width = 32, int height = 32)
-    {
-        using var image = new Image<Rgb24>(width, height);
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb24((byte)(x % 256), (byte)(y % 256), 128);
-            }
-        }
-
-        using var stream = new MemoryStream();
-        image.SaveAsPng(stream);
-        return stream.ToArray();
-    }
+    private static byte[] SamplePng(int width = 32, int height = 32) =>
+        TestPng.Encode(width, height, (x, y) => ((byte)(x % 256), (byte)(y % 256), (byte)128));
 
     // ---- Media types ---------------------------------------------------------------------------
 

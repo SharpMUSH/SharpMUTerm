@@ -69,7 +69,7 @@ fallbacks) for inline images/maps.
   probe, and `InlineImagePolicy` — the Kitty → Sixel → half-block → text degradation chain (no UI
   dependency). Inside the TUI the *pixels* are drawn by SharpConsoleUI's `ImageControl`; ours
   supplies the policy, because only the framework's renderer can put an image into compositor cells.
-  **Sixel inside the compositor is blocked upstream:** at SharpConsoleUI 2.5.14 `IImageRenderer` is
+  **Sixel inside the compositor is blocked upstream:** at SharpConsoleUI 2.7.8 `IImageRenderer` is still
   `internal` and `ImageControl.ResolveRenderer()` is private, so no Sixel back-end can be injected —
   and the framework ships none. Reopening it needs an upstream PR making `IImageRenderer` public and
   `ResolveRenderer` overridable; nothing on our side unblocks it. `InlineImagePolicy` therefore
@@ -152,7 +152,7 @@ fallbacks) for inline images/maps.
     first frame, and every line would otherwise count as missed — so any frame that later made such a
     window visible carried an activity bar reporting the client's own setup as news.
 - **A pane's output can be selected with the mouse and copied with `⌃C`, and almost all of it is the
-  framework's** (`MarkupControl.EnableSelection`, shipped in the pinned 2.5.14 and **off by default**).
+  framework's** (`MarkupControl.EnableSelection`, shipped since 2.5.14 and **off by default**).
   Drag, double-click word, triple-click line, drag-autoscroll through the `ScrollablePanelControl` each
   pane already sits in, one-selection-per-window arbitration and a wrap-aware copy all come from the
   package. This is the rare case where the answer was to *switch something on* rather than build it; what
@@ -773,7 +773,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
 
 ## SharpConsoleUI — the traps that cost the most time
 
-Package `SharpConsoleUI`, repo `nickprotop/ConsoleEx`, pinned at **2.5.14**. **Always the package** —
+Package `SharpConsoleUI`, repo `nickprotop/ConsoleEx`, pinned at **2.7.8**. **Always the package** —
 there is no source-reference path and no switch. A sibling clone at `../SharpConsoleUI` used to be
 detected and preferred *by default*, which meant merely having it on disk changed what this repo
 compiled against, silently and differently from CI; that is gone. Clone it and read it, and never wire
@@ -785,6 +785,15 @@ runtime. Marshal background work with `system.EnqueueOnUIThread`; global keys vi
 `RegisterGlobalShortcut`; `system.Run()` blocks, `RequestExit(code)` ends it. Text is Spectre-style
 markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]` → `LinkClicked`).
 
+- **A headless frame is captured by lifting a suppression the driver sets, by reflection**
+  (`HeadlessFrameCapture`). Until 2.6 `HeadlessConsoleDriver`'s buffer leaked every frame to
+  `Console.Out` and the snapshot simply redirected that. 2.6 closed the leak (`19c3810f`,
+  `ConsoleBuffer.SuppressConsoleOutput`) and `OutputHistory` is documented as no longer populated, so
+  no public read of a frame is left. The capture sets the buffer's private `_consoleBuffer` field's
+  suppression off for the one redirected render and back on after. If it breaks, every frame test fails
+  on "too few painted cells" at once; a public frame accessor on the headless driver is the upstream fix.
+- **Image decoding is StbImageSharp since 2.7** (`0e10ef8d`), and ImageSharp is no longer a transitive
+  dependency. Tests that need real PNG bytes encode them with `StbImageWriteSharp` (`TestPng`).
 - **Controls default to `HorizontalAlignment.Left`, which self-sizes to content** instead of filling
   the slot. This is the single biggest cause of "why doesn't this fill the width?" Use
   `.WithAlignment(HorizontalAlignment.Stretch)`. A `.Flex(n)` column only fills if the grid is
@@ -804,8 +813,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   derive the text's origin and scroll from one place** (`InputBarControl.Geometry`): the paint has always
   been clamped to the rows it was *given* and the cursor was not, so on any frame where the arranged
   height was short of the requested one they disagreed about the scroll.
-- **The caret was placed from a rectangle only the *mouse* refreshed — an upstream bug, fixed in the
-  clone, and a whole class of defect no test here can see.** `ControlBounds.ControlContentBounds` is
+- **The caret was placed from a rectangle only the *mouse* refreshed — an upstream bug, fixed in 2.6
+  (`1dbc33f0`), and a whole class of defect no test here can see.** `ControlBounds.ControlContentBounds` is
   written by `WindowEventDispatcher.UpdateControlLayout()` and by nothing else, and that has exactly one
   caller: `ProcessMouseEvent`. Both cursor readers preferred it and fell through to the layout node's
   (always fresh) `AbsoluteBounds` only while it was still `Rectangle.Empty` — so the caret was correct
@@ -813,9 +822,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   wherever the pointer had last seen the control. Every later layout change (the input bar growing on
   F8, the second bar showing or hiding) then moved the text and left the caret behind, permanently:
   typing does not fix it, and leaving the terminal and coming back does, because that crosses it with
-  the pointer. Fixed in `../SharpConsoleUI` (`CursorBoundsStalenessTests`) by preferring the node in
-  both readers. **Two things follow for this repo.** That fix is not in the pinned package, and this
-  repo builds only against the package, so we still have the bug until a release ships it. And nothing
+  the pointer. Fixed upstream (`CursorBoundsStalenessTests`) by preferring the node in both readers,
+  and in the package since the 2.7.8 bump. **Nothing**
   in our suite can catch this class of bug: the framework only registers its driver-mouse handler inside
   `Run()`, which no test calls, so `ControlContentBounds` is never populated headlessly and every caret
   test here silently exercises the *fresh* path. A caret report that our tests cannot reproduce is
@@ -1019,8 +1027,9 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     old tree. The kept viewports therefore refill themselves; markup controls survive disposal (they
     override nothing), which is why the same one is re-parented for the life of the app.
 - **Only `MarkupControl.AppendLine` and `FeedRange` hand pane content to a control** — the seam a
-  windowed feed replaces. Appending re-parses the whole control (the parse cache is keyed on a content
-  version), so never "refresh" a pane by re-`SetContent`-ing the full buffer on a scroll or a frame.
+  windowed feed replaces. Since 2.6 an append parses only text the control has not seen at that width
+  (`6a3562b0`, a second cache level keyed on each line's text), but a content change still rebuilds the
+  flat row list, so never "refresh" a pane by re-`SetContent`-ing the full buffer on a scroll or a frame.
   `BindSession`'s scrollback replay used to be a third route, painting straight onto the control; the
   buffer and the control then disagreed and the next thing to re-feed that pane dropped those lines.
 - **A buffered line is a `PaneLine` — markup plus, held apart from it, when the line arrived** — and the
@@ -1102,11 +1111,13 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `PaneTintTests.ABackgroundTabWearsItsOwnCharactersColour` is the pin and the `tint-tabs` view is the
   frame — the old code was internally consistent and the screen was still wrong, so only a painted cell
   answers this.
-- **A tab strip shrinks its labels to fit its pane, because the framework clips and does not scroll**
+- **A tab strip shrinks its labels to fit its pane, because a strip that overflows hides tabs**
   (`TabStripFit`; `SharpMUTermApp.RetitlePane`/`SyncTabStripWidths`; the `tabs-many` view).
-  `TabControl` draws its tabs left to right from index 0 and writes each clipped to the header rectangle
-  — there is **no first-visible-tab offset anywhere in the control** — so a strip narrower than its tabs
-  simply stops drawing. The tabs past the edge are gone, **the selected one included**, and with them the
+  Through 2.5.x `TabControl` drew its tabs left to right from index 0 and wrote each clipped to the
+  header rectangle — there was **no first-visible-tab offset anywhere in the control** — so a strip
+  narrower than its tabs simply stopped drawing. 2.7 (`7be20b38`) scrolls the row so the active tab is
+  always shown and marks a hidden edge with `‹`/`›`; the rest of this entry predates that and still
+  holds, because a scrolled strip still hides every tab off its ends. The tabs past the edge are gone, **the selected one included**, and with them the
   `×`, the separator and the framework's own `← →` hint, which is drawn only when there is slack left to
   draw it in *and* the strip has keyboard focus (which it never has here: focus is pinned to the armed
   command line). Measured: five captures in a split pane drew two tabs and half of a third.
@@ -1124,8 +1135,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     each one or two cells against a name that is routinely twenty.
   - **Past the floors the tabs really do overflow, and that is left alone.** Eight tabs cannot be drawn
     in forty cells however they are labelled; the answer is the floors and the framework clips the
-    remainder — the state that existed before this, reached later. Making the *last* tab visible is a
-    scroll offset, which is upstream work.
+    remainder — since 2.7 scrolled so the selected tab stays on screen, with `‹`/`›` at a hidden edge.
   - **A tab's fixed cost is measured off a rendered title, never re-derived.** `VisibleLength(title)`
     less the name, plus the framework's own cells (the space either side, the `×`, the `│`). A second
     arithmetic for the decorations would drift from `TabTitles.For` and overflow the pane while every

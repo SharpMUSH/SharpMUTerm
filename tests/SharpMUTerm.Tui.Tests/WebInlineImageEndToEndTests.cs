@@ -1,5 +1,3 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using SharpMUTerm.Graphics;
 using SharpMUTerm.Tui;
 using SharpMUTerm.Web;
@@ -24,21 +22,8 @@ public class WebInlineImageEndToEndTests
         "<p>Exits lead north and south.</p>" +
         "</body></html>";
 
-    private static byte[] Png(int width, int height)
-    {
-        using var image = new Image<Rgb24>(width, height);
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb24((byte)(x % 256), (byte)(y % 256), 200);
-            }
-        }
-
-        using var stream = new MemoryStream();
-        image.SaveAsPng(stream);
-        return stream.ToArray();
-    }
+    private static byte[] Png(int width, int height) =>
+        TestPng.Encode(width, height, (x, y) => ((byte)(x % 256), (byte)(y % 256), (byte)200));
 
     private static TerminalCapabilities Detect(params (string Key, string? Value)[] vars) =>
         CapabilityProbe.Detect(vars.ToDictionary(v => v.Key, v => v.Value, StringComparer.Ordinal));
