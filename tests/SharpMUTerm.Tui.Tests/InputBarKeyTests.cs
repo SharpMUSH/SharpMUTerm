@@ -239,4 +239,93 @@ public class InputBarKeyTests
         await Assert.That(bar.HasSelection).IsFalse();
         await Assert.That(bar.Text).IsEqualTo("look");
     }
+
+    // ---- what the editor underneath brings, and what it is not allowed to -------------------------
+
+    /// <summary>⌃Z takes back the last edit and ⌃Y puts it back — the editor's undo, reached from the bar.</summary>
+    [Test]
+    public async Task CtrlZUndoesAndCtrlYRedoes()
+    {
+        var bar = Bar();
+        Type(bar, "look");
+        bar.ProcessKey(Chord(ConsoleKey.Backspace));
+        await Assert.That(bar.Text).IsEqualTo("loo");
+
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.Z, ctrl: true))).IsTrue();
+        await Assert.That(bar.Text).IsEqualTo("look");
+
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.Y, ctrl: true))).IsTrue();
+        await Assert.That(bar.Text).IsEqualTo("loo");
+    }
+
+    /// <summary>⌃K and ⌃U kill to either end of the whole buffer, across rows, and ⌃Z brings it back.</summary>
+    [Test]
+    public async Task TheKillsReachAcrossLinesAndCanBeUndone()
+    {
+        var bar = Bar();
+        Type(bar, "one");
+        bar.ProcessKey(Chord(ConsoleKey.L, ctrl: true));
+        Type(bar, "two");
+        bar.ProcessKey(Chord(ConsoleKey.A, ctrl: true)); // the start of the buffer, not of the row
+        bar.ProcessKey(Chord(ConsoleKey.RightArrow));
+
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.K, ctrl: true))).IsTrue();
+        await Assert.That(bar.Text).IsEqualTo("o");
+
+        bar.ProcessKey(Chord(ConsoleKey.Z, ctrl: true));
+        await Assert.That(bar.Text).IsEqualTo("one\ntwo");
+
+        bar.ProcessKey(Chord(ConsoleKey.E, ctrl: true));
+        bar.ProcessKey(Chord(ConsoleKey.LeftArrow));
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.U, ctrl: true))).IsTrue();
+        await Assert.That(bar.Text).IsEqualTo("o");
+    }
+
+    /// <summary>
+    /// The editor's own Ctrl table is a document's: ⌃A selects all, ⌃C/⌃X write the system clipboard
+    /// directly, ⌃D duplicates a line. None of them may reach it — ⌃C is the app's, through the
+    /// selection owner, and the rest mean nothing on a command line — so each is declined and the text
+    /// is left alone.
+    /// </summary>
+    [Test]
+    [Arguments(ConsoleKey.C)]
+    [Arguments(ConsoleKey.X)]
+    [Arguments(ConsoleKey.V)]
+    [Arguments(ConsoleKey.D)]
+    public async Task TheEditorsDocumentChordsAreDeclined(ConsoleKey key)
+    {
+        var bar = Bar();
+        Type(bar, "look");
+        bar.ProcessKey(Chord(ConsoleKey.LeftArrow, shift: true));
+
+        await Assert.That(bar.ProcessKey(Chord(key, ctrl: true))).IsFalse();
+        await Assert.That(bar.Text).IsEqualTo("look");
+    }
+
+    /// <summary>⌃A is the start of the line, as readline has it, not the editor's select-all.</summary>
+    [Test]
+    public async Task CtrlAMovesRatherThanSelects()
+    {
+        var bar = Bar();
+        Type(bar, "look");
+
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.A, ctrl: true))).IsTrue();
+        await Assert.That(bar.HasSelection).IsFalse();
+        Type(bar, ">");
+        await Assert.That(bar.Text).IsEqualTo(">look");
+    }
+
+    /// <summary>
+    /// Escape is declined. The editor would take it (to leave edit mode, or to swallow it), and a claimed
+    /// Escape is one <c>TryAltEnter</c> never sees, which would break ⌥⏎.
+    /// </summary>
+    [Test]
+    public async Task EscapeIsDeclined()
+    {
+        var bar = Bar();
+        Type(bar, "look");
+
+        await Assert.That(bar.ProcessKey(Chord(ConsoleKey.Escape))).IsFalse();
+        await Assert.That(bar.IsEditing).IsTrue();
+    }
 }

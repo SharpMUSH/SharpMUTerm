@@ -15,12 +15,10 @@ internal readonly record struct ComposeResult(string Body, ComposeEscaping Escap
 /// <summary>
 /// The composer: a full-screen editor for writing a post before sending it, over the workspace.
 /// <para>
-/// <b>Why an editor and not a bigger command line.</b> The command line is deliberately ours
-/// (<see cref="InputBarControl"/>) because ⏎ has to send rather than insert, which rules the framework's
-/// text controls out for it. A composer is the opposite case and the one
-/// <see cref="MultilineEditControl"/> was built for: ⏎ inserts, the buffer is a document, and undo,
-/// find, selection, mouse and a caret over wrapped rows all come with it rather than being written
-/// again here.
+/// <b>Why a full screen and not a bigger command line.</b> The command line is the same control
+/// (<see cref="InputBarControl"/> is a <see cref="MultilineEditControl"/>) with ⏎ taken over to send. A
+/// composer is the case the editor was built for: ⏎ inserts, the buffer is a document, and there is the
+/// whole screen to write it in.
 /// </para>
 /// <para>
 /// <b>Why a modal window.</b> The app pins keyboard focus to the armed command line on every focus

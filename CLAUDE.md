@@ -27,16 +27,30 @@ fallbacks) for inline images/maps.
   TelnetNegotiationCore; **MCCP, MSDP, MXP, and Pueblo are our own app layer.**
 - **Config:** fresh JSON schema of our own (worlds hold characters; automation lives in shared
   named trigger sets), versioned with automatic migration between schema revisions.
-- **The command line is ours** (`InputBarControl` + `InputBuffer` + `InputLayout`), and stays ours.
-  The framework has two text controls and neither is the answer. `PromptControl` genuinely cannot
-  do it — single-line by construction (its setter turns `\n` into a space), one row tall, scrolls
-  sideways, and unfocuses on ⏎ with no way to switch that off. `MultilineEditControl` is a capable
-  *editor* (wrap, undo, find/replace, mouse, paste, a pluggable gutter) and is worth knowing about,
-  but a command line is not an editor: ⏎ has to send rather than insert, the bar grows to its
-  content between a floor and a ceiling, it carries a prompt the text indents past, and two of them
-  share one caret with per-window drafts and history recall behind it. Expanding ours is the call.
-  Offering it upstream once it is genuinely finished and problem-free is a someday, not a plan —
-  do not treat it as pending work.
+- **The command line is the F1 composer's editor with the command line's rules laid over it**
+  (`InputBarControl : MultilineEditControl`, plus `InputLayout` for the height arithmetic). It was our own
+  control for a long time, on the grounds that a command line is not an editor; the maintainer chose to
+  rebuild it on the editor once 2.7.8 was in, for undo/redo, word-aware wrapping and the editor's mouse
+  handling. What the subclass adds is the part an editor does not do: ⏎ sends (the editor inserts on ⏎
+  and declines every modified ⏎, so ⌥⏎/⌃L are handed to it as a *bare* ⏎); it grows between `MinRows`
+  and `MaxRows` (`MeasureDOM` sets the editor's fixed viewport from the wrapped row count); the prompt is
+  a gutter renderer, so every row indents past it; and the key table in front decides what the editor
+  ever sees. Three things are load-bearing:
+  - **Keys are filtered, never passed wholesale.** The editor's table is a document's — ⌃A select-all,
+    ⌃C/⌃X straight to the system clipboard through a static helper nothing can substitute, ⌃D duplicate
+    line, ⌥↑/↓ move line, ⇥ indent, Esc out of edit mode. None of those may reach it: ⌃C is
+    `CopyFocusedSelection`'s through the window's `SelectionManager`, ⌃A is readline's, and a claimed Esc
+    is one `TryAltEnter` never sees. `IInteractiveControl`, `IMouseAwareControl`, `ILogicalCursorProvider`
+    and `ISelectableControl` are **re-implemented** on the subclass so the framework's calls arrive at the
+    filtered members, not the editor's.
+  - **The wrapped row count is read by reflection** (`GetWrappedLines(int)`), because the public measure
+    wraps at the width of the *last* paint and so runs a frame behind every resize. It falls back to the
+    public one if the method is renamed.
+  - **A full last row gets a row under it**, and the caret is moved onto it. The editor draws a caret at
+    the end of a full row one cell past the text, which on a bar as wide as the terminal is off screen.
+    `ACaretAfterAFullRowIsOnTheRowBelowIt` reads that off the frame.
+  Two old behaviours changed with it: the prompt scrolls away with the first row once the bar is past its
+  cap, and past the cap the overflow is shown by the editor's scrollbar rather than `▴`/`▾`.
 - **License:** MIT.
 
 ## Repository state
@@ -225,8 +239,8 @@ fallbacks) for inline images/maps.
     upstream; tmux needs `allow-passthrough on`. The Windows mouse path is a separate ad-hoc parser in
     `NetConsoleDriver` and nothing here can verify it — treat Windows drag-select as unproven.
 - **The command line can be selected and copied too, and it joins the panes' one selection rather than
-  adding a second** (`InputBuffer` anchor + `InputBarControl : ISelectableControl`; the `input-selection`
-  view). ⇧←/→ and ⇧Home/End extend from the caret through the same moves the bare keys make; a drag or a
+  adding a second** (the editor's own selection, registered with the window's `SelectionManager`; the
+  `input-selection` view). ⇧←/→ and ⇧Home/End extend from the caret through the same moves the bare keys make; a drag or a
   double-click does it with the mouse; typing, paste, Backspace and Delete replace what is selected; any
   bare move drops it. ⇧↑/↓ stay the scrollback keys, so a selection across rows is ⇧Home/End or the mouse.
   The bar registers with the window's `SelectionManager` exactly as a pane's `MarkupControl` does, so
@@ -428,10 +442,8 @@ fallbacks) for inline images/maps.
     opener refuses out loud (`AutoLinkTests.AnAppWithNoOpenerLaunchesNothingAndSaysSo`).
 - **F1 is the composer: a full-screen editor for writing a post, sent as one command**
   (`ComposeOverlay`, Tui; `ComposeMessage`, Core; ⌃P ▸ *Compose a post*; `--view compose` /
-  `compose-literal`). It is **the one place `MultilineEditControl` is right**. CLAUDE.md rules that
-  control out of the *command line* because ⏎ there has to send rather than insert; a composer is the
-  opposite case, so undo, find, selection, mouse and a caret over wrapped rows all come free instead of
-  being written again.
+  `compose-literal`). The command line is the same control with ⏎ taken over; here ⏎ inserts, as the
+  editor intends, so undo, find, selection, mouse and a caret over wrapped rows all come free.
   - **The buffer is the whole command**, verb and all — nothing is prepended and nothing is guessed at —
     and its line breaks are joined with `%r`, because a MUSH stores a post as one string and renders the
     breaks itself. Blank rows at the ends are where the caret was left and are dropped; interior ones are
@@ -831,10 +843,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   while the screen disagrees. `CaretOnScreen()` reads the cell the *driver* was handed — it goes through
   `ConsoleWindowSystem.ProcessOnce` because `ForceRender` paints and stops, and the cursor pass
   (`UpdateCursor`) is a separate, `internal` step of the real loop. `FrameGrid.Decode` turns a frame back
-  into cells so "where the text is" is read off the paint. **`PaintDOM` and `GetLogicalCursorPosition`
-  derive the text's origin and scroll from one place** (`InputBarControl.Geometry`): the paint has always
-  been clamped to the rows it was *given* and the cursor was not, so on any frame where the arranged
-  height was short of the requested one they disagreed about the scroll.
+  into cells so "where the text is" is read off the paint.
 - **The caret was placed from a rectangle only the *mouse* refreshed — an upstream bug, fixed in 2.6
   (`1dbc33f0`), and a whole class of defect no test here can see.** `ControlBounds.ControlContentBounds` is
   written by `WindowEventDispatcher.UpdateControlLayout()` and by nothing else, and that has exactly one
@@ -870,9 +879,9 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   truncated title survived to a real terminal.
 - **`WindowBuilder.Centered()` must come *after* `WithSize()`** — it reads `_bounds` and falls back
   to 80×25, so centring first positions the window as if it were that size.
-- **`PromptControl` is not the command line** — `InputBarControl` is. The framework's prompt is
-  single-line by construction (`SetInput` replaces `\n` with a space) and unfocuses itself on ⏎
-  (`UnfocusOnEnter`, default true, not settable through the builder).
+- **`PromptControl` is not the command line** — `InputBarControl` is, built on `MultilineEditControl`.
+  2.7 gave `PromptControl` an opt-in multiline mode (`Multiline`, `MinRows`/`MaxRows`, `EnterBehavior`),
+  but it has no undo and no gutter for the prompt.
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on
@@ -1411,8 +1420,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   upstream: make `AnsiInputParser`/`InputEvent` public and add an `UnknownSequenceHandler` hook, or add
   an input-reader factory to `NetConsoleDriverOptions`. ~15 lines there; do not try it from here.
 - **A global shortcut runs before any window**, so a chord in `MacroKeys.AppShortcuts` can never reach
-  a control's own key table. That is why the command line has no ⌃W (`CloseActiveWindow` claims it) and
-  why `InputBuffer.KillWordLeft` currently has no chord that can reach it.
+  a control's own key table. That is why the command line has no ⌃W (`CloseActiveWindow` claims it).
 
 ## Other dependency notes
 
