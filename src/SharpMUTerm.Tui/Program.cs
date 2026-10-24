@@ -364,12 +364,13 @@ internal static class Program
         // Alt+Enter and Ctrl+L only. Shift+Enter and Ctrl+Enter are deliberately not listed: no Unix
         // terminal reports them distinctly through SharpConsoleUI's input parser (both arrive as a bare
         // Enter), and a help page naming a key that cannot fire is the defect this file is careful about.
-        usage.WriteLine("Typing: Alt+Enter or Ctrl+L inserts a newline · Ctrl+A/E line ends · Ctrl+K/U kill ·");
+        usage.WriteLine("Typing: Alt+Enter or Ctrl+L inserts a newline · Home/Ctrl+E line ends · Ctrl+K/U kill ·");
         usage.WriteLine("        Alt+Left/Right by word · Ctrl+Z/Y undo and redo · Ctrl+R searches history. Up/Down");
         usage.WriteLine("        and Alt+Up/Down recall what was sent to the focused character; each character keeps");
         usage.WriteLine("        its own history.");
         usage.WriteLine("Copy:   Ctrl+C copies the selection — drag across output or the command line, or select");
-        usage.WriteLine("        in the command line with Shift+Left/Right and Shift+Home/End.");
+        usage.WriteLine("        in the command line with Shift+Left/Right, Shift+Home/End or Ctrl+A (all). Ctrl+X");
+        usage.WriteLine("        cuts the command line's selection.");
         // The connection pair, described by what the key does rather than by what it asks — it asks
         // nothing. Both act at once, on the character whose pane is focused, and "drops and redials" is
         // spelt out because a reconnect on a live connection is a disconnect with a dial after it and the
