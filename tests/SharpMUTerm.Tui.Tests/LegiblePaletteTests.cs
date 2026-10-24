@@ -139,11 +139,14 @@ public class LegiblePaletteTests
     {
         // The defect as it was reported, kept as its own case so the number stays in the repository: the
         // bar took its accent straight from the theme's index 5, and on the default dark theme's focused
-        // pane that is #800080 on #36363d.
+        // pane that is #800080 on #36363d. That pane is written as the literal it was, because the surface
+        // has since been darkened and a derived one would no longer be the plane the report was about; the
+        // fix is held against the focused pane as it is painted now.
         var theme = ThemeLibrary.Dark();
+        var reportedPane = new Rgb(0x36, 0x36, 0x3d);
         var focusedPane = WorkspacePalette.Focus(WorkspacePalette.Surface(theme));
 
-        await Assert.That(Contrast.Ratio(theme.ResolveIndex(5), focusedPane)).IsLessThan(1.3);
+        await Assert.That(Contrast.Ratio(theme.ResolveIndex(5), reportedPane)).IsLessThan(1.3);
         await Assert.That(Contrast.Ratio(ParseHex(WorkspacePalette.Chrome(theme).Marker), focusedPane))
             .IsGreaterThanOrEqualTo(Contrast.Floor);
     }

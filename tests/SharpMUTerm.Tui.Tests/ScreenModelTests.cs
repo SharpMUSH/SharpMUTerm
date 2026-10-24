@@ -364,14 +364,15 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 15 display rows: 4 section headers + 3 spacers + 8 options. It was 7/4 before WHITESPACE and
+        // 18 display rows: 5 section headers + 4 spacers + 9 options. It was 7/4 before WHITESPACE and
         // its "tab width (spaces)" row, which brought a header and a spacer with it, 10/5 before
         // "detect links in output" joined the COLOUR section, 11/6 before ACTIVITY and its
         // "activity bar holds for (seconds)" row brought a header and a spacer of their own, and 14/7
-        // before "keep text legible" joined COLOUR beneath the row it is the other half of.
-        await Assert.That(screen.Rows.Count).IsEqualTo(15);
+        // before "keep text legible" joined COLOUR beneath the row it is the other half of, and 15/8
+        // before BACKGROUND and its "transparent background" row.
+        await Assert.That(screen.Rows.Count).IsEqualTo(18);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(8);
+        await Assert.That(model.Sizes[0]).IsEqualTo(9);
     }
 
     /// <summary>

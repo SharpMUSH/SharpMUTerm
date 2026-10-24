@@ -726,8 +726,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // The window paints the backdrop, not the text background: everything that is not a pane — the
         // connection rail, the status line, the gaps a split leaves — sits on it, so the panes read as
         // raised surfaces and an empty one is still a visible rectangle. See WorkspacePalette.
-        var bg = ToColor(WorkspacePalette.Backdrop(_theme));
+        var bg = BackdropColor();
         var fg = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: false));
+        ApplyDesktopTransparency();
 
         // The title is never drawn — the window is frameless and there is no task bar left to list it
         // in — so it is the app's name for diagnostics (the framework logs windows by title) and not a
@@ -6514,6 +6515,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // the user did next, which is indistinguishable from the setting not working.
         RefreshPaneFocus();
 
+        // And F7's transparent background, which the pane bodies above already follow; the backdrop is
+        // the window's own colour and is set here.
+        ApplyDesktopTransparency();
+        _window.BackgroundColor = BackdropColor();
+
         PersistConfiguration();
     }
 
@@ -8915,13 +8921,52 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         surface.Rows(GridLength.Star(1)).Columns(GridLength.Star(1));
         surface.Place(content, 0, 0, 1, 1);
         var built = surface.Build();
-        built.BackgroundColor = ToColor(PaneSurfaceTone(paneId));
+        built.BackgroundColor = PaneBodyColor(paneId);
         if (paneId is not null)
         {
             _paneSurfaces[paneId] = built;
         }
 
         return built;
+    }
+
+    /// <summary>
+    /// What a pane's body is handed to the compositor as: its plane (<see cref="PaneSurfaceTone"/>), or —
+    /// with F7's <c>transparent background</c> on and no character's tint to show — the terminal's own
+    /// background, so a translucent terminal shows through it.
+    /// <para>
+    /// Only the body. The tab chips keep <see cref="PaneSurfaceTone"/>, so the selected chip still carries
+    /// the focused pane's lift: the plane behind the text is the one cue that can be given up, because the
+    /// chip, the <c>▌</c> and the armed command line all say the same thing. A tinted pane stays painted —
+    /// its colour says whose pane it is, and nothing else on the plane says that.
+    /// </para>
+    /// </summary>
+    private SColor PaneBodyColor(string? paneId) =>
+        _config.Text.TransparentBackground && PaneTintOf(paneId) == PaneTint.None
+            ? SColor.Transparent
+            : ToColor(PaneSurfaceTone(paneId));
+
+    /// <summary>
+    /// What everything that is not a pane sits on: <see cref="WorkspacePalette.Backdrop"/>, or the
+    /// terminal's own background while F7's <c>transparent background</c> is on.
+    /// </summary>
+    private SColor BackdropColor() =>
+        _config.Text.TransparentBackground ? SColor.Transparent : ToColor(WorkspacePalette.Backdrop(_theme));
+
+    /// <summary>
+    /// Makes the desktop under the window the terminal's own background while transparency is on, and
+    /// hands it back to the framework's theme otherwise. Needed as well as the window's own colour: a cell
+    /// whose background is not opaque is composited against what lies below it, and the framework only
+    /// passes it through as SGR 49 when that, too, is the terminal's.
+    /// </summary>
+    private void ApplyDesktopTransparency()
+    {
+        // Left untouched while transparency has never been on, so a client that never asks for it hands
+        // the framework exactly the desktop it always did.
+        if (_config.Text.TransparentBackground || _system.DesktopBackgroundColor is not null)
+        {
+            _system.DesktopBackgroundColor = _config.Text.TransparentBackground ? SColor.Transparent : null;
+        }
     }
 
     /// <summary>
@@ -9011,7 +9056,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         foreach (var (paneId, surface) in _paneSurfaces)
         {
             // GridControl's setter invalidates for repaint, so this is the whole update.
-            surface.BackgroundColor = ToColor(PaneSurfaceTone(paneId));
+            surface.BackgroundColor = PaneBodyColor(paneId);
         }
 
         lock (_paneTabsLock)

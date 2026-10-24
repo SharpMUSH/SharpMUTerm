@@ -171,7 +171,7 @@ fallbacks) for inline images/maps.
     landed in would report a fact nobody asked about. `WorkspacePalette.SelectionBand` is `ReadingPlane`
     pushed *further* in the direction of travel — brighter on a dark theme, darker on a light one — then
     leaned toward `Theme.Prompt`, the same anchor `ArmedBand` uses. It is held to a **fill** floor against
-    all fourteen planes (1.5:1; tightest measured 2.70:1) and `SelectionInk` to `Contrast.Floor` on the
+    every plane a pane can wear (1.5:1) and `SelectionInk` to `Contrast.Floor` on the
     band, which matters more here than anywhere: the highlight replaces the world's *foreground* too, so
     that one ink is what all selected output is read in.
   - **The clipboard writer is caller-supplied and null by default** — the `save:`/`logRoot:`/`openUrl:`
@@ -551,9 +551,9 @@ fallbacks) for inline images/maps.
   - **The plane handed to `MarkupFormatter` is per *theme*, not per pane.** A pane's plane depends on its
     character's tint and on focus, and resolving against *that* would re-format a whole buffer on every
     focus move — the expensive path this file reserves for one deliberate keystroke. `ReadingPlane` is the
-    **extreme of the fourteen** a pane can wear, in the direction of travel, and that is the worst case
+    **extreme of the twenty-two** a pane can wear, in the direction of travel, and that is the worst case
     rather than an approximation of one: once the foreground is past the background's luminance the ratio
-    is monotone in the background, so clearing the extreme clears all fourteen.
+    is monotone in the background, so clearing the extreme clears all of them.
   - **A span carrying a background is measured against *it*.** That plane is known exactly and a
     highlight's pair must be judged as a pair; a span with the default background emits none and takes
     the pane, so it is measured against the reading plane. `reverse` swaps first.
@@ -1218,7 +1218,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   *luminance*.** A character may be given a colour (`CharacterDefinition.Tint` → `PaneTint`, Core;
   `WorkspacePalette.Tint`, Tui; F5's `tint` row), that colour becomes the pane's base plane, and the same
   focus multiplication is applied on top of it — `PaneSurfaceTone` is two lines and the composition is
-  the whole design. Load-bearing, in order. **All six tints sit at exactly one luminance**: the plane is
+  the whole design. Load-bearing, in order. **All ten tints sit at exactly one luminance**: the plane is
   re-lit to the target before the anchor is mixed into it (`AtLuma`), and luma is linear in the channels,
   so both ends of the blend share that luma and so does every point between them — by construction, on
   any theme, for any `TintStrength`. No character's pane is brighter than another's, and the focus step —
@@ -1235,7 +1235,12 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   darker still" is a change that has to move `FocusScale` too. **The anchors are saturated for the same
   reason**: chroma is bounded by luminance, so at the darker target a muted anchor has nothing left —
   the first set's two closest colours were ΔE 8.2 apart and its nearest was ΔE 7.7 from the untinted
-  plane; these are ΔE 14.4 and ΔE 12.1. **It says nothing on a monochrome terminal, deliberately** — the
+  plane; the original six were ΔE 14.4 and ΔE 12.1. The four added later (`Indigo`, `Azure`, `Jade`,
+  `Rose`) fill the widest gaps the six left and were chosen against `TwoCharactersPanesDifferInHue`'s own
+  chroma distance on the darkened surface: nearest pair Teal/Jade at 7.8, against that test's floor of 6.
+  The yellow-greens were tried and rejected — an olive measured 5.9 from `Ochre`, a lime 6.5 from `Moss` — and
+  `TintStrength` went from 0.75 to 0.85 with the darkening, for the same chroma-is-bounded reason.
+  **It says nothing on a monochrome terminal, deliberately** — the
   cue that must survive a lost hue is focus, and the rail and the tab title still name the character in
   words — and it is a **truecolor** cue, which is unacceptable for focus and is why
   `FocusSurvivesA256ColourTerminal` exists and has no tint counterpart. And **it costs no cells**, for the
@@ -1246,10 +1251,28 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   colour of the window **in front of it** — a pane can host several characters' windows as tabs and
   paints one rectangle — resolved through the workspace's ownership record and never through `_active`,
   because a background pane wearing the focused character's colour would say the opposite of what it
-  means. The palette is a **closed set of six names** and not a hex: a free colour cannot be validated
+  means. The palette is a **closed set of ten names** and not a hex: a free colour cannot be validated
   against a theme the user may change tomorrow, and a name survives that change where a hex picked
   against a dark theme becomes a hole. `PaneTint.None` is the default and **no migration marks anybody**
   — the same reasoning as `ConnectAtStartup`, and the reason the schema version did not move for it.
+  - **A dark theme's surface is scaled to 0.7 of the theme's own mix** (`WorkspacePalette.Surface`,
+    `DarkSurfaceDepth`) — the report was that the base was too light for a focus step that *lifts* it.
+    Every other plane is derived from the surface, so the focused plane, the tints, the backdrop and the
+    reading/chrome planes all moved with it; Dark's focused pane is now `#26262b` where the unfocused one
+    used to be `#222226`. A light theme is left alone: darkening it makes a grey theme, and its focus step
+    clamps at white either way. The cost is the pane-over-backdrop step, a ratio, which is fewer L* points
+    a range lower (Dark 4.0 → 2.8); `EveryThemeGetsARaisedSurfaceOverARecessedBackdrop` now measures L*.
+  - **F7 ▸ `transparent background` (off by default) hands the planes that carry no fact to the
+    terminal** (`TextSettings.TransparentBackground`; `PaneBodyColor`, `BackdropColor`,
+    `ApplyDesktopTransparency`). A translucent terminal (kitty's `background_opacity`) makes translucent
+    only cells on the default background, `SGR 49`, so this paints `Color.Transparent` on an untinted pane
+    body — focused or not, since the pane being read is always the focused one — and on the window's
+    backdrop, and makes the framework's desktop transparent too, because a non-opaque cell is composited
+    against what lies below it. A tint, the tab chips (the selected one keeps the focus lift), the
+    command line and the header stay painted. The framework's `TerminalTransparencyMode` is deliberately
+    **not** set: `PreserveTerminalTransparency` also stops writing a foreground for every blank cell, which
+    splits words across SGR runs and broke a dozen frame-text tests, and the default mode already passes an
+    `A=0` cell over an `A=0` desktop through as `49`. `--transparent` renders a snapshot with it on.
   - **The command line wears it too, and takes the hue without the depth** (`PaintInputBands`,
     `WorkspacePalette.IdleBand(theme, tint)` / `ArmedBand(theme, tint)`). On a pane, luminance carries
     focus as a ratio that a step applied equally to all six leaves intact; on the input row luminance is
