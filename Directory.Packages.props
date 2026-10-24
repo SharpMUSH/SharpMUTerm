@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <!-- TUI framework: compositor, split layouts, tabs, mouse, Kitty graphics (stable, net10). -->
-    <PackageVersion Include="SharpConsoleUI" Version="2.5.14" />
+    <PackageVersion Include="SharpConsoleUI" Version="2.7.8" />
 
     <!-- Telnet negotiation: TELOPT/NAWS/MTTS/EOR/CHARSET/MSSP/GMCP/MSDP/MCCP/MXP negotiation. -->
     <PackageVersion Include="TelnetNegotiationCore" Version="2.12.0" />
@@ -16,7 +16,7 @@
     <PackageVersion Include="MoonSharp" Version="2.0.0" />
 
     <!-- Pure-managed HTML5 parser for the in-TUI web view. -->
-    <PackageVersion Include="AngleSharp" Version="1.6.0" />
+    <PackageVersion Include="AngleSharp" Version="1.7.1" />
 
     <!-- Logging abstractions (TelnetNegotiationCore takes an ILogger). -->
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
@@ -30,6 +30,9 @@
     <PackageVersion Include="Serilog" Version="4.3.1" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+
+    <!-- PNG encoder for tests that need real image bytes; the sibling of the decoder SharpConsoleUI uses. -->
+    <PackageVersion Include="StbImageWriteSharp" Version="1.16.7" />
 
     <!-- Test stack: TUnit (source-generated, runs on Microsoft.Testing.Platform). -->
     <PackageVersion Include="TUnit" Version="1.61.38" />

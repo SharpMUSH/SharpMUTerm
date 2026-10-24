@@ -1710,27 +1710,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// Renders exactly one frame, synchronously, inline on this thread, and returns it as ANSI.
     /// ForceRender() performs a single render cycle (bypassing the frame-rate limiter) with no Run()
     /// loop, no driver Initialize/Start, and no OnShown pass — a freshly-added window is dirty and
-    /// paints on the first call. The HeadlessConsoleDriver writes the composited frame straight to the
-    /// console, so Console.Out is redirected for the duration of that one call and what it wrote is
-    /// kept. (An earlier Run()-on-a-worker-thread approach raced the input+render pump and hung/OOM'd.)
-    /// A frame also arranges the layout, so control bounds are only real after one has been rendered.
+    /// paints on the first call. <see cref="HeadlessFrameCapture"/> keeps what the driver composed for
+    /// that one call. (An earlier Run()-on-a-worker-thread approach raced the input+render pump and
+    /// hung/OOM'd.) A frame also arranges the layout, so control bounds are only real after one has
+    /// been rendered.
     /// </summary>
-    private string RenderFrame()
-    {
-        var real = Console.Out;
-        var writer = new StringWriter();
-        try
-        {
-            Console.SetOut(writer);
-            _system.ForceRender();
-        }
-        finally
-        {
-            Console.SetOut(real);
-        }
-
-        return writer.ToString();
-    }
+    private string RenderFrame() => HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
 
     /// <summary>
     /// Renders one more frame, the way a test drives the client on past a change it has just made —
