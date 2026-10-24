@@ -219,8 +219,7 @@ internal sealed class InlineImageHost : IDisposable
         PixelBuffer source;
         try
         {
-            using var stream = new MemoryStream(bytes, writable: false);
-            source = PixelBuffer.FromStream(stream);
+            source = ImageDecoder.Decode(bytes);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

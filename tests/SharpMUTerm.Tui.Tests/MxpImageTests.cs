@@ -136,6 +136,27 @@ public class MxpImageTests
     }
 
     /// <summary>
+    /// A WebP is drawn like any other picture. The framework's decoder stopped reading WebP at 2.7, and
+    /// every picture SharpMUSH serves is one, so for a while each stayed its label.
+    /// </summary>
+    [Test]
+    public async Task AWebPPictureIsDrawn()
+    {
+        await using var run = await Start(GraphicsProtocol.HalfBlock);
+        run.App.ImageFetch = (_, _) => Task.FromResult<byte[]?>(TestImages.WebP(64, 64));
+
+        run.Receive(Secure + "A map: <IMAGE map.webp URL=\"https://mud.example/\">");
+        await run.App.InlineImagesSettled;
+        run.App.RenderNextFrame();
+
+        var lines = run.App.PaneLines(MainWindow).ToList();
+        var at = lines.FindIndex(l => l.Contains("A map:", StringComparison.Ordinal));
+        await Assert.That(at).IsGreaterThanOrEqualTo(0);
+        await Assert.That(lines.Skip(at + 1).TakeWhile(l => l.Contains('▀')).Count()).IsEqualTo(4);
+        await Assert.That(lines.Any(l => l.Contains("[image:", StringComparison.Ordinal))).IsFalse();
+    }
+
+    /// <summary>
     /// A line that was nothing but its picture is replaced by the picture, rather than left as an empty row
     /// above it, and the picture is the link the label was.
     /// </summary>
