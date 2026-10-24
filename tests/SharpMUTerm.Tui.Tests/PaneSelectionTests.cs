@@ -236,4 +236,37 @@ public class PaneSelectionTests
 
         await Assert.That(app.PaneSelection(SharpMUTermApp.MainWindowId)).IsEmpty();
     }
+
+    /// <summary>
+    /// A line wider than its pane is word-wrapped, and the wrap <em>consumes</em> the space it breaks at:
+    /// <c>the courier's road</c> is drawn as <c>the courier's</c> on one row and <c>road</c> on the next.
+    /// The framework's copy joins a wrapped row onto the one before it with nothing between them, so the
+    /// copy read <c>the courier'sroad</c> — a space gone at every wrap point, which is what was reported.
+    /// The copy has to give the spaces back, as many as the wrap took.
+    /// </summary>
+    [Test]
+    public async Task CopyingAWrappedLineKeepsTheSpacesTheWrapBrokeAt()
+    {
+        var (app, copied) = Narrow();
+        app.LoadLongScene(SharpMUTermApp.MainWindowId, 1, first: 7);
+        app.RenderSnapshot();
+
+        app.SimulatePaneDrag(SharpMUTermApp.MainWindowId, 0, 0, 500, 5000);
+        app.SimulateKey(CtrlC);
+
+        await Assert.That(copied).HasSingleItem();
+        await Assert.That(copied[0]).Contains("line 0007 · the courier's road runs on past the northern watch");
+        await Assert.That(app.PaneSelection(SharpMUTermApp.MainWindowId)).IsEqualTo(copied[0]);
+    }
+
+    /// <summary>A terminal narrow enough that the demo's lines wrap in the main pane.</summary>
+    private static (SharpMUTermApp App, List<string> Copied) Narrow()
+    {
+        Console.SetIn(TextReader.Null);
+        var copied = new List<string>();
+        var app = new SharpMUTermApp(
+            DemoScene.Build(), Headless, new HeadlessConsoleDriver(60, Height), clipboard: copied.Add);
+        app.RenderSnapshot();
+        return (app, copied);
+    }
 }

@@ -213,6 +213,12 @@ fallbacks) for inline images/maps.
     because SGR encodes motion-while-held as `Button1Pressed | Button1Dragged` and a seam sending the bare
     form would exercise a path the terminal never produces. The `selection` view is the frame, and it is
     in `FrameContrastTests`' list — a colour nothing renders is a colour nobody checks.
+  - **The copy puts back the spaces a word-wrap broke at, and that is ours to do** (`SelectedText`).
+    The framework's wrap consumes the run of spaces it breaks at, and its copy joins a continuation row
+    onto the one above with nothing between, so every wrap point closed two words up (`runs onpast`).
+    Unchanged through 2.7.8. The run is recovered by re-parsing the line the rows came from, reading the
+    control's private layout cache by reflection; anything unexpected falls back to the framework's text,
+    and `SelectedTextTests.TheFrameworkAloneClosesUpAWrap` says so the day a release fixes it upstream.
   - **Not fixed, and known**: chrome rows live in the same buffer and are selectable (a terminal selection
     would take them too); OSC 52 caps at ~74 KB and `Osc52.BuildSequence` returns null past it, so a very
     large copy lands locally and **silently** does not travel over ssh; GNU screen has OSC 52 disabled

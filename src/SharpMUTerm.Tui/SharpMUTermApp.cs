@@ -7393,7 +7393,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// belongs to the framework and a second record of it would be a second answer.
     /// </summary>
     internal string PaneSelection(string windowId) =>
-        _panes.TryGetValue(windowId, out var pane) && pane.HasSelection ? pane.GetSelectedText() : string.Empty;
+        _panes.TryGetValue(windowId, out var pane) && pane.HasSelection ? SelectedText.Of(pane) : string.Empty;
 
     /// <summary>
     /// The markup a window's output pane currently holds, one string per row. Internal so a test can read
@@ -8514,7 +8514,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool CopySelection()
     {
-        var text = _window.SelectionManager.GetSelectedText() ?? string.Empty;
+        // A pane's own copy closes up the spaces a word-wrap broke at; SelectedText puts them back.
+        var text = _window.SelectionManager.ActiveSelection is MarkupControl { HasSelection: true } pane
+            ? SelectedText.Of(pane)
+            : _window.SelectionManager.GetSelectedText() ?? string.Empty;
 
         if (text.Length == 0)
         {
