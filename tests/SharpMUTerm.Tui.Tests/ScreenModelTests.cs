@@ -369,7 +369,7 @@ public class ScreenModelTests
         // "detect links in output" joined the COLOUR section, 11/6 before ACTIVITY and its
         // "activity bar holds for (seconds)" row brought a header and a spacer of their own, and 14/7
         // before "keep text legible" joined COLOUR beneath the row it is the other half of, and 15/8
-        // before BACKGROUND and its "transparent background" row.
+        // before BACKGROUND and its "background transparency (%)" row.
         await Assert.That(screen.Rows.Count).IsEqualTo(18);
         await Assert.That(model.PaneCount).IsEqualTo(1);
         await Assert.That(model.Sizes[0]).IsEqualTo(9);
@@ -409,6 +409,13 @@ public class ScreenModelTests
         // this screen carry an editable row at all.
         await Assert.That(model.ToggleAt(0, 5)).IsNull();
         await Assert.That(model.HasEditableRow).IsTrue();
+
+        // Row 7 is the background transparency, a percentage rather than the checkbox it started as.
+        await Assert.That(model.ToggleAt(0, 7)).IsNull();
+        var transparency = model.FieldAt(0, 7, 0)!.Value;
+        await Assert.That(transparency.Validate("101")).IsNotNull();
+        transparency.Set("60");
+        await Assert.That(text.BackgroundTransparency).IsEqualTo(60);
     }
 
     [Test]

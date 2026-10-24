@@ -830,6 +830,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         {
             ReportPaneSizes();
             SyncTabStripWidths();
+            SyncTransparentColours();
         };
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level
@@ -864,7 +865,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // Here and not in the constructor: this is the one method that means "there is a live terminal
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
-        return _system.Run();
+        var exitCode = _system.Run();
+
+        // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
+        // output translucent wherever it happens to use one of them.
+        ResetTransparentColours();
+        return exitCode;
     }
 
     /// <summary>
@@ -6515,8 +6521,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // the user did next, which is indistinguishable from the setting not working.
         RefreshPaneFocus();
 
-        // And F7's transparent background, which the pane bodies above already follow; the backdrop is
-        // the window's own colour and is set here.
+        // And F7's background transparency, which the pane bodies above already follow; the backdrop is
+        // the window's own colour and is set here. Kitty's named colours follow on the next frame.
         ApplyDesktopTransparency();
         _window.BackgroundColor = BackdropColor();
 
@@ -8932,41 +8938,148 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// What a pane's body is handed to the compositor as: its plane (<see cref="PaneSurfaceTone"/>), or —
-    /// with F7's <c>transparent background</c> on and no character's tint to show — the terminal's own
-    /// background, so a translucent terminal shows through it.
+    /// with F7's background transparency on, a terminal that cannot be given a level, and no character's
+    /// tint to show — the terminal's own background, so a translucent terminal shows through it.
     /// <para>
     /// Only the body. The tab chips keep <see cref="PaneSurfaceTone"/>, so the selected chip still carries
     /// the focused pane's lift: the plane behind the text is the one cue that can be given up, because the
     /// chip, the <c>▌</c> and the armed command line all say the same thing. A tinted pane stays painted —
-    /// its colour says whose pane it is, and nothing else on the plane says that.
+    /// its colour says whose pane it is, and nothing else on the plane says that. On kitty none of this
+    /// applies: every plane stays painted and is named to the terminal instead (<see cref="SyncTransparentColours"/>).
     /// </para>
     /// </summary>
     private SColor PaneBodyColor(string? paneId) =>
-        _config.Text.TransparentBackground && PaneTintOf(paneId) == PaneTint.None
+        HandsPlanesToTheTerminal && PaneTintOf(paneId) == PaneTint.None
             ? SColor.Transparent
             : ToColor(PaneSurfaceTone(paneId));
 
     /// <summary>
     /// What everything that is not a pane sits on: <see cref="WorkspacePalette.Backdrop"/>, or the
-    /// terminal's own background while F7's <c>transparent background</c> is on.
+    /// terminal's own background under <see cref="HandsPlanesToTheTerminal"/>.
     /// </summary>
     private SColor BackdropColor() =>
-        _config.Text.TransparentBackground ? SColor.Transparent : ToColor(WorkspacePalette.Backdrop(_theme));
+        HandsPlanesToTheTerminal ? SColor.Transparent : ToColor(WorkspacePalette.Backdrop(_theme));
 
     /// <summary>
-    /// Makes the desktop under the window the terminal's own background while transparency is on, and
-    /// hands it back to the framework's theme otherwise. Needed as well as the window's own colour: a cell
-    /// whose background is not opaque is composited against what lies below it, and the framework only
-    /// passes it through as SGR 49 when that, too, is the terminal's.
+    /// Makes the desktop under the window the terminal's own background under
+    /// <see cref="HandsPlanesToTheTerminal"/>, and hands it back to the framework's theme otherwise. Needed
+    /// as well as the window's own colour: a cell whose background is not opaque is composited against what
+    /// lies below it, and the framework only passes it through as SGR 49 when that, too, is the terminal's.
     /// </summary>
     private void ApplyDesktopTransparency()
     {
-        // Left untouched while transparency has never been on, so a client that never asks for it hands
-        // the framework exactly the desktop it always did.
-        if (_config.Text.TransparentBackground || _system.DesktopBackgroundColor is not null)
+        // Left untouched while this has never been on, so a client that never asks for it hands the
+        // framework exactly the desktop it always did.
+        if (HandsPlanesToTheTerminal || _system.DesktopBackgroundColor is not null)
         {
-            _system.DesktopBackgroundColor = _config.Text.TransparentBackground ? SColor.Transparent : null;
+            _system.DesktopBackgroundColor = HandsPlanesToTheTerminal ? SColor.Transparent : null;
         }
+    }
+
+    /// <summary>F7's background transparency, held to its range: a hand-edited file may say anything.</summary>
+    private int BackgroundTransparency =>
+        Math.Clamp(_config.Text.BackgroundTransparency, 0, TextSettings.MaxBackgroundTransparency);
+
+    /// <summary>
+    /// Transparency is on and the terminal cannot be told a level, so the planes that carry no fact are
+    /// written on its default background and take whatever opacity it was configured with.
+    /// </summary>
+    private bool HandsPlanesToTheTerminal =>
+        BackgroundTransparency > 0 && !_capabilities.SupportsTransparentColours;
+
+    /// <summary>The planes kitty is currently drawing translucent, in slot order. Empty when none.</summary>
+    internal IReadOnlyList<Rgb> TransparentColours => _transparentColours.Planes;
+
+    /// <summary>The last color-control escape sent to the terminal, or null if none has been.</summary>
+    internal string? LastColourControl { get; private set; }
+
+    private (IReadOnlyList<Rgb> Planes, int Level) _transparentColours = (Array.Empty<Rgb>(), 0);
+
+    /// <summary>
+    /// The planes worth one of kitty's seven slots, most cells first: the pane bodies (focused pane
+    /// first, then the rest in pane order), the backdrop, the command line's two bands, the header, and
+    /// the recessed tab chips. Anything past the seventh distinct colour stays opaque, which is the
+    /// cost of matching by exact colour — and why the dividers, the ribbon's segments and the selection
+    /// band are not candidates at all: thin, or a fill that says something, or there for a moment.
+    /// </summary>
+    private List<Rgb> TransparentColourCandidates()
+    {
+        var focused = _workspace.Layout.FocusedPaneId;
+        var panes = _workspace.Layout.Panes
+            .Select(p => p.Id)
+            .OrderBy(id => string.Equals(id, focused, StringComparison.Ordinal) ? 0 : 1)
+            .ToList();
+        var bodies = panes.Select(PaneSurfaceTone).ToList();
+
+        var planes = new List<Rgb>(KittyTransparentColours.Slots);
+        foreach (var plane in bodies
+                     .Append(WorkspacePalette.Backdrop(_theme))
+                     .Append(_inputBands.Idle)
+                     .Append(_inputBands.Armed)
+                     .Append(_theme.StatusBackground)
+                     .Concat(bodies.Select(WorkspacePalette.Recessed)))
+        {
+            if (planes.Count == KittyTransparentColours.Slots)
+            {
+                break;
+            }
+
+            if (!planes.Contains(plane))
+            {
+                planes.Add(plane);
+            }
+        }
+
+        return planes;
+    }
+
+    /// <summary>
+    /// Names this frame's planes to kitty at F7's level, when they or the level have changed since the
+    /// last frame. Rides <c>PostBufferPaint</c> beside <see cref="ReportPaneSizes"/>, for its reason: a
+    /// focus move, a tint, a theme or a split all repaint, so one hook sees every way the set can change.
+    /// Writing nothing on a frame that changed nothing is what makes that affordable.
+    /// </summary>
+    private void SyncTransparentColours()
+    {
+        var level = _capabilities.SupportsTransparentColours ? BackgroundTransparency : 0;
+        IReadOnlyList<Rgb> planes = level > 0 ? TransparentColourCandidates() : Array.Empty<Rgb>();
+        var (current, currentLevel) = _transparentColours;
+        if (planes.Count == 0 && current.Count == 0)
+        {
+            return;
+        }
+
+        if (level == currentLevel && planes.SequenceEqual(current))
+        {
+            return;
+        }
+
+        _transparentColours = (planes, level);
+        EmitColourControl(planes.Count == 0
+            ? KittyTransparentColours.Reset
+            : KittyTransparentColours.Sequence(planes, level));
+    }
+
+    /// <summary>Hands every slot back to kitty's own configuration, if this client set any.</summary>
+    private void ResetTransparentColours()
+    {
+        if (_transparentColours.Planes.Count == 0)
+        {
+            return;
+        }
+
+        _transparentColours = (Array.Empty<Rgb>(), 0);
+        EmitColourControl(KittyTransparentColours.Reset);
+    }
+
+    /// <summary>
+    /// Through the driver's one raw write that is serialised against frame painting, as
+    /// <see cref="TerminalFocusWatcher"/> asks for focus reports.
+    /// </summary>
+    private void EmitColourControl(string sequence)
+    {
+        LastColourControl = sequence;
+        _system.ConsoleDriver.WriteClipboardOsc52(sequence);
     }
 
     /// <summary>
@@ -12029,6 +12142,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     {
         _system.ConsoleDriver.MouseEvent -= OnDriverMouseEvent;
         _focus.Dispose();           // and the terminal is told to stop reporting focus at nobody
+        ResetTransparentColours();  // and kitty's colours go back to its own
         _sizeFlushTimer?.Dispose(); // nothing left to tell a server we are shutting down to
         _noticeTimer?.Dispose();    // and no row left to put a notice back on
         _prefixTimer?.Dispose();    // and no window left to float a which-key panel over

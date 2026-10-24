@@ -56,25 +56,32 @@ public sealed class TextSettings
     public bool KeepTextLegible { get; set; } = true;
 
     /// <summary>
-    /// Let the terminal's own background show through the panes and the rail, for a terminal configured
-    /// to draw that background translucent (kitty's <c>background_opacity</c>, and the same setting in
-    /// WezTerm, Ghostty, Alacritty and Windows Terminal).
+    /// How much of whatever is behind the terminal shows through the client's backgrounds, from 0
+    /// (opaque, the default) to <see cref="MaxBackgroundTransparency"/> (fully clear).
     /// <para>
-    /// What this changes is which cells are painted with the terminal's <em>default</em> background
-    /// (<c>SGR 49</c>) rather than an explicit colour, because a translucent terminal makes exactly those
-    /// cells translucent and draws every explicit colour opaque. So it is the planes that carry no fact
-    /// that go: an untinted pane's body, focused or not, and the backdrop under the rail and the status
-    /// line. What stays painted is what says something — a character's tint (identity), the tab chips
-    /// (which tab, and the focused pane's lift), the command line's armed band, and the header.
+    /// <b>The level is only expressible on kitty</b>, and only while kitty's own window is translucent
+    /// (<c>background_opacity</c> below 1, or <c>dynamic_background_opacity yes</c> — kitty creates an
+    /// opaque framebuffer otherwise). There the client names its planes through kitty's color-control
+    /// escape (<c>OSC 21 ; transparent_background_colorN=#rrggbb@opacity</c>) and kitty draws every cell
+    /// of that colour at that opacity: pane bodies tinted or not, the backdrop, the command line, the
+    /// header and the tab chips. Kitty holds seven such colours, so a screen showing more planes than
+    /// that keeps the rest opaque, in the order the client ranks them.
     /// </para>
     /// <para>
-    /// Off by default and opt-in, because whether it looks right is the terminal's configuration and not
-    /// this client's: on an opaque terminal it shows the terminal's own background colour, which this
-    /// client cannot see, where the theme's darker plane would have been. The legibility floor still
-    /// measures against the theme's planes for the same reason.
+    /// Any other terminal can only make translucent the cells written on its <em>default</em> background
+    /// (<c>SGR 49</c>), at the opacity it was configured with, so there any level above zero hands the
+    /// planes that carry no fact to the terminal — an untinted pane body and the backdrop — and the
+    /// number itself cannot be honoured.
+    /// </para>
+    /// <para>
+    /// Off by default, because whether it looks right is the terminal's configuration and not this
+    /// client's. The legibility floor still measures against the theme's planes, for the same reason.
     /// </para>
     /// </summary>
-    public bool TransparentBackground { get; set; }
+    public int BackgroundTransparency { get; set; }
+
+    /// <summary>Fully clear: every plane the client names is drawn at opacity zero.</summary>
+    public const int MaxBackgroundTransparency = 100;
 
     /// <summary>
     /// How many spaces a tab in server output is drawn as. Zero removes tabs entirely.

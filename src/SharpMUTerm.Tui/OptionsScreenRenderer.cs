@@ -297,10 +297,14 @@ internal static class OptionsScreenRenderer
             new("├ BACKGROUND", null, null),
 
             // Its own section, beside ACTIVITY's reasoning: it describes the client's chrome rather than
-            // how a world's text is drawn. Off unless asked for — it only looks right on a terminal that
-            // has been set to draw its background translucent, which is not something this client can see.
-            new("transparent background", null, settings.TransparentBackground, null,
-                ScreenToggle.Bind(() => settings.TransparentBackground, v => settings.TransparentBackground = v)),
+            // how a world's text is drawn. A percentage and not a checkbox, and zero is off — it only looks
+            // right on a terminal set to draw its background translucent, which this client cannot see.
+            new("background transparency (%)",
+                settings.BackgroundTransparency.ToString(CultureInfo.InvariantCulture), null, null, null,
+                ScreenField.Integer(
+                    "background transparency (%)",
+                    () => settings.BackgroundTransparency, v => settings.BackgroundTransparency = v,
+                    0, TextSettings.MaxBackgroundTransparency)),
             new(string.Empty, null, null),
             new("├ ACTIVITY", null, null),
 
