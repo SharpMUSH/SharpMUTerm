@@ -205,7 +205,7 @@ public static class CommandCatalog
         // the application, so a user who has learnt that their terminal needs ⇧-drag has no reason to try
         // dragging here. It refuses out loud with nothing selected, which is what earns it a row at all.
         items.Add(new CommandItem(
-            CommandGroup.Terminal, "Copy the selection", "term:copy", "⌃C · drag across a pane to select"));
+            CommandGroup.Terminal, "Copy the selection", "term:copy", "⌃C · drag across a pane or the command line, or ⇧← ⇧→ there"));
 
         // The client's own messages — the status-line notices that dismiss themselves — kept out of the
         // output window (and so out of the session log) and readable here instead.

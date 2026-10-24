@@ -46,7 +46,7 @@ public class FrameContrastTests
         // The selection band is the one plane this client invents rather than derives from a pane, and
         // its ink replaces the world's own colour on every selected cell — so it is the pair with the
         // most to lose from a theme it was not measured against.
-        "selection",
+        "selection", "input-selection",
 
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band

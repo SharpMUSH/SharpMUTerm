@@ -319,6 +319,28 @@ internal static class WorkspacePalette
     }
 
     /// <summary>
+    /// The band a selection in the command line is painted on: <see cref="SelectionBand"/>'s recipe applied
+    /// to the armed input band instead of the reading plane. The pane band is measured against the panes
+    /// and the armed bar is the brightest plane the client paints on a dark theme, so on the bar the pane
+    /// band sat only about 1.7:1 off its background — legible, and barely there. Same direction of travel,
+    /// same step and the same lean toward <see cref="Theme.Prompt"/>, so the two still read as one mark.
+    /// </summary>
+    internal static Rgb InputSelectionBand(Theme theme, PaneTint tint)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        var dark = Contrast.RelativeLuminance(Surface(theme)) < LightPlaneLuminance;
+        var armed = ArmedBand(theme, tint);
+        return Mix(Scale(armed, dark ? SelectionScale : 1.0 / SelectionScale), theme.Prompt, SelectionTint);
+    }
+
+    /// <summary>The ink of selected command-line text, held to the floor on <see cref="InputSelectionBand"/>.</summary>
+    internal static Rgb InputSelectionInk(Theme theme, PaneTint tint)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(theme.Foreground, InputSelectionBand(theme, tint));
+    }
+
+    /// <summary>
     /// The one colour every selected cell's text is painted in, held to <see cref="Contrast.Floor"/> on
     /// <see cref="SelectionBand"/>.
     /// <para>
