@@ -27,7 +27,7 @@ internal sealed class MarkupFormatter(Theme theme, TextSettings? text = null, Rg
     /// <summary>
     /// The plane a span carrying no background of its own is read on — computed once per formatter,
     /// because it is a property of the <em>theme</em> and not of any one pane. See
-    /// <see cref="WorkspacePalette.ReadingPlane"/> for why one plane covers all fourteen a pane can
+    /// <see cref="WorkspacePalette.ReadingPlane"/> for why one plane covers every plane a pane can
     /// wear, and why resolving it per pane would cost a whole-buffer re-format on every focus move.
     /// <para>
     /// <paramref name="plane"/> overrides it for output that is painted somewhere other than a pane —

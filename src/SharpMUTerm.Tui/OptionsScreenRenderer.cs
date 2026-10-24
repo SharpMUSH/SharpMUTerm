@@ -294,6 +294,14 @@ internal static class OptionsScreenRenderer
             new("emoji substitution", null, settings.EmojiSubstitution, null,
                 ScreenToggle.Bind(() => settings.EmojiSubstitution, v => settings.EmojiSubstitution = v)),
             new(string.Empty, null, null),
+            new("├ BACKGROUND", null, null),
+
+            // Its own section, beside ACTIVITY's reasoning: it describes the client's chrome rather than
+            // how a world's text is drawn. Off unless asked for — it only looks right on a terminal that
+            // has been set to draw its background translucent, which is not something this client can see.
+            new("transparent background", null, settings.TransparentBackground, null,
+                ScreenToggle.Bind(() => settings.TransparentBackground, v => settings.TransparentBackground = v)),
+            new(string.Empty, null, null),
             new("├ ACTIVITY", null, null),
 
             // Seconds, and its own section: it is the only row on this screen describing the client's own

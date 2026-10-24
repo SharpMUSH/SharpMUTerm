@@ -23,9 +23,13 @@ namespace SharpMUTerm.Core.Configuration;
 /// be far too loud to read the game on.)
 /// </para>
 /// <para>
-/// <b>Six hues, spread around the wheel.</b> Fewer would not cover a client with four or five characters
-/// open; more would be pairs a reader has to squint between, which is worse than none because it invites
-/// a mistake rather than admitting one. They are named for the colour rather than for a role
+/// <b>Ten hues, spread around the wheel.</b> The first six covered a client with four or five characters
+/// open; the four after them fill the widest gaps the six left (between blue and violet, blue and
+/// blue-green, blue-green and green, violet and red) and stop there. More would be pairs a reader has to
+/// squint between — the yellow-greens were tried and are too close to <see cref="Ochre"/> and
+/// <see cref="Moss"/> on a dark plane — which is worse than none because it invites a mistake rather than
+/// admitting one. New members go on the end: the value is stored by name, but the order is the order F5
+/// lists them in. They are named for the colour rather than for a role
 /// (<c>Ember</c>, not <c>Alert</c>): a character's pane colour is an identity, and a role name would
 /// quietly promise a meaning the client never acts on.
 /// </para>
@@ -56,4 +60,16 @@ public enum PaneTint
 
     /// <summary>Violet.</summary>
     Plum,
+
+    /// <summary>Blue-violet.</summary>
+    Indigo,
+
+    /// <summary>Sky blue.</summary>
+    Azure,
+
+    /// <summary>Blue-green, greener than <see cref="Teal"/>.</summary>
+    Jade,
+
+    /// <summary>Pink-red.</summary>
+    Rose,
 }

@@ -61,6 +61,13 @@ internal static class Program
                 config.Theme = ThemeLibrary.Get(themeName);
             }
 
+            // --transparent renders with F7's transparent background on, so the cells that become the
+            // terminal's own background (SGR 49) can be counted in a frame rather than taken on trust.
+            if (args.Contains("--transparent"))
+            {
+                config.Text.TransparentBackground = true;
+            }
+
             var (width, height) = ParseSize(args);
             var app = new SharpMUTermApp(config, capabilities, new HeadlessConsoleDriver(width, height));
             var frame = app.RenderSnapshot(GetOption(args, "--view"));

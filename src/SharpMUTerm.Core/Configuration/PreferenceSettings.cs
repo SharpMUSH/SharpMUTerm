@@ -56,6 +56,27 @@ public sealed class TextSettings
     public bool KeepTextLegible { get; set; } = true;
 
     /// <summary>
+    /// Let the terminal's own background show through the panes and the rail, for a terminal configured
+    /// to draw that background translucent (kitty's <c>background_opacity</c>, and the same setting in
+    /// WezTerm, Ghostty, Alacritty and Windows Terminal).
+    /// <para>
+    /// What this changes is which cells are painted with the terminal's <em>default</em> background
+    /// (<c>SGR 49</c>) rather than an explicit colour, because a translucent terminal makes exactly those
+    /// cells translucent and draws every explicit colour opaque. So it is the planes that carry no fact
+    /// that go: an untinted pane's body, focused or not, and the backdrop under the rail and the status
+    /// line. What stays painted is what says something — a character's tint (identity), the tab chips
+    /// (which tab, and the focused pane's lift), the command line's armed band, and the header.
+    /// </para>
+    /// <para>
+    /// Off by default and opt-in, because whether it looks right is the terminal's configuration and not
+    /// this client's: on an opaque terminal it shows the terminal's own background colour, which this
+    /// client cannot see, where the theme's darker plane would have been. The legibility floor still
+    /// measures against the theme's planes for the same reason.
+    /// </para>
+    /// </summary>
+    public bool TransparentBackground { get; set; }
+
+    /// <summary>
     /// How many spaces a tab in server output is drawn as. Zero removes tabs entirely.
     /// <para>
     /// A tab used to travel the pipeline as one character, so the wrap, the pane width and

@@ -17,6 +17,25 @@ public class WorkspacePaletteTests
     /// <summary>A step the eye can find on a terminal's worth of flat colour.</summary>
     private const double Visible = 8;
 
+    /// <summary>
+    /// CIE L* — lightness as the eye reads it. Used where a dark plane is compared with a darker one,
+    /// because at the bottom of the range a fixed luma step under-reports what is seen: the eye reads a
+    /// dark plane's depth in ratio, and L* is built to be even across the range.
+    /// </summary>
+    private static double Lightness(SharpMUTerm.Core.Text.Rgb rgb)
+    {
+        var y = SharpMUTerm.Core.Text.Contrast.RelativeLuminance(rgb);
+        return y > 0.008856 ? (116 * Math.Cbrt(y)) - 16 : 903.3 * y;
+    }
+
+    /// <summary>
+    /// The pane is lighter than what surrounds it, or an empty pane goes on reading as a hole. Measured in
+    /// L* rather than luma, because the backdrop is a <em>ratio</em> below the surface and darkening the
+    /// surface shrinks a luma step faster than it shrinks what the eye sees. It did shrink: on Dark the step
+    /// was 4.0 L* before the surface was darkened and is 2.8 after (Solarized Dark 4.9 → 3.7; Light is not
+    /// darkened and is 21). Two and a half is the floor that leaves, and the hairline drawn between the rail
+    /// and the panes carries the edge on top of it.
+    /// </summary>
     [Test]
     [Arguments("Dark")]
     [Arguments("Light")]
@@ -24,11 +43,39 @@ public class WorkspacePaletteTests
     public async Task EveryThemeGetsARaisedSurfaceOverARecessedBackdrop(string themeName)
     {
         var theme = ThemeLibrary.Get(themeName);
-        var surface = Luma(WorkspacePalette.Surface(theme));
-        var backdrop = Luma(WorkspacePalette.Backdrop(theme));
+        var surface = Lightness(WorkspacePalette.Surface(theme));
+        var backdrop = Lightness(WorkspacePalette.Backdrop(theme));
 
-        // The pane is lighter than what surrounds it, or an empty pane goes on reading as a hole.
-        await Assert.That(surface - backdrop).IsGreaterThan(Visible);
+        await Assert.That(surface - backdrop).IsGreaterThan(2.5);
+    }
+
+    /// <summary>
+    /// <b>A dark theme's panes are darker than its own text background.</b> The focus step is a lift, so
+    /// the base has to leave it room: on Dark the focused pane now lands about where the unfocused one
+    /// used to be, rather than a step above a plane that was already grey. Measured against the theme's
+    /// <see cref="Theme.Background"/>, the colour a MU* server's output was written to be read on.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Solarized Dark")]
+    public async Task ADarkThemesPanesSitBelowItsOwnTextBackground(string themeName)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+
+        await Assert.That(Luma(WorkspacePalette.Surface(theme))).IsLessThan(Luma(theme.Background));
+        await Assert.That(Luma(WorkspacePalette.Focus(theme))).IsLessThan(Luma(new SharpMUTerm.Core.Text.Rgb(0x36, 0x36, 0x3d)));
+    }
+
+    /// <summary>
+    /// A light theme is not darkened — it would stop being a light theme. Its surface is still the quarter
+    /// mix of its background toward its chrome, byte for byte.
+    /// </summary>
+    [Test]
+    public async Task ALightThemesSurfaceIsLeftWhereItWas()
+    {
+        var surface = WorkspacePalette.Surface(ThemeLibrary.Get("Light"));
+
+        await Assert.That(surface).IsEqualTo(new SharpMUTerm.Core.Text.Rgb(0xf2, 0xf2, 0xf5));
     }
 
     [Test]
@@ -55,10 +102,11 @@ public class WorkspacePaletteTests
         var surface = WorkspacePalette.Surface(theme);
 
         // A quarter of the way from the text background toward the chrome the header and input bands
-        // are already painted in — so the output plane belongs to this application, not to the terminal.
-        await Assert.That(surface.R).IsEqualTo((byte)0x22);
-        await Assert.That(surface.G).IsEqualTo((byte)0x22);
-        await Assert.That(surface.B).IsEqualTo((byte)0x26);
+        // are already painted in — so the output plane belongs to this application, not to the terminal —
+        // and then darkened, which scales every channel and so keeps that hue. #222226 before the scale.
+        await Assert.That(surface.R).IsEqualTo((byte)0x18);
+        await Assert.That(surface.G).IsEqualTo((byte)0x18);
+        await Assert.That(surface.B).IsEqualTo((byte)0x1b);
         await Assert.That(surface.B).IsGreaterThan(surface.R); // cooler than the plain background, which is neutral
     }
 

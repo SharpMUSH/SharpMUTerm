@@ -55,12 +55,30 @@ internal static class WorkspacePalette
     /// </summary>
     private const double PromptTint = 0.28;
 
-    /// <summary>The plane a pane's output is painted on — tab strip, scrollback and empty rows alike.</summary>
+    /// <summary>
+    /// The plane a pane's output is painted on — tab strip, scrollback and empty rows alike.
+    /// <para>
+    /// On a dark theme it is then taken <see cref="DarkSurfaceDepth"/> of the way down, because every
+    /// other plane is measured off this one and the focus step is a <em>lift</em>: a base that sat level
+    /// with the theme's text background left the focused pane, and the tinted panes' focused planes,
+    /// reading as grey rather than as the dark terminal MU* output is written for. A light theme is left
+    /// where it is — darkening it would make it a grey theme, and its focus step already clamps at white.
+    /// </para>
+    /// </summary>
     internal static Rgb Surface(Theme theme)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Mix(theme.Background, theme.StatusBackground, ChromeTint);
+        var plane = Mix(theme.Background, theme.StatusBackground, ChromeTint);
+        return Contrast.RelativeLuminance(plane) < LightPlaneLuminance ? Scale(plane, DarkSurfaceDepth) : plane;
     }
+
+    /// <summary>
+    /// How far a dark theme's surface is scaled toward black. Chosen so the <em>focused</em> plane lands
+    /// near where the unfocused one used to be (<c>#26262b</c> against <c>#222226</c> on Dark): the lift
+    /// still reads, and it no longer reads as the pane having gone grey. Scaling rather than mixing toward
+    /// black keeps the theme's hue, so Solarized Dark stays blue-green.
+    /// </summary>
+    private const double DarkSurfaceDepth = 0.7;
 
     /// <summary>
     /// The plane the focused pane is painted on, and the band behind the command line ⏎ sends from. One
@@ -78,7 +96,7 @@ internal static class WorkspacePalette
     /// The plane a character's pane is painted on, so a workspace holding several characters says whose
     /// pane is whose. <see cref="PaneTint.None"/> returns the surface byte for byte.
     /// <para>
-    /// All six tints sit at one luminance, by construction: the plane is re-lit to
+    /// All ten tints sit at one luminance, by construction: the plane is re-lit to
     /// <see cref="TintDepth"/> before the anchor is mixed in, and luma is linear in the channels, so both
     /// ends of the blend share it and so does every point between. No character's pane is brighter than
     /// another's. That luminance sits <em>below</em> the untinted surface because MU* servers are written
@@ -124,13 +142,15 @@ internal static class WorkspacePalette
     /// <summary>
     /// How far a tinted plane travels toward its hue — pure chroma, since <see cref="AtLuma"/> has
     /// already settled the brightness. Short of the whole way: the thing being identified is a character,
-    /// not an alarm, and this is the plane the game's colours are read against.
+    /// not an alarm, and this is the plane the game's colours are read against. Higher than it was before
+    /// <see cref="DarkSurfaceDepth"/>: chroma is bounded by luminance, so a darker plane needs more of the
+    /// hue to stay as far from its neighbours.
     /// </summary>
-    private const double TintStrength = 0.75;
+    private const double TintStrength = 0.85;
 
     /// <summary>
     /// The hue each named tint stands for. Never painted — <see cref="Tinted"/> re-lights each to the
-    /// plane it is going onto, so what is fixed here is hue and saturation. Six, spread around the wheel,
+    /// plane it is going onto, so what is fixed here is hue and saturation. Ten, spread around the wheel,
     /// so two characters' colours are recognised rather than compared; saturated, because chroma is
     /// bounded by luminance and these are re-lit onto a dark plane.
     /// </summary>
@@ -142,6 +162,10 @@ internal static class WorkspacePalette
         PaneTint.Ochre => new Rgb(0xd4, 0x96, 0x00),
         PaneTint.Ember => new Rgb(0xd8, 0x33, 0x1c),
         PaneTint.Plum => new Rgb(0xb0, 0x2c, 0xd4),
+        PaneTint.Indigo => new Rgb(0x5a, 0x3c, 0xf0),
+        PaneTint.Azure => new Rgb(0x00, 0x90, 0xd8),
+        PaneTint.Jade => new Rgb(0x00, 0xb0, 0x60),
+        PaneTint.Rose => new Rgb(0xe0, 0x30, 0x7a),
         _ => null,
     };
 
@@ -256,7 +280,7 @@ internal static class WorkspacePalette
     private const double ChipLift = 0.22;
 
     /// <summary>
-    /// Every plane a pane's output can be painted on — the untinted surface and all six tints, each
+    /// Every plane a pane's output can be painted on — the untinted surface and all ten tints, each
     /// focused and not. They form a band: every one is a theme background put through a darkening and a
     /// brightening.
     /// </summary>
@@ -297,7 +321,7 @@ internal static class WorkspacePalette
     /// would be reporting a fact nobody asked it about.
     /// </para>
     /// <para>
-    /// Built from <see cref="ReadingPlane"/> — the extreme of the fourteen in the direction of travel —
+    /// Built from <see cref="ReadingPlane"/> — the extreme of the twenty-two in the direction of travel —
     /// pushed <em>further</em> that way, so it clears the whole band rather than the one plane it was
     /// derived from, and then leaned toward <see cref="Theme.Prompt"/>. The lean is what makes it read as
     /// the client's own mark instead of a pane that has gone brighter, and it is the same anchor
@@ -310,7 +334,7 @@ internal static class WorkspacePalette
         ArgumentNullException.ThrowIfNull(theme);
 
         // Away from the panes, whichever way that is. On a dark theme the reading plane is the brightest of
-        // the fourteen and the selection goes brighter still; on a light one it is the darkest and the
+        // the twenty-two and the selection goes brighter still; on a light one it is the darkest and the
         // selection goes darker. Scaling the wrong way would land the band *inside* the band it has to
         // stand clear of — the exact failure Extreme exists to describe, one step further out.
         var plane = ReadingPlane(theme);
