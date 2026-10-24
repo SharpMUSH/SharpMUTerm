@@ -423,6 +423,30 @@ public class InputAreaEndToEndTests
     }
 
     /// <summary>
+    /// <b>Text that fills its row exactly leaves the caret at the start of the next one</b>, which is
+    /// where the next character goes. The editor the bar is built on places it one cell past the text,
+    /// which on a bar as wide as the terminal is off the screen.
+    /// </summary>
+    [Test]
+    public async Task ACaretAfterAFullRowIsOnTheRowBelowIt()
+    {
+        var (app, _) = Demo();
+        Type(app, "ab" + Sentinel);
+        var (_, column) = FindSentinel(app);
+        var indent = column - 2;
+
+        app.SimulateKey(Chord(ConsoleKey.U, ctrl: true));
+        Type(app, new string('x', Width - indent - 1) + Sentinel);
+        app.RenderNextFrame();
+
+        var (fullRow, fullColumn) = FindSentinel(app);
+        await Assert.That(fullColumn).IsEqualTo(Width - 1);
+        var (visible, x, y) = app.CaretOnScreen();
+        await Assert.That(visible).IsTrue();
+        await Assert.That((x, y)).IsEqualTo((indent, fullRow + 1));
+    }
+
+    /// <summary>
     /// Showing the second bar, cycling to it and back with ⇥ (which is what ⌃I arrives as — 0x09 is HT,
     /// and the parser reports it with no Control bit), and hiding it again: at every step the painted
     /// caret is on the bar that ⏎ sends from, at that bar's own prompt. The first cycle is checked

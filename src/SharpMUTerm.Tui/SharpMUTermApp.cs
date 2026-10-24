@@ -4851,7 +4851,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
     private bool AnyBarHasText() =>
-        !_input.Buffer.IsEmpty || (_second.Visible && !_second.Buffer.IsEmpty);
+        !_input.IsEmpty || (_second.Visible && !_second.IsEmpty);
 
     /// <summary>
     /// Wires one bar: its send, its draft recording, and the two ways the caret can move to it. Both
@@ -6367,7 +6367,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     {
         var activeId = ActiveWindowId();
         var holding = _workspace.Windows.Where(w => w.HasUnsentInput).ToList();
-        var bars = (_input.Buffer.IsEmpty ? 0 : 1) + (_second.Visible && !_second.Buffer.IsEmpty ? 1 : 0);
+        var bars = (_input.IsEmpty ? 0 : 1) + (_second.Visible && !_second.IsEmpty ? 1 : 0);
         // A post in the composer is a draft too, and the one most worth being asked about: it is minutes
         // of writing rather than a line, and it is kept in memory only, so quitting is exactly the thing
         // that loses it. The open window's buffer is counted separately from the stored drafts because it

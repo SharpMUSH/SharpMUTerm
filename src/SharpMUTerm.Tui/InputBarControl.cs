@@ -1,11 +1,14 @@
+using System.Collections;
+using System.Reflection;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Core;
+using SharpConsoleUI.Events;
 using SharpConsoleUI.Extensions;
+using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 using Point = System.Drawing.Point;
-using Size = System.Drawing.Size;
 
 namespace SharpMUTerm.Tui;
 
@@ -14,36 +17,74 @@ namespace SharpMUTerm.Tui;
 /// it. Two of these make up the input area — the everyday bar and the optional second one — and the
 /// pair is what <see cref="SharpMUTermApp"/> routes typing into.
 /// <para>
-/// It is our control rather than the framework's <c>PromptControl</c> because that one cannot be made
-/// to do this: it stores a single line (its setter turns <c>\n</c> into a space), it measures one row
-/// tall, and it scrolls sideways when the text outgrows the field. It also unfocuses itself on ⏎
-/// (<c>UnfocusOnEnter</c>, on by default), which is exactly the behaviour the maintainer reported as
-/// "pressing enter should not lose focus". None of that is configurable from outside, and SharpConsoleUI
-/// is a dependency here, not a fork — so the control is written against its public painting API
-/// (<see cref="BaseControl"/>, <see cref="CharacterBuffer"/>, <see cref="MarkupParser"/>) instead.
+/// <b>It is the F1 composer's editor, <see cref="MultilineEditControl"/>, with the command line's rules
+/// laid over it.</b> The editor brings what a hand-written bar would have to write again: undo and redo
+/// (⌃Z/⌃Y), a caret that moves over wrapped rows, word-aware wrapping, mouse placement, drag and
+/// double-click selection, and one selection shared with the panes through the window's
+/// <c>SelectionManager</c>. What it does not do, and this class does, is four things:
 /// </para>
+/// <list type="bullet">
+/// <item><b>⏎ sends.</b> The editor inserts a newline on ⏎ and declines every modified ⏎; here a bare ⏎
+/// sends and clears, and the modified forms (⌥⏎, reassembled by <c>SharpMUTermApp.TryAltEnter</c>, and
+/// ⌃L) insert the newline. Keys reach this table from the window's <c>PreviewKeyPressed</c> and from the
+/// framework through <see cref="IInteractiveControl"/>, which is re-implemented so both arrive at
+/// <see cref="ProcessKey"/>.</item>
+/// <item><b>It grows to its text</b>, between <see cref="MinRows"/> and <see cref="MaxRows"/>. The editor
+/// has a fixed viewport, so <see cref="MeasureDOM"/> sets it from the wrapped row count at the width it
+/// is about to be given. That count is read from the editor's own wrapper by reflection
+/// (<see cref="WrappedRowCount"/>), because the public one is measured at the width of the <em>last</em>
+/// paint and so runs a frame behind every resize.</item>
+/// <item><b>The prompt is a gutter</b> (<see cref="PromptGutter"/>) as wide as the prompt, written on
+/// the first row and blank under it, so every row of text indents past it.</item>
+/// <item><b>Copy goes through the app.</b> The editor's ⌃C and ⌃X write to the system clipboard through
+/// a static helper nothing can substitute, so a test would overwrite the developer's clipboard. They are
+/// never passed on: ⌃C is answered by <c>SharpMUTermApp.CopyFocusedSelection</c>, which asks the
+/// window's selection owner — this bar, when the selection is here.</item>
+/// </list>
 /// <para>
-/// The parts worth testing are deliberately not in here: the text edits are <see cref="InputBuffer"/>
-/// and the geometry is <see cref="InputLayout"/>, both terminal-free. What is left is the key table,
-/// the painting, and the focus rules.
+/// <b>Every arm in <see cref="ProcessKey"/> matches the modifiers it wants exactly, and declines
+/// everything else.</b> Returning <c>true</c> for a chord this control has no meaning for is how the old
+/// bar once swallowed <c>Alt+Shift+←</c>, the pane-resize chord, as a caret move. The editor's own table
+/// is wider than a command line's (⌃A select-all, ⌃D duplicate line, ⌥↑ move line, ⇥ indent), so it only
+/// ever sees a key this table has decided it should.
 /// </para>
 /// </summary>
-internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocusableControl,
-    IMouseAwareControl, ILogicalCursorProvider, ICursorShapeProvider, IPasteTarget, ISelectableControl
+internal sealed class InputBarControl : MultilineEditControl,
+    IInteractiveControl, IMouseAwareControl, ILogicalCursorProvider, ISelectableControl
 {
-    /// <summary>The buffer this bar edits. Public so the app can read the draft without a round trip.</summary>
-    internal InputBuffer Buffer { get; } = new();
+    private static readonly MethodInfo? WrappedLinesMethod = typeof(MultilineEditControl).GetMethod(
+        "GetWrappedLines", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(int)]);
 
-    private string _prompt = string.Empty;
+    private readonly PromptGutter _gutter;
     private bool _armed = true;
     private int _minRows = 3;
     private int _maxRows = 8;
-    private int _scroll;
+    private bool _quiet;
+    private Color _band = new(0x33, 0x39, 0x4c, 255);
+    private Color _idleBand = new(0x26, 0x2b, 0x3a, 255);
+    private Color _ink = new(0xe6, 0xe6, 0xe6, 255);
+    private Color _idleInk = new(0x8a, 0x8f, 0x9e, 255);
 
-    // True between a button press on the text and its release, so motion with the button held extends
-    // the selection from where the press landed.
-    private bool _dragging;
-    private Point _dragAt;
+    internal InputBarControl()
+        : base(viewportHeight: 3)
+    {
+        WrapMode = WrapMode.WrapWords;
+        IsEditing = true;
+        EscapeExitsEditMode = false;
+        ShowEditingHints = false;
+        HorizontalScrollbarVisibility = ScrollbarVisibility.Never;
+        VerticalScrollbarVisibility = ScrollbarVisibility.Auto;
+        _gutter = new PromptGutter(this);
+        AddGutterRenderer(_gutter);
+        ContentChanged += (_, _) =>
+        {
+            if (!_quiet)
+            {
+                Changed?.Invoke(Text);
+            }
+        };
+        ApplyColors();
+    }
 
     /// <summary>Raised when ⏎ sends the line. The payload is the text as it was, newlines included.</summary>
     internal event Action<string>? Entered;
@@ -60,11 +101,21 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     /// <summary>Whether ⇥ has somewhere to go — false while this is the only bar on screen.</summary>
     internal Func<bool> HasSibling { get; set; } = () => false;
 
-    /// <summary>The prompt drawn on the bar's first row, as markup. Continuation rows indent past it.</summary>
+    /// <summary>The prompt drawn on the bar's first row, as markup. Every row of text indents past it.</summary>
     internal string Prompt
     {
-        get => _prompt;
-        set => SetProperty(ref _prompt, value ?? string.Empty);
+        get => _gutter.Markup;
+        set
+        {
+            var markup = value ?? string.Empty;
+            if (_gutter.Markup == markup)
+            {
+                return;
+            }
+
+            _gutter.Markup = markup;
+            Invalidate(Invalidation.Relayout);
+        }
     }
 
     /// <summary>Whether ⏎ sends from this bar. The unarmed bar is dimmed and shows no caret.</summary>
@@ -79,7 +130,7 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
             }
 
             _armed = value;
-            Invalidate(Invalidation.Repaint);
+            ApplyColors();
         }
     }
 
@@ -87,57 +138,136 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     internal int MinRows
     {
         get => _minRows;
-        set => SetProperty(ref _minRows, value);
+        set
+        {
+            if (_minRows != value)
+            {
+                _minRows = value;
+                Invalidate(Invalidation.Relayout);
+            }
+        }
     }
 
     /// <summary>The most rows it grows to before scrolling inside itself — F8's <c>grows to</c>.</summary>
     internal int MaxRows
     {
         get => _maxRows;
-        set => SetProperty(ref _maxRows, value);
-    }
-
-    /// <summary>The band colour behind an armed bar.</summary>
-    internal Color BandColor { get; set; } = new(0x33, 0x39, 0x4c, 255);
-
-    /// <summary>The band colour behind the bar ⏎ will not send from.</summary>
-    internal Color IdleBandColor { get; set; } = new(0x26, 0x2b, 0x3a, 255);
-
-    /// <summary>The colour typed text is drawn in.</summary>
-    internal Color TextColor { get; set; } = new(0xe6, 0xe6, 0xe6, 255);
-
-    /// <summary>The colour typed text is drawn in on the bar ⏎ will not send from.</summary>
-    internal Color IdleTextColor { get; set; } = new(0x8a, 0x8f, 0x9e, 255);
-
-    /// <summary>The band behind selected text — the same one a pane's selection is drawn on.</summary>
-    internal Color SelectionColor { get; set; } = new(0x4a, 0x5a, 0x8a, 255);
-
-    /// <summary>The ink selected text is drawn in, held to the floor against <see cref="SelectionColor"/>.</summary>
-    internal Color SelectionTextColor { get; set; } = new(0xff, 0xff, 0xff, 255);
-
-    /// <summary>The whole buffer. Setting it is a recall, not a keystroke: it raises no change event.</summary>
-    internal string Text
-    {
-        get => Buffer.Text;
         set
         {
-            if (Buffer.Set(value))
+            if (_maxRows != value)
             {
+                _maxRows = value;
                 Invalidate(Invalidation.Relayout);
             }
         }
+    }
+
+    /// <summary>The band colour behind an armed bar.</summary>
+    internal Color BandColor
+    {
+        get => _band;
+        set { _band = value; ApplyColors(); }
+    }
+
+    /// <summary>The band colour behind the bar ⏎ will not send from.</summary>
+    internal Color IdleBandColor
+    {
+        get => _idleBand;
+        set { _idleBand = value; ApplyColors(); }
+    }
+
+    /// <summary>The colour typed text is drawn in.</summary>
+    internal Color TextColor
+    {
+        get => _ink;
+        set { _ink = value; ApplyColors(); }
+    }
+
+    /// <summary>The colour typed text is drawn in on the bar ⏎ will not send from.</summary>
+    internal Color IdleTextColor
+    {
+        get => _idleInk;
+        set { _idleInk = value; ApplyColors(); }
+    }
+
+    /// <summary>The band behind selected text — the same one a pane's selection is drawn on.</summary>
+    internal Color SelectionColor
+    {
+        get => SelectionBackgroundColor;
+        set => SelectionBackgroundColor = value;
+    }
+
+    /// <summary>The ink selected text is drawn in, held to the floor against <see cref="SelectionColor"/>.</summary>
+    internal Color SelectionTextColor
+    {
+        get => SelectionForegroundColor;
+        set => SelectionForegroundColor = value;
+    }
+
+    /// <summary>The band and ink this bar paints in now, which <see cref="Armed"/> picks between.</summary>
+    private Color Band => _armed ? _band : _idleBand;
+
+    private Color Ink => _armed ? _ink : _idleInk;
+
+    /// <summary>
+    /// Sets both of the editor's colour pairs. It paints from the <em>focused</em> pair while it has focus
+    /// and the other pair otherwise, and which bar holds focus is the app's business, not this one's — so
+    /// the pair a bar is drawn in is decided by <see cref="Armed"/> alone.
+    /// </summary>
+    private void ApplyColors()
+    {
+        BackgroundColor = Band;
+        FocusedBackgroundColor = Band;
+        ForegroundColor = Ink;
+        FocusedForegroundColor = Ink;
+    }
+
+    /// <summary>Whether the bar is holding nothing.</summary>
+    internal bool IsEmpty => LineCount <= 1 && Text.Length == 0;
+
+    /// <summary>
+    /// The whole buffer, lines joined with <c>\n</c> whatever the platform. Setting it is a recall, not a
+    /// keystroke: the caret goes to the end and no change event is raised.
+    /// </summary>
+    internal string Text
+    {
+        get
+        {
+            var content = GetContent();
+            return Environment.NewLine == "\n" ? content : content.Replace(Environment.NewLine, "\n");
+        }
+        set => Replace(value, notify: false);
     }
 
     /// <summary>
     /// Puts text in and reports the change, which is what a link's <c>prompt:</c> payload wants: the
     /// text arrived from outside, but it is the user's draft now and the window should keep it.
     /// </summary>
-    internal void SetAndNotify(string? text)
+    internal void SetAndNotify(string? text) => Replace(text, notify: true);
+
+    private void Replace(string? text, bool notify)
     {
-        if (Buffer.Set(text))
+        var value = text ?? string.Empty;
+        if (string.Equals(value, Text, StringComparison.Ordinal))
         {
-            Invalidate(Invalidation.Relayout);
-            Changed?.Invoke(Buffer.Text);
+            return;
+        }
+
+        _quiet = true;
+        try
+        {
+            SetContent(value);
+            GoToEnd();
+        }
+        finally
+        {
+            _quiet = false;
+        }
+
+        Invalidate(Invalidation.Relayout);
+        if (notify)
+        {
+            Changed?.Invoke(Text);
         }
     }
 
@@ -148,107 +278,48 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
     /// </summary>
     internal bool TryMoveRow(int delta)
     {
-        if (!Buffer.MoveRow(delta, FieldWidth()))
-        {
-            return false;
-        }
-
-        Deselected(Buffer.Deselect());
-
-        Invalidate(Invalidation.Repaint);
-        return true;
+        var (line, column) = (CurrentLine, CurrentColumn);
+        Pass(delta < 0 ? ConsoleKey.UpArrow : ConsoleKey.DownArrow);
+        return line != CurrentLine || column != CurrentColumn;
     }
 
     /// <summary>How tall the bar currently is, in rows — what the layout asks for and what tests assert.</summary>
     internal int Rows() =>
-        InputLayout.Height(InputLayout.Wrap(Buffer.Text, FieldWidth()).Count, MinRows, MaxRows);
+        InputLayout.Height(WrappedRowCount(FieldWidth(ActualWidth > 0 ? ActualWidth : Width ?? 80)), MinRows, MaxRows);
 
     /// <inheritdoc/>
-    public override int? ContentWidth => MarkupParser.StripLength(_prompt) + 10 + Margin.Left + Margin.Right;
-
-    /// <inheritdoc/>
-    public bool IsEnabled { get; set; } = true;
-
-    /// <inheritdoc/>
-    public bool CanReceiveFocus => IsEnabled;
-
-    /// <inheritdoc/>
-    public bool HasFocus => ComputeHasFocus();
-
-    /// <inheritdoc/>
-    public CursorShape? PreferredCursorShape => CursorShape.VerticalBar;
+    public override int? ContentWidth => MarkupParser.StripLength(Prompt) + 10 + Margin.Left + Margin.Right;
 
     /// <summary>⇥ is ours whenever there is another bar to hand it to; otherwise it stays traversal.</summary>
-    public bool WantsTabKey => HasSibling();
+    public new bool WantsTabKey => HasSibling();
+
+    bool IInteractiveControl.WantsTabKey => WantsTabKey;
 
     /// <summary>
-    /// The key table.
+    /// The key table. It decides what reaches the editor, and the editor only ever sees a key that means
+    /// the same thing to a command line as it does to a document.
     /// <para>
     /// ⏎ sends, always — that is the one binding a MU* client may not get wrong. <b>The newline chord is
     /// Alt+⏎</b>, with ⌃L as a second spelling, and Shift+⏎ / Ctrl+⏎ honoured where a host reports them.
-    /// The reason it is Alt and not the two that were asked for is a fact about the terminal:
-    /// SharpConsoleUI's Unix input parser (<c>AnsiInputParser</c>) decodes no CSI-u and enables no
-    /// <c>modifyOtherKeys</c>, so it turns both CR (0x0D) and LF (0x0A) into a bare
-    /// <see cref="ConsoleKey.Enter"/> carrying no modifier bits at all — Shift+⏎ and Ctrl+⏎ are
-    /// <em>indistinguishable from ⏎</em> there, and a client that bound them would either do nothing or
-    /// stop sending lines. They are accepted here anyway because the Windows <c>Console.ReadKey</c> path
-    /// does report them, and accepting a modifier that never arrives costs nothing.
+    /// SharpConsoleUI's Unix input parser decodes no CSI-u and enables no <c>modifyOtherKeys</c>, so CR and
+    /// LF both arrive as a bare ⏎ — Shift+⏎ and Ctrl+⏎ are indistinguishable from ⏎ there, and are
+    /// accepted only because the Windows <c>Console.ReadKey</c> path reports them. Alt+⏎ arrives as Escape
+    /// then Enter and <c>SharpMUTermApp.TryAltEnter</c> reassembles it.
     /// </para>
     /// <para>
-    /// Alt+⏎ <em>does</em> arrive, in two pieces: the parser emits ESC followed by a control byte as two
-    /// key events (<c>ProcessEscape</c>), so Alt+⏎ is Escape and then Enter, in that order, in the same
-    /// input batch. <c>SharpMUTermApp.TryAltEnter</c> puts the pair back together and hands this table a
-    /// synthetic Alt+Enter, which is why the modifier is honoured here rather than the newline being
-    /// inserted from over there: the key table stays the one place that says what Enter does. ⌃L is kept
-    /// as the chord that needs no reassembly — <see cref="MacroKeys"/> records that a Ctrl+letter reaches
-    /// the app as its control byte except for I, M, J and H, which the terminal spells Tab, Enter, Enter
-    /// and Backspace.
+    /// <b>Word movement is Alt+←/→</b> (Ctrl+←/→ is pane selection), handed to the editor as its Ctrl
+    /// form. <b>⌃A/⌃E/⌃K/⌃U are readline's</b>: start and end of the buffer, kill to the end and to the
+    /// start. ⌃A is not select-all, for the reason it never was — Ctrl+Shift+A is indistinguishable from
+    /// it, so there is nowhere to move line-start to. The kills go through the editor's own delete, so
+    /// ⌃Z puts them back. <b>⌃Z/⌃Y are undo and redo.</b> There is no ⌃W: <c>CloseActiveWindow</c> claims
+    /// it as a global shortcut, ahead of any window.
     /// </para>
     /// <para>
-    /// <b>Word movement is Alt+←/→, not Ctrl+←/→.</b> It was Ctrl, and the chord was given up to
-    /// directional pane navigation (<c>SharpMUTermApp.TryFocusKey</c>) — a deliberate trade, not an
-    /// oversight. Alt+arrow is delivered every bit as reliably (the parser reads the Alt bit out of
-    /// <c>CSI 1;3 D</c>, exactly as it reads Ctrl out of <c>CSI 1;5 D</c>) and is the more widely-used
-    /// spelling of the two, so the capability is not reduced — only respelt, and now advertised, which it
-    /// never was.
-    /// </para>
-    /// <para>
-    /// <b>Ctrl+A is move-to-line-start, not select-all</b>, and it is not up for grabs. The same parser
-    /// limitation makes Ctrl+Shift+A indistinguishable from Ctrl+A, so there is no second chord to move
-    /// line-start onto: handing ⌃A to a selection would simply remove it from the readline set
-    /// (⌃A ⌃E ⌃K ⌃U) that is the only way around a wrapped, multi-row command line.
-    /// </para>
-    /// <para>
-    /// <b>There is no ⌃W here, and the readline set is four keys rather than five.</b> It used to be
-    /// listed, and it used to be handled — <c>case ConsoleKey.W: return Edit(Buffer.KillWordLeft())</c> —
-    /// and it could never once have run: <see cref="MacroKeys.AppShortcuts"/> claims ⌃W for
-    /// <c>CloseActiveWindow</c>, and a global shortcut is dispatched before any window sees the key, so
-    /// the chord was consumed before it could reach this table. A key table advertising a binding nothing
-    /// can deliver is the same defect as a settings screen naming a key it does not offer, so the dead
-    /// case is gone and the advertisement with it. <c>InputBuffer.KillWordLeft</c> is deliberately kept:
-    /// it works and it is tested, and what it lacks is a chord this host can deliver — <em>not</em>
-    /// Alt+Backspace, which the parser splits into Escape then Backspace (ESC followed by a control byte
-    /// is emitted as two keys), so restoring it means taking ⌃W back off the window command or spending a
-    /// function key, which is a decision about which meaning wins rather than a repair.
-    /// </para>
-    /// <para>
-    /// <b>Selection is ⇧←/→ and ⇧Home/End, and a drag or double-click with the mouse.</b> The shifted
-    /// keys extend from wherever the caret is, through the same moves the bare keys make; typing, paste,
-    /// Backspace and Delete replace what is selected; any bare move drops it. ⇧↑/↓ are not here — they
-    /// are the scrollback keys, and the window takes them before the bar sees them — so a selection
-    /// across rows is made with ⇧Home/End or the mouse. The bar is an <see cref="ISelectableControl"/>
-    /// and registers with the window's <c>SelectionManager</c>, so it and the panes share one selection:
-    /// starting one here clears a pane's, and the app's ⌃C copies whichever exists, without learning that
-    /// the bar is a second place text can be selected.
-    /// </para>
-    /// <para>
-    /// <b>Every arm below matches the modifiers it wants exactly, and declines everything else.</b> The
-    /// navigation keys are the caret's only bare; word movement is Alt and nothing else. Returning
-    /// <c>true</c> for a chord this control has no meaning for is how it swallowed <c>Alt+Shift+←</c> —
-    /// the pane-resize chord — as a caret move, on any line with a character to the left of the caret.
+    /// <b>Selection is ⇧←/→ and ⇧Home/End, and a drag or double-click.</b> ⇧↑/↓ are the scrollback keys
+    /// and are taken before the bar sees them.
     /// </para>
     /// </summary>
-    public bool ProcessKey(ConsoleKeyInfo key)
+    public new bool ProcessKey(ConsoleKeyInfo key)
     {
         if (!IsEnabled)
         {
@@ -261,72 +332,79 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
 
         if (key.Key == ConsoleKey.Enter)
         {
-            return ctrl || shift || alt ? Edit(Buffer.InsertNewline()) : Send();
+            return ctrl || shift || alt ? Claim(ConsoleKey.Enter) : Send();
         }
 
-        // Alt and nothing else. Alt+Shift+←/→ is the pane-resize chord and Alt+Ctrl+← is nobody's here;
-        // a `HasFlag` test claimed both, which is the defect the block below is guarded against.
+        if (key.Key == ConsoleKey.Tab)
+        {
+            if (!HasSibling())
+            {
+                return false;
+            }
+
+            CycleRequested?.Invoke();
+            return true;
+        }
+
+        // Alt and nothing else. Alt+Shift+←/→ is the pane-resize chord and Alt+Ctrl+← is nobody's here.
         if (key.Modifiers == ConsoleModifiers.Alt)
         {
             switch (key.Key)
             {
-                case ConsoleKey.LeftArrow: return Move(b => b.MoveWordLeft());
-                case ConsoleKey.RightArrow: return Move(b => b.MoveWordRight());
+                case ConsoleKey.LeftArrow: return Claim(ConsoleKey.LeftArrow, ConsoleModifiers.Control);
+                case ConsoleKey.RightArrow: return Claim(ConsoleKey.RightArrow, ConsoleModifiers.Control);
             }
+
+            return false;
         }
 
-        // Shift and nothing else extends a selection. Exact for the reason the Alt block above is: Alt+Shift
-        // is the pane resize, and ⇧↑/↓ never arrive here (the scrollback keys are taken first).
+        // Shift and nothing else extends a selection.
         if (key.Modifiers == ConsoleModifiers.Shift)
         {
             switch (key.Key)
             {
-                case ConsoleKey.LeftArrow: return Extend(b => b.MoveLeft());
-                case ConsoleKey.RightArrow: return Extend(b => b.MoveRight());
-                case ConsoleKey.Home: return Extend(b => b.MoveHome(FieldWidth()));
-                case ConsoleKey.End: return Extend(b => b.MoveEnd(FieldWidth()));
+                case ConsoleKey.LeftArrow:
+                case ConsoleKey.RightArrow:
+                case ConsoleKey.Home:
+                case ConsoleKey.End:
+                    return Claim(key.Key, ConsoleModifiers.Shift);
             }
         }
 
-        if (ctrl)
+        if (key.Modifiers == ConsoleModifiers.Control)
         {
             switch (key.Key)
             {
-                case ConsoleKey.L: return Edit(Buffer.InsertNewline());
-                case ConsoleKey.A: return Move(b => b.MoveTo(0));
-                case ConsoleKey.E: return Move(b => b.MoveTo(b.Text.Length));
-                case ConsoleKey.K: return Edit(Buffer.KillToEnd());
-                case ConsoleKey.U: return Edit(Buffer.KillToStart());
+                case ConsoleKey.L: return Claim(ConsoleKey.Enter);
+                case ConsoleKey.A: return Claim(ConsoleKey.Home, ConsoleModifiers.Control);
+                case ConsoleKey.E: return Claim(ConsoleKey.End, ConsoleModifiers.Control);
+                case ConsoleKey.K: return Kill(toEnd: true);
+                case ConsoleKey.U: return Kill(toEnd: false);
+                case ConsoleKey.Z:
+                case ConsoleKey.Y:
+                    return Claim(key.Key, ConsoleModifiers.Control);
             }
+
+            return false;
         }
 
         switch (key.Key)
         {
-            case ConsoleKey.Backspace: return Edit(Buffer.Backspace());
-            case ConsoleKey.Delete: return Edit(Buffer.Delete());
-            case ConsoleKey.Tab when HasSibling():
-                CycleRequested?.Invoke();
-                return true;
+            case ConsoleKey.Backspace when key.Modifiers == 0:
+            case ConsoleKey.Delete when key.Modifiers == 0:
+                return Claim(key.Key);
         }
 
-        // The navigation keys are the caret's only when nothing is held down. This switch had no modifier
-        // test at all, so every modified arrow was a plain caret move — and returning true for one is a
-        // claim, not a shrug: Move(Buffer.MoveLeft()) is true whenever there is a character to the left of
-        // the caret. That is the defect this project has now paid for three times (TryRecallKey swallowing
-        // Shift+↑ from the scrollback work; the framework's move-mode handler taking every unclaimed Ctrl+
-        // chord until Movable(false)), and here it was a second cause standing behind the terminal's in the
-        // pane-resize report: on an empty command line ←/→ declined and the chord fell through, and one
-        // typed character made them claim it — while TryMoveRow hid the vertical half by returning false on
-        // a one-row bar. A control that does not handle a chord has to decline it; the window's own key
-        // handler is the one with the whole keyboard in view.
+        // The navigation keys are the caret's only when nothing is held down.
         if (key.Modifiers == 0)
         {
             switch (key.Key)
             {
-                case ConsoleKey.Home: return Move(b => b.MoveHome(FieldWidth()));
-                case ConsoleKey.End: return Move(b => b.MoveEnd(FieldWidth()));
-                case ConsoleKey.LeftArrow: return Move(b => b.MoveLeft());
-                case ConsoleKey.RightArrow: return Move(b => b.MoveRight());
+                case ConsoleKey.Home:
+                case ConsoleKey.End:
+                case ConsoleKey.LeftArrow:
+                case ConsoleKey.RightArrow:
+                    return Claim(key.Key);
                 case ConsoleKey.UpArrow: return TryMoveRow(-1);
                 case ConsoleKey.DownArrow: return TryMoveRow(1);
             }
@@ -334,453 +412,180 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
 
         // Alt chords are the app's or a macro's, never text: the parser spells them ESC + the character,
         // so accepting them here would type the letter of every Alt binding into the command line.
-        if (!key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !ctrl && !char.IsControl(key.KeyChar))
+        if (!alt && !ctrl && !char.IsControl(key.KeyChar))
         {
-            return Edit(Buffer.Insert(key.KeyChar));
+            Pass(key);
+            return true;
         }
 
         return false;
+    }
+
+    bool IInteractiveControl.ProcessKey(ConsoleKeyInfo key) => ProcessKey(key);
+
+    /// <summary>Hands a key to the editor and claims it whether or not it changed anything.</summary>
+    private bool Claim(ConsoleKey key, ConsoleModifiers modifiers = 0)
+    {
+        Pass(key, modifiers);
+        return true;
+    }
+
+    private void Pass(ConsoleKey key, ConsoleModifiers modifiers = 0) =>
+        Pass(new ConsoleKeyInfo(
+            key == ConsoleKey.Enter ? '\r' : '\0',
+            key,
+            modifiers.HasFlag(ConsoleModifiers.Shift),
+            modifiers.HasFlag(ConsoleModifiers.Alt),
+            modifiers.HasFlag(ConsoleModifiers.Control)));
+
+    private void Pass(ConsoleKeyInfo key) => base.ProcessKey(key);
+
+    /// <summary>⌃K and ⌃U: select from the caret to an end of the buffer and delete it, as one undo step.</summary>
+    private bool Kill(bool toEnd)
+    {
+        var line = CurrentLine - 1;
+        var column = CurrentColumn - 1;
+        if (toEnd ? IsAtEnd(line, column) : line == 0 && column == 0)
+        {
+            return true;
+        }
+
+        if (toEnd)
+        {
+            SelectRange(line, column, LineCount - 1, int.MaxValue);
+        }
+        else
+        {
+            SelectRange(0, 0, line, column);
+        }
+
+        if (HasSelection)
+        {
+            Pass(ConsoleKey.Delete);
+        }
+
+        return true;
+    }
+
+    private bool IsAtEnd(int line, int column)
+    {
+        if (line != LineCount - 1)
+        {
+            return false;
+        }
+
+        var text = Text;
+        var lastBreak = text.LastIndexOf('\n');
+        return column >= text.Length - (lastBreak + 1);
     }
 
     /// <summary>Sends the line and clears it, leaving the caret exactly where it was — on this bar.</summary>
     private bool Send()
     {
-        var text = Buffer.Text;
-        if (Buffer.Clear())
-        {
-            _scroll = 0;
-            Invalidate(Invalidation.Relayout);
-        }
-
+        var text = Text;
+        Replace(string.Empty, notify: false);
         Entered?.Invoke(text);
         return true;
     }
 
-    /// <summary>Commits an edit: relayout (the bar may have grown) and tell the app the draft moved.</summary>
-    private bool Edit(bool changed)
-    {
-        if (changed)
-        {
-            Invalidate(Invalidation.Relayout);
-            Changed?.Invoke(Buffer.Text);
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Commits a caret move: repaint only, and no draft change — the text did not move. A bare move drops
-    /// the selection, so it repaints when that is all it did.
-    /// </summary>
-    private bool Move(Func<InputBuffer, bool> move)
-    {
-        var deselected = Buffer.Deselect();
-        if (move(Buffer) || deselected)
-        {
-            Invalidate(Invalidation.Repaint);
-        }
-
-        Deselected(deselected);
-        return true;
-    }
-
-    /// <summary>Commits a shifted move: the caret moves and the anchor stays where the selection began.</summary>
-    private bool Extend(Func<InputBuffer, bool> move)
-    {
-        if (Buffer.Extend(move))
-        {
-            Invalidate(Invalidation.Repaint);
-            SelectionMoved();
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Tells the window this bar holds the selection now, and anyone listening what it is. Through the
-    /// window's <c>SelectionManager</c>, the same call a pane makes, which is what clears a pane's
-    /// selection when one starts here and what lets ⌃C ask one place for the text.
-    /// </summary>
-    private void SelectionMoved()
-    {
-        if (!Buffer.HasSelection)
-        {
-            SelectionChanged?.Invoke(this, string.Empty);
-            return;
-        }
-
-        this.GetParentWindow()?.SelectionManager.SetActiveSelection(this);
-        SelectionChanged?.Invoke(this, Buffer.SelectedText);
-    }
-
-    /// <summary>Reports a selection that a move or a recall dropped.</summary>
-    private void Deselected(bool had)
-    {
-        if (had)
-        {
-            Invalidate(Invalidation.Repaint);
-            SelectionChanged?.Invoke(this, string.Empty);
-        }
-    }
-
-    #region ISelectableControl
-
-    /// <inheritdoc/>
-    public bool HasSelection => Buffer.HasSelection;
-
-    /// <inheritdoc/>
-    public event EventHandler<string>? SelectionChanged;
-
-    /// <inheritdoc/>
-    public string GetSelectedText() => Buffer.SelectedText;
-
-    /// <summary>
-    /// Drops the selection when another control's starts. Called by the window's <c>SelectionManager</c>,
-    /// so it must not call back into it — it only resets this bar and repaints.
-    /// </summary>
-    public void ClearSelection()
-    {
-        _dragging = false;
-        Deselected(Buffer.Deselect());
-    }
-
-    #endregion
-
-    /// <summary>Pastes at the caret. Newlines are kept: this bar has rows for them.</summary>
-    public void Paste(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        _dragging = false;
-        Edit(Buffer.Insert(text.Replace("\r\n", "\n").Replace('\r', '\n')));
-    }
-
     /// <summary>How many columns of text fit on one row: the field, less the prompt it indents past.</summary>
-    private int FieldWidth()
-    {
-        var width = ActualWidth > 0 ? ActualWidth : Width ?? 80;
-        return Math.Max(1, width - Margin.Left - Margin.Right - MarkupParser.StripLength(_prompt));
-    }
+    private int FieldWidth(int width) =>
+        Math.Max(1, width - Margin.Left - Margin.Right - MarkupParser.StripLength(Prompt));
 
     /// <summary>
-    /// <b>Where row 0 of the text lands and how far it has scrolled, derived once.</b> Both
-    /// <see cref="PaintDOM"/> and <see cref="GetLogicalCursorPosition"/> ask this, because the caret is
-    /// drawn on the row the text was painted on and there is no version of that sentence in which two
-    /// formulas may compute it separately: they agree only for as long as nobody edits one of them, and
-    /// a caret computed from state that does not match what was painted is a bug with a new symptom for
-    /// every layout change.
+    /// The rows the text takes at <paramref name="fieldWidth"/>: the editor's own wrapped rows, plus one
+    /// when the last of them is exactly full. That row is where the next character goes and where the
+    /// caret sits until it is typed; the editor puts a caret at the end of a full row one cell past the
+    /// text, which on this bar is off the control (<see cref="GetLogicalCursorPosition"/> moves it down).
     /// <para>
-    /// <paramref name="boxHeight"/> is the rows the control was actually <em>given</em>, which is not
-    /// always the rows it asked for — the framework clamps a measure to the space left. The paint has
-    /// always honoured that (it cannot paint outside its bounds); the cursor did not, so on any frame
-    /// where the two differed the scroll offset the caret was placed by was one the text was never drawn
-    /// at. Pass 0 when nothing has been arranged yet and the requested height is the only answer there is.
+    /// Read by reflection because the public measure (<c>GetLogicalContentSize</c>) wraps at the width of
+    /// the last paint, so it runs a frame behind every resize; falls back to it if the private method is
+    /// ever renamed.
     /// </para>
     /// </summary>
-    private (IReadOnlyList<InputRow> Rows, int Row, int Column, int Height) Geometry(
-        int fieldWidth, int boxHeight)
+    private int WrappedRowCount(int fieldWidth)
     {
-        var rows = InputLayout.Wrap(Buffer.Text, fieldWidth);
-        var (row, column) = InputLayout.Caret(rows, Buffer.Caret);
-        var height = InputLayout.Height(rows.Count, MinRows, MaxRows);
-        if (boxHeight > 0)
+        if (WrappedLinesMethod?.Invoke(this, [fieldWidth]) is not IList rows || rows.Count == 0)
         {
-            height = Math.Min(height, boxHeight);
+            return Math.Max(1, GetLogicalContentSize().Height);
         }
 
-        _scroll = InputLayout.Scroll(row, rows.Count, height, _scroll);
-        return (rows, row, column, height);
+        var last = rows[rows.Count - 1];
+        var text = last?.GetType().GetProperty("DisplayText")?.GetValue(last) as string ?? string.Empty;
+        return rows.Count + (text.Length > 0 && UnicodeWidth.GetStringWidth(text) >= fieldWidth ? 1 : 0);
     }
-
-    /// <summary>The rows the last arrange gave the text, or 0 before there has been one.</summary>
-    private int ArrangedTextHeight() =>
-        ActualHeight > 0 ? Math.Max(0, ActualHeight - Margin.Top - Margin.Bottom) : 0;
-
-    /// <inheritdoc/>
-    public Point? GetLogicalCursorPosition()
-    {
-        if (!HasFocus || !Armed)
-        {
-            return null;
-        }
-
-        var (_, row, column, _) = Geometry(FieldWidth(), ArrangedTextHeight());
-        return new Point(
-            Margin.Left + MarkupParser.StripLength(_prompt) + column,
-            Margin.Top + row - _scroll);
-    }
-
-    /// <inheritdoc/>
-    public void SetLogicalCursorPosition(Point position)
-    {
-        var deselected = Buffer.Deselect();
-        if (Buffer.MoveTo(OffsetAt(position)) || deselected)
-        {
-            Invalidate(Invalidation.Repaint);
-        }
-
-        Deselected(deselected);
-    }
-
-    /// <summary>The buffer offset under a point in this control's own coordinates, clamped into the text.</summary>
-    private int OffsetAt(Point position)
-    {
-        var rows = InputLayout.Wrap(Buffer.Text, FieldWidth());
-        var row = Math.Clamp(position.Y - Margin.Top + _scroll, 0, rows.Count - 1);
-        var column = position.X - Margin.Left - MarkupParser.StripLength(_prompt);
-        return InputLayout.Offset(rows, row, column);
-    }
-
-    /// <inheritdoc/>
-    public override Size GetLogicalContentSize() => new(Width ?? (ContentWidth ?? 0), Rows());
 
     /// <inheritdoc/>
     public override LayoutSize MeasureDOM(LayoutConstraints constraints)
     {
-        var width = (Width ?? constraints.MaxWidth) + Margin.Left + Margin.Right;
-        var height = Rows() + Margin.Top + Margin.Bottom;
-        return new LayoutSize(
-            Math.Clamp(width, constraints.MinWidth, constraints.MaxWidth),
-            Math.Clamp(height, constraints.MinHeight, constraints.MaxHeight));
+        var width = Width ?? constraints.MaxWidth;
+        ViewportHeight = InputLayout.Height(WrappedRowCount(FieldWidth(width)), MinRows, MaxRows);
+        return base.MeasureDOM(constraints);
     }
 
-    /// <inheritdoc/>
-    public override void PaintDOM(
-        CharacterBuffer buffer, LayoutRect bounds, LayoutRect clipRect, Color defaultFg, Color defaultBg)
+    /// <summary>The caret is drawn only on the bar ⏎ sends from, and only while it holds the focus.</summary>
+    public new Point? GetLogicalCursorPosition()
     {
-        ArgumentNullException.ThrowIfNull(buffer);
-
-        SetActualBounds(bounds);
-
-        var band = Armed ? BandColor : IdleBandColor;
-        var ink = Armed ? TextColor : IdleTextColor;
-        var startX = bounds.X + Margin.Left;
-        var startY = bounds.Y + Margin.Top;
-        var promptWidth = MarkupParser.StripLength(_prompt);
-        var fieldWidth = Math.Max(1, bounds.Width - Margin.Left - Margin.Right - promptWidth);
-
-        var (rows, _, _, height) = Geometry(fieldWidth, bounds.Height - Margin.Top - Margin.Bottom);
-        var (selStart, selLength) = Buffer.Selection;
-
-        for (var line = 0; line < height; line++)
+        if (!HasFocus || !Armed || base.GetLogicalCursorPosition() is not { } caret)
         {
-            var y = startY + line;
-            if (y < clipRect.Y || y >= clipRect.Bottom || y >= bounds.Bottom)
-            {
-                continue;
-            }
-
-            // The whole row is band first, so a short line still paints the bar edge to edge.
-            for (var x = bounds.X; x < bounds.Right; x++)
-            {
-                if (x >= clipRect.X && x < clipRect.Right)
-                {
-                    buffer.SetNarrowCell(x, y, ' ', ink, band);
-                }
-            }
-
-            if (line == 0 && promptWidth > 0)
-            {
-                buffer.WriteCellsClipped(startX, y, MarkupParser.Parse(_prompt, ink, band), clipRect);
-            }
-
-            var index = _scroll + line;
-            if (index >= rows.Count)
-            {
-                continue;
-            }
-
-            var row = rows[index];
-            var textX = startX + promptWidth;
-            for (var i = 0; i < row.Length && i < fieldWidth; i++)
-            {
-                var x = textX + i;
-                if (x >= clipRect.X && x < clipRect.Right && x < bounds.Right - Margin.Right)
-                {
-                    var offset = row.Start + i;
-                    var selected = offset >= selStart && offset < selStart + selLength;
-                    buffer.SetNarrowCell(
-                        x, y, Buffer.Text[offset],
-                        selected ? SelectionTextColor : ink,
-                        selected ? SelectionColor : band);
-                }
-            }
+            return null;
         }
 
-        PaintOverflow(buffer, bounds, clipRect, rows.Count, height, ink, band);
+        // Past the last column means the end of a full row; the row under it is the one Rows() added.
+        // A bar past its cap shows the editor's scrollbar, which takes the field's last column.
+        var field = FieldWidth(ActualWidth > 0 ? ActualWidth : Width ?? 80);
+        var right = Margin.Left + MarkupParser.StripLength(Prompt) + field
+            - (WrappedRowCount(field) > ViewportHeight ? 1 : 0);
+        if (caret.X >= right && caret.Y + 1 - Margin.Top < ViewportHeight)
+        {
+            return new Point(Margin.Left + MarkupParser.StripLength(Prompt), caret.Y + 1);
+        }
+
+        return caret.X >= right ? caret with { X = right - 1 } : caret;
     }
+
+    Point? ILogicalCursorProvider.GetLogicalCursorPosition() => GetLogicalCursorPosition();
 
     /// <summary>
-    /// Marks a bar that has more rows than it is tall. Without it the cap reads as lost text: the line
-    /// simply stops, with nothing to say the rest is above or below.
+    /// Drops the selection when another control's starts. Called by the window's <c>SelectionManager</c>;
+    /// the editor's own clear resets the selection without repainting it, which would leave the band on
+    /// screen until the next keystroke.
     /// </summary>
-    private void PaintOverflow(
-        CharacterBuffer buffer, LayoutRect bounds, LayoutRect clipRect, int rows, int height,
-        Color ink, Color band)
+    public new void ClearSelection()
     {
-        if (rows <= height || height <= 0)
+        var had = HasSelection;
+        base.ClearSelection();
+        if (had)
         {
-            return;
-        }
-
-        var x = bounds.Right - Margin.Right - 1;
-        if (x < clipRect.X || x >= clipRect.Right)
-        {
-            return;
-        }
-
-        var top = bounds.Y + Margin.Top;
-        if (_scroll > 0 && top >= clipRect.Y && top < clipRect.Bottom)
-        {
-            buffer.SetNarrowCell(x, top, '▴', ink, band);
-        }
-
-        var last = top + height - 1;
-        if (_scroll + height < rows && last >= clipRect.Y && last < clipRect.Bottom)
-        {
-            buffer.SetNarrowCell(x, last, '▾', ink, band);
+            Invalidate(Invalidation.Repaint);
         }
     }
 
-    #region IMouseAwareControl
-
-    /// <inheritdoc/>
-    public bool WantsMouseEvents => true;
-
-    /// <inheritdoc/>
-    public bool CanFocusWithMouse => CanReceiveFocus;
-
-    /// <inheritdoc/>
-    public event EventHandler<SharpConsoleUI.Events.MouseEventArgs>? MouseClick;
-
-    /// <inheritdoc/>
-    public event EventHandler<SharpConsoleUI.Events.MouseEventArgs>? MouseDoubleClick;
-
-    /// <inheritdoc/>
-    public event EventHandler<SharpConsoleUI.Events.MouseEventArgs>? MouseRightClick;
-
-    /// <inheritdoc/>
-    public event EventHandler<SharpConsoleUI.Events.MouseEventArgs>? MouseEnter;
-
-    /// <inheritdoc/>
-    public event EventHandler<SharpConsoleUI.Events.MouseEventArgs>? MouseLeave;
-
-    /// <inheritdoc/>
-    public event EventHandler<SharpConsoleUI.Events.MouseEventArgs>? MouseMove;
+    void ISelectableControl.ClearSelection() => ClearSelection();
 
     /// <summary>
-    /// Clicking a bar arms it and drops the caret where the pointer landed — the second way (after ⇥)
-    /// to say which line ⏎ should send. The hover events are relayed as the framework reports them so a
-    /// subscriber sees the same stream any other mouse-aware control gives.
+    /// A press on a bar arms it first — the second way (after ⇥) to say which line ⏎ sends from — and
+    /// then the editor places the caret, starts a drag or selects a word.
     /// </summary>
-    public bool ProcessMouseEvent(SharpConsoleUI.Events.MouseEventArgs args)
+    public new bool ProcessMouseEvent(MouseEventArgs args)
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        if (!IsEnabled)
-        {
-            return false;
-        }
-
-        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.MouseEnter))
-        {
-            MouseEnter?.Invoke(this, args);
-        }
-
-        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.MouseLeave))
-        {
-            MouseLeave?.Invoke(this, args);
-        }
-
-        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.ReportMousePosition))
-        {
-            MouseMove?.Invoke(this, args);
-        }
-
-        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button3Clicked))
-        {
-            MouseRightClick?.Invoke(this, args);
-        }
-
-        // A double-click selects the word under it. Before the press arm below, because the framework
-        // reports the second press of a double-click with both flags.
-        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1DoubleClicked))
+        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Pressed)
+            || args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked)
+            || args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1DoubleClicked))
         {
             Arm();
-            _dragging = false;
-            if (Buffer.SelectWordAt(OffsetAt(args.Position)))
-            {
-                Invalidate(Invalidation.Repaint);
-            }
-
-            SelectionMoved();
-            MouseDoubleClick?.Invoke(this, args);
-            args.Handled = true;
-            return true;
         }
 
-        // Motion with the button held, which SGR reports as Pressed|Dragged: extend from where the press
-        // landed. A bare Pressed at the cell the gesture is already on is the host's auto-repeat of a held
-        // button (PaneDragTracker has the details) and continues it; a bare Pressed anywhere else is a new
-        // press after a release this control never saw, and starts over.
-        var pressed = args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Pressed);
-        if (_dragging
-            && (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Dragged)
-                || (pressed && args.Position == _dragAt)))
-        {
-            _dragAt = args.Position;
-            var target = OffsetAt(args.Position);
-            Extend(b => b.MoveTo(target));
-            args.Handled = true;
-            return true;
-        }
-
-        if (pressed)
-        {
-            Arm();
-            SetLogicalCursorPosition(args.Position);
-            _dragging = true;
-            _dragAt = args.Position;
-            args.Handled = true;
-            return true;
-        }
-
-        if (args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Released)
-            || args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked))
-        {
-            // A click that ends a drag leaves the selection the drag made. A click with no press before
-            // it (some drivers report only the click) places the caret, as a click always has.
-            var wasDragging = _dragging;
-            _dragging = false;
-            if (!args.HasFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked))
-            {
-                return false;
-            }
-
-            if (!wasDragging)
-            {
-                Arm();
-                SetLogicalCursorPosition(args.Position);
-            }
-
-            MouseClick?.Invoke(this, args);
-            args.Handled = true;
-            return true;
-        }
-
-        return false;
+        return base.ProcessMouseEvent(args);
     }
 
-    /// <summary>
-    /// What any press on a bar does first: take the focus and ask to be the bar ⏎ sends from — the second
-    /// way (after ⇥) to say which line that is.
-    /// </summary>
+    bool IMouseAwareControl.ProcessMouseEvent(MouseEventArgs args) => ProcessMouseEvent(args);
+
     private void Arm()
     {
-        if (!HasFocus && CanFocusWithMouse)
+        if (!HasFocus && IsEnabled)
         {
             this.GetParentWindow()?.FocusManager.SetFocus(this, FocusReason.Mouse);
         }
@@ -788,10 +593,34 @@ internal sealed class InputBarControl : BaseControl, IInteractiveControl, IFocus
         ActivationRequested?.Invoke(this);
     }
 
-    #endregion
-
-    /// <inheritdoc/>
-    protected override void OnDisposing()
+    /// <summary>
+    /// The prompt, drawn as a gutter: as wide as the prompt on every row, written on the first and blank
+    /// under it, so a wrapped line indents past the prompt rather than running back under it.
+    /// </summary>
+    private sealed class PromptGutter(InputBarControl bar) : IGutterRenderer
     {
+        public string Markup { get; set; } = string.Empty;
+
+        // The prompt's width is re-read on every measure, so there is nothing for this to announce.
+        public event EventHandler? Invalidated { add { } remove { } }
+
+        public int GetWidth(int totalLineCount) => MarkupParser.StripLength(Markup);
+
+        public void Render(in GutterRenderContext context, int width)
+        {
+            var band = bar.Band;
+            var ink = bar.Ink;
+            for (var x = 0; x < width; x++)
+            {
+                context.Buffer.SetNarrowCell(context.X + x, context.Y, ' ', ink, band);
+            }
+
+            if (context.SourceLineIndex == 0 && context.IsFirstWrappedSegment)
+            {
+                context.Buffer.WriteCellsClipped(
+                    context.X, context.Y, MarkupParser.Parse(Markup, ink, band),
+                    new LayoutRect(context.X, context.Y, width, 1));
+            }
+        }
     }
 }
