@@ -1267,17 +1267,27 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     used to be `#222226`. A light theme is left alone: darkening it makes a grey theme, and its focus step
     clamps at white either way. The cost is the pane-over-backdrop step, a ratio, which is fewer L* points
     a range lower (Dark 4.0 → 2.8); `EveryThemeGetsARaisedSurfaceOverARecessedBackdrop` now measures L*.
-  - **F7 ▸ `transparent background` (off by default) hands the planes that carry no fact to the
-    terminal** (`TextSettings.TransparentBackground`; `PaneBodyColor`, `BackdropColor`,
-    `ApplyDesktopTransparency`). A translucent terminal (kitty's `background_opacity`) makes translucent
-    only cells on the default background, `SGR 49`, so this paints `Color.Transparent` on an untinted pane
-    body — focused or not, since the pane being read is always the focused one — and on the window's
-    backdrop, and makes the framework's desktop transparent too, because a non-opaque cell is composited
-    against what lies below it. A tint, the tab chips (the selected one keeps the focus lift), the
-    command line and the header stay painted. The framework's `TerminalTransparencyMode` is deliberately
-    **not** set: `PreserveTerminalTransparency` also stops writing a foreground for every blank cell, which
-    splits words across SGR runs and broke a dozen frame-text tests, and the default mode already passes an
-    `A=0` cell over an `A=0` desktop through as `49`. `--transparent` renders a snapshot with it on.
+  - **F7 ▸ `background transparency (%)` (0, off, by default) is a level only kitty can honour**
+    (`TextSettings.BackgroundTransparency`; `KittyTransparentColours`, `SyncTransparentColours`). A
+    translucent terminal draws translucent only cells on its *default* background (`SGR 49`), at the
+    opacity in *its* config, and every explicit colour opaque — so an application cannot put a level on
+    its own planes except by naming them. Kitty (0.36+) takes up to **seven** named colours with an
+    opacity each through its color-control escape, `OSC 21 ; transparent_background_colorN=#rrggbb@a`.
+    So on kitty (`TerminalCapabilities.SupportsTransparentColours`: `TERM` or `KITTY_WINDOW_ID`, **not**
+    Ghostty) every plane stays painted and the most-used seven are named, in rank order: pane bodies
+    (focused first), backdrop, idle band, armed band, header, recessed chips. The set rides
+    `PostBufferPaint` and is written only when it or the level changes; unused slots and, after `Run`
+    returns, all seven are *reset* (key with no `=`), which restores the user's own `kitty.conf`. Kitty
+    only creates a translucent framebuffer with `background_opacity` < 1 or `dynamic_background_opacity
+    yes`; without that this does nothing, and nothing here can tell. Matching is by exact colour, so a
+    world's own background that equals a named plane goes translucent with it.
+    Any other terminal gets the fallback (`HandsPlanesToTheTerminal`): `Color.Transparent` on an untinted
+    pane body and the backdrop, plus a transparent framework desktop because a non-opaque cell is
+    composited against it; the number cannot be honoured there. The framework's
+    `TerminalTransparencyMode` is deliberately **not** set: `PreserveTerminalTransparency` also stops
+    writing a foreground for every blank cell, which splits words across SGR runs and broke a dozen
+    frame-text tests. `--transparency <0-100>` renders a snapshot with it on; a snapshot is never kitty,
+    so it shows the fallback.
   - **The command line wears it too, and takes the hue without the depth** (`PaintInputBands`,
     `WorkspacePalette.IdleBand(theme, tint)` / `ArmedBand(theme, tint)`). On a pane, luminance carries
     focus as a ratio that a step applied equally to all six leaves intact; on the input row luminance is

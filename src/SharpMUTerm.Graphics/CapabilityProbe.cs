@@ -53,6 +53,12 @@ public static class CapabilityProbe
             Contains(term, "ghostty") ||
             Equals(termProgram, "ghostty");
 
+        // kitty's per-colour opacity (OSC 21 transparent_background_colorN, 0.36+). Not Ghostty: it shares
+        // the graphics protocol above and not this escape.
+        var supportsTransparentColours =
+            Contains(term, "kitty") ||
+            !string.IsNullOrEmpty(Get(environment, "KITTY_WINDOW_ID"));
+
         var supportsSixel =
             Contains(term, "sixel") ||
             Equals(Get(environment, "SHARPMUTERM_SIXEL"), "1") ||
@@ -63,7 +69,8 @@ public static class CapabilityProbe
         var overrideValue = Get(environment, OverrideVariable);
         if (TryParseOverride(overrideValue, out var forced))
         {
-            return new TerminalCapabilities(forced, supportsTrueColor, supportsKitty, supportsSixel);
+            return new TerminalCapabilities(
+                forced, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours);
         }
 
         var protocol = supportsKitty
@@ -74,7 +81,8 @@ public static class CapabilityProbe
                     ? GraphicsProtocol.HalfBlock
                     : GraphicsProtocol.None;
 
-        return new TerminalCapabilities(protocol, supportsTrueColor, supportsKitty, supportsSixel);
+        return new TerminalCapabilities(
+            protocol, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours);
     }
 
     /// <summary>Detects capabilities from the current process environment.</summary>

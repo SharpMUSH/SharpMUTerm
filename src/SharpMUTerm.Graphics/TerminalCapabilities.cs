@@ -11,12 +11,14 @@ public sealed class TerminalCapabilities
         GraphicsProtocol protocol,
         bool supportsTrueColor,
         bool supportsKittyGraphics,
-        bool supportsSixel)
+        bool supportsSixel,
+        bool supportsTransparentColours = false)
     {
         Protocol = protocol;
         SupportsTrueColor = supportsTrueColor;
         SupportsKittyGraphics = supportsKittyGraphics;
         SupportsSixel = supportsSixel;
+        SupportsTransparentColours = supportsTransparentColours;
     }
 
     /// <summary>The best inline-graphics protocol available.</summary>
@@ -31,6 +33,13 @@ public sealed class TerminalCapabilities
     /// <summary>True when Sixel raster graphics are available.</summary>
     public bool SupportsSixel { get; }
 
+    /// <summary>
+    /// True when the terminal can be told to draw named background colours translucent — kitty's
+    /// <c>transparent_background_color1..7</c>, set through its color-control escape (<c>OSC 21</c>).
+    /// Kitty alone: Ghostty speaks kitty's graphics protocol and not this.
+    /// </summary>
+    public bool SupportsTransparentColours { get; }
+
     public override string ToString() =>
-        $"{Protocol} (truecolor={SupportsTrueColor}, kitty={SupportsKittyGraphics}, sixel={SupportsSixel})";
+        $"{Protocol} (truecolor={SupportsTrueColor}, kitty={SupportsKittyGraphics}, sixel={SupportsSixel}, transparent colours={SupportsTransparentColours})";
 }

@@ -66,6 +66,22 @@ public class CapabilityProbeTests
         await Assert.That(caps.Protocol).IsEqualTo(GraphicsProtocol.Kitty);
     }
 
+    /// <summary>
+    /// Per-colour opacity is kitty's color-control escape, and only kitty's: Ghostty shares the graphics
+    /// protocol and not this, so it is detected as kitty for pictures and not for transparency.
+    /// </summary>
+    [Test]
+    [Arguments("TERM", "xterm-kitty", true)]
+    [Arguments("KITTY_WINDOW_ID", "3", true)]
+    [Arguments("TERM", "xterm-ghostty", false)]
+    [Arguments("TERM_PROGRAM", "ghostty", false)]
+    [Arguments("TERM_PROGRAM", "WezTerm", false)]
+    public async Task TransparentColours_KittyOnly(string name, string value, bool expected)
+    {
+        var caps = Detect((name, value));
+        await Assert.That(caps.SupportsTransparentColours).IsEqualTo(expected);
+    }
+
     [Test]
     public async Task Kitty_ViaGhosttyTerm()
     {

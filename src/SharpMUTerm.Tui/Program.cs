@@ -1,3 +1,4 @@
+using System.Globalization;
 using SharpMUTerm.Core.Theming;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Core.Configuration;
@@ -61,11 +62,13 @@ internal static class Program
                 config.Theme = ThemeLibrary.Get(themeName);
             }
 
-            // --transparent renders with F7's transparent background on, so the cells that become the
-            // terminal's own background (SGR 49) can be counted in a frame rather than taken on trust.
-            if (args.Contains("--transparent"))
+            // --transparency <0-100> renders with F7's background transparency at that level. A headless
+            // driver is no kitty, so the frame shows the fallback: the cells handed to the terminal's own
+            // background (SGR 49), which can be counted rather than taken on trust.
+            if (GetOption(args, "--transparency") is { } level
+                && int.TryParse(level, NumberStyles.None, CultureInfo.InvariantCulture, out var percent))
             {
-                config.Text.TransparentBackground = true;
+                config.Text.BackgroundTransparency = Math.Clamp(percent, 0, TextSettings.MaxBackgroundTransparency);
             }
 
             var (width, height) = ParseSize(args);
