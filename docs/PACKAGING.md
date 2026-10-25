@@ -68,10 +68,6 @@ publishes the terminal and the window into one folder, smoke-tests both, and pac
 | `sharpmuterm-win-x64.zip` | `sharpmuterm.exe`, `sharpmuterm-window.exe` |
 | `SharpMUTerm-<version>-win-x64-setup.exe` | Inno Setup installer for both |
 
-The version is the tag without its `v`; a manual run builds `0.0.0-dev.<run number>` and uploads the assets
-as workflow artifacts only. On a tag they are attached to the GitHub release.
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+The version comes from `Directory.Build.props`, and a tag must match it and have a `CHANGELOG.md` section;
+a manual run builds `<version>-dev.<run number>` and uploads the assets as workflow artifacts only. The
+release procedure is [`RELEASING.md`](RELEASING.md).

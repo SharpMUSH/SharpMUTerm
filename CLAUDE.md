@@ -1870,5 +1870,9 @@ Kept for context; **M1 is done** (see *Repository state* above). As originally s
 ## Working conventions
 
 - Branch from `main`; open a **PR**. Do **not** commit directly to `main`.
+- **Every PR that changes what ships adds a line under `## [Unreleased]` in `CHANGELOG.md`**, written for a
+  user, not a reviewer. The **Changelog** workflow fails a PR touching `src/`, `packaging/` or
+  `Directory.*.props` without one (`skip-changelog` label for changes nobody could notice). The version lives
+  only in `Directory.Build.props` (`VersionPrefix`); a release tag must equal it. See `docs/RELEASING.md`.
 - Follow `.editorconfig`: file-scoped namespaces, 4-space C#, LF line endings.
 - Keep commits focused with clear messages.

@@ -12,6 +12,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <Authors>Harry Cordewener</Authors>
     <Product>SharpMUTerm</Product>
+    <!--
+      The one place the version is written. A release tag must be v{VersionPrefix} and CHANGELOG.md must have
+      a dated section for it, or release.yml refuses; see docs/RELEASING.md. Untagged builds append a suffix.
+    -->
+    <VersionPrefix>0.1.0</VersionPrefix>
     <Copyright>Copyright (c) 2026 Harry Cordewener</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/SharpMUSH/SharpMUTerm</RepositoryUrl>

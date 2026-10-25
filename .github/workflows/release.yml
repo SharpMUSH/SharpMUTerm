@@ -9,8 +9,37 @@ permissions:
   contents: write
 
 jobs:
+  # A tag is refused before anything is built unless it is v{Directory.Build.props version} and CHANGELOG.md
+  # has a dated section for that version. See docs/RELEASING.md.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      numeric: ${{ steps.version.outputs.numeric }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # A tag builds exactly the declared version; a manual run builds <version>-dev.<run>. The installer's
+      # file version has to be four numbers, so a prerelease suffix is dropped there.
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 tools/changelog.py release-check "$GITHUB_REF_NAME"
+            version=$(python3 tools/changelog.py version)
+          else
+            python3 tools/changelog.py check
+            version="$(python3 tools/changelog.py version)-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "numeric=${version%%-*}.0" >> "$GITHUB_OUTPUT"
+
   publish:
     name: publish (${{ matrix.rid }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -30,29 +59,15 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # v1.2.3 → 1.2.3 on a tag; a manual run is 0.0.0-dev.<run>. The installer's file version has to be
-      # four numbers, so the prerelease suffix is dropped there.
-      - name: Version
-        id: version
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="0.0.0-dev.${GITHUB_RUN_NUMBER}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "numeric=${version%%-*}.0" >> "$GITHUB_OUTPUT"
-
       # Both executables go into one folder: `sharpmuterm --window` looks for the window beside itself.
       - name: Publish single-file
         shell: bash
         run: |
           dotnet publish src/SharpMUTerm.Tui/SharpMUTerm.Tui.csproj \
-            -p:PublishProfile=${{ matrix.profile }} -p:Version=${{ steps.version.outputs.version }} \
+            -p:PublishProfile=${{ matrix.profile }} -p:Version=${{ needs.version.outputs.version }} \
             -o publish/${{ matrix.rid }}
           dotnet publish src/SharpMUTerm.Avalonia/SharpMUTerm.Avalonia.csproj \
-            -p:PublishProfile=${{ matrix.profile }} -p:Version=${{ steps.version.outputs.version }} \
+            -p:PublishProfile=${{ matrix.profile }} -p:Version=${{ needs.version.outputs.version }} \
             -o publish/${{ matrix.rid }}
 
       # The window's own demo render, from the published single file, before anything is packaged.
@@ -71,7 +86,7 @@ jobs:
         run: |
           mkdir -p dist
           tar -czf dist/sharpmuterm-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} sharpmuterm sharpmuterm-window
-          packaging/linux/build-appimage.sh publish/${{ matrix.rid }} ${{ steps.version.outputs.version }} dist
+          packaging/linux/build-appimage.sh publish/${{ matrix.rid }} ${{ needs.version.outputs.version }} dist
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -84,8 +99,8 @@ jobs:
             choco install innosetup --no-progress -y
           fi
           "$iscc" \
-            "/DAppVersion=${{ steps.version.outputs.version }}" \
-            "/DNumericVersion=${{ steps.version.outputs.numeric }}" \
+            "/DAppVersion=${{ needs.version.outputs.version }}" \
+            "/DNumericVersion=${{ needs.version.outputs.numeric }}" \
             "/DPublishDir=$(cygpath -w "$PWD/publish/${{ matrix.rid }}")" \
             "/DOutputDir=$(cygpath -w "$PWD/dist")" \
             packaging/windows/sharpmuterm.iss
@@ -99,10 +114,18 @@ jobs:
   # Serialize release creation in a single downstream job so the two matrix jobs don't race
   # softprops/action-gh-release on the same tag.
   release:
-    needs: publish
+    needs: [version, publish]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Release notes from CHANGELOG.md
+        run: python3 tools/changelog.py notes ${{ needs.version.outputs.version }} > release-notes.md
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -112,4 +135,7 @@ jobs:
       - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
+          name: SharpMUTerm ${{ needs.version.outputs.version }}
+          body_path: release-notes.md
+          prerelease: ${{ contains(needs.version.outputs.version, '-') }}
           files: artifacts/*
