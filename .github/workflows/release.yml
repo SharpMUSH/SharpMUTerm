@@ -151,7 +151,7 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # Assets can only be attached before a release is published, so it is made as a draft, filled, then published.
+      # Assets can only be attached before a release is published, so the workflow makes a draft and fills it.
       - name: Create draft release and upload assets
         uses: softprops/action-gh-release@v2
         with:
@@ -162,10 +162,12 @@ jobs:
           files: artifacts/*
           fail_on_unmatched_files: true
 
-      - name: Publish release
+      # Publishing is a person's step, on the Releases page: once published, the release can no longer change.
+      - name: Check the draft carries all four packages
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          test "$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets | length')" -eq 4
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          count=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets | length')
+          test "$count" -eq 4 || { echo "::error::the draft has $count packages, expected 4"; exit 1; }
+          echo "Draft ready: $(gh release view "$GITHUB_REF_NAME" --json url -q .url). Review it and press Publish."
