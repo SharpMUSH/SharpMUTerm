@@ -37,8 +37,9 @@ minor bump and is named in the changelog. A prerelease (`0.2.0-beta.1`) is publi
    release `SharpMUTerm X.Y.Z` with the changelog section as its notes, and attaches the `.tar.gz`, the AppImage,
    the `.zip` and the installer. A tag with a prerelease suffix (`v0.2.0-beta.1`) becomes a GitHub prerelease.
 
-A tag that fails the check builds nothing; delete it (`git push origin :refs/tags/vX.Y.Z`), fix the changelog,
-and tag again. A tag that has been released is never moved: ship a new patch version instead.
+A tag is never moved or reused, because the repository has immutable releases on. If a tag fails the check, it
+builds nothing: fix the changelog, rename its section to the next patch version, and tag that instead. `v0.1.0`
+is one of these. It was refused, and the first release is 0.1.1.
 
 Running **Release** by hand (workflow dispatch) builds whatever MinVer makes of that commit and keeps the
 packages as workflow artifacts; it publishes nothing.
