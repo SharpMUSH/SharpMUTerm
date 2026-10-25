@@ -14,6 +14,11 @@
     <PackageReference Include="Avalonia.Headless" />
   </ItemGroup>
 
+  <!-- The terminal suite's frame decoder, so a headless frame and a window frame are read the same way. -->
+  <ItemGroup>
+    <Compile Include="..\SharpMUTerm.Tui.Tests\FrameGrid.cs" Link="Shared\FrameGrid.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\SharpMUTerm.Avalonia\SharpMUTerm.Avalonia.csproj" />
   </ItemGroup>

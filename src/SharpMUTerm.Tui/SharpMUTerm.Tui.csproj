@@ -46,6 +46,19 @@
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 
+  <!--
+    The app is shared by every host (terminal, desktop window, headless snapshot), so it may not decide
+    anything by asking which driver it was handed or what the environment says: that is how a feature ends
+    up working in one host and not the other. Those facts are ClientHost's (Hosting/), and the analyzer
+    fails the build when they are reached for anywhere else. A use that has to stay carries a
+    #pragma warning disable RS0030 with the reason beside it. It is an error by .editorconfig (this
+    folder's), and off in Hosting/ by that folder's own.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="BannedSymbols.txt" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="SharpMUTerm.Tui.Tests" />
     <!-- The windowed host: it runs the same SharpMUTermApp through Program.RunLive with its own driver. -->

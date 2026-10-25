@@ -37,26 +37,13 @@ internal static class ClientLaunch
             return app.Run([]);
         }
 
-        // Focus reporting is a terminal escape, and its focus-in arrives disguised as a Tab: in a window it
-        // would only ever turn a real Tab after a pause into a "you were away" bar.
-        return Tui.Program.RunLive(
-            options.ClientArgs,
-            config,
-            WindowOptions.Capabilities,
-            notices,
-            new LiveHost(driver, clipboard, FocusReporting: false));
+        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard));
     }
 
     /// <summary>The demo client, with its <c>--view</c> scene laid out and not yet running.</summary>
     public static SharpMUTermApp Demo(WindowOptions options, AppConfiguration config, AvaloniaConsoleDriver driver, Action<string>? clipboard)
     {
-        var app = new SharpMUTermApp(
-            config,
-            WindowOptions.Capabilities,
-            driver,
-            focusReporting: false,
-            openUrl: ExternalBrowser.Open,
-            clipboard: clipboard);
+        var app = new SharpMUTermApp(config, WindowHost.Create(driver, clipboard));
 
         // The snapshot's scene builder is the demo: it pours the demo output in and opens the named view. What
         // it returns is the headless driver's capture, which on this driver is empty and not wanted.

@@ -30,13 +30,18 @@ public sealed record CharacterRef(
 /// Whether the focused pane is showing something other than its newest output, so
 /// <c>Back to live output</c> has somewhere to go.
 /// </param>
+/// <param name="NewlineChord">
+/// The chord that inserts a newline where the client is running — <c>Alt+⏎</c> in a terminal, <c>Ctrl+⏎</c> in
+/// the desktop window, which keeps ⌥⏎ for itself. Supplied by the host for the reason the screens are.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
     bool Frozen = false,
     bool TimestampsOn = false,
     bool SecondInputOn = false,
-    bool ScrolledBack = false);
+    bool ScrolledBack = false,
+    string NewlineChord = "Alt+⏎");
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -234,10 +239,10 @@ public static class CommandCatalog
 
         // The newline chord. Here for the same reason the scrollback keys are: a chord that works and is
         // named nowhere is a chord nobody finds, which is precisely how this one was reported as missing.
-        // Alt+⏎ is the modifier+Enter this host delivers — a terminal reports Shift+⏎ and Ctrl+⏎ as a
-        // bare ⏎, so naming those would be advertising a key that cannot fire.
+        // The host says which chord it is: a terminal reports Shift+⏎ and Ctrl+⏎ as a bare ⏎, so there it is
+        // Alt+⏎, and a window keeps Alt+⏎ for itself, so there it is Ctrl+⏎.
         items.Add(new CommandItem(
-            CommandGroup.Terminal, "Insert a newline in the command line", "term:newline", "Alt+⏎"));
+            CommandGroup.Terminal, "Insert a newline in the command line", "term:newline", context.NewlineChord));
 
         // LAYOUT — every entry carries the chord that runs it, because this surface is where the client
         // is discovered from and the ⌃B keymap is otherwise visible only while the prefix is armed.

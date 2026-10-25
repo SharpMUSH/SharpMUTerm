@@ -4,6 +4,7 @@ using SharpConsoleUI;
 using SharpConsoleUI.Core;
 using SharpConsoleUI.Drivers;
 using SharpConsoleUI.Layout;
+using SharpMUTerm.Tui;
 using Size = SharpConsoleUI.Helpers.Size;
 
 namespace SharpMUTerm.Avalonia;
@@ -26,7 +27,7 @@ namespace SharpMUTerm.Avalonia;
 /// this driver keeps the pixels in a <see cref="PictureStore"/> and the renderer draws them over the cells.
 /// </para>
 /// </summary>
-internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol, IDisposable
+internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol, IMouseInjector, IDisposable
 {
     private readonly CellGrid _grid;
     private CaretState _caret;
@@ -128,6 +129,8 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     public void RaiseKey(ConsoleKeyInfo key) => KeyPressed?.Invoke(this, key);
 
     public void RaiseMouse(List<MouseFlags> flags, Point cell) => MouseEvent?.Invoke(this, flags, cell);
+
+    void IMouseInjector.InjectMouse(List<MouseFlags> flags, Point cell) => RaiseMouse(flags, cell);
 
     public void RaisePaste(string text) => Paste?.Invoke(this, text);
 

@@ -1,0 +1,4 @@
+# The app is shared by every host, so a host check inside it is a build error (BannedSymbols.txt).
+# Hosting/ turns it off again for itself.
+[*.cs]
+dotnet_diagnostic.RS0030.severity = error

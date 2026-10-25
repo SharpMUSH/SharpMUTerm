@@ -1,0 +1,8 @@
+T:SharpConsoleUI.Drivers.NetConsoleDriver;The driver is chosen by the host: ClientHost.Terminal
+T:SharpConsoleUI.Drivers.HeadlessConsoleDriver;Ask ClientHost (RunsInline, Capabilities, Keys), not the driver's type
+M:System.Environment.GetEnvironmentVariable(System.String);The environment is read by the host (ClientHost) or the capability probe, never by the app
+M:System.Environment.GetEnvironmentVariable(System.String,System.EnvironmentVariableTarget);The environment is read by the host (ClientHost) or the capability probe, never by the app
+M:System.OperatingSystem.IsWindows;Platform differences are host facts: put them on ClientHost
+M:System.OperatingSystem.IsLinux;Platform differences are host facts: put them on ClientHost
+M:System.OperatingSystem.IsMacOS;Platform differences are host facts: put them on ClientHost
+M:System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform);Platform differences are host facts: put them on ClientHost

@@ -111,28 +111,25 @@ internal sealed class TerminalView : Control
     {
         base.OnKeyDown(e);
         _swallowText = null;
-        var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
-        var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        var mapped = KeyMapper.FromKeyDown(e.Key, e.KeyModifiers);
 
-        // Paste is the window's, as it is the terminal's: Ctrl+Shift+V and Shift+Insert, the terminal
-        // conventions, so a bare Ctrl+V still reaches the client as the key it has always been.
-        if ((ctrl && shift && e.Key == Key.V) || (shift && !ctrl && e.Key == Key.Insert))
+        // The window's own chords (WindowHost): paste, and ⌥⏎ to maximise and restore. Read from the list the
+        // client's surfaces are told the window keeps, so the two cannot disagree.
+        if (mapped is { } paste && WindowHost.Paste.Any(r => r.Chord.Matches(paste)))
         {
             _ = PasteAsync();
             e.Handled = true;
             return;
         }
 
-        // Alt+Enter maximises and restores, as it does in Windows Terminal. The client's own ⌥⏎ (a newline in the
-        // command line) is the cost; a window reports ⌃⏎ and ⇧⏎, and either is the newline here.
-        if (e.KeyModifiers == KeyModifiers.Alt && e.Key == Key.Enter)
+        if (mapped is { } chord && WindowHost.Maximise.Chord.Matches(chord))
         {
             ToggleMaximised();
             e.Handled = true;
             return;
         }
 
-        if (KeyMapper.FromKeyDown(e.Key, e.KeyModifiers) is { } key)
+        if (mapped is { } key)
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
             _swallowText = key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control)

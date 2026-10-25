@@ -675,8 +675,8 @@ fallbacks) for inline images/maps.
     *synthesised* (`MouseMapper`) in `UnixStdinReader`'s shapes, including the 100 ms press repeat.
   - **The client loop runs on its own thread**; `ConsoleWindowSystem.Run` blocks, and Avalonia must keep the
     main one. They meet only in the driver. Closing the window sends ⌃Q, so it goes through `QuitOverlay`.
-  - **`Program.RunLive` is the one composition root for both hosts** (`LiveHost` says what differs): same
-    files, same save on exit. `--demo-config` in the window builds the app the snapshot way, saving nothing.
+  - **`Program.RunLive` is the one composition root for both hosts** (`ClientHost` says what differs; see
+    *One client, several hosts* below): same files, same save on exit. `--demo-config` in the window builds the app the snapshot way, saving nothing.
     Focus reporting is off: its focus-in is a disguised Tab, and a window would only misread real Tabs.
   - **A snapshot scene on a non-headless driver does not wait for its pictures** (`AwaitSnapshotPictures`):
     the Kitty transmit is UI-thread work, queued until the loop runs, so waiting before `Run` deadlocked.
@@ -692,8 +692,8 @@ fallbacks) for inline images/maps.
     managers. There is no close or minimise button: ⌃Q quits. **⌥⏎ maximises and restores** (Windows
     Terminal's chord), which takes the client's ⌥⏎ newline in this host. The newline is ⌃⏎ or ⇧⏎ here: a
     window reports both modifiers, so they reach `InputBarControl`'s existing modified-⏎ arm with no change on
-    the client side (`NewlineKeyTests`). `AdvertisedKeyHonestyTests` still holds for the terminal, where they
-    arrive as a bare ⏎; the client's own surfaces do not know which host they are in, so they keep naming ⌥⏎.
+    the client side (`NewlineKeyTests`). The client's surfaces name each host's own newline: ⌃P and `--help`
+    read `ClientHost.Keys`, so the window's say ⌃⏎ and the terminal's say ⌥⏎ (`HostParityTests`).
   - **stdin is detached at start** (`Console.SetIn(TextReader.Null)`, as `--snapshot` does). A window has no
     stdin, and the framework reads a redirected one behind a modal "Reading input" dialog that stays up while the
     pipe is open. **On Windows `--help`/`--render-png` borrow the parent console** (`AttachConsole`) when output is
@@ -712,6 +712,41 @@ fallbacks) for inline images/maps.
     checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
   - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level
     selection only (it is the framework's), no bundled font, never run on Windows or macOS by a person.
+
+## One client, several hosts — and how they are kept the same
+
+The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the headless snapshot all run the
+one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
+(`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
+(`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop, and
+the Sixel cell size. Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+`WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
+
+- **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
+  every host states its value, null included. A new fact that differs between hosts goes there — never as an
+  optional constructor parameter with a terminal default, which is how the window inherited a newline chord
+  it does not have. `ClientHostContractTests.EveryMemberOfTheHostContractIsRequired` pins it.
+- **The app may not ask where it is running.** `Microsoft.CodeAnalysis.BannedApiAnalyzers` makes it a build
+  error in `SharpMUTerm.Tui` to name `NetConsoleDriver`/`HeadlessConsoleDriver`, read an environment
+  variable or ask `OperatingSystem`/`RuntimeInformation` which platform it is
+  (`src/SharpMUTerm.Tui/BannedSymbols.txt`, enabled by that folder's `.editorconfig`). `Hosting/` has its own
+  `.editorconfig` turning it off; that folder is where such a question is allowed, and the answer goes onto
+  `ClientHost`. Don't use `WarningsAsErrors` for it: that ignores the folder's `severity = none`.
+- **Every snapshot view is drawn through both drivers and compared cell for cell**, glyph and background
+  (`HostParityTests.EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal`, Avalonia suite), with the same
+  capabilities and keys, so a difference can only be the driver. The list is `SnapshotViews.All`, and
+  `EveryViewTheSnapshotKnowsIsInTheParityList` reads `RenderSnapshot`'s source and fails when it learns a
+  view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both.
+- **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
+  `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
+  `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer
+  (`ClientUsage`) with the client's options in one table (`ClientOptions`); a launcher adds only its own
+  sections. An option that takes a value is listed in `ClientOptions.TakingValues`, so its value is never read
+  as the host (`--name Corvid host` used to dial Corvid).
+
+**Not covered yet**: F4's verdicts (`MacroKeys.Verdict`) describe the terminal only. In the window ⌃digit
+does arrive (F4 says it cannot), and ⌥⏎ never reaches a macro. Making it per host means threading `HostKeys`
+through `MacroKeys`, `ScreenField` and the keypad renderer.
 
 ## Building and testing
 

@@ -159,11 +159,13 @@ public class TerminalFocusWatcherTests
     /// interpretation would not be.
     /// </summary>
     [Test]
-    public async Task ShouldEnable_IsFalseForAHeadlessDriver()
+    public async Task TheHeadlessHostDoesNotReportFocus()
     {
         using var headless = new HeadlessConsoleDriver(80, 24);
+        var caps = new SharpMUTerm.Graphics.TerminalCapabilities(
+            SharpMUTerm.Graphics.GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-        await Assert.That(TerminalFocusWatcher.ShouldEnable(headless)).IsFalse();
+        await Assert.That(ClientHost.Headless(headless, caps).FocusReporting).IsFalse();
     }
 
     /// <summary>
