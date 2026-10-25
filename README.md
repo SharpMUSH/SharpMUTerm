@@ -139,6 +139,8 @@ dotnet run --project src/SharpMUTerm.Avalonia -- <host> <port> [--font "Cascadia
 dotnet run --project src/SharpMUTerm.Avalonia -- --demo-config --view mxp-image   # the demo worlds, saves nothing
 ```
 
+The window has no title bar: drag the blank part of the top row to move it, double-click there to
+maximise, drag an edge to resize, and Ctrl+Q to quit (`--title-bar` brings the system one back).
 Paste is Ctrl+Shift+V or Shift+Insert. Install a Nerd Font for the header and sidebar icons.
 
 ## Testing

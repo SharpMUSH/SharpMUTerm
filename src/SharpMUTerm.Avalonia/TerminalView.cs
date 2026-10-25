@@ -33,6 +33,7 @@ internal sealed class TerminalView : Control
     private double _scale = 1;
     private int _invalidatePending;
     private char? _swallowText;
+    private WindowEdge? _cursorEdge;
 
     public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family)
     {
@@ -174,6 +175,12 @@ internal sealed class TerminalView : Control
             return;
         }
 
+        if (button == PointerButton.Left && TryWindowGesture(e, point.Position))
+        {
+            e.Handled = true;
+            return;
+        }
+
         e.Pointer.Capture(this);
         _driver.RaiseMouse(_mouse.Pressed(button, Cell(point.Position), e.ClickCount, Modifiers(e.KeyModifiers)), Cell(point.Position));
         _repeat.Start();
@@ -183,6 +190,7 @@ internal sealed class TerminalView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        UpdateEdgeCursor(e.GetPosition(this));
         var cell = Cell(e.GetPosition(this));
         if (_mouse.Moved(cell, Modifiers(e.KeyModifiers)) is { } flags)
         {
@@ -222,6 +230,51 @@ internal sealed class TerminalView : Control
         }
 
         e.Handled = true;
+    }
+
+    /// <summary>The window this view drives when it has no title bar, or null when it has one.</summary>
+    private Window? Undecorated =>
+        TopLevel.GetTopLevel(this) is Window { WindowDecorations: not WindowDecorations.Full } window ? window : null;
+
+    /// <summary>A press that moves or resizes an undecorated window instead of reaching the client (<see cref="WindowChrome"/>).</summary>
+    private bool TryWindowGesture(PointerPressedEventArgs e, Point position)
+    {
+        if (Undecorated is not { } window)
+        {
+            return false;
+        }
+
+        if (window.WindowState == WindowState.Normal && WindowChrome.EdgeAt(position, Bounds.Size) is { } edge)
+        {
+            window.BeginResizeDrag(edge, e);
+            return true;
+        }
+
+        if (!WindowChrome.IsMoveHandle(_driver.Frame, Cell(position)))
+        {
+            return false;
+        }
+
+        if (e.ClickCount == 2)
+        {
+            window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        }
+        else
+        {
+            window.BeginMoveDrag(e);
+        }
+
+        return true;
+    }
+
+    private void UpdateEdgeCursor(Point position)
+    {
+        var edge = Undecorated is { WindowState: WindowState.Normal } && !_mouse.IsHeld ? WindowChrome.EdgeAt(position, Bounds.Size) : null;
+        if (edge != _cursorEdge)
+        {
+            _cursorEdge = edge;
+            Cursor = new Cursor(edge is { } e ? WindowChrome.CursorFor(e) : StandardCursorType.Ibeam);
+        }
     }
 
     private void RepeatPress()

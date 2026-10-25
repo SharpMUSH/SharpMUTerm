@@ -666,6 +666,11 @@ fallbacks) for inline images/maps.
     Private Use Area are looked up in a Nerd Font **by name** before the platform fallback, which on Linux can
     pick a face that draws PUA code points as hex boxes. No font is bundled: with no Nerd Font installed the
     chrome's icons are tofu.
+  - **The window has no title bar** (`WindowDecorations.BorderOnly`; `--title-bar` restores it). The client's
+    header is the top of the window. A drag on a *blank* header cell moves it and a double-click maximises
+    (`WindowChrome`); a press on header text is still the client's. Resizing is a 5-pixel band at each edge,
+    done by us with `BeginResizeDrag`, because a borderless window on Linux gets a border only from some window
+    managers. There is no close or minimise button: ⌃Q quits.
   - **`--render-png`** draws a demo frame through the real loop, driver and renderer with no window, and CI
     checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
   - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level

@@ -21,7 +21,8 @@ internal sealed record WindowOptions(
     string? ThemeName,
     string? RenderPng,
     int Columns,
-    int Rows)
+    int Rows,
+    bool TitleBar = false)
 {
     /// <summary>
     /// What the client is told about this "terminal": Kitty graphics and truecolour. Both are true by
@@ -36,6 +37,7 @@ internal sealed record WindowOptions(
         string? font = null, view = null, theme = null, png = null;
         var points = 14f;
         var demo = false;
+        var titleBar = false;
         var (columns, rows) = (120, 36);
         for (var i = 0; i < args.Length; i++)
         {
@@ -51,6 +53,7 @@ internal sealed record WindowOptions(
 
                     break;
                 case "--demo-config": demo = true; break;
+                case "--title-bar": titleBar = true; break;
                 case "--view": view = Next(); break;
                 case "--theme": theme = Next(); break;
                 case "--render-png": png = Next(); break;
@@ -65,7 +68,7 @@ internal sealed record WindowOptions(
             }
         }
 
-        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows);
+        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar);
     }
 
     /// <summary>Applies <c>--theme</c>, the way the snapshot does: name and inline theme both.</summary>
@@ -103,6 +106,8 @@ internal sealed record WindowOptions(
           --theme <name>       With --demo-config: Dark, Light or Solarized Dark.
           --render-png <file>  With --demo-config: draw one frame to a PNG with no window, and exit.
           --size <WxH>         Grid for --render-png, and the window's first size (default 120x36).
+          --title-bar          Keep the system title bar. Without it, drag the blank part of the top row
+                               to move the window, double-click it to maximise, and drag an edge to resize.
 
         Paste is Ctrl+Shift+V or Shift+Insert, as in a terminal; Ctrl+V reaches the client as a key.
         """;

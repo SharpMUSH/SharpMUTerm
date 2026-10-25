@@ -34,6 +34,10 @@ internal sealed class MainWindow : Window
         _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily);
 
         Title = "SharpMUTerm";
+
+        // No title bar: the client's own header is the top of the window, as it is the top of a terminal. The
+        // border stays, and the header's blank cells move the window (WindowChrome). --title-bar brings it back.
+        WindowDecorations = options.TitleBar ? WindowDecorations.Full : WindowDecorations.BorderOnly;
         Background = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
         Content = _view;
         var size = _view.SizeFor(options.Columns, options.Rows);

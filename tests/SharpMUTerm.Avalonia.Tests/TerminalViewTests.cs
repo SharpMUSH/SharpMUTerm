@@ -80,6 +80,32 @@ public class TerminalViewTests
         await Assert.That(colours.Outside).IsEqualTo(global::Avalonia.Media.Color.FromRgb(Back.Red, Back.Green, Back.Blue));
     }
 
+    [Test]
+    public async Task WithoutATitleBarTheHeadersBlankCellsAreTheWindowsNotTheClients()
+    {
+        var events = await Run(window =>
+        {
+            var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            driver.SetNarrowCell(2, 0, 'm', Color.Default, Color.Default);
+            driver.Flush();
+            var seen = new List<System.Drawing.Point>();
+            driver.MouseEvent += (_, _, cell) => seen.Add(cell);
+            var cell = view.SizeFor(1, 1);
+            foreach (var column in new[] { 6, 2 })
+            {
+                var at = new Point((cell.Width * column) + (cell.Width / 2), cell.Height / 2 + 6);
+                window.MouseDown(at, MouseButton.Left);
+                window.MouseUp(at, MouseButton.Left);
+            }
+
+            return seen;
+        }, WindowDecorations.BorderOnly);
+
+        // The blank cell took hold of the window; the press on text reached the client, press and release.
+        await Assert.That(events.All(c => c == new System.Drawing.Point(2, 0))).IsTrue();
+        await Assert.That(events.Count).IsEqualTo(2);
+    }
+
     private static global::Avalonia.Media.Color Pixel(global::Avalonia.Media.Imaging.WriteableBitmap bitmap, double x, double y)
     {
         using var buffer = bitmap.Lock();
@@ -95,12 +121,12 @@ public class TerminalViewTests
 
     private static readonly HeadlessUnitTestSession Session = HeadlessUnitTestSession.StartNew(typeof(TestApp));
 
-    private static Task<T> Run<T>(Func<Window, T> body) =>
+    private static Task<T> Run<T>(Func<Window, T> body, WindowDecorations decorations = WindowDecorations.Full) =>
         Session.Dispatch(() =>
         {
             var driver = new AvaloniaConsoleDriver(10, 4);
             var view = new TerminalView(driver, SKColors.White, Back, 16, null);
-            var window = new Window { Content = view, Tag = (view, driver) };
+            var window = new Window { Content = view, Tag = (view, driver), WindowDecorations = decorations };
             var size = view.SizeFor(10, 4);
             window.Width = size.Width;
             window.Height = size.Height;
