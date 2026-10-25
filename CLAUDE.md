@@ -32,7 +32,7 @@ fallbacks) for inline images/maps.
   control for a long time, on the grounds that a command line is not an editor; the maintainer chose to
   rebuild it on the editor once 2.7.8 was in, for undo/redo, word-aware wrapping and the editor's mouse
   handling. What the subclass adds is the part an editor does not do: ⏎ sends (the editor inserts on ⏎
-  and declines every modified ⏎, so ⌥⏎/⌃L are handed to it as a *bare* ⏎); it grows between `MinRows`
+  and declines every modified ⏎, so ⌥⏎ is handed to it as a *bare* ⏎); it grows between `MinRows`
   and `MaxRows` (`MeasureDOM` sets the editor's fixed viewport from the wrapped row count); the prompt is
   a gutter renderer, so every row indents past it; and the key table in front decides what the editor
   ever sees. Three things are load-bearing:
@@ -988,7 +988,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Deliberately left on Ctrl**, because the convention is worth more than the pattern: `⌃R`
     (readline's reverse history search), `⌃P` (command surface), `⌃Q` (quit — and safe here because
     `TerminalRawMode` clears `IXON`, so it is not XON), `⌃B` (tmux's prefix), `⌃O` (pane cycle),
-    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A` (select all)/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
+    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A` (select all)/`⌃E`/`⌃K`/`⌃U`. A sweep that moved everything
     would be as wrong as one that moved nothing.
   - **Freeze is `⌥F`, and `⌃F` is find** — the search surface, above. Freeze was on `⌃F` and left it for
     exactly the reason the keys above stay where they are: `⌃F` means *find* to everyone who has used a
@@ -1469,8 +1469,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   and hands the bar a synthetic Alt+Enter. It is safe because Escape in the command line is a genuine
   no-op and every other meaning of Escape is handled earlier in `HandleWindowKey`; and it is reliable
   because both halves land in *one* read, one parse and one dispatch batch (a terminal writes `ESC CR`
-  in a single write), so the observed gap is microseconds, not milliseconds. ⌃L is kept as the second
-  spelling. **Getting `Ctrl+⏎`/`Shift+⏎` properly needs the Kitty keyboard protocol, and that cannot
+  in a single write), so the observed gap is microseconds, not milliseconds. ⌃L was a second
+  spelling and is **gone** at the maintainer's request: the bar declines it, so it is free for a macro. **Getting `Ctrl+⏎`/`Shift+⏎` properly needs the Kitty keyboard protocol, and that cannot
   be done consumer-side** — see below.
 - **The input stack cannot be extended from here.** Enabling the Kitty keyboard protocol is trivial
   (`IConsoleDriver.WriteClipboardOsc52` is a de-facto public raw-escape emitter, and `Start`/`Stop`

@@ -380,10 +380,10 @@ internal static class Program
         usage.WriteLine("        sits (it says so when there is no split that way, or the pane paying is at its");
         usage.WriteLine("        smallest).");
 
-        // Alt+Enter and Ctrl+L only. Shift+Enter and Ctrl+Enter are deliberately not listed: no Unix
+        // Alt+Enter only. Shift+Enter and Ctrl+Enter are deliberately not listed: no Unix
         // terminal reports them distinctly through SharpConsoleUI's input parser (both arrive as a bare
         // Enter), and a help page naming a key that cannot fire is the defect this file is careful about.
-        usage.WriteLine("Typing: Alt+Enter or Ctrl+L inserts a newline · Home/Ctrl+E line ends · Ctrl+K/U kill ·");
+        usage.WriteLine("Typing: Alt+Enter inserts a newline · Home/Ctrl+E line ends · Ctrl+K/U kill ·");
         usage.WriteLine("        Alt+Left/Right by word · Ctrl+Z/Y undo and redo · Ctrl+R searches history. Up/Down");
         usage.WriteLine("        and Alt+Up/Down recall what was sent to the focused character; each character keeps");
         usage.WriteLine("        its own history.");

@@ -124,7 +124,7 @@ internal sealed class TerminalView : Control
         }
 
         // Alt+Enter maximises and restores, as it does in Windows Terminal. The client's own ⌥⏎ (a newline in the
-        // command line) is the cost; ⌃L is its other spelling and still arrives.
+        // command line) is the cost; a window reports ⌃⏎ and ⇧⏎, and either is the newline here.
         if (e.KeyModifiers == KeyModifiers.Alt && e.Key == Key.Enter)
         {
             ToggleMaximised();

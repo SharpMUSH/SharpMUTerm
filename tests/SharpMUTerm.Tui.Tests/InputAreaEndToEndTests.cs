@@ -241,7 +241,8 @@ public class InputAreaEndToEndTests
         var (app, _) = Demo();
 
         Type(app, "pose ");
-        app.SimulateKey(Chord(ConsoleKey.L, ctrl: true));
+        app.SimulateKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
+        app.SimulateKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
         Type(app, "smiles.");
 
         await Assert.That(app.ArmedInputText).IsEqualTo("pose \nsmiles.");

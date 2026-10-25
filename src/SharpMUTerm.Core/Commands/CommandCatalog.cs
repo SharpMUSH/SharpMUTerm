@@ -237,7 +237,7 @@ public static class CommandCatalog
         // Alt+⏎ is the modifier+Enter this host delivers — a terminal reports Shift+⏎ and Ctrl+⏎ as a
         // bare ⏎, so naming those would be advertising a key that cannot fire.
         items.Add(new CommandItem(
-            CommandGroup.Terminal, "Insert a newline in the command line", "term:newline", "Alt+⏎ · ⌃L"));
+            CommandGroup.Terminal, "Insert a newline in the command line", "term:newline", "Alt+⏎"));
 
         // LAYOUT — every entry carries the chord that runs it, because this surface is where the client
         // is discovered from and the ⌃B keymap is otherwise visible only while the prefix is armed.
