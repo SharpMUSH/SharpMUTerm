@@ -110,27 +110,9 @@ internal sealed class TerminalFocusWatcher : IDisposable
 
     /// <summary>
     /// Whether this watcher will do anything at all. False leaves the terminal untouched and leaves
-    /// every Tab alone, which is what <see cref="ShouldEnable"/> asks for off Unix.
+    /// every Tab alone, which is what <see cref="ClientHost.PlatformDecodesFocusReports"/> asks for off Unix.
     /// </summary>
     public bool IsEnabled => _enabled;
-
-    /// <summary>
-    /// Whether focus reporting can be used with <paramref name="driver"/> at all.
-    /// <para>
-    /// <b>Not on Windows.</b> The Windows branch of <c>NetConsoleDriver</c> is a
-    /// <c>Console.ReadKey</c> loop with its own ad-hoc sequence reassembly rather than
-    /// <c>AnsiInputParser</c>, so an <c>ESC [ I</c> arriving there would be reassembled into something
-    /// else entirely. The feature is inert on Windows, deliberately, rather than wrong.
-    /// </para>
-    /// <para>
-    /// <b>Not headless.</b> A snapshot or a test has no terminal to report focus and no reader to have
-    /// left one. <c>WriteClipboardOsc52</c> is a default interface method with an empty body, so the
-    /// emission would already be a no-op there — but the <em>Tab interpretation</em> would not be, and a
-    /// headless harness pressing Tab must get a Tab.
-    /// </para>
-    /// </summary>
-    public static bool ShouldEnable(IConsoleDriver driver) =>
-        !OperatingSystem.IsWindows() && driver is not HeadlessConsoleDriver;
 
     /// <summary>Asks the terminal to report focus and starts listening for input. Idempotent.</summary>
     public void Start()

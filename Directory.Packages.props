@@ -55,6 +55,9 @@
     <!-- PNG encoder for tests that need real image bytes; the sibling of the decoder SharpConsoleUI uses. -->
     <PackageVersion Include="StbImageWriteSharp" Version="1.16.7" />
 
+    <!-- Keeps host decisions in Tui/Hosting: see src/SharpMUTerm.Tui/BannedSymbols.txt. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
+
     <!-- Test stack: TUnit (source-generated, runs on Microsoft.Testing.Platform). -->
     <PackageVersion Include="TUnit" Version="1.61.38" />
   </ItemGroup>

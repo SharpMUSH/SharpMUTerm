@@ -1,0 +1,4 @@
+# The host layer: the one place in this project that may ask which driver it has, which platform it is on,
+# or what the environment says. Everywhere else those are banned (../BannedSymbols.txt).
+[*.cs]
+dotnet_diagnostic.RS0030.severity = none

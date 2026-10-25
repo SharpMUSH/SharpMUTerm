@@ -37,6 +37,9 @@ internal static class WorkspacePalette
     /// </summary>
     private const double RuleLift = 0.45;
 
+    /// <summary>How far a hovered divider leans from the hairline toward the prompt colour.</summary>
+    private const double RuleHoverLean = 0.55;
+
     /// <summary>
     /// How far a <em>focused</em> plane is lifted off an unfocused one — the mean of
     /// <c>CursorBg ÷ EditBg</c>, the step the settings screens take to say "the keyboard is here".
@@ -262,6 +265,12 @@ internal static class WorkspacePalette
 
     /// <summary>The one-cell hairline a split draws between two panes, and beside the rail.</summary>
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);
+
+    /// <summary>
+    /// A divider under the pointer, or being dragged: the hairline leaned toward the prompt colour, the anchor
+    /// the armed command line leans to. Enough to say "this moves" without reading as a second focus cue.
+    /// </summary>
+    internal static Rgb RuleHover(Theme theme) => Mix(Rule(theme), theme.Prompt, RuleHoverLean);
 
     /// <summary>
     /// The chrome the header ribbon's character segment sits on — the chrome band lifted toward its own

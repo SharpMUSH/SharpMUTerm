@@ -38,7 +38,7 @@ namespace SharpMUTerm.Tui;
 /// tabs — so spawn routing and unread badges reuse the tested Core logic. Splits (via SharpConsoleUI
 /// splitters) layer on this later. Background session events are marshalled onto the UI thread.
 /// </summary>
-internal sealed class SharpMUTermApp : IAsyncDisposable
+internal sealed partial class SharpMUTermApp : IAsyncDisposable
 {
     internal const string MainWindowId = "main";
     private const string WebWindowId = "web";
@@ -356,6 +356,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     private WorldSession? _active;
     private string? _demoActiveKey;
     private readonly bool _headless;
+
+    /// <summary>Where this client is running: driver, capabilities, clipboard, keys. See <see cref="ClientHost"/>.</summary>
+    internal ClientHost Host { get; }
     private bool _railCollapsed;
     private bool _prefixArmed;
 
@@ -498,6 +501,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly Action<string>? _clipboard;
 
+    /// <summary>Where the pointer's cues go (<see cref="IPointerPresenter"/>); null for a host that shows none.</summary>
+    private readonly IPointerPresenter? _pointer;
+
     /// <summary>
     /// The directory session transcripts are written under, or null for an app that owns no log
     /// directory — which is the default, and is what every test and every snapshot gets. See the
@@ -616,11 +622,39 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         bool? focusReporting = null,
         Action<string>? openUrl = null,
         Action<string>? clipboard = null)
+        : this(
+            config,
+            ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
+            time,
+            diagnostics,
+            save,
+            logRoot,
+            restore,
+            mssp)
     {
+    }
+
+    /// <summary>
+    /// The client, run in <paramref name="host"/>. Both live launchers and the snapshot come through here; the
+    /// loose-parameter overload above is the test suites' shorthand for a harness host and builds one.
+    /// </summary>
+    public SharpMUTermApp(
+        AppConfiguration config,
+        ClientHost host,
+        TimeProvider? time = null,
+        ClientDiagnostics? diagnostics = null,
+        Action<AppConfiguration>? save = null,
+        string? logRoot = null,
+        RestoreLog? restore = null,
+        MsspCache? mssp = null)
+    {
+        var capabilities = host.Capabilities;
+        Host = host;
         _config = config;
         _save = save;
-        _openUrl = openUrl;
-        _clipboard = clipboard;
+        _openUrl = host.OpenUrl;
+        _clipboard = host.Clipboard;
+        _pointer = host.Pointer;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
         _inlineImages = new InlineImageHost(
@@ -630,7 +664,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _capabilities = capabilities;
         if (capabilities.SupportsSixelOverlay)
         {
-            var (cellWidth, cellHeight) = SixelCellSize(Environment.GetEnvironmentVariable(SixelCellVariable));
+            var (cellWidth, cellHeight) = host.SixelCell;
             _sixel = new SixelOverlay(cellWidth, cellHeight);
             _inlineImages.HalfBlockDrawn = _sixel.Register;
         }
@@ -662,7 +696,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // otherwise start with a single main window. Real startup and the demo share this path.
         _workspace = ResumeOrNew(config);
 
-        var headless = driver is HeadlessConsoleDriver;
+        var headless = host.RunsInline;
         _headless = headless;
 
         // No desktop panels, in any driver. The framework's defaults are a top bar carrying the
@@ -687,7 +721,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             // (Smart) rewrites a whole row once enough of it changed — so a busy row next to a picture
             // erased it and the overlay drew it back, every frame. Changed cells only, then.
             DirtyTrackingMode: _sixel is null ? DirtyTrackingMode.Smart : DirtyTrackingMode.Cell);
-        _system = new ConsoleWindowSystem(driver ?? new NetConsoleDriver(RenderMode.Buffer), options);
+        _system = new ConsoleWindowSystem(host.Driver, options);
 
         // Built here so the app always has one to ask, and inert unless something turns it on. Nothing
         // reaches the terminal until Run() starts it, which is the same shape as the save/logRoot/restore
@@ -696,7 +730,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _focus = new TerminalFocusWatcher(
             _system.ConsoleDriver,
             _time,
-            focusReporting ?? TerminalFocusWatcher.ShouldEnable(_system.ConsoleDriver));
+            host.FocusReporting);
         // The watcher listens to the driver, which raises input on its own reader thread; everything past
         // these two handlers is UI-thread state. OnUiThread runs inline when it already is one.
         _focus.Input += at => OnUiThread(() => NoteReaderInput(at));
@@ -854,6 +888,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             SyncTabStripWidths();
             SyncTransparentColours();
             DrawSixelOverlay(buffer);
+            PublishScrollbars();
         };
         if (_sixel is not null)
         {
@@ -1801,11 +1836,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>Gives the headless driver a fresh buffer and marks everything dirty, so the next render is whole.</summary>
     private void ReArmWholeFrame()
     {
-        if (_system.ConsoleDriver is HeadlessConsoleDriver headless)
-        {
-            headless.Initialize(_system);
-        }
-
+        HeadlessDriverAccess.Rearm(_system.ConsoleDriver, _system);
         _system.ForceFullRepaint();
     }
 
@@ -1824,11 +1855,6 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void SimulateSnapshotDrag()
     {
-        if (_system.ConsoleDriver is not HeadlessConsoleDriver driver)
-        {
-            return;
-        }
-
         var panes = _workspace.Layout.Panes;
         var surface = PaneSnapshot();
         if (panes.Count < 2 ||
@@ -1841,14 +1867,12 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         var origin = new System.Drawing.Point(source.X + 2, source.Y);
         var drop = new System.Drawing.Point(target.X + 1, target.Y + (target.Height / 2));
 
-        driver.SimulateMouseEvent(new List<MouseFlags> { MouseFlags.Button1Pressed }, origin);
-        driver.SimulateMouseEvent(new List<MouseFlags> { MouseFlags.Button1Pressed }, origin); // auto-repeat
-
-        driver.SimulateMouseEvent(
-            new List<MouseFlags> { MouseFlags.Button1Pressed, MouseFlags.Button1Dragged, MouseFlags.ReportMousePosition },
-            drop);
-
-        driver.SimulateMouseEvent(new List<MouseFlags> { MouseFlags.Button1Pressed }, drop); // and another
+        HeadlessDriverAccess.TrySimulateMouse(
+            _system.ConsoleDriver,
+            ([MouseFlags.Button1Pressed], origin),
+            ([MouseFlags.Button1Pressed], origin), // auto-repeat
+            ([MouseFlags.Button1Pressed, MouseFlags.Button1Dragged, MouseFlags.ReportMousePosition], drop),
+            ([MouseFlags.Button1Pressed], drop)); // and another
     }
 
     /// <summary>
@@ -4274,7 +4298,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Drives the return the terminal's focus report would have driven. The seam a headless test uses:
-    /// <see cref="TerminalFocusWatcher.ShouldEnable"/> is false for a headless driver by design, so the
+    /// <see cref="ClientHost.Headless"/> reports no focus by design, so the
     /// rule that recognises a return is tested against the watcher directly and what the client *does*
     /// with one is tested here.
     /// <para>
@@ -7406,7 +7430,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             Frozen: _workspace.Layout.FocusedPane.Frozen,
             TimestampsOn: ShowTimestamps,
             SecondInputOn: _secondBars.IsShown(ActiveWindowId()),
-            ScrolledBack: ScrollTarget() is { CanScrollDown: true });
+            ScrolledBack: ScrollTarget() is { CanScrollDown: true },
+            NewlineChord: Host.Keys.Newline.Glyph);
         return CommandCatalog.Build(
             _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
@@ -8877,6 +8902,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
 
         _paneSurfaces.Clear();
+        _dividers.Clear();
 
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
@@ -8958,14 +8984,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// trick; the settings screens found it first.) It matters more now that the panes carry a surface:
     /// a hairline is what keeps two adjacent surfaces from reading as one.
     /// </summary>
-    private IWindowControl Divider()
+    private HorizontalGridControl Divider(bool lit = false)
     {
         var rule = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Flex(1).Add(new MarkupControl(new List<string>())))
             .Build();
-        rule.BackgroundColor = ToColor(WorkspacePalette.Rule(_theme));
+        rule.BackgroundColor = ToColor(lit ? WorkspacePalette.RuleHover(_theme) : WorkspacePalette.Rule(_theme));
         return rule;
     }
 
@@ -9434,7 +9460,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 grid.Place(children[i], 0, i * 2, 1, 1);
                 if (i < children.Count - 1)
                 {
-                    grid.Place(Divider(), 0, i * 2 + 1, 1, 1);
+                    grid.Place(PaneDivider(split, i), 0, i * 2 + 1, 1, 1);
                 }
             }
         }
@@ -9446,7 +9472,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 grid.Place(children[i], i * 2, 0, 1, 1);
                 if (i < children.Count - 1)
                 {
-                    grid.Place(Divider(), i * 2 + 1, 0, 1, 1);
+                    grid.Place(PaneDivider(split, i), i * 2 + 1, 0, 1, 1);
                 }
             }
         }
@@ -9921,8 +9947,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             Console.SetOut(real);
         }
 
-        var driver = (HeadlessConsoleDriver)_system.ConsoleDriver;
-        return (driver.CursorVisible, driver.CursorPosition.X, driver.CursorPosition.Y);
+        return HeadlessDriverAccess.Caret(_system.ConsoleDriver);
     }
 
     /// <summary>What the command line ⏎ sends from is holding — the armed bar's text.</summary>
@@ -10256,6 +10281,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>What a command line has recorded, oldest first — the list the ⌃R surface reads.</summary>
     internal IReadOnlyList<string> HistoryEntries(InputBar bar) => HistoryFor(bar).Entries;
+
+    /// <summary>Ends a running loop with no confirmation. For a host that ran the loop to draw a frame, and for tests.</summary>
+    internal void EndLoop() => OnUiThread(() => _system.RequestExit(0));
 
     /// <summary>Whether a confirmed quit has ended the loop — what <c>RequestExit</c> did, observably.</summary>
     internal bool ExitRequested => _exiting;
@@ -10782,6 +10810,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnDriverMouseEvent(object sender, List<MouseFlags> flags, System.Drawing.Point point)
     {
+        // Hover, divider drags and the right-click menu read arranged layout, so they go to the client's
+        // thread; the copy is because the driver may reuse its list.
+        var frame = flags.ToList();
+        OnUiThread(() => OnPointerFrame(frame, point));
+
         // Overlays own the whole screen while they're up; a drag underneath them would target panes
         // the user can't even see.
         if (AnyOverlayOpen || _moveMode)
@@ -11063,7 +11096,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// Runs UI work on the UI thread. Headless (snapshot and test) runs have no main loop to drain the
     /// queue, and are single-threaded anyway, so they run it inline.
     /// </summary>
-    private void OnUiThread(Action action)
+    internal void OnUiThread(Action action)
     {
         if (_headless || _system.IsOnUIThread)
         {

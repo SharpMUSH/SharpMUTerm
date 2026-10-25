@@ -675,8 +675,8 @@ fallbacks) for inline images/maps.
     *synthesised* (`MouseMapper`) in `UnixStdinReader`'s shapes, including the 100 ms press repeat.
   - **The client loop runs on its own thread**; `ConsoleWindowSystem.Run` blocks, and Avalonia must keep the
     main one. They meet only in the driver. Closing the window sends ⌃Q, so it goes through `QuitOverlay`.
-  - **`Program.RunLive` is the one composition root for both hosts** (`LiveHost` says what differs): same
-    files, same save on exit. `--demo-config` in the window builds the app the snapshot way, saving nothing.
+  - **`Program.RunLive` is the one composition root for both hosts** (`ClientHost` says what differs; see
+    *One client, several hosts* below): same files, same save on exit. `--demo-config` in the window builds the app the snapshot way, saving nothing.
     Focus reporting is off: its focus-in is a disguised Tab, and a window would only misread real Tabs.
   - **A snapshot scene on a non-headless driver does not wait for its pictures** (`AwaitSnapshotPictures`):
     the Kitty transmit is UI-thread work, queued until the loop runs, so waiting before `Run` deadlocked.
@@ -692,8 +692,8 @@ fallbacks) for inline images/maps.
     managers. There is no close or minimise button: ⌃Q quits. **⌥⏎ maximises and restores** (Windows
     Terminal's chord), which takes the client's ⌥⏎ newline in this host. The newline is ⌃⏎ or ⇧⏎ here: a
     window reports both modifiers, so they reach `InputBarControl`'s existing modified-⏎ arm with no change on
-    the client side (`NewlineKeyTests`). `AdvertisedKeyHonestyTests` still holds for the terminal, where they
-    arrive as a bare ⏎; the client's own surfaces do not know which host they are in, so they keep naming ⌥⏎.
+    the client side (`NewlineKeyTests`). The client's surfaces name each host's own newline: ⌃P and `--help`
+    read `ClientHost.Keys`, so the window's say ⌃⏎ and the terminal's say ⌥⏎ (`HostParityTests`).
   - **stdin is detached at start** (`Console.SetIn(TextReader.Null)`, as `--snapshot` does). A window has no
     stdin, and the framework reads a redirected one behind a modal "Reading input" dialog that stays up while the
     pipe is open. **On Windows `--help`/`--render-png` borrow the parent console** (`AttachConsole`) when output is
@@ -712,6 +712,81 @@ fallbacks) for inline images/maps.
     checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
   - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level
     selection only (it is the framework's), no bundled font, never run on Windows or macOS by a person.
+- **The client says what is under the pointer; a host only shows it** (`Tui/Pointer/`: `TargetAt`,
+  `PointerMenu`, `IPointerPresenter`; `ClientHost.Pointer`). Every mouse frame is also marshalled to
+  `OnPointerFrame` on the client's thread, which works out the target (divider, rail row, tab, link, output,
+  command line) with its pointer shape and tooltip, and hands the host a hover, a right-click menu or the
+  panes' scroll positions. Nothing in it consumes a frame: the framework and `PaneDragTracker` see every
+  frame as before. Decisions not to relitigate:
+  - **The divider cues are cells, so both hosts have them.** A pane divider recolours to
+    `WorkspacePalette.RuleHover` under the pointer and while dragged; a drag moves the border to the pointer
+    (`PaneResize.DragBorder`, which changes only the two children either side), a double-click evens the
+    split (`PaneResize.Even`). A recolour costs no cell and moves no pane rectangle — the NAWS rule. While a
+    drag is held the 100 ms bare-press repeat is read as "the pointer is here".
+  - **The menu is the ⌃P catalog's own entries** (`AddCommands`), so it cannot offer an action the keyboard
+    lacks, and each says its key (`ShortHint`). A right-click on a link or output focuses that pane first,
+    and on a tab activates it, so the entries act on what was clicked.
+  - **Link and tab hit tests read the framework's private paint geometry** (`FrameworkHitTests`:
+    `MarkupControl._cachedRowLinks`/`_cachedRowPaintX`/`_cachedOriginY`, `TabControl.GetTabIndexAtX`).
+    A rename costs the hover and nothing else; `PointerTests.TheHitTestsTheHoverNeedsAreStillInTheFramework`
+    fails on the release that does it.
+  - **The window** (`WindowPointer` on the driver; `TerminalView`): the cursor from the target's shape (a
+    window edge first), a tooltip after 500 ms, a faint plate over a link, tab or rail row, a native
+    `ContextMenu` in the client's theme variant, and **overlay scrollbars** drawn over each pane's right
+    edge — never in a column of it, which would make the pane narrower than in a terminal and change what
+    NAWS reports. A press on a bar is the window's and never reaches the client. A right press is sent as a
+    whole click, because the menu takes the pointer and the release would never arrive.
+  - **The terminal** (`TerminalPointer`): pointer shapes over OSC 22 on kitty, Ghostty and foot, through the
+    same raw write `?1004` uses. No tooltips, menus or scrollbars: nothing in a terminal can draw over cells
+    without taking them.
+  - Screenshots of the window's cues come from a real window under Xvfb, driven with XTest; `--render-png`
+    has no pointer and cannot show them.
+
+## One client, several hosts — and how they are kept the same
+
+The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the headless snapshot all run the
+one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
+(`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
+(`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
+the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+`WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
+
+- **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
+  every host states its value, null included. A new fact that differs between hosts goes there — never as an
+  optional constructor parameter with a terminal default, which is how the window inherited a newline chord
+  it does not have. `ClientHostContractTests.EveryMemberOfTheHostContractIsRequired` pins it.
+- **The app may not ask where it is running.** `Microsoft.CodeAnalysis.BannedApiAnalyzers` makes it a build
+  error in `SharpMUTerm.Tui` to name `NetConsoleDriver`/`HeadlessConsoleDriver`, read an environment
+  variable or ask `OperatingSystem`/`RuntimeInformation` which platform it is
+  (`src/SharpMUTerm.Tui/BannedSymbols.txt`, enabled by that folder's `.editorconfig`). `Hosting/` has its own
+  `.editorconfig` turning it off; that folder is where such a question is allowed, and the answer goes onto
+  `ClientHost`. Don't use `WarningsAsErrors` for it: that ignores the folder's `severity = none`.
+- **Every snapshot view is drawn through both drivers and compared cell for cell**, glyph and background
+  (`HostParityTests.EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal`, Avalonia suite), with the same
+  capabilities and keys, so a difference can only be the driver. The list is `SnapshotViews.All`, and
+  `EveryViewTheSnapshotKnowsIsInTheParityList` reads `RenderSnapshot`'s source and fails when it learns a
+  view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both. A second
+  pass (`EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning`) draws each view with the window's loop
+  running, because inline is not how a person runs it: a modal opened *before* `Run` (the `--view` demo path)
+  came out as an empty frame — ⌃P and F1 blank — while the inline pass was green. The scene is now queued for
+  the loop's first tick (`ClientLaunch.Demo`). That pass skips the bottom row (a live client has been through
+  startup) and the two timestamp views (a loop reads the clock).
+- **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
+  `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
+  `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer
+  (`ClientUsage`) with the client's options in one table (`ClientOptions`); a launcher adds only its own
+  sections. An option that takes a value is listed in `ClientOptions.TakingValues`, so its value is never read
+  as the host (`--name Corvid host` used to dial Corvid).
+
+**`sharpmuterm --window` hands off to `sharpmuterm-window`** (`WindowHandoff`, in `Hosting/`): it starts the
+window exe with every other argument unchanged and exits with 0, or 1 and a message naming where it looked
+(beside the running program first, then `PATH`). There is no in-process switch: the terminal does not load
+Avalonia. The window ignores the flag. **`release.yml` publishes only the terminal**, so a released build finds
+no window exe until packaging ships both.
+
+**Not covered yet**: F4's verdicts (`MacroKeys.Verdict`) describe the terminal only. In the window ⌃digit
+does arrive (F4 says it cannot), and ⌥⏎ never reaches a macro. Making it per host means threading `HostKeys`
+through `MacroKeys`, `ScreenField` and the keypad renderer.
 
 ## Building and testing
 

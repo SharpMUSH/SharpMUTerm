@@ -3,6 +3,7 @@ using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Graphics;
+using SharpMUTerm.Tui;
 using SkiaSharp;
 
 namespace SharpMUTerm.Avalonia;
@@ -54,6 +55,7 @@ internal sealed record WindowOptions(
                     break;
                 case "--demo-config": demo = true; break;
                 case "--title-bar": titleBar = true; break;
+                case WindowHandoff.Flag: break; // already in a window
                 case "--view": view = Next(); break;
                 case "--theme": theme = Next(); break;
                 case "--render-png": png = Next(); break;
@@ -93,23 +95,39 @@ internal sealed record WindowOptions(
         return (new SKColor(fg.R, fg.G, fg.B), new SKColor(bg.R, bg.G, bg.B));
     }
 
-    public const string Usage = """
-        sharpmuterm-window — SharpMUTerm in a desktop window.
+    /// <summary>
+    /// The window's help page: the client's own (<see cref="ClientUsage"/>) — its options, files and keys, with
+    /// this host's keys — plus the switches above.
+    /// </summary>
+    public static string Usage
+    {
+        get
+        {
+            var text = new StringWriter();
+            ClientUsage.Write(text, Launcher, WindowHost.Keys);
+            return text.ToString();
+        }
+    }
 
-        Usage: sharpmuterm-window [host] [port] [client options] [window options]
+    internal static UsageLauncher Launcher { get; } = new(
+        "sharpmuterm-window — SharpMUTerm in a desktop window.",
+        "sharpmuterm-window",
+        [
+            ("Window:",
+            [
+                new("--font <family>", "Monospace font (default: the first installed Nerd Font, then Cascadia, Consolas…)."),
+                new("--font-size <pt>", "Font size (default 14)."),
+                new("--size <WxH>", "The window's first size in cells, and the grid for --render-png (default 120x36)."),
+                new("--title-bar", "Keep the system title bar. Without it, drag the blank part of the top row",
+                    "to move the window, double-click it to maximise, and drag an edge to resize."),
+            ]),
+            ("Demo:",
+            [
+                new("--demo-config", "Run the built-in demo worlds instead of your own; saves nothing."),
+                new("--view <name>", "With --demo-config: open on one of the snapshot views (e.g. mxp-image)."),
+                new("--theme <name>", "With --demo-config: Dark, Light or Solarized Dark."),
+                new("--render-png <file>", "With --demo-config: draw one frame to a PNG with no window, and exit."),
+            ]),
+        ]);
 
-        Takes every option the terminal client takes, plus:
-          --font <family>      Monospace font (default: the first installed Nerd Font, then Cascadia, Consolas…).
-          --font-size <pt>     Font size (default 14).
-          --demo-config        Run the built-in demo worlds instead of your own; saves nothing.
-          --view <name>        With --demo-config: open on one of the snapshot views (e.g. mxp-image).
-          --theme <name>       With --demo-config: Dark, Light or Solarized Dark.
-          --render-png <file>  With --demo-config: draw one frame to a PNG with no window, and exit.
-          --size <WxH>         Grid for --render-png, and the window's first size (default 120x36).
-          --title-bar          Keep the system title bar. Without it, drag the blank part of the top row
-                               to move the window, double-click it to maximise, and drag an edge to resize.
-
-        Alt+Enter maximises and restores. A newline in the command line is Ctrl+Enter or Shift+Enter.
-        Paste is Ctrl+Shift+V or Shift+Insert, as in a terminal; Ctrl+V reaches the client as a key.
-        """;
 }

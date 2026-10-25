@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using SharpMUTerm.Core.Configuration;
 
@@ -38,6 +39,14 @@ internal sealed class MainWindow : Window
         _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily);
 
         Title = "SharpMUTerm";
+
+        // The window's own pop-ups (tooltips, the right-click menu) follow the client's theme: a light menu
+        // over a dark client reads as somebody else's.
+        if (Application.Current is { } app)
+        {
+            var luma = (0.2126 * background.Red) + (0.7152 * background.Green) + (0.0722 * background.Blue);
+            app.RequestedThemeVariant = luma < 128 ? ThemeVariant.Dark : ThemeVariant.Light;
+        }
 
         // No title bar: the client's own header is the top of the window, as it is the top of a terminal. The
         // border stays, and the header's blank cells move the window (WindowChrome). --title-bar brings it back.
