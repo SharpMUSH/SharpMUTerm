@@ -7,7 +7,7 @@ and a release fails without its section. The procedure is in [`docs/RELEASING.md
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-10-25
+## [0.1.2] - 2026-10-25
 
 ### Added
 

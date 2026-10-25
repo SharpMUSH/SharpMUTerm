@@ -31,11 +31,20 @@ jobs:
       # A tag builds exactly its own version; a manual run builds what MinVer makes of the commit, e.g.
       # 0.2.1-alpha.0.5. The installer's file version has to be four numbers, so a prerelease suffix is
       # dropped there.
+      # Releases are immutable once published, so a release that already exists for this tag (one made in the
+      # GitHub UI, say) can never receive the packages. Refuse it here rather than after the build.
       - name: Version
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             python3 tools/changelog.py release-check "$GITHUB_REF_NAME"
+            if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft 2>/dev/null)" = "false" ]; then
+              echo "::error::$GITHUB_REF_NAME is already published and immutable, so nothing can be attached to it. Release the next version; push only the tag and let this workflow create the release."
+              exit 1
+            fi
             version="${GITHUB_REF_NAME#v}"
           else
             python3 tools/changelog.py check
@@ -142,10 +151,23 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Create release and upload assets
+      # Assets can only be attached before a release is published, so the workflow makes a draft and fills it.
+      - name: Create draft release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           name: SharpMUTerm ${{ needs.version.outputs.version }}
           body_path: release-notes.md
           prerelease: ${{ contains(needs.version.outputs.version, '-') }}
+          draft: true
           files: artifacts/*
+          fail_on_unmatched_files: true
+
+      # Publishing is a person's step, on the Releases page: once published, the release can no longer change.
+      - name: Check the draft carries all four packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          count=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets | length')
+          test "$count" -eq 4 || { echo "::error::the draft has $count packages, expected 4"; exit 1; }
+          echo "Draft ready: $(gh release view "$GITHUB_REF_NAME" --json url -q .url). Review it and press Publish."

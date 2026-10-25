@@ -33,13 +33,21 @@ minor bump and is named in the changelog. A prerelease (`0.2.0-beta.1`) is publi
    git tag vX.Y.Z <merge-commit>
    git push origin vX.Y.Z
    ```
-3. **Release** builds the terminal and the window for Linux and Windows at exactly `X.Y.Z`, creates the GitHub
-   release `SharpMUTerm X.Y.Z` with the changelog section as its notes, and attaches the `.tar.gz`, the AppImage,
-   the `.zip` and the installer. A tag with a prerelease suffix (`v0.2.0-beta.1`) becomes a GitHub prerelease.
+3. **Release** builds the terminal and the window for Linux and Windows at exactly `X.Y.Z`. It creates a **draft**
+   GitHub release, `SharpMUTerm X.Y.Z`, with the changelog section as its notes, and attaches the `.tar.gz`, the
+   AppImage, the `.zip` and the installer. A tag with a prerelease suffix (`v0.2.0-beta.1`) is drafted as a
+   prerelease.
+4. Open the draft on the Releases page, check it, and press **Publish release**. The release is immutable from
+   that point on.
 
 A tag is never moved or reused, because the repository has immutable releases on. If a tag fails the check, it
-builds nothing: fix the changelog, rename its section to the next patch version, and tag that instead. `v0.1.0`
-is one of these. It was refused, and the first release is 0.1.1.
+builds nothing: fix the changelog, rename its section to the next patch version, and tag that instead.
+
+**Don't create the release yourself; publish the draft the workflow makes.** A published release is immutable, so
+its packages can't be attached afterwards, and GitHub only attaches files to a draft. A tag that already has a
+published release is refused before the build. Neither `v0.1.0` (no
+changelog section) nor `v0.1.1` (released from the UI with no packages) shipped packages, so the first release
+with packages is 0.1.2.
 
 Running **Release** by hand (workflow dispatch) builds whatever MinVer makes of that commit and keeps the
 packages as workflow artifacts; it publishes nothing.
