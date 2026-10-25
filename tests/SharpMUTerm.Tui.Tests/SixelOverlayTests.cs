@@ -11,7 +11,7 @@ namespace SharpMUTerm.Tui.Tests;
 
 /// <summary>
 /// The Sixel overlay: a picture's half-block rows found on the frame by their colours, and drawn again as
-/// Sixel over them once — and again only when the rows under it change, move, or were covered.
+/// Sixel over them once — and again only when it moves, was written over, or was covered.
 /// </summary>
 [NotInParallel]
 public class SixelOverlayTests
@@ -79,7 +79,25 @@ public class SixelOverlayTests
     }
 
     [Test]
-    public async Task AChangeOnARowThePictureSitsOnSendsItAgain()
+    public async Task AChangeBesideThePictureDoesNotSendItAgain()
+    {
+        // The app has the driver write changed cells only, so a cell changing beside the picture leaves
+        // the picture's cells, and the Sixel over them, alone. Re-sending on every such change was the
+        // reported flicker.
+        var overlay = new SixelOverlay();
+        var cells = Cells();
+        overlay.Register(cells, cells);
+        var buffer = new CharacterBuffer(20, 10);
+        Paint(buffer, cells, 5, 3);
+        overlay.OnFrame(buffer, 0, 0, 10);
+
+        buffer.SetNarrowCell(15, 4, 'x', Color.White, Color.Black);
+
+        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)).IsNull();
+    }
+
+    [Test]
+    public async Task APictureThatMovedOrWasHiddenForAFrameIsSentAgain()
     {
         var overlay = new SixelOverlay();
         var cells = Cells();
@@ -88,12 +106,38 @@ public class SixelOverlayTests
         Paint(buffer, cells, 5, 3);
         overlay.OnFrame(buffer, 0, 0, 10);
 
-        buffer.SetNarrowCell(0, 9, 'x', Color.White, Color.Black);
-        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)).IsNull().Because("a row it does not cover");
+        buffer.Clear(Color.Black);
+        Paint(buffer, cells, 5, 2);
+        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)!).Contains(Esc + "[3;6H").Because("scrolled up a row");
 
-        buffer.SetNarrowCell(15, 4, 'x', Color.White, Color.Black);
-        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)).IsNotNull()
-            .Because("the driver may rewrite a row's whole dirty span, across the picture");
+        buffer.SetNarrowCell(6, 2, 'x', Color.White, Color.Black);
+        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)!).Contains(Esc + "[4;6H")
+            .Because("its first row was written over, so only the second is drawn");
+        Paint(buffer, cells, 5, 2);
+        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)!).Contains(Esc + "[3;6H")
+            .Because("the cells written over it erased the Sixel there");
+    }
+
+    [Test]
+    public async Task APictureWiderThanFiveHundredPixelsIsSentAtItsFullWidth()
+    {
+        // PixelBuffer.Resize clamps each side to 500 pixels; a 60-column picture at ten pixels a column
+        // came out 500 wide, and Windows Terminal drew it in 50 columns.
+        var overlay = new SixelOverlay();
+        var cells = new PixelBuffer(60, 4);
+        for (var x = 0; x < 60; x++)
+        {
+            for (var y = 0; y < 4; y++)
+            {
+                cells.SetPixel(x, y, new ImagePixel((byte)(x * 4), (byte)(y * 60), 7));
+            }
+        }
+
+        overlay.Register(cells, cells);
+        var buffer = new CharacterBuffer(80, 10);
+        Paint(buffer, cells, 2, 2);
+
+        await Assert.That(overlay.OnFrame(buffer, 0, 0, 10)!).Contains("\"1;1;600;40");
     }
 
     [Test]
@@ -188,5 +232,22 @@ public class SixelOverlayTests
         var column = grid[row].IndexOf('▀');
         await Assert.That(app.LastSixelOverlay).IsNotNull();
         await Assert.That(app.LastSixelOverlay!).StartsWith($"{Esc}7{Esc}[{row + 1};{column + 1}H{Esc}P0;1;0q\"1;1;80;80");
+    }
+
+    [Test]
+    public async Task WithTheOverlayTheDriverWritesChangedCellsOnly()
+    {
+        Console.SetIn(TextReader.Null);
+        var overlay = new TerminalCapabilities(
+            GraphicsProtocol.Sixel, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: true,
+            supportsSixelOverlay: true);
+        await using var withOverlay = new SharpMUTermApp(new AppConfiguration(), overlay, new HeadlessConsoleDriver(80, 24));
+        await using var without = new SharpMUTermApp(
+            new AppConfiguration(),
+            new TerminalCapabilities(GraphicsProtocol.HalfBlock, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false),
+            new HeadlessConsoleDriver(80, 24));
+
+        await Assert.That(withOverlay.DirtyTracking).IsEqualTo(SharpConsoleUI.Configuration.DirtyTrackingMode.Cell);
+        await Assert.That(without.DirtyTracking).IsEqualTo(SharpConsoleUI.Configuration.DirtyTrackingMode.Smart);
     }
 }

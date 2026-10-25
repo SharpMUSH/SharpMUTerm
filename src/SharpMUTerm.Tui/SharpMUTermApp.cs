@@ -682,7 +682,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ShowTopPanel: false,
             ShowBottomPanel: false,
             EnableAnimations: !headless,
-            ExitKey: null);
+            ExitKey: null,
+            // The Sixel overlay is erased wherever the terminal writes a cell under it, and the default
+            // (Smart) rewrites a whole row once enough of it changed — so a busy row next to a picture
+            // erased it and the overlay drew it back, every frame. Changed cells only, then.
+            DirtyTrackingMode: _sixel is null ? DirtyTrackingMode.Smart : DirtyTrackingMode.Cell);
         _system = new ConsoleWindowSystem(driver ?? new NetConsoleDriver(RenderMode.Buffer), options);
 
         // Built here so the app always has one to ask, and inert unless something turns it on. Nothing
@@ -9122,11 +9126,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>The overlay's output for the last frame that had any — for tests.</summary>
     internal string? LastSixelOverlay { get; private set; }
 
+    /// <summary>How the driver decides which cells to write; <c>Cell</c> while the Sixel overlay is on.</summary>
+    internal DirtyTrackingMode DirtyTracking => _system.Options.DirtyTrackingMode;
+
     /// <summary>
     /// Finds the pictures on the frame just painted and, once it is on the terminal, draws them again as
-    /// Sixel over their half-blocks (<see cref="SixelOverlay"/>). The write is queued, not made here:
+    /// Sixel over their half-blocks (<see cref="SixelOverlay"/>). The Sixel is queued, not written here:
     /// <c>PostBufferPaint</c> runs before the frame is written out, and the frame's cells would land on top.
+    /// What is written here is the start of a synchronized update (<c>CSI ?2026h</c>), ended after the
+    /// Sixel, so a terminal that supports it shows the frame and the picture over it together rather than
+    /// the half-blocks for a moment in between. One that does not ignores both.
     /// </summary>
+    private const string BeginSynchronizedUpdate = "\u001b[?2026h";
+
+    private const string EndSynchronizedUpdate = "\u001b[?2026l";
+
     private void DrawSixelOverlay(CharacterBuffer buffer)
     {
         if (_sixel is null)
@@ -9147,7 +9161,8 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
 
         LastSixelOverlay = output;
-        _system.EnqueueOnUIThread(() => _system.ConsoleDriver.WriteClipboardOsc52(output));
+        _system.ConsoleDriver.WriteClipboardOsc52(BeginSynchronizedUpdate);
+        _system.EnqueueOnUIThread(() => _system.ConsoleDriver.WriteClipboardOsc52(output + EndSynchronizedUpdate));
     }
 
     /// <summary>Hands every slot back to kitty's own configuration, if this client set any.</summary>

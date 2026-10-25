@@ -252,7 +252,7 @@ internal sealed class InlineImageHost : IDisposable
         var height = Math.Min(source.Height, box.Rows * InlineImageLayout.CellPixelHeight);
         try
         {
-            var scaled = width == source.Width && height == source.Height ? source : source.Resize(width, height);
+            var scaled = PixelScale.Stretch(source, width, height);
             return new DecodedPicture(box, scaled);
         }
         catch (ArgumentOutOfRangeException)

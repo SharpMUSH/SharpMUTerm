@@ -39,7 +39,7 @@ internal sealed class SixelOverlay
     private readonly int _cellHeight;
     private readonly LinkedList<Picture> _pictures = new();
     private readonly Dictionary<(uint Top, uint Bottom), List<(Picture Picture, int Row)>> _byFirstCell = new();
-    private Dictionary<(Picture, int X, int Y, int FirstRow, int Rows), long> _shown = new();
+    private HashSet<(Picture, int X, int Y, int FirstRow, int Rows)> _shown = new();
     private (int Width, int Height) _screen;
 
     /// <param name="cellWidth">Sixel pixels per cell across. Windows Terminal scales Sixel as if a cell were 10×20.</param>
@@ -129,7 +129,7 @@ internal sealed class SixelOverlay
         }
 
         var placements = Locate(buffer);
-        var next = new Dictionary<(Picture, int X, int Y, int FirstRow, int Rows), long>(placements.Count);
+        var next = new HashSet<(Picture, int X, int Y, int FirstRow, int Rows)>(placements.Count);
         StringBuilder? output = null;
         foreach (var p in placements)
         {
@@ -141,9 +141,8 @@ internal sealed class SixelOverlay
             }
 
             var key = (p.Picture, p.X, p.Y, p.FirstRow, rows);
-            var stamp = RowsStamp(buffer, p.Y, rows);
-            next[key] = stamp;
-            if (_shown.TryGetValue(key, out var was) && was == stamp)
+            next.Add(key);
+            if (_shown.Contains(key))
             {
                 continue;
             }
@@ -229,24 +228,6 @@ internal sealed class SixelOverlay
         return true;
     }
 
-    /// <summary>A fingerprint of whole rows, so a change anywhere on a row the picture sits on is noticed.</summary>
-    private static long RowsStamp(CharacterBuffer buffer, int y, int rows)
-    {
-        var hash = new HashCode();
-        for (var row = y; row < y + rows; row++)
-        {
-            for (var x = 0; x < buffer.Width; x++)
-            {
-                var cell = buffer.GetCell(x, row);
-                hash.Add(cell.Character.Value);
-                hash.Add(Pack(cell.Foreground));
-                hash.Add(Pack(cell.Background));
-            }
-        }
-
-        return hash.ToHashCode();
-    }
-
     private void Index(Picture picture)
     {
         for (var row = 0; row < picture.Rows; row++)
@@ -304,7 +285,7 @@ internal sealed class SixelOverlay
                 return known;
             }
 
-            _scaled ??= pixels.Resize(Columns * cellWidth, Rows * cellHeight);
+            _scaled ??= PixelScale.Stretch(pixels, Columns * cellWidth, Rows * cellHeight);
             var encoded = SixelEncoder.EncodeCompact(new Slice(_scaled, firstRow * cellHeight, rows * cellHeight));
             if (_sixels.Count >= 8)
             {
