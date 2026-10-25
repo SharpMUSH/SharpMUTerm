@@ -515,6 +515,11 @@ fallbacks) for inline images/maps.
     placeholder cells as literal glyphs, so `CapabilityProbe` names only kitty and Ghostty and an `a=q`
     answer is never taken as enough. The framework's own `ImageControl` (the web view) still trusts that
     answer — an upstream issue.
+  - **`SHARPMUTERM_GRAPHICS=kitty` overrides the driver's flag, not just ours** (`TerminalCapabilities.IsForced`,
+    `GraphicsSurface.Compositor(driverTransmits, driverReportsKitty, caps)`). SharpConsoleUI's
+    `SupportsKittyGraphics` comes from its own probe, which **never runs on Windows**, so the flag is false
+    in every Windows terminal; gating on it alone made the override a silent no-op there. Without an
+    override the driver keeps its veto. The web view's `ImageControl` still reads the framework flag.
   - **Sixel and iTerm2 inline images are not offered**, for the reason Sixel is blocked above: both paint at
     the cursor outside the cell model and the next frame overwrites them. WezTerm, foot, Konsole, Windows
     Terminal and the rest of the Sixel terminals therefore get half-blocks.

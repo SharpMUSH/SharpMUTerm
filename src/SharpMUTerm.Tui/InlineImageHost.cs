@@ -260,13 +260,15 @@ internal sealed class InlineImageHost : IDisposable
     }
 
     /// <summary>
-    /// Sends the picture under a fresh id and returns the placeholder rows for it, or null when this
-    /// driver cannot take it — in which case the caller falls back to half-blocks, which every
-    /// truecolour terminal can show.
+    /// Sends the picture under a fresh id and returns the placeholder rows for it, or null when there is
+    /// no driver to take it — in which case the caller falls back to half-blocks, which every
+    /// truecolour terminal can show. Whether the terminal speaks the protocol is the caller's decision
+    /// (<see cref="GraphicsSurface.CanPlaceKitty"/>), not the driver's flag: that flag is never set on
+    /// Windows, and reading it here would undo a forced <c>SHARPMUTERM_GRAPHICS=kitty</c>.
     /// </summary>
     private IReadOnlyList<string>? Transmit(DecodedPicture picture, IGraphicsProtocol? protocol)
     {
-        if (protocol is not { SupportsKittyGraphics: true })
+        if (protocol is null)
         {
             return null;
         }

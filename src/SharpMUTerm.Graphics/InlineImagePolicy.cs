@@ -57,6 +57,26 @@ public sealed class GraphicsSurface
     /// <param name="canPlaceKitty">Whether the console driver reports Kitty graphics support.</param>
     public static GraphicsSurface Compositor(bool canPlaceKitty) => new(canPlaceKitty, false, true);
 
+    /// <summary>
+    /// A compositor whose driver may or may not have found Kitty graphics on its own. The driver's answer
+    /// is used unless the user forced <see cref="GraphicsProtocol.Kitty"/>, in which case a driver that can
+    /// transmit at all is enough.
+    /// </summary>
+    /// <remarks>
+    /// SharpConsoleUI decides <c>SupportsKittyGraphics</c> from its own probe, and on Windows that probe
+    /// never runs: the flag stays false in every terminal there, so an override that only set
+    /// <see cref="TerminalCapabilities.Protocol"/> was refused here and nothing changed on screen.
+    /// </remarks>
+    /// <param name="driverTransmits">Whether the console driver can send Kitty graphics at all.</param>
+    /// <param name="driverReportsKitty">Whether the driver's own probe found the protocol.</param>
+    /// <param name="capabilities">What this client detected, or was told.</param>
+    public static GraphicsSurface Compositor(bool driverTransmits, bool driverReportsKitty, TerminalCapabilities capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        var forcedKitty = capabilities.IsForced && capabilities.Protocol == GraphicsProtocol.Kitty;
+        return Compositor(driverTransmits && (driverReportsKitty || forcedKitty));
+    }
+
     /// <summary>Direct terminal output with no compositor in the way: anything the terminal accepts.</summary>
     public static GraphicsSurface RawTerminal { get; } = new(true, true, true);
 
