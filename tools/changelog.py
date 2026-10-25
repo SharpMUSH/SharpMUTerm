@@ -3,8 +3,7 @@
 
   changelog.py check                 the changelog's shape
   changelog.py unreleased-grew <ref>  [Unreleased] has an entry that <ref>'s changelog does not
-  changelog.py release-check <tag>   a release tag: v<semver>, with a dated, non-empty section
-  changelog.py notes <version>       that version's section, for the release page
+  changelog.py notes <version>       that version's section, else [Unreleased], for the release page
 
 Exits 1 with one line per problem. Used by changelog.yml and release.yml; see docs/RELEASING.md.
 """
@@ -90,20 +89,6 @@ def section(version):
     return None
 
 
-def release_check(tag):
-    problems = check()
-    m = re.fullmatch(r"v(" + SEMVER + r")" + BUILD, tag)
-    if not m:
-        return problems + [f"tag {tag} is not v<semantic version>, e.g. v1.2.3 or v1.3.0-beta.1"]
-    version = m.group(1)  # build metadata names a build, not a release, so the section is the version's
-    body = section(version)
-    if body is None:
-        problems.append(f"CHANGELOG.md has no '## [{version}] - YYYY-MM-DD' section")
-    elif not has_entries(body):
-        problems.append(f"CHANGELOG.md's {version} section has no entries")
-    return problems
-
-
 def unreleased_entries(text):
     entries, inside = [], False
     for line in text.splitlines():
@@ -131,14 +116,13 @@ def main(argv):
         problems = check()
     elif len(argv) == 3 and argv[1] == "unreleased-grew":
         problems = unreleased_grew(argv[2])
-    elif len(argv) == 3 and argv[1] == "release-check":
-        problems = release_check(argv[2])
     elif len(argv) == 3 and argv[1] == "notes":
+        # Prints nothing when neither has entries; release.yml then lets GitHub write the notes.
         body = section(argv[2])
         if body is None or not has_entries(body):
-            print(f"CHANGELOG.md has no entries for {argv[2]}", file=sys.stderr)
-            return 1
-        print("\n".join(body).strip())
+            body = next((b for h, _, b in sections() if h == "## [Unreleased]"), [])
+        if has_entries(body):
+            print("\n".join(body).strip())
         return 0
     else:
         print(__doc__, file=sys.stderr)

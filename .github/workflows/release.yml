@@ -40,7 +40,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            python3 tools/changelog.py release-check "$GITHUB_REF_NAME"
             if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft 2>/dev/null)" = "false" ]; then
               echo "::error::$GITHUB_REF_NAME is already published and immutable, so nothing can be attached to it. Release the next version; push only the tag and let this workflow create the release."
               exit 1
@@ -142,8 +141,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # The version's changelog section, else [Unreleased]; with neither, GitHub writes notes from the commits.
       - name: Release notes from CHANGELOG.md
-        run: python3 tools/changelog.py notes ${{ needs.version.outputs.version }} > release-notes.md
+        id: notes
+        run: |
+          python3 tools/changelog.py notes ${{ needs.version.outputs.version }} > release-notes.md
+          if [ -s release-notes.md ]; then echo "generate=false" >> "$GITHUB_OUTPUT"; else echo "generate=true" >> "$GITHUB_OUTPUT"; fi
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -157,6 +160,7 @@ jobs:
         with:
           name: SharpMUTerm ${{ needs.version.outputs.version }}
           body_path: release-notes.md
+          generate_release_notes: ${{ steps.notes.outputs.generate == 'true' }}
           prerelease: ${{ contains(needs.version.outputs.version, '-') }}
           draft: true
           files: artifacts/*
