@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=SharpMUTerm
+GenericName=MU* Client
+Comment=A MUSH, MUCK and MUD client
+Exec=sharpmuterm-window %U
+Icon=sharpmuterm
+Terminal=false
+Categories=Game;RolePlaying;
+Keywords=MUD;MUSH;MUCK;MU*;telnet;
+StartupWMClass=sharpmuterm-window

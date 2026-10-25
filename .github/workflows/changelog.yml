@@ -1,0 +1,39 @@
+name: Changelog
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Shape and version
+        run: python3 tools/changelog.py check
+
+      # A pull request that changes what ships says so under [Unreleased]. Tests, docs and tooling don't
+      # ship and are exempt; anything else that genuinely changes nothing a user sees takes the
+      # `skip-changelog` label.
+      - name: Entry for this change
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE"...HEAD)
+          if echo "$changed" | grep -qE '^(src/|packaging/|Directory\.(Build|Packages)\.props$)' \
+             && ! python3 tools/changelog.py unreleased-grew "$BASE"; then
+            echo "::error file=CHANGELOG.md::This changes what ships but adds nothing under [Unreleased] in CHANGELOG.md. Add an entry, or label the PR skip-changelog if no user could notice it."
+            exit 1
+          fi

@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>SharpMUTerm.Tui</RootNamespace>
     <AssemblyName>sharpmuterm</AssemblyName>
+    <ApplicationIcon>..\..\packaging\icons\sharpmuterm.ico</ApplicationIcon>
 
     <!--
       Runtimes we ship single-file builds for. Declaring them here is build-safe (only used on

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Starts the desktop window. `--terminal` as the first argument runs the terminal client instead, so one
+# AppImage carries both: `SharpMUTerm.AppImage --terminal host 4201`.
+HERE="$(dirname "$(readlink -f "$0")")"
+if [ "$1" != "--terminal" ]; then
+    exec "$HERE/usr/bin/sharpmuterm-window" "$@"
+fi
+shift
+
+# `--terminal --window` is the window. Done here rather than by the terminal's own hand-off, because that
+# starts the window and exits, and the AppImage is unmounted when the program it started exits, taking the
+# window's executable with it.
+window=0
+for arg in "$@"; do
+    [ "$arg" = "--window" ] && window=1
+done
+if [ "$window" = 1 ]; then
+    for arg in "$@"; do
+        shift
+        [ "$arg" = "--window" ] || set -- "$@" "$arg"
+    done
+    exec "$HERE/usr/bin/sharpmuterm-window" "$@"
+fi
+exec "$HERE/usr/bin/sharpmuterm" "$@"

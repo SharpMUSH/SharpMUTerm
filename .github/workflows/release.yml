@@ -9,8 +9,45 @@ permissions:
   contents: write
 
 jobs:
+  # The version is the tag (MinVer; see Directory.Build.props). A tag is refused before anything is built
+  # unless CHANGELOG.md has a dated section for it. See docs/RELEASING.md.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      numeric: ${{ steps.version.outputs.numeric }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # A tag builds exactly its own version; a manual run builds what MinVer makes of the commit, e.g.
+      # 0.2.1-alpha.0.5. The installer's file version has to be four numbers, so a prerelease suffix is
+      # dropped there.
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 tools/changelog.py release-check "$GITHUB_REF_NAME"
+            version="${GITHUB_REF_NAME#v}"
+          else
+            python3 tools/changelog.py check
+            dotnet tool install --tool-path "$RUNNER_TEMP/minver" minver-cli --version 8.0.0
+            version=$("$RUNNER_TEMP/minver/minver" --tag-prefix v --minimum-major-minor 0.1 --verbosity warn)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "numeric=${version%%-*}.0" >> "$GITHUB_OUTPUT"
+
   publish:
     name: publish (${{ matrix.rid }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -30,40 +67,75 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Both executables go into one folder: `sharpmuterm --window` looks for the window beside itself.
       - name: Publish single-file
         shell: bash
-        run: >
-          dotnet publish src/SharpMUTerm.Tui/SharpMUTerm.Tui.csproj
-          -p:PublishProfile=${{ matrix.profile }}
-          -o publish/${{ matrix.rid }}
+        run: |
+          dotnet publish src/SharpMUTerm.Tui/SharpMUTerm.Tui.csproj \
+            -p:PublishProfile=${{ matrix.profile }} -p:MinVerVersionOverride=${{ needs.version.outputs.version }} \
+            -o publish/${{ matrix.rid }}
+          dotnet publish src/SharpMUTerm.Avalonia/SharpMUTerm.Avalonia.csproj \
+            -p:PublishProfile=${{ matrix.profile }} -p:MinVerVersionOverride=${{ needs.version.outputs.version }} \
+            -o publish/${{ matrix.rid }}
+
+      # The window's own demo render, from the published single file, before anything is packaged.
+      - name: Smoke test
+        shell: bash
+        run: |
+          cd publish/${{ matrix.rid }}
+          ./sharpmuterm --help > /dev/null </dev/null
+          ./sharpmuterm-window --demo-config --render-png smoke.png </dev/null
+          test -s smoke.png
+          rm smoke.png
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cd publish/${{ matrix.rid }}
-          tar -czf ../../sharpmuterm-${{ matrix.rid }}.tar.gz sharpmuterm
+          mkdir -p dist
+          tar -czf dist/sharpmuterm-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} sharpmuterm sharpmuterm-window
+          packaging/linux/build-appimage.sh publish/${{ matrix.rid }} ${{ needs.version.outputs.version }} dist
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          cd publish/${{ matrix.rid }}
-          7z a ../../sharpmuterm-${{ matrix.rid }}.zip sharpmuterm.exe
+          mkdir -p dist
+          (cd publish/${{ matrix.rid }} && 7z a ../../dist/sharpmuterm-${{ matrix.rid }}.zip sharpmuterm.exe sharpmuterm-window.exe)
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -f "$iscc" ]; then
+            choco install innosetup --no-progress -y
+          fi
+          # Git Bash rewrites an argument that starts with / into a Windows path; ISCC's /D options are not paths.
+          MSYS2_ARG_CONV_EXCL='*' "$iscc" \
+            "/DAppVersion=${{ needs.version.outputs.version }}" \
+            "/DNumericVersion=${{ needs.version.outputs.numeric }}" \
+            "/DPublishDir=$(cygpath -w "$PWD/publish/${{ matrix.rid }}")" \
+            "/DOutputDir=$(cygpath -w "$PWD/dist")" \
+            packaging/windows/sharpmuterm.iss
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: sharpmuterm-${{ matrix.rid }}
-          path: sharpmuterm-${{ matrix.rid }}.*
+          path: dist/*
 
   # Serialize release creation in a single downstream job so the two matrix jobs don't race
   # softprops/action-gh-release on the same tag.
   release:
-    needs: publish
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version, publish]
+    # A manual run, even against a tag, keeps its packages as workflow artifacts.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Release notes from CHANGELOG.md
+        run: python3 tools/changelog.py notes ${{ needs.version.outputs.version }} > release-notes.md
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -73,4 +145,7 @@ jobs:
       - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
+          name: SharpMUTerm ${{ needs.version.outputs.version }}
+          body_path: release-notes.md
+          prerelease: ${{ contains(needs.version.outputs.version, '-') }}
           files: artifacts/*
