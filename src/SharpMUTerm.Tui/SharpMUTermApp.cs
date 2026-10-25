@@ -221,6 +221,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly InlineImageHost _inlineImages;
 
+    /// <summary>Pictures drawn again as Sixel over their half-blocks, where that is on; null elsewhere.</summary>
+    private readonly SixelOverlay? _sixel;
+
     /// <summary>
     /// The last anchor handed to a line waiting on pictures. A line's index moves (a trim, a bar
     /// inserted above it), so the rows that arrive later find their line by this number instead.
@@ -625,6 +628,13 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             OnUi);
         _mssp = mssp ?? new MsspCache();
         _capabilities = capabilities;
+        if (capabilities.SupportsSixelOverlay)
+        {
+            var (cellWidth, cellHeight) = SixelCellSize(Environment.GetEnvironmentVariable(SixelCellVariable));
+            _sixel = new SixelOverlay(cellWidth, cellHeight);
+            _inlineImages.HalfBlockDrawn = _sixel.Register;
+        }
+
         _time = time ?? TimeProvider.System;
         _diagnostics = diagnostics ?? ClientDiagnostics.InMemory();
         _ownsDiagnostics = diagnostics is null;
@@ -672,7 +682,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             ShowTopPanel: false,
             ShowBottomPanel: false,
             EnableAnimations: !headless,
-            ExitKey: null);
+            ExitKey: null,
+            // The Sixel overlay is erased wherever the terminal writes a cell under it, and the default
+            // (Smart) rewrites a whole row once enough of it changed — so a busy row next to a picture
+            // erased it and the overlay drew it back, every frame. Changed cells only, then.
+            DirtyTrackingMode: _sixel is null ? DirtyTrackingMode.Smart : DirtyTrackingMode.Cell);
         _system = new ConsoleWindowSystem(driver ?? new NetConsoleDriver(RenderMode.Buffer), options);
 
         // Built here so the app always has one to ask, and inert unless something turns it on. Nothing
@@ -826,12 +840,21 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         // repaints. One hook therefore covers the lot, and none of them can be forgotten later.
         // (The event's adder is a silent no-op while a window has no renderer; this one has had one
         // since its constructor ran, and NawsPaneReportTests fails loudly if that ever stops holding.)
-        _window.PostBufferPaint += (_, _, _) =>
+        _window.PostBufferPaint += (buffer, _, _) =>
         {
             ReportPaneSizes();
             SyncTabStripWidths();
             SyncTransparentColours();
+            DrawSixelOverlay(buffer);
         };
+        if (_sixel is not null)
+        {
+            // Another window over this one rewrites the cells a picture sits on, and the frame that puts
+            // them back can be byte-identical to the one before it — so the overlay forgets what it sent.
+            _window.Activated += (_, _) => _sixel.Invalidate();
+            _window.Deactivated += (_, _) => _sixel.Invalidate();
+        }
+
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level
         // handler would only ever see the *source* pane. The driver stream carries every frame in
@@ -9084,6 +9107,62 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         EmitColourControl(planes.Count == 0
             ? KittyTransparentColours.Reset
             : KittyTransparentColours.Sequence(planes, level));
+    }
+
+    /// <summary>Overrides the Sixel pixels per cell, as <c>WIDTHxHEIGHT</c>; Windows Terminal's own is 10x20.</summary>
+    internal const string SixelCellVariable = "SHARPMUTERM_SIXEL_CELL";
+
+    /// <summary>The Sixel cell size <paramref name="value"/> names, or Windows Terminal's 10×20.</summary>
+    internal static (int Width, int Height) SixelCellSize(string? value)
+    {
+        var parts = value?.Split('x', 'X');
+        return parts is [var w, var h] &&
+               int.TryParse(w, out var width) && width is > 0 and <= 64 &&
+               int.TryParse(h, out var height) && height is > 0 and <= 128
+            ? (width, height)
+            : (10, 20);
+    }
+
+    /// <summary>The overlay's output for the last frame that had any — for tests.</summary>
+    internal string? LastSixelOverlay { get; private set; }
+
+    /// <summary>How the driver decides which cells to write; <c>Cell</c> while the Sixel overlay is on.</summary>
+    internal DirtyTrackingMode DirtyTracking => _system.Options.DirtyTrackingMode;
+
+    /// <summary>
+    /// Finds the pictures on the frame just painted and, once it is on the terminal, draws them again as
+    /// Sixel over their half-blocks (<see cref="SixelOverlay"/>). The Sixel is queued, not written here:
+    /// <c>PostBufferPaint</c> runs before the frame is written out, and the frame's cells would land on top.
+    /// What is written here is the start of a synchronized update (<c>CSI ?2026h</c>), ended after the
+    /// Sixel, so a terminal that supports it shows the frame and the picture over it together rather than
+    /// the half-blocks for a moment in between. One that does not ignores both.
+    /// </summary>
+    private const string BeginSynchronizedUpdate = "\u001b[?2026h";
+
+    private const string EndSynchronizedUpdate = "\u001b[?2026l";
+
+    private void DrawSixelOverlay(CharacterBuffer buffer)
+    {
+        if (_sixel is null)
+        {
+            return;
+        }
+
+        if (!_window.GetIsActive())
+        {
+            _sixel.Invalidate();
+            return;
+        }
+
+        var output = _sixel.OnFrame(buffer, _window.Left, _window.Top, _system.ConsoleDriver.ScreenSize.Height);
+        if (output is null)
+        {
+            return;
+        }
+
+        LastSixelOverlay = output;
+        _system.ConsoleDriver.WriteClipboardOsc52(BeginSynchronizedUpdate);
+        _system.EnqueueOnUIThread(() => _system.ConsoleDriver.WriteClipboardOsc52(output + EndSynchronizedUpdate));
     }
 
     /// <summary>Hands every slot back to kitty's own configuration, if this client set any.</summary>

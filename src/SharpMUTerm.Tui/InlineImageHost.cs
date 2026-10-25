@@ -55,6 +55,13 @@ internal sealed class InlineImageHost : IDisposable
 
     private readonly HashSet<Task> _running = new();
 
+    /// <summary>
+    /// Told, on the UI thread, about each picture drawn as half-blocks: the cells its rows were made from
+    /// and the picture at its best. <see cref="SixelOverlay"/> listens, to draw the picture again over them.
+    /// A result served from the cache is not reported again.
+    /// </summary>
+    public Action<PixelBuffer, PixelBuffer>? HalfBlockDrawn { get; set; }
+
     /// <summary>Completes when every load started so far has finished — for tests and snapshots.</summary>
     public Task Pending
     {
@@ -200,7 +207,16 @@ internal sealed class InlineImageHost : IDisposable
             rows = await done.Task.ConfigureAwait(false);
         }
 
-        rows ??= HalfBlockRows(picture);
+        if (rows is null)
+        {
+            var cells = HalfBlockCells(picture);
+            rows = HalfBlockRows(picture.Box, cells);
+            if (HalfBlockDrawn is { } drawn)
+            {
+                _onUi(() => drawn(cells, picture.Pixels));
+            }
+        }
+
         Remember(key, rows);
         return rows;
     }
@@ -236,7 +252,7 @@ internal sealed class InlineImageHost : IDisposable
         var height = Math.Min(source.Height, box.Rows * InlineImageLayout.CellPixelHeight);
         try
         {
-            var scaled = width == source.Width && height == source.Height ? source : source.Resize(width, height);
+            var scaled = PixelScale.Stretch(source, width, height);
             return new DecodedPicture(box, scaled);
         }
         catch (ArgumentOutOfRangeException)
@@ -246,17 +262,23 @@ internal sealed class InlineImageHost : IDisposable
     }
 
     /// <summary>Half-block rows for a decoded picture: one pixel across and two down per cell.</summary>
-    internal static IReadOnlyList<string> HalfBlockRows(DecodedPicture picture)
+    internal static IReadOnlyList<string> HalfBlockRows(DecodedPicture picture) =>
+        HalfBlockRows(picture.Box, HalfBlockCells(picture));
+
+    /// <summary>The picture at one pixel across and two down per cell — what its half-block rows are made of.</summary>
+    internal static PixelBuffer HalfBlockCells(DecodedPicture picture) =>
+        picture.Pixels.Resize(picture.Box.Columns, picture.Box.Rows * 2);
+
+    private static IReadOnlyList<string> HalfBlockRows(WebImageLayout.CellBox box, PixelBuffer cells)
     {
-        var cells = picture.Pixels.Resize(picture.Box.Columns, picture.Box.Rows * 2);
         return InlineImageRows.HalfBlock(
             (x, y) =>
             {
                 var p = cells.GetPixel(x, y);
                 return (p.R, p.G, p.B);
             },
-            picture.Box.Columns,
-            picture.Box.Rows);
+            box.Columns,
+            box.Rows);
     }
 
     /// <summary>

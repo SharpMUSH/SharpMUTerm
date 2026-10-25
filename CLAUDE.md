@@ -521,9 +521,28 @@ fallbacks) for inline images/maps.
     `SupportsKittyGraphics` comes from its own probe, which **never runs on Windows**, so the flag is false
     in every Windows terminal; gating on it alone made the override a silent no-op there. Without an
     override the driver keeps its veto. The web view's `ImageControl` still reads the framework flag.
-  - **Sixel and iTerm2 inline images are not offered**, for the reason Sixel is blocked above: both paint at
-    the cursor outside the cell model and the next frame overwrites them. WezTerm, foot, Konsole, Windows
-    Terminal and the rest of the Sixel terminals therefore get half-blocks.
+  - **Sixel and iTerm2 inline images are not offered in the cells**, for the reason Sixel is blocked above:
+    both paint at the cursor outside the cell model. Making `IImageRenderer` public would not change that —
+    a renderer only fills a `CharacterBuffer`. WezTerm, foot, Konsole and the rest get half-blocks.
+  - **Windows Terminal gets a Sixel *overlay* on top of the half-blocks** (`SixelOverlay`; on with
+    `WT_SESSION` or a forced `SHARPMUTERM_GRAPHICS=sixel`, `TerminalCapabilities.SupportsSixelOverlay`).
+    It exists because Windows has no other way to a sharp picture: kitty and Ghostty do not run there, and
+    ConPTY drops Kitty's APC (tested in Rio: blank cells, misaligned rows). On `PostBufferPaint` the frame is
+    scanned for runs of `▀` cells in a registered picture's exact colours, and the Sixel is written
+    **queued** (`EnqueueOnUIThread`), because `PostBufferPaint` runs before the frame is flushed and its
+    cells would land on top. The overlay switches the driver to `DirtyTrackingMode.Cell`: the default
+    (Smart) rewrites a whole row once enough of it changed, and any cell written under a Sixel erases that
+    part of it, so busy rows erased the picture and the overlay redrew it every frame — the flicker seen on
+    Windows Terminal. With changed cells only, a picture found where it was last sent has not been written
+    over, so it is sent again only when it moves, when a frame did not show it whole, and after the main
+    window is (de)activated. A send is wrapped in a synchronized update (`CSI ?2026h`, written in
+    `PostBufferPaint` before the frame; `?2026l` after the Sixel), so the half-blocks are never shown on
+    their own in between. Never drawn on the last screen row, where an ending Sixel scrolls. Cell size is
+    Windows Terminal's virtual 10×20 (`SHARPMUTERM_SIXEL_CELL` overrides).
+    **`PixelBuffer.Resize` is not used to size anything we send**: it clamps each side to 500 pixels
+    (`ImagingDefaults.MaxImageDimension`) without saying so, which made a 114-column Sixel 500 px wide and
+    drew it in 50 columns. `PixelScale.Stretch` is exact; `PixelScaleTests.TheFrameworksResizeClamps…`
+    fails the day a release drops the clamp.
   - **Nothing is fetched unless something can be drawn**, nothing is fetched from a restore log, only http(s)
     and `data:` are fetched (`WebImageLoader`'s rules), two fetches run at once and sixteen lines may wait.
     `IMAGE` is a secure tag, so a player cannot make the room's clients fetch a URL.

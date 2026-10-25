@@ -13,7 +13,8 @@ public sealed class TerminalCapabilities
         bool supportsKittyGraphics,
         bool supportsSixel,
         bool supportsTransparentColours = false,
-        bool isForced = false)
+        bool isForced = false,
+        bool supportsSixelOverlay = false)
     {
         Protocol = protocol;
         SupportsTrueColor = supportsTrueColor;
@@ -21,6 +22,7 @@ public sealed class TerminalCapabilities
         SupportsSixel = supportsSixel;
         SupportsTransparentColours = supportsTransparentColours;
         IsForced = isForced;
+        SupportsSixelOverlay = supportsSixelOverlay;
     }
 
     /// <summary>The best inline-graphics protocol available.</summary>
@@ -49,6 +51,14 @@ public sealed class TerminalCapabilities
     /// </summary>
     public bool IsForced { get; }
 
+    /// <summary>
+    /// True when pictures should also be drawn as Sixel on top of their half-block cells, after each frame.
+    /// That is a workaround for a compositor that cannot hold Sixel in its cells, and it is only switched on
+    /// where it has a chance and a reason: Windows Terminal (<c>WT_SESSION</c>), where Sixel is the only
+    /// image format that survives ConPTY, or wherever the user forced <c>SHARPMUTERM_GRAPHICS=sixel</c>.
+    /// </summary>
+    public bool SupportsSixelOverlay { get; }
+
     public override string ToString() =>
-        $"{Protocol} (truecolor={SupportsTrueColor}, kitty={SupportsKittyGraphics}, sixel={SupportsSixel}, transparent colours={SupportsTransparentColours}{(IsForced ? ", forced" : "")})";
+        $"{Protocol} (truecolor={SupportsTrueColor}, kitty={SupportsKittyGraphics}, sixel={SupportsSixel}, transparent colours={SupportsTransparentColours}{(IsForced ? ", forced" : "")}{(SupportsSixelOverlay ? ", sixel overlay" : "")})";
 }
