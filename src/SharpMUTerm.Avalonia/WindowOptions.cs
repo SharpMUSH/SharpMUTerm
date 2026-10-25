@@ -109,6 +109,7 @@ internal sealed record WindowOptions(
           --title-bar          Keep the system title bar. Without it, drag the blank part of the top row
                                to move the window, double-click it to maximise, and drag an edge to resize.
 
+        Alt+Enter maximises and restores (so a newline in the command line is Ctrl+L here).
         Paste is Ctrl+Shift+V or Shift+Insert, as in a terminal; Ctrl+V reaches the client as a key.
         """;
 }

@@ -121,6 +121,15 @@ internal sealed class TerminalView : Control
             return;
         }
 
+        // Alt+Enter maximises and restores, as it does in Windows Terminal. The client's own ⌥⏎ (a newline in the
+        // command line) is the cost; ⌃L is its other spelling and still arrives.
+        if (e.KeyModifiers == KeyModifiers.Alt && e.Key == Key.Enter)
+        {
+            ToggleMaximised();
+            e.Handled = true;
+            return;
+        }
+
         if (KeyMapper.FromKeyDown(e.Key, e.KeyModifiers) is { } key)
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
@@ -257,7 +266,7 @@ internal sealed class TerminalView : Control
 
         if (e.ClickCount == 2)
         {
-            window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            ToggleMaximised();
         }
         else
         {
@@ -265,6 +274,14 @@ internal sealed class TerminalView : Control
         }
 
         return true;
+    }
+
+    private void ToggleMaximised()
+    {
+        if (TopLevel.GetTopLevel(this) is Window window)
+        {
+            window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        }
     }
 
     private void UpdateEdgeCursor(Point position)

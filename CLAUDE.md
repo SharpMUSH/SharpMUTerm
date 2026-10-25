@@ -670,7 +670,18 @@ fallbacks) for inline images/maps.
     header is the top of the window. A drag on a *blank* header cell moves it and a double-click maximises
     (`WindowChrome`); a press on header text is still the client's. Resizing is a 5-pixel band at each edge,
     done by us with `BeginResizeDrag`, because a borderless window on Linux gets a border only from some window
-    managers. There is no close or minimise button: ⌃Q quits.
+    managers. There is no close or minimise button: ⌃Q quits. **⌥⏎ maximises and restores** (Windows
+    Terminal's chord), which takes the client's ⌥⏎ newline in this host; ⌃L is the newline here.
+  - **Restoring re-applies the remembered normal size by hand** (`MainWindow.OnPropertyChanged`). On X11 a
+    `BorderOnly` window's border is Avalonia's own (`DecorationInset`, part of the window only while it is not
+    maximised); a restore laid out before the window manager's restored size arrives pushes the *maximised*
+    `Width` back with the border added, and the window "restores" larger than the screen — about one in three
+    quick toggles under openbox. The size is recorded only once a state change has settled (500 ms).
+  - **The client's main window is not scrollable** (`_window.IsScrollable = false`, in the Tui, so it holds in a
+    terminal too). A frameless scrollable window reserves a scrollbar column whenever its content is taller than
+    it; a shrink passes through that state for a frame, the column narrows the status line into a second row,
+    and the extra row keeps the column — a stable layout one column short with the input bar a row up. That was
+    the "maximise does not work" report, seen on restore. `ClientResizeTests` grows and shrinks a live client.
   - **`--render-png`** draws a demo frame through the real loop, driver and renderer with no window, and CI
     checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
   - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level

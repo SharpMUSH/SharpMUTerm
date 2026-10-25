@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
@@ -22,6 +24,8 @@ internal sealed class MainWindow : Window
     private readonly List<string> _notices = [];
     private bool _clientEnded;
     private bool _started;
+    private Size _normalSize;
+    private long _stateChangedAt;
 
     public MainWindow(WindowOptions options, IClassicDesktopStyleApplicationLifetime lifetime)
     {
@@ -43,6 +47,7 @@ internal sealed class MainWindow : Window
         var size = _view.SizeFor(options.Columns, options.Rows);
         Width = size.Width;
         Height = size.Height;
+        _normalSize = size;
 
         Opened += (_, _) =>
         {
@@ -54,6 +59,38 @@ internal sealed class MainWindow : Window
         };
         Closing += OnClosing;
     }
+
+    /// <summary>
+    /// Restoring a window that has no title bar puts it back at the size it had, which Avalonia does not always
+    /// do on its own. Without a title bar the border is drawn by Avalonia (on X11, at least) and is part of the
+    /// window only while it is not maximised; when a restore is laid out before the window manager has sent the
+    /// restored size, the maximised <see cref="Layoutable.Width"/> is pushed back to the platform with the border
+    /// added, and the window "restores" to a size larger than the screen. So the last size the window had while
+    /// it was not maximised is remembered here, and restored by hand.
+    /// </summary>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == WindowStateProperty)
+        {
+            _stateChangedAt = Environment.TickCount64;
+            if (change.GetNewValue<WindowState>() == WindowState.Normal && _normalSize is { Width: > 0, Height: > 0 })
+            {
+                Width = _normalSize.Width;
+                Height = _normalSize.Height;
+            }
+        }
+        else if (change.Property == ClientSizeProperty
+                 && WindowState == WindowState.Normal
+                 && Environment.TickCount64 - _stateChangedAt > SettleMilliseconds)
+        {
+            // Not while a change of state is still settling: the sizes reported then are the maximised one on its
+            // way out, or the oversized one this exists to undo.
+            _normalSize = change.GetNewValue<Size>();
+        }
+    }
+
+    private const int SettleMilliseconds = 500;
 
     private void StartClient()
     {

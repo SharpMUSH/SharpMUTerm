@@ -106,6 +106,28 @@ public class TerminalViewTests
         await Assert.That(events.Count).IsEqualTo(2);
     }
 
+    [Test]
+    public async Task AltEnterMaximisesAndRestoresAndTheClientNeverSeesIt()
+    {
+        var (states, keys) = await Run(window =>
+        {
+            var (_, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var seen = new List<ConsoleKeyInfo>();
+            driver.KeyPressed += (_, k) => seen.Add(k);
+            var states = new List<WindowState>();
+            foreach (var _ in new[] { 1, 2 })
+            {
+                window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.Alt);
+                states.Add(window.WindowState);
+            }
+
+            return (states, seen);
+        });
+
+        await Assert.That(states).IsEquivalentTo(new[] { WindowState.Maximized, WindowState.Normal });
+        await Assert.That(keys).IsEmpty();
+    }
+
     private static global::Avalonia.Media.Color Pixel(global::Avalonia.Media.Imaging.WriteableBitmap bitmap, double x, double y)
     {
         using var buffer = bitmap.Lock();

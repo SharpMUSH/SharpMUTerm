@@ -757,6 +757,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             .AddControl(_statusBar)
             .Build();
 
+        // Nothing in this window scrolls as a window — every pane scrolls inside its own viewport — and a
+        // frameless scrollable window reserves a scrollbar column whenever its content is taller than it is.
+        // A shrinking terminal (or a desktop window coming back from maximised) passes through exactly that
+        // state for a frame, and once the column is taken the narrower width wraps the status line onto a
+        // second row, which keeps the content too tall, which keeps the column: the layout stuck one column
+        // short with the input bar a row up, for good.
+        _window.IsScrollable = false;
+
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _settings = new SettingsOverlay(_system);
