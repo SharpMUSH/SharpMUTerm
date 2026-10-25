@@ -744,6 +744,12 @@ the Sixel cell size. Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snap
   sections. An option that takes a value is listed in `ClientOptions.TakingValues`, so its value is never read
   as the host (`--name Corvid host` used to dial Corvid).
 
+**`sharpmuterm --window` hands off to `sharpmuterm-window`** (`WindowHandoff`, in `Hosting/`): it starts the
+window exe with every other argument unchanged and exits with 0, or 1 and a message naming where it looked
+(beside the running program first, then `PATH`). There is no in-process switch: the terminal does not load
+Avalonia. The window ignores the flag. **`release.yml` publishes only the terminal**, so a released build finds
+no window exe until packaging ships both.
+
 **Not covered yet**: F4's verdicts (`MacroKeys.Verdict`) describe the terminal only. In the window ⌃digit
 does arrive (F4 says it cannot), and ⌥⏎ never reaches a macro. Making it per host means threading `HostKeys`
 through `MacroKeys`, `ScreenField` and the keypad renderer.

@@ -65,6 +65,11 @@ internal static class ClientUsage
         "SharpMUTerm — a cross-platform TUI MU* client.",
         "sharpmuterm",
         [
+            ("Desktop window:",
+            [
+                new(WindowHandoff.Flag, "Open in a desktop window instead (sharpmuterm-window), with the other",
+                    "arguments. The same client, configuration and keys; see its --help."),
+            ]),
             ("Snapshot (render one frame headlessly and exit):",
             [
                 new("--snapshot", "Render one frame (ANSI) headlessly and exit."),

@@ -19,6 +19,11 @@ internal static class Program
             return 0;
         }
 
+        if (args.Contains(WindowHandoff.Flag))
+        {
+            return WindowHandoff.Run(args, Console.Error);
+        }
+
         // Anything the load wants to say about the secrets file is collected here and logged once diagnostics
         // exist — the pipeline is built further down, and this runs before it. It is deliberately a list that
         // is drained exactly once: a secrets problem is a startup fact, not a recurring notice.

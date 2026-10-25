@@ -55,6 +55,7 @@ internal sealed record WindowOptions(
                     break;
                 case "--demo-config": demo = true; break;
                 case "--title-bar": titleBar = true; break;
+                case WindowHandoff.Flag: break; // already in a window
                 case "--view": view = Next(); break;
                 case "--theme": theme = Next(); break;
                 case "--render-png": png = Next(); break;
