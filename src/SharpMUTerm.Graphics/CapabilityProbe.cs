@@ -43,7 +43,8 @@ public static class CapabilityProbe
 
         // Kitty here means the Unicode-placeholder part of the protocol (a=p,U=1 and U+10EEEE cells),
         // because that is the only part a compositor can use: both this client's MXP images and the
-        // framework's ImageControl draw through placeholder cells. Only kitty and Ghostty implement it.
+        // framework's ImageControl draw through placeholder cells. kitty, Ghostty and Rio implement it
+        // (Rio sets TERM_PROGRAM=rio on every platform, and has drawn U+10EEEE cells since 0.4.12).
         // WezTerm, Konsole, iTerm2 and Warp accept direct placements and answer the a=q query, but draw
         // placeholder cells as literal glyphs, so they are deliberately not listed (WezTerm falls to its
         // Sixel entry below, which inside the TUI degrades to half-blocks).
@@ -51,7 +52,8 @@ public static class CapabilityProbe
             Contains(term, "kitty") ||
             !string.IsNullOrEmpty(Get(environment, "KITTY_WINDOW_ID")) ||
             Contains(term, "ghostty") ||
-            Equals(termProgram, "ghostty");
+            Equals(termProgram, "ghostty") ||
+            Equals(termProgram, "rio");
 
         // kitty's per-colour opacity (OSC 21 transparent_background_colorN, 0.36+). Not Ghostty: it shares
         // the graphics protocol above and not this escape.

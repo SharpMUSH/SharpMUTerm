@@ -509,10 +509,11 @@ fallbacks) for inline images/maps.
   - **Kitty goes through `IGraphicsProtocol.TransmitRawRgb`** (zlib, `q=2`, virtual placement), under the
     driver's own lock, on the UI thread just before the rows are painted. Ids start at `0xC00000` so they
     never meet the framework's own (numbered from 1). Repeats of a picture reuse the transmitted id.
-  - **"Kitty" means Unicode placeholders, and only kitty and Ghostty implement them** (checked October
+  - **"Kitty" means Unicode placeholders, and only kitty, Ghostty and Rio implement them** (Rio added later, by
+    `TERM_PROGRAM=rio`) (checked October
     2026: WezTerm's support is an open PR, wezterm#7924; Warp's is warp#16312; xterm.js has an open issue).
     WezTerm, Konsole, iTerm2 and Warp answer the `a=q` query and accept direct placements, but draw
-    placeholder cells as literal glyphs, so `CapabilityProbe` names only kitty and Ghostty and an `a=q`
+    placeholder cells as literal glyphs, so `CapabilityProbe` names only kitty, Ghostty and Rio and an `a=q`
     answer is never taken as enough. The framework's own `ImageControl` (the web view) still trusts that
     answer — an upstream issue.
   - **`SHARPMUTERM_GRAPHICS=kitty` overrides the driver's flag, not just ours** (`TerminalCapabilities.IsForced`,
