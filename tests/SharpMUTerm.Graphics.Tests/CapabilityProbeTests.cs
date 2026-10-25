@@ -67,6 +67,29 @@ public class CapabilityProbeTests
     }
 
     [Test]
+    public async Task WindowsTerminal_IsSixel_AndGetsTheOverlay()
+    {
+        var caps = Detect(("WT_SESSION", "1b2c3d4e-0000-0000-0000-000000000000"));
+        await Assert.That(caps.Protocol).IsEqualTo(GraphicsProtocol.Sixel);
+        await Assert.That(caps.SupportsSixelOverlay).IsTrue();
+    }
+
+    [Test]
+    public async Task ADetectedSixelTerminalElsewhereDoesNotGetTheOverlay()
+    {
+        var caps = Detect(("TERM_PROGRAM", "WezTerm"));
+        await Assert.That(caps.Protocol).IsEqualTo(GraphicsProtocol.Sixel);
+        await Assert.That(caps.SupportsSixelOverlay).IsFalse();
+    }
+
+    [Test]
+    public async Task ForcedSixel_GetsTheOverlay()
+    {
+        var caps = Detect(("SHARPMUTERM_GRAPHICS", "sixel"));
+        await Assert.That(caps.SupportsSixelOverlay).IsTrue();
+    }
+
+    [Test]
     public async Task Kitty_ViaRio()
     {
         var caps = Detect(("TERM_PROGRAM", "rio"));

@@ -61,8 +61,11 @@ public static class CapabilityProbe
             Contains(term, "kitty") ||
             !string.IsNullOrEmpty(Get(environment, "KITTY_WINDOW_ID"));
 
+        // Windows Terminal draws Sixel since 1.22 and says so only by setting WT_SESSION.
+        var windowsTerminal = !string.IsNullOrEmpty(Get(environment, "WT_SESSION"));
         var supportsSixel =
             Contains(term, "sixel") ||
+            windowsTerminal ||
             Equals(Get(environment, "SHARPMUTERM_SIXEL"), "1") ||
             IsKnownSixelProgram(termProgram);
 
@@ -72,7 +75,8 @@ public static class CapabilityProbe
         if (TryParseOverride(overrideValue, out var forced))
         {
             return new TerminalCapabilities(
-                forced, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours, isForced: true);
+                forced, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours, isForced: true,
+                supportsSixelOverlay: forced == GraphicsProtocol.Sixel);
         }
 
         var protocol = supportsKitty
@@ -84,7 +88,8 @@ public static class CapabilityProbe
                     : GraphicsProtocol.None;
 
         return new TerminalCapabilities(
-            protocol, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours);
+            protocol, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours,
+            supportsSixelOverlay: protocol == GraphicsProtocol.Sixel && windowsTerminal);
     }
 
     /// <summary>Detects capabilities from the current process environment.</summary>

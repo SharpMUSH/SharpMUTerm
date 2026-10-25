@@ -521,9 +521,20 @@ fallbacks) for inline images/maps.
     `SupportsKittyGraphics` comes from its own probe, which **never runs on Windows**, so the flag is false
     in every Windows terminal; gating on it alone made the override a silent no-op there. Without an
     override the driver keeps its veto. The web view's `ImageControl` still reads the framework flag.
-  - **Sixel and iTerm2 inline images are not offered**, for the reason Sixel is blocked above: both paint at
-    the cursor outside the cell model and the next frame overwrites them. WezTerm, foot, Konsole, Windows
-    Terminal and the rest of the Sixel terminals therefore get half-blocks.
+  - **Sixel and iTerm2 inline images are not offered in the cells**, for the reason Sixel is blocked above:
+    both paint at the cursor outside the cell model. Making `IImageRenderer` public would not change that —
+    a renderer only fills a `CharacterBuffer`. WezTerm, foot, Konsole and the rest get half-blocks.
+  - **Windows Terminal gets a Sixel *overlay* on top of the half-blocks** (`SixelOverlay`; on with
+    `WT_SESSION` or a forced `SHARPMUTERM_GRAPHICS=sixel`, `TerminalCapabilities.SupportsSixelOverlay`).
+    It exists because Windows has no other way to a sharp picture: kitty and Ghostty do not run there, and
+    ConPTY drops Kitty's APC (tested in Rio: blank cells, misaligned rows). On `PostBufferPaint` the frame is
+    scanned for runs of `▀` cells in a registered picture's exact colours, and the Sixel is written
+    **queued** (`EnqueueOnUIThread`), because `PostBufferPaint` runs before the frame is flushed and its
+    cells would land on top. The driver only writes changed cells, so a still picture is sent once; it is
+    sent again when anything on the rows it covers changes (a row's dirty span can cross it), when it
+    moves, and after the main window is (de)activated. Never drawn on the last screen row, where an ending
+    Sixel scrolls. Cell size is Windows Terminal's virtual 10×20 (`SHARPMUTERM_SIXEL_CELL` overrides).
+    **Unverified on a real Windows Terminal** at the time of writing; nothing headless can show Sixel.
   - **Nothing is fetched unless something can be drawn**, nothing is fetched from a restore log, only http(s)
     and `data:` are fetched (`WebImageLoader`'s rules), two fetches run at once and sixteen lines may wait.
     `IMAGE` is a secure tag, so a player cannot make the room's clients fetch a URL.
