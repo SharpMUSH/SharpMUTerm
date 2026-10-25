@@ -1,12 +1,15 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Threading;
+using SharpMUTerm.Tui;
 using SkiaSharp;
 
 namespace SharpMUTerm.Avalonia;
@@ -33,8 +36,19 @@ internal sealed class TerminalView : Control
     private double _scale = 1;
     private int _invalidatePending;
     private char? _swallowText;
-    private WindowEdge? _cursorEdge;
     private double _wheelRemainder;
+    private StandardCursorType _cursor = StandardCursorType.Ibeam;
+    private Point _pointerAt;
+
+    // What the client says is under the pointer and where the panes are scrolled to, copied onto this thread.
+    private PointerTarget _target = PointerTarget.Nothing;
+    private IReadOnlyList<PaneScrollbar> _bars = [];
+    private ScrollDrag? _scrollDrag;
+    private string? _barHovered;
+
+    private readonly Popup _tip;
+    private readonly TextBlock _tipText;
+    private readonly DispatcherTimer _tipTimer;
 
     public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family)
     {
@@ -48,6 +62,35 @@ internal sealed class TerminalView : Control
 
         _driver.FrameReady += OnFrameReady;
         _repeat = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Input, (_, _) => RepeatPress());
+
+        _tipText = new TextBlock { Foreground = Brush(foreground), FontSize = 12, MaxWidth = 420, TextWrapping = TextWrapping.Wrap };
+        _tip = new Popup
+        {
+            PlacementTarget = this,
+            Placement = PlacementMode.Bottom,
+            IsLightDismissEnabled = false,
+            IsHitTestVisible = false,
+            Child = new Border
+            {
+                Background = Brush(Mix(background, foreground, 0.12f)),
+                BorderBrush = Brush(Mix(background, foreground, 0.35f)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(7, 4),
+                Child = _tipText,
+            },
+        };
+        LogicalChildren.Add(_tip);
+        _tipTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Input, (_, _) => OpenTip());
+
+        var pointer = _driver.Pointer;
+        pointer.HoverChanged += _ => Dispatcher.UIThread.Post(() => OnHover(pointer.Target));
+        pointer.ScrollbarsChanged += _ => Dispatcher.UIThread.Post(() =>
+        {
+            _bars = pointer.Bars;
+            InvalidateVisual();
+        });
+        pointer.MenuRequested += (_, items) => Dispatcher.UIThread.Post(() => OpenMenu(items));
     }
 
     /// <summary>The cell size in logical units, for mapping a pointer position to a cell.</summary>
@@ -79,6 +122,25 @@ internal sealed class TerminalView : Control
     public override void Render(DrawingContext context)
     {
         context.Custom(new FrameDraw(new Rect(Bounds.Size), _driver.Frame, _driver.Pictures, _renderer, _scale));
+        DrawHover(context);
+        DrawScrollbars(context);
+    }
+
+    /// <summary>
+    /// A faint plate under whatever a click acts on — a link, a tab, a sidebar row — so it reads as a control
+    /// before it is clicked. Drawn over the cells, never in them, so the frame is the terminal's frame.
+    /// </summary>
+    private void DrawHover(DrawingContext context)
+    {
+        if (_target.Kind is not (PointerKind.Link or PointerKind.Tab or PointerKind.RailRow) || _mouse.IsHeld || _target.Area.Width <= 0)
+        {
+            return;
+        }
+
+        var cell = CellSize;
+        var area = _target.Area;
+        var rect = new Rect(area.X * cell.Width, area.Y * cell.Height, area.Width * cell.Width, area.Height * cell.Height);
+        context.DrawRectangle(Brush(_renderer.DefaultForeground, 0x24), null, rect.Inflate(new Thickness(1, 0)), 2, 2);
     }
 
     private void Rescale(double scale)
@@ -185,14 +247,31 @@ internal sealed class TerminalView : Control
             return;
         }
 
-        if (button == PointerButton.Left && TryWindowGesture(e, point.Position))
+        CloseTip();
+        if (button == PointerButton.Left && (TryWindowGesture(e, point.Position) || TryGrabScrollbar(e, point.Position)))
         {
             e.Handled = true;
             return;
         }
 
+        var cell = Cell(point.Position);
+        var modifiers = Modifiers(e.KeyModifiers);
+        if (button == PointerButton.Right)
+        {
+            // The client answers a right press with a menu, which takes the pointer, so this view never sees the
+            // release: the click is sent whole, and nothing is left held to repeat or to turn into a drag.
+            _driver.RaiseMouse(_mouse.Pressed(button, cell, 1, modifiers), cell);
+            if (_mouse.Released(button, cell, modifiers) is { } released)
+            {
+                _driver.RaiseMouse(released, cell);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         e.Pointer.Capture(this);
-        _driver.RaiseMouse(_mouse.Pressed(button, Cell(point.Position), e.ClickCount, Modifiers(e.KeyModifiers)), Cell(point.Position));
+        _driver.RaiseMouse(_mouse.Pressed(button, cell, e.ClickCount, modifiers), cell);
         _repeat.Start();
         e.Handled = true;
     }
@@ -200,8 +279,18 @@ internal sealed class TerminalView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        UpdateEdgeCursor(e.GetPosition(this));
-        var cell = Cell(e.GetPosition(this));
+        var position = e.GetPosition(this);
+        _pointerAt = position;
+        if (_scrollDrag is { } drag)
+        {
+            DragScrollbar(drag, position.Y);
+            e.Handled = true;
+            return;
+        }
+
+        HoverScrollbar(position);
+        UpdateCursor(position);
+        var cell = Cell(position);
         if (_mouse.Moved(cell, Modifiers(e.KeyModifiers)) is { } flags)
         {
             _driver.RaiseMouse(flags, cell);
@@ -211,6 +300,16 @@ internal sealed class TerminalView : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (_scrollDrag is not null)
+        {
+            _scrollDrag = null;
+            e.Pointer.Capture(null);
+            HoverScrollbar(e.GetPosition(this));
+            UpdateCursor(e.GetPosition(this));
+            e.Handled = true;
+            return;
+        }
+
         var button = e.InitialPressMouseButton switch
         {
             MouseButton.Left => PointerButton.Left,
@@ -232,6 +331,7 @@ internal sealed class TerminalView : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+        CloseTip();
         var cell = Cell(e.GetPosition(this));
         var notches = MouseMapper.WheelNotches(ref _wheelRemainder, e.Delta.Y);
         for (var i = 0; i < Math.Abs(notches); i++)
@@ -285,15 +385,232 @@ internal sealed class TerminalView : Control
         }
     }
 
-    private void UpdateEdgeCursor(Point position)
+    /// <summary>
+    /// The cursor for <paramref name="position"/>: a window edge's resize cursor first, then the arrow over a
+    /// scrollbar, then whatever the client says the cell under it is.
+    /// </summary>
+    private void UpdateCursor(Point position)
     {
         var edge = Undecorated is { WindowState: WindowState.Normal } && !_mouse.IsHeld ? WindowChrome.EdgeAt(position, Bounds.Size) : null;
-        if (edge != _cursorEdge)
+        var cursor = edge is { } e ? WindowChrome.CursorFor(e)
+            : _scrollDrag is not null || _barHovered is not null ? StandardCursorType.Arrow
+            : CursorFor(_target.Shape);
+        if (cursor != _cursor)
         {
-            _cursorEdge = edge;
-            Cursor = new Cursor(edge is { } e ? WindowChrome.CursorFor(e) : StandardCursorType.Ibeam);
+            _cursor = cursor;
+            Cursor = new Cursor(cursor);
         }
     }
+
+    internal static StandardCursorType CursorFor(PointerShape shape) => shape switch
+    {
+        PointerShape.Text => StandardCursorType.Ibeam,
+        PointerShape.Hand => StandardCursorType.Hand,
+        PointerShape.ResizeColumns => StandardCursorType.SizeWestEast,
+        PointerShape.ResizeRows => StandardCursorType.SizeNorthSouth,
+        _ => StandardCursorType.Arrow,
+    };
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        CloseTip();
+        if (_barHovered is not null && _scrollDrag is null)
+        {
+            _barHovered = null;
+            InvalidateVisual();
+        }
+    }
+
+    // ── What is under the pointer ───────────────────────────────────────────────────────────────
+
+    private void OnHover(PointerTarget target)
+    {
+        if (target.Key == _target.Key && target.Tooltip == _target.Tooltip)
+        {
+            return;
+        }
+
+        _target = target;
+        InvalidateVisual();
+        UpdateCursor(_pointerAt);
+        CloseTip();
+        if (target.Tooltip is not null && !_mouse.IsHeld)
+        {
+            _tipTimer.Start();
+        }
+    }
+
+    /// <summary>The cursor the view is showing. Internal for tests.</summary>
+    internal StandardCursorType CursorType => _cursor;
+
+    /// <summary>The tooltip, open or not. Internal for tests.</summary>
+    internal (bool Open, string? Text) Tip => (_tip.IsOpen, _tipText.Text);
+
+    /// <summary>The last right-click menu opened. Internal for tests.</summary>
+    internal ContextMenu? OpenedMenu { get; private set; }
+
+    /// <summary>Shows the hovered target's tooltip under the pointer, once it has rested there. Internal for tests.</summary>
+    internal void OpenTip()
+    {
+        _tipTimer.Stop();
+        if (_target.Tooltip is not { } text || _mouse.IsHeld || _scrollDrag is not null || !IsPointerOver)
+        {
+            return;
+        }
+
+        _tipText.Text = text;
+        var cell = CellSize;
+        _tip.PlacementRect = new Rect(_pointerAt.X - cell.Width / 2, _pointerAt.Y, cell.Width, cell.Height);
+        _tip.IsOpen = true;
+    }
+
+    private void CloseTip()
+    {
+        _tipTimer.Stop();
+        _tip.IsOpen = false;
+    }
+
+    /// <summary>The client's right-click menu, as a native one. Each entry runs on the client's thread by itself.</summary>
+    private void OpenMenu(IReadOnlyList<PointerMenuItem> items)
+    {
+        CloseTip();
+        var menu = new ContextMenu { Placement = PlacementMode.Pointer, PlacementTarget = this };
+        Grid.SetIsSharedSizeScope(menu, true);
+        foreach (var item in items)
+        {
+            if (item.IsSeparator)
+            {
+                menu.Items.Add(new Separator());
+                continue;
+            }
+
+            var entry = new MenuItem { Header = MenuHeader(item), IsEnabled = item.Enabled };
+            entry.Click += (_, _) => item.Run();
+            menu.Items.Add(entry);
+        }
+
+        menu.Closed += (_, _) => Focus();
+        OpenedMenu = menu;
+        menu.Open(this);
+    }
+
+    /// <summary>A menu entry's label with its key after it, the keys lined up in a column of their own.</summary>
+    private static Control MenuHeader(PointerMenuItem item)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "label" });
+        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "hint" });
+        grid.Children.Add(new TextBlock { Text = item.Label, VerticalAlignment = VerticalAlignment.Center });
+        if (item.Hint is { } hint)
+        {
+            var key = new TextBlock { Text = hint, Opacity = 0.6, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(key, 1);
+            grid.Children.Add(key);
+        }
+
+        return grid;
+    }
+
+    // ── Scrollbars ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The scrollbars are drawn over the pane's right edge rather than in a column of it: a column would make
+    /// the pane narrower in this host than in a terminal, and every connected world is told the pane's width.
+    /// </summary>
+    private const double BarWidth = 4, BarWidthHovered = 8, BarZone = 12, MinimumThumb = 18;
+
+    private sealed record ScrollDrag(string WindowId, double Grab);
+
+    /// <summary>A bar's track and thumb in logical pixels, or null when the pane has nothing to scroll.</summary>
+    private (Rect Zone, Rect Thumb, double Travel)? BarGeometry(PaneScrollbar bar)
+    {
+        if (bar.ContentRows <= bar.ViewportRows || bar.ViewportRows <= 0)
+        {
+            return null;
+        }
+
+        var cell = CellSize;
+        var right = (bar.Track.X + bar.Track.Width) * cell.Width;
+        var top = bar.Track.Y * cell.Height;
+        var height = bar.Track.Height * cell.Height;
+        var thumb = Math.Min(height, Math.Max(MinimumThumb, height * bar.ViewportRows / bar.ContentRows));
+        var travel = height - thumb;
+        var hidden = bar.ContentRows - bar.ViewportRows;
+        var y = top + travel * Math.Clamp(bar.Offset, 0, hidden) / hidden;
+        var width = bar.WindowId == _barHovered ? BarWidthHovered : BarWidth;
+        return (new Rect(right - BarZone, top, BarZone, height), new Rect(right - width - 2, y, width, thumb), travel);
+    }
+
+    private PaneScrollbar? BarAt(Point position) =>
+        _bars.FirstOrDefault(bar => BarGeometry(bar) is { } g && g.Zone.Contains(position));
+
+    private void HoverScrollbar(Point position)
+    {
+        var hovered = _mouse.IsHeld ? null : BarAt(position)?.WindowId;
+        if (hovered != _barHovered)
+        {
+            _barHovered = hovered;
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>A press on a bar: the thumb is picked up where it was pressed; the track jumps the thumb to the pointer.</summary>
+    private bool TryGrabScrollbar(PointerPressedEventArgs e, Point position)
+    {
+        if (BarAt(position) is not { } bar || BarGeometry(bar) is not { } g)
+        {
+            return false;
+        }
+
+        var grab = g.Thumb.Top <= position.Y && position.Y < g.Thumb.Bottom ? position.Y - g.Thumb.Top : g.Thumb.Height / 2;
+        _scrollDrag = new ScrollDrag(bar.WindowId, grab);
+        _barHovered = bar.WindowId;
+        e.Pointer.Capture(this);
+        DragScrollbar(_scrollDrag, position.Y);
+        return true;
+    }
+
+    private void DragScrollbar(ScrollDrag drag, double y)
+    {
+        if (_bars.FirstOrDefault(b => b.WindowId == drag.WindowId) is not { } bar || BarGeometry(bar) is not { } g || g.Travel <= 0)
+        {
+            return;
+        }
+
+        var hidden = bar.ContentRows - bar.ViewportRows;
+        var fraction = Math.Clamp((y - drag.Grab - g.Zone.Top) / g.Travel, 0, 1);
+        bar.ScrollTo((int)Math.Round(fraction * hidden));
+    }
+
+    private void DrawScrollbars(DrawingContext context)
+    {
+        var colour = _renderer.DefaultForeground;
+        foreach (var bar in _bars)
+        {
+            if (BarGeometry(bar) is not { } g)
+            {
+                continue;
+            }
+
+            var active = bar.WindowId == _barHovered;
+            if (active)
+            {
+                var track = new Rect(g.Thumb.X, g.Zone.Y, g.Thumb.Width, g.Zone.Height);
+                context.DrawRectangle(Brush(colour, 0x22), null, track, g.Thumb.Width / 2, g.Thumb.Width / 2);
+            }
+
+            context.DrawRectangle(Brush(colour, active ? (byte)0xB0 : (byte)0x60), null, g.Thumb, g.Thumb.Width / 2, g.Thumb.Width / 2);
+        }
+    }
+
+    private static SolidColorBrush Brush(SKColor colour, byte alpha = 0xFF) =>
+        new(Color.FromArgb(alpha, colour.Red, colour.Green, colour.Blue));
+
+    private static SKColor Mix(SKColor from, SKColor to, float amount) => new(
+        (byte)(from.Red + (to.Red - from.Red) * amount),
+        (byte)(from.Green + (to.Green - from.Green) * amount),
+        (byte)(from.Blue + (to.Blue - from.Blue) * amount));
 
     private void RepeatPress()
     {

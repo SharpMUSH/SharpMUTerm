@@ -712,14 +712,43 @@ fallbacks) for inline images/maps.
     checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
   - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level
     selection only (it is the framework's), no bundled font, never run on Windows or macOS by a person.
+- **The client says what is under the pointer; a host only shows it** (`Tui/Pointer/`: `TargetAt`,
+  `PointerMenu`, `IPointerPresenter`; `ClientHost.Pointer`). Every mouse frame is also marshalled to
+  `OnPointerFrame` on the client's thread, which works out the target (divider, rail row, tab, link, output,
+  command line) with its pointer shape and tooltip, and hands the host a hover, a right-click menu or the
+  panes' scroll positions. Nothing in it consumes a frame: the framework and `PaneDragTracker` see every
+  frame as before. Decisions not to relitigate:
+  - **The divider cues are cells, so both hosts have them.** A pane divider recolours to
+    `WorkspacePalette.RuleHover` under the pointer and while dragged; a drag moves the border to the pointer
+    (`PaneResize.DragBorder`, which changes only the two children either side), a double-click evens the
+    split (`PaneResize.Even`). A recolour costs no cell and moves no pane rectangle — the NAWS rule. While a
+    drag is held the 100 ms bare-press repeat is read as "the pointer is here".
+  - **The menu is the ⌃P catalog's own entries** (`AddCommands`), so it cannot offer an action the keyboard
+    lacks, and each says its key (`ShortHint`). A right-click on a link or output focuses that pane first,
+    and on a tab activates it, so the entries act on what was clicked.
+  - **Link and tab hit tests read the framework's private paint geometry** (`FrameworkHitTests`:
+    `MarkupControl._cachedRowLinks`/`_cachedRowPaintX`/`_cachedOriginY`, `TabControl.GetTabIndexAtX`).
+    A rename costs the hover and nothing else; `PointerTests.TheHitTestsTheHoverNeedsAreStillInTheFramework`
+    fails on the release that does it.
+  - **The window** (`WindowPointer` on the driver; `TerminalView`): the cursor from the target's shape (a
+    window edge first), a tooltip after 500 ms, a faint plate over a link, tab or rail row, a native
+    `ContextMenu` in the client's theme variant, and **overlay scrollbars** drawn over each pane's right
+    edge — never in a column of it, which would make the pane narrower than in a terminal and change what
+    NAWS reports. A press on a bar is the window's and never reaches the client. A right press is sent as a
+    whole click, because the menu takes the pointer and the release would never arrive.
+  - **The terminal** (`TerminalPointer`): pointer shapes over OSC 22 on kitty, Ghostty and foot, through the
+    same raw write `?1004` uses. No tooltips, menus or scrollbars: nothing in a terminal can draw over cells
+    without taking them.
+  - Screenshots of the window's cues come from a real window under Xvfb, driven with XTest; `--render-png`
+    has no pointer and cannot show them.
 
 ## One client, several hosts — and how they are kept the same
 
 The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the headless snapshot all run the
 one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
-(`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop, and
-the Sixel cell size. Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+(`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
+the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until

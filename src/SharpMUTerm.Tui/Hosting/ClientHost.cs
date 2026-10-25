@@ -41,6 +41,12 @@ internal sealed record ClientHost
     /// <summary>Whether to ask for terminal focus reports (<see cref="TerminalFocusWatcher"/>).</summary>
     public required bool FocusReporting { get; init; }
 
+    /// <summary>
+    /// What the host does with the pointer cues the client works out — a cursor shape, a tooltip, a right-click
+    /// menu, scrollbars drawn over a pane — or null for a host that shows none of them.
+    /// </summary>
+    public required IPointerPresenter? Pointer { get; init; }
+
     /// <summary>The keys this host delivers differently from the others, or keeps for itself.</summary>
     public required HostKeys Keys { get; init; }
 
@@ -65,10 +71,16 @@ internal sealed record ClientHost
         Headless(new HeadlessConsoleDriver(width, height), capabilities);
 
     /// <summary>The terminal client as it always was: the framework's own driver, the system clipboard, focus decided by the platform.</summary>
-    public static ClientHost Terminal(TerminalCapabilities capabilities) => new()
+    public static ClientHost Terminal(TerminalCapabilities capabilities)
+    {
+        var driver = new NetConsoleDriver(RenderMode.Buffer);
+        return Terminal(capabilities, driver);
+    }
+
+    private static ClientHost Terminal(TerminalCapabilities capabilities, IConsoleDriver driver) => new()
     {
         Name = "terminal",
-        Driver = new NetConsoleDriver(RenderMode.Buffer),
+        Driver = driver,
         Capabilities = capabilities,
 
         // SharpConsoleUI's helper writes OSC 52 *and* mirrors to the platform tool (wl-copy / xclip / pbcopy /
@@ -77,6 +89,7 @@ internal sealed record ClientHost
         OpenUrl = ExternalBrowser.Open,
         FocusReporting = PlatformDecodesFocusReports,
         Keys = HostKeys.Terminal,
+        Pointer = TerminalPointer.Create(driver),
         RunsInline = false,
         SixelCell = SharpMUTermApp.SixelCellSize(Environment.GetEnvironmentVariable(SharpMUTermApp.SixelCellVariable)),
     };
@@ -94,6 +107,7 @@ internal sealed record ClientHost
         OpenUrl = null,
         FocusReporting = false,
         Keys = HostKeys.Terminal,
+        Pointer = null,
         RunsInline = true,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
     };

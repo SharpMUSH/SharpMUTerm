@@ -158,6 +158,84 @@ public static class PaneResize
     }
 
     /// <summary>
+    /// Puts the border between child <paramref name="index"/> and child <paramref name="index"/> + 1 of
+    /// <paramref name="split"/> at <paramref name="boundary"/> — the cell the divider should occupy, counted
+    /// along the split's axis the way the rectangles are. What a mouse drag on a divider asks for: a
+    /// position, not a step. Only those two children change size, their floors hold, and every other
+    /// child keeps its cells, which is <see cref="Apply"/>'s rule for the same NAWS reason.
+    /// </summary>
+    /// <returns>
+    /// <see cref="PaneResizeOutcome.Resized"/> with the signed distance moved, <see cref="PaneResizeOutcome.AtMinimum"/>
+    /// when the border is already as close to that cell as the floors allow, or
+    /// <see cref="PaneResizeOutcome.NotMeasured"/> when a pane involved has no rectangle.
+    /// </returns>
+    public static PaneResizeResult DragBorder(
+        SplitNode split,
+        int index,
+        int boundary,
+        IReadOnlyDictionary<string, PaneRect> rects)
+    {
+        ArgumentNullException.ThrowIfNull(split);
+        ArgumentNullException.ThrowIfNull(rects);
+        if (index < 0 || index + 1 >= split.Children.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        var horizontal = split.Direction == SplitDirection.Row;
+        var extents = new int[split.Children.Count];
+        var start = 0;
+        for (var i = 0; i < extents.Length; i++)
+        {
+            if (Span(split.Children[i], horizontal, rects) is not { } span)
+            {
+                return new PaneResizeResult(PaneResizeOutcome.NotMeasured, 0);
+            }
+
+            extents[i] = span.Length;
+            if (i == index)
+            {
+                start = span.Start;
+            }
+        }
+
+        var total = extents.Sum();
+        var pair = extents[index] + extents[index + 1];
+        var lowest = Minimum(split.Children[index], horizontal);
+        var highest = pair - Minimum(split.Children[index + 1], horizontal);
+        if (total <= 0 || lowest > highest)
+        {
+            return new PaneResizeResult(total <= 0 ? PaneResizeOutcome.NotMeasured : PaneResizeOutcome.AtMinimum, 0);
+        }
+
+        var wanted = Math.Clamp(boundary - start, lowest, highest);
+        var moved = wanted - extents[index];
+        if (moved == 0)
+        {
+            return new PaneResizeResult(PaneResizeOutcome.AtMinimum, 0);
+        }
+
+        extents[index] = wanted;
+        extents[index + 1] = pair - wanted;
+        split.SetSizes(extents.Select(cells => (double)cells / total).ToList());
+        return new PaneResizeResult(PaneResizeOutcome.Resized, moved);
+    }
+
+    /// <summary>Gives every child of <paramref name="split"/> an equal share again. False when they already have one.</summary>
+    public static bool Even(SplitNode split)
+    {
+        ArgumentNullException.ThrowIfNull(split);
+        var share = 1.0 / split.Children.Count;
+        if (split.Sizes.All(size => Math.Abs(size - share) < 1e-9))
+        {
+            return false;
+        }
+
+        split.ResetSizes();
+        return true;
+    }
+
+    /// <summary>
     /// The smallest <paramref name="node"/> can be along an axis, in cells. A pane is the flat floor; a
     /// split running <em>in</em> that axis needs the sum of its children's floors plus its dividers, and
     /// one running across it needs the largest of them. So squeezing a subtree can never crush a pane
@@ -278,6 +356,12 @@ public static class PaneResize
     private static int? Extent(
         LayoutNode node,
         bool horizontal,
+        IReadOnlyDictionary<string, PaneRect> rects) => Span(node, horizontal, rects)?.Length;
+
+    /// <summary>Where a subtree starts along one axis and how many cells it covers; null as for <see cref="Extent"/>.</summary>
+    private static (int Start, int Length)? Span(
+        LayoutNode node,
+        bool horizontal,
         IReadOnlyDictionary<string, PaneRect> rects)
     {
         int? near = null;
@@ -296,7 +380,7 @@ public static class PaneResize
             far = far is { } f ? Math.Max(f, end) : end;
         }
 
-        return near is { } lo && far is { } hi ? hi - lo : null;
+        return near is { } lo && far is { } hi ? (lo, hi - lo) : null;
     }
 
     /// <summary>

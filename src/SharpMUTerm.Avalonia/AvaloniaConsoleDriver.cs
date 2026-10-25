@@ -64,6 +64,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
 
     public PictureStore Pictures { get; } = new();
 
+    /// <summary>What the client says is under the pointer, for the window to show (<see cref="WindowPointer"/>).</summary>
+    public WindowPointer Pointer { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

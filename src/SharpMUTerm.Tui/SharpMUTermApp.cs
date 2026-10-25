@@ -38,7 +38,7 @@ namespace SharpMUTerm.Tui;
 /// tabs — so spawn routing and unread badges reuse the tested Core logic. Splits (via SharpConsoleUI
 /// splitters) layer on this later. Background session events are marshalled onto the UI thread.
 /// </summary>
-internal sealed class SharpMUTermApp : IAsyncDisposable
+internal sealed partial class SharpMUTermApp : IAsyncDisposable
 {
     internal const string MainWindowId = "main";
     private const string WebWindowId = "web";
@@ -501,6 +501,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly Action<string>? _clipboard;
 
+    /// <summary>Where the pointer's cues go (<see cref="IPointerPresenter"/>); null for a host that shows none.</summary>
+    private readonly IPointerPresenter? _pointer;
+
     /// <summary>
     /// The directory session transcripts are written under, or null for an app that owns no log
     /// directory — which is the default, and is what every test and every snapshot gets. See the
@@ -651,6 +654,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         _save = save;
         _openUrl = host.OpenUrl;
         _clipboard = host.Clipboard;
+        _pointer = host.Pointer;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
         _inlineImages = new InlineImageHost(
@@ -884,6 +888,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             SyncTabStripWidths();
             SyncTransparentColours();
             DrawSixelOverlay(buffer);
+            PublishScrollbars();
         };
         if (_sixel is not null)
         {
@@ -8897,6 +8902,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
         }
 
         _paneSurfaces.Clear();
+        _dividers.Clear();
 
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
@@ -8978,14 +8984,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// trick; the settings screens found it first.) It matters more now that the panes carry a surface:
     /// a hairline is what keeps two adjacent surfaces from reading as one.
     /// </summary>
-    private IWindowControl Divider()
+    private HorizontalGridControl Divider(bool lit = false)
     {
         var rule = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Flex(1).Add(new MarkupControl(new List<string>())))
             .Build();
-        rule.BackgroundColor = ToColor(WorkspacePalette.Rule(_theme));
+        rule.BackgroundColor = ToColor(lit ? WorkspacePalette.RuleHover(_theme) : WorkspacePalette.Rule(_theme));
         return rule;
     }
 
@@ -9454,7 +9460,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 grid.Place(children[i], 0, i * 2, 1, 1);
                 if (i < children.Count - 1)
                 {
-                    grid.Place(Divider(), 0, i * 2 + 1, 1, 1);
+                    grid.Place(PaneDivider(split, i), 0, i * 2 + 1, 1, 1);
                 }
             }
         }
@@ -9466,7 +9472,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 grid.Place(children[i], i * 2, 0, 1, 1);
                 if (i < children.Count - 1)
                 {
-                    grid.Place(Divider(), i * 2 + 1, 0, 1, 1);
+                    grid.Place(PaneDivider(split, i), i * 2 + 1, 0, 1, 1);
                 }
             }
         }
@@ -10804,6 +10810,11 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnDriverMouseEvent(object sender, List<MouseFlags> flags, System.Drawing.Point point)
     {
+        // Hover, divider drags and the right-click menu read arranged layout, so they go to the client's
+        // thread; the copy is because the driver may reuse its list.
+        var frame = flags.ToList();
+        OnUiThread(() => OnPointerFrame(frame, point));
+
         // Overlays own the whole screen while they're up; a drag underneath them would target panes
         // the user can't even see.
         if (AnyOverlayOpen || _moveMode)

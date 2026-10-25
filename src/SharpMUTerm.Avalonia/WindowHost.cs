@@ -44,6 +44,7 @@ internal static class WindowHost
         FocusReporting = false,
         Keys = Keys,
         RunsInline = false,
+        Pointer = driver.Pointer,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
     };
 }

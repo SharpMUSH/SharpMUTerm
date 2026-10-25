@@ -7,6 +7,7 @@ using Color = SharpConsoleUI.Color;
 using Window = Avalonia.Controls.Window;
 using SharpConsoleUI.Drivers;
 using SkiaSharp;
+using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Avalonia.Tests;
 
@@ -146,6 +147,130 @@ public class TerminalViewTests
 
         await Assert.That(states).IsEquivalentTo(new[] { WindowState.Maximized, WindowState.Normal });
         await Assert.That(keys).IsEmpty();
+    }
+
+    [Test]
+    public async Task ARightClickIsSentWholeSoNothingIsLeftHeld()
+    {
+        var events = await Run(window =>
+        {
+            var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var seen = new List<List<MouseFlags>>();
+            driver.MouseEvent += (_, flags, _) => seen.Add(flags);
+            var cell = view.SizeFor(1, 1);
+            var at = new Point((cell.Width * 3) + 1, (cell.Height * 1) + 1);
+            window.MouseDown(at, MouseButton.Right);
+            window.MouseMove(at + new Vector(cell.Width, 0));
+            return seen;
+        });
+
+        await Assert.That(events.Count).IsEqualTo(3);
+        await Assert.That(events[0]).IsEquivalentTo(new[] { MouseFlags.Button3Pressed });
+        await Assert.That(events[1]).IsEquivalentTo(new[] { MouseFlags.Button3Released, MouseFlags.Button3Clicked });
+        await Assert.That(events[2]).IsEquivalentTo(new[] { MouseFlags.ReportMousePosition }).Because("a move after it is not a right-drag");
+    }
+
+    [Test]
+    public async Task TheCursorIsWhatTheClientSaysIsUnderThePointer()
+    {
+        var cursors = await Run(window =>
+        {
+            var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var seen = new List<StandardCursorType>();
+            foreach (var shape in new[] { PointerShape.Hand, PointerShape.ResizeColumns, PointerShape.ResizeRows, PointerShape.Text })
+            {
+                driver.Pointer.Hover(new PointerTarget(PointerKind.Link, new(0, 0, 1, 1), shape, null, shape.ToString()));
+                Dispatch.Drain();
+                seen.Add(view.CursorType);
+            }
+
+            return seen;
+        });
+
+        await Assert.That(cursors).IsEquivalentTo(new[]
+        {
+            StandardCursorType.Hand, StandardCursorType.SizeWestEast, StandardCursorType.SizeNorthSouth, StandardCursorType.Ibeam,
+        });
+    }
+
+    [Test]
+    public async Task ATooltipOpensWithTheClientsTextAndAPressClosesIt()
+    {
+        var (open, text, afterPress) = await Run(window =>
+        {
+            var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var cell = view.SizeFor(1, 1);
+            var at = new Point((cell.Width * 2) + 1, cell.Height + 1);
+            window.MouseMove(at);
+            driver.Pointer.Hover(new PointerTarget(PointerKind.Link, new(2, 1, 3, 1), PointerShape.Hand, "Opens in your browser:\nhttps://example.com", "link"));
+            Dispatch.Drain();
+            view.OpenTip();
+            var tip = view.Tip;
+            window.MouseDown(at, MouseButton.Left);
+            window.MouseUp(at, MouseButton.Left);
+            return (tip.Open, tip.Text, view.Tip.Open);
+        });
+
+        await Assert.That(open).IsTrue();
+        await Assert.That(text).IsEqualTo("Opens in your browser:\nhttps://example.com");
+        await Assert.That(afterPress).IsFalse();
+    }
+
+    [Test]
+    public async Task TheClientsMenuOpensAndAnEntryRunsItsAction()
+    {
+        var (labels, ran) = await Run(window =>
+        {
+            var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var ran = new List<string>();
+            driver.Pointer.ShowMenu(new System.Drawing.Point(1, 1),
+            [
+                new PointerMenuItem("Split right", "⌃B |", () => ran.Add("split")),
+                PointerMenuItem.Separator,
+                new PointerMenuItem("Copy link address", null, () => ran.Add("copy"), Enabled: false),
+            ]);
+            Dispatch.Drain();
+            var menu = view.OpenedMenu!;
+            var entries = menu.Items.OfType<MenuItem>().ToArray();
+            entries[0].RaiseEvent(new global::Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+            var labels = menu.Items.Select(i => i is MenuItem m ? $"{m.IsEnabled}" : "-").ToArray();
+            return (labels, ran);
+        });
+
+        await Assert.That(labels).IsEquivalentTo(new[] { "True", "-", "False" });
+        await Assert.That(ran).IsEquivalentTo(new[] { "split" });
+    }
+
+    [Test]
+    public async Task APanesScrollbarIsPaintedOnItsRightEdgeAndDraggingItScrollsInsteadOfSelecting()
+    {
+        var (thumb, empty, scrolledTo, clientSaw) = await Run(window =>
+        {
+            var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var scrolledTo = new List<int>();
+            var clientSaw = 0;
+            driver.MouseEvent += (_, _, _) => clientSaw++;
+            driver.Pointer.Scrollbars([new PaneScrollbar("main", new(0, 0, 10, 4), 40, 4, 0, scrolledTo.Add)]);
+            Dispatch.Drain();
+            using var frame = window.CaptureRenderedFrame()!;
+            var cell = view.SizeFor(1, 1);
+            var right = cell.Width * 10;
+            var thumb = Pixel(frame, right - 4, 2);
+            var empty = Pixel(frame, right - 4, (cell.Height * 4) - 2);
+
+            var grab = new Point(right - 3, 3);
+            window.MouseDown(grab, MouseButton.Left);
+            window.MouseMove(grab + new Vector(0, cell.Height * 2));
+            window.MouseUp(grab + new Vector(0, cell.Height * 2), MouseButton.Left);
+            return (thumb, empty, scrolledTo, clientSaw);
+        });
+
+        var back = global::Avalonia.Media.Color.FromRgb(Back.Red, Back.Green, Back.Blue);
+        await Assert.That(thumb).IsNotEqualTo(back);
+        await Assert.That(empty).IsEqualTo(back).Because("the thumb is a tenth of the track and sits at the top");
+        await Assert.That(scrolledTo.Count).IsGreaterThan(0);
+        await Assert.That(scrolledTo[^1]).IsGreaterThan(0);
+        await Assert.That(clientSaw).IsEqualTo(0).Because("a press on the bar is the window's, not a selection");
     }
 
     private static global::Avalonia.Media.Color Pixel(global::Avalonia.Media.Imaging.WriteableBitmap bitmap, double x, double y)
