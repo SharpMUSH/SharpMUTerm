@@ -7,6 +7,8 @@ and a release fails without its section. The procedure is in [`docs/RELEASING.md
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-25
+
 ### Added
 
 - A desktop window (`sharpmuterm-window`) that runs the same client as the terminal and draws pictures as
