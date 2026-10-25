@@ -14,10 +14,25 @@ not just SharpMUSH ones.
 The goal is [BeipMU](https://beipdev.github.io/BeipMU/)-class feature parity in a terminal-native
 client: rich truecolor text, inline graphics, powerful automation, and full MU\* protocol support.
 
-> **Status:** milestone **M1 delivered** (usable text client foundation) with substantial work
-> from M2–M4 in place — automation engines, inline-graphics subsystem, Lua scripting, and theming.
-> `SharpMUTerm.Core` is fully unit-tested (514 tests across the solution). See
-> [`docs/PLAN.md`](docs/PLAN.md) for the full architecture and roadmap.
+> **Status:** first release, **0.1.0**. It is a usable text client with automation engines, inline
+> graphics, Lua scripting, theming and a desktop window, all covered by unit tests. Each release's changes are
+> in [`CHANGELOG.md`](CHANGELOG.md). The architecture and roadmap are in [`docs/PLAN.md`](docs/PLAN.md).
+
+## Install
+
+Download a package from the [latest release](https://github.com/SharpMUSH/SharpMUTerm/releases/latest).
+Each one contains both programs: `sharpmuterm`, the terminal client, and `sharpmuterm-window`, the same
+client in a desktop window. No .NET runtime is needed.
+
+| Platform | Package | What to run |
+|---|---|---|
+| Windows | `SharpMUTerm-<version>-win-x64-setup.exe` | Start menu ▸ SharpMUTerm opens the window. Tick *Add to PATH* to run `sharpmuterm` from any terminal. Installs per user, with no administrator prompt. |
+| Windows | `sharpmuterm-win-x64.zip` | Unzip and run either `.exe`. |
+| Linux | `SharpMUTerm-<version>-x86_64.AppImage` | `chmod +x` it and run it to open the window. Add `--terminal` as the first argument to run the terminal client instead. |
+| Linux | `sharpmuterm-linux-x64.tar.gz` | Unpack and run either program. |
+
+`sharpmuterm --window` starts the window from the terminal client, as long as `sharpmuterm-window` is next to
+it or on `PATH`.
 
 ## Why a TUI
 
@@ -49,7 +64,7 @@ because a player count from last week is not a player count; and it distinguishe
 never dialled from a server that answered and publishes no MSSP, which is the ordinary case on a MUSH
 and not a fault.
 
-## Solution layout (planned)
+## Solution layout
 
 | Project | Responsibility |
 |---|---|
@@ -57,6 +72,8 @@ and not a fault.
 | `SharpMUTerm.Graphics` | Kitty graphics protocol, capability probe, Sixel + half-block fallbacks, `GraphicsView` |
 | `SharpMUTerm.Scripting` | MoonSharp host + scripting API |
 | `SharpMUTerm.Tui` | SharpConsoleUI application (windows, panes, settings, wiring) |
+| `SharpMUTerm.Web` | The text-mode web view |
+| `SharpMUTerm.Avalonia` | The desktop window: the same client on a console driver drawn with Skia |
 | `*.Tests` | TUnit test projects |
 
 ## What works today
@@ -97,7 +114,7 @@ and not a fault.
   character-bound input prompt + destination/draft gutter. Output is truecolor markup with clickable
   MXP/Pueblo/web spans; every connected world is told its **own pane's** size over NAWS, on every
   resize and every layout change (rate-limited, with the settled size always delivered).
-  `Ctrl+N` next window · `Ctrl+O` next pane · `Ctrl+W` close · `Ctrl+R` command history (per command
+  `Ctrl+N` next tab · `Ctrl+O` next pane · `Ctrl+W` close · `Ctrl+R` command history (per command
   line, newest first, typing filters it; ⏎ puts an entry on the input line rather than sending it) ·
   `Ctrl+Q` quit (asks first, naming the connections and unsent drafts it would end). Hand-typed login
   lines (`connect <name> <password>`) are kept out of history, and history is never written to disk.
@@ -105,8 +122,10 @@ and not a fault.
   follow an MXP/Pueblo/HTML link and read the page as styled, word-wrapped text with clickable
   links you can navigate in-pane. `<img>` shows as a labelled link (graphics-terminal image
   rendering reuses the Kitty/Sixel/half-block pipeline).
-- **Packaging** — self-contained single-file publishing for Linux/Windows (see
-  [`docs/PACKAGING.md`](docs/PACKAGING.md)); a tagged release workflow builds the binaries.
+- **Packaging** — self-contained single-file builds for Linux and Windows, released as an AppImage, a
+  Windows installer, a `.tar.gz` and a `.zip`, each holding both programs. A tag builds them, and the
+  release notes come from the changelog. See [`docs/PACKAGING.md`](docs/PACKAGING.md) and
+  [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Building
 
@@ -120,21 +139,23 @@ dotnet build SharpMUTerm.slnx -c Release
 
 ```bash
 dotnet run --project src/SharpMUTerm.Tui -- <host> <port> [--tls] [--insecure] [--name NAME]
-sharpmuterm --help    # once published
+sharpmuterm --help    # from a release package
 ```
 
-In-app: **Up/Down** input history · **Ctrl+N** next window · **Ctrl+W** close window · **Alt+R** reconnect
-(drops the connection and redials it) · **Ctrl+D** disconnect · **Ctrl+Q** quit (y/n confirmation). Alt+R and
-Ctrl+D act at once, on the character whose pane is focused, and say so when there is nothing connected.
+In-app: **Alt+Up/Down** input history · **Ctrl+P** command surface · **Ctrl+F** search · **Ctrl+N** next tab ·
+**Ctrl+W** close window · **Alt+F** freeze the pane · **Alt+R** reconnect (drops the connection and redials it) ·
+**Alt+D** disconnect · **Ctrl+Q** quit (y/n confirmation). Alt+R and Alt+D act at once, on the character whose
+pane is focused, and say so when there is nothing connected. F4 (macros) says which keys the client already uses.
 (Windows/panes are mouse-resizable; each window keeps its own input draft.)
 
-### In a desktop window (prototype)
+### In a desktop window
 
 The same client can run in its own window instead of a terminal. It draws the cells itself with Skia,
 so pictures sent by a world are drawn as real bitmaps on every platform — including Windows, whose
 terminals cannot show Kitty graphics. Every terminal option works, plus a few of its own (`--help`):
 
 ```bash
+sharpmuterm-window <host> <port>        # from a release package
 dotnet run --project src/SharpMUTerm.Avalonia -- <host> <port> [--font "Cascadia Mono"] [--font-size 14]
 dotnet run --project src/SharpMUTerm.Avalonia -- --demo-config --view mxp-image   # the demo worlds, saves nothing
 ```
