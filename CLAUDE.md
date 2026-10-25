@@ -781,8 +781,12 @@ the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, nul
 **`sharpmuterm --window` hands off to `sharpmuterm-window`** (`WindowHandoff`, in `Hosting/`): it starts the
 window exe with every other argument unchanged and exits with 0, or 1 and a message naming where it looked
 (beside the running program first, then `PATH`). There is no in-process switch: the terminal does not load
-Avalonia. The window ignores the flag. **`release.yml` publishes only the terminal**, so a released build finds
-no window exe until packaging ships both.
+Avalonia. The window ignores the flag. **Every release package ships both executables side by side**
+(`release.yml`; `packaging/`): the `.tar.gz`/`.zip`, the Linux AppImage and the Windows installer. The AppImage
+starts the window; `--terminal` as its first argument runs the terminal instead, and `--terminal --window` is
+turned into the window by `AppRun` itself rather than by the hand-off, because an AppImage is unmounted when the
+program it started exits and the hand-off exits at once. The installer is Inno Setup, per-user by default, with
+an optional PATH entry so `sharpmuterm` runs from any terminal.
 
 **Not covered yet**: F4's verdicts (`MacroKeys.Verdict`) describe the terminal only. In the window ⌃digit
 does arrive (F4 says it cannot), and ⌥⏎ never reaches a macro. Making it per host means threading `HostKeys`

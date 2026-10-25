@@ -12,6 +12,7 @@
     <RootNamespace>SharpMUTerm.Avalonia</RootNamespace>
     <AssemblyName>sharpmuterm-window</AssemblyName>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <ApplicationIcon>..\..\packaging\icons\sharpmuterm.ico</ApplicationIcon>
     <!-- The Tui project is an Exe too; referencing it is how this host reuses its composition root. -->
     <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
