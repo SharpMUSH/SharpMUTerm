@@ -78,18 +78,18 @@ public class AdvertisedKeyHonestyTests
     }
 
     /// <summary>
-    /// The newline entry names both spellings, and both of them insert a newline. Alt+⏎ is driven the way
-    /// the terminal delivers it — Escape then Enter — because that is the only way it arrives.
+    /// The newline entry names its chord, and the chord inserts a newline. Alt+⏎ is driven the way the
+    /// terminal delivers it — Escape then Enter — because that is the only way it arrives.
     /// </summary>
     [Test]
-    public async Task TheNewlineEntryNamesTwoChordsAndBothWork()
+    public async Task TheNewlineEntryNamesItsChordAndItWorks()
     {
         var app = App();
         app.RenderSnapshot();
 
         var entry = app.BuildCatalog().Single(c => c.Id == "term:newline");
         await Assert.That(entry.Subtitle).Contains("Alt+⏎");
-        await Assert.That(entry.Subtitle).Contains("⌃L");
+        await Assert.That(entry.Subtitle).DoesNotContain("⌃L");
 
         // Alt+⏎, as two key events.
         Clear(app);
@@ -98,13 +98,6 @@ public class AdvertisedKeyHonestyTests
         app.SimulateKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
         app.SimulateKey(new ConsoleKeyInfo('b', ConsoleKey.NoName, false, false, false));
         await Assert.That(app.ArmedInputText).IsEqualTo("a\nb");
-
-        // ⌃L.
-        Clear(app);
-        app.SimulateKey(new ConsoleKeyInfo('c', ConsoleKey.NoName, false, false, false));
-        app.SimulateKey(Ctrl(ConsoleKey.L));
-        app.SimulateKey(new ConsoleKeyInfo('d', ConsoleKey.NoName, false, false, false));
-        await Assert.That(app.ArmedInputText).IsEqualTo("c\nd");
     }
 
     private static void Clear(SharpMUTermApp app)
@@ -255,7 +248,7 @@ public class AdvertisedKeyHonestyTests
         var help = Program.UsageText;
 
         await Assert.That(help).Contains("Alt+Enter");
-        await Assert.That(help).Contains("Ctrl+L");
+        await Assert.That(help).DoesNotContain("Ctrl+L ");
         await Assert.That(help).Contains("Ctrl+Left/Right/Up/Down");
         await Assert.That(help).Contains("Alt+Left/Right");
     }

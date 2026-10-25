@@ -32,7 +32,7 @@ fallbacks) for inline images/maps.
   control for a long time, on the grounds that a command line is not an editor; the maintainer chose to
   rebuild it on the editor once 2.7.8 was in, for undo/redo, word-aware wrapping and the editor's mouse
   handling. What the subclass adds is the part an editor does not do: ⏎ sends (the editor inserts on ⏎
-  and declines every modified ⏎, so ⌥⏎/⌃L are handed to it as a *bare* ⏎); it grows between `MinRows`
+  and declines every modified ⏎, so ⌥⏎ is handed to it as a *bare* ⏎); it grows between `MinRows`
   and `MaxRows` (`MeasureDOM` sets the editor's fixed viewport from the wrapped row count); the prompt is
   a gutter renderer, so every row indents past it; and the key table in front decides what the editor
   ever sees. Three things are load-bearing:
@@ -58,7 +58,7 @@ fallbacks) for inline images/maps.
 
 ## Repository state
 
-**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all ten projects on
+**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all twelve projects on
 `net10.0`, with the full test suite passing. In place:
 
 - **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
@@ -659,6 +659,60 @@ fallbacks) for inline images/maps.
     `RestoreLog` format-version bump). **Wired, not yet acted on**: nothing today gags, logs, restores,
     searches or badges a prompt any differently from an ordinary line because of this bit.
 
+- **The same client runs in a desktop window, on a console driver of our own** (`SharpMUTerm.Avalonia`,
+  `sharpmuterm-window`; prototype). `AvaloniaConsoleDriver` implements SharpConsoleUI's `IConsoleDriver` and
+  `IGraphicsProtocol` — both public, and nothing in the framework casts to a concrete driver — so
+  `SharpMUTermApp` runs unchanged: the framework writes cells into a `CellGrid`, `Flush` publishes an immutable
+  `ScreenFrame`, and `TerminalView` paints it with Skia. It exists for Windows, where ConPTY drops Kitty
+  graphics. Things not to relitigate:
+  - **It reports Kitty and is the terminal at once.** The client sends a picture exactly as it would to kitty
+    (`TransmitRawRgb` plus `U+10EEEE` placeholder rows); the driver keeps the pixels (`PictureStore`) and
+    `CellRenderer` draws each placeholder cell as its slice of the picture. Nothing on the client side knows a
+    window is involved, so a picture scrolls, clips and freezes with its pane as it does in kitty.
+  - **Keys follow `AnsiInputParser`'s spellings field for field** (`KeyMapper`) — Ctrl+letter carries its
+    control byte, Alt+letter the letter — because every key table here was written against them. Printable
+    keys come from `TextInput`, never the physical key, so layouts, dead keys and the IME work. Clicks are
+    *synthesised* (`MouseMapper`) in `UnixStdinReader`'s shapes, including the 100 ms press repeat.
+  - **The client loop runs on its own thread**; `ConsoleWindowSystem.Run` blocks, and Avalonia must keep the
+    main one. They meet only in the driver. Closing the window sends ⌃Q, so it goes through `QuitOverlay`.
+  - **`Program.RunLive` is the one composition root for both hosts** (`LiveHost` says what differs): same
+    files, same save on exit. `--demo-config` in the window builds the app the snapshot way, saving nothing.
+    Focus reporting is off: its focus-in is a disguised Tab, and a window would only misread real Tabs.
+  - **A snapshot scene on a non-headless driver does not wait for its pictures** (`AwaitSnapshotPictures`):
+    the Kitty transmit is UI-thread work, queued until the loop runs, so waiting before `Run` deadlocked.
+  - **Block elements, box lines, rounded corners and powerline wedges are drawn as shapes** (`Shapes`), and
+    the cell is whole device pixels; a font draws them to its own ascent, which leaves seams. Icons in the
+    Private Use Area are looked up in a Nerd Font **by name** before the platform fallback, which on Linux can
+    pick a face that draws PUA code points as hex boxes. No font is bundled: with no Nerd Font installed the
+    chrome's icons are tofu.
+  - **The window has no title bar** (`WindowDecorations.BorderOnly`; `--title-bar` restores it). The client's
+    header is the top of the window. A drag on a *blank* header cell moves it and a double-click maximises
+    (`WindowChrome`); a press on header text is still the client's. Resizing is a 5-pixel band at each edge,
+    done by us with `BeginResizeDrag`, because a borderless window on Linux gets a border only from some window
+    managers. There is no close or minimise button: ⌃Q quits. **⌥⏎ maximises and restores** (Windows
+    Terminal's chord), which takes the client's ⌥⏎ newline in this host. The newline is ⌃⏎ or ⇧⏎ here: a
+    window reports both modifiers, so they reach `InputBarControl`'s existing modified-⏎ arm with no change on
+    the client side (`NewlineKeyTests`). `AdvertisedKeyHonestyTests` still holds for the terminal, where they
+    arrive as a bare ⏎; the client's own surfaces do not know which host they are in, so they keep naming ⌥⏎.
+  - **stdin is detached at start** (`Console.SetIn(TextReader.Null)`, as `--snapshot` does). A window has no
+    stdin, and the framework reads a redirected one behind a modal "Reading input" dialog that stays up while the
+    pipe is open. **On Windows `--help`/`--render-png` borrow the parent console** (`AttachConsole`) when output is
+    not already redirected, because a `WinExe` has none.
+  - **Restoring re-applies the remembered normal size by hand** (`MainWindow.OnPropertyChanged`). On X11 a
+    `BorderOnly` window's border is Avalonia's own (`DecorationInset`, part of the window only while it is not
+    maximised); a restore laid out before the window manager's restored size arrives pushes the *maximised*
+    `Width` back with the border added, and the window "restores" larger than the screen — about one in three
+    quick toggles under openbox. The size is recorded only once a state change has settled (500 ms).
+  - **The client's main window is not scrollable** (`_window.IsScrollable = false`, in the Tui, so it holds in a
+    terminal too). A frameless scrollable window reserves a scrollbar column whenever its content is taller than
+    it; a shrink passes through that state for a frame, the column narrows the status line into a second row,
+    and the extra row keeps the column — a stable layout one column short with the input bar a row up. That was
+    the "maximise does not work" report, seen on restore. `ClientResizeTests` grows and shrinks a live client.
+  - **`--render-png`** draws a demo frame through the real loop, driver and renderer with no window, and CI
+    checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
+  - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level
+    selection only (it is the framework's), no bundled font, never run on Windows or macOS by a person.
+
 ## Building and testing
 
 - **.NET 10 SDK**: install via `apt-get install -y dotnet-sdk-10.0` (the Microsoft CDN is often
@@ -669,8 +723,8 @@ fallbacks) for inline images/maps.
   ```bash
   dotnet run -c Release --project tests/SharpMUTerm.Core.Tests </dev/null
   ```
-  There are five: Core, Graphics, Scripting, Web, Tui. Primary signal is
-  `dotnet build SharpMUTerm.slnx` plus all five green and warning-free.
+  There are six: Core, Graphics, Scripting, Web, Tui, Avalonia. Primary signal is
+  `dotnet build SharpMUTerm.slnx` plus all six green and warning-free.
 - **Building against the local SharpConsoleUI clone surfaces 2 NuGet advisory warnings** for
   AngleSharp. They are the framework's, not ours; a build against the package has none.
 
@@ -953,7 +1007,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Deliberately left on Ctrl**, because the convention is worth more than the pattern: `⌃R`
     (readline's reverse history search), `⌃P` (command surface), `⌃Q` (quit — and safe here because
     `TerminalRawMode` clears `IXON`, so it is not XON), `⌃B` (tmux's prefix), `⌃O` (pane cycle),
-    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A` (select all)/`⌃E`/`⌃K`/`⌃U`/`⌃L`. A sweep that moved everything
+    `⌃N`/`⌃W`/`⌃F` (find), and the command line's `⌃A` (select all)/`⌃E`/`⌃K`/`⌃U`. A sweep that moved everything
     would be as wrong as one that moved nothing.
   - **Freeze is `⌥F`, and `⌃F` is find** — the search surface, above. Freeze was on `⌃F` and left it for
     exactly the reason the keys above stay where they are: `⌃F` means *find* to everyone who has used a
@@ -1434,8 +1488,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   and hands the bar a synthetic Alt+Enter. It is safe because Escape in the command line is a genuine
   no-op and every other meaning of Escape is handled earlier in `HandleWindowKey`; and it is reliable
   because both halves land in *one* read, one parse and one dispatch batch (a terminal writes `ESC CR`
-  in a single write), so the observed gap is microseconds, not milliseconds. ⌃L is kept as the second
-  spelling. **Getting `Ctrl+⏎`/`Shift+⏎` properly needs the Kitty keyboard protocol, and that cannot
+  in a single write), so the observed gap is microseconds, not milliseconds. ⌃L was a second
+  spelling and is **gone** at the maintainer's request: the bar declines it, so it is free for a macro. **Getting `Ctrl+⏎`/`Shift+⏎` properly needs the Kitty keyboard protocol, and that cannot
   be done consumer-side** — see below.
 - **The input stack cannot be extended from here.** Enabling the Kitty keyboard protocol is trivial
   (`IConsoleDriver.WriteClipboardOsc52` is a de-facto public raw-escape emitter, and `Start`/`Stop`
@@ -1725,7 +1779,7 @@ Kept for context; **M1 is done** (see *Repository state* above). As originally s
 
 ## Verification
 
-- Primary signal: `dotnet build SharpMUTerm.slnx` plus all five suites (see *Building and testing*).
+- Primary signal: `dotnet build SharpMUTerm.slnx` plus all six suites (see *Building and testing*).
   Keep coverage in `SharpMUTerm.Core.Tests` — ANSI/SGR parser, telnet round-trips, engines.
 - **The TUI is verifiable headlessly** via the snapshot pipeline above; a claim about layout or
   chrome should be backed by a rendered frame you actually looked at, not by reading the markup.

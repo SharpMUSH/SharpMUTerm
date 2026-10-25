@@ -780,11 +780,10 @@ public class FocusIndicationTests
     }
 
     /// <summary>
-    /// ⌃L is the second spelling and still works — the chord that needs no reassembly, kept because it
-    /// arrives whole on every host.
+    /// ⌃L is no longer a newline: ⌥⏎ is the one spelling in a terminal, and a window reports ⌃⏎/⇧⏎.
     /// </summary>
     [Test]
-    public async Task CtrlLStillInsertsANewline()
+    public async Task CtrlLInsertsNoNewline()
     {
         var app = App();
         app.RenderSnapshot();
@@ -792,7 +791,7 @@ public class FocusIndicationTests
         app.SimulateKey(Ctrl(ConsoleKey.L));
         app.SimulateKey(Plain('b', ConsoleKey.NoName));
 
-        await Assert.That(app.ArmedInputText).IsEqualTo("a\nb");
+        await Assert.That(app.ArmedInputText).IsEqualTo("ab");
     }
 
     /// <summary>

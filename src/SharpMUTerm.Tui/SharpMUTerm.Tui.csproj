@@ -48,6 +48,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="SharpMUTerm.Tui.Tests" />
+    <!-- The windowed host: it runs the same SharpMUTermApp through Program.RunLive with its own driver. -->
+    <InternalsVisibleTo Include="sharpmuterm-window" />
+    <InternalsVisibleTo Include="SharpMUTerm.Avalonia.Tests" />
   </ItemGroup>
 
   <ItemGroup>

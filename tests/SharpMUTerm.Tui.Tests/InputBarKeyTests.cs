@@ -43,12 +43,11 @@ public class InputBarKeyTests
     }
 
     /// <summary>
-    /// Ctrl+L is the newline chord this host can actually deliver, and it must not send. Shift+⏎ and
-    /// Ctrl+⏎ do the same where a host reports them (Windows' <c>Console.ReadKey</c> does; the Unix
-    /// parser cannot, having no CSI-u) — all three are asserted as "no send, one more line".
+    /// Shift+⏎ and Ctrl+⏎ break the line where a host reports them (Windows' <c>Console.ReadKey</c> and the
+    /// desktop window do; the Unix parser cannot, having no CSI-u) — both are asserted as "no send, one
+    /// more line". Alt+⏎ is the same arm, reached through <c>TryAltEnter</c>.
     /// </summary>
     [Test]
-    [Arguments(ConsoleKey.L, true, false)]
     [Arguments(ConsoleKey.Enter, true, false)]
     [Arguments(ConsoleKey.Enter, false, true)]
     public async Task TheNewlineChords_BreakTheLineAndSendNothing(ConsoleKey key, bool ctrl, bool shift)
@@ -77,7 +76,7 @@ public class InputBarKeyTests
         bar.Entered += text => sent = text;
 
         Type(bar, "pose ");
-        bar.ProcessKey(Chord(ConsoleKey.L, ctrl: true));
+        bar.ProcessKey(Chord(ConsoleKey.Enter, ctrl: true));
         Type(bar, "smiles.");
         bar.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
 
@@ -264,7 +263,7 @@ public class InputBarKeyTests
     {
         var bar = Bar();
         Type(bar, "one");
-        bar.ProcessKey(Chord(ConsoleKey.L, ctrl: true));
+        bar.ProcessKey(Chord(ConsoleKey.Enter, ctrl: true));
         Type(bar, "two");
         bar.ProcessKey(Chord(ConsoleKey.UpArrow));
         bar.ProcessKey(Chord(ConsoleKey.Home));
@@ -291,6 +290,7 @@ public class InputBarKeyTests
     [Arguments(ConsoleKey.C)]
     [Arguments(ConsoleKey.V)]
     [Arguments(ConsoleKey.D)]
+    [Arguments(ConsoleKey.L)]
     public async Task TheEditorsDocumentChordsAreDeclined(ConsoleKey key)
     {
         var bar = Bar();
@@ -307,7 +307,7 @@ public class InputBarKeyTests
     {
         var bar = Bar();
         Type(bar, "one");
-        bar.ProcessKey(Chord(ConsoleKey.L, ctrl: true));
+        bar.ProcessKey(Chord(ConsoleKey.Enter, ctrl: true));
         Type(bar, "two");
 
         await Assert.That(bar.ProcessKey(Chord(ConsoleKey.A, ctrl: true))).IsTrue();

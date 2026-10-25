@@ -26,7 +26,7 @@ namespace SharpMUTerm.Tui;
 /// <list type="bullet">
 /// <item><b>⏎ sends.</b> The editor inserts a newline on ⏎ and declines every modified ⏎; here a bare ⏎
 /// sends and clears, and the modified forms (⌥⏎, reassembled by <c>SharpMUTermApp.TryAltEnter</c>, and
-/// ⌃L) insert the newline. Keys reach this table from the window's <c>PreviewKeyPressed</c> and from the
+/// ⌃⏎/⇧⏎ where a host reports them) insert the newline. Keys reach this table from the window's <c>PreviewKeyPressed</c> and from the
 /// framework through <see cref="IInteractiveControl"/>, which is re-implemented so both arrive at
 /// <see cref="ProcessKey"/>.</item>
 /// <item><b>It grows to its text</b>, between <see cref="MinRows"/> and <see cref="MaxRows"/>. The editor
@@ -308,7 +308,8 @@ internal sealed class InputBarControl : MultilineEditControl,
     /// the same thing to a command line as it does to a document.
     /// <para>
     /// ⏎ sends, always — that is the one binding a MU* client may not get wrong. <b>The newline chord is
-    /// Alt+⏎</b>, with ⌃L as a second spelling, and Shift+⏎ / Ctrl+⏎ honoured where a host reports them.
+    /// Alt+⏎</b>, with Shift+⏎ / Ctrl+⏎ honoured where a host reports them. ⌃L used to be a second
+    /// spelling and was dropped: it is declined, so a macro can have it.
     /// SharpConsoleUI's Unix input parser decodes no CSI-u and enables no <c>modifyOtherKeys</c>, so CR and
     /// LF both arrive as a bare ⏎ — Shift+⏎ and Ctrl+⏎ are indistinguishable from ⏎ there, and are
     /// accepted only because the Windows <c>Console.ReadKey</c> path reports them. Alt+⏎ arrives as Escape
@@ -383,7 +384,6 @@ internal sealed class InputBarControl : MultilineEditControl,
         {
             switch (key.Key)
             {
-                case ConsoleKey.L: return Claim(ConsoleKey.Enter);
                 case ConsoleKey.A: return SelectAll();
                 case ConsoleKey.X: return Cut();
                 case ConsoleKey.E: return Claim(ConsoleKey.End, ConsoleModifiers.Control);

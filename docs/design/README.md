@@ -427,12 +427,12 @@ count on the tab, the rail character, and the rail world.
 `⌃R` command-history search ·
 `⌃N` next tab in the focused pane · `⌃C` copy the pane selection (drag to select) ·
 `⌥D`/`⌥R` disconnect/reconnect · `⌥↑`/`⌥↓` command history (`↑`/`↓` do it too,
-where the caret has nowhere further to go) · `⌥⏎`, or `⌃L`, newline in input · `F1` composer ·
+where the caret has nowhere further to go) · `⌥⏎` newline in input · `F1` composer ·
 `F2`–`F9` config · `Esc` close overlay.
 
 Four entries here were stale and have been corrected rather than left: `⌃Tab` cannot arrive at all (a
 terminal writes `0x09` for it, which is a bare Tab), `⌃R` is the history surface and never was
-reconnect, `⌃L` is the newline chord and not a logging toggle, and `Shift+⏎` collapses onto a bare
+reconnect, `⌃L` is not a logging toggle (it is unbound), and `Shift+⏎` collapses onto a bare
 `Enter` with no modifier bits. `MacroKeys.Verdict` is the readable form of all of that.
 
 ---

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    SharpMUTerm in a desktop window instead of a terminal. The client is the same SharpMUTermApp the
+    terminal runs, unchanged; what this project adds is a SharpConsoleUI console driver
+    (AvaloniaConsoleDriver) whose "terminal" is a Skia canvas. It exists for the platforms whose
+    terminals cannot draw a picture — Windows above all, where ConPTY drops Kitty graphics — because a
+    driver that paints the cells itself can draw a picture at its cell rectangle as a real bitmap.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>SharpMUTerm.Avalonia</RootNamespace>
+    <AssemblyName>sharpmuterm-window</AssemblyName>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The Tui project is an Exe too; referencing it is how this host reuses its composition root. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Simple" />
+    <PackageReference Include="SharpConsoleUI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharpMUTerm.Avalonia.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpMUTerm.Tui\SharpMUTerm.Tui.csproj" />
+    <ProjectReference Include="..\SharpMUTerm.Graphics\SharpMUTerm.Graphics.csproj" />
+    <ProjectReference Include="..\SharpMUTerm.Core\SharpMUTerm.Core.csproj" />
+  </ItemGroup>
+
+</Project>

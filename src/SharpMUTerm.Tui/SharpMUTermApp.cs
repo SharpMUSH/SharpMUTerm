@@ -771,6 +771,14 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
             .AddControl(_statusBar)
             .Build();
 
+        // Nothing in this window scrolls as a window — every pane scrolls inside its own viewport — and a
+        // frameless scrollable window reserves a scrollbar column whenever its content is taller than it is.
+        // A shrinking terminal (or a desktop window coming back from maximised) passes through exactly that
+        // state for a frame, and once the column is taken the narrower width wraps the status line onto a
+        // second row, which keeps the content too tall, which keeps the column: the layout stuck one column
+        // short with the input bar a row up, for good.
+        _window.IsScrollable = false;
+
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _settings = new SettingsOverlay(_system);
@@ -1062,7 +1070,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 }
             }
 
-            _inlineImages.Pending.GetAwaiter().GetResult();
+            AwaitSnapshotPictures();
         }
 
         // A figure inside a box, as a server that lays pictures out sends it over MXP: the tag sized in
@@ -1098,7 +1106,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
                 }
             }
 
-            _inlineImages.Pending.GetAwaiter().GetResult();
+            AwaitSnapshotPictures();
         }
 
         // Split the workspace: Aardwolf (main) stays in the left pane, the Chat window moves to the
@@ -2364,6 +2372,20 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>Completes when every MXP picture asked for so far has been delivered or given up on.</summary>
     internal Task InlineImagesSettled => _inlineImages.Pending;
+
+    /// <summary>
+    /// Waits for a snapshot scene's pictures — headless only. A Kitty picture is transmitted on the UI thread,
+    /// and only a headless app runs UI work inline before <see cref="Run"/>; on any other driver the work is
+    /// queued for a loop that has not started, so waiting here would wait for ever. The windowed host lays a
+    /// scene out this way and then runs the loop, which delivers the pictures.
+    /// </summary>
+    private void AwaitSnapshotPictures()
+    {
+        if (_headless)
+        {
+            _inlineImages.Pending.GetAwaiter().GetResult();
+        }
+    }
 
     /// <summary>
     /// Opens the character's log sink for this session, per its <see cref="LoggingSettings"/> — the
