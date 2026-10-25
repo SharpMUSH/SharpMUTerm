@@ -98,7 +98,8 @@ jobs:
           if [ ! -f "$iscc" ]; then
             choco install innosetup --no-progress -y
           fi
-          "$iscc" \
+          # Git Bash rewrites an argument that starts with / into a Windows path; ISCC's /D options are not paths.
+          MSYS2_ARG_CONV_EXCL='*' "$iscc" \
             "/DAppVersion=${{ needs.version.outputs.version }}" \
             "/DNumericVersion=${{ needs.version.outputs.numeric }}" \
             "/DPublishDir=$(cygpath -w "$PWD/publish/${{ matrix.rid }}")" \
