@@ -14,7 +14,7 @@ not just SharpMUSH ones.
 The goal is [BeipMU](https://beipdev.github.io/BeipMU/)-class feature parity in a terminal-native
 client: rich truecolor text, inline graphics, powerful automation, and full MU\* protocol support.
 
-> **Status:** first release, **0.1.0**. It is a usable text client with automation engines, inline
+> **Status:** first release, **0.1.1**. It is a usable text client with automation engines, inline
 > graphics, Lua scripting, theming and a desktop window, all covered by unit tests. Each release's changes are
 > in [`CHANGELOG.md`](CHANGELOG.md). The architecture and roadmap are in [`docs/PLAN.md`](docs/PLAN.md).
 
