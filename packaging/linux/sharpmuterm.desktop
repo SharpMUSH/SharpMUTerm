@@ -6,6 +6,6 @@ Comment=A MUSH, MUCK and MUD client
 Exec=sharpmuterm-window %U
 Icon=sharpmuterm
 Terminal=false
-Categories=Network;Game;
+Categories=Game;RolePlaying;
 Keywords=MUD;MUSH;MUCK;MU*;telnet;
 StartupWMClass=sharpmuterm-window

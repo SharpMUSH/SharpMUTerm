@@ -124,7 +124,8 @@ jobs:
   # softprops/action-gh-release on the same tag.
   release:
     needs: [version, publish]
-    if: startsWith(github.ref, 'refs/tags/')
+    # A manual run, even against a tag, keeps its packages as workflow artifacts.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

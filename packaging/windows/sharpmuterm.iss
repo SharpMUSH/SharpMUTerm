@@ -80,6 +80,11 @@ begin
                 ';' + Uppercase(Path) + ';') > 0;
 end;
 
+{ Set when this installation put the folder on PATH, so uninstall never removes an entry the user made. }
+const
+  OwnKey = 'Software\SharpMUTerm';
+  AddedToPath = 'AddedToPath';
+
 procedure AddToPath(Dir: String);
 var
   Path: String;
@@ -87,7 +92,8 @@ begin
   if not RegQueryStringValue(PathRoot, PathKey, 'Path', Path) then Path := '';
   if PathHas(Path, Dir) then Exit;
   if (Path <> '') and (Copy(Path, Length(Path), 1) <> ';') then Path := Path + ';';
-  RegWriteExpandStringValue(PathRoot, PathKey, 'Path', Path + RemoveBackslashUnlessRoot(Dir));
+  if RegWriteExpandStringValue(PathRoot, PathKey, 'Path', Path + RemoveBackslashUnlessRoot(Dir)) then
+    RegWriteDWordValue(PathRoot, OwnKey, AddedToPath, 1);
 end;
 
 procedure RemoveFromPath(Dir: String);
@@ -119,7 +125,11 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Added: Cardinal;
 begin
-  if CurUninstallStep = usPostUninstall then
+  if CurUninstallStep <> usPostUninstall then Exit;
+  if RegQueryDWordValue(PathRoot, OwnKey, AddedToPath, Added) and (Added = 1) then
     RemoveFromPath(ExpandConstant('{app}'));
+  RegDeleteKeyIncludingSubkeys(PathRoot, OwnKey);
 end;

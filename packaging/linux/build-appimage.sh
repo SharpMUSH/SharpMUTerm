@@ -22,11 +22,17 @@ install -Dm644 "$icons/sharpmuterm.png" "$appdir/sharpmuterm.png"
 install -Dm644 "$icons/sharpmuterm.png" "$appdir/usr/share/icons/hicolor/256x256/apps/sharpmuterm.png"
 ln -s sharpmuterm.png "$appdir/.DirIcon"
 
+# A fixed release, checked against the hash it had when it was pinned: the tool builds what we ship, so a
+# replaced download must fail the build rather than run. Move both lines together.
+APPIMAGETOOL_VERSION=1.9.1
+APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+
 tool=${APPIMAGETOOL:-}
 if [ -z "$tool" ]; then
     tool="$work/appimagetool"
     curl -fsSL -o "$tool" \
-        https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+        "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_VERSION/appimagetool-x86_64.AppImage"
+    echo "$APPIMAGETOOL_SHA256  $tool" | sha256sum -c --quiet -
     chmod +x "$tool"
 fi
 

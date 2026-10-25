@@ -2,19 +2,25 @@
 """Keeps CHANGELOG.md honest, and a release tag to it. The version itself is the git tag (MinVer).
 
   changelog.py check                 the changelog's shape
+  changelog.py unreleased-grew <ref>  [Unreleased] has an entry that <ref>'s changelog does not
   changelog.py release-check <tag>   a release tag: v<semver>, with a dated, non-empty section
   changelog.py notes <version>       that version's section, for the release page
 
 Exits 1 with one line per problem. Used by changelog.yml and release.yml; see docs/RELEASING.md.
 """
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CHANGELOG = ROOT / "CHANGELOG.md"
 
-SEMVER = r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?"
+# SemVer 2.0 without build metadata (semver.org's own pattern): no leading zeros, no empty identifiers.
+PRERELEASE_ID = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+SEMVER = (r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+          r"(?:-(" + PRERELEASE_ID + r"(?:\." + PRERELEASE_ID + r")*))?")
+BUILD = r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 RELEASED = re.compile(r"^## \[(?P<version>" + SEMVER + r")\] - (?P<date>\d{4}-\d{2}-\d{2})$")
 SUBSECTIONS = {"Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"}
 
@@ -86,9 +92,10 @@ def section(version):
 
 def release_check(tag):
     problems = check()
-    version = tag[1:] if tag.startswith("v") else None
-    if version is None or not re.fullmatch(SEMVER, version):
+    m = re.fullmatch(r"v(" + SEMVER + r")" + BUILD, tag)
+    if not m:
         return problems + [f"tag {tag} is not v<semantic version>, e.g. v1.2.3 or v1.3.0-beta.1"]
+    version = m.group(1)  # build metadata names a build, not a release, so the section is the version's
     body = section(version)
     if body is None:
         problems.append(f"CHANGELOG.md has no '## [{version}] - YYYY-MM-DD' section")
@@ -97,9 +104,33 @@ def release_check(tag):
     return problems
 
 
+def unreleased_entries(text):
+    entries, inside = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line.rstrip() == "## [Unreleased]"
+        elif inside and line.startswith("- "):
+            entries.append(line.rstrip())
+    return entries
+
+
+def unreleased_grew(base_ref):
+    """A PR that changes what ships adds at least one entry under [Unreleased]."""
+    try:
+        before = subprocess.run(["git", "show", f"{base_ref}:CHANGELOG.md"], cwd=ROOT, check=True,
+                                capture_output=True, text=True).stdout
+    except subprocess.CalledProcessError:
+        before = ""
+    old = set(unreleased_entries(before))
+    new = [e for e in unreleased_entries(CHANGELOG.read_text(encoding="utf-8")) if e not in old]
+    return [] if new else ["no new entry under '## [Unreleased]' in CHANGELOG.md"]
+
+
 def main(argv):
     if len(argv) == 2 and argv[1] == "check":
         problems = check()
+    elif len(argv) == 3 and argv[1] == "unreleased-grew":
+        problems = unreleased_grew(argv[2])
     elif len(argv) == 3 and argv[1] == "release-check":
         problems = release_check(argv[2])
     elif len(argv) == 3 and argv[1] == "notes":
