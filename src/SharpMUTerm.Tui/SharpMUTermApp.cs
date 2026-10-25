@@ -10276,6 +10276,9 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// <summary>What a command line has recorded, oldest first — the list the ⌃R surface reads.</summary>
     internal IReadOnlyList<string> HistoryEntries(InputBar bar) => HistoryFor(bar).Entries;
 
+    /// <summary>Ends a running loop with no confirmation. For a host that ran the loop to draw a frame, and for tests.</summary>
+    internal void EndLoop() => OnUiThread(() => _system.RequestExit(0));
+
     /// <summary>Whether a confirmed quit has ended the loop — what <c>RequestExit</c> did, observably.</summary>
     internal bool ExitRequested => _exiting;
 
@@ -11082,7 +11085,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// Runs UI work on the UI thread. Headless (snapshot and test) runs have no main loop to drain the
     /// queue, and are single-threaded anyway, so they run it inline.
     /// </summary>
-    private void OnUiThread(Action action)
+    internal void OnUiThread(Action action)
     {
         if (_headless || _system.IsOnUIThread)
         {

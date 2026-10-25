@@ -46,8 +46,10 @@ internal static class ClientLaunch
         var app = new SharpMUTermApp(config, WindowHost.Create(driver, clipboard));
 
         // The snapshot's scene builder is the demo: it pours the demo output in and opens the named view. What
-        // it returns is the headless driver's capture, which on this driver is empty and not wanted.
-        _ = app.RenderSnapshot(options.View);
+        // it returns is the headless driver's capture, which on this driver is empty and not wanted. It is queued
+        // for the loop's first tick rather than run here: a modal (⌃P, F1) opened before the loop starts is drawn
+        // as an empty frame and never filled, while the same window opened from inside the loop draws whole.
+        app.OnUiThread(() => _ = app.RenderSnapshot(options.View));
         return app;
     }
 }

@@ -51,10 +51,56 @@ public class HostParityTests
             window.RenderSnapshot(view);
         }
 
+        var differences = Differences(ansi, driver.Frame, Height);
+        await Assert.That(differences).IsEmpty().Because(string.Join('\n', differences));
+    }
+
+    /// <summary>
+    /// The same comparison with the window's client running its real loop, the way a person runs it. The test
+    /// above draws every view inline, with no loop, and that is how a ⌃P menu and an F1 composer that the window
+    /// drew as empty frames went unnoticed: inline they were whole. The bottom row is left out — a running client
+    /// has been through startup, and says on that row that nothing connects at start, where a snapshot never
+    /// started — and so are the views that read the clock, which a loop does and a snapshot pins.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(Views))]
+    public async Task EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning(string name)
+    {
+        var view = name == "(default)" ? null : name;
+        if (view is "timestamps" or "timestamps-toggled")
+        {
+            return;
+        }
+
+        Console.SetIn(TextReader.Null);
+        string ansi;
+        using (var headless = new HeadlessConsoleDriver(Width, Height))
+        {
+            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps));
+            ansi = terminal.RenderSnapshot(view);
+        }
+
+        using var driver = new AvaloniaConsoleDriver(Width, Height);
+        await using var window = new SharpMUTermApp(
+            DemoScene.Build(),
+            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal });
+        window.OnUiThread(() => _ = window.RenderSnapshot(view));
+        var loop = new Thread(() => window.Run([])) { IsBackground = true };
+        loop.Start();
+        LiveLoop.Settle(driver);
+        window.EndLoop();
+        loop.Join(TimeSpan.FromSeconds(5));
+
+        var differences = Differences(ansi, driver.Frame, Height - 1);
+        await Assert.That(differences).IsEmpty().Because(string.Join('\n', differences));
+    }
+
+    /// <summary>Where the window's frame differs from the terminal's, glyph or background, over the first <paramref name="rows"/> rows.</summary>
+    private static List<string> Differences(string ansi, ScreenFrame frame, int rows)
+    {
         var cells = FrameGrid.Cells(ansi, Width, Height);
-        var frame = driver.Frame;
         var differences = new List<string>();
-        for (var y = 0; y < Height && differences.Count < 5; y++)
+        for (var y = 0; y < rows && differences.Count < 5; y++)
         {
             var expected = FrameGrid.Decode(ansi, Width, Height)[y];
             var actual = frame.RowText(y);
@@ -75,7 +121,7 @@ public class HostParityTests
             }
         }
 
-        await Assert.That(differences).IsEmpty().Because(string.Join('\n', differences));
+        return differences;
     }
 
     public static IEnumerable<string> Hosts() => ["terminal", "window"];

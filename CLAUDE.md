@@ -736,7 +736,12 @@ the Sixel cell size. Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snap
   (`HostParityTests.EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal`, Avalonia suite), with the same
   capabilities and keys, so a difference can only be the driver. The list is `SnapshotViews.All`, and
   `EveryViewTheSnapshotKnowsIsInTheParityList` reads `RenderSnapshot`'s source and fails when it learns a
-  view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both.
+  view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both. A second
+  pass (`EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning`) draws each view with the window's loop
+  running, because inline is not how a person runs it: a modal opened *before* `Run` (the `--view` demo path)
+  came out as an empty frame — ⌃P and F1 blank — while the inline pass was green. The scene is now queued for
+  the loop's first tick (`ClientLaunch.Demo`). That pass skips the bottom row (a live client has been through
+  startup) and the two timestamp views (a loop reads the clock).
 - **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
   `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
   `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer
