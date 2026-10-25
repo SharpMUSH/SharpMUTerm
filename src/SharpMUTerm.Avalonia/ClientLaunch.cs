@@ -23,9 +23,9 @@ internal static class ClientLaunch
             return demo;
         }
 
-        var config = Tui.Program.LoadConfiguration(notices.Add);
-        options.ApplyTheme(config);
-        return config;
+        // --theme is for the demo only: the live configuration is saved on the way out, and a flag given for one
+        // launch must not become the user's theme.
+        return Tui.Program.LoadConfiguration(notices.Add);
     }
 
     /// <summary>Runs the client on <paramref name="driver"/> until it quits; blocks the calling thread.</summary>

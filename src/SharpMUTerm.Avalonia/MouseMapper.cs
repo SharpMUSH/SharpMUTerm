@@ -110,6 +110,29 @@ internal sealed class MouseMapper
         return ([Flag(_held, MouseFlags.Button1Pressed, MouseFlags.Button2Pressed, MouseFlags.Button3Pressed)], _lastAt);
     }
 
+    /// <summary>
+    /// Whole wheel notches in <paramref name="delta"/> plus what earlier events left over, signed (up is positive);
+    /// the fraction is kept in <paramref name="remainder"/>. A precision touchpad sends a stream of small deltas,
+    /// and counting each as a notch scrolled several rows for every hundredth of one. A reversal starts afresh.
+    /// </summary>
+    public static int WheelNotches(ref double remainder, double delta)
+    {
+        if (delta == 0)
+        {
+            return 0;
+        }
+
+        if (Math.Sign(remainder) == -Math.Sign(delta))
+        {
+            remainder = 0;
+        }
+
+        remainder += delta;
+        var notches = (int)Math.Truncate(remainder);
+        remainder -= notches;
+        return notches;
+    }
+
     public static List<MouseFlags> Wheel(bool up, PointerModifiers modifiers) =>
         With(modifiers, up ? MouseFlags.WheeledUp : MouseFlags.WheeledDown);
 

@@ -141,7 +141,8 @@ dotnet run --project src/SharpMUTerm.Avalonia -- --demo-config --view mxp-image 
 
 The window has no title bar: drag the blank part of the top row to move it, double-click there or press
 Alt+Enter to maximise and restore, drag an edge to resize, and Ctrl+Q to quit (`--title-bar` brings the
-system one back). Alt+Enter is the window's, so a newline in the command line is Ctrl+L here.
+system one back). A newline in the command line is Ctrl+Enter or Shift+Enter here, which a window can
+see and a terminal cannot; Alt+Enter is the window's.
 Paste is Ctrl+Shift+V or Shift+Insert. Install a Nerd Font for the header and sidebar icons.
 
 ## Testing

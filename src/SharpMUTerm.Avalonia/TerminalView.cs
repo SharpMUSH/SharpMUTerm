@@ -34,6 +34,7 @@ internal sealed class TerminalView : Control
     private int _invalidatePending;
     private char? _swallowText;
     private WindowEdge? _cursorEdge;
+    private double _wheelRemainder;
 
     public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family)
     {
@@ -109,6 +110,7 @@ internal sealed class TerminalView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        _swallowText = null;
         var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
         var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
 
@@ -133,7 +135,9 @@ internal sealed class TerminalView : Control
         if (KeyMapper.FromKeyDown(e.Key, e.KeyModifiers) is { } key)
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
-            _swallowText = key.Modifiers == ConsoleModifiers.Alt ? key.KeyChar : null;
+            _swallowText = key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control)
+                ? key.KeyChar
+                : null;
             _driver.RaiseKey(key);
             e.Handled = true;
         }
@@ -232,10 +236,10 @@ internal sealed class TerminalView : Control
     {
         base.OnPointerWheelChanged(e);
         var cell = Cell(e.GetPosition(this));
-        var notches = Math.Max(1, (int)Math.Round(Math.Abs(e.Delta.Y)));
-        for (var i = 0; i < notches && e.Delta.Y != 0; i++)
+        var notches = MouseMapper.WheelNotches(ref _wheelRemainder, e.Delta.Y);
+        for (var i = 0; i < Math.Abs(notches); i++)
         {
-            _driver.RaiseMouse(MouseMapper.Wheel(e.Delta.Y > 0, Modifiers(e.KeyModifiers)), cell);
+            _driver.RaiseMouse(MouseMapper.Wheel(notches > 0, Modifiers(e.KeyModifiers)), cell);
         }
 
         e.Handled = true;

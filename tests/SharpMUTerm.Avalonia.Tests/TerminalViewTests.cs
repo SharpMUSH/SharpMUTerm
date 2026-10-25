@@ -107,6 +107,26 @@ public class TerminalViewTests
     }
 
     [Test]
+    public async Task CtrlAndShiftEnterReachTheDriverWithTheirModifier()
+    {
+        var keys = await Run(window =>
+        {
+            var (_, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
+            var seen = new List<ConsoleKeyInfo>();
+            driver.KeyPressed += (_, k) => seen.Add(k);
+            window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.Control);
+            window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.Shift);
+            return seen;
+        });
+
+        await Assert.That(keys).IsEquivalentTo(new[]
+        {
+            new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, true),
+            new ConsoleKeyInfo('\r', ConsoleKey.Enter, true, false, false),
+        });
+    }
+
+    [Test]
     public async Task AltEnterMaximisesAndRestoresAndTheClientNeverSeesIt()
     {
         var (states, keys) = await Run(window =>

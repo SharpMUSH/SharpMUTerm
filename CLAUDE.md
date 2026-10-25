@@ -671,7 +671,14 @@ fallbacks) for inline images/maps.
     (`WindowChrome`); a press on header text is still the client's. Resizing is a 5-pixel band at each edge,
     done by us with `BeginResizeDrag`, because a borderless window on Linux gets a border only from some window
     managers. There is no close or minimise button: ⌃Q quits. **⌥⏎ maximises and restores** (Windows
-    Terminal's chord), which takes the client's ⌥⏎ newline in this host; ⌃L is the newline here.
+    Terminal's chord), which takes the client's ⌥⏎ newline in this host. The newline is ⌃⏎ or ⇧⏎ here: a
+    window reports both modifiers, so they reach `InputBarControl`'s existing modified-⏎ arm with no change on
+    the client side (`NewlineKeyTests`). `AdvertisedKeyHonestyTests` still holds for the terminal, where they
+    arrive as a bare ⏎; the client's own surfaces do not know which host they are in, so they keep naming ⌥⏎.
+  - **stdin is detached at start** (`Console.SetIn(TextReader.Null)`, as `--snapshot` does). A window has no
+    stdin, and the framework reads a redirected one behind a modal "Reading input" dialog that stays up while the
+    pipe is open. **On Windows `--help`/`--render-png` borrow the parent console** (`AttachConsole`) when output is
+    not already redirected, because a `WinExe` has none.
   - **Restoring re-applies the remembered normal size by hand** (`MainWindow.OnPropertyChanged`). On X11 a
     `BorderOnly` window's border is Avalonia's own (`DecorationInset`, part of the window only while it is not
     maximised); a restore laid out before the window manager's restored size arrives pushes the *maximised*

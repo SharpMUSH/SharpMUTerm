@@ -26,7 +26,17 @@ internal static class RenderPng
         var app = ClientLaunch.Demo(options, config, driver, clipboard: null);
         new Thread(() => app.Run([])) { IsBackground = true, Name = "SharpMUTerm client" }.Start();
 
-        Settle(driver);
+        // The picture is fetched and transmitted after the scene is laid out, so a quiet second alone can come
+        // before it lands. Wait for the image work too, and refuse a frame that was cut short or lost its picture.
+        var imagesDone = app.InlineImagesSettled.Wait(TimeSpan.FromSeconds(15));
+        var settled = Settle(driver);
+        var wantsPicture = options.View is "mxp-image" or "mxp-figure";
+        if (!imagesDone || !settled || (wantsPicture && driver.Pictures.Count == 0))
+        {
+            Console.Error.WriteLine($"--render-png: the frame did not settle (images {(imagesDone ? "done" : "timed out")}, "
+                + $"frames {(settled ? "quiet" : "still changing")}, {driver.Pictures.Count} picture(s)).");
+            Environment.Exit(1);
+        }
 
         // Points to pixels at 96 dpi, the scale a window on an unscaled display would use.
         using var fonts = new CellFonts(options.FontPoints * 96f / 72f, options.FontFamily);
@@ -49,25 +59,32 @@ internal static class RenderPng
         return 0;
     }
 
-    /// <summary>Waits until frames stop arriving — a picture landing repaints, so a quiet second means settled.</summary>
-    private static void Settle(AvaloniaConsoleDriver driver)
+    /// <summary>
+    /// Waits until what is drawn stops changing for a second. Not until frames stop arriving: they never do, since the
+    /// loop keeps flushing (the caret). False on timeout.
+    /// </summary>
+    private static bool Settle(AvaloniaConsoleDriver driver)
     {
         var clock = Stopwatch.StartNew();
-        var last = -1L;
+        var last = "";
         var quietSince = clock.Elapsed;
         while (clock.Elapsed < TimeSpan.FromSeconds(15))
         {
             Thread.Sleep(50);
-            var count = driver.FrameCount;
-            if (count != last)
+            var frame = driver.Frame;
+            var text = driver.FrameCount == 0 ? "" : string.Join('\n', Enumerable.Range(0, frame.Height).Select(frame.RowText));
+            if (text != last)
             {
-                last = count;
+
+                last = text;
                 quietSince = clock.Elapsed;
             }
-            else if (count > 0 && clock.Elapsed - quietSince > TimeSpan.FromSeconds(1))
+            else if (text.Length > 0 && clock.Elapsed - quietSince > TimeSpan.FromSeconds(1))
             {
-                return;
+                return true;
             }
         }
+
+        return false;
     }
 }

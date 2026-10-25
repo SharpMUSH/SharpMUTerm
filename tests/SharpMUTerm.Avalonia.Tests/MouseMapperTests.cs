@@ -76,4 +76,14 @@ public class MouseMapperTests
         await Assert.That(repeat!.Value.Flags).IsEquivalentTo(new[] { MouseFlags.Button1Pressed });
         await Assert.That(repeat.Value.Cell).IsEqualTo(new Point(6, 2));
     }
+
+    [Test]
+    public async Task ATouchpadsSmallDeltasAddUpToNotchesRatherThanEachBeingOne()
+    {
+        var remainder = 0.0;
+        var notches = Enumerable.Range(0, 10).Sum(_ => MouseMapper.WheelNotches(ref remainder, 0.25));
+        await Assert.That(notches).IsEqualTo(2);
+        await Assert.That(MouseMapper.WheelNotches(ref remainder, -1)).IsEqualTo(-1);
+        await Assert.That(MouseMapper.WheelNotches(ref remainder, 3)).IsEqualTo(3);
+    }
 }

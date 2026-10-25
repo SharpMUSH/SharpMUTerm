@@ -22,6 +22,18 @@ public class ClientResizeTests
         await Assert.That(string.Join('\n', cycled)).IsEqualTo(string.Join('\n', fresh));
     }
 
+    /// <summary>The client's rows when settled, then again after <paramref name="act"/>.</summary>
+    internal static (ScreenFrame Before, ScreenFrame After) RunPair(int columns, int rows, Action<AvaloniaConsoleDriver> act)
+    {
+        ScreenFrame? before = null;
+        var after = Run(columns, rows, driver =>
+        {
+            before = driver.Frame;
+            act(driver);
+        });
+        return (before!, after);
+    }
+
     private static ScreenFrame Run(int columns, int rows, Action<AvaloniaConsoleDriver> act)
     {
         var options = WindowOptions.Parse(["--demo-config", "--size", $"{columns}x{rows}"]);
@@ -35,7 +47,7 @@ public class ClientResizeTests
         return driver.Frame;
     }
 
-    private static string[] Rows(ScreenFrame frame) =>
+    internal static string[] Rows(ScreenFrame frame) =>
         Enumerable.Range(0, frame.Height).Select(frame.RowText).ToArray();
 
     /// <summary>Waits until what is drawn stops changing. Frames keep arriving (the caret), so their count cannot say.</summary>

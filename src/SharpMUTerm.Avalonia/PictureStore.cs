@@ -51,19 +51,18 @@ internal sealed class PictureStore : IDisposable
         }
     }
 
-    public void Remove(uint id)
-    {
-        if (_pictures.TryRemove(id, out var gone))
-        {
-            gone.Image.Dispose();
-        }
-    }
+    /// <summary>Forgets a picture. Its image is left to the GC, for <see cref="Replace"/>'s reason.</summary>
+    public void Remove(uint id) => _pictures.TryRemove(id, out _);
 
+    /// <summary>At shutdown, when nothing is drawing any more.</summary>
     public void Dispose()
     {
         foreach (var id in _pictures.Keys)
         {
-            Remove(id);
+            if (_pictures.TryRemove(id, out var gone))
+            {
+                gone.Image.Dispose();
+            }
         }
     }
 
