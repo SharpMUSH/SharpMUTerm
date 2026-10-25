@@ -58,7 +58,7 @@ fallbacks) for inline images/maps.
 
 ## Repository state
 
-**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all ten projects on
+**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all twelve projects on
 `net10.0`, with the full test suite passing. In place:
 
 - **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
@@ -640,6 +640,37 @@ fallbacks) for inline images/maps.
     `RestoreLog` format-version bump). **Wired, not yet acted on**: nothing today gags, logs, restores,
     searches or badges a prompt any differently from an ordinary line because of this bit.
 
+- **The same client runs in a desktop window, on a console driver of our own** (`SharpMUTerm.Avalonia`,
+  `sharpmuterm-window`; prototype). `AvaloniaConsoleDriver` implements SharpConsoleUI's `IConsoleDriver` and
+  `IGraphicsProtocol` — both public, and nothing in the framework casts to a concrete driver — so
+  `SharpMUTermApp` runs unchanged: the framework writes cells into a `CellGrid`, `Flush` publishes an immutable
+  `ScreenFrame`, and `TerminalView` paints it with Skia. It exists for Windows, where ConPTY drops Kitty
+  graphics. Things not to relitigate:
+  - **It reports Kitty and is the terminal at once.** The client sends a picture exactly as it would to kitty
+    (`TransmitRawRgb` plus `U+10EEEE` placeholder rows); the driver keeps the pixels (`PictureStore`) and
+    `CellRenderer` draws each placeholder cell as its slice of the picture. Nothing on the client side knows a
+    window is involved, so a picture scrolls, clips and freezes with its pane as it does in kitty.
+  - **Keys follow `AnsiInputParser`'s spellings field for field** (`KeyMapper`) — Ctrl+letter carries its
+    control byte, Alt+letter the letter — because every key table here was written against them. Printable
+    keys come from `TextInput`, never the physical key, so layouts, dead keys and the IME work. Clicks are
+    *synthesised* (`MouseMapper`) in `UnixStdinReader`'s shapes, including the 100 ms press repeat.
+  - **The client loop runs on its own thread**; `ConsoleWindowSystem.Run` blocks, and Avalonia must keep the
+    main one. They meet only in the driver. Closing the window sends ⌃Q, so it goes through `QuitOverlay`.
+  - **`Program.RunLive` is the one composition root for both hosts** (`LiveHost` says what differs): same
+    files, same save on exit. `--demo-config` in the window builds the app the snapshot way, saving nothing.
+    Focus reporting is off: its focus-in is a disguised Tab, and a window would only misread real Tabs.
+  - **A snapshot scene on a non-headless driver does not wait for its pictures** (`AwaitSnapshotPictures`):
+    the Kitty transmit is UI-thread work, queued until the loop runs, so waiting before `Run` deadlocked.
+  - **Block elements, box lines, rounded corners and powerline wedges are drawn as shapes** (`Shapes`), and
+    the cell is whole device pixels; a font draws them to its own ascent, which leaves seams. Icons in the
+    Private Use Area are looked up in a Nerd Font **by name** before the platform fallback, which on Linux can
+    pick a face that draws PUA code points as hex boxes. No font is bundled: with no Nerd Font installed the
+    chrome's icons are tofu.
+  - **`--render-png`** draws a demo frame through the real loop, driver and renderer with no window, and CI
+    checks it carried a picture. `TerminalViewTests` drive a headless Avalonia window with the Skia renderer.
+  - **Not done**: no cursor blink, no IME composition preview, no window title from the session, cell-level
+    selection only (it is the framework's), no bundled font, never run on Windows or macOS by a person.
+
 ## Building and testing
 
 - **.NET 10 SDK**: install via `apt-get install -y dotnet-sdk-10.0` (the Microsoft CDN is often
@@ -650,8 +681,8 @@ fallbacks) for inline images/maps.
   ```bash
   dotnet run -c Release --project tests/SharpMUTerm.Core.Tests </dev/null
   ```
-  There are five: Core, Graphics, Scripting, Web, Tui. Primary signal is
-  `dotnet build SharpMUTerm.slnx` plus all five green and warning-free.
+  There are six: Core, Graphics, Scripting, Web, Tui, Avalonia. Primary signal is
+  `dotnet build SharpMUTerm.slnx` plus all six green and warning-free.
 - **Building against the local SharpConsoleUI clone surfaces 2 NuGet advisory warnings** for
   AngleSharp. They are the framework's, not ours; a build against the package has none.
 
@@ -1706,7 +1737,7 @@ Kept for context; **M1 is done** (see *Repository state* above). As originally s
 
 ## Verification
 
-- Primary signal: `dotnet build SharpMUTerm.slnx` plus all five suites (see *Building and testing*).
+- Primary signal: `dotnet build SharpMUTerm.slnx` plus all six suites (see *Building and testing*).
   Keep coverage in `SharpMUTerm.Core.Tests` — ANSI/SGR parser, telnet round-trips, engines.
 - **The TUI is verifiable headlessly** via the snapshot pipeline above; a claim about layout or
   chrome should be backed by a rendered frame you actually looked at, not by reading the markup.

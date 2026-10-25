@@ -42,6 +42,16 @@
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
 
+    <!--
+      The windowed host (SharpMUTerm.Avalonia): a desktop window that draws the TUI's cell grid with Skia,
+      for the platforms whose terminals cannot show a picture (Windows, behind ConPTY). SkiaSharp comes in
+      through Avalonia.Skia, at the version Avalonia was built against.
+    -->
+    <PackageVersion Include="Avalonia" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Themes.Simple" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.4" />
+
     <!-- PNG encoder for tests that need real image bytes; the sibling of the decoder SharpConsoleUI uses. -->
     <PackageVersion Include="StbImageWriteSharp" Version="1.16.7" />
 

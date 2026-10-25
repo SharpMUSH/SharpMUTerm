@@ -128,6 +128,19 @@ In-app: **Up/Down** input history · **Ctrl+N** next window · **Ctrl+W** close 
 Ctrl+D act at once, on the character whose pane is focused, and say so when there is nothing connected.
 (Windows/panes are mouse-resizable; each window keeps its own input draft.)
 
+### In a desktop window (prototype)
+
+The same client can run in its own window instead of a terminal. It draws the cells itself with Skia,
+so pictures sent by a world are drawn as real bitmaps on every platform — including Windows, whose
+terminals cannot show Kitty graphics. Every terminal option works, plus a few of its own (`--help`):
+
+```bash
+dotnet run --project src/SharpMUTerm.Avalonia -- <host> <port> [--font "Cascadia Mono"] [--font-size 14]
+dotnet run --project src/SharpMUTerm.Avalonia -- --demo-config --view mxp-image   # the demo worlds, saves nothing
+```
+
+Paste is Ctrl+Shift+V or Shift+Insert. Install a Nerd Font for the header and sidebar icons.
+
 ## Testing
 
 The test projects use [TUnit], which runs on the Microsoft.Testing.Platform. Run each directly
@@ -139,6 +152,7 @@ dotnet run --project tests/SharpMUTerm.Graphics.Tests
 dotnet run --project tests/SharpMUTerm.Scripting.Tests
 dotnet run --project tests/SharpMUTerm.Web.Tests
 dotnet run --project tests/SharpMUTerm.Tui.Tests
+dotnet run --project tests/SharpMUTerm.Avalonia.Tests
 ```
 
 ## License

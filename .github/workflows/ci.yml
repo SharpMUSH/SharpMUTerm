@@ -64,6 +64,23 @@ jobs:
         shell: bash
         run: dotnet run -c Release --no-build --project tests/SharpMUTerm.Tui.Tests/SharpMUTerm.Tui.Tests.csproj
 
+      - name: Test — Avalonia
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: dotnet run -c Release --no-build --project tests/SharpMUTerm.Avalonia.Tests/SharpMUTerm.Avalonia.Tests.csproj
+
+      # The windowed host draws a demo frame with no window: the client's real loop on the Avalonia driver,
+      # a picture sent the Kitty way, and the Skia renderer, end to end. A PNG with the picture in it is the pass.
+      - name: Smoke — windowed host renders a picture
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          out=$(dotnet run -c Release --no-build --project src/SharpMUTerm.Avalonia/SharpMUTerm.Avalonia.csproj -- \
+            --demo-config --view mxp-image --render-png window.png --size 120x32 </dev/null)
+          echo "$out"
+          test -s window.png || { echo "no PNG written"; exit 1; }
+          echo "$out" | grep -qF "1 picture(s)" || { echo "the picture was not transmitted to the driver"; exit 1; }
+
       # End-to-end guard: the headless snapshot must render the workspace (rail, worlds, command
       # surface) and exit — catches both UI-render regressions and any return of the stdin-block hang.
       - name: Smoke — headless snapshot

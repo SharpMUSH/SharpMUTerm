@@ -90,6 +90,22 @@ internal static class Program
             Environment.Exit(0);
         }
 
+        return RunLive(args, config, capabilities, loadNotices, LiveHost.Terminal);
+    }
+
+    /// <summary>
+    /// The live client, past argument handling: what a terminal launch runs, and what the windowed host in
+    /// <c>SharpMUTerm.Avalonia</c> runs with its own driver. One composition root for both, so a window is the
+    /// same client as a terminal — same files, same diagnostics, same save on exit — and differs only in what
+    /// <paramref name="host"/> supplies.
+    /// </summary>
+    internal static int RunLive(
+        string[] args,
+        AppConfiguration config,
+        TerminalCapabilities capabilities,
+        IReadOnlyList<string> loadNotices,
+        LiveHost host)
+    {
         // What this launch connects: the command line's host if one was typed, else whatever is marked
         // `at start` on F5, else nothing at all. The precedence lives in Core (StartupConnections) so it
         // can be asserted without a terminal; the parsing stays here.
@@ -148,6 +164,7 @@ internal static class Program
         var liveApp = new SharpMUTermApp(
             config,
             capabilities,
+            host.Driver,
             diagnostics: diagnostics,
             save: saved => ConfigurationStore.Save(ConfigurationStore.DefaultPath, saved),
             logRoot: logRoot,
@@ -160,7 +177,9 @@ internal static class Program
             // client is local or on the far end of an ssh session. Supplied here rather than reached for
             // inside the app for the reason logRoot and the browser launcher are: nothing that is not this
             // entry point may touch the developer's clipboard, least of all the test suite.
-            clipboard: SharpConsoleUI.Helpers.ClipboardHelper.SetText);
+            clipboard: host.Clipboard ?? SharpConsoleUI.Helpers.ClipboardHelper.SetText,
+            focusReporting: host.FocusReporting);
+        host.Prepare?.Invoke(liveApp);
         var exitCode = liveApp.Run(startup); // blocks on the SharpConsoleUI main loop until exit
 
         // Persist the workspace so the next launch resumes where this one left off.
@@ -197,7 +216,7 @@ internal static class Program
     /// Loads the configuration, collecting anything the store wants reported into
     /// <paramref name="report"/> for the caller to log once diagnostics exist.
     /// </summary>
-    private static AppConfiguration LoadConfiguration(Action<string> report)
+    internal static AppConfiguration LoadConfiguration(Action<string> report)
     {
         try
         {
@@ -209,7 +228,7 @@ internal static class Program
         }
     }
 
-    private static TerminalCapabilities DetectCapabilities(AppConfiguration config)
+    internal static TerminalCapabilities DetectCapabilities(AppConfiguration config)
     {
         // A config graphics override maps onto the same SHARPMUTERM_GRAPHICS mechanism the probe reads.
         if (!string.IsNullOrEmpty(config.GraphicsOverride))
@@ -251,7 +270,7 @@ internal static class Program
         return null;
     }
 
-    private static string? GetOption(string[] args, string name)
+    internal static string? GetOption(string[] args, string name)
     {
         var index = Array.IndexOf(args, name);
         return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
@@ -384,4 +403,19 @@ internal static class Program
         usage.WriteLine("        cancels, and pausing after Ctrl+B pops a panel naming each key. Or drag a tab");
         usage.WriteLine("        strip onto another pane — middle drops it as a tab, an edge splits there.");
     }
+}
+
+/// <summary>
+/// What a live launch is run in. <see cref="Terminal"/> is the terminal client exactly as it always was: the
+/// framework's own <c>NetConsoleDriver</c>, the system clipboard helper, and focus reporting decided by the
+/// watcher. A windowed host supplies its own driver and clipboard, turns focus reporting off (it is a
+/// terminal escape, and its focus-in arrives disguised as Tab), and may prepare the app before the loop runs.
+/// </summary>
+internal sealed record LiveHost(
+    IConsoleDriver? Driver = null,
+    Action<string>? Clipboard = null,
+    bool? FocusReporting = null,
+    Action<SharpMUTermApp>? Prepare = null)
+{
+    public static LiveHost Terminal { get; } = new();
 }
