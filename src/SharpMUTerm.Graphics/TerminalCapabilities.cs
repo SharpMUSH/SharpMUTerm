@@ -12,13 +12,15 @@ public sealed class TerminalCapabilities
         bool supportsTrueColor,
         bool supportsKittyGraphics,
         bool supportsSixel,
-        bool supportsTransparentColours = false)
+        bool supportsTransparentColours = false,
+        bool isForced = false)
     {
         Protocol = protocol;
         SupportsTrueColor = supportsTrueColor;
         SupportsKittyGraphics = supportsKittyGraphics;
         SupportsSixel = supportsSixel;
         SupportsTransparentColours = supportsTransparentColours;
+        IsForced = isForced;
     }
 
     /// <summary>The best inline-graphics protocol available.</summary>
@@ -40,6 +42,13 @@ public sealed class TerminalCapabilities
     /// </summary>
     public bool SupportsTransparentColours { get; }
 
+    /// <summary>
+    /// True when <see cref="Protocol"/> was named by <c>SHARPMUTERM_GRAPHICS</c> (or the config's graphics
+    /// override) rather than detected. A host that has its own idea of what the terminal supports should
+    /// defer to this: it is the user saying they know better than every probe.
+    /// </summary>
+    public bool IsForced { get; }
+
     public override string ToString() =>
-        $"{Protocol} (truecolor={SupportsTrueColor}, kitty={SupportsKittyGraphics}, sixel={SupportsSixel}, transparent colours={SupportsTransparentColours})";
+        $"{Protocol} (truecolor={SupportsTrueColor}, kitty={SupportsKittyGraphics}, sixel={SupportsSixel}, transparent colours={SupportsTransparentColours}{(IsForced ? ", forced" : "")})";
 }

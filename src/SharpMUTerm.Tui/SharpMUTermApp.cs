@@ -3523,7 +3523,7 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
 
         AppendWindowLine(windowId, markup, stamp, anchor, pictures);
 
-        IGraphicsProtocol? Kitty() => _system.ConsoleDriver as IGraphicsProtocol;
+        IGraphicsProtocol? Kitty() => WebGraphicsSurface().CanPlaceKitty ? _system.ConsoleDriver as IGraphicsProtocol : null;
         if (anchor != 0)
         {
             var edges = inline.Count == 1 ? BoxEdgesAround(line, inline[0]) : null;
@@ -8473,7 +8473,10 @@ internal sealed class SharpMUTermApp : IAsyncDisposable
     /// initialised and run its capability probe.
     /// </summary>
     private GraphicsSurface WebGraphicsSurface() =>
-        GraphicsSurface.Compositor(_system.ConsoleDriver is IGraphicsProtocol { SupportsKittyGraphics: true });
+        GraphicsSurface.Compositor(
+            _system.ConsoleDriver is IGraphicsProtocol,
+            _system.ConsoleDriver is IGraphicsProtocol { SupportsKittyGraphics: true },
+            _capabilities);
 
     /// <summary>The decoded page images as plain sizes, for <see cref="WebImageReport"/>.</summary>
     private Dictionary<int, WebImageReport.Decoded> DecodedWebImages() =>

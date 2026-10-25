@@ -70,7 +70,7 @@ public static class CapabilityProbe
         if (TryParseOverride(overrideValue, out var forced))
         {
             return new TerminalCapabilities(
-                forced, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours);
+                forced, supportsTrueColor, supportsKitty, supportsSixel, supportsTransparentColours, isForced: true);
         }
 
         var protocol = supportsKitty

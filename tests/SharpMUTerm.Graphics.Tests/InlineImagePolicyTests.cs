@@ -135,6 +135,53 @@ public class InlineImagePolicyTests
         await Assert.That(chosen).IsEqualTo(InlineImagePresentation.HalfBlock);
     }
 
+    [Test]
+    public async Task ForcedKitty_IsHonouredWhenTheDriversOwnProbeFoundNothing()
+    {
+        // WezTerm on Windows with SHARPMUTERM_GRAPHICS=kitty: the framework never probes on Windows, so
+        // the driver reports no Kitty support in any terminal there. The override has to win over that.
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["SHARPMUTERM_GRAPHICS"] = "kitty",
+            ["TERM_PROGRAM"] = "WezTerm",
+        };
+
+        var surface = GraphicsSurface.Compositor(
+            driverTransmits: true, driverReportsKitty: false, CapabilityProbe.Detect(env));
+
+        await Assert.That(surface.CanPlaceKitty).IsTrue();
+        await Assert.That(InlineImagePolicy.Select(CapabilityProbe.Detect(env), surface))
+            .IsEqualTo(InlineImagePresentation.Kitty);
+    }
+
+    [Test]
+    public async Task DetectedKitty_StillNeedsTheDriverToAgree()
+    {
+        // Without an override the driver's own probe keeps its veto, as before.
+        var caps = CapabilityProbe.Detect(new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["TERM"] = "xterm-kitty",
+        });
+
+        var surface = GraphicsSurface.Compositor(driverTransmits: true, driverReportsKitty: false, caps);
+
+        await Assert.That(caps.IsForced).IsFalse();
+        await Assert.That(surface.CanPlaceKitty).IsFalse();
+    }
+
+    [Test]
+    public async Task ForcedKitty_CannotConjureADriverThatTransmits()
+    {
+        var caps = CapabilityProbe.Detect(new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["SHARPMUTERM_GRAPHICS"] = "kitty",
+        });
+
+        var surface = GraphicsSurface.Compositor(driverTransmits: false, driverReportsKitty: false, caps);
+
+        await Assert.That(surface.CanPlaceKitty).IsFalse();
+    }
+
     // ---- Descriptions -----------------------------------------------------------------------
 
     [Test]
