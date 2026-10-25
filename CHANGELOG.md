@@ -3,11 +3,11 @@
 Every change a user could notice is recorded here, in the release that ships it. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `tools/changelog.py check` enforces the shape,
-and a release fails without its section. The procedure is in [`docs/RELEASING.md`](docs/RELEASING.md).
+and a release's notes are its section. The procedure is in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## [Unreleased]
 
-## [0.1.2] - 2026-10-25
+## [0.1.4] - 2026-10-25
 
 ### Added
 
