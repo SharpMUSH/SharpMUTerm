@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Keeps CHANGELOG.md and the version in Directory.Build.props honest.
+"""Keeps CHANGELOG.md honest, and a release tag to it. The version itself is the git tag (MinVer).
 
-  changelog.py check                 the changelog's shape, and the version against it
-  changelog.py version               the version Directory.Build.props declares
-  changelog.py release-check <tag>   a release tag: v<version>, with a dated, non-empty section
+  changelog.py check                 the changelog's shape
+  changelog.py release-check <tag>   a release tag: v<semver>, with a dated, non-empty section
   changelog.py notes <version>       that version's section, for the release page
 
-Exits 1 with one line per problem. Used by ci.yml and release.yml; see docs/RELEASING.md.
+Exits 1 with one line per problem. Used by changelog.yml and release.yml; see docs/RELEASING.md.
 """
 import re
 import sys
@@ -14,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CHANGELOG = ROOT / "CHANGELOG.md"
-PROPS = ROOT / "Directory.Build.props"
 
 SEMVER = r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?"
 RELEASED = re.compile(r"^## \[(?P<version>" + SEMVER + r")\] - (?P<date>\d{4}-\d{2}-\d{2})$")
@@ -32,13 +30,6 @@ def key(version):
         return core, (1,)
     parts = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
     return core, (0,) + parts
-
-
-def props_version():
-    m = re.search(r"<VersionPrefix>([^<]+)</VersionPrefix>", PROPS.read_text(encoding="utf-8"))
-    if not m:
-        sys.exit(f"{PROPS.name}: no <VersionPrefix>")
-    return m.group(1).strip()
 
 
 def sections():
@@ -82,15 +73,6 @@ def check():
             if line.startswith("### ") and line[4:] not in SUBSECTIONS:
                 problems.append(f"{where}: '{line}' is not one of {', '.join(sorted(SUBSECTIONS))}")
 
-    version = props_version()
-    try:
-        key(version)
-    except ValueError:
-        problems.append(f"{PROPS.name}: '{version}' is not a semantic version")
-    else:
-        latest = next((RELEASED.match(h)["version"] for h, _, _ in found if RELEASED.match(h)), None)
-        if latest and key(version) < key(latest):
-            problems.append(f"{PROPS.name}: {version} is older than the last release in CHANGELOG.md, {latest}")
     return problems
 
 
@@ -104,23 +86,20 @@ def section(version):
 
 def release_check(tag):
     problems = check()
-    version = props_version()
-    if tag != f"v{version}":
-        problems.append(f"tag {tag} does not match {PROPS.name}'s version; it should be v{version}")
-    body = section(tag[1:] if tag.startswith("v") else tag)
+    version = tag[1:] if tag.startswith("v") else None
+    if version is None or not re.fullmatch(SEMVER, version):
+        return problems + [f"tag {tag} is not v<semantic version>, e.g. v1.2.3 or v1.3.0-beta.1"]
+    body = section(version)
     if body is None:
-        problems.append(f"CHANGELOG.md has no '## [{tag.lstrip('v')}] - YYYY-MM-DD' section")
+        problems.append(f"CHANGELOG.md has no '## [{version}] - YYYY-MM-DD' section")
     elif not has_entries(body):
-        problems.append(f"CHANGELOG.md's {tag.lstrip('v')} section has no entries")
+        problems.append(f"CHANGELOG.md's {version} section has no entries")
     return problems
 
 
 def main(argv):
     if len(argv) == 2 and argv[1] == "check":
         problems = check()
-    elif len(argv) == 2 and argv[1] == "version":
-        print(props_version())
-        return 0
     elif len(argv) == 3 and argv[1] == "release-check":
         problems = release_check(argv[2])
     elif len(argv) == 3 and argv[1] == "notes":

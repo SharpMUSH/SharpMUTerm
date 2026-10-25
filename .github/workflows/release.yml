@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  # A tag is refused before anything is built unless it is v{Directory.Build.props version} and CHANGELOG.md
-  # has a dated section for that version. See docs/RELEASING.md.
+  # The version is the tag (MinVer; see Directory.Build.props). A tag is refused before anything is built
+  # unless CHANGELOG.md has a dated section for it. See docs/RELEASING.md.
   version:
     runs-on: ubuntu-latest
     outputs:
@@ -21,18 +21,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
-      # A tag builds exactly the declared version; a manual run builds <version>-dev.<run>. The installer's
-      # file version has to be four numbers, so a prerelease suffix is dropped there.
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # A tag builds exactly its own version; a manual run builds what MinVer makes of the commit, e.g.
+      # 0.2.1-alpha.0.5. The installer's file version has to be four numbers, so a prerelease suffix is
+      # dropped there.
       - name: Version
         id: version
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             python3 tools/changelog.py release-check "$GITHUB_REF_NAME"
-            version=$(python3 tools/changelog.py version)
+            version="${GITHUB_REF_NAME#v}"
           else
             python3 tools/changelog.py check
-            version="$(python3 tools/changelog.py version)-dev.${GITHUB_RUN_NUMBER}"
+            dotnet tool install --tool-path "$RUNNER_TEMP/minver" minver-cli --version 8.0.0
+            version=$("$RUNNER_TEMP/minver/minver" --tag-prefix v --minimum-major-minor 0.1 --verbosity warn)
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "numeric=${version%%-*}.0" >> "$GITHUB_OUTPUT"
@@ -64,10 +72,10 @@ jobs:
         shell: bash
         run: |
           dotnet publish src/SharpMUTerm.Tui/SharpMUTerm.Tui.csproj \
-            -p:PublishProfile=${{ matrix.profile }} -p:Version=${{ needs.version.outputs.version }} \
+            -p:PublishProfile=${{ matrix.profile }} -p:MinVerVersionOverride=${{ needs.version.outputs.version }} \
             -o publish/${{ matrix.rid }}
           dotnet publish src/SharpMUTerm.Avalonia/SharpMUTerm.Avalonia.csproj \
-            -p:PublishProfile=${{ matrix.profile }} -p:Version=${{ needs.version.outputs.version }} \
+            -p:PublishProfile=${{ matrix.profile }} -p:MinVerVersionOverride=${{ needs.version.outputs.version }} \
             -o publish/${{ matrix.rid }}
 
       # The window's own demo render, from the published single file, before anything is packaged.
