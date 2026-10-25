@@ -38,8 +38,13 @@ minor bump and is named in the changelog. A prerelease (`0.2.0-beta.1`) is publi
    the `.zip` and the installer. A tag with a prerelease suffix (`v0.2.0-beta.1`) becomes a GitHub prerelease.
 
 A tag is never moved or reused, because the repository has immutable releases on. If a tag fails the check, it
-builds nothing: fix the changelog, rename its section to the next patch version, and tag that instead. `v0.1.0`
-is one of these. It was refused, and the first release is 0.1.1.
+builds nothing: fix the changelog, rename its section to the next patch version, and tag that instead.
+
+**Push only the tag.** Don't create the release in GitHub's UI. A published release is immutable, so the packages
+can't be attached to it afterwards. The workflow creates the release as a draft, attaches the four packages, and
+then publishes it. A tag that already has a published release is refused before the build. Neither `v0.1.0` (no
+changelog section) nor `v0.1.1` (released from the UI with no packages) shipped packages, so the first release
+with packages is 0.1.2.
 
 Running **Release** by hand (workflow dispatch) builds whatever MinVer makes of that commit and keeps the
 packages as workflow artifacts; it publishes nothing.
