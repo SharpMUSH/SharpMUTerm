@@ -158,6 +158,11 @@ public sealed class WorldSession : IAsyncDisposable
         if (parser is MxpParser mxp)
         {
             mxp.ClientReply += (_, reply) => SendProtocolReply(reply);
+            mxp.EntityChanged += (_, e) => GameData.SetMxp(e.Name, e.Value);
+            mxp.Flagged += (_, e) => MxpFlagged?.Invoke(this, e);
+            mxp.GaugeDeclared += (_, e) => DeclareMeter(e);
+            mxp.MediaRequested += (_, e) => MediaReceived?.Invoke(this, e);
+            mxp.Redirected += (_, e) => SpawnLine?.Invoke(this, new SpawnLineEventArgs(e.Frame, ApplyLinks(ApplyEmoji(e.Line))));
         }
 
         return parser;
@@ -390,6 +395,60 @@ public sealed class WorldSession : IAsyncDisposable
 
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
 
+    /// <summary>
+    /// Raised on the read loop when an MXP element the server flagged closes — <c>RoomName</c>, <c>RoomDesc</c>,
+    /// <c>RoomExit</c>, <c>RoomNum</c> and the like — with its text. What the MXP room source reads.
+    /// </summary>
+    public event EventHandler<MxpFlagText>? MxpFlagged;
+
+    /// <summary>The most meters one connection's <c>&lt;GAUGE&gt;</c>s may add.</summary>
+    public const int MaxMxpMeters = 8;
+
+    private readonly Lock _metersGate = new();
+    private List<StatusMeter> _mxpMeters = [];
+
+    /// <summary>
+    /// The status meters this connection's server asked for with MXP <c>&lt;GAUGE&gt;</c> and <c>&lt;STAT&gt;</c>,
+    /// read from its entities (<c>MXP.hp</c>). Shown after the player's own; emptied on connect.
+    /// </summary>
+    public IReadOnlyList<StatusMeter> MxpMeters
+    {
+        get
+        {
+            lock (_metersGate)
+            {
+                return _mxpMeters;
+            }
+        }
+    }
+
+    /// <summary>Raised on the read loop when <see cref="MxpMeters"/> changes.</summary>
+    public event EventHandler? MxpMetersChanged;
+
+    private void DeclareMeter(MxpGauge gauge)
+    {
+        var meter = new StatusMeter
+        {
+            Label = StatusMeter.Clip(gauge.Caption ?? gauge.Entity),
+            Value = $"{GameDataStore.MxpPrefix}.{gauge.Entity}",
+            Max = gauge.Max is null ? null : $"{GameDataStore.MxpPrefix}.{gauge.Max}",
+        };
+
+        lock (_metersGate)
+        {
+            var kept = _mxpMeters.Where(m => !string.Equals(m.Value, meter.Value, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (kept.Count >= MaxMxpMeters)
+            {
+                return;
+            }
+
+            kept.Add(meter);
+            _mxpMeters = kept;
+        }
+
+        MxpMetersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public event EventHandler<SpawnLineEventArgs>? SpawnLine;
 
     /// <summary>Raised when the encoding in force changes — see <see cref="CurrentEncoding"/>.</summary>
@@ -479,6 +538,11 @@ public sealed class WorldSession : IAsyncDisposable
         _telnet = telnet;
         telnet.OutputReceived += OnOutputReceived;
         GameData.Clear();
+        lock (_metersGate)
+        {
+            _mxpMeters = [];
+        }
+
         telnet.GmcpReceived += (_, e) =>
         {
             // Stored before the event, so a handler reading GameData sees the message that raised it.
@@ -561,7 +625,7 @@ public sealed class WorldSession : IAsyncDisposable
             ProcessOutputLine(tail);
             emitted = true;
         }
-        else if (!emitted)
+        else if (!emitted && _parser is not MxpParser { LineSwallowed: true })
         {
             ProcessOutputLine(StyledLine.Empty);
         }

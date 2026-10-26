@@ -171,7 +171,7 @@ fallbacks) for inline images/maps.
     the server's `WILL MSP` is refused, and `MspChanged` is never raised. The bump registers the plugin only
     when `PlaysMedia` is true and raises the event from its two callbacks.
 - **Packages** (`Core/Packages`: `PackageManifest`, `PackageArchive`, `PackageStore`; Tui `PackageScreen`,
-  `PackagesOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
+  `ListOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
   `games` as `host[:port]`, `*.host` or `*`), `sets/*.json`, `scripts/**.lua`, `media/**`; anything else is
   listed as left out and never extracted. **The archive is server text meeting the disk**, so `Read` refuses
   traversal, absolute and backslashed names by never reading them, and counts sizes while decompressing
@@ -1888,6 +1888,26 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   drops it on the floor, unhandled. Claiming `+high` would tell a server to send markup this client
   silently discards, exactly the failure mode the MTTS bit vector is already held to; add a tag to this
   list only once the handler for it exists, never once the tag is merely accepted.
+- **What a server defines over MXP is held per connection and bounded** (`MxpParser.Definitions.cs`).
+  `<!ELEMENT>`, `<!ENTITY>`, `<VAR>`, `<GAUGE>`/`<STAT>`, `<SOUND>`/`<MUSIC>`, `<FRAME>` and `<DEST>` are all
+  secure tags, so a player can neither define nor send one. Decisions not to relitigate:
+  - **An element is expanded through the same trust as the tag that opened it.** An `OPEN` element a player
+    uses on an open line runs its definition's tags as an open line would, so a definition carrying `<SEND>`
+    gives the player formatting and never a command. The built-in tags and entities cannot be redefined.
+  - **Every expansion is capped** (256 elements, 512 entities, 1 KB a definition, depth 4, 64 per line, 8
+    frames). A definition that names itself stops at the depth cap rather than at the stack's end.
+  - **A tag ends at a `>` outside a quoted value**, because a definition carries markup in one. A quote opens
+    only after `=` or a space, so the apostrophe in `<don't>` holds nothing open, and **a tag still being read
+    is abandoned as text at the line boundary** (`EndLine`, i.e. `Flush`), not only at a `'\n'` the product
+    never feeds.
+  - **A line that was only markup is swallowed** (`LineSwallowed`), and `WorldSession` skips the blank line it
+    would otherwise print. A genuinely blank line still prints.
+  - **`<DEST>` lines skip the trigger engine**: they reach the window by `SpawnLine`, already shown, as a
+    capture rule's would. `<FRAME>` raises `FrameDeclared` and nothing listens yet; a window opens when text
+    is first sent to it.
+  - **Entities are game data** (`GameDataStore`, under `MXP.`), so the game data view and a gauge's meter read them where
+    they read GMCP. `PRIVATE` entities are kept from both.
+  - **A restored line keeps only a menu's first command**: `StyledLineCodec` does not carry `SendChoice`s.
 - **MSSP is read by the library, not by us — since 2.6.5, and that is the standing example of the
   rule above.** 2.6.0's reader destroyed the protocol's own array notation inside the library:
   `PORT "80" "23" "4201"` arrived as the integer `80234201`, `REFERRAL` (array-only) arrived null,

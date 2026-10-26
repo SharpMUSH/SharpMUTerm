@@ -6,11 +6,11 @@ using SharpMUTerm.Core.Packages;
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// The two package surfaces, as one modal window: the review before an install (⏎ installs, Esc cancels)
-/// and the Packages screen (F10, ⌃P ▸ Packages). What they say is <see cref="PackageScreen"/>'s; what a key
-/// does to the installed set is the app's, through the callbacks.
+/// A modal list surface driven by callbacks: the package review and Packages screen (F10), the package
+/// index, and the terminal's chooser for an MXP <c>&lt;SEND&gt;</c> menu. What it says is the caller's
+/// render; what a key does is the caller's key handler, which says whether the surface stays open.
 /// </summary>
-internal sealed class PackagesOverlay
+internal sealed class ListOverlay
 {
     private readonly ConsoleWindowSystem _system;
 
@@ -19,7 +19,7 @@ internal sealed class PackagesOverlay
     private Func<int, List<string>>? _render;
     private Func<ConsoleKeyInfo, bool>? _key;
 
-    public PackagesOverlay(ConsoleWindowSystem system)
+    public ListOverlay(ConsoleWindowSystem system)
     {
         _system = system;
     }
@@ -36,7 +36,7 @@ internal sealed class PackagesOverlay
     /// Opens a surface. <paramref name="render"/> draws it at a width; <paramref name="key"/> answers a key
     /// and returns whether the surface stays open.
     /// </summary>
-    public void Open(string mode, string title, Func<int, List<string>> render, Func<ConsoleKeyInfo, bool> key)
+    public void Open(string mode, string title, Func<int, List<string>> render, Func<ConsoleKeyInfo, bool> key, int? width = null)
     {
         if (_window is not null)
         {
@@ -46,8 +46,9 @@ internal sealed class PackagesOverlay
         _render = render;
         _key = key;
         var desktop = _system.DesktopDimensions;
-        var width = Math.Clamp(desktop.Width - 8, 44, 110);
-        var lines = render(width - 4);
+        var widest = Math.Clamp(desktop.Width - 8, 44, 110);
+        var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
+        var lines = render(outer - 4);
         var height = Math.Clamp(lines.Count + 2, 8, Math.Max(8, desktop.Height - 2));
         _content = new MarkupControl(lines);
 
@@ -60,7 +61,7 @@ internal sealed class PackagesOverlay
             .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
-            .WithSize(width, height)
+            .WithSize(outer, height)
             .Centered()
             .AddControl(_content)
             .OnClosed((_, _) =>

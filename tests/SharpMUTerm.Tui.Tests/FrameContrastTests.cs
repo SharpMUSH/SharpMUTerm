@@ -53,7 +53,7 @@ public class FrameContrastTests
         "meters", "gamedata", "map", "map-walking", "map-split",
 
         // The package surfaces are a modal of their own, with a warning ink on the review.
-        "packages", "package-review", "package-browse",
+        "packages", "package-review", "package-browse", "send-menu",
 
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band

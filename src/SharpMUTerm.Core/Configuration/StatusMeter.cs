@@ -23,6 +23,9 @@ public sealed class StatusMeter
     /// <summary>The longest label the row draws.</summary>
     public const int MaxLabelLength = 8;
 
+    /// <summary>A label cut to <see cref="MaxLabelLength"/>.</summary>
+    public static string Clip(string label) => label.Length > MaxLabelLength ? label[..MaxLabelLength] : label;
+
     /// <summary>
     /// The default row: health, mana and movement, by the names IRE, Aardwolf and the MSDP convention use.
     /// </summary>

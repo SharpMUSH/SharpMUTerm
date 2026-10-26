@@ -53,6 +53,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   package index, with the current game's first and an update shown beside any you have at an older
   version. The index is fetched only when you open it. A package from it is checked against the index's
   SHA-256 before its review opens. Another index can be named as `packageIndexUrl` in `config.json`.
+- An MXP link with several commands (`<SEND "look|get|drop">`) still sends the first on a click, and a
+  right-click offers all of them: in the window's own menu, or in a small chooser in a terminal (arrows or
+  1–9, then Enter). Its tooltip says how many more there are.
+- More of MXP: elements a game defines with `<!ELEMENT>` (including room names, exits and numbers, which
+  feed the automapper), entities from `<!ENTITY>` and `<VAR>` (kept with the game data on Ctrl+P ▸ *Show game
+  data*), `<GAUGE>` and `<STAT>` meters on the status row, `<SOUND>` and `<MUSIC>`, which play as MSP sounds
+  do, and `<DEST>`, which sends text to a window of its own. A line that is only definitions no longer
+  prints as a blank line.
 
 ### Changed
 
