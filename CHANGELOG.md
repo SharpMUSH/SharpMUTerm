@@ -7,7 +7,7 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-10-25
+## [0.1.5] - 2026-10-25
 
 ### Added
 

@@ -36,7 +36,7 @@ minor bump and is named in the changelog. A prerelease (`0.2.0-beta.1`) is publi
 
 A tag is never moved or reused. If a release goes wrong, release the next patch version. `v0.1.0` to `v0.1.3`
 shipped no packages, and the last three were immutable releases, which can never take files. The first release
-with packages is 0.1.4.
+with packages is 0.1.5.
 
 Running **Release** by hand (workflow dispatch) builds whatever MinVer makes of that commit and keeps the
 packages as workflow artifacts; it publishes nothing.
