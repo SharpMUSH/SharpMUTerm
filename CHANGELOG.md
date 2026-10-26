@@ -49,6 +49,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   press Enter. Its sets then apply to every character on the games it names, after their own. F10 or
   Ctrl+P ▸ *Packages* lists what is installed: Space switches one off, `c` copies its sets into your own
   so you can edit them on F2, and Delete (twice) removes it.
+- Ctrl+P ▸ *Browse packages* (or `b` on F10, or `/package browse`) lists the packages in the project's
+  package index, with the current game's first and an update shown beside any you have at an older
+  version. The index is fetched only when you open it. A package from it is checked against the index's
+  SHA-256 before its review opens. Another index can be named as `packageIndexUrl` in `config.json`.
 
 ### Changed
 

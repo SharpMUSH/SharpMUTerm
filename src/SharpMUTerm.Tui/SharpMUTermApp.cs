@@ -1670,11 +1670,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         }
 
-        // The Packages screen with two installed (one switched off), and the review an install opens with —
-        // both through the real paths, into the snapshot's memory-only store.
-        if (view?.ToLowerInvariant() is "packages" or "package-review")
+        // The Packages screen with two installed (one switched off), the review an install opens with, and
+        // the index with this world's packages first — all through the real paths, into the snapshot's memory-only store.
+        if (view?.ToLowerInvariant() is "packages" or "package-review" or "package-browse")
         {
-            LoadDemoPackages(review: string.Equals(view, "package-review", StringComparison.OrdinalIgnoreCase));
+            LoadDemoPackages(view.ToLowerInvariant());
         }
 
         // The status row's meters and the game data inspector, over the demo's game data — written through
@@ -8013,6 +8013,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:packages":
                 ShowPackages();
+                return true;
+            case "term:package-browse":
+                BrowsePackages();
                 return true;
             case "term:package-install":
                 ActiveBar().SetAndNotify("/package install ");

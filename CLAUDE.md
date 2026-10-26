@@ -187,6 +187,13 @@ fallbacks) for inline images/maps.
   - One folder per package (`packages/<id>/`, beside `config.json`), swapped in through a `.id.new` staging
     folder; a snapshot's store has no folder and writes nothing. F10 is claimed (`opens Packages`); GNOME
     Terminal may take it for its menu, so ⌃P ▸ *Packages* is the way in that always works.
+  - **The index** (`PackageIndex`; ⌃P ▸ *Browse packages*, `b` on F10) is `{"packages":[…]}`, each entry a
+    manifest plus an https `url` and a `sha256`, at `AppConfiguration.PackageIndexUrl`. **It is fetched only
+    when the player opens it, never at start.** An entry that breaks a rule is dropped and counted, not
+    fatal to the list. The archive is checked against the entry's SHA-256 *and* its id and version before
+    the review opens, so the review is never shown for bytes the index did not name. The focused window's
+    world (its session's, else its owner's, never `_active`) sorts its own packages first; a `*` package does
+    not count as the world's own. The default index repository does not exist yet.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a

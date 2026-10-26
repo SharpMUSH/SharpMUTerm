@@ -106,6 +106,12 @@ public sealed class AppConfiguration
     /// <summary>The ids of installed packages the player has switched off; their sets apply to nobody.</summary>
     public List<string> DisabledPackages { get; set; } = new();
 
+    /// <summary>The package index Browse packages reads: an https link to an <c>index.json</c>.</summary>
+    public string PackageIndexUrl { get; set; } = DefaultPackageIndexUrl;
+
+    /// <summary>The project's own index, until a player names another.</summary>
+    public const string DefaultPackageIndexUrl = "https://raw.githubusercontent.com/SharpMUSH/sharpmuterm-packages/main/index.json";
+
     /// <summary>
     /// The last workspace layout (panes, windows, focus) so the app can resume where it left off.
     /// Null on a fresh config; the shell rebuilds a live workspace from it at startup via

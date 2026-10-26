@@ -73,7 +73,13 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        RefuseCommand("/package, or /package install <file or https link>");
+        if (argument.Equals("browse", StringComparison.OrdinalIgnoreCase))
+        {
+            BrowsePackages();
+            return;
+        }
+
+        RefuseCommand("/package, /package browse, or /package install <file or https link>");
     }
 
     /// <summary>Reads a package from a path or an https link and opens its review. Nothing is written here.</summary>
@@ -100,33 +106,7 @@ internal sealed partial class SharpMUTermApp
                 return;
             }
 
-            Notice($"Fetching {Snippet(uri.Host)}…", MessageSeverity.Info, key: "package");
-            var fetch = PackageFetch ?? DownloadPackageAsync;
-            _ = Task.Run(async () =>
-            {
-                byte[]? bytes = null;
-                string? problem = null;
-                try
-                {
-                    bytes = await fetch(uri, CancellationToken.None).ConfigureAwait(false);
-                    problem = bytes is null ? "the download failed or was too large" : null;
-                }
-                catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
-                {
-                    problem = ex.Message;
-                }
-
-                OnUiThread(() =>
-                {
-                    if (bytes is null)
-                    {
-                        RefuseCommand($"package not fetched: {problem}");
-                        return;
-                    }
-
-                    ReviewPackage(bytes);
-                });
-            });
+            Fetch(uri, "package", bytes => ReviewPackage(bytes));
             return;
         }
 
@@ -157,13 +137,28 @@ internal sealed partial class SharpMUTermApp
         ReviewPackage(archive);
     }
 
-    /// <summary>Opens the review for an archive, or says why it is not a package.</summary>
-    internal void ReviewPackage(byte[] archive)
+    /// <summary>
+    /// Opens the review for an archive, or says why it is not a package. From an index, the archive must be
+    /// the one <paramref name="listed"/> names — its SHA-256, id and version — before anything is shown.
+    /// </summary>
+    internal void ReviewPackage(byte[] archive, PackageIndexEntry? listed = null)
     {
+        if (listed?.Verify(archive, inside: null) is { } mismatch)
+        {
+            RefuseCommand($"not installed: {mismatch}");
+            return;
+        }
+
         var (contents, problem) = PackageArchive.Read(archive);
         if (contents is null)
         {
             RefuseCommand($"not installed: {problem}");
+            return;
+        }
+
+        if (listed?.Verify(archive, contents.Manifest) is { } different)
+        {
+            RefuseCommand($"not installed: {different}");
             return;
         }
 
@@ -198,6 +193,122 @@ internal sealed partial class SharpMUTermApp
                     MessageSeverity.Info,
                     key: "package");
                 return false;
+            });
+    }
+
+    /// <summary>
+    /// Downloads <paramref name="uri"/> off the UI thread and hands the bytes back on it, or says why not.
+    /// </summary>
+    private void Fetch(Uri uri, string what, Action<byte[]> then)
+    {
+        Notice($"Fetching {Snippet(uri.Host)}…", MessageSeverity.Info, key: "package");
+        var fetch = PackageFetch ?? DownloadPackageAsync;
+        _ = Task.Run(async () =>
+        {
+            byte[]? bytes = null;
+            string? problem = null;
+            try
+            {
+                bytes = await fetch(uri, CancellationToken.None).ConfigureAwait(false);
+                problem = bytes is null ? "the download failed or was too large" : null;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                problem = ex.Message;
+            }
+
+            OnUiThread(() =>
+            {
+                if (bytes is null)
+                {
+                    RefuseCommand($"{what} not fetched: {problem}");
+                    return;
+                }
+
+                then(bytes);
+            });
+        });
+    }
+
+    /// <summary>
+    /// Browse packages: fetches the index — only now, never at start — and lists it with the focused world's
+    /// packages first. ⏎ fetches one, checks it against the index's SHA-256 and opens the review.
+    /// </summary>
+    internal void BrowsePackages()
+    {
+        if (ComposerIsInTheWay("the packages") || (AnyOverlayOpen && !_packageView.IsOpen && Refuse($"close {OpenOverlayName()} first")))
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(_config.PackageIndexUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        {
+            RefuseCommand("the package index is not an https link (packageIndexUrl in config.json)");
+            return;
+        }
+
+        Fetch(uri, "package index", bytes =>
+        {
+            if (bytes.Length > PackageIndex.MaxIndexBytes)
+            {
+                RefuseCommand("the package index is too large");
+                return;
+            }
+
+            var (index, problem) = PackageIndex.Parse(System.Text.Encoding.UTF8.GetString(bytes));
+            if (index is null)
+            {
+                RefuseCommand($"package index not read: {problem}");
+                return;
+            }
+
+            ShowIndex(index);
+        });
+    }
+
+    /// <summary>
+    /// The world of the focused window: its session's, else its recorded owner's — so a disconnected
+    /// character's window still names its game. Never <c>_active</c>.
+    /// </summary>
+    private WorldDefinition? FocusedWorld()
+    {
+        if (SendTarget()?.World is { } live)
+        {
+            return live;
+        }
+
+        var owner = _workspace.FindWindow(ActiveWindowId())?.SessionKey;
+        return owner is null
+            ? null
+            : _config.Worlds.FirstOrDefault(w => w.Characters.Any(c => string.Equals($"{w.Name}.{c.Name}", owner, StringComparison.Ordinal)));
+    }
+
+    private void ShowIndex(PackageIndex index)
+    {
+        var world = FocusedWorld();
+        var entries = index.For(world?.Host, world?.Port ?? 0);
+        _packageSelected = 0;
+        _packageView.Open(
+            "browse",
+            "Browse packages",
+            width => PackageScreen.Browse(entries, _packages.Installed, _packageSelected, world?.Name, index.Dropped, width),
+            key =>
+            {
+                switch (key.Key)
+                {
+                    case ConsoleKey.UpArrow:
+                        _packageSelected = Math.Max(0, _packageSelected - 1);
+                        return true;
+                    case ConsoleKey.DownArrow:
+                        _packageSelected = Math.Min(Math.Max(0, entries.Count - 1), _packageSelected + 1);
+                        return true;
+                    case ConsoleKey.Enter when entries.Count > 0:
+                        var entry = entries[Math.Clamp(_packageSelected, 0, entries.Count - 1)];
+                        Fetch(new Uri(entry.Url), "package", bytes => ReviewPackage(bytes, entry));
+                        return false;
+                    default:
+                        return true;
+                }
             });
     }
 
@@ -236,6 +347,12 @@ internal sealed partial class SharpMUTermApp
         var installed = _packages.Installed;
         var confirming = _confirmRemove;
         _confirmRemove = false;
+        if (key.Key == ConsoleKey.B)
+        {
+            BrowsePackages();
+            return false;
+        }
+
         if (installed.Count == 0)
         {
             return key.Key is not (ConsoleKey.F10 or ConsoleKey.Enter);
@@ -362,11 +479,36 @@ internal sealed partial class SharpMUTermApp
         """,
         "Health warnings, a tells window and the status gauges.");
 
-    private void LoadDemoPackages(bool review)
+    private void LoadDemoPackages(string view)
     {
-        if (review)
+        if (view == "package-review")
         {
             ReviewPackage(DemoBasics);
+            return;
+        }
+
+        if (view == "package-browse")
+        {
+            // Installed at an older version, so the list shows an update beside it.
+            _packages.Install(PackageArchive.Read(DemoPackage(
+                "aetherfall.basics", "Aetherfall basics", "1.1.0", "\"aetherfall.mux:4201\"", """{"name":"Aetherfall basics"}""", "")).Contents!);
+            SyncPackages();
+            var hash = new string('0', 64);
+            var (index, _) = PackageIndex.Parse($$"""
+                {"packages":[
+                  {"id":"mush.colours","name":"MUSH colour names","version":"0.3.1","games":["*"],
+                   "description":"Highlights pages and channel names on any game.",
+                   "url":"https://packages.example/mush-colours-0.3.1.zip","sha256":"{{hash}}"},
+                  {"id":"grapevine.channels","name":"Grapevine channels","version":"2.0.0","games":["grapevine.haus"],
+                   "url":"https://packages.example/grapevine-channels-2.0.0.zip","sha256":"{{hash}}"},
+                  {"id":"aetherfall.basics","name":"Aetherfall basics","version":"1.2.0","author":"the Aetherfall builders",
+                   "games":["aetherfall.mux:4201"],"description":"Health warnings, a tells window and the status gauges.",
+                   "url":"https://packages.example/aetherfall-basics-1.2.0.zip","sha256":"{{hash}}"},
+                  {"id":"aetherfall.mapper","name":"Aetherfall mapper rooms","version":"0.9.0","games":["aetherfall.mux"],
+                   "url":"https://packages.example/aetherfall-mapper-0.9.0.zip","sha256":"{{hash}}"},
+                  {"id":"bad","name":"Bad","version":"1","games":["*"],"url":"http://x","sha256":"x"}]}
+                """);
+            ShowIndex(index!);
             return;
         }
 

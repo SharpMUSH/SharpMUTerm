@@ -273,6 +273,8 @@ public static class CommandCatalog
             CommandGroup.Terminal, "Packages", "term:packages", "F10 · installed packages, on/off, remove"));
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Install package…", "term:package-install", "from a file or an https link"));
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Browse packages", "term:package-browse", "the package index, this game's first"));
         items.Add(context.TimestampsOn
             ? new CommandItem(CommandGroup.Terminal, "Hide timestamps", "term:timestamps-off")
             : new CommandItem(CommandGroup.Terminal, "Show timestamps", "term:timestamps-on"));
