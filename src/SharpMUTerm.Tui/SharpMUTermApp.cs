@@ -6,6 +6,7 @@ using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Input;
 using SharpMUTerm.Core.Logging;
+using SharpMUTerm.Core.Mapping;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Telnet;
@@ -540,6 +541,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly Dictionary<WorldSession, SessionScripts> _scripts = new();
 
     /// <summary>
+    /// Where maps are kept: memory-only unless <c>Program</c> hands one a folder, the <c>mssp:</c> rule. Never
+    /// null, so a recorder needs no "is there a store" branch.
+    /// </summary>
+    private readonly MapStore _maps;
+
+    /// <summary>Each open session's map recorder, fed by its GMCP and text room sources.</summary>
+    private readonly Dictionary<WorldSession, MapRecorder> _recorders = new();
+
+    /// <summary>
     /// Every server's last MSSP report, which is what the F5 ▸ <c>i</c> INFO screen reads. Never null,
     /// and that is the difference from the three above rather than an inconsistency with them: a cache
     /// built with no path is memory-only <em>by construction</em> — it reads nothing and writes nothing —
@@ -643,7 +653,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         bool? focusReporting = null,
         Action<string>? openUrl = null,
         Action<string>? clipboard = null,
-        string? scriptsRoot = null)
+        string? scriptsRoot = null,
+        MapStore? maps = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -653,7 +664,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             logRoot,
             restore,
             mssp,
-            scriptsRoot)
+            scriptsRoot,
+            maps)
     {
     }
 
@@ -670,7 +682,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         string? logRoot = null,
         RestoreLog? restore = null,
         MsspCache? mssp = null,
-        string? scriptsRoot = null)
+        string? scriptsRoot = null,
+        MapStore? maps = null)
     {
         var capabilities = host.Capabilities;
         Host = host;
@@ -688,6 +701,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
             OnUi);
         _mssp = mssp ?? new MsspCache();
+        _maps = maps ?? new MapStore();
         _capabilities = capabilities;
         if (capabilities.SupportsSixelOverlay)
         {
@@ -7986,6 +8000,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void OnSessionAdded(object? sender, WorldSession session)
     {
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
+        StartMapping(session);
         if (_scriptsRoot is null || _scripts.ContainsKey(session))
         {
             return;
@@ -8002,7 +8017,63 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             scripts.Dispose();
         }
+
+        if (_recorders.Remove(session, out var recorder))
+        {
+            SaveMap(session, recorder);
+            recorder.Dispose();
+        }
     }
+
+    /// <summary>
+    /// Starts recording the session's map. Observations arrive on the read loop and are applied on the UI
+    /// thread, in the same queue as the commands that say which way a room was left, so the two keep their
+    /// order. The map is written when the connection closes and when the client exits, not per room.
+    /// </summary>
+    private void StartMapping(WorldSession session)
+    {
+        if (_recorders.ContainsKey(session))
+        {
+            return;
+        }
+
+        var text = new TextRoomSource(session, session.World.Map);
+        if (text.Problem is { } problem)
+        {
+            session.PrintSystem($"*** {problem}");
+        }
+
+        IRoomSource[] sources = text.IsActive ? [new GmcpRoomSource(session), text] : [new GmcpRoomSource(session)];
+        if (!text.IsActive)
+        {
+            text.Dispose();
+        }
+
+        var recorder = new MapRecorder(_maps.For(session.World.Host, session.World.Port), sources) { Post = OnUiThread };
+        _recorders[session] = recorder;
+        session.CommandSent += (_, command) => OnUiThread(() => recorder.NoteCommand(command));
+        session.StateChanged += (_, e) =>
+        {
+            if (e.State is ConnectionState.Disconnected or ConnectionState.Faulted)
+            {
+                OnUiThread(() => SaveMap(session, recorder));
+            }
+        };
+    }
+
+    private void SaveMap(WorldSession session, MapRecorder recorder)
+    {
+        if (!recorder.IsDirty)
+        {
+            return;
+        }
+
+        _maps.Save(session.World.Host, session.World.Port);
+        recorder.MarkSaved();
+    }
+
+    /// <summary>The focused connection's map recorder, or null.</summary>
+    internal MapRecorder? MapFor(WorldSession session) => _recorders.GetValueOrDefault(session);
 
     /// <summary>
     /// A script failure is said twice: in the session's own window, where the reader is looking when a
@@ -12526,6 +12597,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _scripts.Clear();
+        foreach (var (session, recorder) in _recorders)
+        {
+            SaveMap(session, recorder);
+            recorder.Dispose();
+        }
+
+        _recorders.Clear();
         await _sessions.DisposeAsync().ConfigureAwait(false);
         _frameworkLog.Dispose();
         if (_ownsDiagnostics)

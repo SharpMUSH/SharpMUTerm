@@ -123,6 +123,13 @@ fallbacks) for inline images/maps.
   **endpoint** under `maps/` (`MsspCache`'s reasoning), memory-only with no directory, never overwrites a
   newer client's file and moves an unreadable one aside. `PathFinder` is Dijkstra, not A*: coordinates are
   not a lower bound on cost once portals and nudged placements exist, and 10,000 rooms is milliseconds.
+  - **Rooms come from `IRoomSource`s** (`GmcpRoomSource`: IRE/Aardwolf via TNC's typed `RoomInfo`, MUME's
+    `id` + object exits + `Room.UpdateExits`; `TextRoomSource`: `MapSettings` patterns) into one
+    `MapRecorder` per session. Sources raise on the read loop; the recorder applies on the UI thread
+    (`Post`), in the same queue as `WorldSession.CommandSent`, which is how it knows the way a room was left.
+    `CommandSent` carries player commands only — never the login line or on-connect commands.
+  - Maps are written on disconnect, session removal and exit, not per room (`IsDirty`). MXP room tags wait
+    for `<!ELEMENT>` (Phase 5a).
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a

@@ -191,6 +191,7 @@ public sealed class MapStore
         room.SpecialExits = new Dictionary<string, long>(room.SpecialExits ?? [], StringComparer.Ordinal);
         room.ExitWeights = new Dictionary<string, int>(room.ExitWeights ?? [], StringComparer.Ordinal);
         room.LockedExits = new HashSet<string>(room.LockedExits ?? [], StringComparer.Ordinal);
+        room.Stubs = new HashSet<string>(room.Stubs ?? [], StringComparer.Ordinal);
         room.UserData = new Dictionary<string, string>(room.UserData ?? [], StringComparer.Ordinal);
         room.Name ??= string.Empty;
         room.Weight = Math.Max(1, room.Weight);

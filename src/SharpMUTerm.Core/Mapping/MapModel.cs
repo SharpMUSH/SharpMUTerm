@@ -29,6 +29,12 @@ public sealed class MapRoom
     /// <summary>Exits by the command that takes them (<c>enter portal</c>) → the room they lead to.</summary>
     public Dictionary<string, long> SpecialExits { get; set; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Exits the room is known to have whose destination nobody has walked yet — Mudlet's stubs. The text
+    /// source reports only these; a walk turns one into an <see cref="Exits"/> entry.
+    /// </summary>
+    public HashSet<string> Stubs { get; set; } = new(StringComparer.Ordinal);
+
     /// <summary>The cost of entering this room, at least 1. A heavier room is walked around when there is a way.</summary>
     public int Weight { get; set; } = 1;
 
