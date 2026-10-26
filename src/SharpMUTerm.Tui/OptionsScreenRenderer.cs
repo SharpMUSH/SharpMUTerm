@@ -252,11 +252,11 @@ internal static class OptionsScreenRenderer
     /// <see cref="TextSettings"/>. Called without arguments it projects the defaults, which is what
     /// the unit tests and the width-agnostic fallback want.
     /// </summary>
-    internal static OptionsScreen TextAnsiScreen(TextSettings? text = null)
+    internal static OptionsScreen TextAnsiScreen(TextSettings? text = null, SoundSettings? sound = null)
     {
         var settings = text ?? new TextSettings();
 
-        return new OptionsScreen("Text & ANSI", "F7", new List<OptionRow>
+        var rows = new List<OptionRow>
         {
             new("├ COLOUR", null, null),
             new("strip incoming ANSI colour", null, settings.StripIncomingColour, null,
@@ -329,7 +329,37 @@ internal static class OptionsScreenRenderer
                     "meters",
                     () => settings.StatusMeters.Count == 0 ? null : StatusMeter.Format(settings.StatusMeters),
                     v => settings.StatusMeters = StatusMeter.Parse(v))),
-        });
+        };
+
+        if (sound is not null)
+        {
+            rows.AddRange(SoundRows(sound));
+        }
+
+        return new OptionsScreen("Text & ANSI", "F7", rows);
+    }
+
+    /// <summary>
+    /// F7's SOUND rows: game sound on or off, the three levels, and captions. Drawn on every host, because
+    /// captions are text and are the one thing a host with no audio device can still do with a sound.
+    /// </summary>
+    private static IEnumerable<OptionRow> SoundRows(SoundSettings sound)
+    {
+        yield return new(string.Empty, null, null);
+        yield return new("├ SOUND", null, null);
+        yield return new("game sound", null, sound.Enabled, null,
+            ScreenToggle.Bind(() => sound.Enabled, v => sound.Enabled = v));
+        yield return Level("master volume (%)", () => sound.MasterVolume, v => sound.MasterVolume = v);
+        yield return Level("sound volume (%)", () => sound.SoundVolume, v => sound.SoundVolume = v);
+        yield return Level("music volume (%)", () => sound.MusicVolume, v => sound.MusicVolume = v);
+
+        // A caption is a line of text for a sound, so it is the one SOUND row that matters with sound off.
+        yield return new("sound captions", null, sound.Captions, null,
+            ScreenToggle.Bind(() => sound.Captions, v => sound.Captions = v));
+
+        static OptionRow Level(string label, Func<int> get, Action<int> set) =>
+            new(label, get().ToString(CultureInfo.InvariantCulture), null, null, null,
+                ScreenField.Integer(label, get, set, 0, SoundSettings.MaxVolume));
     }
 
     /// <summary>

@@ -45,9 +45,12 @@ public sealed class MediaCache
     /// <summary>Whether this cache can hold anything at all.</summary>
     public bool HasRoot => _root is not null;
 
-    /// <summary>The cache folder beside a configuration file: <c>media/</c>.</summary>
-    public static string PathFor(string configPath) =>
-        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? ".", "media");
+    /// <summary>
+    /// The platform's cache folder, beside the scrollback spill's (<c>~/.cache/SharpMUTerm/media</c> on Linux).
+    /// A cache and not configuration: a world's files can be fetched again, and are never worth backing up.
+    /// </summary>
+    public static string DefaultRoot =>
+        Path.Combine(Path.GetDirectoryName(Text.FileScrollbackSpill.DefaultRoot) ?? ".", "media");
 
     /// <summary>Why a server's file name is refused, or null when it is acceptable.</summary>
     public static string? CheckName(string name)

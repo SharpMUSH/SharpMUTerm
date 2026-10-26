@@ -83,6 +83,12 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
     internal const int WalkFailField = 10;
 
+    /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
+    internal const int SoundsField = 11;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.DownloadMedia"/>: on fetches what the game asks for.</summary>
+    internal static readonly string[] SoundChoices = ["download", "cached only"];
+
     /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
     /// CHARACTER form draws them, top to bottom. The name leads, as on every list screen. The password
@@ -440,7 +446,12 @@ internal static class WorldsScreenRenderer
             ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices),
             ScreenField.OptionalPattern("map room", () => w.Map.RoomNamePattern, v => w.Map.RoomNamePattern = v),
             ScreenField.OptionalPattern("map exits", () => w.Map.ExitsPattern, v => w.Map.ExitsPattern = v),
-            ScreenField.OptionalPattern("walk fail", () => w.Map.WalkFailurePattern, v => w.Map.WalkFailurePattern = v)))
+            ScreenField.OptionalPattern("walk fail", () => w.Map.WalkFailurePattern, v => w.Map.WalkFailurePattern = v),
+            ScreenField.Choice(
+                "sounds",
+                () => w.DownloadMedia ? SoundChoices[0] : SoundChoices[1],
+                v => w.DownloadMedia = v == SoundChoices[0],
+                SoundChoices)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -966,6 +977,11 @@ internal static class WorldsScreenRenderer
                 PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField)),
             WorldField("walk fail", Field(
                 PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField)),
+            WorldField("sounds", Field(
+                world.DownloadMedia ? $"[{Label}]{SoundChoices[0]}[/]" : $"[{Value}]{SoundChoices[1]}[/]",
+                cursor,
+                selectedWorld,
+                SoundsField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

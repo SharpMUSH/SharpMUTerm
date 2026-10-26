@@ -78,6 +78,9 @@ public sealed class AppConfiguration
     /// <summary>How inbound text is drawn — the F7 "Text &amp; ANSI" screen's settings.</summary>
     public TextSettings Text { get; set; } = new();
 
+    /// <summary>Game sound: on or off, the player's levels, captions (F7 ▸ SOUND).</summary>
+    public SoundSettings Sound { get; set; } = new();
+
     /// <summary>How the command line behaves — the F8 "Input &amp; spellcheck" screen's settings.</summary>
     public InputSettings Input { get; set; } = new();
 

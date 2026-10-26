@@ -375,6 +375,16 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     public IReadOnlyList<string> MsdpReports { get; set; } = [];
 
+    /// <summary>
+    /// Whether this client will play what the server sends: set by the app when it has an audio device and game
+    /// sound is on. True adds <c>Client.Media 1</c> to the GMCP modules, which is how MCMP asks; read on connect.
+    /// </summary>
+    public bool PlaysMedia { get; set; }
+
+    /// <summary>The GMCP modules a connection asks for beyond the defaults: the world's, then MCMP's when it plays media.</summary>
+    public static string[] GmcpModulesFor(WorldDefinition world, bool playsMedia) =>
+        playsMedia ? [.. world.GmcpModules, Media.MediaCommand.GmcpModule] : world.GmcpModules.ToArray();
+
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
 
     public event EventHandler<SpawnLineEventArgs>? SpawnLine;
@@ -1033,7 +1043,7 @@ public sealed class WorldSession : IAsyncDisposable
             Logger,
             options: new TelnetSessionOptions
             {
-                GmcpModules = World.GmcpModules.ToArray(),
+                GmcpModules = GmcpModulesFor(World, PlaysMedia),
                 AnnouncePueblo = World.ContentFormat is ContentFormat.Ansi or ContentFormat.Pueblo,
                 CharsetOrder = order,
                 EncodingOverride = encodingOverride,

@@ -1,4 +1,6 @@
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Audio;
+using SharpMUTerm.Core.Media;
 using SharpMUTerm.Graphics;
 
 namespace SharpMUTerm.Tui;
@@ -60,6 +62,13 @@ internal sealed record ClientHost
     public required (int Width, int Height) SixelCell { get; init; }
 
     /// <summary>
+    /// Opens the sound device, called the first time a game asks for a sound, so a client whose games send
+    /// none never opens one. Null for no sound at all — the snapshot and the tests, which must never make a
+    /// noise; a factory that returns null is a machine with no device.
+    /// </summary>
+    public required Func<IAudioOutput?>? Audio { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -92,6 +101,7 @@ internal sealed record ClientHost
         Pointer = TerminalPointer.Create(driver),
         RunsInline = false,
         SixelCell = SharpMUTermApp.SixelCellSize(Environment.GetEnvironmentVariable(SharpMUTermApp.SixelCellVariable)),
+        Audio = () => DesktopAudio.TryCreate(),
     };
 
     /// <summary>
@@ -110,6 +120,7 @@ internal sealed record ClientHost
         Pointer = null,
         RunsInline = true,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
+        Audio = null,
     };
 
     /// <summary>
@@ -126,7 +137,13 @@ internal sealed record ClientHost
     {
         if (driver is null)
         {
-            return Terminal(capabilities) with { Clipboard = clipboard, OpenUrl = openUrl, FocusReporting = focusReporting ?? PlatformDecodesFocusReports };
+            return Terminal(capabilities) with
+            {
+                Clipboard = clipboard,
+                OpenUrl = openUrl,
+                FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
+                Audio = null, // a test never makes a noise
+            };
         }
 
         var inline = driver is HeadlessConsoleDriver;
