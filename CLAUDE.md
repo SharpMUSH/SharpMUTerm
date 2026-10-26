@@ -1743,8 +1743,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     is parser state too: MXP has to be negotiated again on the new socket to take the session off ANSI.
     Left alone, a server's `ESC[6z` made the *next* connection start in secure default, and the black-on-black
     above survived the reconnect that is the obvious way a user tries to get rid of it.
-  - **`AnsiParser` and `MxpParser` hold near-duplicate escape state machines, deliberately
-    unconsolidated — so a fix to one has to be applied to the other, with its own test in each suite.**
+  - **`AnsiParser`, `MxpParser` and `PuebloParser` hold near-duplicate escape state machines, deliberately
+    unconsolidated — so a fix to one has to be applied to the others, with its own test in each suite.**
     (Same states, same CSI ranges, same OSC/DCS/ST handling; `MxpParser`'s differs only by the `z`
     line-tag arm and by disarming TEMP SECURE on the way out.) This was weighed and kept: extracting a
     shared scanner is a structural refactor, and it was not going into a fix wave that already carried
@@ -1785,12 +1785,21 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   written while the mode never reverted in production, where "lands on an OPEN line" was not true of a
   session a server had ever secured. Closing the buffering hole itself needs its own change at the
   telnet layer and is out of this scope.
-- **`PuebloParser` decodes no ANSI, and nothing else decodes it for it.** Its header used to say escapes
-  were "handled upstream" — the same false premise `MxpParser` carried, in the same words, and there is
-  no upstream either way: a session gets one parser. So a Pueblo world's colour arrives on screen as a
-  literal `<ESC>[0;33m`. The behaviour clause was accurate; only the justification was invented. The fix
-  is the one `MxpParser` already had — its own escape state machine over `SgrCodes` — and until someone
-  does it this is a known gap rather than a design.
+- **`PuebloParser` decodes ANSI itself, through `SgrCodes`**, for `MxpParser`'s reason: a session gets one
+  parser and nothing chains another in front of it. Until it did, a Pueblo world's colour arrived as a
+  literal `<ESC>[0;33m`. Its escape machine is the third copy (see the paragraph on the duplicates above).
+- **Pueblo is negotiated the way MXP is** (`PuebloProtocol`, TelnetNegotiationCore; `TelnetSession`'s
+  `OnPuebloOffered`/`OnPuebloEnabled`; `WorldSession.UpgradeParser`). Pueblo has no telnet option: the server
+  prints `This world is Pueblo 1.10 Enhanced.`, the client answers with the text line `PUEBLOCLIENT 2.50`,
+  and the server's `</xch_mudtext><img xch_mode=purehtml…>` switches the connection. Three rules:
+  - **The answer goes only to a server that said hello, and only from `auto` or `pueblo`**
+    (`TelnetSessionOptions.AnnouncePueblo`). It is a line at a login prompt, where a server without Pueblo
+    reads it as a name — the unsolicited-negotiation rule, in text.
+  - **The first markup a connection negotiates keeps it.** The parser is swapped only off the plain
+    `AnsiParser`, and the hello is not answered once MXP is on, so a server offering both is not flipped
+    between them by the order the handshakes finish in.
+  - **The library consumes both lines; `_pending` is cleared in both callbacks**, because `CallbackOnByteAsync`
+    has already collected their bytes and a prompt boundary would otherwise flush them as text.
 - **`<VERSION>`/`<SUPPORT>` are answered, and the `SUPPORTS` list is held to the same rule as the MTTS
   bit vector: an honest claim, not an aspirational one.** The spec requires both replies to go out as a
   secure-tagged line (`ESC[1z` prefix, `MxpParser.SecureLinePrefix`) specifically so a server can tell

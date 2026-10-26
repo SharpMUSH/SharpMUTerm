@@ -37,6 +37,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Pueblo worlds work. The client answers a server's Pueblo greeting and switches to Pueblo markup when the
+  server does, and Pueblo worlds now show their ANSI colours instead of the escape codes. A world set to
+  `mxp` or `ansi` on F5 does not answer the greeting.
 - A character's on-disconnect commands are now sent, before the client closes the connection itself
   (Disconnect, Reconnect or quitting). They were saved and never used.
 - Lua scripts now run. A trigger set's script files are loaded from the `scripts` folder beside
