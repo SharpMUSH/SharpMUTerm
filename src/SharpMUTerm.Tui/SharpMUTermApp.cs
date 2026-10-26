@@ -347,6 +347,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The client diagnostics pipeline: the message log, the rolling file, the level switch.</summary>
     private readonly ClientDiagnostics _diagnostics;
 
+    /// <summary>The framework's own log, routed into <see cref="_diagnostics"/>; see <see cref="ClientDiagnostics.Forward"/>.</summary>
+    private readonly IDisposable _frameworkLog;
+
     /// <summary>Whether this app built its own pipeline (and so must dispose it) or was handed one.</summary>
     private readonly bool _ownsDiagnostics;
 
@@ -722,6 +725,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // erased it and the overlay drew it back, every frame. Changed cells only, then.
             DirtyTrackingMode: _sixel is null ? DirtyTrackingMode.Smart : DirtyTrackingMode.Cell);
         _system = new ConsoleWindowSystem(host.Driver, options);
+        _frameworkLog = _diagnostics.Forward(_system.LogService);
 
         // Built here so the app always has one to ask, and inert unless something turns it on. Nothing
         // reaches the terminal until Run() starts it, which is the same shape as the save/logRoot/restore
@@ -9177,6 +9181,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>How the driver decides which cells to write; <c>Cell</c> while the Sixel overlay is on.</summary>
     internal DirtyTrackingMode DirtyTracking => _system.Options.DirtyTrackingMode;
 
+    /// <summary>The framework's own log, which <see cref="ClientDiagnostics.Forward"/> routes into this app's.</summary>
+    internal SharpConsoleUI.Logging.ILogService FrameworkLog => _system.LogService;
+
     /// <summary>
     /// Finds the pictures on the frame just painted and, once it is on the terminal, draws them again as
     /// Sixel over their half-blocks (<see cref="SixelOverlay"/>). The Sixel is queued, not written here:
@@ -12312,6 +12319,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _imageLoader.Dispose();
         _fetcher.Dispose();
         await _sessions.DisposeAsync().ConfigureAwait(false);
+        _frameworkLog.Dispose();
         if (_ownsDiagnostics)
         {
             _diagnostics.Dispose(); // only the pipeline this app built; a supplied one outlives it

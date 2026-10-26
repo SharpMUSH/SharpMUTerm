@@ -127,6 +127,10 @@ internal static class Program
         // the World.Character-*.log transcripts). Never a console sink — this app owns the screen.
         using var diagnostics = ClientDiagnostics.Create(logRoot);
 
+        // A crash leaves its stack in that file. Without this an exception nothing caught ended the process with
+        // nothing written anywhere a user could find, which in the window (no console) meant it simply vanished.
+        using var crashes = diagnostics.RecordUnhandled();
+
         // Drain what the configuration load had to say now that there is somewhere to say it. A secrets file
         // that could not be read means characters start with no password — worth one line in the client
         // message log (⌃P), and never more than that: the client still runs, still connects, and the password
@@ -173,7 +177,23 @@ internal static class Program
             logRoot: logRoot,
             restore: restore,
             mssp: mssp);
-        var exitCode = liveApp.Run(startup); // blocks on the SharpConsoleUI main loop until exit
+        int exitCode;
+        try
+        {
+            exitCode = liveApp.Run(startup); // blocks on the SharpConsoleUI main loop until exit
+        }
+        catch (Exception ex)
+        {
+            // Run itself catches what its loop throws; this is what escapes it (startup, shutdown). The window's
+            // client thread catches it next, and has nowhere but a console that does not exist to write it.
+            diagnostics.Logger.LogCritical(ex, "The client stopped on an exception");
+            throw;
+        }
+
+        if (exitCode != 0)
+        {
+            diagnostics.Logger.LogWarning("The client loop ended with exit code {ExitCode}", exitCode);
+        }
 
         // Persist the workspace so the next launch resumes where this one left off.
         try
