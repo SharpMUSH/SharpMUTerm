@@ -512,7 +512,7 @@ public class ScreenModelTests
         var model = WorldsScreenRenderer.Model(worlds, Sets(), 0, 0);
         var row = model.RowAt(WorldsScreenRenderer.CharactersPane, 0);
 
-        await Assert.That(row.FieldCount).IsEqualTo(9);
+        await Assert.That(row.FieldCount).IsEqualTo(10);
         await Assert.That(row.FieldAt(WorldsScreenRenderer.CharacterNameField)!.Value.Get()).IsEqualTo("Kaz");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogFormatField)!.Value.Get()).IsEqualTo("Html");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogDirectoryField)!.Value.Get()).IsEqualTo("/logs/kaz");

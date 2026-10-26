@@ -106,7 +106,10 @@ public sealed class CharacterDefinition
     /// <summary>Semicolon-separated commands sent after connecting.</summary>
     public string? OnConnect { get; set; }
 
-    /// <summary>Semicolon-separated commands sent (or run locally) on disconnect.</summary>
+    /// <summary>
+    /// Semicolon-separated commands sent before the client closes this character's connection itself
+    /// (Disconnect, Reconnect, quitting) — <c>QUIT</c>, typically. A connection the server dropped gets none.
+    /// </summary>
     public string? OnDisconnect { get; set; }
 
     /// <summary>Names of the <see cref="TriggerSet"/>s that apply to this character.</summary>

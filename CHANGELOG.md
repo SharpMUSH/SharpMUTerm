@@ -24,6 +24,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   shows the selected one in full.
 - Lua scripts can read and send game data: `gmcp.get('Char.Vitals')`, `msdp.get('HEALTH')` and
   `gmcp.send('Char.Skills.Get', { group = 'combat' })`.
+- Worlds & Characters (F5) shows three settings that could only be changed in `config.json`: a world's
+  `content` (`auto`, `ansi`, `mxp` or `pueblo`; `ansi` keeps a world on plain colour even when the server
+  offers MXP), its `emoji` substitution (off, emoticons, shortcodes or both), and a character's
+  `disconnect` commands.
 
 ### Changed
 
@@ -33,6 +37,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- A character's on-disconnect commands are now sent, before the client closes the connection itself
+  (Disconnect, Reconnect or quitting). They were saved and never used.
 - Lua scripts now run. A trigger set's script files are loaded from the `scripts` folder beside
   `config.json` when its character's session opens, and the `script` field of a trigger, alias, timer or
   macro calls the Lua function it names, with the match and its groups. Until now no script was ever loaded,

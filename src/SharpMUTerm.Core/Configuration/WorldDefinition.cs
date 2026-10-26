@@ -15,7 +15,10 @@ public enum LogFormat
 /// <summary>How a world's inbound text is interpreted for styling and interaction.</summary>
 public enum ContentFormat
 {
-    /// <summary>Plain text with ANSI SGR colour (the default).</summary>
+    /// <summary>
+    /// Plain text with ANSI SGR colour, switched to MXP when the connection negotiates it — the default, and
+    /// so it means "nobody chose" (F5's <c>auto</c>).
+    /// </summary>
     Ansi,
 
     /// <summary>MXP markup (tags, SEND/A links) over ANSI.</summary>
@@ -23,6 +26,13 @@ public enum ContentFormat
 
     /// <summary>Pueblo HTML-subset markup.</summary>
     Pueblo,
+
+    /// <summary>
+    /// ANSI colour and nothing else, chosen on purpose: a negotiated MXP does not switch the parser (F5's
+    /// <c>ansi</c>). Appended, because the configuration stores these by name and <see cref="Ansi"/> has to
+    /// keep meaning what every saved world already means by it.
+    /// </summary>
+    AnsiOnly,
 }
 
 /// <summary>Emoji/emoticon substitution options.</summary>
