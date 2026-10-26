@@ -646,13 +646,35 @@ public sealed class WorldSession : IAsyncDisposable
 
             foreach (var command in expansion.Commands)
             {
-                await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
+                await SendCommandAsync(command, cancellationToken).ConfigureAwait(false);
             }
 
             return;
         }
 
-        await SendRawAsync(input, cancellationToken).ConfigureAwait(false);
+        await SendCommandAsync(input, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Raised for each command the player sends — typed (after alias expansion), from a macro, or from a
+    /// speedwalk — after it has gone to the server. What the mapper reads to know which way a room was left.
+    /// <para>
+    /// <b>Never the login line or the on-connect commands</b>, which go straight to <see cref="SendRawAsync"/>:
+    /// the login line carries the password, and nothing that listens here needs to see it.
+    /// </para>
+    /// </summary>
+    public event EventHandler<string>? CommandSent;
+
+    /// <summary>Sends a command the player chose, and says so on <see cref="CommandSent"/>.</summary>
+    public async Task SendCommandAsync(string command, CancellationToken cancellationToken = default)
+    {
+        if (!IsConnected)
+        {
+            return;
+        }
+
+        await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
+        CommandSent?.Invoke(this, command);
     }
 
     /// <summary>
@@ -829,7 +851,7 @@ public sealed class WorldSession : IAsyncDisposable
             return null;
         }
 
-        await SendRawAsync(macro.Command, cancellationToken).ConfigureAwait(false);
+        await SendCommandAsync(macro.Command, cancellationToken).ConfigureAwait(false);
         return macro.Command;
     }
 

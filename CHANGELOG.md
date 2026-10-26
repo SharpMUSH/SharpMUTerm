@@ -28,6 +28,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   `content` (`auto`, `ansi`, `mxp` or `pueblo`; `ansi` keeps a world on plain colour even when the server
   offers MXP), its `emoji` substitution (off, emoticons, shortcodes or both), and a character's
   `disconnect` commands.
+- The client records a map of each game as you walk it, from GMCP `Room.Info` (Iron Realms, Aardwolf and
+  MUME shapes) or, for games that send no room data, from a room-name and exits pattern set in
+  `config.json`. Maps are saved per server in a `maps` folder beside `config.json`.
 
 ### Changed
 

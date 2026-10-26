@@ -2,6 +2,7 @@ using System.Globalization;
 using SharpMUTerm.Core.Theming;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Mapping;
 using SharpMUTerm.Core.Telnet.Mssp;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Graphics;
@@ -190,7 +191,8 @@ internal static class Program
             logRoot: logRoot,
             restore: restore,
             mssp: mssp,
-            scriptsRoot: scriptsRoot);
+            scriptsRoot: scriptsRoot,
+            maps: new MapStore(MapStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Map") });
         int exitCode;
         try
         {

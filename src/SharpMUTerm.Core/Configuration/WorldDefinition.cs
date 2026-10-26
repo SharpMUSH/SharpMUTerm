@@ -45,6 +45,27 @@ public sealed class EmojiSettings
     public bool Shortcodes { get; set; } = true;
 }
 
+/// <summary>
+/// The mapper's per-world text patterns, for games that send neither GMCP room data nor MXP room tags. Both
+/// are regular expressions; empty means the text source is off.
+/// </summary>
+public sealed class MapSettings
+{
+    /// <summary>
+    /// Matches the line that names a room. The <c>name</c> group, when there is one, is the name; otherwise the
+    /// whole match is.
+    /// </summary>
+    public string? RoomNamePattern { get; set; }
+
+    /// <summary>
+    /// Matches the line that lists a room's exits, and so ends the room. The <c>exits</c> group holds the list,
+    /// split on spaces, commas and <c>and</c>.
+    /// </summary>
+    public string? ExitsPattern { get; set; }
+
+    public MapSettings Clone() => new() { RoomNamePattern = RoomNamePattern, ExitsPattern = ExitsPattern };
+}
+
 /// <summary>Per-character logging configuration.</summary>
 public sealed class LoggingSettings
 {
@@ -122,6 +143,9 @@ public sealed class WorldDefinition
     /// </summary>
     public List<string> GmcpModules { get; set; } = new();
 
+    /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
+    public MapSettings Map { get; set; } = new();
+
     /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
@@ -155,6 +179,7 @@ public sealed class WorldDefinition
         },
         Accent = Accent,
         GmcpModules = GmcpModules.ToList(),
+        Map = Map.Clone(),
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 
