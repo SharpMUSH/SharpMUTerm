@@ -147,6 +147,14 @@ public sealed class TelnetSessionOptions
     /// </summary>
     public bool AnnouncePueblo { get; init; } = true;
 
+    /// <summary>
+    /// Whether to agree MSP (option 90) when a server offers it. Registering the library's plugin is the
+    /// statement that this client plays sound, so a session with nothing to play leaves it off and the
+    /// server's <c>WILL MSP</c> is refused. Off by default; <c>WorldSession</c> sets it from
+    /// <c>PlaysMedia</c>.
+    /// </summary>
+    public bool PlaysMsp { get; init; }
+
     /// <summary>The version this client announces as a Pueblo client; PennMUSH reads only the word.</summary>
     public const string PuebloVersion = "2.50";
 
@@ -402,6 +410,7 @@ public sealed class TelnetSession : ITelnetSession
     public event EventHandler? MxpEnabled;
     public event EventHandler? MsdpEnabled;
     public event EventHandler? PuebloEnabled;
+    public event EventHandler<bool>? MspChanged;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -475,6 +484,13 @@ public sealed class TelnetSession : ITelnetSession
                 .OnMcpMessage(MooEditing.SimpleEditContent, OnMooEditAsync)
                 .OnMcpMessage(MooEditing.AwnsStatus, OnMcpStatusAsync)
                 .OnMcpNegotiationComplete(OnMcpAgreedAsync);
+
+        if (_options.PlaysMsp)
+        {
+            builder = builder.AddPlugin<MSPProtocol>()
+                .OnMSPEnabled(() => OnMspChangedAsync(true))
+                .OnMSPDisabled(() => OnMspChangedAsync(false));
+        }
 
         // An idle keepalive, when the world asks for one: IAC NOP after the configured silence, so a
         // NAT or load balancer doesn't evict a connection that is merely quiet. It is filler traffic,
@@ -831,6 +847,13 @@ public sealed class TelnetSession : ITelnetSession
         _mxpOn = true;
         _logger.LogInformation("MXP negotiated.");
         MxpEnabled?.Invoke(this, EventArgs.Empty);
+        return ValueTask.CompletedTask;
+    }
+
+    private ValueTask OnMspChangedAsync(bool active)
+    {
+        _logger.LogInformation(active ? "MSP negotiated." : "MSP withdrawn.");
+        MspChanged?.Invoke(this, active);
         return ValueTask.CompletedTask;
     }
 

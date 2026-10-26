@@ -166,10 +166,10 @@ fallbacks) for inline images/maps.
     scrollback spill under the platform cache folder, not beside `config.json`.
   - **MSP triggers are read only on a connection that agreed option 90** (`MspTrigger`,
     `ITelnetSession.MspChanged`): a whole line `!!SOUND(…)`/`!!MUSIC(…)` becomes a `MediaCommand` and is taken
-    out before the triggers; anywhere else it is text a player typed. **It is inert until the library ships
-    `MSPProtocol`** (TelnetNegotiationCore PR #171): no release has it, so `TelnetSession` registers nothing,
-    the server's `WILL MSP` is refused, and `MspChanged` is never raised. The bump registers the plugin only
-    when `PlaysMedia` is true and raises the event from its two callbacks.
+    out before the triggers; anywhere else it is text a player typed. The library's `MSPProtocol` is
+    registered only when `PlaysMedia` is true (`TelnetSessionOptions.PlaysMsp`), because registering it is
+    the statement that this client plays sound; otherwise the server's `WILL MSP` is refused. Its two
+    callbacks raise `MspChanged`.
 - **Packages** (`Core/Packages`: `PackageManifest`, `PackageArchive`, `PackageStore`; Tui `PackageScreen`,
   `ListOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
   `games` as `host[:port]`, `*.host` or `*`), `sets/*.json`, `scripts/**.lua`, `media/**`; anything else is
