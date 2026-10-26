@@ -36,6 +36,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
+- Worlds can log in over GMCP. Set F5 ▸ `gmcp login` to `if offered`, and a character with a saved password is
+  logged in with GMCP's `Char.Login` on a server that offers it (Achaea and other IRE games, and servers
+  written for Mudlet). Any other server still gets the connect line, after waiting up to five seconds for the
+  offer. The password is sent only to the server and never shown or logged.
 - Lua scripts can keep values between sessions: `store.set('kills', 3)`, `store.get('kills')` and
   `store.keys()`. Each character has its own store, kept in `script-data/` beside `config.json`. A store holds
   at most 1,024 keys and 256 KB, and `store.set(key, nil)` removes a key.
