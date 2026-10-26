@@ -142,6 +142,15 @@ fallbacks) for inline images/maps.
     read off the UI thread: every such read takes `MapRecorder.SyncRoot`, which the recorder holds while it
     changes the map and never while it raises `Changed` (a handler can end in the alias engine, which takes
     the script host's lock). A change a script asks for (`map.walk`, a lock) is posted to the UI thread.
+- **Sound** (`Core/Media`: `MediaCommand`, `MediaQueue`, `MediaCache`, `IAudioOutput`). MCMP's
+  `Client.Media.*` is read with TNC.Gmcp's typed records into `MediaCommand`s (`WorldSession.MediaReceived`),
+  and one `MediaQueue` per connection applies the specification's rules — priority halts and refuses lower,
+  a key replaces a different file, music continues unless told not to, an empty stop ends everything — then
+  drives an `IAudioOutput` the host supplies. MSP becomes the same `MediaRequest`s, flagged `Exclusive` for
+  its one-sound-at-a-time rule. **`MediaCache` is where server text meets the disk**: http(s) only, relative
+  names with no `..`, four extensions, per-file and per-world caps enforced while reading, files named by a
+  hash of their URL; with no root it fetches nothing (the `mssp:` rule). A stop that arrives while a file is
+  being fetched cancels it.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
