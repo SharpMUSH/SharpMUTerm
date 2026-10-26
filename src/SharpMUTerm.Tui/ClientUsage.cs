@@ -70,6 +70,11 @@ internal static class ClientUsage
                 new(WindowHandoff.Flag, "Open in a desktop window instead (sharpmuterm-window), with the other",
                     "arguments. The same client, configuration and keys; see its --help."),
             ]),
+            ("Screen readers:",
+            [
+                new(PlainHost.Flag, "Plain text instead of the full screen: output a line at a time as it arrives,",
+                    "and each line typed is sent. End of input quits."),
+            ]),
             ("Snapshot (render one frame headlessly and exit):",
             [
                 new("--snapshot", "Render one frame (ANSI) headlessly and exit."),

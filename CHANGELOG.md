@@ -36,6 +36,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
+- Screen reader support. `sharpmuterm --plain` runs the client as plain text: game output a line at a time
+  as it arrives, the client's own messages marked `[client]`, and each line you type is sent. In the desktop
+  window, output and the client's messages are given to the screen reader as they arrive. ⌃P ▸ `Stop reading
+  this window aloud` keeps a busy window quiet. The desktop window's support has not yet been tried with a
+  screen reader.
 - Games that publish a Discord status (GMCP `External.Discord`) can show it on your Discord profile. It is off
   for every world; turn it on with F5 ▸ `discord`. Only the world whose window is in front is shown, and it
   is cleared when you switch away or disconnect. It talks only to the Discord app on your computer.
