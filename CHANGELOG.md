@@ -36,6 +36,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
+- One line can go to several characters. With two characters open, ⌃P offers `Add Ann to the send group` for
+  each of them, and the rail marks members with ◆. `Send the command line to the group` sends what you typed
+  to every connected member once and names any that are not connected. Lua scripts can send to another open
+  character with `world.sendTo('Ann', 'wave')`, which returns false and the reason when it cannot.
 - The client answers a server's NEW-ENVIRON request (MNES) with its name, version, terminal type and MTTS
   flags, so servers that read MNES identify it. It sends nothing about your computer, and offers nothing to a
   server that does not ask. The MTTS flags now include MNES.

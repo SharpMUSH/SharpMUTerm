@@ -7481,7 +7481,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Active: active,
                     Unread: windows.Sum(w => w.Unread),
                     windows,
-                    Chord: characterChords.GetValueOrDefault(key)));
+                    Chord: characterChords.GetValueOrDefault(key),
+                    InGroup: _sendGroup.Contains(key)));
             }
 
             worlds.Add(new RailWorld(world.Name, world.Host, world.Port, accent, characters));
@@ -7722,7 +7723,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     character.Name,
                     key,
                     Connected: connected.Contains(key),
-                    Open: _sessions.Find(key) is not null));
+                    Open: _sessions.Find(key) is not null,
+                    InGroup: _sendGroup.Contains(key)));
             }
         }
 
@@ -7947,6 +7949,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal bool DispatchCommand(string id)
     {
+        if (DispatchGroupCommand(id))
+        {
+            return true;
+        }
+
         if (id.StartsWith(CharacterCommandPrefix, StringComparison.Ordinal))
         {
             SwitchToCharacter(id[CharacterCommandPrefix.Length..]);
@@ -8216,7 +8223,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript, _scriptStoreRoot);
+        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript, _scriptStoreRoot, ScriptSendTo);
         _scripts[session] = scripts;
         scripts.Reload();
     }
@@ -8224,6 +8231,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void OnSessionRemoved(object? sender, WorldSession session)
     {
         StopSound(session);
+        _sendGroup.Remove(session.SessionKey);
         if (_scripts.Remove(session, out var scripts))
         {
             scripts.Dispose();

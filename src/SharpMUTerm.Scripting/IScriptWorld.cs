@@ -13,6 +13,12 @@ public interface IScriptWorld
     /// <summary>Queues or sends a command to the server.</summary>
     void Send(string command);
 
+    /// <summary>
+    /// Sends a command to another open, connected character (<c>world.sendTo</c>), named as <c>World.Character</c>
+    /// or by character name alone. Null when it went; otherwise why not.
+    /// </summary>
+    string? SendTo(string character, string command) => "this client cannot send to another character";
+
     /// <summary>Writes a line of text to the client output.</summary>
     void Print(string text);
 

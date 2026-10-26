@@ -1911,6 +1911,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **The send group is session keys in memory** (`SendGroup`, Core; `SharpMUTermApp.SendGroup.cs`; ⌃P `group:`
+  ids). It is never saved, because a saved group would be a standing order to send one line to several worlds.
+  It is offered once two characters are open. Members are marked on the rail by swapping the dot for ◆/◇ in
+  the same cell, so joining moves no column (the NAWS rule). `group:send` sends the armed bar's text through
+  each member's `SendUserInputAsync`, so aliases and echo apply per character, once each. A disconnected member
+  gets nothing and is named in the notice. A closed session leaves the group. `world.sendTo(name, cmd)` resolves
+  through `SendGroup.Find`: an exact `World.Character` key, else a unique character name. It refuses an
+  ambiguous or disconnected name and sends raw, like `world.send`. Not done: no ⌃P chord, and no rail gesture
+  to toggle membership.
 - **NEW-ENVIRON is answered as MNES** (`TelnetSessionOptions.MnesIdentity`; the library's `NewEnvironProtocol`).
   The variables are `CLIENT_NAME`, `CLIENT_VERSION`, `TERMINAL_TYPE` and `MTTS`, read from the same TTYPE list,
   so the two channels cannot disagree (`MTTS 2845`, which now includes MNES 512). It answers a server's `DO` and

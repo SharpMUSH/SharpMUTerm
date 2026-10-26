@@ -33,6 +33,7 @@ public sealed class SessionScripts : IDisposable
     private readonly Action<string> _report;
     private readonly Func<string, string?>? _packageScript;
     private readonly ScriptStore _store;
+    private readonly Func<string, string, string?>? _sendTo;
     private WorldSessionScriptBridge? _bridge;
     private ScriptHost? _host;
     private string[] _files = Array.Empty<string>();
@@ -52,18 +53,24 @@ public sealed class SessionScripts : IDisposable
     /// The folder the character's <c>store.*</c> file is kept in, named for the session; null keeps the values
     /// in memory only. Either way they outlive a <see cref="Reload"/>.
     /// </param>
+    /// <param name="sendTo">
+    /// What <c>world.sendTo(name, command)</c> calls: null when the command went, otherwise why not. Called on the
+    /// script's thread. Null leaves scripts unable to reach another character.
+    /// </param>
     public SessionScripts(
         WorldSession session,
         string root,
         Action<string> report,
         Func<string, string?>? packageScript = null,
-        string? storeRoot = null)
+        string? storeRoot = null,
+        Func<string, string, string?>? sendTo = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         _root = Path.GetFullPath(root);
         _report = report ?? throw new ArgumentNullException(nameof(report));
         _packageScript = packageScript;
+        _sendTo = sendTo;
         _store = new ScriptStore(
             string.IsNullOrWhiteSpace(storeRoot) ? null : Path.Combine(storeRoot, ScriptStore.FileNameFor(session.SessionKey)),
             report);
@@ -111,7 +118,7 @@ public sealed class SessionScripts : IDisposable
         _session.Aliases.ClearRuntime();
 
         _files = _session.ScriptFiles.ToArray();
-        _bridge = new WorldSessionScriptBridge(_session);
+        _bridge = new WorldSessionScriptBridge(_session, _sendTo);
         _host = new ScriptHost(_bridge, _store);
         _bridge.Attach(_host);
         _host.Error += OnScriptError;

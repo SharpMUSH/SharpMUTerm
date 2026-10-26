@@ -64,4 +64,15 @@ public class GameDataApiTests
         await Assert.That(() => host.Execute("local t = {} t.me = t gmcp.send('X', t)")).Throws<ScriptException>();
         await Assert.That(world.SentGmcp).IsEmpty();
     }
+
+    [Test]
+    public async Task SendToReturnsFalseAndWhyWhenTheWorldCannotReachAnotherCharacter()
+    {
+        var world = new FakeScriptWorld();
+        using var host = new ScriptHost(world);
+
+        host.Execute("local ok, why = world.sendTo('Bob', 'wave') world.send(tostring(ok) .. ' ' .. why)");
+
+        await Assert.That(world.Sent).IsEquivalentTo(new[] { "false this client cannot send to another character" });
+    }
 }

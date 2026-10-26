@@ -16,6 +16,18 @@ public static class CommandIds
     /// <summary>Prefix of a "go to this window" id; the remainder is a workspace window id.</summary>
     public const string WindowPrefix = "win:";
 
+    /// <summary>Prefix of an "add to / remove from the send group" id; the remainder is a session key.</summary>
+    public const string GroupTogglePrefix = "group:toggle:";
+
+    /// <summary>Sends the command line to every member of the send group.</summary>
+    public const string GroupSend = "group:send";
+
+    /// <summary>Empties the send group.</summary>
+    public const string GroupClear = "group:clear";
+
+    /// <summary>The id that adds the character named by <paramref name="sessionKey"/> to the send group, or removes it.</summary>
+    public static string GroupToggle(string sessionKey) => GroupTogglePrefix + sessionKey;
+
     /// <summary>The id that switches to the character named by <paramref name="sessionKey"/>.</summary>
     public static string Character(string sessionKey) => CharacterPrefix + sessionKey;
 
