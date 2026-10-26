@@ -545,6 +545,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly string? _scriptStoreRoot;
 
+    /// <summary>Opens the composer's dictionary; null in a test and a snapshot, which therefore read none.</summary>
+    private readonly Func<SpellChecker?>? _spelling;
+
     /// <summary>Each open session's scripts. Empty when <see cref="_scriptsRoot"/> is null.</summary>
     private readonly Dictionary<WorldSession, SessionScripts> _scripts = new();
 
@@ -674,7 +677,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MapStore? maps = null,
         MediaCache? media = null,
         PackageStore? packages = null,
-        string? scriptStoreRoot = null)
+        string? scriptStoreRoot = null,
+        Func<SpellChecker?>? spelling = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -688,7 +692,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             maps,
             media,
             packages,
-            scriptStoreRoot)
+            scriptStoreRoot,
+            spelling)
     {
     }
 
@@ -709,8 +714,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MapStore? maps = null,
         MediaCache? media = null,
         PackageStore? packages = null,
-        string? scriptStoreRoot = null)
+        string? scriptStoreRoot = null,
+        Func<SpellChecker?>? spelling = null)
     {
+        _spelling = spelling;
         var capabilities = host.Capabilities;
         Host = host;
         _config = config;
@@ -889,7 +896,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
         _settings = new SettingsOverlay(_system);
-        _composer = new ComposeOverlay(_system);
+        _composer = new ComposeOverlay(_system, _spelling);
         _packageView = new ListOverlay(_system);
         _sendMenu = new ListOverlay(_system);
         _composer.Send += (_, result) => SendComposed(result);

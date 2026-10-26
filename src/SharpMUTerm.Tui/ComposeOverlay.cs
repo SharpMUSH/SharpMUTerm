@@ -4,6 +4,7 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Telnet;
+using SharpMUTerm.Core.Text;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
@@ -49,8 +50,26 @@ internal sealed class ComposeOverlay
     private string _target = string.Empty;
     private bool _canSend;
     private MooEdit? _edit;
+    private readonly Func<SpellChecker?>? _openSpelling;
+    private SpellChecker? _spelling;
+    private bool _spellingOpened;
 
-    internal ComposeOverlay(ConsoleWindowSystem system) => _system = system;
+    /// <param name="system">The window system the composer opens in.</param>
+    /// <param name="spelling">
+    /// Opens the dictionary, the first time the composer is opened and never again, so a client nobody writes a
+    /// post in reads no dictionary. Null, or a null answer, is a composer with no spelling, which says so.
+    /// </param>
+    internal ComposeOverlay(ConsoleWindowSystem system, Func<SpellChecker?>? spelling = null)
+    {
+        _system = system;
+        _openSpelling = spelling;
+    }
+
+    /// <summary>
+    /// The dictionary marking this post, or null: none was found, or this is a MOO edit, whose buffer is as often
+    /// code as prose.
+    /// </summary>
+    internal SpellChecker? Spelling => _edit is null ? _spelling : null;
 
     /// <summary>Raised when ⌃S sends. The host decides where it goes and what it does about failure.</summary>
     internal event EventHandler<ComposeResult>? Send;
@@ -140,6 +159,17 @@ internal sealed class ComposeOverlay
             SelectionForegroundColor = new Color(ScreenPalette.Value),
         };
 
+        if (!_spellingOpened)
+        {
+            _spellingOpened = true;
+            _spelling = _openSpelling?.Invoke();
+        }
+
+        if (Spelling is { } checker)
+        {
+            _editor.SyntaxHighlighter = new SpellingHighlighter(checker);
+        }
+
         _editor.SetContent(draft);
         FitEditor();
 
@@ -218,6 +248,15 @@ internal sealed class ComposeOverlay
             return;
         }
 
+        // ⌥W adds the word at the caret to the dictionary. Alt by the same rule as ⌥L, and W because nothing
+        // in MacroKeys.AppShortcuts takes it — a global shortcut would run before this window ever saw it.
+        if (alt && key.Key == ConsoleKey.W && Spelling is not null)
+        {
+            e.Handled = true;
+            AddWordAtCaret();
+            return;
+        }
+
         if (key.Key == ConsoleKey.Escape && !ctrl && !alt)
         {
             e.Handled = true;
@@ -225,6 +264,30 @@ internal sealed class ComposeOverlay
         }
 
         // Everything else is the editor's, including ⏎, the arrows, ⌃Z and a selection drag.
+    }
+
+    /// <summary>
+    /// Adds the word the caret is in, or just after, to the player's word list and repaints the marks. Nothing
+    /// happens on a caret in no word.
+    /// </summary>
+    private void AddWordAtCaret()
+    {
+        if (_editor is null || Spelling is not { } checker)
+        {
+            return;
+        }
+
+        var lines = _editor.GetContent().Split('\n');
+        var row = _editor.CurrentLine - 1;
+        if (row < 0 || row >= lines.Length || SpellChecker.WordAt(lines[row], _editor.CurrentColumn - 1) is not { } word)
+        {
+            return;
+        }
+
+        if (checker.Add(word))
+        {
+            _editor.RefreshSyntaxHighlighting();
+        }
     }
 
     private void SendNow()
@@ -314,12 +377,17 @@ internal sealed class ComposeOverlay
             ? $"[{ScreenPalette.Accent}]literal[/]"
             : $"[{ScreenPalette.Value}]as typed[/]";
 
+        var spelling = _spelling is { } checker
+            ? $"[{ScreenPalette.Value}]{Escape(checker.Name)}[/]"
+            : $"[{ScreenPalette.Muted}]no dictionary[/]";
+
         return $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
-            + $"[{ScreenPalette.Label}]  ·  text [/]{mode}";
+            + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"
+            + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}";
     }
 
     /// <summary>
-    /// The key row. It names ⌃S, ⌥L and Esc and nothing else, because this screen is held to the same
+    /// The key row. It names ⌃S, ⌥L, ⌥W (while there is a dictionary) and Esc and nothing else, because this screen is held to the same
     /// honesty rule as the settings screens: every key printed here works, and none that works is
     /// hidden. There is deliberately no <c>⌃F find</c> — the control has a find API but no chord bound
     /// to it, and advertising one would send a reader to press a key that does nothing.
@@ -340,6 +408,7 @@ internal sealed class ComposeOverlay
 
         return send
             + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥L[/][{ScreenPalette.Label}] escaping[/]"
+            + (Spelling is null ? string.Empty : $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥W[/][{ScreenPalette.Label}] add word[/]")
             + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close (keeps the draft)[/]";
     }
 
