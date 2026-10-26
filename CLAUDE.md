@@ -118,6 +118,11 @@ fallbacks) for inline images/maps.
   - **A meter is drawn only once its value has arrived, and from then its fields are reserved** (value and
     max five cells each, `StatusMeter.Fit` scales past that). A world with no game data costs the row
     nothing; one with it never reflows the row as numbers change.
+- **Maps** (`Core/Mapping`: `WorldMap`, `MapRoom`, `PathFinder`, `MapStore`). Mudlet's room model (id, area,
+  x/y/z, exits by direction and by command, room and exit weights, locks). `MapStore` keeps one file per
+  **endpoint** under `maps/` (`MsspCache`'s reasoning), memory-only with no directory, never overwrites a
+  newer client's file and moves an unreadable one aside. `PathFinder` is Dijkstra, not A*: coordinates are
+  not a lower bound on cost once portals and nudged placements exist, and 10,000 rooms is milliseconds.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
