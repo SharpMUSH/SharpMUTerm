@@ -15,12 +15,16 @@ namespace SharpMUTerm.Scripting;
 public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
 {
     private readonly WorldSession _session;
+    private readonly Func<string, string, string?>? _sendTo;
     private ScriptHost? _host;
     private bool _disposed;
 
-    public WorldSessionScriptBridge(WorldSession session)
+    /// <param name="session">The session the scripts belong to.</param>
+    /// <param name="sendTo">What <c>world.sendTo</c> calls; null when this client offers no other characters.</param>
+    public WorldSessionScriptBridge(WorldSession session, Func<string, string, string?>? sendTo = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _sendTo = sendTo;
         _session.ScriptRequested += OnScriptRequested;
         _session.GmcpReceived += OnGmcpReceived;
     }
@@ -40,6 +44,9 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
     public string WorldName => _session.World.Name;
 
     public void Send(string command) => _ = _session.SendRawAsync(command);
+
+    public string? SendTo(string character, string command) =>
+        _sendTo is null ? "this client cannot send to another character" : _sendTo(character, command);
 
     public void Print(string text) => _session.PrintSystem(text);
 

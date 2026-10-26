@@ -78,13 +78,13 @@ internal static class PackageScreen
     {
         var lines = new List<string>
         {
-            $"[{ScreenPalette.Label}]{Count(packages.Count)} installed · ↑↓ select · Space on/off · c copy sets to yours · Del remove · Esc close[/]",
+            $"[{ScreenPalette.Label}]{Count(packages.Count)} installed · ↑↓ select · Space on/off · c copy sets to yours · Del remove · b browse · Esc close[/]",
             string.Empty,
         };
 
         if (packages.Count == 0)
         {
-            lines.Add($"[{ScreenPalette.Label}]none — ⌃P ▸ Install package…, or /package install <file or https link>[/]");
+            lines.Add($"[{ScreenPalette.Label}]none — b browses the package index; ⌃P ▸ Install package… takes a file or an https link[/]");
             return lines;
         }
 
@@ -115,6 +115,59 @@ internal static class PackageScreen
             lines.Add($"[bold {ScreenPalette.Warn}]Remove {Escape(current.Manifest.Name)} and its files? Del again removes it, any other key keeps it.[/]");
         }
 
+        return lines;
+    }
+
+    /// <summary>The index's packages, the focused world's first, with what is installed beside each.</summary>
+    internal static List<string> Browse(
+        IReadOnlyList<PackageIndexEntry> entries,
+        IReadOnlyList<InstalledPackage> installed,
+        int selected,
+        string? world,
+        int dropped,
+        int width)
+    {
+        var lines = new List<string>
+        {
+            $"[{ScreenPalette.Label}]{Of(entries.Count, "package")}"
+                + (world is null ? string.Empty : $" · {Escape(Elide(world, 30))}'s first")
+                + " · ↑↓ select · ⏎ review · Esc close[/]",
+        };
+
+        if (dropped > 0)
+        {
+            lines.Add($"[{ScreenPalette.Warn}]{(dropped == 1 ? "1 entry in the index breaks its rules and is" : $"{Count(dropped)} entries in the index break its rules and are")} not listed[/]");
+        }
+
+        lines.Add(string.Empty);
+        if (entries.Count == 0)
+        {
+            lines.Add($"[{ScreenPalette.Label}]the index lists nothing[/]");
+            return lines;
+        }
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var have = installed.FirstOrDefault(p => p.Id == entry.Id);
+            var state = have is null ? string.Empty
+                : have.Manifest.Version == entry.Version ? " · installed"
+                : $" · installed {Escape(have.Manifest.Version)}, update";
+            var marker = i == selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
+            lines.Add($"{marker} [{(i == selected ? "bold " : string.Empty)}{ScreenPalette.Value}]{Escape(Elide(entry.Name, 30))}[/]"
+                + $" [{ScreenPalette.Label}]{Escape(entry.Version)} · {Escape(Elide(string.Join(", ", entry.Games), Math.Max(10, width - 60)))}{state}[/]");
+        }
+
+        var current = entries[Math.Clamp(selected, 0, entries.Count - 1)];
+        lines.Add(string.Empty);
+        lines.Add($"[bold {ScreenPalette.Accent}]{Escape(Elide(current.Name, width - 4))}[/]"
+            + (current.Author is { } author ? $" [{ScreenPalette.Label}]by {Escape(Elide(author, 40))}[/]" : string.Empty));
+        if (!string.IsNullOrWhiteSpace(current.Description))
+        {
+            lines.Add($"  [{ScreenPalette.Value}]{Escape(Elide(current.Description, width - 4))}[/]");
+        }
+
+        lines.Add($"  [{ScreenPalette.Label}]from[/] [{ScreenPalette.Value}]{Escape(Elide(current.Url, width - 9))}[/]");
         return lines;
     }
 

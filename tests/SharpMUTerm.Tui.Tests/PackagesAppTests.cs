@@ -255,4 +255,89 @@ public class PackagesAppTests
         await Assert.That(app.Packages.Installed.Count).IsEqualTo(1);
         await Assert.That(app.Packages.HasRoot).IsFalse();
     }
+
+    private static string IndexFor(byte[] archive, string? sha = null) =>
+        $$"""
+        {"packages":[
+          {"id":"other.thing","name":"Other thing","version":"0.1.0","games":["elsewhere.example"],
+           "url":"https://packages.example/other.zip","sha256":"{{new string('b', 64)}}"},
+          {"id":"aether.basics","name":"Aether basics","version":"1.0.0","games":["aetherfall.example:4000"],
+           "url":"https://packages.example/basics.zip",
+           "sha256":"{{sha ?? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(archive))}}"}]}
+        """;
+
+    private static async Task Until(Func<bool> condition)
+    {
+        for (var i = 0; i < 300 && !condition(); i++)
+        {
+            await Task.Delay(10);
+        }
+    }
+
+    [Test]
+    public async Task BrowseFetchesTheIndexOnlyWhenOpenedThenReviewsAVerifiedPackage()
+    {
+        await using var rig = Open();
+        var asked = new List<string>();
+        var archive = Archive();
+        rig.App.PackageFetch = (uri, _) =>
+        {
+            lock (asked)
+            {
+                asked.Add(uri.AbsolutePath);
+            }
+
+            return Task.FromResult<byte[]?>(uri.AbsolutePath.EndsWith("index.json", StringComparison.Ordinal)
+                ? Encoding.UTF8.GetBytes(IndexFor(archive))
+                : archive);
+        };
+        await Assert.That(asked).IsEmpty();
+
+        rig.App.DispatchCommand("term:package-browse");
+        await Until(() => rig.App.PackageView.Mode == "browse");
+        var text = string.Join("\n", rig.App.PackageView.Lines.Select(MarkupText.Plain));
+        await Assert.That(text).Contains("Other thing");
+
+        rig.App.PackageView.SimulateKey(Key(ConsoleKey.Enter, '\r')); // "Aether basics" sorts first
+        await Until(() => rig.App.PackageView.Mode == "review");
+
+        await Assert.That(asked).IsEquivalentTo(new[] { "/SharpMUSH/sharpmuterm-packages/main/index.json", "/basics.zip" });
+        await Assert.That(rig.App.Packages.Installed).IsEmpty();
+    }
+
+    [Test]
+    public async Task AFocusedWorldsPackagesAreListedFirst()
+    {
+        await using var rig = Open();
+        rig.App.TelnetFactory = _ => new RecordingTelnetSession();
+        rig.App.DispatchCommand(SharpMUTerm.Core.Commands.CommandIds.Character("Aetherfall.Corvid"));
+        await rig.App.FindSession("Aetherfall.Corvid")!.ConnectAsync();
+        var archive = Archive();
+        rig.App.PackageFetch = (_, _) => Task.FromResult<byte[]?>(Encoding.UTF8.GetBytes(IndexFor(archive)));
+
+        rig.App.BrowsePackages();
+        await Until(() => rig.App.PackageView.Mode == "browse");
+
+        var rows = rig.App.PackageView.Lines.Select(MarkupText.Plain).ToList();
+        await Assert.That(rows[0]).Contains("Aetherfall's first");
+        await Assert.That(rows.FindIndex(r => r.Contains("Aether basics"))).IsLessThan(rows.FindIndex(r => r.Contains("Other thing")));
+    }
+
+    [Test]
+    public async Task AnArchiveThatIsNotTheOneListedIsRefusedBeforeTheReview()
+    {
+        await using var rig = Open();
+        var archive = Archive();
+        rig.App.PackageFetch = (uri, _) => Task.FromResult<byte[]?>(uri.AbsolutePath.EndsWith("index.json", StringComparison.Ordinal)
+            ? Encoding.UTF8.GetBytes(IndexFor(archive, sha: new string('c', 64)))
+            : archive);
+
+        rig.App.BrowsePackages();
+        await Until(() => rig.App.PackageView.Mode == "browse");
+        rig.App.PackageView.SimulateKey(Key(ConsoleKey.Enter, '\r')); // "Aether basics" sorts first
+        await Until(() => MarkupText.Plain(rig.App.StatusMarkup).Contains("SHA-256"));
+
+        await Assert.That(rig.App.PackageView.IsOpen).IsFalse();
+        await Assert.That(MarkupText.Plain(rig.App.StatusMarkup)).Contains("does not match the index's SHA-256");
+    }
 }

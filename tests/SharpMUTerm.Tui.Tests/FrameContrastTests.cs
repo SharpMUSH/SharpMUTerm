@@ -40,7 +40,7 @@ public class FrameContrastTests
     private static readonly string[] Views =
     [
         "", "freeze", "away", "highlight", "scrollback", "links", "mxp-image", "mxp-figure", "connections", "tint", "tint-input",
-        "characters", "compose", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
+        "characters", "compose", "moo-edit", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
         "logging", "startup", "history", "prefix-panel", "keypad",
 
         // The selection band is the one plane this client invents rather than derives from a pane, and
@@ -53,7 +53,7 @@ public class FrameContrastTests
         "meters", "gamedata", "map", "map-walking", "map-split",
 
         // The package surfaces are a modal of their own, with a warning ink on the review.
-        "packages", "package-review",
+        "packages", "package-review", "package-browse", "send-menu",
 
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band

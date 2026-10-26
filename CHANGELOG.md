@@ -36,6 +36,34 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
+- Screen reader support. `sharpmuterm --plain` runs the client as plain text: game output a line at a time
+  as it arrives, the client's own messages marked `[client]`, and each line you type is sent. In the desktop
+  window, output and the client's messages are given to the screen reader as they arrive. ⌃P ▸ `Stop reading
+  this window aloud` keeps a busy window quiet. The desktop window's support has not yet been tried with a
+  screen reader.
+- Spelling in the composer (F1). Words the dictionary does not know are shown in red, and ⌥W adds the word
+  at the caret to your own list. The client uses a Hunspell dictionary (`.aff` and `.dic`) from a
+  `dictionaries` folder beside `config.json`, or the system's (`/usr/share/hunspell` on Linux,
+  `~/Library/Spelling` on macOS; on Windows only the folder). None is included, and the composer's header
+  says when there is none. `%r` and the other `%` codes, function names, and words in capitals or with a
+  capital inside (`OOC`, `McTavish`) are not checked.
+- Games that publish a Discord status (GMCP `External.Discord`) can show it on your Discord profile. It is off
+  for every world; turn it on with F5 ▸ `discord`. Only the world whose window is in front is shown, and it
+  is cleared when you switch away or disconnect. It talks only to the Discord app on your computer.
+- One line can go to several characters. With two characters open, ⌃P offers `Add Ann to the send group` for
+  each of them, and the rail marks members with ◆. `Send the command line to the group` sends what you typed
+  to every connected member once and names any that are not connected. Lua scripts can send to another open
+  character with `world.sendTo('Ann', 'wave')`, which returns false and the reason when it cannot.
+- The client answers a server's NEW-ENVIRON request (MNES) with its name, version, terminal type and MTTS
+  flags, so servers that read MNES identify it. It sends nothing about your computer, and offers nothing to a
+  server that does not ask. The MTTS flags now include MNES.
+- Worlds can log in over GMCP. Set F5 ▸ `gmcp login` to `if offered`, and a character with a saved password is
+  logged in with GMCP's `Char.Login` on a server that offers it (Achaea and other IRE games, and servers
+  written for Mudlet). Any other server still gets the connect line, after waiting up to five seconds for the
+  offer. The password is sent only to the server and never shown or logged.
+- Lua scripts can keep values between sessions: `store.set('kills', 3)`, `store.get('kills')` and
+  `store.keys()`. Each character has its own store, kept in `script-data/` beside `config.json`. A store holds
+  at most 1,024 keys and 256 KB, and `store.set(key, nil)` removes a key.
 - Lua scripts can use the map: `map.current()`, `map.path('Town Square')` and `map.walk('Town Square')`.
 - Game sound. A GMCP game that uses MCMP (`Client.Media`, as Mudlet does) can now play sounds and music:
   the client asks for it, fetches the files the game names into a cache folder, and plays WAV, MP3, OGG and
@@ -49,6 +77,30 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   press Enter. Its sets then apply to every character on the games it names, after their own. F10 or
   Ctrl+P ▸ *Packages* lists what is installed: Space switches one off, `c` copies its sets into your own
   so you can edit them on F2, and Delete (twice) removes it.
+- Ctrl+P ▸ *Browse packages* (or `b` on F10, or `/package browse`) lists the packages in the project's
+  package index, with the current game's first and an update shown beside any you have at an older
+  version. The index is fetched only when you open it. A package from it is checked against the index's
+  SHA-256 before its review opens. Another index can be named as `packageIndexUrl` in `config.json`.
+- An MXP link with several commands (`<SEND "look|get|drop">`) still sends the first on a click, and a
+  right-click offers all of them: in the window's own menu, or in a small chooser in a terminal (arrows or
+  1–9, then Enter). Its tooltip says how many more there are.
+- Editing MOO verbs, properties and notes in the composer. On a MOO that speaks MCP 2.1 (LambdaMOO and its
+  descendants), `@edit` opens what you named in the F1 composer, and Ctrl+S saves it back to the MOO line
+  for line. An edit that arrives while another window or screen is in front waits for F1 in that
+  character's window. The client also tells the MOO its name, version and window size, and shows the MOO's
+  status text on the status row.
+- Tab on the command line completes the word you are typing from the game's recent output, with the people
+  the game names over GMCP (in the room, on a channel) offered first. Tab again goes to the next match and
+  back round to what you typed. With nothing to complete, Tab still moves to the second command line.
+- An `edit grab` prefix per world in Worlds & Characters (F5), empty by default. A line from the game that
+  starts with it is not shown; its text goes on that character's command line for you to change and send.
+  AresMUSH uses `FugueEdit >` for its edit commands. The client never sends a grabbed line itself, and a
+  line you were typing is kept in history (Alt+Up).
+- More of MXP: elements a game defines with `<!ELEMENT>` (including room names, exits and numbers, which
+  feed the automapper), entities from `<!ENTITY>` and `<VAR>` (kept with the game data on Ctrl+P ▸ *Show game
+  data*), `<GAUGE>` and `<STAT>` meters on the status row, `<SOUND>` and `<MUSIC>`, which play as MSP sounds
+  do, and `<DEST>`, which sends text to a window of its own. A line that is only definitions no longer
+  prints as a blank line.
 
 ### Changed
 

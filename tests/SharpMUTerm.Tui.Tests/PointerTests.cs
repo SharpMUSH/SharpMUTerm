@@ -27,6 +27,8 @@ public class PointerTests
 
         public void ShowMenu(Point cell, IReadOnlyList<PointerMenuItem> items) => Menus.Add(items);
 
+        public bool DrawsMenus => true;
+
         public void Scrollbars(IReadOnlyList<PaneScrollbar> bars) => Bars = bars;
     }
 

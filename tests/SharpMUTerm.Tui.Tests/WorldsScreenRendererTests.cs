@@ -217,7 +217,8 @@ public class WorldsScreenRendererTests
         // None of the three restated columns survives in the list, nor the header that named them.
         foreach (var gone in new[] { "○ offline", "login", "manual", "trigger sets", "state" })
         {
-            await Assert.That(column.Any(l => l.Contains(gone))).IsFalse().Because(gone + " is the form's");
+            // The world's own `gmcp login` row is a world setting, not the character's login column.
+            await Assert.That(column.Any(l => l.Replace("gmcp login", string.Empty).Contains(gone))).IsFalse().Because(gone + " is the form's");
         }
 
         // And each of them is still on the screen, in the form that owns it.

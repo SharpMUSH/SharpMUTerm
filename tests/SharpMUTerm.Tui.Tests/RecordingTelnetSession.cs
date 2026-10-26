@@ -83,6 +83,36 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     /// <summary>Every MSDP variable the client sent, oldest first.</summary>
     public List<(string Variable, string Value)> SentMsdp { get; } = new();
 
+    public event EventHandler<MooEdit>? MooEditReceived;
+
+    public event EventHandler<string>? McpStatusReceived;
+
+    /// <summary>Hands the client a buffer to edit, as an authenticated simpleedit message would.</summary>
+    public void ReceiveMooEdit(MooEdit edit) => MooEditReceived?.Invoke(this, edit);
+
+    public void ReceiveMcpStatus(string text) => McpStatusReceived?.Invoke(this, text);
+
+    /// <summary>When set, a save is refused as a server that never agreed simpleedit would refuse it.</summary>
+    public bool RefusesEdits { get; set; }
+
+    /// <summary>Every edit saved back, oldest first.</summary>
+    public List<(MooEdit Edit, IReadOnlyList<string> Lines)> SavedEdits { get; } = new();
+
+    public ValueTask SendMooEditAsync(MooEdit edit, IReadOnlyList<string> lines)
+    {
+        if (RefusesEdits)
+        {
+            return ValueTask.FromException(new InvalidOperationException("no MCP"));
+        }
+
+        lock (SavedEdits)
+        {
+            SavedEdits.Add((edit, lines));
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
 
     /// <summary>Announces whatever <see cref="CurrentEncoding"/> has been set to, as a live session would.</summary>

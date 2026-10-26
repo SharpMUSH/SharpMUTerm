@@ -60,6 +60,18 @@ internal enum LinkAction
 /// </summary>
 internal readonly record struct LinkPayload(LinkAction Action, string Target)
 {
+    /// <summary>
+    /// An MXP <c>&lt;SEND&gt;</c> menu's entries, first one first; null for a link with one target. The
+    /// <see cref="Action"/> and <see cref="Target"/> are the first entry's, so a click is unchanged.
+    /// </summary>
+    internal IReadOnlyList<SendChoice>? Choices { get; init; }
+
+    /// <summary>A <c>&lt;SEND&gt;</c> menu; the menu's own entries are percent-encoded inside it.</summary>
+    internal const string MenuScheme = "mux:menu:";
+
+    /// <summary>The same with <c>PROMPT</c>.</summary>
+    internal const string MenuPromptScheme = "mux:menu-prompt:";
+
     /// <summary>MXP <c>&lt;SEND&gt;</c> / Pueblo <c>xch_cmd</c>: a command to write to the wire.</summary>
     internal const string SendScheme = "mux:send:";
 
@@ -81,6 +93,8 @@ internal readonly record struct LinkPayload(LinkAction Action, string Target)
     /// </summary>
     internal static string? For(SpanInteraction? interaction) => interaction?.Kind switch
     {
+        InteractionKind.SendCommand when interaction.Choices is { Count: > 1 } choices =>
+            (interaction.PromptOnly ? MenuPromptScheme : MenuScheme) + LinkUrl.Escape(EncodeChoices(choices)),
         InteractionKind.SendCommand when interaction.PromptOnly => PromptScheme + LinkUrl.Escape(interaction.Target),
         InteractionKind.SendCommand => SendScheme + LinkUrl.Escape(interaction.Target),
         InteractionKind.Hyperlink => WebScheme + LinkUrl.Escape(interaction.Target),
@@ -99,6 +113,8 @@ internal readonly record struct LinkPayload(LinkAction Action, string Target)
     /// </summary>
     internal static LinkPayload Parse(string? url) => url switch
     {
+        not null when url.StartsWith(MenuScheme, StringComparison.Ordinal) => Menu(LinkAction.Send, url[MenuScheme.Length..]),
+        not null when url.StartsWith(MenuPromptScheme, StringComparison.Ordinal) => Menu(LinkAction.Prompt, url[MenuPromptScheme.Length..]),
         not null when url.StartsWith(SendScheme, StringComparison.Ordinal) =>
             new(LinkAction.Send, url[SendScheme.Length..]),
         not null when url.StartsWith(PromptScheme, StringComparison.Ordinal) =>
@@ -115,4 +131,28 @@ internal readonly record struct LinkPayload(LinkAction Action, string Target)
     /// checking a chain the app does not use.
     /// </summary>
     internal static LinkPayload Delivered(string emitted) => Parse(LinkUrl.Unescape(emitted));
+
+    /// <summary>
+    /// <c>label,command|label,command</c>, each part through <see cref="Uri.EscapeDataString"/>, which leaves
+    /// neither <c>,</c> nor <c>|</c> unescaped — so the separators cannot come from a server's text.
+    /// </summary>
+    private static string EncodeChoices(IReadOnlyList<SendChoice> choices) =>
+        string.Join('|', choices.Select(c => Uri.EscapeDataString(c.Label) + "," + Uri.EscapeDataString(c.Command)));
+
+    private static LinkPayload Menu(LinkAction action, string encoded)
+    {
+        var choices = new List<SendChoice>();
+        foreach (var part in encoded.Split('|'))
+        {
+            var comma = part.IndexOf(',', StringComparison.Ordinal);
+            if (comma < 0)
+            {
+                return None;
+            }
+
+            choices.Add(new SendChoice(Uri.UnescapeDataString(part[..comma]), Uri.UnescapeDataString(part[(comma + 1)..])));
+        }
+
+        return choices.Count == 0 ? None : new LinkPayload(action, choices[0].Command) { Choices = choices };
+    }
 }

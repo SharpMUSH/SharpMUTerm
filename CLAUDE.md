@@ -171,7 +171,7 @@ fallbacks) for inline images/maps.
     the server's `WILL MSP` is refused, and `MspChanged` is never raised. The bump registers the plugin only
     when `PlaysMedia` is true and raises the event from its two callbacks.
 - **Packages** (`Core/Packages`: `PackageManifest`, `PackageArchive`, `PackageStore`; Tui `PackageScreen`,
-  `PackagesOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
+  `ListOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
   `games` as `host[:port]`, `*.host` or `*`), `sets/*.json`, `scripts/**.lua`, `media/**`; anything else is
   listed as left out and never extracted. **The archive is server text meeting the disk**, so `Read` refuses
   traversal, absolute and backslashed names by never reading them, and counts sizes while decompressing
@@ -187,6 +187,13 @@ fallbacks) for inline images/maps.
   - One folder per package (`packages/<id>/`, beside `config.json`), swapped in through a `.id.new` staging
     folder; a snapshot's store has no folder and writes nothing. F10 is claimed (`opens Packages`); GNOME
     Terminal may take it for its menu, so ⌃P ▸ *Packages* is the way in that always works.
+  - **The index** (`PackageIndex`; ⌃P ▸ *Browse packages*, `b` on F10) is `{"packages":[…]}`, each entry a
+    manifest plus an https `url` and a `sha256`, at `AppConfiguration.PackageIndexUrl`. **It is fetched only
+    when the player opens it, never at start.** An entry that breaks a rule is dropped and counted, not
+    fatal to the list. The archive is checked against the entry's SHA-256 *and* its id and version before
+    the review opens, so the review is never shown for bytes the index did not name. The focused window's
+    world (its session's, else its owner's, never `_active`) sorts its own packages first; a `*` package does
+    not count as the world's own. The default index repository does not exist yet.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
@@ -575,8 +582,19 @@ fallbacks) for inline images/maps.
     it *before* the screen lookup — an arm reached only on a miss would make every future unclaimed F-key
     silently open the composer. Claiming it takes it off `MacroKeys.Bindable` automatically, which is why
     a macro test that used F1 as "a free function key" had to move to F12.
-  - **The footer names ⌃S, ⌥L and Esc and nothing else.** No `⌃F find`: the control has a find *API* and
-    no chord bound to it, and this screen is held to the same honesty rule as the settings screens.
+  - **The footer names ⌃S, ⌥L, ⌥W and Esc and nothing else.** No `⌃F find`: the control has a find *API* and
+    no chord bound to it, and this screen is held to the same honesty rule as the settings screens. ⌥W is
+    named only while a dictionary is open.
+  - **Spelling is a colour, not an underline** (`SpellChecker`, Core; `SpellingHighlighter`, Tui). The marks
+    go through `MultilineEditControl.SyntaxHighlighter`, whose tokens carry a foreground and nothing else;
+    an underline needs a styling hook upstream. Hunspell via WeCantSpell.Hunspell, **no dictionary
+    bundled**: `dictionaries/` beside `config.json`, then the system folders, chosen by the POSIX locale
+    variables — not `CultureInfo`, because the build is `InvariantGlobalization` and every culture is the
+    invariant one. The dictionary is opened the first time F1 opens, never at startup, and the app takes a
+    `Func<SpellChecker?>` that is null by default, so a test and a snapshot read none and their header says
+    `no dictionary`. A MOO edit is not checked (its buffer is code as often as prose). `%`-codes, a word
+    before `(`, and any word with a digit or an inner capital are skipped. ⌥W appends to
+    `dictionaries/user-words.txt`.
 - **An MXP `<IMAGE>` is drawn in the output pane as rows of markup under the line that named it**
   (`MxpParser.HandleImage` + `MxpImageSource`, Core; `InlineImageHost`/`InlineImageRows`/`InlineImageLayout`,
   Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
@@ -963,6 +981,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   tabs — the only geometry where an idle chip can be seen wearing a colour the pane behind it is not,
   which is the whole of the per-tab chip),
   `deletions`,
+  `moo-edit` (the composer holding a MOO verb from MCP simpleedit — `EDIT`, the name and its type in the
+  header, `⌃S save` and no escaping in the footer),
   `compose`/`compose-literal` (the F1 composer in each of its two escaping modes — the pair exists
   because ⌥L changes what is *sent* and only the header says which way it is set; the demo has no
   session, so the target is handed in and pinned against the live writer by `ComposeWindowTests`),
@@ -1686,9 +1706,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   pin said 2.8.1. The notes below say which release changed what, never what we are on. (Repo owner
   is its author — extend it by PR rather than working around it.)
   Fluent builder API; negotiates MCCP/MSDP/MXP itself; ships the keepalive interpreter
-  (`WithKeepAlive(TimeSpan?, …)`, default 30s, clamped to 1s–24h). `TelnetSession` sets the
-  init-only `CallbackOnByteAsync` reflectively to see raw bytes including unterminated prompts — a
-  first-class `OnByte` builder hook remains a good upstream PR. It handles the option handshake
+  (`WithKeepAlive(TimeSpan?, …)`, default 30s, clamped to 1s–24h). A prompt's text is the
+  interpreter's own `LastPromptBytes`, read inside the prompt callback; the reflective
+  `CallbackOnByteAsync` copy of every byte that used to stand in for it is gone (see the MCP entry).
+  It handles the option handshake
   (TELOPT, GA, TTYPE/MTTS, EOR, NAWS, CHARSET, MSSP, GMCP) — **Pueblo and all ANSI/MXP/Pueblo
   payload _parsing_ stay our layer.**
   - **2.8.1 changes that affected us:** `TelnetInterpreter.SendNAWS(short, short)` was removed —
@@ -1712,10 +1733,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `IProtocolContext` is unchanged in 2.12.0: the prompt-boundary members
     (`TakePartialLineAsPrompt`, `HasPartialLine`, `HasSeenMarkedPrompt`) are public on
     `TelnetInterpreter`, reachable through the interface's existing `Interpreter` property, so there
-    is no public break to migrate for. The
-    `CallbackOnByteAsync` property this file reaches by reflection is unchanged across the whole jump:
-    still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }` on
-    `TelnetInterpreter`.
+    is no public break to migrate for.
   - **`cd06e8b` (the prompt render) and `04e0e26` (this 2.12.0 bump) must not be separated.** Reverting
     the render alone while 2.12.0 stays pinned sends every packet-patch-inferred prompt fragment to
     `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
@@ -1724,20 +1742,19 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **The 2.x → 4.x jump compiled with no source change here.** 4.0.0 replaced the interpreter with a
     generated state machine (4 KiB batches, returning at MCCP boundaries); 3.0.0 dropped OneOf; 4.1.1
     made a second plugin for one protocol throw (EOR, SGA and PacketPatch are three plugins, each
-    registered once — keep it that way). The two reflective reaches above (`CallbackOnByteAsync`,
-    `CurrentEncoding`'s internal setter) and `NAWSProtocol`'s subclassability are unchanged. The only
+    registered once — keep it that way). The reflective reach into `CurrentEncoding`'s internal
+    setter and `NAWSProtocol`'s subclassability are unchanged. The only
     build change was `Microsoft.Extensions.Logging.Abstractions`, which 4.x needs at a newer patch.
     What the jump *makes available* and is not yet used: a GMCP `Core` client session
     (`UseGmcpClientSession`, `TelnetNegotiationCore.Gmcp`), typed GMCP packages, MSDP over GMCP,
-    `PuebloProtocol`, and MCP 2.1 (`MudClientProtocol`).
+    `PuebloProtocol`, and MCP 2.1 (`MudClientProtocol`, now used — see below).
   - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A
     pin that only resolves from a local `nuget.config` builds here and fails `NU1101` everywhere else;
     if a locally-built nupkg of that version is already in `~/.nuget/packages/`, the real package
     publishing later fails `NU1403` (content mismatch) until that cache directory is deleted. Delete
     the stale cache; do not commit a `nuget.config` pointing at `/tmp`.
 - **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
-  of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
-  unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
+  of them.** `TelnetSession.OnPromptAsync` is the only thing that emits an unterminated line, so a server whose prompt boundary the library
   does not report leaves that prompt in the buffer for ever. Both halves were wrong in the library
   and were fixed upstream rather than worked around here (PR #90):
   - **GA is the boundary a default NVT uses**, and most MU\* servers are one. RFC 854 makes it
@@ -1753,8 +1770,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - Nothing on our side changes for any of it. `AddDefaultMUDProtocols(onPrompt: OnPromptAsync)`
     already wires one callback to both plugins, so the signal arrives on the version bump.
   - **What is still ours**: a server that sends no boundary marker at all — no GA, no EOR, no newline
-    — still leaves a prompt in `_pending`, because nothing here flushes on idle. That is a real gap
-    and a deliberate non-decision, not something the library can fix.
+    — is now `PacketPatchProtocol`'s, which infers a boundary from silence.
 - **MXP's line-security model is the parser's real job, and the allow-list is chosen deliberately over
   a deny-list** (`MxpLineMode`, `MxpTagCategory`, `MxpParser` — the eight `ESC[#z` line tags: OPEN,
   SECURE, LOCKED, TEMP SECURE, and LOCK OPEN/SECURE/LOCKED plus RESET). The spec draws its own line in
@@ -1867,8 +1883,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **The first markup a connection negotiates keeps it.** The parser is swapped only off the plain
     `AnsiParser`, and the hello is not answered once MXP is on, so a server offering both is not flipped
     between them by the order the handshakes finish in.
-  - **The library consumes both lines; `_pending` is cleared in both callbacks**, because `CallbackOnByteAsync`
-    has already collected their bytes and a prompt boundary would otherwise flush them as text.
+  - **The library consumes both lines**, and a prompt is read from `LastPromptBytes`, so neither can be
+    flushed as text by a boundary that follows it.
 - **`<VERSION>`/`<SUPPORT>` are answered, and the `SUPPORTS` list is held to the same rule as the MTTS
   bit vector: an honest claim, not an aspirational one.** The spec requires both replies to go out as a
   secure-tagged line (`ESC[1z` prefix, `MxpParser.SecureLinePrefix`) specifically so a server can tell
@@ -1881,6 +1897,118 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   drops it on the floor, unhandled. Claiming `+high` would tell a server to send markup this client
   silently discards, exactly the failure mode the MTTS bit vector is already held to; add a tag to this
   list only once the handler for it exists, never once the tag is merely accepted.
+- **MOO editing is MCP 2.1, and the library does the protocol** (`MudClientProtocol`, registered for every
+  world in `TelnetSession`; `MooEditing`, Core; `SharpMUTermApp.MooEdit.cs`, Tui; the `moo-edit` view). The
+  server opens MCP (`#$#mcp version`), so registering it sends nothing to a server that never offers it, and
+  the library checks the authentication key, so a `#$#` line a player types is dropped and never opens an
+  edit. Three packages: `dns-org-mud-moo-simpleedit` (edit and save), `dns-com-vmoo-client` (name, version
+  and screen size, sent once the package list is agreed and again on each NAWS change) and
+  `dns-com-awns-status` (the `»` cell on the status row, reserved and elided like the room cell).
+  Decisions not to relitigate:
+  - **An edit opens in the composer only when its character's window is in front and nothing else is
+    open**; otherwise it is held and F1 in that window opens it. A modal on wire input must not land over
+    another window, or over a surface somebody is typing into.
+  - **Edits are held apart from post drafts** (`_mooEdits`, one per character, the newest winning), so an
+    edit arriving never replaces a half-written post. Esc keeps the edit; a save lets it go only once the
+    MOO has it, and a failed save keeps it.
+  - **An edit is saved as its lines** (`MooEditing.LinesOf`): no `%r` join, no escaping, nothing trimmed but
+    the caret's last newline. ⌥L does nothing in edit mode and the footer does not offer it.
+  - **A prompt is `LastPromptBytes`, not a copy of every byte.** The library takes MCP lines out of the
+    stream after their bytes have passed any per-byte hook, and nothing marks where a consumed line
+    ended, so a GA straight after an MCP message printed the message as the prompt. Reading the
+    interpreter's own partial line removed the reflective `CallbackOnByteAsync` hook along with the bug.
+  - **Not done: the legacy LambdaMOO local edit** (`#$# edit name: … upload: …`). The library drops every
+    line-initial `#$#` that is not a well-formed MCP message, in a session or outside one, so that header
+    never reaches this client. Supporting it needs the library to hand such a line back outside a session.
+  - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
+    never raises; such a MOO gets no client info. Editing does not depend on it.
+- **Screen readers get an announcer, never the compositor** (`IAnnouncer`, Core; `ClientHost.Announcer`;
+  `SharpMUTermApp.Announce.cs`). The app announces each line at `OnLine`/`OnSpawnLine` as plain `StyledLine.Text`,
+  every `Notice`, and the window `Activate` brings forward. A window can be kept quiet from ⌃P (`a11y:toggle-window`,
+  in memory, offered only when the host has an announcer). The terminal host has none, because a cursor-addressed
+  screen reads as noise. **`--plain`** (`PlainHost`, in `Hosting/`) is the terminal's answer: the same app on a
+  `HeadlessConsoleDriver` with the loop running (`RunsInline = false`). `PlainAnnouncer` writes to stdout, and
+  `PumpInput` reads the real stdin a line at a time into `SimulateKeyPress` plus ⏎, then sends ⌃Q, Y at EOF. The
+  framework is handed `TextReader.Null`, and the pump is started from the loop (`RunLive`'s `ready`), because a
+  key raised before `Run()` has no listener and is lost. The window (`WindowAnnouncer`) uses two hidden live
+  regions: output is polite and notices are assertive, posted to Avalonia's thread. This was built against the
+  API and has not been tried with NVDA or Orca. Not done: no speech engine of our own, and no per-line
+  automation peer on `TerminalView`.
+- **Discord presence is a host member and a per-world opt-in** (`ClientHost.Presence`, a lazy
+  `Func<IPresence?>?`; `GamePresence`/`DiscordIpc`, Core; F5 ▸ `discord`, off by default). The world asks for
+  `External.Discord 1`. `WorldSession.GamePresence` folds `Info` (application id: digits only) and `Status`
+  (fields trimmed to Discord's 128). The app shows the `SendTarget()` session's presence while it is connected
+  and opted in, and clears it on a window change, a state change or a world that has not opted in. The host is
+  opened only when there is something to show, so a client whose worlds never opt in never touches the socket.
+  `DiscordIpc.Show` never blocks: a worker sends only the newest value, reads and discards each reply (bounded
+  in size and time), and on a failed connect does not retry until the next update. The application id is the
+  game's; this client registers none. The snapshot and every test host have `Presence = null`.
+- **The send group is session keys in memory** (`SendGroup`, Core; `SharpMUTermApp.SendGroup.cs`; ⌃P `group:`
+  ids). It is never saved, because a saved group would be a standing order to send one line to several worlds.
+  It is offered once two characters are open. Members are marked on the rail by swapping the dot for ◆/◇ in
+  the same cell, so joining moves no column (the NAWS rule). `group:send` sends the armed bar's text through
+  each member's `SendUserInputAsync`, so aliases and echo apply per character, once each. A disconnected member
+  gets nothing and is named in the notice. A closed session leaves the group. `world.sendTo(name, cmd)` resolves
+  through `SendGroup.Find`: an exact `World.Character` key, else a unique character name. It refuses an
+  ambiguous or disconnected name and sends raw, like `world.send`. Not done: no ⌃P chord, and no rail gesture
+  to toggle membership.
+- **NEW-ENVIRON is answered as MNES** (`TelnetSessionOptions.MnesIdentity`; the library's `NewEnvironProtocol`).
+  The variables are `CLIENT_NAME`, `CLIENT_VERSION`, `TERMINAL_TYPE` and `MTTS`, read from the same TTYPE list,
+  so the two channels cannot disagree (`MTTS 2845`, which now includes MNES 512). It answers a server's `DO` and
+  initiates nothing. There is no `IPADDRESS` and no `USER`. There is no `CHARSET` either: the answer is fixed at
+  connect, CHARSET can settle later, and the library has no `INFO` send to correct it.
+- **GMCP `Char.Login` is opt-in per world** (`WorldDefinition.GmcpLogin`, F5 ▸ `gmcp login`; `GmcpLogin`, Core).
+  On, the world asks for `Char.Login 1`, and a character whose `LoginPlan` is `WithPassword` holds its connect
+  line back. `Char.Login.Default` offering `password-credentials` gets `Char.Login.Credentials`; any other
+  answer gets the connect line; silence gets it after `GmcpLoginWait` (5 s). The wait ends once, under a lock,
+  so a late offer cannot log in twice. The on-connect commands go after whichever login was sent. The password
+  goes only to `SendGmcpAsync`; `Char.Login.Result` is printed, bounded to one line. Not done: a server that
+  never negotiates GMCP still costs the five seconds, because `TelnetSession` raises nothing on a refusal.
+- **Lua's `store.*` is one JSON file per character** (`ScriptStore`, Scripting; `script-data/<session key>.json`
+  beside `config.json`, `0600`). The `scriptStoreRoot:` constructor parameter is null by default, the
+  `save:`/`logRoot:` family, but the host's store never is: with no folder it is memory-only by construction, the
+  `MsspCache` rule, so a test that runs scripts writes nothing. The store belongs to `SessionScripts`, not to a
+  `ScriptHost`, so it outlives a reload. Bounds are enforced at `set` (1,024 keys, 128-character keys, 256 KB),
+  and a refused `set` changes nothing and raises a Lua error. Every change is written at once through a
+  temporary file and a rename. A file that does not parse is moved to `.bad` and not overwritten. A session key
+  that is not a safe file name gets a hash suffix, so `A/B` and `A_B` never share a file.
+- **⇥ completes the last word on the command line** (`CompletionIndex`, Core, one per `WorldSession`;
+  `InputBarControl.Complete`; `SharpMUTermApp.Completion.cs`). Names from GMCP (`Room.Players`,
+  `Room.AddPlayer`, `Comm.Channel.Players`, `Comm.Channel.Text`'s talker) first, then words of output the
+  session *showed* (a gagged line's words were never read), newest first, capped at 4,096 words and 512
+  names. Repeated ⇥ cycles and ends on what was typed; any edit ends the cycle, because the cycle is keyed
+  on the exact text it left. **Only at the end of the buffer**: the bar exposes no caret offset to replace a
+  mid-line word through, and that is where a MUD line is typed. **Ahead of the sibling-bar cycle, and only
+  when there is a candidate**, so ⇥ with nothing to complete still moves to the second bar. A focus-in Tab
+  never reaches the bar: `TerminalFocusWatcher` claims it as a global shortcut first. Not on F4, because ⇥
+  is not taken outright.
+- **A MUSH's edit grab goes on the command line and is never sent** (`WorldDefinition.GrabPrefix`, F5 ▸
+  `edit grab`, null by default; `WorldSession.TryGrab`; `SharpMUTermApp.Grab.cs`). Another player can page a
+  line that starts with the prefix, so the player always sees the text and presses ⏎. Matched exactly and at
+  the start, before the triggers, so a rule can neither see nor send it. It lands on the bar of the window it
+  came from — at once when that window is in front, otherwise when it is next brought forward
+  (`_pendingGrabs`), never on another character's bar. A line being typed goes into history first. It is
+  always the command line and never the composer: a grab is one line, and the bar scrolls past its cap.
+- **What a server defines over MXP is held per connection and bounded** (`MxpParser.Definitions.cs`).
+  `<!ELEMENT>`, `<!ENTITY>`, `<VAR>`, `<GAUGE>`/`<STAT>`, `<SOUND>`/`<MUSIC>`, `<FRAME>` and `<DEST>` are all
+  secure tags, so a player can neither define nor send one. Decisions not to relitigate:
+  - **An element is expanded through the same trust as the tag that opened it.** An `OPEN` element a player
+    uses on an open line runs its definition's tags as an open line would, so a definition carrying `<SEND>`
+    gives the player formatting and never a command. The built-in tags and entities cannot be redefined.
+  - **Every expansion is capped** (256 elements, 512 entities, 1 KB a definition, depth 4, 64 per line, 8
+    frames). A definition that names itself stops at the depth cap rather than at the stack's end.
+  - **A tag ends at a `>` outside a quoted value**, because a definition carries markup in one. A quote opens
+    only after `=` or a space, so the apostrophe in `<don't>` holds nothing open, and **a tag still being read
+    is abandoned as text at the line boundary** (`EndLine`, i.e. `Flush`), not only at a `'\n'` the product
+    never feeds.
+  - **A line that was only markup is swallowed** (`LineSwallowed`), and `WorldSession` skips the blank line it
+    would otherwise print. A genuinely blank line still prints.
+  - **`<DEST>` lines skip the trigger engine**: they reach the window by `SpawnLine`, already shown, as a
+    capture rule's would. `<FRAME>` raises `FrameDeclared` and nothing listens yet; a window opens when text
+    is first sent to it.
+  - **Entities are game data** (`GameDataStore`, under `MXP.`), so the game data view and a gauge's meter read them where
+    they read GMCP. `PRIVATE` entities are kept from both.
+  - **A restored line keeps only a menu's first command**: `StyledLineCodec` does not carry `SendChoice`s.
 - **MSSP is read by the library, not by us — since 2.6.5, and that is the standing example of the
   rule above.** 2.6.0's reader destroyed the protocol's own array notation inside the library:
   `PORT "80" "23" "4201"` arrived as the integer `80234201`, `REFERRAL` (array-only) arrived null,
@@ -1913,7 +2041,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   bite you, and all four already have:
   - **`TelnetInterpreter.CurrentEncoding` defaults to `Encoding.UTF8`** (`TelnetStandardInterpreter.cs:46`),
     and that default is not something to rely on unseeded: it is handed to
-    `CallbackOnByteAsync`/`CallbackOnSubmitAsync` for every byte and used for GMCP, MSDP and everything
+    `CallbackOnSubmitAsync` for every line and used for GMCP, MSDP and everything
     we send, before this session's own encoding decision (an override, or the head of `CharsetOrder`)
     has had any say. `TelnetSession` seeds that property (reflectively, `internal set`, the same way
     `CharsetProtocol` itself writes it) with the head of the stated order — otherwise a world pinned to

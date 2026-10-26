@@ -45,7 +45,7 @@ fallbacks) for inline images and maps.
 
 - **.NET 10** / C#
 - **[SharpConsoleUI](https://github.com/nickprotop/ConsoleEx)** — compositor-based TUI framework: split layouts, tabs, resizable/mouse windows, Spectre-style markup, and a native Kitty graphics protocol (+ Sixel/half-block)
-- **[TelnetNegotiationCore](https://www.nuget.org/packages/TelnetNegotiationCore/)** — telnet option negotiation (NAWS, MTTS, CHARSET, EOR/GA, MSSP, GMCP)
+- **[TelnetNegotiationCore](https://www.nuget.org/packages/TelnetNegotiationCore/)** — telnet option negotiation (NAWS, MTTS, NEW-ENVIRON/MNES, CHARSET, EOR/GA, MSSP, GMCP)
 - **[MoonSharp](https://www.moonsharp.org/)** — embedded, sandboxed Lua scripting
 - Custom app-layer parsers for **ANSI** (256 + 24-bit), **MXP**, and **Pueblo**
 

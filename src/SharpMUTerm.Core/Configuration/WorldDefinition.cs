@@ -150,6 +150,21 @@ public sealed class WorldDefinition
     /// </summary>
     public List<string> GmcpModules { get; set; } = new();
 
+    /// <summary>
+    /// Whether to log in over GMCP's <c>Char.Login</c> on a server that offers it, rather than by sending the
+    /// connect line. Off by default. On, the client asks for <c>Char.Login 1</c> and waits a few seconds for the
+    /// server's <c>Char.Login.Default</c>; a server that offers <c>password-credentials</c> is sent the
+    /// character's name and saved password, and any other answer, or none, gets the connect line as before.
+    /// </summary>
+    public bool GmcpLogin { get; set; }
+
+    /// <summary>
+    /// Whether this world may show what you are doing on your Discord profile, through GMCP's
+    /// <c>External.Discord</c>. Off by default. On, the world is asked for <c>External.Discord 1</c> and what it
+    /// sends goes to the Discord app on this computer while one of its characters' windows is in front.
+    /// </summary>
+    public bool DiscordPresence { get; set; }
+
     /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
     public MapSettings Map { get; set; } = new();
 
@@ -158,6 +173,13 @@ public sealed class WorldDefinition
     /// already cached or in a soundpack folder; it only stops new fetches.
     /// </summary>
     public bool DownloadMedia { get; set; } = true;
+
+    /// <summary>
+    /// The prefix a MUSH starts a line with when it hands text back to edit — AresMUSH's <c>FugueEdit &gt;</c> —
+    /// or null for none, the default. Such a line is not shown: its text is put on the command line, and the
+    /// player sends it. Never sent by the client, because another player can page a line that starts with it.
+    /// </summary>
+    public string? GrabPrefix { get; set; }
 
     /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
@@ -194,6 +216,9 @@ public sealed class WorldDefinition
         GmcpModules = GmcpModules.ToList(),
         Map = Map.Clone(),
         DownloadMedia = DownloadMedia,
+        GrabPrefix = GrabPrefix,
+        GmcpLogin = GmcpLogin,
+        DiscordPresence = DiscordPresence,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

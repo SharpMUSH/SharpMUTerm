@@ -15,7 +15,8 @@ public sealed record CharacterRef(
     string CharacterName,
     string SessionKey,
     bool Connected,
-    bool Open = false);
+    bool Open = false,
+    bool InGroup = false);
 
 /// <summary>Live flags the catalog reads so stateful commands show their current value.</summary>
 /// <param name="LoggingOn">Whether the focused character is logging.</param>
@@ -42,6 +43,9 @@ public sealed record CharacterRef(
 /// Null where the client cannot play sound, so no mute is offered; otherwise whether sound is playing
 /// (offer <c>Mute sound</c>) or muted (offer <c>Unmute sound</c>).
 /// </param>
+/// <param name="Announced">
+/// Null where the host has no screen reader to tell; otherwise whether the active window's output is read aloud.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -52,7 +56,8 @@ public sealed record CommandContext(
     string NewlineChord = "Alt+⏎",
     bool ScriptsOn = false,
     bool Walking = false,
-    bool? Sound = null);
+    bool? Sound = null,
+    bool? Announced = null);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -182,10 +187,46 @@ public static class CommandCatalog
         // can find is the same as no feature — ⌃L's newline sat unused until it was reported missing.
         items.Add(new CommandItem(CommandGroup.World, "Reconnect", "world:reconnect", "⌥R"));
         items.Add(new CommandItem(CommandGroup.World, "Disconnect", "world:disconnect", "⌥D"));
+        // The send group: one line to several characters. Offered once two characters are open, since a
+        // group of one is the command line.
+        var open = characters.Where(c => c.Open).ToList();
+        if (open.Count > 1 || characters.Any(c => c.InGroup))
+        {
+            foreach (var character in open)
+            {
+                items.Add(new CommandItem(
+                    CommandGroup.World,
+                    character.InGroup
+                        ? $"Remove {character.CharacterName} from the send group"
+                        : $"Add {character.CharacterName} to the send group",
+                    CommandIds.GroupToggle(character.SessionKey),
+                    character.WorldName));
+            }
+
+            var members = characters.Count(c => c.InGroup);
+            if (members > 0)
+            {
+                items.Add(new CommandItem(
+                    CommandGroup.World,
+                    "Send the command line to the group",
+                    CommandIds.GroupSend,
+                    members == 1 ? "1 character" : $"{members} characters"));
+                items.Add(new CommandItem(CommandGroup.World, "Clear the send group", CommandIds.GroupClear));
+            }
+        }
+
         if (context.ScriptsOn)
         {
             items.Add(new CommandItem(
                 CommandGroup.World, "Reload scripts", "world:reload-scripts", "re-reads this character's Lua files"));
+        }
+
+        // Only where the host has a screen reader to tell: the window's live region, or --plain.
+        if (context.Announced is { } announced)
+        {
+            items.Add(announced
+                ? new CommandItem(CommandGroup.Terminal, "Stop reading this window aloud", "a11y:toggle-window")
+                : new CommandItem(CommandGroup.Terminal, "Read this window aloud", "a11y:toggle-window"));
         }
 
         // TERMINAL — stateful labels.
@@ -273,6 +314,8 @@ public static class CommandCatalog
             CommandGroup.Terminal, "Packages", "term:packages", "F10 · installed packages, on/off, remove"));
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Install package…", "term:package-install", "from a file or an https link"));
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Browse packages", "term:package-browse", "the package index, this game's first"));
         items.Add(context.TimestampsOn
             ? new CommandItem(CommandGroup.Terminal, "Hide timestamps", "term:timestamps-off")
             : new CommandItem(CommandGroup.Terminal, "Show timestamps", "term:timestamps-on"));

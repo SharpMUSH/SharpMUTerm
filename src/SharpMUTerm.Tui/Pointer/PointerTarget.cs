@@ -114,6 +114,12 @@ internal interface IPointerPresenter
     /// <summary>A right-click asked for a menu at a cell. An empty list is never passed.</summary>
     void ShowMenu(System.Drawing.Point cell, IReadOnlyList<PointerMenuItem> items);
 
+    /// <summary>
+    /// Whether <see cref="ShowMenu"/> draws anything. Where it does not, the client opens its own chooser for
+    /// the one menu a server can ask for, an MXP <c>&lt;SEND&gt;</c> with several commands.
+    /// </summary>
+    bool DrawsMenus { get; }
+
     /// <summary>The panes' scroll positions, whenever one of them changes.</summary>
     void Scrollbars(IReadOnlyList<PaneScrollbar> bars);
 }

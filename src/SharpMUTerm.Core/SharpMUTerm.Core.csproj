@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="TelnetNegotiationCore" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="WeCantSpell.Hunspell" />
   </ItemGroup>
 
 </Project>
