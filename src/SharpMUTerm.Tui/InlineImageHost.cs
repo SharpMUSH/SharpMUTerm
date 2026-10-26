@@ -12,10 +12,17 @@ namespace SharpMUTerm.Tui;
 /// Conservative in the ways a world could abuse it. Fetching goes through <see cref="WebImageLoader"/>'s
 /// rules (http(s) and <c>data:</c>, an image content type, a byte cap, a timeout). At most
 /// <see cref="MaxConcurrentFetches"/> run at once and at most <see cref="MaxQueuedLines"/> lines wait,
-/// so a server spamming tags gets placeholders rather than a client with a hundred sockets open. A
-/// result is kept per URL, presentation and box, so the room map a game re-sends on every <c>look</c>
-/// is fetched once and, under Kitty, transmitted once — later copies are placeholder cells pointing at
-/// the image the terminal already holds.
+/// so a server spamming tags gets placeholders rather than a client with a hundred sockets open.
+/// </para>
+/// <para>
+/// Two caches, because a picture is used at more than one size. The decoded picture is kept per URL
+/// (<see cref="SourceCacheBytes"/>), and a fetch already running is shared, so the room picture a game
+/// re-sends on every <c>look</c> is fetched and decoded once for the session, whatever width the pane is
+/// when it arrives and however many looks land before the first fetch is back. Decoding is the costly
+/// half: a WebP the size of a desktop background is tens of milliseconds of SIMD work each time. The rows
+/// are kept as well, per URL, presentation and box, so a repeat at the same size is not even re-scaled
+/// and, under Kitty, not re-transmitted — later copies are placeholder cells pointing at the image the
+/// terminal already holds.
 /// </para>
 /// </summary>
 internal sealed class InlineImageHost : IDisposable
@@ -30,6 +37,13 @@ internal sealed class InlineImageHost : IDisposable
     public const int CacheSize = 32;
 
     /// <summary>
+    /// Decoded pictures kept for reuse, in bytes of pixels. A 1942×809 room picture is about 6 MB, so this
+    /// holds a session's worth of rooms; the least recently used goes first, and one larger than the whole
+    /// budget is used once and not kept.
+    /// </summary>
+    public const long SourceCacheBytes = 64L * 1024 * 1024;
+
+    /// <summary>
     /// First Kitty image id this host hands out. The framework numbers its own images (the web view's)
     /// from 1; starting high keeps the two apart, and every id still fits the 24 bits a placeholder's
     /// foreground colour can carry.
@@ -41,14 +55,23 @@ internal sealed class InlineImageHost : IDisposable
     private readonly SemaphoreSlim _fetches = new(MaxConcurrentFetches);
     private readonly CancellationTokenSource _cts = new();
     private readonly LinkedList<(string Key, IReadOnlyList<string> Rows)> _cache = new();
+    private readonly Dictionary<string, LinkedListNode<Source>> _sources = new(StringComparer.Ordinal);
+    private readonly LinkedList<Source> _sourceOrder = new();
+    private readonly long _sourceBudget;
+    private long _sourceBytes;
     private readonly object _gate = new();
     private int _queued;
     private int _nextKittyId = FirstKittyId;
 
     /// <param name="fetch">Fetches an image's bytes, or null.</param>
     /// <param name="onUi">Marshals onto the UI thread.</param>
-    public InlineImageHost(Func<string, CancellationToken, Task<byte[]?>> fetch, Action<Action> onUi)
+    /// <param name="sourceCacheBytes">The decoded-picture budget; <see cref="SourceCacheBytes"/> unless a test says otherwise.</param>
+    public InlineImageHost(
+        Func<string, CancellationToken, Task<byte[]?>> fetch,
+        Action<Action> onUi,
+        long sourceCacheBytes = SourceCacheBytes)
     {
+        _sourceBudget = sourceCacheBytes;
         _fetch = fetch ?? throw new ArgumentNullException(nameof(fetch));
         _onUi = onUi ?? throw new ArgumentNullException(nameof(onUi));
     }
@@ -176,22 +199,8 @@ internal sealed class InlineImageHost : IDisposable
             return hit;
         }
 
-        byte[]? bytes;
-        await _fetches.WaitAsync(_cts.Token).ConfigureAwait(false);
-        try
-        {
-            bytes = await _fetch(request.Url, _cts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        finally
-        {
-            _fetches.Release();
-        }
-
-        var picture = bytes is null ? null : Decode(bytes, request, availableColumns, maxRows);
+        var source = await SourceFor(request.Url).ConfigureAwait(false);
+        var picture = source is null ? null : Fit(source, request, availableColumns, maxRows);
         if (picture is null)
         {
             return null;
@@ -222,6 +231,125 @@ internal sealed class InlineImageHost : IDisposable
     }
 
     /// <summary>
+    /// The decoded picture at <paramref name="url"/>: from the cache, from a fetch already under way, or
+    /// fetched and decoded now. Null when it cannot be had, and a failure is not remembered, so the next
+    /// mention tries again.
+    /// </summary>
+    private Task<PixelBuffer?> SourceFor(string url)
+    {
+        lock (_gate)
+        {
+            if (_sources.TryGetValue(url, out var node))
+            {
+                _sourceOrder.Remove(node);
+                _sourceOrder.AddFirst(node);
+                return node.Value.Picture;
+            }
+
+            // In the cache before it starts, so a fetch that finishes at once still finds itself there to
+            // settle; and off this thread, so a fetch that completes at once does not decode under the lock.
+            var source = new Source(url);
+            _sources[url] = _sourceOrder.AddFirst(source);
+            source.Picture = Task.Run(async () =>
+            {
+                PixelBuffer? picture = null;
+                try
+                {
+                    picture = await FetchAndDecodeAsync(url).ConfigureAwait(false);
+                    return picture;
+                }
+                finally
+                {
+                    Settle(source, picture);
+                }
+            });
+            return source.Picture;
+        }
+    }
+
+    private async Task<PixelBuffer?> FetchAndDecodeAsync(string url)
+    {
+        byte[]? bytes;
+        await _fetches.WaitAsync(_cts.Token).ConfigureAwait(false);
+        try
+        {
+            bytes = await _fetch(url, _cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        finally
+        {
+            _fetches.Release();
+        }
+
+        if (bytes is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return ImageDecoder.Decode(bytes);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Accounts for a finished fetch: forgets a failure, and trims the cache to its budget.</summary>
+    private void Settle(Source source, PixelBuffer? picture)
+    {
+        lock (_gate)
+        {
+            if (!_sources.TryGetValue(source.Url, out var node) || !ReferenceEquals(node.Value, source))
+            {
+                return;
+            }
+
+            if (picture is null)
+            {
+                Forget(node);
+                return;
+            }
+
+            source.Bytes = (long)picture.Width * picture.Height * 4;
+            _sourceBytes += source.Bytes;
+            for (var last = _sourceOrder.Last; _sourceBytes > _sourceBudget && last is not null;)
+            {
+                var previous = last.Previous;
+                if (last.Value.Bytes > 0)
+                {
+                    Forget(last);
+                }
+
+                last = previous;
+            }
+        }
+    }
+
+    private void Forget(LinkedListNode<Source> node)
+    {
+        _sourceOrder.Remove(node);
+        _sources.Remove(node.Value.Url);
+        _sourceBytes -= node.Value.Bytes;
+    }
+
+    /// <summary>Decoded pictures held, and fetches under way — for tests.</summary>
+    internal int SourcesHeld
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sources.Count;
+            }
+        }
+    }
+
+    /// <summary>
     /// Decodes and sizes a picture. The pixels kept are the most either presentation needs: under
     /// Kitty the terminal scales into the box, so anything past <see cref="InlineImageLayout.CellPixelWidth"/>
     /// per column is bytes on the wire for nothing.
@@ -242,6 +370,16 @@ internal sealed class InlineImageHost : IDisposable
             return null;
         }
 
+        return Fit(source, request, availableColumns, maxRows);
+    }
+
+    /// <summary>Sizes a decoded picture to its cell box, keeping the pixels either presentation needs.</summary>
+    internal static DecodedPicture? Fit(
+        PixelBuffer source,
+        InlineImageRequest request,
+        int availableColumns,
+        int maxRows = InlineImageLayout.MaxRows)
+    {
         var box = InlineImageLayout.Fit(source.Width, source.Height, request.Width, request.Height, availableColumns, maxRows);
         if (box.Columns <= 0 || box.Rows <= 0)
         {
@@ -362,6 +500,17 @@ internal sealed class InlineImageHost : IDisposable
                 _cache.RemoveLast();
             }
         }
+    }
+
+    /// <summary>A decoded picture held by the cache, or the fetch that will produce it.</summary>
+    private sealed class Source(string url)
+    {
+        public string Url { get; } = url;
+
+        public Task<PixelBuffer?> Picture { get; set; } = Task.FromResult<PixelBuffer?>(null);
+
+        /// <summary>Its size in the cache's budget; zero while the fetch is under way.</summary>
+        public long Bytes { get; set; }
     }
 
     public void Dispose()
