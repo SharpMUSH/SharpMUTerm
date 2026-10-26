@@ -41,6 +41,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   window, output and the client's messages are given to the screen reader as they arrive. ⌃P ▸ `Stop reading
   this window aloud` keeps a busy window quiet. The desktop window's support has not yet been tried with a
   screen reader.
+- Spelling in the composer (F1). Words the dictionary does not know are shown in red, and ⌥W adds the word
+  at the caret to your own list. The client uses a Hunspell dictionary (`.aff` and `.dic`) from a
+  `dictionaries` folder beside `config.json`, or the system's (`/usr/share/hunspell` on Linux,
+  `~/Library/Spelling` on macOS; on Windows only the folder). None is included, and the composer's header
+  says when there is none. `%r` and the other `%` codes, function names, and words in capitals or with a
+  capital inside (`OOC`, `McTavish`) are not checked.
 - Games that publish a Discord status (GMCP `External.Discord`) can show it on your Discord profile. It is off
   for every world; turn it on with F5 ▸ `discord`. Only the world whose window is in front is shown, and it
   is cleared when you switch away or disconnect. It talks only to the Discord app on your computer.

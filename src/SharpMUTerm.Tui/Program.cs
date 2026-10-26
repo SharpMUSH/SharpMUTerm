@@ -209,7 +209,8 @@ internal static class Program
             maps: new MapStore(MapStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Map") },
             media: new MediaCache(MediaCache.DefaultRoot),
             packages: new PackageStore(PackageStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Packages") },
-            scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"));
+            scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"),
+            spelling: () => OpenDictionary(loadLogger));
         ready?.Invoke(liveApp);
         int exitCode;
         try
@@ -341,5 +342,21 @@ internal static class Program
             ClientUsage.Write(text, ClientUsage.Terminal, HostKeys.Terminal);
             return text.ToString();
         }
+    }
+
+    /// <summary>
+    /// The composer's dictionary: <c>dictionaries/</c> beside config.json first, then the system's, in the
+    /// locale's language. Words added with ⌥W go to <c>dictionaries/user-words.txt</c>.
+    /// </summary>
+    private static SpellChecker? OpenDictionary(ILogger logger)
+    {
+        var own = Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "dictionaries");
+        var checker = SpellChecker.Find(SpellChecker.SearchFolders(own), SpellChecker.PreferredLanguage(), Path.Combine(own, "user-words.txt"));
+        if (checker is null)
+        {
+            logger.LogInformation("No Hunspell dictionary found; put an .aff/.dic pair in {Folder} for spelling in the composer", own);
+        }
+
+        return checker;
     }
 }

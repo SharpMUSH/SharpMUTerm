@@ -582,8 +582,19 @@ fallbacks) for inline images/maps.
     it *before* the screen lookup — an arm reached only on a miss would make every future unclaimed F-key
     silently open the composer. Claiming it takes it off `MacroKeys.Bindable` automatically, which is why
     a macro test that used F1 as "a free function key" had to move to F12.
-  - **The footer names ⌃S, ⌥L and Esc and nothing else.** No `⌃F find`: the control has a find *API* and
-    no chord bound to it, and this screen is held to the same honesty rule as the settings screens.
+  - **The footer names ⌃S, ⌥L, ⌥W and Esc and nothing else.** No `⌃F find`: the control has a find *API* and
+    no chord bound to it, and this screen is held to the same honesty rule as the settings screens. ⌥W is
+    named only while a dictionary is open.
+  - **Spelling is a colour, not an underline** (`SpellChecker`, Core; `SpellingHighlighter`, Tui). The marks
+    go through `MultilineEditControl.SyntaxHighlighter`, whose tokens carry a foreground and nothing else;
+    an underline needs a styling hook upstream. Hunspell via WeCantSpell.Hunspell, **no dictionary
+    bundled**: `dictionaries/` beside `config.json`, then the system folders, chosen by the POSIX locale
+    variables — not `CultureInfo`, because the build is `InvariantGlobalization` and every culture is the
+    invariant one. The dictionary is opened the first time F1 opens, never at startup, and the app takes a
+    `Func<SpellChecker?>` that is null by default, so a test and a snapshot read none and their header says
+    `no dictionary`. A MOO edit is not checked (its buffer is code as often as prose). `%`-codes, a word
+    before `(`, and any word with a digit or an inner capital are skipped. ⌥W appends to
+    `dictionaries/user-words.txt`.
 - **An MXP `<IMAGE>` is drawn in the output pane as rows of markup under the line that named it**
   (`MxpParser.HandleImage` + `MxpImageSource`, Core; `InlineImageHost`/`InlineImageRows`/`InlineImageLayout`,
   Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
