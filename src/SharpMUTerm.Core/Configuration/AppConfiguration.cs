@@ -95,6 +95,18 @@ public sealed class AppConfiguration
     public List<TriggerSet> TriggerSets { get; set; } = new();
 
     /// <summary>
+    /// The installed packages, read from their folders at start (<see cref="Packages.PackageStore"/>) and never
+    /// saved here: a package's sets are its own, replaced wholesale on update, and the screens that edit
+    /// <see cref="TriggerSets"/> do not list them. They apply to the characters of the worlds each package is
+    /// for, after the character's own sets.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<Packages.InstalledPackage> Packages { get; set; } = [];
+
+    /// <summary>The ids of installed packages the player has switched off; their sets apply to nobody.</summary>
+    public List<string> DisabledPackages { get; set; } = new();
+
+    /// <summary>
     /// The last workspace layout (panes, windows, focus) so the app can resume where it left off.
     /// Null on a fresh config; the shell rebuilds a live workspace from it at startup via
     /// <see cref="WorkspaceState.Restore"/>. Only structure lives here — the <em>content</em> of each
@@ -107,9 +119,10 @@ public sealed class AppConfiguration
     /// <summary>
     /// Resolves the <see cref="TriggerSet"/>s a character has opted into, in the character's own
     /// order, matching by name case-insensitively. Names with no matching set are skipped, and
-    /// each set is returned at most once even if referenced twice.
+    /// each set is returned at most once even if referenced twice. With <paramref name="world"/>, the sets of
+    /// every enabled package for that world follow.
     /// </summary>
-    public IReadOnlyList<TriggerSet> ResolveTriggerSets(CharacterDefinition character)
+    public IReadOnlyList<TriggerSet> ResolveTriggerSets(CharacterDefinition character, WorldDefinition? world = null)
     {
         ArgumentNullException.ThrowIfNull(character);
 
@@ -126,6 +139,17 @@ public sealed class AppConfiguration
             if (byName.TryGetValue(name, out var set) && seen.Add(set))
             {
                 resolved.Add(set);
+            }
+        }
+
+        if (world is not null)
+        {
+            foreach (var package in Packages)
+            {
+                if (!DisabledPackages.Contains(package.Id, StringComparer.Ordinal) && package.Manifest.IsFor(world.Host, world.Port))
+                {
+                    resolved.AddRange(package.Sets);
+                }
             }
         }
 

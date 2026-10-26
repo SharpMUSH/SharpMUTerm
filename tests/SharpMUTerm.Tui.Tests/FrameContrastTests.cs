@@ -52,6 +52,9 @@ public class FrameContrastTests
         // value wears the notice ink), and the inspector is a modal of its own.
         "meters", "gamedata", "map", "map-walking", "map-split",
 
+        // The package surfaces are a modal of their own, with a warning ink on the review.
+        "packages", "package-review",
+
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band
         // instead of the reading plane. A band nothing renders in a test is a band nobody checks.

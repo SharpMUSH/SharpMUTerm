@@ -170,6 +170,23 @@ fallbacks) for inline images/maps.
     `MSPProtocol`** (TelnetNegotiationCore PR #171): no release has it, so `TelnetSession` registers nothing,
     the server's `WILL MSP` is refused, and `MspChanged` is never raised. The bump registers the plugin only
     when `PlaysMedia` is true and raises the event from its two callbacks.
+- **Packages** (`Core/Packages`: `PackageManifest`, `PackageArchive`, `PackageStore`; Tui `PackageScreen`,
+  `PackagesOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
+  `games` as `host[:port]`, `*.host` or `*`), `sets/*.json`, `scripts/**.lua`, `media/**`; anything else is
+  listed as left out and never extracted. **The archive is server text meeting the disk**, so `Read` refuses
+  traversal, absolute and backslashed names by never reading them, and counts sizes while decompressing
+  (archive, total, per-file, per-text-file, entry count). Decisions not to relitigate:
+  - **Package sets are never in `config.json`** (`AppConfiguration.Packages` is `[JsonIgnore]`) and are not on
+    F2–F6. `ResolveTriggerSets(character, world)` appends the enabled ones for that world *after* the
+    character's own, so an update replaces them wholesale and never touches the player's edits; `c` on F10
+    copies them into the player's sets to edit. The only thing saved is `DisabledPackages`.
+  - **The review is the consent step**: nothing is written until ⏎, and it leads with what can act as the
+    player (rules that send, scripts that run). Downloads are https only, capped while streaming.
+  - **Scripts are `package:<id>/<file>`** and `SessionScripts` resolves them only under that package's
+    `scripts/`, through `PackageStore.ResolveScript`. They still need the scripts root, like any script.
+  - One folder per package (`packages/<id>/`, beside `config.json`), swapped in through a `.id.new` staging
+    folder; a snapshot's store has no folder and writes nothing. F10 is claimed (`opens Packages`); GNOME
+    Terminal may take it for its menu, so ⌃P ▸ *Packages* is the way in that always works.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a

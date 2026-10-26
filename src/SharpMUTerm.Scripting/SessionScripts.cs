@@ -31,6 +31,7 @@ public sealed class SessionScripts : IDisposable
     private readonly WorldSession _session;
     private readonly string _root;
     private readonly Action<string> _report;
+    private readonly Func<string, string?>? _packageScript;
     private WorldSessionScriptBridge? _bridge;
     private ScriptHost? _host;
     private string[] _files = Array.Empty<string>();
@@ -42,12 +43,17 @@ public sealed class SessionScripts : IDisposable
     /// Where a load failure, a refused path or a script's runtime error is said. Called on whichever thread
     /// the failure happened on, so a caller with a UI thread marshals.
     /// </param>
-    public SessionScripts(WorldSession session, string root, Action<string> report)
+    /// <param name="packageScript">
+    /// Resolves a <c>package:&lt;id&gt;/&lt;file&gt;</c> name inside that package's own folder, or null when it
+    /// names nothing installed. Without it no package script loads.
+    /// </param>
+    public SessionScripts(WorldSession session, string root, Action<string> report, Func<string, string?>? packageScript = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         _root = Path.GetFullPath(root);
         _report = report ?? throw new ArgumentNullException(nameof(report));
+        _packageScript = packageScript;
     }
 
     /// <summary>The file names the host was last built from, as the trigger sets spell them.</summary>
@@ -97,9 +103,12 @@ public sealed class SessionScripts : IDisposable
         var loaded = 0;
         foreach (var file in _files)
         {
-            if (Resolve(_root, file) is not { } path)
+            var fromPackage = file.StartsWith("package:", StringComparison.Ordinal);
+            if ((fromPackage ? _packageScript?.Invoke(file) : Resolve(_root, file)) is not { } path)
             {
-                _report($"Script '{file}' is outside the scripts folder ({_root}) and was not loaded.");
+                _report(fromPackage
+                    ? $"Script '{file}' is not in an installed package and was not loaded."
+                    : $"Script '{file}' is outside the scripts folder ({_root}) and was not loaded.");
                 continue;
             }
 

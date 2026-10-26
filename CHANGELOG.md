@@ -43,6 +43,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   captions*, which prints a dim `♪ …` line for each sound. Ctrl+P ▸ *Mute sound* silences everything until
   you unmute or restart, and the status row says `♪ muted` meanwhile. Worlds & Characters (F5) has a
   `sounds` field to stop a world downloading new files.
+- Packages. A package is a `.zip` of trigger sets, Lua scripts and sound files for one or more games.
+  Ctrl+P ▸ *Install package…* (or `/package install <file or https link>`) shows what it adds first,
+  including how many of its rules send commands and which scripts it runs, and writes nothing until you
+  press Enter. Its sets then apply to every character on the games it names, after their own. F10 or
+  Ctrl+P ▸ *Packages* lists what is installed: Space switches one off, `c` copies its sets into your own
+  so you can edit them on F2, and Delete (twice) removes it.
 
 ### Changed
 
