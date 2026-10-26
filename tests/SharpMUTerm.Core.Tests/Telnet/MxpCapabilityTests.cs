@@ -76,6 +76,9 @@ public class MxpCapabilityTests
     [Arguments(new[] { "image", "SEND" }, new[] { "image", "SEND" }, new string[0])]
     [Arguments(new[] { "send.expire", "h1" }, new string[0], new[] { "send.expire", "h1" })]
     [Arguments(new[] { "\"image\"" }, new[] { "image" }, new string[0])]
+    [Arguments(new[] { "color.fore", "color.size" }, new[] { "color.fore" }, new[] { "color.size" })]
+    [Arguments(new[] { "color.*" }, new[] { "color.fore", "color.back" }, new string[0])]
+    [Arguments(new[] { "h1.*", "b.*" }, new string[0], new[] { "h1.*" })]
     public async Task AnAnswerNamesWhatWasAskedAbout(string[] asked, string[] supported, string[] unsupported)
     {
         var (yes, no) = MxpParser.AnswerSupport(asked);

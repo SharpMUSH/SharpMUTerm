@@ -104,7 +104,7 @@ public partial class HostParityTests
         {
             var expected = FrameGrid.Decode(ansi, Width, Height)[y];
             var actual = frame.RowText(y);
-            if (!string.Equals(WithoutClockTimes(expected), WithoutClockTimes(actual), StringComparison.Ordinal))
+            if (!string.Equals(expected, actual, StringComparison.Ordinal) && !DifferOnlyInStamp(expected, actual))
             {
                 differences.Add($"row {y}:\n  terminal |{expected}|\n  window   |{actual}|");
                 continue;
@@ -125,13 +125,31 @@ public partial class HostParityTests
     }
 
     /// <summary>
-    /// A row with each <c>hh:mm:ss</c> blanked. The client's messages are stamped by the logger's wall clock,
-    /// which no test pins, and the two hosts draw a second apart often enough to fail on the second changing.
+    /// True when two rows differ only in the time a message was stamped with: the first <c>hh:mm:ss</c> in
+    /// each, at the same column, with every other cell equal. The client's messages are stamped by the
+    /// logger's wall clock, which no test pins, and the two hosts draw a second apart often enough to fail on
+    /// the second changing. A clock in a message's own text comes after the stamp and is still compared.
     /// </summary>
-    private static string WithoutClockTimes(string row) => ClockTime().Replace(row, "--:--:--");
+    internal static bool DifferOnlyInStamp(string expected, string actual)
+    {
+        var a = ClockTime().Match(expected);
+        var b = ClockTime().Match(actual);
+        return a.Success && b.Success && a.Index == b.Index && expected.Length == actual.Length
+            && string.Equals(expected[..a.Index], actual[..a.Index], StringComparison.Ordinal)
+            && string.Equals(expected[(a.Index + a.Length)..], actual[(b.Index + b.Length)..], StringComparison.Ordinal);
+    }
 
     [System.Text.RegularExpressions.GeneratedRegex(@"\b\d{2}:\d{2}:\d{2}\b")]
     private static partial System.Text.RegularExpressions.Regex ClockTime();
+
+    /// <summary>Only the stamp is allowed to differ: a clock in a message's text is compared like any other text.</summary>
+    [Test]
+    [Arguments("│ 10:00:00 info  hello", "│ 10:00:01 info  hello", true)]
+    [Arguments("│ 10:00:00 info  at 12:34:56", "│ 10:00:00 info  at 12:35:56", false)]
+    [Arguments("│ 10:00:00 info  hello", "│ 10:00:01 info  hullo", false)]
+    [Arguments("│ 10:00:00 info  hello", "│  10:00:01 info hello", false)]
+    public async Task OnlyTheStampMayDifferBetweenHosts(string terminal, string window, bool same) =>
+        await Assert.That(DifferOnlyInStamp(terminal, window)).IsEqualTo(same);
 
     public static IEnumerable<string> Hosts() => ["terminal", "window"];
 

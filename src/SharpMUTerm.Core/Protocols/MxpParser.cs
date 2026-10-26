@@ -189,11 +189,32 @@ public sealed partial class MxpParser : ILineParser
          "!element", "!entity", "var", "gauge", "stat", "sound", "music", "frame", "dest"];
 
     /// <summary>
+    /// The attributes a handler here reads, by tag, for a <c>&lt;SUPPORT tag.attr&gt;</c> or
+    /// <c>&lt;SUPPORT tag.*&gt;</c>. The same honesty rule as <see cref="SupportedTags"/>: an attribute
+    /// is listed only when its handler acts on it, so <c>image.ismap</c>, read and ignored, is not.
+    /// A supported tag missing here has no attribute this client claims.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string[]> SupportedAttributes { get; } =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["color"] = ["fore", "back"],
+            ["send"] = ["href", "hint", "prompt"],
+            ["a"] = ["href", "hint"],
+            ["image"] = ["fname", "url", "t", "w", "h"],
+            ["gauge"] = ["entity", "max", "caption"],
+            ["stat"] = ["entity", "max", "caption"],
+            ["sound"] = ["fname", "v", "l", "p", "t", "u"],
+            ["music"] = ["fname", "v", "l", "c", "t", "u"],
+            ["frame"] = ["name", "action", "title"],
+            ["dest"] = ["name"],
+        };
+
+    /// <summary>
     /// The answer to a <c>&lt;SUPPORT&gt;</c> that asked about <paramref name="asked"/>: every tag in
     /// <see cref="SupportedTags"/> when it asked about nothing, otherwise each entry it named, as one this
-    /// client renders or one it does not. A tag's argument (<c>send.expire</c>) is answered as not
-    /// supported: the list is of tags, and claiming an argument nobody checked is the aspirational claim
-    /// <see cref="SupportedTags"/> refuses to make.
+    /// client renders or one it does not. <c>tag.attr</c> is supported when <see cref="SupportedAttributes"/>
+    /// lists it, and <c>tag.*</c> is answered with each attribute listed for the tag, as the specification
+    /// asks; a tag this client does not render is answered <c>-tag.*</c>.
     /// </summary>
     public static (IReadOnlyList<string> Supported, IReadOnlyList<string> Unsupported) AnswerSupport(IReadOnlyList<string> asked)
     {
@@ -212,7 +233,32 @@ public sealed partial class MxpParser : ILineParser
                 continue;
             }
 
-            (SupportedTags.Contains(name, StringComparer.OrdinalIgnoreCase) ? supported : unsupported).Add(name);
+            var dot = name.IndexOf('.', StringComparison.Ordinal);
+            if (dot < 0)
+            {
+                (SupportedTags.Contains(name, StringComparer.OrdinalIgnoreCase) ? supported : unsupported).Add(name);
+                continue;
+            }
+
+            var tag = name[..dot];
+            var attribute = name[(dot + 1)..];
+            var known = SupportedTags.Contains(tag, StringComparer.OrdinalIgnoreCase);
+            var attributes = known ? SupportedAttributes.GetValueOrDefault(tag) ?? [] : [];
+            if (attribute == "*")
+            {
+                if (known)
+                {
+                    supported.AddRange(attributes.Select(a => $"{tag}.{a}"));
+                }
+                else
+                {
+                    unsupported.Add(name);
+                }
+            }
+            else
+            {
+                (attributes.Contains(attribute, StringComparer.OrdinalIgnoreCase) ? supported : unsupported).Add(name);
+            }
         }
 
         return (supported, unsupported);
