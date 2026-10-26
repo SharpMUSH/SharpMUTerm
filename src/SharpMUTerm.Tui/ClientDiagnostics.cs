@@ -120,10 +120,81 @@ internal sealed class ClientDiagnostics : IDisposable
         }
     }
 
+    /// <summary>
+    /// Routes the framework's own log into this pipeline, from Warning up, for as long as the result is held.
+    /// <para>
+    /// The framework catches what it runs and logs it to a <see cref="SharpConsoleUI.Logging.ILogService"/> of its
+    /// own that writes nowhere unless an environment variable names a file: every exception thrown by an
+    /// <c>EnqueueOnUIThread</c> action (which is most of this app's cross-thread work, through <c>OnUiThread</c>), and
+    /// the one that ends the main loop. That last one returns 1 from <c>Run</c> and prints its stack to the console
+    /// once the console is restored, which a terminal shows and a window has nowhere to put: the window just closed,
+    /// and no file on the machine said why.
+    /// </para>
+    /// </summary>
+    public IDisposable Forward(SharpConsoleUI.Logging.ILogService framework)
+    {
+        var logger = For("SharpConsoleUI");
+        void OnEntry(object? sender, SharpConsoleUI.Logging.LogEntry entry)
+        {
+            var level = entry.Level switch
+            {
+                SharpConsoleUI.Logging.LogLevel.Critical => LogLevel.Critical,
+                SharpConsoleUI.Logging.LogLevel.Error => LogLevel.Error,
+                SharpConsoleUI.Logging.LogLevel.Warning => LogLevel.Warning,
+                _ => LogLevel.None,
+            };
+            if (level != LogLevel.None)
+            {
+                logger.Log(level, entry.Exception, "{Message}", entry.Message);
+            }
+        }
+
+        framework.LogAdded += OnEntry;
+        return new Subscription(() => framework.LogAdded -= OnEntry);
+    }
+
+    /// <summary>
+    /// Records what would otherwise end the process without a word, for as long as the result is held: an exception
+    /// no thread caught (<see cref="AppDomain.UnhandledException"/>, which also sees one escaping the window's own
+    /// UI thread) and a faulted task nobody awaited (<see cref="TaskScheduler.UnobservedTaskException"/>, which does
+    /// not end the process and is logged as an error). Neither is handled here: the process ends as it would have,
+    /// with the stack in the file first. The file sink is unbuffered, so the line is on disk when the handler returns.
+    /// </summary>
+    public IDisposable RecordUnhandled()
+    {
+        var logger = For("SharpMUTerm.Crash");
+        void OnUnhandled(object? sender, UnhandledExceptionEventArgs e)
+        {
+            logger.LogCritical(
+                e.ExceptionObject as Exception,
+                "Unhandled exception on thread {Thread} (terminating: {Terminating})",
+                Thread.CurrentThread.Name ?? Environment.CurrentManagedThreadId.ToString(),
+                e.IsTerminating);
+        }
+
+        void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e) =>
+            logger.LogError(e.Exception, "A task failed and nothing awaited it");
+
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandled;
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
+        return new Subscription(() =>
+        {
+            AppDomain.CurrentDomain.UnhandledException -= OnUnhandled;
+            TaskScheduler.UnobservedTaskException -= OnUnobserved;
+        });
+    }
+
     public void Dispose()
     {
         _factory.Dispose();
         _serilog.Dispose();
+    }
+
+    private sealed class Subscription(Action undo) : IDisposable
+    {
+        private Action? _undo = undo;
+
+        public void Dispose() => Interlocked.Exchange(ref _undo, null)?.Invoke();
     }
 
     private static LogEventLevel ToSerilog(LogLevel level) => level switch

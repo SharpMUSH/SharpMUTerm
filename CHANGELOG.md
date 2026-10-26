@@ -7,6 +7,17 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Added
+
+- A crash now leaves its stack in `logs/client-diagnostics-*.log`, in the window and the terminal alike,
+  along with errors the UI framework used to swallow without a trace.
+
+### Changed
+
+- An MXP picture is downloaded and decoded once per session. A room picture shown on every look used
+  to be fetched again whenever the pane's width had changed, and once per look that arrived while it was
+  still loading.
+
 ## [0.1.5] - 2026-10-25
 
 ### Added
