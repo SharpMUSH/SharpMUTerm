@@ -43,6 +43,9 @@ public sealed record CharacterRef(
 /// Null where the client cannot play sound, so no mute is offered; otherwise whether sound is playing
 /// (offer <c>Mute sound</c>) or muted (offer <c>Unmute sound</c>).
 /// </param>
+/// <param name="Announced">
+/// Null where the host has no screen reader to tell; otherwise whether the active window's output is read aloud.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -53,7 +56,8 @@ public sealed record CommandContext(
     string NewlineChord = "Alt+⏎",
     bool ScriptsOn = false,
     bool Walking = false,
-    bool? Sound = null);
+    bool? Sound = null,
+    bool? Announced = null);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -215,6 +219,14 @@ public static class CommandCatalog
         {
             items.Add(new CommandItem(
                 CommandGroup.World, "Reload scripts", "world:reload-scripts", "re-reads this character's Lua files"));
+        }
+
+        // Only where the host has a screen reader to tell: the window's live region, or --plain.
+        if (context.Announced is { } announced)
+        {
+            items.Add(announced
+                ? new CommandItem(CommandGroup.Terminal, "Stop reading this window aloud", "a11y:toggle-window")
+                : new CommandItem(CommandGroup.Terminal, "Read this window aloud", "a11y:toggle-window"));
         }
 
         // TERMINAL — stateful labels.

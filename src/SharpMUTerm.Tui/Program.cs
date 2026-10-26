@@ -98,6 +98,17 @@ internal static class Program
             Environment.Exit(0);
         }
 
+        if (args.Contains(PlainHost.Flag))
+        {
+            // The input pump keeps the real stdin; the framework is handed an empty one, or it would read the
+            // same lines behind a modal of its own.
+            var stdin = Console.In;
+            var stdout = Console.Out;
+            Console.SetIn(TextReader.Null);
+            var plain = PlainHost.Create(capabilities, stdout);
+            return RunLive(args, config, loadNotices, plain, app => PlainHost.PumpInput(stdin, (HeadlessConsoleDriver)plain.Driver, app));
+        }
+
         return RunLive(args, config, loadNotices, ClientHost.Terminal(capabilities));
     }
 
@@ -111,7 +122,8 @@ internal static class Program
         string[] args,
         AppConfiguration config,
         IReadOnlyList<string> loadNotices,
-        ClientHost host)
+        ClientHost host,
+        Action<SharpMUTermApp>? ready = null)
     {
         // What this launch connects: the command line's host if one was typed, else whatever is marked
         // `at start` on F5, else nothing at all. The precedence lives in Core (StartupConnections) so it
@@ -198,6 +210,7 @@ internal static class Program
             media: new MediaCache(MediaCache.DefaultRoot),
             packages: new PackageStore(PackageStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Packages") },
             scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"));
+        ready?.Invoke(liveApp);
         int exitCode;
         try
         {

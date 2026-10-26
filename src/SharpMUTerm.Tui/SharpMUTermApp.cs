@@ -4518,6 +4518,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(windowId, line, stamp);
         RecordForRestore(session, windowId, WindowTitle(windowId), line, stamp);
+        AnnounceLine(windowId, line.Text);
 
         if (!_workspace.IsCaughtUp(windowId))
         {
@@ -4577,6 +4578,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(window.Id, line, stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
+        AnnounceLine(window.Id, line.Text);
 
         // A first-seen destination adds a tab to its pane, so rebuild; otherwise just refresh badges.
         if (existed)
@@ -7687,7 +7689,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             NewlineChord: Host.Keys.Newline.Glyph,
             ScriptsOn: _scriptsRoot is not null,
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
-            Sound: CanPlaySound ? !_muted : null);
+            Sound: CanPlaySound ? !_muted : null,
+            Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()));
         return CommandCatalog.Build(
             _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
@@ -7952,6 +7955,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (DispatchGroupCommand(id))
         {
+            return true;
+        }
+
+        if (id == "a11y:toggle-window")
+        {
+            ToggleAnnounced();
             return true;
         }
 
@@ -12100,6 +12109,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             AdoptSessionOf(id);
             SelectTabFor(id);
             SyncToFocusedPane();
+            AnnounceFocus(id);
         }
         finally
         {
@@ -12712,6 +12722,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             "{Notice:l}", // :l renders the string literally; the default quotes it, and a quoted sentence reads as data
             key is null ? text : $"{key} {text}");
 
+        AnnounceNotice(text);
         var body = severity == MessageSeverity.Error
             ? $"[{ScreenPalette.Warn}]{Escape(text)}[/]"
             : $"[dim]{Escape(text)}[/]";

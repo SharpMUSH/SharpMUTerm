@@ -1911,6 +1911,18 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **Screen readers get an announcer, never the compositor** (`IAnnouncer`, Core; `ClientHost.Announcer`;
+  `SharpMUTermApp.Announce.cs`). The app announces each line at `OnLine`/`OnSpawnLine` as plain `StyledLine.Text`,
+  every `Notice`, and the window `Activate` brings forward. A window can be kept quiet from ⌃P (`a11y:toggle-window`,
+  in memory, offered only when the host has an announcer). The terminal host has none, because a cursor-addressed
+  screen reads as noise. **`--plain`** (`PlainHost`, in `Hosting/`) is the terminal's answer: the same app on a
+  `HeadlessConsoleDriver` with the loop running (`RunsInline = false`). `PlainAnnouncer` writes to stdout, and
+  `PumpInput` reads the real stdin a line at a time into `SimulateKeyPress` plus ⏎, then sends ⌃Q, Y at EOF. The
+  framework is handed `TextReader.Null`, and the pump is started from the loop (`RunLive`'s `ready`), because a
+  key raised before `Run()` has no listener and is lost. The window (`WindowAnnouncer`) uses two hidden live
+  regions: output is polite and notices are assertive, posted to Avalonia's thread. This was built against the
+  API and has not been tried with NVDA or Orca. Not done: no speech engine of our own, and no per-line
+  automation peer on `TerminalView`.
 - **Discord presence is a host member and a per-world opt-in** (`ClientHost.Presence`, a lazy
   `Func<IPresence?>?`; `GamePresence`/`DiscordIpc`, Core; F5 ▸ `discord`, off by default). The world asks for
   `External.Discord 1`. `WorldSession.GamePresence` folds `Info` (application id: digits only) and `Status`

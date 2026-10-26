@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -52,7 +53,16 @@ internal sealed class MainWindow : Window
         // border stays, and the header's blank cells move the window (WindowChrome). --title-bar brings it back.
         WindowDecorations = options.TitleBar ? WindowDecorations.Full : WindowDecorations.BorderOnly;
         Background = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
-        Content = _view;
+        // The view fills the window; the screen-reader regions sit under it, unseen.
+        var root = new Panel();
+        foreach (var region in _driver.Announcer.Regions())
+        {
+            root.Children.Add(region);
+        }
+
+        root.Children.Add(_view);
+        Content = root;
+        AutomationProperties.SetName(_view, "SharpMUTerm");
         var size = _view.SizeFor(options.Columns, options.Rows);
         Width = size.Width;
         Height = size.Height;

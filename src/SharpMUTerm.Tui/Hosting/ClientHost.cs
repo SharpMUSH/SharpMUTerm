@@ -1,5 +1,6 @@
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Audio;
+using SharpMUTerm.Core.Accessibility;
 using SharpMUTerm.Core.Media;
 using SharpMUTerm.Core.Presence;
 using SharpMUTerm.Graphics;
@@ -76,6 +77,13 @@ internal sealed record ClientHost
     public required Func<IPresence?>? Presence { get; init; }
 
     /// <summary>
+    /// Where output lines, the client's messages and window changes go for a screen reader: the window's live
+    /// region, or <c>--plain</c>'s stdout. Null in a terminal, whose screen a reader cannot follow, and in the
+    /// snapshot and the tests.
+    /// </summary>
+    public required IAnnouncer? Announcer { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -110,6 +118,7 @@ internal sealed record ClientHost
         SixelCell = SharpMUTermApp.SixelCellSize(Environment.GetEnvironmentVariable(SharpMUTermApp.SixelCellVariable)),
         Audio = () => DesktopAudio.TryCreate(),
         Presence = () => new DiscordIpc(),
+        Announcer = null,
     };
 
     /// <summary>
@@ -130,6 +139,7 @@ internal sealed record ClientHost
         SixelCell = SharpMUTermApp.SixelCellSize(null),
         Audio = null,
         Presence = null,
+        Announcer = null,
     };
 
     /// <summary>
