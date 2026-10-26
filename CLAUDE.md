@@ -1911,6 +1911,13 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **A MUSH's edit grab goes on the command line and is never sent** (`WorldDefinition.GrabPrefix`, F5 ▸
+  `edit grab`, null by default; `WorldSession.TryGrab`; `SharpMUTermApp.Grab.cs`). Another player can page a
+  line that starts with the prefix, so the player always sees the text and presses ⏎. Matched exactly and at
+  the start, before the triggers, so a rule can neither see nor send it. It lands on the bar of the window it
+  came from — at once when that window is in front, otherwise when it is next brought forward
+  (`_pendingGrabs`), never on another character's bar. A line being typed goes into history first. It is
+  always the command line and never the composer: a grab is one line, and the bar scrolls past its cap.
 - **What a server defines over MXP is held per connection and bounded** (`MxpParser.Definitions.cs`).
   `<!ELEMENT>`, `<!ENTITY>`, `<VAR>`, `<GAUGE>`/`<STAT>`, `<SOUND>`/`<MUSIC>`, `<FRAME>` and `<DEST>` are all
   secure tags, so a player can neither define nor send one. Decisions not to relitigate:
