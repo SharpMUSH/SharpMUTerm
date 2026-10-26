@@ -57,6 +57,8 @@ internal sealed class TerminalPointer(IConsoleDriver driver) : IPointerPresenter
     {
     }
 
+    public bool DrawsMenus => false;
+
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
     }

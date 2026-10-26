@@ -77,6 +77,12 @@ public sealed class MxpParser : ILineParser
         public bool PromptOnly { get; init; }
         public int SpanStart { get; init; }
 
+        /// <summary>A <c>&lt;SEND&gt;</c>'s commands as written, when one holds <c>&amp;text;</c> to fill in at the close.</summary>
+        public IReadOnlyList<string>? Templates { get; init; }
+
+        /// <summary>The menu labels a <c>&lt;SEND&gt;</c>'s hint gave its commands, if it gave any.</summary>
+        public IReadOnlyList<string>? Labels { get; init; }
+
         /// <summary>
         /// True when the element was opened while the line was in <see cref="MxpLineMode.Open"/> —
         /// i.e. it is one of the spec's "tags that were used while in open mode", the only ones it
@@ -1006,6 +1012,15 @@ public sealed class MxpParser : ILineParser
         }
     }
 
+    /// <summary>The most commands one <c>&lt;SEND&gt;</c> menu keeps.</summary>
+    public const int MaxSendChoices = 20;
+
+    /// <summary>
+    /// <c>&lt;SEND [HREF=]"cmd|cmd…" [HINT=]"…" [PROMPT]&gt;</c>. Several <c>|</c>-separated commands make a
+    /// menu: a click sends the first, and the client offers the rest. A hint with one part more than there
+    /// are commands is the tooltip followed by a label for each; with as many parts, it is the labels alone.
+    /// <c>&amp;text;</c> in a command is the element's own text, filled in when the element closes.
+    /// </summary>
     private void OpenSend(string attrs)
     {
         var parsed = ParseAttributes(attrs);
@@ -1013,20 +1028,48 @@ public sealed class MxpParser : ILineParser
         var hint = GetAttr(parsed, "HINT") ?? Positional(parsed, 1);
         var prompt = HasFlag(parsed, "PROMPT");
 
-        if (href is not null)
-        {
-            // HREF may hold several '|'-separated commands; the first is the primary command.
-            var primary = href.Split('|', 2)[0];
-            PushFrame("SEND", isInteraction: true, isLink: false, deferCommand: false, hint: hint, promptOnly: prompt);
-            _interaction = SpanInteraction.Command(primary, hint, prompt);
-        }
-        else
+        if (href is null)
         {
             // No HREF: the enclosed text is itself the command (resolved when the tag closes).
             PushFrame("SEND", isInteraction: true, isLink: false, deferCommand: true, hint: hint, promptOnly: prompt);
             _interaction = SpanInteraction.Command(string.Empty, hint, prompt);
+            return;
         }
+
+        var commands = href.Split('|').Take(MaxSendChoices).ToArray();
+        string[]? labels = null;
+        if (commands.Length > 1 && hint is not null)
+        {
+            var parts = hint.Split('|');
+            if (parts.Length > commands.Length)
+            {
+                hint = parts[0];
+                labels = parts[1..(commands.Length + 1)];
+            }
+            else if (parts.Length == commands.Length)
+            {
+                hint = null;
+                labels = parts;
+            }
+        }
+
+        var templated = commands.Any(c => c.Contains(TextEntity, StringComparison.OrdinalIgnoreCase));
+        PushFrame(
+            "SEND", isInteraction: true, isLink: false, deferCommand: templated, hint: hint, promptOnly: prompt,
+            templates: templated ? commands : null, labels: labels);
+        _interaction = SendInteraction(commands, labels, hint, prompt);
     }
+
+    /// <summary>The placeholder a <c>&lt;SEND&gt;</c> command uses for the element's own text.</summary>
+    private const string TextEntity = "&text;";
+
+    private static SpanInteraction SendInteraction(IReadOnlyList<string> commands, IReadOnlyList<string>? labels, string? hint, bool prompt) =>
+        SpanInteraction.Command(commands[0], hint, prompt) with
+        {
+            Choices = commands.Count < 2
+                ? null
+                : commands.Select((c, i) => new SendChoice(labels is not null && labels[i].Length > 0 ? labels[i] : c, c)).ToArray(),
+        };
 
     private void OpenLink(string attrs)
     {
@@ -1046,7 +1089,15 @@ public sealed class MxpParser : ILineParser
         }
     }
 
-    private void PushFrame(string name, bool isInteraction, bool isLink, bool deferCommand, string? hint, bool promptOnly)
+    private void PushFrame(
+        string name,
+        bool isInteraction,
+        bool isLink,
+        bool deferCommand,
+        string? hint,
+        bool promptOnly,
+        IReadOnlyList<string>? templates = null,
+        IReadOnlyList<string>? labels = null)
     {
         FlushRun();
         _stack.Add(new Frame
@@ -1061,6 +1112,8 @@ public sealed class MxpParser : ILineParser
             PromptOnly = promptOnly,
             SpanStart = _lineSpans.Count,
             OpenedInOpenMode = _lineMode == MxpLineMode.Open,
+            Templates = templates,
+            Labels = labels,
         });
     }
 
@@ -1139,7 +1192,13 @@ public sealed class MxpParser : ILineParser
         var target = sb.ToString();
         var interaction = frame.IsLink
             ? SpanInteraction.Link(target, frame.Hint)
-            : SpanInteraction.Command(target, frame.Hint, frame.PromptOnly);
+            : frame.Templates is { } templates
+                ? SendInteraction(
+                    templates.Select(t => t.Replace(TextEntity, target, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                    frame.Labels,
+                    frame.Hint,
+                    frame.PromptOnly)
+                : SpanInteraction.Command(target, frame.Hint, frame.PromptOnly);
 
         for (var i = frame.SpanStart; i < _lineSpans.Count; i++)
         {
@@ -1190,6 +1249,9 @@ public sealed class MxpParser : ILineParser
                     Hint = frame.Hint,
                     PromptOnly = frame.PromptOnly,
                     SpanStart = 0,
+                    OpenedInOpenMode = frame.OpenedInOpenMode,
+                    Templates = frame.Templates,
+                    Labels = frame.Labels,
                 };
             }
         }

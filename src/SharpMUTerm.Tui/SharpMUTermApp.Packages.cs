@@ -17,7 +17,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>Installed packages; memory-only unless <c>Program</c> hands it a folder.</summary>
     private readonly PackageStore _packages;
 
-    private readonly PackagesOverlay _packageView;
+    private readonly ListOverlay _packageView;
 
     /// <summary>The media folders this app added to the sound cache, so a change can take them back out.</summary>
     private readonly List<string> _packageMedia = new();
@@ -28,7 +28,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>How an https package is downloaded; a test supplies one, the client uses <see cref="DownloadPackageAsync"/>.</summary>
     internal Func<Uri, CancellationToken, Task<byte[]?>>? PackageFetch { get; set; }
 
-    internal PackagesOverlay PackageView => _packageView;
+    internal ListOverlay PackageView => _packageView;
 
     internal PackageStore Packages => _packages;
 

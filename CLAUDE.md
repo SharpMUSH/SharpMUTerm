@@ -171,7 +171,7 @@ fallbacks) for inline images/maps.
     the server's `WILL MSP` is refused, and `MspChanged` is never raised. The bump registers the plugin only
     when `PlaysMedia` is true and raises the event from its two callbacks.
 - **Packages** (`Core/Packages`: `PackageManifest`, `PackageArchive`, `PackageStore`; Tui `PackageScreen`,
-  `PackagesOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
+  `ListOverlay`, `SharpMUTermApp.Packages.cs`). A `.zip` with `package.json` (id, name, SemVer version,
   `games` as `host[:port]`, `*.host` or `*`), `sets/*.json`, `scripts/**.lua`, `media/**`; anything else is
   listed as left out and never extracted. **The archive is server text meeting the disk**, so `Read` refuses
   traversal, absolute and backslashed names by never reading them, and counts sizes while decompressing

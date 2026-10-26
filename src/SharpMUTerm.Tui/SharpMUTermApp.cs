@@ -880,7 +880,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _gameData = new GameDataOverlay(_system, _time);
         _settings = new SettingsOverlay(_system);
         _composer = new ComposeOverlay(_system);
-        _packageView = new PackagesOverlay(_system);
+        _packageView = new ListOverlay(_system);
+        _sendMenu = new ListOverlay(_system);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -1171,6 +1172,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             AwaitSnapshotPictures();
+        }
+
+        // An MXP <SEND> menu, through the real parser and pane path, and then the real right-click on it:
+        // a snapshot host draws no menus, as a terminal does not, so the client's own chooser opens.
+        if (string.Equals(view, "send-menu", StringComparison.OrdinalIgnoreCase))
+        {
+            var mxp = new MxpParser();
+            foreach (var text in new[]
+            {
+                "A merchant lays out her wares on a striped cloth.",
+                "\x1b[1zOn the cloth: <SEND \"buy &text;|look &text;|haggle over &text;\" hint=\"The lantern|Buy it|Look at it|Haggle\">a brass lantern</SEND>.",
+            })
+            {
+                mxp.Feed(text);
+                if (mxp.Flush() is { } line)
+                {
+                    AppendSessionLine(MainWindowId, line, StampNow());
+                }
+            }
+
+            SettleScroll();
+            if (MenuLinkCell(MainWindowId) is { } cell)
+            {
+                OnPointerFrame([SharpConsoleUI.Drivers.MouseFlags.Button3Pressed], cell);
+            }
         }
 
         // A figure inside a box, as a server that lays pictures out sends it over MXP: the tag sized in
@@ -4947,7 +4973,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -5062,6 +5088,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _messageLog.IsOpen ? "the client messages"
         : _gameData.IsOpen ? "the game data"
         : _packageView.IsOpen ? "the packages"
+        : _sendMenu.IsOpen ? "the menu"
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
