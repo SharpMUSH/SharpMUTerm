@@ -158,6 +158,13 @@ public sealed class WorldDefinition
     /// </summary>
     public bool GmcpLogin { get; set; }
 
+    /// <summary>
+    /// Whether this world may show what you are doing on your Discord profile, through GMCP's
+    /// <c>External.Discord</c>. Off by default. On, the world is asked for <c>External.Discord 1</c> and what it
+    /// sends goes to the Discord app on this computer while one of its characters' windows is in front.
+    /// </summary>
+    public bool DiscordPresence { get; set; }
+
     /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
     public MapSettings Map { get; set; } = new();
 
@@ -211,6 +218,7 @@ public sealed class WorldDefinition
         DownloadMedia = DownloadMedia,
         GrabPrefix = GrabPrefix,
         GmcpLogin = GmcpLogin,
+        DiscordPresence = DiscordPresence,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

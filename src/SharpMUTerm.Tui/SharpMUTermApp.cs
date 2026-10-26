@@ -5337,6 +5337,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         SyncInputBars();
         RecallDrafts(ActiveWindowId());
+        UpdatePresence();
     }
 
     /// <summary>
@@ -8216,6 +8217,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void OnSessionAdded(object? sender, WorldSession session)
     {
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
+        WatchPresence(session);
         StartMapping(session);
         StartSound(session);
         if (_scriptsRoot is null || _scripts.ContainsKey(session))
@@ -13180,6 +13182,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _recorders.Clear();
         DisposeSound();
+        DisposePresence();
         await _sessions.DisposeAsync().ConfigureAwait(false);
         _frameworkLog.Dispose();
         if (_ownsDiagnostics)

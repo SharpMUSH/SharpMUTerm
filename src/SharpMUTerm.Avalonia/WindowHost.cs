@@ -49,5 +49,8 @@ internal static class WindowHost
 
         // The same desktop device as the terminal: both are desktop processes on the same machine.
         Audio = () => SharpMUTerm.Audio.DesktopAudio.TryCreate(),
+
+        // Discord's IPC is a local socket either host can reach.
+        Presence = () => new SharpMUTerm.Core.Presence.DiscordIpc(),
     };
 }
