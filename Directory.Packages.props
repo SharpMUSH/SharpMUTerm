@@ -10,7 +10,7 @@
     <PackageVersion Include="SharpConsoleUI" Version="2.7.8" />
 
     <!-- Telnet negotiation: TELOPT/NAWS/MTTS/EOR/CHARSET/MSSP/GMCP/MSDP/MCCP/MXP negotiation. -->
-    <PackageVersion Include="TelnetNegotiationCore" Version="2.12.0" />
+    <PackageVersion Include="TelnetNegotiationCore" Version="4.5.2" />
 
     <!-- The version, from the git tag (see Directory.Build.props). Build-time only. -->
     <PackageVersion Include="MinVer" Version="8.0.0" />
@@ -33,7 +33,7 @@
     <PackageVersion Include="AngleSharp" Version="1.7.1" />
 
     <!-- Logging abstractions (TelnetNegotiationCore takes an ILogger). -->
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
 
     <!--
       Client diagnostics: Serilog behind Microsoft.Extensions.Logging. Only the Tui's composition root
