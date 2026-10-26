@@ -411,12 +411,22 @@ public sealed class ScriptHost : IDisposable
         };
         globals["timer"] = timer;
 
-        // gmcp.*
+        // gmcp.* — `on` hears a package arrive, `get` reads what the session holds, `send` writes one.
         var gmcp = new Table(script)
         {
             ["on"] = (Action<string, DynValue>)OnGmcp,
+            ["get"] = (Func<string, DynValue>)(path => LuaJson.ToLua(script, _world.GameData(path ?? string.Empty))),
+            ["send"] = (Action<string, DynValue>)SendGmcp,
         };
         globals["gmcp"] = gmcp;
+
+        // msdp.* — read only: what to REPORT is the status row's to ask for, at the moment MSDP is agreed.
+        var msdp = new Table(script)
+        {
+            ["get"] = (Func<string, DynValue>)(name =>
+                LuaJson.ToLua(script, _world.GameData("MSDP." + (name ?? string.Empty)))),
+        };
+        globals["msdp"] = msdp;
 
         // log.*
         var log = new Table(script)
@@ -444,6 +454,24 @@ public sealed class ScriptHost : IDisposable
             _world.Print(sb.ToString());
             return DynValue.Nil;
         });
+    }
+
+    /// <summary>
+    /// <c>gmcp.send(package, value)</c>. A string is sent as it is — raw JSON, Mudlet's <c>sendGMCP</c>
+    /// convention — and anything else is serialised, so <c>gmcp.send("Char.Skills.Get", {group = "combat"})</c>
+    /// works without a JSON library in the sandbox.
+    /// </summary>
+    private void SendGmcp(string package, DynValue value)
+    {
+        if (string.IsNullOrWhiteSpace(package))
+        {
+            throw new ScriptRuntimeException("gmcp.send: a package name is required.");
+        }
+
+        var body = value.Type == DataType.String
+            ? value.String
+            : LuaJson.FromLua(value)?.ToJsonString() ?? string.Empty;
+        _world.SendGmcp(package.Trim(), body);
     }
 
     private void AddTrigger(string pattern, DynValue fn)

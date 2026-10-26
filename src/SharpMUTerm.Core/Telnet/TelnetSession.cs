@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SharpMUTerm.Core.Telnet.Mssp;
 using SharpMUTerm.Core.Transport;
 using TelnetNegotiationCore.Builders;
+using TelnetNegotiationCore.Gmcp;
 using TelnetNegotiationCore.Interpreters;
 using TelnetNegotiationCore.Models;
 using TelnetNegotiationCore.Protocols;
@@ -96,6 +97,19 @@ public sealed class TelnetSessionOptions
     /// </para>
     /// </summary>
     public TimeSpan? KeepaliveInterval { get; init; }
+
+    /// <summary>
+    /// Whether to send <c>Core.Hello</c> and <c>Core.Supports.Set</c> once the server's GMCP is agreed
+    /// (<see cref="GmcpHandshake"/>). On by default: it is what makes a server that waits to be told which
+    /// modules a client wants send anything at all.
+    /// </summary>
+    public bool IntroduceOverGmcp { get; init; } = true;
+
+    /// <summary>
+    /// Modules asked for beyond <see cref="GmcpHandshake.DefaultModules"/>, each <c>Name Version</c> — a
+    /// world's <see cref="SharpMUTerm.Core.Configuration.WorldDefinition.GmcpModules"/>.
+    /// </summary>
+    public IReadOnlyList<string> GmcpModules { get; init; } = [];
 
     /// <summary>
     /// Turns a world's configured keepalive seconds into an interval the telnet library will accept,
@@ -357,6 +371,7 @@ public sealed class TelnetSession : ITelnetSession
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
     public event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
     public event EventHandler? MxpEnabled;
+    public event EventHandler? MsdpEnabled;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -368,6 +383,7 @@ public sealed class TelnetSession : ITelnetSession
         // Transport must be open before building: the interpreter emits initial negotiation
         // (e.g. WILL NAWS) during BuildAsync, which is written straight to the transport.
         await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
+        _msdpAgreed = false;
 
         try
         {
@@ -407,7 +423,7 @@ public sealed class TelnetSession : ITelnetSession
             // Explicit defaults let NAWS observe negotiation completion, so an early pane report
             // is retained and sent on DO NAWS rather than silently discarded by the base plugin.
             .AddPlugin(new WindowSizeProtocol().OnNAWS(static (_, _) => ValueTask.CompletedTask))
-            .AddPlugin<GMCPProtocol>().OnGMCPMessage(OnGmcpAsync)
+            .AddPlugin<GMCPProtocol>().OnGMCPMessage(OnGmcpAsync).OnGMCPNegotiated(OnGmcpNegotiatedAsync)
             .AddPlugin<MSDPProtocol>().OnMSDPMessage(OnMsdpAsync)
             .AddPlugin<MSSPProtocol>().OnMSSP(OnMsspAsync).WithMSSPConfig(static () => new MSSPConfig())
             .AddPlugin<TerminalTypeProtocol>()
@@ -532,8 +548,58 @@ public sealed class TelnetSession : ITelnetSession
         EncodingChanged?.Invoke(this, new SessionEncodingEventArgs(current));
     }
 
-    private ValueTask WriteToTransportAsync(ReadOnlyMemory<byte> data) =>
-        _transport.SendAsync(data);
+    /// <summary>
+    /// The library's negotiation output, written as-is. It is also where this session learns MSDP was
+    /// agreed: MSDP has no negotiated callback, and the library's <c>IAC DO MSDP</c> answer to a server's
+    /// <c>WILL</c> is the moment it is. Only negotiation passes through here, never data, so the three bytes
+    /// cannot be a literal in someone's text.
+    /// </summary>
+    private ValueTask WriteToTransportAsync(ReadOnlyMemory<byte> data)
+    {
+        if (!_msdpAgreed && Contains(data.Span, [Iac, DoCommand, MsdpOption]))
+        {
+            _msdpAgreed = true;
+            _logger.LogInformation("MSDP negotiated.");
+            var transportWrite = _transport.SendAsync(data);
+            MsdpEnabled?.Invoke(this, EventArgs.Empty);
+            return transportWrite;
+        }
+
+        return _transport.SendAsync(data);
+    }
+
+    private const byte Iac = 255;
+    private const byte DoCommand = 253;
+    private const byte MsdpOption = 69;
+
+    /// <summary>Whether this connection has agreed MSDP; reset on every connect.</summary>
+    private volatile bool _msdpAgreed;
+
+    private static bool Contains(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle) =>
+        haystack.IndexOf(needle) >= 0;
+
+    /// <summary>
+    /// Introduces the client once GMCP is agreed — Mudlet's order, <c>Core.Hello</c> first. A failure here
+    /// is logged and swallowed: a server that drops the handshake still has a working connection.
+    /// </summary>
+    private async ValueTask OnGmcpNegotiatedAsync(bool agreed)
+    {
+        if (!agreed || !_options.IntroduceOverGmcp || _interpreter is not { } interpreter)
+        {
+            return;
+        }
+
+        try
+        {
+            var gmcp = new GmcpClientSession((package, data) => interpreter.SendGMCPCommand(package, data));
+            await gmcp.HelloAsync(GmcpHandshake.ClientName, GmcpHandshake.ClientVersion).ConfigureAwait(false);
+            await gmcp.SetSupportsAsync(GmcpHandshake.Modules(_options.GmcpModules)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            _logger.LogWarning(ex, "Could not send the GMCP handshake.");
+        }
+    }
 
     private ValueTask OnByteAsync(byte value, Encoding encoding)
     {
@@ -687,6 +753,13 @@ public sealed class TelnetSession : ITelnetSession
         cancellationToken.ThrowIfCancellationRequested();
         var interpreter = _interpreter ?? throw new InvalidOperationException("Session is not connected.");
         return interpreter.SendGMCPCommand(package, json ?? string.Empty);
+    }
+
+    public ValueTask SendMsdpAsync(string variable, string value, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var interpreter = _interpreter ?? throw new InvalidOperationException("Session is not connected.");
+        return interpreter.SendMSDPCommand(variable, value ?? string.Empty);
     }
 
     public ValueTask SetWindowSizeAsync(int width, int height)

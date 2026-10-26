@@ -39,6 +39,12 @@ public interface ITelnetSession : IAsyncDisposable
     /// </summary>
     event EventHandler? MxpEnabled;
 
+    /// <summary>
+    /// Raised once the client has agreed to the server's MSDP, so a consumer can ask it to <c>REPORT</c> the
+    /// variables it wants. MSDP servers commonly send nothing until asked.
+    /// </summary>
+    event EventHandler? MsdpEnabled;
+
     /// <summary>Connects the transport and begins negotiation and the receive loop.</summary>
     Task ConnectAsync(CancellationToken cancellationToken = default);
 
@@ -50,6 +56,9 @@ public interface ITelnetSession : IAsyncDisposable
 
     /// <summary>Sends a GMCP message.</summary>
     ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Sends one MSDP variable and value, e.g. <c>REPORT</c> <c>HEALTH</c>.</summary>
+    ValueTask SendMsdpAsync(string variable, string value, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reports the terminal window size via NAWS. Before the server enables NAWS, retains the latest

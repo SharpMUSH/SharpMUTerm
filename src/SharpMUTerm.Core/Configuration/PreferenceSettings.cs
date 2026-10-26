@@ -161,6 +161,13 @@ public sealed class TextSettings
     /// <summary>Ten minutes. Past this a boundary marker is not a marker, it is a pin.</summary>
     public const int MaxActivityBarSeconds = 600;
 
+    /// <summary>
+    /// The readings the status row shows from the session's GMCP and MSDP data (F7 ▸ STATUS ROW). A meter
+    /// whose value the server has not sent is not drawn, so the defaults cost nothing on a world without
+    /// either protocol.
+    /// </summary>
+    public List<StatusMeter> StatusMeters { get; set; } = StatusMeter.Defaults();
+
     // There is deliberately no "ambiguous width" here. It was a setting with nothing behind it: every
     // column measurement in this app is SharpConsoleUI's (Helpers/UnicodeWidth.cs), which asks the
     // Wcwidth tables and offers no East-Asian-ambiguous policy to set. Honouring it needs an upstream

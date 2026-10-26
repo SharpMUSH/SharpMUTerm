@@ -318,8 +318,26 @@ internal static class OptionsScreenRenderer
                     "activity bar holds for (seconds)",
                     () => settings.ActivityBarSeconds, v => settings.ActivityBarSeconds = v,
                     0, TextSettings.MaxActivityBarSeconds)),
+            new(string.Empty, null, null),
+            new("├ STATUS ROW", null, null),
+
+            // One line, `label=value/max; …`, each path allowed `|` alternatives. A list editor would be
+            // friendlier and is a screen of its own; this is the whole of the setting, typed where it is read,
+            // and a part that does not parse is dropped rather than refused so a half-typed meter costs nothing.
+            new("meters", MeterSummary(settings.StatusMeters), null, null, null,
+                ScreenField.Optional(
+                    "meters",
+                    () => settings.StatusMeters.Count == 0 ? null : StatusMeter.Format(settings.StatusMeters),
+                    v => settings.StatusMeters = StatusMeter.Parse(v))),
         });
     }
+
+    /// <summary>
+    /// What the meters row shows when it is not being edited: the labels, in order. The full line is long —
+    /// every alternative path of every meter — and a row clipped at the screen's edge says less than this.
+    /// </summary>
+    private static string MeterSummary(IReadOnlyList<StatusMeter> meters) =>
+        meters.Count == 0 ? "none" : string.Join(" · ", meters.Select(m => m.Label)) + "  (⏎ edits the paths)";
 
     /// <summary>
     /// The F8 "Input" screen, reflecting — and writing back to — the app's

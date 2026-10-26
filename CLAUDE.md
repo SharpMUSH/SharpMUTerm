@@ -106,6 +106,18 @@ fallbacks) for inline images/maps.
   - **A rebuild clears the engines' runtime rules first** (`ClearRuntime`), or a reload doubles every
     `trigger.add`. `SaveConfiguration` rebuilds only when a session's file list changed (`SyncFiles`),
     since a rebuild restarts script timers; ⌃P ▸ *Reload scripts* always rebuilds and re-reads.
+- **GMCP and MSDP data is held per session in `GameDataStore`, and three things read it**: the status row's
+  meters (`StatusMeter`, F7 ▸ `meters`), ⌃P ▸ *Show game data* (`GameDataOverlay`) and Lua (`gmcp.get`,
+  `msdp.get`). GMCP packages are stored by name with objects merged key by key, because IRE and Aardwolf send
+  partial `Char.Vitals` updates; MSDP variables are stored as `MSDP.NAME`, so one path syntax with `|`
+  alternatives reads both. Payloads over 64 KiB and packages past 512 are dropped at the door.
+  - **The client says `Core.Hello` and `Core.Supports.Set` only after the server agrees to GMCP**
+    (`OnGMCPNegotiated`, `GmcpHandshake`). Before that a GMCP frame would be the unsolicited-option bytes
+    the login rule above forbids. MSDP has no negotiated callback in the library, so `IAC DO MSDP` is
+    spotted on the write path and the `REPORT`s follow it.
+  - **A meter is drawn only once its value has arrived, and from then its fields are reserved** (value and
+    max five cells each, `StatusMeter.Fit` scales past that). A world with no game data costs the row
+    nothing; one with it never reflows the row as numbers change.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
