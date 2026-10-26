@@ -349,6 +349,12 @@ public sealed class WorldSession : IAsyncDisposable
 
     public event EventHandler<GmcpMessageEventArgs>? GmcpReceived;
 
+    /// <summary>
+    /// A sound or music command from the server — MCMP's <c>Client.Media.*</c> — raised on the read loop. The
+    /// client hands it to the connection's media queue; with no audio device nothing listens.
+    /// </summary>
+    public event EventHandler<Media.MediaCommand>? MediaReceived;
+
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
 
     /// <summary>
@@ -465,6 +471,11 @@ public sealed class WorldSession : IAsyncDisposable
             // Stored before the event, so a handler reading GameData sees the message that raised it.
             GameData.SetGmcp(e.Package, e.Json);
             GmcpReceived?.Invoke(this, e);
+            if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
+                && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
+            {
+                MediaReceived?.Invoke(this, media);
+            }
         };
         telnet.MsdpReceived += (_, e) =>
         {
