@@ -262,9 +262,23 @@ public sealed class WorldSession : IAsyncDisposable
         return true;
     }
 
-    private void OnMxpEnabled(object? sender, EventArgs e)
+    private void OnMxpEnabled(object? sender, EventArgs e) => UpgradeParser(ContentFormat.Mxp);
+
+    /// <summary>
+    /// Upgrades to the Pueblo parser when the server switches the connection to Pueblo — the same rule as
+    /// MXP's, above: only from the automatic default.
+    /// </summary>
+    private void OnPuebloEnabled(object? sender, EventArgs e) => UpgradeParser(ContentFormat.Pueblo);
+
+    /// <summary>
+    /// The one parser swap. Only from <see cref="ContentFormat.Ansi"/> and only off the plain ANSI parser, so
+    /// <b>the first markup a connection negotiates keeps it</b>: a server that offers both MXP and Pueblo is
+    /// not switched back and forth by the order its handshakes finish in. (The telnet layer also declines to
+    /// answer a Pueblo hello once MXP is on.)
+    /// </summary>
+    private void UpgradeParser(ContentFormat format)
     {
-        if (World.ContentFormat != ContentFormat.Ansi || _parser is MxpParser)
+        if (World.ContentFormat != ContentFormat.Ansi || _parser is not AnsiParser)
         {
             return;
         }
@@ -274,7 +288,7 @@ public sealed class WorldSession : IAsyncDisposable
             ProcessOutputLine(tail);
         }
 
-        _parser = NewParser(ContentFormat.Mxp);
+        _parser = NewParser(format);
     }
 
     /// <summary>
@@ -456,6 +470,7 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.EncodingChanged += OnEncodingChanged;
         telnet.Disconnected += OnDisconnected;
         telnet.MxpEnabled += OnMxpEnabled;
+        telnet.PuebloEnabled += OnPuebloEnabled;
 
         try
         {
@@ -980,6 +995,7 @@ public sealed class WorldSession : IAsyncDisposable
             options: new TelnetSessionOptions
             {
                 GmcpModules = World.GmcpModules.ToArray(),
+                AnnouncePueblo = World.ContentFormat is ContentFormat.Ansi or ContentFormat.Pueblo,
                 CharsetOrder = order,
                 EncodingOverride = encodingOverride,
                 KeepaliveInterval = TelnetSessionOptions.ResolveKeepalive(World.KeepaliveSeconds),

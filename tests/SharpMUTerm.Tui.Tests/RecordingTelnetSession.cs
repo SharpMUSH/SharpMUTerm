@@ -65,6 +65,7 @@ internal sealed class RecordingTelnetSession : ITelnetSession
 #pragma warning disable CS0067 // Required by the interface; these tests drive sizes and output, not these.
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
     public event EventHandler? MxpEnabled;
+    public event EventHandler? PuebloEnabled;
 #pragma warning restore CS0067
 
     public event EventHandler? MsdpEnabled;

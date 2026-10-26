@@ -22,26 +22,29 @@ namespace SharpMUTerm.Core.Protocols;
 /// deciding whether a world is Pueblo-enabled is a session concern handled elsewhere.
 ///
 /// <para>
-/// <b>ANSI/VT escape sequences are not decoded, and nothing else decodes them either.</b> An ESC
-/// (0x1b) byte is passed through untouched into the span text — so a Pueblo world's colour arrives on
-/// screen as a literal <c>&lt;ESC&gt;[0;33m</c>. This used to claim the escapes were "handled
-/// upstream"; there is no upstream. <c>WorldSession.CreateParser</c> hands a session <i>one</i> parser
-/// for its content format, never a chain, which is the same false premise
-/// <see cref="MxpParser"/> carried until it grew its own escape state machine (through
-/// <see cref="SharpMUTerm.Core.Text.SgrCodes"/>). Doing the same here is the fix; it is a known gap
-/// rather than a design, and the behaviour clause above is what actually happens today.
+/// <b>ANSI is decoded here, through <see cref="SgrCodes"/></b>, because a session has one parser and nothing
+/// chains another in front of it (<see cref="MxpParser"/>'s reason, in the same words). SGR changes the style;
+/// every other CSI, OSC, DCS/SOS/PM/APC string and two-byte escape is consumed. The escape state machine is a
+/// near-copy of <see cref="MxpParser"/>'s and <see cref="AnsiParser"/>'s, deliberately not shared — a fix to
+/// one belongs in all three, with its own test in each suite.
 /// </para>
 /// </summary>
 public sealed class PuebloParser : ILineParser
 {
     private const int MaxTagLength = 4096;
     private const int MaxEntityLength = 32;
+    private const int MaxSequenceLength = 128;
 
     private enum State
     {
         Ground,
         Tag,
         Entity,
+        Escape,
+        EscapeIntermediate,
+        Csi,
+        Osc,
+        OscEscape,
     }
 
     /// <summary>A saved rendition frame, pushed when an element opens and restored when it closes.</summary>
@@ -68,6 +71,7 @@ public sealed class PuebloParser : ILineParser
     private readonly List<StyledSpan> _lineSpans = new();
     private readonly StringBuilder _tag = new();
     private readonly StringBuilder _entity = new();
+    private readonly StringBuilder _seq = new();
     private readonly List<Frame> _stack = new();
 
     /// <summary>The rendition state that will apply to the next printed character.</summary>
@@ -102,6 +106,13 @@ public sealed class PuebloParser : ILineParser
     /// </summary>
     public StyledLine? Flush()
     {
+        // The telnet layer strips the terminator, so this is the line boundary in production, and an
+        // escape cannot span it — see Process.
+        if (IsEscapeState(_state))
+        {
+            EndSequence();
+        }
+
         FlushRun();
         CloseInteractionsAtBoundary();
         if (_lineSpans.Count == 0)
@@ -124,11 +135,19 @@ public sealed class PuebloParser : ILineParser
         _lineSpans.Clear();
         _tag.Clear();
         _entity.Clear();
+        _seq.Clear();
         _stack.Clear();
     }
 
     private void Process(char ch, ref List<StyledLine>? lines)
     {
+        // A newline ends the line whatever sequence is in flight, or an unterminated ESC ] that a player
+        // typed would swallow every following line. MxpParser and AnsiParser carry the same rule.
+        if (ch == '\n' && IsEscapeState(_state))
+        {
+            EndSequence();
+        }
+
         switch (_state)
         {
             case State.Ground:
@@ -142,7 +161,133 @@ public sealed class PuebloParser : ILineParser
             case State.Entity:
                 ProcessEntity(ch, ref lines);
                 break;
+
+            case State.Escape:
+                ProcessEscape(ch);
+                break;
+
+            case State.EscapeIntermediate:
+                // The single trailing byte of e.g. ESC ( B.
+                EndSequence();
+                break;
+
+            case State.Csi:
+                ProcessCsi(ch);
+                break;
+
+            case State.Osc:
+                ProcessOsc(ch);
+                break;
+
+            case State.OscEscape:
+                // ESC inside a string sequence; a following '\' is the ST terminator.
+                if (ch == '\\')
+                {
+                    EndSequence();
+                }
+                else
+                {
+                    _state = State.Osc;
+                }
+
+                break;
         }
+    }
+
+    private static bool IsEscapeState(State state) =>
+        state is State.Escape or State.EscapeIntermediate or State.Csi or State.Osc or State.OscEscape;
+
+    private void ProcessEscape(char ch)
+    {
+        switch (ch)
+        {
+            case '[':
+                _seq.Clear();
+                _state = State.Csi;
+                break;
+
+            case ']':
+            case 'P': // DCS
+            case 'X': // SOS
+            case '^': // PM
+            case '_': // APC
+                // String sequences, terminated by BEL or ST — consumed so the payload never shows.
+                _seq.Clear();
+                _state = State.Osc;
+                break;
+
+            case '(':
+            case ')':
+            case '*':
+            case '+':
+            case '#':
+            case '%':
+                _state = State.EscapeIntermediate;
+                break;
+
+            default:
+                // A two-byte escape (ESC c, ESC M, …), consumed.
+                EndSequence();
+                break;
+        }
+    }
+
+    private void ProcessCsi(char ch)
+    {
+        if (ch is >= '\x40' and <= '\x7e')
+        {
+            if (ch == 'm')
+            {
+                // Text so far keeps the style it was written in.
+                FlushRun();
+                _current = SgrCodes.Apply(_current, _seq.ToString());
+            }
+
+            // Every other final byte — cursor movement, erase — means nothing to a line-oriented view.
+            EndSequence();
+            return;
+        }
+
+        if (ch is >= '\x20' and <= '\x3f')
+        {
+            if (_seq.Length < MaxSequenceLength)
+            {
+                _seq.Append(ch);
+            }
+
+            return;
+        }
+
+        // A control character inside the sequence aborts it as malformed.
+        EndSequence();
+    }
+
+    private void ProcessOsc(char ch)
+    {
+        switch (ch)
+        {
+            case '\x07':
+                EndSequence();
+                break;
+
+            case '\x1b':
+                _state = State.OscEscape;
+                break;
+
+            default:
+                if (_seq.Length < MaxSequenceLength)
+                {
+                    _seq.Append(ch);
+                }
+
+                break;
+        }
+    }
+
+    private void EndSequence()
+    {
+        _seq.Clear();
+        _state = State.Ground;
     }
 
     private void ProcessGround(char ch, ref List<StyledLine>? lines)
@@ -165,6 +310,11 @@ public sealed class PuebloParser : ILineParser
 
             case '\r':
                 // Carriage returns are dropped; scrollback is line-based.
+                break;
+
+            case '\x1b':
+                _seq.Clear();
+                _state = State.Escape;
                 break;
 
             default:

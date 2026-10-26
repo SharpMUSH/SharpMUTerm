@@ -112,6 +112,17 @@ public sealed class TelnetSessionOptions
     public IReadOnlyList<string> GmcpModules { get; init; } = [];
 
     /// <summary>
+    /// Whether to answer a server's Pueblo hello (<c>This world is Pueblo 1.10 Enhanced.</c>) with
+    /// <c>PUEBLOCLIENT</c>. Pueblo has no telnet option: the answer is a line of text, so it is sent only to a
+    /// server that has announced Pueblo, and only when nothing else (MXP) already owns the markup. The world's
+    /// content format decides it — see <c>WorldSession</c>.
+    /// </summary>
+    public bool AnnouncePueblo { get; init; } = true;
+
+    /// <summary>The version this client announces as a Pueblo client; PennMUSH reads only the word.</summary>
+    public const string PuebloVersion = "2.50";
+
+    /// <summary>
     /// Turns a world's configured keepalive seconds into an interval the telnet library will accept,
     /// or null when there should be none.
     /// <para>
@@ -372,6 +383,7 @@ public sealed class TelnetSession : ITelnetSession
     public event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
     public event EventHandler? MxpEnabled;
     public event EventHandler? MsdpEnabled;
+    public event EventHandler? PuebloEnabled;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -384,6 +396,7 @@ public sealed class TelnetSession : ITelnetSession
         // (e.g. WILL NAWS) during BuildAsync, which is written straight to the transport.
         await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
         _msdpAgreed = false;
+        _mxpOn = false;
 
         try
         {
@@ -432,6 +445,7 @@ public sealed class TelnetSession : ITelnetSession
             .AddPlugin<SuppressGoAheadProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<PacketPatchProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<MXPProtocol>().OnMXPEnabled(OnMxpEnabledAsync)
+            .AddPlugin<PuebloProtocol>().OnPuebloOffered(OnPuebloOfferedAsync).OnPuebloEnabled(OnPuebloEnabledAsync)
             .AddPlugin<MCCPProtocol>().OnCompressionEnabled(OnCompressionAsync);
 
         // An idle keepalive, when the world asks for one: IAC NOP after the configured silence, so a
@@ -674,8 +688,44 @@ public sealed class TelnetSession : ITelnetSession
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// The server's Pueblo hello: answered with <c>PUEBLOCLIENT</c> unless the world says otherwise or MXP is
+    /// already in use. The hello is consumed by the library, so its bytes are dropped from the pending line
+    /// here — they were never going to be submitted, and a prompt boundary would otherwise flush them.
+    /// </summary>
+    private async ValueTask OnPuebloOfferedAsync()
+    {
+        _pending.Clear();
+        if (!_options.AnnouncePueblo || _mxpOn || _interpreter?.PluginManager?.GetPlugin<PuebloProtocol>() is not { } pueblo)
+        {
+            _logger.LogInformation("The server offered Pueblo; not announcing (content format or MXP).");
+            return;
+        }
+
+        try
+        {
+            await pueblo.AnnounceAsync(TelnetSessionOptions.PuebloVersion).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            _logger.LogWarning(ex, "Could not answer the server's Pueblo hello.");
+        }
+    }
+
+    /// <summary>The server's Pueblo start sequence, consumed by the library like the hello.</summary>
+    private ValueTask OnPuebloEnabledAsync(PuebloClient client)
+    {
+        _pending.Clear();
+        _logger.LogInformation("Pueblo negotiated.");
+        PuebloEnabled?.Invoke(this, EventArgs.Empty);
+        return ValueTask.CompletedTask;
+    }
+
+    private volatile bool _mxpOn;
+
     private ValueTask OnMxpEnabledAsync()
     {
+        _mxpOn = true;
         _logger.LogInformation("MXP negotiated.");
         MxpEnabled?.Invoke(this, EventArgs.Empty);
         return ValueTask.CompletedTask;

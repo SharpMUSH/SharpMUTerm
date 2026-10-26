@@ -23,6 +23,7 @@ internal sealed class FakeTelnetSession : ITelnetSession
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
     public event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
     public event EventHandler? MxpEnabled;
+    public event EventHandler? PuebloEnabled;
     public event EventHandler? MsdpEnabled;
 
     public List<(string Variable, string Value)> SentMsdp { get; } = new();
@@ -87,6 +88,8 @@ internal sealed class FakeTelnetSession : ITelnetSession
     }
 
     public void RaiseMxpEnabled() => MxpEnabled?.Invoke(this, EventArgs.Empty);
+
+    public void RaisePuebloEnabled() => PuebloEnabled?.Invoke(this, EventArgs.Empty);
 
     public void RaiseMsdpEnabled() => MsdpEnabled?.Invoke(this, EventArgs.Empty);
 

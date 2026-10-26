@@ -86,4 +86,53 @@ public class WorldSessionSettingsTests
         await Assert.That(lines.Any(l => l.Text == "one :fire:")).IsTrue();
         await Assert.That(lines.Any(l => l.Text.StartsWith("two", StringComparison.Ordinal) && l.Text.Contains("🔥", StringComparison.Ordinal))).IsTrue();
     }
+    [Test]
+    public async Task PuebloNegotiationSwitchesAnAutomaticWorldsParser()
+    {
+        var telnet = new FakeTelnetSession();
+        var session = new WorldSession(World(), sessionFactory: _ => telnet);
+        await session.ConnectAsync();
+
+        telnet.EmitLine("<b>before</b>");
+        telnet.RaisePuebloEnabled();
+        telnet.EmitLine("<b>after</b>");
+
+        var lines = session.Scrollback.Snapshot();
+        await Assert.That(lines.Any(l => l.Text == "<b>before</b>")).IsTrue();
+        await Assert.That(lines.Any(l => l.Text == "after")).IsTrue();
+    }
+
+    /// <summary>
+    /// The first markup a connection negotiates keeps it: MXP after Pueblo leaves the Pueblo parser in place.
+    /// <c>SEND</c> tells them apart — a fresh MXP parser refuses it on an open line and echoes it, Pueblo
+    /// strips it.
+    /// </summary>
+    [Test]
+    public async Task MxpAfterPuebloDoesNotSwitchAgain()
+    {
+        var telnet = new FakeTelnetSession();
+        var session = new WorldSession(World(), sessionFactory: _ => telnet);
+        await session.ConnectAsync();
+
+        telnet.RaisePuebloEnabled();
+        telnet.RaiseMxpEnabled();
+        telnet.EmitLine("<SEND>after</SEND>");
+
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "after")).IsTrue();
+    }
+
+    [Test]
+    public async Task AnExplicitMxpWorldIgnoresPueblo()
+    {
+        var world = World();
+        world.ContentFormat = ContentFormat.Mxp;
+        var telnet = new FakeTelnetSession();
+        var session = new WorldSession(world, sessionFactory: _ => telnet);
+        await session.ConnectAsync();
+
+        telnet.RaisePuebloEnabled();
+        telnet.EmitLine("<SEND>after</SEND>");
+
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "after")).IsFalse();
+    }
 }

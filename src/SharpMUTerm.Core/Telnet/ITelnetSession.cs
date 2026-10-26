@@ -40,6 +40,12 @@ public interface ITelnetSession : IAsyncDisposable
     event EventHandler? MxpEnabled;
 
     /// <summary>
+    /// Raised once the server has switched this connection to Pueblo (its start sequence, after our
+    /// <c>PUEBLOCLIENT</c>). The <see cref="MxpEnabled"/> of Pueblo.
+    /// </summary>
+    event EventHandler? PuebloEnabled;
+
+    /// <summary>
     /// Raised once the client has agreed to the server's MSDP, so a consumer can ask it to <c>REPORT</c> the
     /// variables it wants. MSDP servers commonly send nothing until asked.
     /// </summary>
