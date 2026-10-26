@@ -56,6 +56,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - An MXP link with several commands (`<SEND "look|get|drop">`) still sends the first on a click, and a
   right-click offers all of them: in the window's own menu, or in a small chooser in a terminal (arrows or
   1–9, then Enter). Its tooltip says how many more there are.
+- Editing MOO verbs, properties and notes in the composer. On a MOO that speaks MCP 2.1 (LambdaMOO and its
+  descendants), `@edit` opens what you named in the F1 composer, and Ctrl+S saves it back to the MOO line
+  for line. An edit that arrives while another window or screen is in front waits for F1 in that
+  character's window. The client also tells the MOO its name, version and window size, and shows the MOO's
+  status text on the status row.
 - More of MXP: elements a game defines with `<!ELEMENT>` (including room names, exits and numbers, which
   feed the automapper), entities from `<!ENTITY>` and `<VAR>` (kept with the game data on Ctrl+P ▸ *Show game
   data*), `<GAUGE>` and `<STAT>` meters on the status row, `<SOUND>` and `<MUSIC>`, which play as MSP sounds

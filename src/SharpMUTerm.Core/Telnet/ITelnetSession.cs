@@ -62,6 +62,27 @@ public interface ITelnetSession : IAsyncDisposable
     /// </summary>
     event EventHandler? MsdpEnabled;
 
+    /// <summary>
+    /// Raised when a MOO hands this client a buffer to edit (MCP <c>dns-org-mud-moo-simpleedit</c>). Only an
+    /// authenticated MCP message raises it, so a player cannot.
+    /// </summary>
+    event EventHandler<MooEdit>? MooEditReceived
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>Raised with a MOO's status text (MCP <c>dns-com-awns-status</c>).</summary>
+    event EventHandler<string>? McpStatusReceived
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>Sends an edited buffer back to the MOO that handed it out. Throws when MCP editing is not agreed.</summary>
+    ValueTask SendMooEditAsync(MooEdit edit, IReadOnlyList<string> lines) =>
+        ValueTask.FromException(new InvalidOperationException("This session cannot send MOO edits."));
+
     /// <summary>Connects the transport and begins negotiation and the receive loop.</summary>
     Task ConnectAsync(CancellationToken cancellationToken = default);
 

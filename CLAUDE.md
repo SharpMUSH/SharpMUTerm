@@ -970,6 +970,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   tabs — the only geometry where an idle chip can be seen wearing a colour the pane behind it is not,
   which is the whole of the per-tab chip),
   `deletions`,
+  `moo-edit` (the composer holding a MOO verb from MCP simpleedit — `EDIT`, the name and its type in the
+  header, `⌃S save` and no escaping in the footer),
   `compose`/`compose-literal` (the F1 composer in each of its two escaping modes — the pair exists
   because ⌥L changes what is *sent* and only the header says which way it is set; the demo has no
   session, so the target is handed in and pinned against the live writer by `ComposeWindowTests`),
@@ -1693,9 +1695,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   pin said 2.8.1. The notes below say which release changed what, never what we are on. (Repo owner
   is its author — extend it by PR rather than working around it.)
   Fluent builder API; negotiates MCCP/MSDP/MXP itself; ships the keepalive interpreter
-  (`WithKeepAlive(TimeSpan?, …)`, default 30s, clamped to 1s–24h). `TelnetSession` sets the
-  init-only `CallbackOnByteAsync` reflectively to see raw bytes including unterminated prompts — a
-  first-class `OnByte` builder hook remains a good upstream PR. It handles the option handshake
+  (`WithKeepAlive(TimeSpan?, …)`, default 30s, clamped to 1s–24h). A prompt's text is the
+  interpreter's own `LastPromptBytes`, read inside the prompt callback; the reflective
+  `CallbackOnByteAsync` copy of every byte that used to stand in for it is gone (see the MCP entry).
+  It handles the option handshake
   (TELOPT, GA, TTYPE/MTTS, EOR, NAWS, CHARSET, MSSP, GMCP) — **Pueblo and all ANSI/MXP/Pueblo
   payload _parsing_ stay our layer.**
   - **2.8.1 changes that affected us:** `TelnetInterpreter.SendNAWS(short, short)` was removed —
@@ -1719,10 +1722,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `IProtocolContext` is unchanged in 2.12.0: the prompt-boundary members
     (`TakePartialLineAsPrompt`, `HasPartialLine`, `HasSeenMarkedPrompt`) are public on
     `TelnetInterpreter`, reachable through the interface's existing `Interpreter` property, so there
-    is no public break to migrate for. The
-    `CallbackOnByteAsync` property this file reaches by reflection is unchanged across the whole jump:
-    still `public Func<byte, Encoding, ValueTask>? CallbackOnByteAsync { get; init; }` on
-    `TelnetInterpreter`.
+    is no public break to migrate for.
   - **`cd06e8b` (the prompt render) and `04e0e26` (this 2.12.0 bump) must not be separated.** Reverting
     the render alone while 2.12.0 stays pinned sends every packet-patch-inferred prompt fragment to
     `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
@@ -1731,20 +1731,19 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **The 2.x → 4.x jump compiled with no source change here.** 4.0.0 replaced the interpreter with a
     generated state machine (4 KiB batches, returning at MCCP boundaries); 3.0.0 dropped OneOf; 4.1.1
     made a second plugin for one protocol throw (EOR, SGA and PacketPatch are three plugins, each
-    registered once — keep it that way). The two reflective reaches above (`CallbackOnByteAsync`,
-    `CurrentEncoding`'s internal setter) and `NAWSProtocol`'s subclassability are unchanged. The only
+    registered once — keep it that way). The reflective reach into `CurrentEncoding`'s internal
+    setter and `NAWSProtocol`'s subclassability are unchanged. The only
     build change was `Microsoft.Extensions.Logging.Abstractions`, which 4.x needs at a newer patch.
     What the jump *makes available* and is not yet used: a GMCP `Core` client session
     (`UseGmcpClientSession`, `TelnetNegotiationCore.Gmcp`), typed GMCP packages, MSDP over GMCP,
-    `PuebloProtocol`, and MCP 2.1 (`MudClientProtocol`).
+    `PuebloProtocol`, and MCP 2.1 (`MudClientProtocol`, now used — see below).
   - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A
     pin that only resolves from a local `nuget.config` builds here and fails `NU1101` everywhere else;
     if a locally-built nupkg of that version is already in `~/.nuget/packages/`, the real package
     publishing later fails `NU1403` (content mismatch) until that cache directory is deleted. Delete
     the stale cache; do not commit a `nuget.config` pointing at `/tmp`.
 - **A prompt ends with `IAC EOR` or `IAC GA`, and until 2.11.0 this client could only see the first
-  of them.** `TelnetSession.OnPromptAsync` is the only thing that flushes `_pending` — the
-  unterminated line `CallbackOnByteAsync` accumulates — so a server whose prompt boundary the library
+  of them.** `TelnetSession.OnPromptAsync` is the only thing that emits an unterminated line, so a server whose prompt boundary the library
   does not report leaves that prompt in the buffer for ever. Both halves were wrong in the library
   and were fixed upstream rather than worked around here (PR #90):
   - **GA is the boundary a default NVT uses**, and most MU\* servers are one. RFC 854 makes it
@@ -1760,8 +1759,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - Nothing on our side changes for any of it. `AddDefaultMUDProtocols(onPrompt: OnPromptAsync)`
     already wires one callback to both plugins, so the signal arrives on the version bump.
   - **What is still ours**: a server that sends no boundary marker at all — no GA, no EOR, no newline
-    — still leaves a prompt in `_pending`, because nothing here flushes on idle. That is a real gap
-    and a deliberate non-decision, not something the library can fix.
+    — is now `PacketPatchProtocol`'s, which infers a boundary from silence.
 - **MXP's line-security model is the parser's real job, and the allow-list is chosen deliberately over
   a deny-list** (`MxpLineMode`, `MxpTagCategory`, `MxpParser` — the eight `ESC[#z` line tags: OPEN,
   SECURE, LOCKED, TEMP SECURE, and LOCK OPEN/SECURE/LOCKED plus RESET). The spec draws its own line in
@@ -1874,8 +1872,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **The first markup a connection negotiates keeps it.** The parser is swapped only off the plain
     `AnsiParser`, and the hello is not answered once MXP is on, so a server offering both is not flipped
     between them by the order the handshakes finish in.
-  - **The library consumes both lines; `_pending` is cleared in both callbacks**, because `CallbackOnByteAsync`
-    has already collected their bytes and a prompt boundary would otherwise flush them as text.
+  - **The library consumes both lines**, and a prompt is read from `LastPromptBytes`, so neither can be
+    flushed as text by a boundary that follows it.
 - **`<VERSION>`/`<SUPPORT>` are answered, and the `SUPPORTS` list is held to the same rule as the MTTS
   bit vector: an honest claim, not an aspirational one.** The spec requires both replies to go out as a
   secure-tagged line (`ESC[1z` prefix, `MxpParser.SecureLinePrefix`) specifically so a server can tell
@@ -1888,6 +1886,31 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   drops it on the floor, unhandled. Claiming `+high` would tell a server to send markup this client
   silently discards, exactly the failure mode the MTTS bit vector is already held to; add a tag to this
   list only once the handler for it exists, never once the tag is merely accepted.
+- **MOO editing is MCP 2.1, and the library does the protocol** (`MudClientProtocol`, registered for every
+  world in `TelnetSession`; `MooEditing`, Core; `SharpMUTermApp.MooEdit.cs`, Tui; the `moo-edit` view). The
+  server opens MCP (`#$#mcp version`), so registering it sends nothing to a server that never offers it, and
+  the library checks the authentication key, so a `#$#` line a player types is dropped and never opens an
+  edit. Three packages: `dns-org-mud-moo-simpleedit` (edit and save), `dns-com-vmoo-client` (name, version
+  and screen size, sent once the package list is agreed and again on each NAWS change) and
+  `dns-com-awns-status` (the `»` cell on the status row, reserved and elided like the room cell).
+  Decisions not to relitigate:
+  - **An edit opens in the composer only when its character's window is in front and nothing else is
+    open**; otherwise it is held and F1 in that window opens it. A modal on wire input must not land over
+    another window, or over a surface somebody is typing into.
+  - **Edits are held apart from post drafts** (`_mooEdits`, one per character, the newest winning), so an
+    edit arriving never replaces a half-written post. Esc keeps the edit; a save lets it go only once the
+    MOO has it, and a failed save keeps it.
+  - **An edit is saved as its lines** (`MooEditing.LinesOf`): no `%r` join, no escaping, nothing trimmed but
+    the caret's last newline. ⌥L does nothing in edit mode and the footer does not offer it.
+  - **A prompt is `LastPromptBytes`, not a copy of every byte.** The library takes MCP lines out of the
+    stream after their bytes have passed any per-byte hook, and nothing marks where a consumed line
+    ended, so a GA straight after an MCP message printed the message as the prompt. Reading the
+    interpreter's own partial line removed the reflective `CallbackOnByteAsync` hook along with the bug.
+  - **Not done: the legacy LambdaMOO local edit** (`#$# edit name: … upload: …`). The library drops every
+    line-initial `#$#` that is not a well-formed MCP message, in a session or outside one, so that header
+    never reaches this client. Supporting it needs the library to hand such a line back outside a session.
+  - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
+    never raises; such a MOO gets no client info. Editing does not depend on it.
 - **What a server defines over MXP is held per connection and bounded** (`MxpParser.Definitions.cs`).
   `<!ELEMENT>`, `<!ENTITY>`, `<VAR>`, `<GAUGE>`/`<STAT>`, `<SOUND>`/`<MUSIC>`, `<FRAME>` and `<DEST>` are all
   secure tags, so a player can neither define nor send one. Decisions not to relitigate:
@@ -1940,7 +1963,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   bite you, and all four already have:
   - **`TelnetInterpreter.CurrentEncoding` defaults to `Encoding.UTF8`** (`TelnetStandardInterpreter.cs:46`),
     and that default is not something to rely on unseeded: it is handed to
-    `CallbackOnByteAsync`/`CallbackOnSubmitAsync` for every byte and used for GMCP, MSDP and everything
+    `CallbackOnSubmitAsync` for every line and used for GMCP, MSDP and everything
     we send, before this session's own encoding decision (an override, or the head of `CharsetOrder`)
     has had any say. `TelnetSession` seeds that property (reflectively, `internal set`, the same way
     `CharsetProtocol` itself writes it) with the head of the stated order — otherwise a world pinned to

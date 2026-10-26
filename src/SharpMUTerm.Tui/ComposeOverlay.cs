@@ -3,6 +3,7 @@ using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpMUTerm.Core.Commands;
+using SharpMUTerm.Core.Telnet;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
@@ -10,7 +11,8 @@ namespace SharpMUTerm.Tui;
 /// <summary>What a composed post is, at the moment it is sent or put away.</summary>
 /// <param name="Body">The editor's buffer, exactly as typed.</param>
 /// <param name="Escaping">The window's escaping mode when it happened.</param>
-internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping);
+/// <param name="Edit">The MOO buffer this is an edit of, or null for a post.</param>
+internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping, MooEdit? Edit = null);
 
 /// <summary>
 /// The composer: a full-screen editor for writing a post before sending it, over the workspace.
@@ -46,6 +48,7 @@ internal sealed class ComposeOverlay
     private ComposeEscaping _escaping;
     private string _target = string.Empty;
     private bool _canSend;
+    private MooEdit? _edit;
 
     internal ComposeOverlay(ConsoleWindowSystem system) => _system = system;
 
@@ -67,6 +70,12 @@ internal sealed class ComposeOverlay
     /// <summary>The escaping mode as it stands — the window's own toggle, not a saved setting.</summary>
     internal ComposeEscaping Escaping => _escaping;
 
+    /// <summary>
+    /// The MOO buffer being edited, or null for a post. An edit is saved as its lines, with no <c>%r</c> join and
+    /// no escaping, so ⌥L does nothing while it is open and the footer does not offer it.
+    /// </summary>
+    internal MooEdit? Edit => _edit;
+
     /// <summary>The header row's markup, so a test can read who the window says it will send to.</summary>
     internal string HeaderMarkup => Header();
 
@@ -82,7 +91,8 @@ internal sealed class ComposeOverlay
     /// world briefly down is a real thing to be doing — and refuses at the moment of sending instead,
     /// which is the same rule ⏎ follows on the command line.
     /// </param>
-    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend)
+    /// <param name="edit">The MOO buffer this opens on, or null for a post.</param>
+    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null)
     {
         if (_window is not null)
         {
@@ -93,6 +103,7 @@ internal sealed class ComposeOverlay
         _target = target;
         _escaping = escaping;
         _canSend = canSend;
+        _edit = edit;
 
         _editor = new MultilineEditControl
         {
@@ -112,7 +123,9 @@ internal sealed class ComposeOverlay
             // into browse mode — which would make the key mean two different things depending on a
             // state the writer has no reason to be tracking.
             EscapeExitsEditMode = false,
-            PlaceholderText = "Write your post. ⏎ starts a new line; the game gets one command with %r breaks.",
+            PlaceholderText = edit is null
+                ? "Write your post. ⏎ starts a new line; the game gets one command with %r breaks."
+                : "Empty. ⌃S saves it empty.",
 
             // The screens' own edit colours, so the composer reads as part of this client rather than as
             // the control's grey default sitting in a themed window. Both pairs are set: this control
@@ -197,7 +210,7 @@ internal sealed class ComposeOverlay
 
         // ⌥L flips the escaping. Alt rather than Ctrl by this codebase's rule — ESC + a printable byte
         // arrives intact, while half the Ctrl alphabet collapses onto bytes a terminal already spends.
-        if (alt && key.Key == ConsoleKey.L)
+        if (alt && key.Key == ConsoleKey.L && _edit is null)
         {
             e.Handled = true;
             _escaping = _escaping == ComposeEscaping.Literal ? ComposeEscaping.AsTyped : ComposeEscaping.Literal;
@@ -225,7 +238,7 @@ internal sealed class ComposeOverlay
         // the close so the handler sees the buffer rather than an empty window — and Closed still
         // follows, so a send the host refuses (no connection) keeps the post rather than dropping it on
         // the floor.
-        Send?.Invoke(this, new ComposeResult(_editor.GetContent(), _escaping));
+        Send?.Invoke(this, new ComposeResult(_editor.GetContent(), _escaping, _edit));
     }
 
     /// <summary>Shuts the window, handing the buffer back for the host to keep.</summary>
@@ -236,7 +249,7 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        var result = new ComposeResult(Body, _escaping);
+        var result = new ComposeResult(Body, _escaping, _edit);
         _system.CloseModalWindow(window);
         Closed?.Invoke(this, result);
     }
@@ -291,6 +304,12 @@ internal sealed class ComposeOverlay
             ? $"[{ScreenPalette.Warn}]no connection[/]"
             : $"[{ScreenPalette.Value}]{Escape(_target)}[/]";
 
+        if (_edit is { } edit)
+        {
+            return $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
+                + $"[{ScreenPalette.Label}]  {Escape(edit.Type)}  ·  from [/]{target}";
+        }
+
         var mode = _escaping == ComposeEscaping.Literal
             ? $"[{ScreenPalette.Accent}]literal[/]"
             : $"[{ScreenPalette.Value}]as typed[/]";
@@ -307,6 +326,14 @@ internal sealed class ComposeOverlay
     /// </summary>
     private string Footer()
     {
+        if (_edit is not null)
+        {
+            return (_canSend
+                    ? $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] save[/]"
+                    : $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] save (nothing connected)[/]")
+                + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close (keeps the edit)[/]";
+        }
+
         var send = _canSend
             ? $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] send[/]"
             : $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] send (nothing connected)[/]";
@@ -359,5 +386,6 @@ internal sealed class ComposeOverlay
         _system.ConsoleDriver.ScreenResized -= OnScreenResized;
         _window = null;
         _editor = null;
+        _edit = null;
     }
 }
