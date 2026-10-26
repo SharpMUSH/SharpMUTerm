@@ -358,6 +358,12 @@ public sealed class WorldSession : IAsyncDisposable
     public GameDataStore GameData { get; } = new();
 
     /// <summary>
+    /// This connection's map, when the client keeps one: set by the client as the session opens, read by the
+    /// scripting bridge's <c>map.*</c>. Null in a session nothing maps.
+    /// </summary>
+    public Mapping.SessionMap? Map { get; set; }
+
+    /// <summary>
     /// The MSDP variables to ask for with <c>REPORT</c> once MSDP is agreed — the ones the status row's meters
     /// read. Set by the app; read at that moment, so a change applies from the next connection.
     /// </summary>

@@ -44,6 +44,21 @@ public interface IScriptWorld
     /// <summary>Sends a GMCP message; <paramref name="json"/> is the body, empty for none.</summary>
     void SendGmcp(string package, string json);
 
+    /// <summary>The room the map says the character is in, for <c>map.current()</c>; null with no map or no room.</summary>
+    ScriptRoom? CurrentRoom();
+
+    /// <summary>
+    /// The commands that walk from the current room to <paramref name="target"/> (a room number or name), for
+    /// <c>map.path()</c>; null when the map knows no way.
+    /// </summary>
+    IReadOnlyList<string>? PathTo(string target);
+
+    /// <summary>Starts a speedwalk to <paramref name="target"/>, for <c>map.walk()</c>: null, or why it did not start.</summary>
+    string? WalkTo(string target);
+
     /// <summary>The display name of the world, exposed to scripts as <c>world.name</c>.</summary>
     string WorldName { get; }
 }
+
+/// <summary>A room as a script sees it.</summary>
+public sealed record ScriptRoom(long Id, string Name, string? Area);

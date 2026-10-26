@@ -50,7 +50,7 @@ public class FrameContrastTests
 
         // The meters are the status row's only cells whose colour depends on what a server sent (a low
         // value wears the notice ink), and the inspector is a modal of its own.
-        "meters", "gamedata",
+        "meters", "gamedata", "map", "map-walking", "map-split",
 
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band

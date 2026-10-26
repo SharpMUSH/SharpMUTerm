@@ -428,6 +428,18 @@ public sealed class ScriptHost : IDisposable
         };
         globals["msdp"] = msdp;
 
+        // map.* — read the recorded map and walk it. `walk` returns true, or false and why.
+        var map = new Table(script)
+        {
+            ["current"] = (Func<DynValue>)(() => CurrentRoom(script)),
+            ["path"] = (Func<string, DynValue>)(target => MapPath(script, target)),
+            ["walk"] = (Func<string, DynValue>)(target =>
+                _world.WalkTo(target ?? string.Empty) is { } problem
+                    ? DynValue.NewTuple(DynValue.False, DynValue.NewString(problem))
+                    : DynValue.True),
+        };
+        globals["map"] = map;
+
         // log.*
         var log = new Table(script)
         {
@@ -454,6 +466,42 @@ public sealed class ScriptHost : IDisposable
             _world.Print(sb.ToString());
             return DynValue.Nil;
         });
+    }
+
+    private DynValue CurrentRoom(Script script)
+    {
+        if (_world.CurrentRoom() is not { } room)
+        {
+            return DynValue.Nil;
+        }
+
+        var table = new Table(script)
+        {
+            ["id"] = (double)room.Id,
+            ["name"] = room.Name,
+        };
+        if (room.Area is { } area)
+        {
+            table["area"] = area;
+        }
+
+        return DynValue.NewTable(table);
+    }
+
+    private DynValue MapPath(Script script, string? target)
+    {
+        if (_world.PathTo(target ?? string.Empty) is not { } steps)
+        {
+            return DynValue.Nil;
+        }
+
+        var table = new Table(script);
+        foreach (var step in steps)
+        {
+            table.Append(DynValue.NewString(step));
+        }
+
+        return DynValue.NewTable(table);
     }
 
     /// <summary>

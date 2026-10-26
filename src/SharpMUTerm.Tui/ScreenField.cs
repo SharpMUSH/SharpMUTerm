@@ -572,6 +572,19 @@ internal readonly record struct ScreenField(
         return new ScreenField(label, get, ValidatePattern, set);
     }
 
+    /// <summary>A <see cref="Pattern"/> that may be blank, held as null when it is: a pattern a world need not have.</summary>
+    internal static ScreenField OptionalPattern(string label, Func<string?> get, Action<string?> set)
+    {
+        ArgumentNullException.ThrowIfNull(get);
+        ArgumentNullException.ThrowIfNull(set);
+
+        return new ScreenField(
+            label,
+            () => get() ?? string.Empty,
+            value => string.IsNullOrWhiteSpace(value) ? null : ValidatePattern(value),
+            value => set(string.IsNullOrWhiteSpace(value) ? null : value));
+    }
+
     /// <summary>
     /// Text that may hold newlines (an alias expansion is one command per line), edited on one row
     /// with the breaks written <c>\n</c> — so a multi-line value is still editable without the

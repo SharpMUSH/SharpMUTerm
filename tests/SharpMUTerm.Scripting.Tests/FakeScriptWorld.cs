@@ -28,6 +28,27 @@ internal sealed class FakeScriptWorld : IScriptWorld
 
     public void SendGmcp(string package, string json) => SentGmcp.Add((package, json));
 
+    public ScriptRoom? Room { get; set; }
+
+    public Dictionary<string, string[]> Paths { get; } = new(StringComparer.Ordinal);
+
+    public List<string> Walks { get; } = new();
+
+    public ScriptRoom? CurrentRoom() => Room;
+
+    public IReadOnlyList<string>? PathTo(string target) => Paths.GetValueOrDefault(target);
+
+    public string? WalkTo(string target)
+    {
+        if (!Paths.ContainsKey(target))
+        {
+            return "the map knows no way there";
+        }
+
+        Walks.Add(target);
+        return null;
+    }
+
     public void AddTrigger(string pattern, string callbackId) => Triggers.Add((pattern, callbackId));
 
     public void AddAlias(string pattern, string substitution, string callbackId) =>
