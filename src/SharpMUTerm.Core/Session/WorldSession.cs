@@ -301,8 +301,12 @@ public sealed class WorldSession : IAsyncDisposable
     /// <summary>Raised when the encoding in force changes — see <see cref="CurrentEncoding"/>.</summary>
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
 
-    /// <summary>Raised for each trigger-requested script callback (consumed by the scripting layer).</summary>
-    public event EventHandler<TriggerScriptInvocation>? TriggerScriptRequested;
+    /// <summary>
+    /// Raised when a trigger, alias, timer or macro names a script callback (consumed by the scripting
+    /// layer). Raised on whichever thread ran the rule: the read loop for a trigger, the caller for input
+    /// and keys, the scheduler for a timer.
+    /// </summary>
+    public event EventHandler<ScriptRequest>? ScriptRequested;
 
     public bool IsConnected => _telnet?.IsConnected == true;
 
@@ -479,7 +483,7 @@ public sealed class WorldSession : IAsyncDisposable
 
         foreach (var invocation in result.ScriptInvocations)
         {
-            TriggerScriptRequested?.Invoke(this, invocation);
+            ScriptRequested?.Invoke(this, ScriptRequest.FromMatch(ScriptSource.Trigger, invocation.Callback, invocation.Match));
         }
 
         // The line as it will be *shown*, computed once and used for both destinations. A spawn window
@@ -551,6 +555,11 @@ public sealed class WorldSession : IAsyncDisposable
 
         if (expansion.Matched)
         {
+            if (expansion.Alias?.ScriptCallback is { Length: > 0 } callback && expansion.Match is { } match)
+            {
+                ScriptRequested?.Invoke(this, ScriptRequest.FromMatch(ScriptSource.Alias, callback, match));
+            }
+
             foreach (var command in expansion.Commands)
             {
                 await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
@@ -658,12 +667,20 @@ public sealed class WorldSession : IAsyncDisposable
             var interval = TimeSpan.FromSeconds(definition.IntervalSeconds);
             void Fire()
             {
-                if (!definition.Enabled || string.IsNullOrWhiteSpace(definition.Command))
+                if (!definition.Enabled)
                 {
                     return;
                 }
 
-                _ = SendRawAsync(definition.Command);
+                if (definition.ScriptCallback is { Length: > 0 } callback)
+                {
+                    ScriptRequested?.Invoke(this, ScriptRequest.Bare(ScriptSource.Timer, callback));
+                }
+
+                if (!string.IsNullOrWhiteSpace(definition.Command))
+                {
+                    _ = SendRawAsync(definition.Command);
+                }
             }
 
             _timerHandles.Add(definition.OneShot
@@ -713,7 +730,17 @@ public sealed class WorldSession : IAsyncDisposable
     public async Task<string?> HandleKeyAsync(string keyDescriptor, CancellationToken cancellationToken = default)
     {
         var macro = Macros.Resolve(keyDescriptor);
-        if (macro is null || string.IsNullOrEmpty(macro.Command))
+        if (macro is null)
+        {
+            return null;
+        }
+
+        if (macro.ScriptCallback is { Length: > 0 } callback)
+        {
+            ScriptRequested?.Invoke(this, ScriptRequest.Bare(ScriptSource.Macro, callback));
+        }
+
+        if (string.IsNullOrEmpty(macro.Command))
         {
             return null;
         }

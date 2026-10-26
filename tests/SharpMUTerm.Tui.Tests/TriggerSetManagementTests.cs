@@ -252,13 +252,33 @@ public class TriggerSetManagementTests
         var row = WorldsScreenRenderer.Model(Worlds(), sets, 0, 0)
             .RowAt(WorldsScreenRenderer.TriggerSetsPane, 0);
 
-        await Assert.That(row.FieldCount).IsEqualTo(2);
+        await Assert.That(row.FieldCount).IsEqualTo(3);
         await Assert.That(row.FieldAt(WorldsScreenRenderer.SetDescriptionField)!.Value.Get())
             .IsEqualTo("channel routing");
 
         await Assert.That(new ScreenEdits().Apply(
             row.FieldAt(WorldsScreenRenderer.SetDescriptionField)!.Value, "chat + pages")).IsNull();
         await Assert.That(sets[0].Description).IsEqualTo("chat + pages");
+    }
+
+    /// <summary>
+    /// A set's script files are its third field: a comma-separated list, written back trimmed, without blanks
+    /// or repeats, in the order typed — the order they load in.
+    /// </summary>
+    [Test]
+    public async Task ASetsScriptsAreTheRowsThirdField()
+    {
+        var sets = Sets();
+        var field = WorldsScreenRenderer.Model(Worlds(), sets, 0, 0)
+            .FieldAt(WorldsScreenRenderer.TriggerSetsPane, 0, WorldsScreenRenderer.SetScriptsField)!.Value;
+
+        await Assert.That(string.IsNullOrEmpty(field.Get())).IsTrue();
+        await Assert.That(new ScreenEdits().Apply(field, " lib.lua, comms.lua ,, lib.lua ")).IsNull();
+
+        await Assert.That(sets[0].ScriptFiles).IsEquivalentTo(new[] { "lib.lua", "comms.lua" });
+        await Assert.That(field.Get()).IsEqualTo("lib.lua, comms.lua");
+        await Assert.That(string.Join("\n", WorldsScreenRenderer.TriggersColumn(
+            Worlds()[0].Characters[0], sets, "#ffffff"))).Contains("lib.lua, comms.lua");
     }
 
     // ---- deleting ---------------------------------------------------------------------------------

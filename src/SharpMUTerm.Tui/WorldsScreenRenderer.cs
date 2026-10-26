@@ -118,6 +118,15 @@ internal static class WorldsScreenRenderer
 
     internal const int SetDescriptionField = 1;
 
+    /// <summary>
+    /// <see cref="TriggerSet.ScriptFiles"/>, typed as a comma-separated list of names under the scripts
+    /// folder. It used to be reachable only by editing <c>config.json</c>, and nothing ran the files anyway.
+    /// </summary>
+    internal const int SetScriptsField = 2;
+
+    /// <summary>What a set with no script files shows in its scripts well.</summary>
+    internal const string NoScripts = "—";
+
     /// <summary>The F-key that opens this screen, and the second key that opens it on a character's log.</summary>
     internal const string FKey = "F5";
 
@@ -449,7 +458,8 @@ internal static class WorldsScreenRenderer
                 () => set.Name,
                 value => RenameSet(worlds, set, value),
                 triggerSets.Where(s => !ReferenceEquals(s, set)).Select(s => s.Name).ToArray()),
-            ScreenField.Optional("description", () => set.Description, v => set.Description = v)))
+            ScreenField.Optional("description", () => set.Description, v => set.Description = v),
+            ScreenField.Optional("scripts", () => JoinScripts(set), v => SplitScripts(set, v))))
             .Concat(SetButtons(worlds, triggerSets, selectedSet))
             .ToArray();
 
@@ -494,6 +504,26 @@ internal static class WorldsScreenRenderer
                 character.TriggerSets.Add(name);
             }
         });
+
+    /// <summary>A set's script files as the well shows and edits them, or null for none.</summary>
+    internal static string? JoinScripts(TriggerSet set) =>
+        set.ScriptFiles.Count == 0 ? null : string.Join(", ", set.ScriptFiles);
+
+    /// <summary>
+    /// Writes the well back as a list: split on commas, trimmed, blanks and repeats dropped, order kept —
+    /// the order files load in, so a later file can rely on what an earlier one defined.
+    /// </summary>
+    internal static void SplitScripts(TriggerSet set, string? value)
+    {
+        set.ScriptFiles.Clear();
+        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!set.ScriptFiles.Contains(part, StringComparer.Ordinal))
+            {
+                set.ScriptFiles.Add(part);
+            }
+        }
+    }
 
     /// <summary>
     /// Renames a set <em>and every reference to it</em> — the one rename on these screens that reaches
@@ -1145,6 +1175,7 @@ internal static class WorldsScreenRenderer
         // each row can be read down. Measured over the drawn text, since a name may carry brackets.
         var nameWidth = Width(triggerSets, s => "▪ " + Escape(s.Name));
         var noteWidth = Width(triggerSets, s => Escape(s.Description ?? NoDescription));
+        var scriptWidth = Width(triggerSets, s => Escape(JoinScripts(s) ?? NoScripts));
 
         var rows = new List<string>(triggerSets.Count);
         foreach (var set in triggerSets)
@@ -1162,8 +1193,11 @@ internal static class WorldsScreenRenderer
             var note = ScreenChrome.Field(
                 PadVisible($"[{Label}]{Escape(set.Description ?? NoDescription)}[/]", noteWidth),
                 cursor.EditOn(TriggerSetsPane, index, SetDescriptionField));
+            var scripts = ScreenChrome.Field(
+                PadVisible($"[{Label}]{Escape(JoinScripts(set) ?? NoScripts)}[/]", scriptWidth),
+                cursor.EditOn(TriggerSetsPane, index, SetScriptsField));
 
-            rows.Add($"{box} {name} {note} [{Label}]{Inventory(set)}[/]");
+            rows.Add($"{box} {name} {note} {scripts} [{Label}]{Inventory(set)}[/]");
         }
 
         // The checklist sits in an auto-width column (see WorldsScreenView), so a cursor bar sized to

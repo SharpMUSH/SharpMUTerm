@@ -11,12 +11,22 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 - A crash now leaves its stack in `logs/client-diagnostics-*.log`, in the window and the terminal alike,
   along with errors the UI framework used to swallow without a trace.
+- A `scripts` field on each trigger set in Worlds & Characters (F5), and Ctrl+P ▸ *Reload scripts*, which
+  re-reads the focused character's files.
 
 ### Changed
 
 - An MXP picture is downloaded and decoded once per session. A room picture shown on every look used
   to be fetched again whenever the pane's width had changed, and once per look that arrived while it was
   still loading.
+
+### Fixed
+
+- Lua scripts now run. A trigger set's script files are loaded from the `scripts` folder beside
+  `config.json` when its character's session opens, and the `script` field of a trigger, alias, timer or
+  macro calls the Lua function it names, with the match and its groups. Until now no script was ever loaded,
+  although 0.1.5 listed Lua scripting. Script errors are shown in the character's window and in the client
+  messages. Files outside the `scripts` folder are refused.
 
 ## [0.1.5] - 2026-10-25
 

@@ -15,6 +15,7 @@ using SharpMUTerm.Core.Transport;
 using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Graphics;
+using SharpMUTerm.Scripting;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Configuration;
@@ -522,6 +523,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly RestoreLog? _restore;
 
     /// <summary>
+    /// The folder Lua files are read from, or null for an app that runs no scripts — the default, and what
+    /// every test and snapshot gets. The <c>save</c>/<c>logRoot</c>/<c>restore</c> family once more: a
+    /// trigger set names its files, and only <c>Program</c> may say where on disk they are read from.
+    /// </summary>
+    private readonly string? _scriptsRoot;
+
+    /// <summary>Each open session's scripts. Empty when <see cref="_scriptsRoot"/> is null.</summary>
+    private readonly Dictionary<WorldSession, SessionScripts> _scripts = new();
+
+    /// <summary>
     /// Every server's last MSSP report, which is what the F5 ▸ <c>i</c> INFO screen reads. Never null,
     /// and that is the difference from the three above rather than an inconsistency with them: a cache
     /// built with no path is memory-only <em>by construction</em> — it reads nothing and writes nothing —
@@ -624,7 +635,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MsspCache? mssp = null,
         bool? focusReporting = null,
         Action<string>? openUrl = null,
-        Action<string>? clipboard = null)
+        Action<string>? clipboard = null,
+        string? scriptsRoot = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -633,7 +645,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             save,
             logRoot,
             restore,
-            mssp)
+            mssp,
+            scriptsRoot)
     {
     }
 
@@ -649,7 +662,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         Action<AppConfiguration>? save = null,
         string? logRoot = null,
         RestoreLog? restore = null,
-        MsspCache? mssp = null)
+        MsspCache? mssp = null,
+        string? scriptsRoot = null)
     {
         var capabilities = host.Capabilities;
         Host = host;
@@ -660,6 +674,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _pointer = host.Pointer;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
+        _scriptsRoot = string.IsNullOrWhiteSpace(scriptsRoot) ? null : scriptsRoot;
+        _sessions.SessionAdded += OnSessionAdded;
+        _sessions.SessionRemoved += OnSessionRemoved;
         _inlineImages = new InlineImageHost(
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
             OnUi);
@@ -6549,6 +6566,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var sets = _config.ResolveTriggerSets(character);
             session.ReloadAutomation(sets);
 
+            // A set gaining or losing a script file reloads that session's Lua; any other edit leaves the
+            // scripts alone, because a rebuild restarts their timers and this runs on every committed change.
+            if (_scripts.TryGetValue(session, out var scripts) && scripts.SyncFiles())
+            {
+                Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", MessageSeverity.Info);
+            }
+
             var after = session.Triggers.Triggers.Count
                 + session.Aliases.Aliases.Count
                 + session.Macros.Macros.Count;
@@ -7435,7 +7459,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             TimestampsOn: ShowTimestamps,
             SecondInputOn: _secondBars.IsShown(ActiveWindowId()),
             ScrolledBack: ScrollTarget() is { CanScrollDown: true },
-            NewlineChord: Host.Keys.Newline.Glyph);
+            NewlineChord: Host.Keys.Newline.Glyph,
+            ScriptsOn: _scriptsRoot is not null);
         return CommandCatalog.Build(
             _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
@@ -7863,6 +7888,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "world:disconnect":
                 Disconnect();
                 break;
+            case "world:reload-scripts":
+                ReloadScripts();
+                break;
             default:
                 // On the status line, never through _active: an unwired command is exactly what you hit
                 // while nothing is connected, and a message that needs a session to be seen cannot
@@ -7918,6 +7946,78 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// of it: the client asks before ending itself (⌃Q) and before nothing else, and a prompt in front of
     /// the key you press <em>because</em> a connection has gone wrong is friction at the worst moment.
     /// </remarks>
+    /// <summary>
+    /// Starts a session's scripts as it opens. Raised for every session the manager holds, so a session
+    /// opened by any path gets them; Lua printing at load lands in the session's scrollback, which
+    /// <see cref="BindSession"/> replays into its window.
+    /// </summary>
+    private void OnSessionAdded(object? sender, WorldSession session)
+    {
+        if (_scriptsRoot is null || _scripts.ContainsKey(session))
+        {
+            return;
+        }
+
+        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text));
+        _scripts[session] = scripts;
+        scripts.Reload();
+    }
+
+    private void OnSessionRemoved(object? sender, WorldSession session)
+    {
+        if (_scripts.Remove(session, out var scripts))
+        {
+            scripts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A script failure is said twice: in the session's own window, where the reader is looking when a
+    /// trigger misfires, and in the client messages, which outlive the scrollback. It can arrive on the
+    /// telnet read loop, so the notice is marshalled; the window line is not, because a session's lines
+    /// already arrive from that thread.
+    /// </summary>
+    private void ReportScript(WorldSession session, string text)
+    {
+        session.PrintSystem($"*** {text}");
+        OnUi(() => Notice($"{SessionTitle(session)}: {text}"));
+    }
+
+    private static string ScriptsLoaded(SessionScripts scripts) => scripts.Files.Count switch
+    {
+        0 => "no scripts",
+        1 => "1 script loaded",
+        var n => $"{n} scripts loaded",
+    };
+
+    /// <summary>
+    /// ⌃P ▸ <c>Reload scripts</c>: re-reads the focused character's script files from disk. Resolved through
+    /// <see cref="SendTarget"/>, the window in front of you, for <see cref="Reconnect"/>'s reason.
+    /// </summary>
+    private void ReloadScripts()
+    {
+        if (_scriptsRoot is null)
+        {
+            RefuseCommand("this client runs no scripts");
+            return;
+        }
+
+        if (SendTarget() is not { } session || !_scripts.TryGetValue(session, out var scripts))
+        {
+            RefuseCommand("no scripts to reload — pick a character first (⌃P ▸ Switch to …)");
+            return;
+        }
+
+        scripts.Reload();
+        Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", MessageSeverity.Info);
+    }
+
+    /// <summary>Whether the focused character's scripts define a function by this name. Null with no scripts.</summary>
+    internal bool? ScriptDefines(string name) =>
+        SendTarget() is { } session && _scripts.TryGetValue(session, out var scripts)
+            ? scripts.Defines(name)
+            : null;
+
     private void Reconnect()
     {
         // Which connection this acts on is decided by the window in front of you — SendTarget, the same
@@ -12318,6 +12418,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _inlineImages.Dispose();
         _imageLoader.Dispose();
         _fetcher.Dispose();
+        foreach (var scripts in _scripts.Values)
+        {
+            scripts.Dispose(); // before the sessions, so no timer of theirs fires into a closed one
+        }
+
+        _scripts.Clear();
         await _sessions.DisposeAsync().ConfigureAwait(false);
         _frameworkLog.Dispose();
         if (_ownsDiagnostics)

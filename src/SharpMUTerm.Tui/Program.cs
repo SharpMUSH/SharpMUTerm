@@ -169,6 +169,19 @@ internal static class Program
             loadLogger.LogWarning("{Notice}", msspProblem);
         }
 
+        // Lua files are read from <config>/scripts and nowhere else (SessionScripts.Resolve), so a trigger
+        // set naming a path cannot make the client read anything outside it. Created here so a new user has
+        // somewhere obvious to put a file; a failure leaves the folder missing, and each load then says so.
+        var scriptsRoot = Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "scripts");
+        try
+        {
+            Directory.CreateDirectory(scriptsRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            loadLogger.LogWarning("Could not create the scripts folder {Folder}: {Reason}", scriptsRoot, ex.Message);
+        }
+
         var liveApp = new SharpMUTermApp(
             config,
             host,
@@ -176,7 +189,8 @@ internal static class Program
             save: saved => ConfigurationStore.Save(ConfigurationStore.DefaultPath, saved),
             logRoot: logRoot,
             restore: restore,
-            mssp: mssp);
+            mssp: mssp,
+            scriptsRoot: scriptsRoot);
         int exitCode;
         try
         {

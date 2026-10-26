@@ -91,7 +91,21 @@ fallbacks) for inline images/maps.
   and the framework ships none. Reopening it needs an upstream PR making `IImageRenderer` public and
   `ResolveRenderer` overridable; nothing on our side unblocks it. `InlineImagePolicy` therefore
   degrades a Sixel-only terminal to half-block explicitly rather than pretending.
-- **Scripting** — sandboxed MoonSharp `ScriptHost` (world/output/trigger/alias/timer/gmcp/log).
+- **Scripting** — sandboxed MoonSharp `ScriptHost` (world/output/trigger/alias/timer/gmcp/log), run per
+  session by `SessionScripts`. Every rule kind asks for its `script` through one event,
+  `WorldSession.ScriptRequested`; the bridge tries a `trigger.add`/`alias.add` id first and then a global
+  (dotted) function name, and a missing name is reported once per load. Decisions not to relitigate:
+  - **Files come from `<config>/scripts` and nowhere else** (`SessionScripts.Resolve`, ordinal prefix check
+    after `GetFullPath`). A trigger set is shared configuration and packages will bring them, so a set
+    naming `/etc/passwd` or `../..` is refused out loud. `scriptsRoot:` is the fifth member of the
+    `save:`/`logRoot:` family — null by default, so no test and no snapshot runs Lua.
+  - **Lua runs on the thread that raised the request**, serialised by the host's `_gate`: the read loop
+    for a trigger, the UI thread for an alias or macro, the scheduler for a timer. `world.send`/`print` go
+    through the session, which is already safe from those threads. Not moved to the UI thread: a slow
+    trigger script would then stall the screen instead of the socket.
+  - **A rebuild clears the engines' runtime rules first** (`ClearRuntime`), or a reload doubles every
+    `trigger.add`. `SaveConfiguration` rebuilds only when a session's file list changed (`SyncFiles`),
+    since a rebuild restarts script timers; ⌃P ▸ *Reload scripts* always rebuilds and re-reads.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a

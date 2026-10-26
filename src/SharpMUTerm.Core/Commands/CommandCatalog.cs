@@ -34,6 +34,9 @@ public sealed record CharacterRef(
 /// The chord that inserts a newline where the client is running — <c>Alt+⏎</c> in a terminal, <c>Ctrl+⏎</c> in
 /// the desktop window, which keeps ⌥⏎ for itself. Supplied by the host for the reason the screens are.
 /// </param>
+/// <param name="ScriptsOn">
+/// Whether this client runs Lua at all, so <c>Reload scripts</c> is offered only where it can do something.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -41,7 +44,8 @@ public sealed record CommandContext(
     bool TimestampsOn = false,
     bool SecondInputOn = false,
     bool ScrolledBack = false,
-    string NewlineChord = "Alt+⏎");
+    string NewlineChord = "Alt+⏎",
+    bool ScriptsOn = false);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -171,6 +175,11 @@ public static class CommandCatalog
         // can find is the same as no feature — ⌃L's newline sat unused until it was reported missing.
         items.Add(new CommandItem(CommandGroup.World, "Reconnect", "world:reconnect", "⌥R"));
         items.Add(new CommandItem(CommandGroup.World, "Disconnect", "world:disconnect", "⌥D"));
+        if (context.ScriptsOn)
+        {
+            items.Add(new CommandItem(
+                CommandGroup.World, "Reload scripts", "world:reload-scripts", "re-reads this character's Lua files"));
+        }
 
         // TERMINAL — stateful labels.
         items.Add(context.LoggingOn
