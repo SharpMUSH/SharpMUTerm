@@ -106,6 +106,12 @@ internal sealed class InputBarControl : MultilineEditControl,
     /// </summary>
     internal Func<string, bool> CutTo { get; set; } = _ => false;
 
+    /// <summary>
+    /// What ⇥ makes of the buffer when the caret is at its end: the completed text, or null when there is
+    /// nothing to complete, in which case ⇥ goes on to the sibling bar as before.
+    /// </summary>
+    internal Func<string, string?> Complete { get; set; } = _ => null;
+
     /// <summary>Whether ⇥ has somewhere to go — false while this is the only bar on screen.</summary>
     internal Func<bool> HasSibling { get; set; } = () => false;
 
@@ -230,6 +236,14 @@ internal sealed class InputBarControl : MultilineEditControl,
         FocusedForegroundColor = Ink;
     }
 
+    /// <summary>Whether the caret is after the last character, which is the only place ⇥ completes.</summary>
+    private bool CaretAtEnd()
+    {
+        var text = Text;
+        var last = text.LastIndexOf('\n');
+        return CurrentLine == text.Count(c => c == '\n') + 1 && CurrentColumn - 1 == text.Length - (last + 1);
+    }
+
     /// <summary>Whether the bar is holding nothing.</summary>
     internal bool IsEmpty => LineCount <= 1 && Text.Length == 0;
 
@@ -342,6 +356,12 @@ internal sealed class InputBarControl : MultilineEditControl,
         if (key.Key == ConsoleKey.Enter)
         {
             return ctrl || shift || alt ? Claim(ConsoleKey.Enter) : Send();
+        }
+
+        if (key.Key == ConsoleKey.Tab && key.Modifiers == 0 && CaretAtEnd() && Complete(Text) is { } completed)
+        {
+            Replace(completed, notify: true);
+            return true;
         }
 
         if (key.Key == ConsoleKey.Tab)

@@ -61,6 +61,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   for line. An edit that arrives while another window or screen is in front waits for F1 in that
   character's window. The client also tells the MOO its name, version and window size, and shows the MOO's
   status text on the status row.
+- Tab on the command line completes the word you are typing from the game's recent output, with the people
+  the game names over GMCP (in the room, on a channel) offered first. Tab again goes to the next match and
+  back round to what you typed. With nothing to complete, Tab still moves to the second command line.
 - An `edit grab` prefix per world in Worlds & Characters (F5), empty by default. A line from the game that
   starts with it is not shown; its text goes on that character's command line for you to change and send.
   AresMUSH uses `FugueEdit >` for its edit commands. The client never sends a grabbed line itself, and a

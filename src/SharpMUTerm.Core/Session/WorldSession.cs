@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpMUTerm.Core.Automation;
+using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Logging;
 using SharpMUTerm.Core.Protocols;
@@ -254,6 +255,12 @@ public sealed class WorldSession : IAsyncDisposable
             Logger.LogDebug(ex, "MSDP {Variable} {Value} was not sent.", variable, value);
         }
     }
+
+    /// <summary>
+    /// What ⇥ completes on this connection's command line: names the game sent over GMCP, and the words of
+    /// the output it shows, in any window. Emptied on connect.
+    /// </summary>
+    public CompletionIndex Completions { get; } = new();
 
     /// <summary>
     /// Raised on the read loop when the MOO hands this connection a buffer to edit (MCP simpleedit). Only an
@@ -582,6 +589,7 @@ public sealed class WorldSession : IAsyncDisposable
         {
             // Stored before the event, so a handler reading GameData sees the message that raised it.
             GameData.SetGmcp(e.Package, e.Json);
+            Completions.ObserveGmcp(e.Package, e.Json);
             GmcpReceived?.Invoke(this, e);
             if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
                 && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
@@ -603,6 +611,7 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.MspChanged += (_, active) => _mspActive = active;
         telnet.PuebloEnabled += OnPuebloEnabled;
         McpStatus = null;
+        Completions.Clear();
         telnet.MooEditReceived += (_, edit) => MooEditReceived?.Invoke(this, edit);
         telnet.McpStatusReceived += (_, text) =>
         {
@@ -758,6 +767,10 @@ public sealed class WorldSession : IAsyncDisposable
         // text and destination disagree is the shape of a phishing link, and this client should not be
         // in the business of manufacturing one.
         var shown = ApplyLinks(ApplyEmoji(result.Line)).WithPrompt(isPrompt);
+        if (result.RouteMain || !result.Suppress || result.SpawnTargets.Count > 0)
+        {
+            Completions.ObserveLine(shown.Text); // only what is shown somewhere: a gagged word was never read
+        }
 
         foreach (var target in result.SpawnTargets)
         {

@@ -5168,6 +5168,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // and the first chrome refresh.
         PaintInputBands(PaneTint.None);
         bar.HasSibling = () => _second.Visible;
+        bar.Complete = CompleteWord;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
         bar.CutTo = CutToClipboard;
