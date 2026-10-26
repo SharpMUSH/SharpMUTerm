@@ -1911,6 +1911,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **NEW-ENVIRON is answered as MNES** (`TelnetSessionOptions.MnesIdentity`; the library's `NewEnvironProtocol`).
+  The variables are `CLIENT_NAME`, `CLIENT_VERSION`, `TERMINAL_TYPE` and `MTTS`, read from the same TTYPE list,
+  so the two channels cannot disagree (`MTTS 2845`, which now includes MNES 512). It answers a server's `DO` and
+  initiates nothing. There is no `IPADDRESS` and no `USER`. There is no `CHARSET` either: the answer is fixed at
+  connect, CHARSET can settle later, and the library has no `INFO` send to correct it.
 - **GMCP `Char.Login` is opt-in per world** (`WorldDefinition.GmcpLogin`, F5 ▸ `gmcp login`; `GmcpLogin`, Core).
   On, the world asks for `Char.Login 1`, and a character whose `LoginPlan` is `WithPassword` holds its connect
   line back. `Char.Login.Default` offering `password-credentials` gets `Char.Login.Credentials`; any other
