@@ -32,6 +32,7 @@ public sealed class SessionScripts : IDisposable
     private readonly string _root;
     private readonly Action<string> _report;
     private readonly Func<string, string?>? _packageScript;
+    private readonly ScriptStore _store;
     private WorldSessionScriptBridge? _bridge;
     private ScriptHost? _host;
     private string[] _files = Array.Empty<string>();
@@ -47,14 +48,29 @@ public sealed class SessionScripts : IDisposable
     /// Resolves a <c>package:&lt;id&gt;/&lt;file&gt;</c> name inside that package's own folder, or null when it
     /// names nothing installed. Without it no package script loads.
     /// </param>
-    public SessionScripts(WorldSession session, string root, Action<string> report, Func<string, string?>? packageScript = null)
+    /// <param name="storeRoot">
+    /// The folder the character's <c>store.*</c> file is kept in, named for the session; null keeps the values
+    /// in memory only. Either way they outlive a <see cref="Reload"/>.
+    /// </param>
+    public SessionScripts(
+        WorldSession session,
+        string root,
+        Action<string> report,
+        Func<string, string?>? packageScript = null,
+        string? storeRoot = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         _root = Path.GetFullPath(root);
         _report = report ?? throw new ArgumentNullException(nameof(report));
         _packageScript = packageScript;
+        _store = new ScriptStore(
+            string.IsNullOrWhiteSpace(storeRoot) ? null : Path.Combine(storeRoot, ScriptStore.FileNameFor(session.SessionKey)),
+            report);
     }
+
+    /// <summary>What the scripts keep between runs.</summary>
+    public ScriptStore Store => _store;
 
     /// <summary>The file names the host was last built from, as the trigger sets spell them.</summary>
     public IReadOnlyList<string> Files => _files;
@@ -96,7 +112,7 @@ public sealed class SessionScripts : IDisposable
 
         _files = _session.ScriptFiles.ToArray();
         _bridge = new WorldSessionScriptBridge(_session);
-        _host = new ScriptHost(_bridge);
+        _host = new ScriptHost(_bridge, _store);
         _bridge.Attach(_host);
         _host.Error += OnScriptError;
 

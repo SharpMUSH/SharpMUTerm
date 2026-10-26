@@ -23,11 +23,11 @@ internal static class LuaJson
     };
 
     /// <summary>A Lua value as JSON, or null for nil. Throws <see cref="ScriptRuntimeException"/> for a function, a cycle or too much nesting.</summary>
-    public static JsonNode? FromLua(DynValue value, int depth = 0)
+    public static JsonNode? FromLua(DynValue value, int depth = 0, string context = "gmcp.send")
     {
         if (depth > MaxDepth)
         {
-            throw new ScriptRuntimeException("gmcp.send: the table is nested too deeply (or contains itself).");
+            throw new ScriptRuntimeException($"{context}: the table is nested too deeply (or contains itself).");
         }
 
         switch (value.Type)
@@ -43,13 +43,13 @@ internal static class LuaJson
             case DataType.String:
                 return JsonValue.Create(value.String);
             case DataType.Table:
-                return FromTable(value.Table, depth);
+                return FromTable(value.Table, depth, context);
             default:
-                throw new ScriptRuntimeException($"gmcp.send: a {value.Type.ToLuaTypeString()} cannot be sent.");
+                throw new ScriptRuntimeException($"{context}: a {value.Type.ToLuaTypeString()} cannot be stored or sent.");
         }
     }
 
-    private static JsonNode FromTable(Table table, int depth)
+    private static JsonNode FromTable(Table table, int depth, string context)
     {
         var length = table.Length;
         var count = table.Pairs.Count();
@@ -58,7 +58,7 @@ internal static class LuaJson
             var array = new JsonArray();
             for (var i = 1; i <= length; i++)
             {
-                array.Add(FromLua(table.Get(i), depth + 1));
+                array.Add(FromLua(table.Get(i), depth + 1, context));
             }
 
             return array;
@@ -71,9 +71,9 @@ internal static class LuaJson
             {
                 DataType.String => pair.Key.String,
                 DataType.Number => pair.Key.Number.ToString(CultureInfo.InvariantCulture),
-                _ => throw new ScriptRuntimeException("gmcp.send: a table key must be a string or a number."),
+                _ => throw new ScriptRuntimeException($"{context}: a table key must be a string or a number."),
             };
-            obj[key] = FromLua(pair.Value, depth + 1);
+            obj[key] = FromLua(pair.Value, depth + 1, context);
         }
 
         return obj;

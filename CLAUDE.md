@@ -1911,6 +1911,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **Lua's `store.*` is one JSON file per character** (`ScriptStore`, Scripting; `script-data/<session key>.json`
+  beside `config.json`, `0600`). The `scriptStoreRoot:` constructor parameter is null by default, the
+  `save:`/`logRoot:` family, but the host's store never is: with no folder it is memory-only by construction, the
+  `MsspCache` rule, so a test that runs scripts writes nothing. The store belongs to `SessionScripts`, not to a
+  `ScriptHost`, so it outlives a reload. Bounds are enforced at `set` (1,024 keys, 128-character keys, 256 KB),
+  and a refused `set` changes nothing and raises a Lua error. Every change is written at once through a
+  temporary file and a rename. A file that does not parse is moved to `.bad` and not overwritten. A session key
+  that is not a safe file name gets a hash suffix, so `A/B` and `A_B` never share a file.
 - **⇥ completes the last word on the command line** (`CompletionIndex`, Core, one per `WorldSession`;
   `InputBarControl.Complete`; `SharpMUTermApp.Completion.cs`). Names from GMCP (`Room.Players`,
   `Room.AddPlayer`, `Comm.Channel.Players`, `Comm.Channel.Text`'s talker) first, then words of output the

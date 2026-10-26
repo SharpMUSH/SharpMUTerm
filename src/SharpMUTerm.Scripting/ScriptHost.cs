@@ -8,7 +8,7 @@ namespace SharpMUTerm.Scripting;
 /// Hosts a single sandboxed Lua environment for a world and bridges it to an
 /// <see cref="IScriptWorld"/>. Owns the MoonSharp <see cref="Script"/>, injects the client API
 /// (<c>world</c>, <c>output</c>, <c>trigger</c>, <c>alias</c>, <c>timer</c>, <c>gmcp</c>,
-/// <c>log</c>), and routes world events (trigger fires, GMCP messages) back into Lua callbacks.
+/// <c>store</c>, <c>log</c>), and routes world events (trigger fires, GMCP messages) back into Lua callbacks.
 /// </summary>
 /// <remarks>
 /// <para><b>Sandbox.</b> The module set is hand-picked (see <see cref="SandboxModules"/>): no
@@ -40,6 +40,7 @@ public sealed class ScriptHost : IDisposable
         CoreModules.Json;
 
     private readonly IScriptWorld _world;
+    private readonly ScriptStore _store;
     private readonly object _gate = new();
     private readonly Dictionary<string, DynValue> _triggerCallbacks = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DynValue> _aliasCallbacks = new(StringComparer.Ordinal);
@@ -52,9 +53,12 @@ public sealed class ScriptHost : IDisposable
     private int _callbackSeed;
     private bool _disposed;
 
-    public ScriptHost(IScriptWorld world)
+    /// <param name="world">What the scripts act on.</param>
+    /// <param name="store">What <c>store.*</c> reads and writes; null gives a store kept in memory only.</param>
+    public ScriptHost(IScriptWorld world, ScriptStore? store = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
+        _store = store ?? new ScriptStore(null);
         ResetScript();
     }
 
@@ -360,6 +364,14 @@ public sealed class ScriptHost : IDisposable
         InjectApi(_script);
     }
 
+    private void StoreSet(string key, DynValue value)
+    {
+        if (_store.Set(key ?? string.Empty, LuaJson.FromLua(value, context: "store.set")) is { } refusal)
+        {
+            throw new ScriptRuntimeException("store.set: " + refusal);
+        }
+    }
+
     private string NextCallbackId(string prefix)
     {
         var n = Interlocked.Increment(ref _callbackSeed);
@@ -439,6 +451,24 @@ public sealed class ScriptHost : IDisposable
                     : DynValue.True),
         };
         globals["map"] = map;
+
+        // store.* — values kept between runs, for this character. set(key, nil) removes one.
+        var store = new Table(script)
+        {
+            ["get"] = (Func<string, DynValue>)(key => LuaJson.ToLua(script, _store.Get(key ?? string.Empty))),
+            ["set"] = (Action<string, DynValue>)StoreSet,
+            ["keys"] = (Func<DynValue>)(() =>
+            {
+                var keys = new Table(script);
+                foreach (var key in _store.Keys)
+                {
+                    keys.Append(DynValue.NewString(key));
+                }
+
+                return DynValue.NewTable(keys);
+            }),
+        };
+        globals["store"] = store;
 
         // log.*
         var log = new Table(script)
