@@ -15,7 +15,8 @@ public sealed record CharacterRef(
     string CharacterName,
     string SessionKey,
     bool Connected,
-    bool Open = false);
+    bool Open = false,
+    bool InGroup = false);
 
 /// <summary>Live flags the catalog reads so stateful commands show their current value.</summary>
 /// <param name="LoggingOn">Whether the focused character is logging.</param>
@@ -182,6 +183,34 @@ public static class CommandCatalog
         // can find is the same as no feature — ⌃L's newline sat unused until it was reported missing.
         items.Add(new CommandItem(CommandGroup.World, "Reconnect", "world:reconnect", "⌥R"));
         items.Add(new CommandItem(CommandGroup.World, "Disconnect", "world:disconnect", "⌥D"));
+        // The send group: one line to several characters. Offered once two characters are open, since a
+        // group of one is the command line.
+        var open = characters.Where(c => c.Open).ToList();
+        if (open.Count > 1 || characters.Any(c => c.InGroup))
+        {
+            foreach (var character in open)
+            {
+                items.Add(new CommandItem(
+                    CommandGroup.World,
+                    character.InGroup
+                        ? $"Remove {character.CharacterName} from the send group"
+                        : $"Add {character.CharacterName} to the send group",
+                    CommandIds.GroupToggle(character.SessionKey),
+                    character.WorldName));
+            }
+
+            var members = characters.Count(c => c.InGroup);
+            if (members > 0)
+            {
+                items.Add(new CommandItem(
+                    CommandGroup.World,
+                    "Send the command line to the group",
+                    CommandIds.GroupSend,
+                    members == 1 ? "1 character" : $"{members} characters"));
+                items.Add(new CommandItem(CommandGroup.World, "Clear the send group", CommandIds.GroupClear));
+            }
+        }
+
         if (context.ScriptsOn)
         {
             items.Add(new CommandItem(

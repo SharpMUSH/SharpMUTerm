@@ -132,7 +132,9 @@ internal static class RailRenderer
     private static string Character(RailRow row, bool reserve, ChromeInk ink)
     {
         var marker = row.Active ? "[bold]▸[/]" : " ";
-        var dot = row.Connected ? "●" : "○";
+        // A member of the send group wears a diamond in the dot's cell: the same width, so joining the group
+        // moves no column and re-announces no pane size.
+        var dot = row.InGroup ? (row.Connected ? "◆" : "◇") : row.Connected ? "●" : "○";
         var name = row.Active ? $"[bold]{Escape(row.Label)}[/]" : Escape(row.Label);
         return $"{Indent(row)}{ChordField(row.Chord, reserve)}"
             + Link(row, $"{marker} [{Accent(row, ink)}]{dot}[/] {name}{UnreadField(row.Unread, ink)}");

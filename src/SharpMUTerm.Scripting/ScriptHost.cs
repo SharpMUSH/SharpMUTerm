@@ -386,6 +386,11 @@ public sealed class ScriptHost : IDisposable
         var world = new Table(script)
         {
             ["send"] = (Action<string>)(cmd => _world.Send(cmd ?? string.Empty)),
+            // sendTo(name, cmd) returns true, or false and why — the map.walk shape.
+            ["sendTo"] = (Func<string, string, DynValue>)((name, cmd) =>
+                _world.SendTo(name ?? string.Empty, cmd ?? string.Empty) is { } refusal
+                    ? DynValue.NewTuple(DynValue.False, DynValue.NewString(refusal))
+                    : DynValue.True),
             ["print"] = (Action<string>)(text => _world.Print(text ?? string.Empty)),
             ["name"] = _world.WorldName,
         };
