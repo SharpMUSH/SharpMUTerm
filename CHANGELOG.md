@@ -112,6 +112,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- MXP pictures draw again. Since the TelnetNegotiationCore update the client stopped answering a
+  server's MXP `<SUPPORT>` and `<VERSION>` questions, so a game such as SharpMUSH decided it could not show
+  `<IMAGE>` and sent the picture's address as text instead.
 - Pueblo worlds work. The client answers a server's Pueblo greeting and switches to Pueblo markup when the
   server does, and Pueblo worlds now show their ANSI colours instead of the escape codes. A world set to
   `mxp` or `ansi` on F5 does not answer the greeting.
