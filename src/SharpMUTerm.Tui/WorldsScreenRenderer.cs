@@ -63,6 +63,12 @@ internal static class WorldsScreenRenderer
     internal const int KeepaliveField = 4;
 
     /// <summary>
+    /// <see cref="WorldDefinition.GmcpModules"/>: the GMCP modules asked for beyond the client's own, as a
+    /// comma-separated list of <c>Name Version</c>.
+    /// </summary>
+    internal const int GmcpModulesField = 5;
+
+    /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
     /// CHARACTER form draws them, top to bottom. The name leads, as on every list screen. The password
     /// and connect line are <em>inserted</em> after it rather than appended, so ⇥ does not walk down the
@@ -406,7 +412,8 @@ internal static class WorldsScreenRenderer
             ScreenField.Text("host", () => w.Host, v => w.Host = v),
             ScreenField.Integer("port", () => w.Port, v => w.Port = v, 1, 65535),
             ScreenField.Choice("encoding", () => w.Encoding, v => w.Encoding = v, Encodings),
-            ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400)))
+            ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400),
+            ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v))))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -504,6 +511,27 @@ internal static class WorldsScreenRenderer
                 character.TriggerSets.Add(name);
             }
         });
+
+    /// <summary>A world's extra GMCP modules as the well shows and edits them, or null for none.</summary>
+    internal static string? JoinModules(WorldDefinition world) =>
+        world.GmcpModules.Count == 0 ? null : string.Join(", ", world.GmcpModules);
+
+    /// <summary>
+    /// Writes the well back: split on commas, and only entries <see cref="GmcpHandshake.Parse"/> accepts are
+    /// kept, normalised to <c>Name Version</c>, so what is saved is what will be sent.
+    /// </summary>
+    internal static void SplitModules(WorldDefinition world, string? value)
+    {
+        world.GmcpModules.Clear();
+        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (GmcpHandshake.Parse(part) is { } module
+                && !world.GmcpModules.Any(m => m.StartsWith(module.Name + " ", StringComparison.OrdinalIgnoreCase)))
+            {
+                world.GmcpModules.Add($"{module.Name} {module.Version.ToString(CultureInfo.InvariantCulture)}");
+            }
+        }
+    }
 
     /// <summary>A set's script files as the well shows and edits them, or null for none.</summary>
     internal static string? JoinScripts(TriggerSet set) =>
@@ -880,6 +908,13 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 KeepaliveField)),
+            WorldField("gmcp", Field(
+                JoinModules(world) is { } modules
+                    ? $"[{Value}]{Escape(modules)}[/]"
+                    : $"[{Label}]defaults[/]",
+                cursor,
+                selectedWorld,
+                GmcpModulesField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

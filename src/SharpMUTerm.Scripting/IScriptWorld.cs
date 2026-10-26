@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 namespace SharpMUTerm.Scripting;
 
 /// <summary>
@@ -32,6 +34,15 @@ public interface IScriptWorld
 
     /// <summary>Schedules a one-shot callback; disposing the handle cancels it.</summary>
     IDisposable ScheduleAfter(TimeSpan delay, Action callback);
+
+    /// <summary>
+    /// The GMCP or MSDP data at a dotted path (<c>Char.Vitals.hp</c>, <c>MSDP.HEALTH</c>), or null — what
+    /// <c>gmcp.get</c> and <c>msdp.get</c> read.
+    /// </summary>
+    JsonNode? GameData(string path);
+
+    /// <summary>Sends a GMCP message; <paramref name="json"/> is the body, empty for none.</summary>
+    void SendGmcp(string package, string json);
 
     /// <summary>The display name of the world, exposed to scripts as <c>world.name</c>.</summary>
     string WorldName { get; }

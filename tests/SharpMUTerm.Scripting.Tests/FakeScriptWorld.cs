@@ -19,6 +19,15 @@ internal sealed class FakeScriptWorld : IScriptWorld
 
     public void Print(string text) => Printed.Add(text);
 
+    public Dictionary<string, System.Text.Json.Nodes.JsonNode?> Data { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public List<(string Package, string Json)> SentGmcp { get; } = new();
+
+    public System.Text.Json.Nodes.JsonNode? GameData(string path) =>
+        Data.TryGetValue(path, out var node) ? node?.DeepClone() : null;
+
+    public void SendGmcp(string package, string json) => SentGmcp.Add((package, json));
+
     public void AddTrigger(string pattern, string callbackId) => Triggers.Add((pattern, callbackId));
 
     public void AddAlias(string pattern, string substitution, string callbackId) =>

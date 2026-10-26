@@ -59,12 +59,28 @@ internal sealed class RecordingTelnetSession : ITelnetSession
 
     public event EventHandler<TelnetOutputEventArgs>? OutputReceived;
 
-#pragma warning disable CS0067 // Required by the interface; these tests drive sizes and output, not these.
     public event EventHandler<GmcpMessageEventArgs>? GmcpReceived;
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
+
+#pragma warning disable CS0067 // Required by the interface; these tests drive sizes and output, not these.
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
     public event EventHandler? MxpEnabled;
 #pragma warning restore CS0067
+
+    public event EventHandler? MsdpEnabled;
+
+    public void ReceiveGmcp(string package, string json) =>
+        GmcpReceived?.Invoke(this, new GmcpMessageEventArgs(package, json));
+
+    public void ReceiveMsdp(string json) => MsdpReceived?.Invoke(this, new MsdpMessageEventArgs(json));
+
+    public void RaiseMsdpEnabled() => MsdpEnabled?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Every GMCP message the client sent, oldest first.</summary>
+    public List<(string Package, string Json)> SentGmcp { get; } = new();
+
+    /// <summary>Every MSDP variable the client sent, oldest first.</summary>
+    public List<(string Variable, string Value)> SentMsdp { get; } = new();
 
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
 
@@ -109,8 +125,25 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     public ValueTask SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default) =>
         ValueTask.CompletedTask;
 
-    public ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default) =>
-        ValueTask.CompletedTask;
+    public ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default)
+    {
+        lock (SentGmcp)
+        {
+            SentGmcp.Add((package, json));
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask SendMsdpAsync(string variable, string value, CancellationToken cancellationToken = default)
+    {
+        lock (SentMsdp)
+        {
+            SentMsdp.Add((variable, value));
+        }
+
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask SetWindowSizeAsync(int width, int height)
     {

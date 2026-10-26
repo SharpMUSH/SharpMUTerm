@@ -212,7 +212,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly InputBarControl _input = new();
     private readonly InputBarControl _second = new();
     private InputBarControl _armed;
-    private readonly GmcpStats _stats = new();
+
+    /// <summary>
+    /// The game data the demo scene shows, standing in for a session's own <see cref="WorldSession.GameData"/>
+    /// in the views that draw it. Written through the same <see cref="GameDataStore.SetGmcp"/> the wire uses,
+    /// and empty in every other frame, so no frame but those carries a meter.
+    /// </summary>
+    private readonly GameDataStore _demoGameData = new();
     private readonly SharpMUTerm.Web.WebPageFetcher _fetcher = new();
     private readonly WebImageLoader _imageLoader = new();
 
@@ -297,6 +303,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>The ⌃P ▸ <c>Show client messages</c> viewer over the diagnostics log.</summary>
     private readonly MessageLogOverlay _messageLog;
+    private readonly GameDataOverlay _gameData;
 
     /// <summary>The ⌃Q confirmation. Nothing ends the loop except a yes it collected.</summary>
     private readonly QuitOverlay _quit;
@@ -836,6 +843,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
+        _gameData = new GameDataOverlay(_system, _time);
         _settings = new SettingsOverlay(_system);
         _composer = new ComposeOverlay(_system);
         _composer.Send += (_, result) => SendComposed(result);
@@ -1592,6 +1600,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice("switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it", MessageSeverity.Info, "⌃P");
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
             _messageLog.Toggle();
+        }
+
+        // The status row's meters and the game data inspector, over the demo's game data — written through
+        // GameDataStore.SetGmcp, the call the wire makes, so the frame shows what a server's messages produce.
+        // `meters` is the row alone; `gamedata` opens the inspector through the real ⌃P entry.
+        if (string.Equals(view, "meters", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "gamedata", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            if (string.Equals(view, "gamedata", StringComparison.OrdinalIgnoreCase))
+            {
+                DispatchCommand("term:gamedata");
+            }
         }
 
         // The ⌃Q confirmation, over a workspace that has something to lose: a second world marked
@@ -2585,11 +2606,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // cache so the snapshot's demo report is written by the same code the wire is (see DemoScene's
         // remarks on state a live session writes).
         session.MsspReceived += (_, e) => OnUi(() => CaptureMssp(session.World, e.Data));
-        session.GmcpReceived += (_, e) => OnUi(() =>
+        // The meters read the session's game data, which the session has already stored by the time this is
+        // raised. Only the session the status row describes repaints it.
+        session.GameData.Changed += (_, _) => OnUi(() =>
         {
-            if (_stats.Update(e.Package, e.Json))
+            if (ReferenceEquals(session, _active))
             {
-                UpdateStatus();
+                RefreshStatusBar();
             }
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
@@ -4827,7 +4850,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -4940,6 +4963,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _palette.IsOpen ? "the command surface"
         : _quit.IsOpen ? "the quit prompt"
         : _messageLog.IsOpen ? "the client messages"
+        : _gameData.IsOpen ? "the game data"
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
@@ -6554,6 +6578,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         foreach (var session in _sessions.Sessions)
         {
+            session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
             if (session.Character is not { } character)
             {
                 continue; // an anonymous connection has no character, so nothing resolves for it
@@ -7848,6 +7873,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 }
 
                 return true;
+            case "term:gamedata":
+                if (!ComposerIsInTheWay("the game data"))
+                {
+                    ShowGameData();
+                }
+
+                return true;
             case "term:restore-purge":
                 PurgeRestoreLog();
                 return true;
@@ -7953,6 +7985,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnSessionAdded(object? sender, WorldSession session)
     {
+        session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         if (_scriptsRoot is null || _scripts.ContainsKey(session))
         {
             return;
@@ -8025,6 +8058,51 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         SendTarget() is { } session && _scripts.TryGetValue(session, out var scripts)
             ? scripts.Defines(name)
             : null;
+
+    /// <summary>
+    /// ⌃P ▸ <c>Show game data</c>: the inspector, over the focused window's connection — <see cref="SendTarget"/>,
+    /// for <see cref="Reconnect"/>'s reason. A window with no connection refuses out loud.
+    /// </summary>
+    private void ShowGameData()
+    {
+        if (_gameData.IsOpen)
+        {
+            _gameData.Toggle(_demoGameData, string.Empty);
+            return;
+        }
+
+        if (SendTarget() is { } session)
+        {
+            _gameData.Toggle(session.GameData, SessionTitle(session));
+            return;
+        }
+
+        if (_sessions.Sessions.Count == 0 && _demoGameData.Count > 0)
+        {
+            _gameData.Toggle(_demoGameData, "Corvid");
+            return;
+        }
+
+        RefuseCommand("no game data here — pick a character first (⌃P ▸ Switch to …)");
+    }
+
+    internal bool GameDataIsOpen => _gameData.IsOpen;
+
+    /// <summary>What an IRE-style server sends after the handshake, for the <c>meters</c> and <c>gamedata</c> views.</summary>
+    private void LoadDemoGameData()
+    {
+        _demoGameData.SetGmcp("Char.Vitals", """{"hp":"412","maxhp":"500","mp":"23","maxmp":"120","moves":"88"}""");
+        _demoGameData.SetGmcp("Char.MaxStats", """{"maxmoves":"100"}""");
+        _demoGameData.SetGmcp("Char.Status", """{"name":"Corvid","level":"42","class":"Sentinel","gold":"1275"}""");
+        _demoGameData.SetGmcp(
+            "Room.Info",
+            """{"num":4201,"name":"The Grand Plaza","area":"Aetherfall","environment":"urban","exits":{"n":4202,"e":4210,"s":4199}}""");
+        _demoGameData.SetGmcp("Comm.Channel.List", """[{"name":"ooc","caption":"Out of character"},{"name":"trade","caption":"Trade"}]""");
+        RefreshStatusBar();
+    }
+
+    /// <summary>The game data the status row's meters read: the active session's, or the demo's.</summary>
+    private GameDataStore StatusData() => _active?.GameData ?? _demoGameData;
 
     private void Reconnect()
     {
@@ -12319,10 +12397,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private SessionEncoding? EffectiveEncoding() => _active?.CurrentEncoding ?? _demoEncoding;
 
+    /// <summary>The cells the meters leave free for the typed-character count to grow into.</summary>
+    private const int MeterSlack = 4;
+
     private string StatusBarMarkup(string character, string state)
     {
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
+        var meters = StatusMeterRenderer.Render(_config.Text.StatusMeters, StatusData(), $"{_ink.Notice}");
 
         var right = new List<string>();
 
@@ -12376,6 +12458,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // worse trade than a hint that is only there when there is room for it, and this is the same
         // measurement the header already makes to right-align its own cluster.
         var rightBar = string.Join("   ", right);
+
+        // The meters sit beside the identity they describe, and only when the row has room for them with a
+        // few cells to spare: the character count on the right grows as a line is typed, and a cluster that
+        // came and went with it would be worse than one that is absent on a narrow terminal.
+        if (meters.Length > 0
+            && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+        {
+            left = $"{left}   {meters}";
+        }
+
         var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
         foreach (var focusHint in FocusHints())
         {

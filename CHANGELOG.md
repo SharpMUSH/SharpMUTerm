@@ -13,6 +13,17 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   along with errors the UI framework used to swallow without a trace.
 - A `scripts` field on each trigger set in Worlds & Characters (F5), and Ctrl+P ▸ *Reload scripts*, which
   re-reads the focused character's files.
+- GMCP games now send their data. The client introduces itself (`Core.Hello`) and asks for the common
+  modules (`Core.Supports.Set`: Char, Char.Skills, Char.Items, Room, Comm.Channel) once GMCP is agreed, and
+  asks an MSDP game to report the variables the status row reads. Worlds & Characters (F5) has a
+  `gmcp modules` field for a world that needs more, such as `IRE.Rift 1`.
+- Health, mana and movement on the status row, read from GMCP or MSDP. A meter shows only once its value
+  arrives, keeps its width as the numbers change, and turns to the warning colour below a quarter. Which
+  values the row shows is the `meters` setting in Text & ANSI (F7).
+- Ctrl+P ▸ *Show game data* lists every GMCP package and MSDP variable the focused connection holds, and
+  shows the selected one in full.
+- Lua scripts can read and send game data: `gmcp.get('Char.Vitals')`, `msdp.get('HEALTH')` and
+  `gmcp.send('Char.Skills.Get', { group = 'combat' })`.
 
 ### Changed
 

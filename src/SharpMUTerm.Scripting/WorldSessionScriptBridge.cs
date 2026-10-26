@@ -60,6 +60,10 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
             ScriptCallback = string.IsNullOrEmpty(callbackId) ? null : callbackId,
         });
 
+    public System.Text.Json.Nodes.JsonNode? GameData(string path) => _session.GameData.Get(path);
+
+    public void SendGmcp(string package, string json) => _ = _session.SendGmcpAsync(package, json);
+
     public IDisposable ScheduleEvery(TimeSpan interval, Action callback) =>
         _session.Scheduler.Every(interval, callback);
 

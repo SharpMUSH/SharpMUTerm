@@ -219,6 +219,48 @@ public sealed class WorldSession : IAsyncDisposable
     /// what it does cover, and is the right call to keep regardless.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Asks an MSDP server for the variables the meters read. MSDP servers commonly send nothing until a
+    /// client <c>REPORT</c>s, so without this a meter pointed at <c>MSDP.HEALTH</c> stayed empty for ever.
+    /// Raised from the read loop; the sends are fire-and-forget because a refused one changes nothing.
+    /// </summary>
+    private void OnMsdpEnabled(object? sender, EventArgs e)
+    {
+        if (sender is not ITelnetSession telnet)
+        {
+            return;
+        }
+
+        foreach (var variable in MsdpReports.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            _ = SendMsdpQuietly(telnet, "REPORT", variable);
+        }
+    }
+
+    private async Task SendMsdpQuietly(ITelnetSession telnet, string variable, string value)
+    {
+        try
+        {
+            await telnet.SendMsdpAsync(variable, value).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "MSDP {Variable} {Value} was not sent.", variable, value);
+        }
+    }
+
+    /// <summary>Sends a GMCP message on this connection; refused (false) when nothing is connected.</summary>
+    public async Task<bool> SendGmcpAsync(string package, string json)
+    {
+        if (_telnet is not { IsConnected: true } telnet)
+        {
+            return false;
+        }
+
+        await telnet.SendGmcpAsync(package, json).ConfigureAwait(false);
+        return true;
+    }
+
     private void OnMxpEnabled(object? sender, EventArgs e)
     {
         if (World.ContentFormat != ContentFormat.Ansi || _parser is MxpParser)
@@ -293,6 +335,18 @@ public sealed class WorldSession : IAsyncDisposable
     public event EventHandler<GmcpMessageEventArgs>? GmcpReceived;
 
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
+
+    /// <summary>
+    /// The latest GMCP and MSDP data this connection has received. Emptied on connect, because a package a
+    /// previous connection held says nothing about this one.
+    /// </summary>
+    public GameDataStore GameData { get; } = new();
+
+    /// <summary>
+    /// The MSDP variables to ask for with <c>REPORT</c> once MSDP is agreed — the ones the status row's meters
+    /// read. Set by the app; read at that moment, so a change applies from the next connection.
+    /// </summary>
+    public IReadOnlyList<string> MsdpReports { get; set; } = [];
 
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
 
@@ -381,8 +435,19 @@ public sealed class WorldSession : IAsyncDisposable
         var telnet = _sessionFactory(World.ToConnectionOptions());
         _telnet = telnet;
         telnet.OutputReceived += OnOutputReceived;
-        telnet.GmcpReceived += (_, e) => GmcpReceived?.Invoke(this, e);
-        telnet.MsdpReceived += (_, e) => MsdpReceived?.Invoke(this, e);
+        GameData.Clear();
+        telnet.GmcpReceived += (_, e) =>
+        {
+            // Stored before the event, so a handler reading GameData sees the message that raised it.
+            GameData.SetGmcp(e.Package, e.Json);
+            GmcpReceived?.Invoke(this, e);
+        };
+        telnet.MsdpReceived += (_, e) =>
+        {
+            GameData.SetMsdp(e.Json);
+            MsdpReceived?.Invoke(this, e);
+        };
+        telnet.MsdpEnabled += OnMsdpEnabled;
         telnet.MsspReceived += (_, e) => MsspReceived?.Invoke(this, e);
         telnet.EncodingChanged += OnEncodingChanged;
         telnet.Disconnected += OnDisconnected;
@@ -876,6 +941,7 @@ public sealed class WorldSession : IAsyncDisposable
             Logger,
             options: new TelnetSessionOptions
             {
+                GmcpModules = World.GmcpModules.ToArray(),
                 CharsetOrder = order,
                 EncodingOverride = encodingOverride,
                 KeepaliveInterval = TelnetSessionOptions.ResolveKeepalive(World.KeepaliveSeconds),

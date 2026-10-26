@@ -226,6 +226,11 @@ public static class CommandCatalog
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Show client messages", "term:messages", "status-line notices"));
 
+        // What the server is sending out of band. Listed unconditionally: a meter or a script is written
+        // against a GMCP path, and this is where a player finds out which paths their game has.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Show game data", "term:gamedata", "GMCP and MSDP this connection holds"));
+
         // The command line's own history, browsable and searchable. Named here as well as bound to ⌃R
         // because a chord nothing mentions is a chord nobody finds — the same reason every settings screen
         // has a row even though each has an F-key.

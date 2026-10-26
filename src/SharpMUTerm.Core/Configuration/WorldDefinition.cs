@@ -107,6 +107,12 @@ public sealed class WorldDefinition
     public EmojiSettings Emoji { get; set; } = new();
 
     /// <summary>
+    /// GMCP modules to ask this world for beyond the client's defaults, each <c>Name Version</c>
+    /// (<c>IRE.Rift 1</c>) — sent in <c>Core.Supports.Set</c> once the server's GMCP is agreed.
+    /// </summary>
+    public List<string> GmcpModules { get; set; } = new();
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
@@ -138,6 +144,7 @@ public sealed class WorldDefinition
             Shortcodes = Emoji.Shortcodes,
         },
         Accent = Accent,
+        GmcpModules = GmcpModules.ToList(),
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 
