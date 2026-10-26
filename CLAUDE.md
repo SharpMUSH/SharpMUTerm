@@ -164,6 +164,12 @@ fallbacks) for inline images/maps.
   - **⌃P ▸ Mute is per run and never saved**; F7 is the setting. The `♪ muted` status cell is volatile
     only by keystroke, so it needs no reserved width. The cache is `MediaCache.DefaultRoot`, beside the
     scrollback spill under the platform cache folder, not beside `config.json`.
+  - **MSP triggers are read only on a connection that agreed option 90** (`MspTrigger`,
+    `ITelnetSession.MspChanged`): a whole line `!!SOUND(…)`/`!!MUSIC(…)` becomes a `MediaCommand` and is taken
+    out before the triggers; anywhere else it is text a player typed. **It is inert until the library ships
+    `MSPProtocol`** (TelnetNegotiationCore PR #171): no release has it, so `TelnetSession` registers nothing,
+    the server's `WILL MSP` is refused, and `MspChanged` is never raised. The bump registers the plugin only
+    when `PlaysMedia` is true and raises the event from its two callbacks.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
