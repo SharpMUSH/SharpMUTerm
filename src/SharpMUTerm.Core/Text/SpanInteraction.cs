@@ -29,6 +29,13 @@ public sealed record SpanInteraction(
     /// </summary>
     public InlineImageRequest? Image { get; init; }
 
+    /// <summary>
+    /// The commands an MXP <c>&lt;SEND HREF="a|b|c"&gt;</c> offers, in order, with their labels; null for a
+    /// span with one command. <see cref="Target"/> is always the first, so a click sends that and a menu
+    /// offers the rest. Not persisted by <see cref="StyledLineCodec"/>: a restored line keeps its first command.
+    /// </summary>
+    public IReadOnlyList<SendChoice>? Choices { get; init; }
+
     /// <summary>A clickable command. <paramref name="promptOnly"/> puts it on the input line instead of sending.</summary>
     public static SpanInteraction Command(string command, string? hint = null, bool promptOnly = false) =>
         new(InteractionKind.SendCommand, command, hint, promptOnly);
@@ -37,3 +44,6 @@ public sealed record SpanInteraction(
     public static SpanInteraction Link(string url, string? hint = null) =>
         new(InteractionKind.Hyperlink, url, hint);
 }
+
+/// <summary>One entry of an MXP <c>&lt;SEND&gt;</c> menu: what it is called and what it sends.</summary>
+public sealed record SendChoice(string Label, string Command);

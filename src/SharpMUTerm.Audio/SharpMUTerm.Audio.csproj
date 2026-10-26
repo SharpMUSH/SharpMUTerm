@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SharpMUTerm.Audio</RootNamespace>
+    <AssemblyName>SharpMUTerm.Audio</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpMUTerm.Core\SharpMUTerm.Core.csproj" />
+    <PackageReference Include="SoundFlow" />
+    <PackageReference Include="NVorbis" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharpMUTerm.Tui.Tests" />
+  </ItemGroup>
+
+</Project>

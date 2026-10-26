@@ -1,4 +1,8 @@
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Audio;
+using SharpMUTerm.Core.Accessibility;
+using SharpMUTerm.Core.Media;
+using SharpMUTerm.Core.Presence;
 using SharpMUTerm.Graphics;
 
 namespace SharpMUTerm.Tui;
@@ -60,6 +64,26 @@ internal sealed record ClientHost
     public required (int Width, int Height) SixelCell { get; init; }
 
     /// <summary>
+    /// Opens the sound device, called the first time a game asks for a sound, so a client whose games send
+    /// none never opens one. Null for no sound at all — the snapshot and the tests, which must never make a
+    /// noise; a factory that returns null is a machine with no device.
+    /// </summary>
+    public required Func<IAudioOutput?>? Audio { get; init; }
+
+    /// <summary>
+    /// Opens where a game's Discord presence is shown, called the first time a world that allows it has something
+    /// to show. Null for nowhere: the snapshot and the tests, which must never reach a Discord on the machine.
+    /// </summary>
+    public required Func<IPresence?>? Presence { get; init; }
+
+    /// <summary>
+    /// Where output lines, the client's messages and window changes go for a screen reader: the window's live
+    /// region, or <c>--plain</c>'s stdout. Null in a terminal, whose screen a reader cannot follow, and in the
+    /// snapshot and the tests.
+    /// </summary>
+    public required IAnnouncer? Announcer { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -92,6 +116,9 @@ internal sealed record ClientHost
         Pointer = TerminalPointer.Create(driver),
         RunsInline = false,
         SixelCell = SharpMUTermApp.SixelCellSize(Environment.GetEnvironmentVariable(SharpMUTermApp.SixelCellVariable)),
+        Audio = () => DesktopAudio.TryCreate(),
+        Presence = () => new DiscordIpc(),
+        Announcer = null,
     };
 
     /// <summary>
@@ -110,6 +137,9 @@ internal sealed record ClientHost
         Pointer = null,
         RunsInline = true,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
+        Audio = null,
+        Presence = null,
+        Announcer = null,
     };
 
     /// <summary>
@@ -126,7 +156,14 @@ internal sealed record ClientHost
     {
         if (driver is null)
         {
-            return Terminal(capabilities) with { Clipboard = clipboard, OpenUrl = openUrl, FocusReporting = focusReporting ?? PlatformDecodesFocusReports };
+            return Terminal(capabilities) with
+            {
+                Clipboard = clipboard,
+                OpenUrl = openUrl,
+                FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
+                Audio = null, // a test never makes a noise
+                Presence = null, // nor talks to Discord
+            };
         }
 
         var inline = driver is HeadlessConsoleDriver;

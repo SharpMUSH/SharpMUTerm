@@ -188,6 +188,8 @@ internal static class MacroKeys
         new((ConsoleModifiers)0, ConsoleKey.F7, "opens Text & ANSI"),
         new((ConsoleModifiers)0, ConsoleKey.F8, "opens Input"),
         new((ConsoleModifiers)0, ConsoleKey.F9, "opens the character's log"),
+        // F10 is Packages, the composer's case: a different surface, claimed so F4 says so.
+        new((ConsoleModifiers)0, ConsoleKey.F10, "opens Packages"),
     };
 
     /// <summary>The claimed chords by canonical descriptor, built once from <see cref="AppShortcuts"/>.</summary>

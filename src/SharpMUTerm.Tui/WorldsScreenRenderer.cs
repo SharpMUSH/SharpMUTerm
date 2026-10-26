@@ -63,6 +63,51 @@ internal static class WorldsScreenRenderer
     internal const int KeepaliveField = 4;
 
     /// <summary>
+    /// <see cref="WorldDefinition.GmcpModules"/>: the GMCP modules asked for beyond the client's own, as a
+    /// comma-separated list of <c>Name Version</c>.
+    /// </summary>
+    internal const int GmcpModulesField = 5;
+
+    /// <summary><see cref="WorldDefinition.ContentFormat"/>, as <see cref="ContentChoices"/>.</summary>
+    internal const int ContentField = 6;
+
+    /// <summary><see cref="WorldDefinition.Emoji"/>'s three switches, as one of <see cref="EmojiChoices"/>.</summary>
+    internal const int EmojiField = 7;
+
+    /// <summary><see cref="MapSettings.RoomNamePattern"/>: the line naming a room, for a game that sends no GMCP room.</summary>
+    internal const int MapRoomField = 8;
+
+    /// <summary><see cref="MapSettings.ExitsPattern"/>: the line listing a room's exits.</summary>
+    internal const int MapExitsField = 9;
+
+    /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
+    internal const int WalkFailField = 10;
+
+    /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
+    internal const int SoundsField = 11;
+
+    /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
+    internal const int GrabField = 12;
+
+    /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
+    internal const int GmcpLoginField = 13;
+
+    /// <summary><see cref="WorldDefinition.DiscordPresence"/>, as one of <see cref="DiscordChoices"/>.</summary>
+    internal const int DiscordField = 14;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.DiscordPresence"/>.</summary>
+    internal static readonly string[] DiscordChoices = ["off", "show status"];
+
+    /// <summary>F5's words for <see cref="WorldDefinition.GmcpLogin"/>: how a character with a saved password logs in.</summary>
+    internal static readonly string[] LoginChoices = ["off", "if offered"];
+
+    /// <summary>The prefix the grab row suggests while it is off: AresMUSH's, and the one its /edit commands use.</summary>
+    internal const string SuggestedGrabPrefix = "FugueEdit >";
+
+    /// <summary>F5's words for <see cref="WorldDefinition.DownloadMedia"/>: on fetches what the game asks for.</summary>
+    internal static readonly string[] SoundChoices = ["download", "cached only"];
+
+    /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
     /// CHARACTER form draws them, top to bottom. The name leads, as on every list screen. The password
     /// and connect line are <em>inserted</em> after it rather than appended, so ⇥ does not walk down the
@@ -78,6 +123,13 @@ internal static class WorldsScreenRenderer
     internal const int OnConnectField = 3;
 
     /// <summary>
+    /// <see cref="CharacterDefinition.OnDisconnect"/>, labelled <c>disconnect</c> as the counterpart of the
+    /// <c>connect</c> line (and because <c>on disconnect</c> is wider than the form's label column). Inserted
+    /// under the on-connect lines, not appended, so ⇥ reads the form top to bottom (the password's rule).
+    /// </summary>
+    internal const int OnDisconnectField = 4;
+
+    /// <summary>
     /// <see cref="CharacterDefinition.ConnectAtStartup"/>, placed with the connection rows it belongs to:
     /// the connect line, the on-connect lines and the login readout all answer "what happens when this
     /// character connects", and this one answers "does it, unasked".
@@ -87,11 +139,11 @@ internal static class WorldsScreenRenderer
     /// all. This one has a well, and ⏎ opens it.
     /// </para>
     /// </summary>
-    internal const int StartupField = 4;
+    internal const int StartupField = 5;
 
-    internal const int LogFormatField = 5;
+    internal const int LogFormatField = 6;
 
-    internal const int LogDirectoryField = 6;
+    internal const int LogDirectoryField = 7;
 
     /// <summary>
     /// <see cref="LoggingSettings.RestoreLog"/> — whether this character's panes come back holding their
@@ -99,7 +151,7 @@ internal static class WorldsScreenRenderer
     /// because it is the third answer to "what does this client write down about me". A field and not a
     /// toggle for <see cref="StartupField"/>'s reason.
     /// </summary>
-    internal const int RestoreLogField = 7;
+    internal const int RestoreLogField = 8;
 
     /// <summary>
     /// <see cref="CharacterDefinition.Tint"/> — the colour this character's panes are painted in.
@@ -107,7 +159,7 @@ internal static class WorldsScreenRenderer
     /// numbering reason above and because it is the one row on this form that is about
     /// <em>appearance</em>: it belongs at the end, where a reader stops looking for behaviour.
     /// </summary>
-    internal const int PaneTintField = 8;
+    internal const int PaneTintField = 9;
 
     /// <summary>
     /// The trigger-set row's field ordinals. A set's name leads, as every list row's does — and here it
@@ -117,6 +169,15 @@ internal static class WorldsScreenRenderer
     internal const int SetNameField = 0;
 
     internal const int SetDescriptionField = 1;
+
+    /// <summary>
+    /// <see cref="TriggerSet.ScriptFiles"/>, typed as a comma-separated list of names under the scripts
+    /// folder. It used to be reachable only by editing <c>config.json</c>, and nothing ran the files anyway.
+    /// </summary>
+    internal const int SetScriptsField = 2;
+
+    /// <summary>What a set with no script files shows in its scripts well.</summary>
+    internal const string NoScripts = "—";
 
     /// <summary>The F-key that opens this screen, and the second key that opens it on a character's log.</summary>
     internal const string FKey = "F5";
@@ -397,7 +458,29 @@ internal static class WorldsScreenRenderer
             ScreenField.Text("host", () => w.Host, v => w.Host = v),
             ScreenField.Integer("port", () => w.Port, v => w.Port = v, 1, 65535),
             ScreenField.Choice("encoding", () => w.Encoding, v => w.Encoding = v, Encodings),
-            ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400)))
+            ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400),
+            ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v)),
+            ScreenField.Choice("content", () => ContentName(w.ContentFormat), v => w.ContentFormat = ContentOf(v), ContentChoices),
+            ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices),
+            ScreenField.OptionalPattern("map room", () => w.Map.RoomNamePattern, v => w.Map.RoomNamePattern = v),
+            ScreenField.OptionalPattern("map exits", () => w.Map.ExitsPattern, v => w.Map.ExitsPattern = v),
+            ScreenField.OptionalPattern("walk fail", () => w.Map.WalkFailurePattern, v => w.Map.WalkFailurePattern = v),
+            ScreenField.Choice(
+                "sounds",
+                () => w.DownloadMedia ? SoundChoices[0] : SoundChoices[1],
+                v => w.DownloadMedia = v == SoundChoices[0],
+                SoundChoices),
+            ScreenField.Optional("edit grab", () => w.GrabPrefix, v => w.GrabPrefix = v),
+            ScreenField.Choice(
+                "gmcp login",
+                () => w.GmcpLogin ? LoginChoices[1] : LoginChoices[0],
+                v => w.GmcpLogin = v == LoginChoices[1],
+                LoginChoices),
+            ScreenField.Choice(
+                "discord",
+                () => w.DiscordPresence ? DiscordChoices[1] : DiscordChoices[0],
+                v => w.DiscordPresence = v == DiscordChoices[1],
+                DiscordChoices)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -415,6 +498,7 @@ internal static class WorldsScreenRenderer
                 ScreenField.Defaulted(
                     "connect", () => c.ConnectString, v => c.ConnectString = v, ConnectStringTemplate.Default),
                 ScreenField.Optional("on connect", () => c.OnConnect, v => c.OnConnect = v),
+                ScreenField.Optional("disconnect", () => c.OnDisconnect, v => c.OnDisconnect = v),
                 ScreenField.Choice(
                     StartupLabel,
                     () => c.ConnectAtStartup ? StartupOn : StartupOff,
@@ -449,7 +533,8 @@ internal static class WorldsScreenRenderer
                 () => set.Name,
                 value => RenameSet(worlds, set, value),
                 triggerSets.Where(s => !ReferenceEquals(s, set)).Select(s => s.Name).ToArray()),
-            ScreenField.Optional("description", () => set.Description, v => set.Description = v)))
+            ScreenField.Optional("description", () => set.Description, v => set.Description = v),
+            ScreenField.Optional("scripts", () => JoinScripts(set), v => SplitScripts(set, v))))
             .Concat(SetButtons(worlds, triggerSets, selectedSet))
             .ToArray();
 
@@ -494,6 +579,50 @@ internal static class WorldsScreenRenderer
                 character.TriggerSets.Add(name);
             }
         });
+
+    /// <summary>A world's extra GMCP modules as the well shows and edits them, or null for none.</summary>
+    internal static string? JoinModules(WorldDefinition world) =>
+        world.GmcpModules.Count == 0 ? null : string.Join(", ", world.GmcpModules);
+
+    /// <summary>
+    /// Writes the well back: split on commas, and only entries <see cref="GmcpHandshake.Parse"/> accepts are
+    /// kept, normalised to <c>Name Version</c>, so what is saved is what will be sent.
+    /// </summary>
+    private static string PatternDetail(string? pattern, string unset) =>
+        string.IsNullOrWhiteSpace(pattern) ? $"[{Label}]{unset}[/]" : $"[{Value}]{Escape(pattern)}[/]";
+
+    internal static void SplitModules(WorldDefinition world, string? value)
+    {
+        world.GmcpModules.Clear();
+        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (GmcpHandshake.Parse(part) is { } module
+                && !world.GmcpModules.Any(m => m.StartsWith(module.Name + " ", StringComparison.OrdinalIgnoreCase)))
+            {
+                world.GmcpModules.Add($"{module.Name} {module.Version.ToString(CultureInfo.InvariantCulture)}");
+            }
+        }
+    }
+
+    /// <summary>A set's script files as the well shows and edits them, or null for none.</summary>
+    internal static string? JoinScripts(TriggerSet set) =>
+        set.ScriptFiles.Count == 0 ? null : string.Join(", ", set.ScriptFiles);
+
+    /// <summary>
+    /// Writes the well back as a list: split on commas, trimmed, blanks and repeats dropped, order kept —
+    /// the order files load in, so a later file can rely on what an earlier one defined.
+    /// </summary>
+    internal static void SplitScripts(TriggerSet set, string? value)
+    {
+        set.ScriptFiles.Clear();
+        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!set.ScriptFiles.Contains(part, StringComparer.Ordinal))
+            {
+                set.ScriptFiles.Add(part);
+            }
+        }
+    }
 
     /// <summary>
     /// Renames a set <em>and every reference to it</em> — the one rename on these screens that reaches
@@ -850,6 +979,55 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 KeepaliveField)),
+            WorldField("gmcp", Field(
+                JoinModules(world) is { } modules
+                    ? $"[{Value}]{Escape(modules)}[/]"
+                    : $"[{Label}]defaults[/]",
+                cursor,
+                selectedWorld,
+                GmcpModulesField)),
+            WorldField("content", Field(
+                world.ContentFormat == ContentFormat.Ansi
+                    ? $"[{Label}]{ContentName(world.ContentFormat)}[/]"
+                    : $"[{Value}]{ContentName(world.ContentFormat)}[/]",
+                cursor,
+                selectedWorld,
+                ContentField)),
+            WorldField("emoji", Field(
+                world.Emoji.Enabled
+                    ? $"[{Value}]{EmojiName(world.Emoji)}[/]"
+                    : $"[{Label}]{EmojiOff}[/]",
+                cursor,
+                selectedWorld,
+                EmojiField)),
+            WorldField("map room", Field(
+                PatternDetail(world.Map.RoomNamePattern, "from GMCP"), cursor, selectedWorld, MapRoomField)),
+            WorldField("map exits", Field(
+                PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField)),
+            WorldField("walk fail", Field(
+                PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField)),
+            WorldField("sounds", Field(
+                world.DownloadMedia ? $"[{Label}]{SoundChoices[0]}[/]" : $"[{Value}]{SoundChoices[1]}[/]",
+                cursor,
+                selectedWorld,
+                SoundsField)),
+            WorldField("edit grab", Field(
+                world.GrabPrefix is { } grab
+                    ? $"[{Value}]{Escape(grab)}[/]"
+                    : $"[{Label}]off · e.g. {Escape(SuggestedGrabPrefix)}[/]",
+                cursor,
+                selectedWorld,
+                GrabField)),
+            WorldField("gmcp login", Field(
+                world.GmcpLogin ? $"[{Value}]{LoginChoices[1]}[/]" : $"[{Label}]{LoginChoices[0]} · connect line[/]",
+                cursor,
+                selectedWorld,
+                GmcpLoginField)),
+            WorldField("discord", Field(
+                world.DiscordPresence ? $"[{Value}]{DiscordChoices[1]}[/]" : $"[{Label}]{DiscordChoices[0]}[/]",
+                cursor,
+                selectedWorld,
+                DiscordField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });
@@ -1000,6 +1178,12 @@ internal static class WorldsScreenRenderer
                 selectedCharacter,
                 OnConnectField,
                 pane: CharactersPane)),
+            CharField("disconnect", Field(
+                $"[{Value}]{Escape(character.OnDisconnect ?? "—")}[/]",
+                cursor,
+                selectedCharacter,
+                OnDisconnectField,
+                pane: CharactersPane)),
             CharField(StartupLabel, Field(
                 StartupDetail(character.ConnectAtStartup),
                 cursor,
@@ -1043,6 +1227,55 @@ internal static class WorldsScreenRenderer
         // is a grid row in WorldsScreenView, which is the other half of why a list overlays rather than
         // pushes: growing one would resize the pane and shove the whole screen about.
         return ScreenChrome.Choices(form, cursor.Edit, CharDetailColumnWidth);
+    }
+
+    /// <summary>
+    /// The <c>content</c> field's words. <c>auto</c> is <see cref="ContentFormat.Ansi"/>, the stored default,
+    /// which starts on ANSI and follows a negotiated MXP; <c>ansi</c> is the deliberate choice not to.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ContentChoices = ["auto", "ansi", "mxp", "pueblo"];
+
+    internal static string ContentName(ContentFormat format) => format switch
+    {
+        ContentFormat.AnsiOnly => "ansi",
+        ContentFormat.Mxp => "mxp",
+        ContentFormat.Pueblo => "pueblo",
+        _ => "auto",
+    };
+
+    internal static ContentFormat ContentOf(string name) => name.ToLowerInvariant() switch
+    {
+        "ansi" => ContentFormat.AnsiOnly,
+        "mxp" => ContentFormat.Mxp,
+        "pueblo" => ContentFormat.Pueblo,
+        _ => ContentFormat.Ansi,
+    };
+
+    internal const string EmojiOff = "off";
+
+    /// <summary>
+    /// The <c>emoji</c> field's words: which of the two substitutions run. Three switches in the
+    /// configuration, one field here, because "on, with neither kind" is not a state anybody wants.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> EmojiChoices = [EmojiOff, "emoticons", "shortcodes", "both"];
+
+    internal static string EmojiName(EmojiSettings emoji) => (emoji.Enabled, emoji.Emoticons, emoji.Shortcodes) switch
+    {
+        (false, _, _) or (true, false, false) => EmojiOff,
+        (true, true, false) => "emoticons",
+        (true, false, true) => "shortcodes",
+        _ => "both",
+    };
+
+    internal static void SetEmoji(EmojiSettings emoji, string name)
+    {
+        var choice = name.ToLowerInvariant();
+        emoji.Enabled = choice != EmojiOff;
+        if (emoji.Enabled)
+        {
+            emoji.Emoticons = choice is "emoticons" or "both";
+            emoji.Shortcodes = choice is "shortcodes" or "both";
+        }
     }
 
     /// <summary>
@@ -1145,6 +1378,7 @@ internal static class WorldsScreenRenderer
         // each row can be read down. Measured over the drawn text, since a name may carry brackets.
         var nameWidth = Width(triggerSets, s => "▪ " + Escape(s.Name));
         var noteWidth = Width(triggerSets, s => Escape(s.Description ?? NoDescription));
+        var scriptWidth = Width(triggerSets, s => Escape(JoinScripts(s) ?? NoScripts));
 
         var rows = new List<string>(triggerSets.Count);
         foreach (var set in triggerSets)
@@ -1162,8 +1396,11 @@ internal static class WorldsScreenRenderer
             var note = ScreenChrome.Field(
                 PadVisible($"[{Label}]{Escape(set.Description ?? NoDescription)}[/]", noteWidth),
                 cursor.EditOn(TriggerSetsPane, index, SetDescriptionField));
+            var scripts = ScreenChrome.Field(
+                PadVisible($"[{Label}]{Escape(JoinScripts(set) ?? NoScripts)}[/]", scriptWidth),
+                cursor.EditOn(TriggerSetsPane, index, SetScriptsField));
 
-            rows.Add($"{box} {name} {note} [{Label}]{Inventory(set)}[/]");
+            rows.Add($"{box} {name} {note} {scripts} [{Label}]{Inventory(set)}[/]");
         }
 
         // The checklist sits in an auto-width column (see WorldsScreenView), so a cursor bar sized to

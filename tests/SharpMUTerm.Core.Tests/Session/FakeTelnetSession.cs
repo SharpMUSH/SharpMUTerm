@@ -16,13 +16,20 @@ internal sealed class FakeTelnetSession : ITelnetSession
 
     public event EventHandler<TelnetOutputEventArgs>? OutputReceived;
     public event EventHandler<GmcpMessageEventArgs>? GmcpReceived;
-#pragma warning disable CS0067 // Required by the interface; not exercised by current tests.
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
+#pragma warning disable CS0067 // Required by the interface; not exercised by current tests.
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
 #pragma warning restore CS0067
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
     public event EventHandler<SessionDisconnectedEventArgs>? Disconnected;
     public event EventHandler? MxpEnabled;
+    public event EventHandler? PuebloEnabled;
+    public event EventHandler? MsdpEnabled;
+    public event EventHandler<bool>? MspChanged;
+
+    public List<(string Variable, string Value)> SentMsdp { get; } = new();
+
+    public List<(string Package, string Json)> SentGmcp { get; } = new();
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -39,8 +46,17 @@ internal sealed class FakeTelnetSession : ITelnetSession
     public ValueTask SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default) =>
         ValueTask.CompletedTask;
 
-    public ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default) =>
-        ValueTask.CompletedTask;
+    public ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default)
+    {
+        SentGmcp.Add((package, json));
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask SendMsdpAsync(string variable, string value, CancellationToken cancellationToken = default)
+    {
+        SentMsdp.Add((variable, value));
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask SetWindowSizeAsync(int width, int height) => ValueTask.CompletedTask;
 
@@ -73,4 +89,12 @@ internal sealed class FakeTelnetSession : ITelnetSession
     }
 
     public void RaiseMxpEnabled() => MxpEnabled?.Invoke(this, EventArgs.Empty);
+
+    public void RaisePuebloEnabled() => PuebloEnabled?.Invoke(this, EventArgs.Empty);
+
+    public void RaiseMsp(bool active) => MspChanged?.Invoke(this, active);
+
+    public void RaiseMsdpEnabled() => MsdpEnabled?.Invoke(this, EventArgs.Empty);
+
+    public void EmitMsdp(string json) => MsdpReceived?.Invoke(this, new MsdpMessageEventArgs(json));
 }

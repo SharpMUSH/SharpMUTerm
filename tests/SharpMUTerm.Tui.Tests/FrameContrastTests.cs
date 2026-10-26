@@ -40,13 +40,20 @@ public class FrameContrastTests
     private static readonly string[] Views =
     [
         "", "freeze", "away", "highlight", "scrollback", "links", "mxp-image", "mxp-figure", "connections", "tint", "tint-input",
-        "characters", "compose", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
+        "characters", "compose", "moo-edit", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
         "logging", "startup", "history", "prefix-panel", "keypad",
 
         // The selection band is the one plane this client invents rather than derives from a pane, and
         // its ink replaces the world's own colour on every selected cell — so it is the pair with the
         // most to lose from a theme it was not measured against.
         "selection", "input-selection",
+
+        // The meters are the status row's only cells whose colour depends on what a server sent (a low
+        // value wears the notice ink), and the inspector is a modal of its own.
+        "meters", "gamedata", "map", "map-walking", "map-split",
+
+        // The package surfaces are a modal of their own, with a warning ink on the review.
+        "packages", "package-review", "package-browse", "send-menu",
 
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band

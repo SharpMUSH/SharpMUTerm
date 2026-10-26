@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SharpMUTerm.Audio/SharpMUTerm.Audio.csproj" />
     <Project Path="src/SharpMUTerm.Avalonia/SharpMUTerm.Avalonia.csproj" />
     <Project Path="src/SharpMUTerm.Core/SharpMUTerm.Core.csproj" />
     <Project Path="src/SharpMUTerm.Graphics/SharpMUTerm.Graphics.csproj" />

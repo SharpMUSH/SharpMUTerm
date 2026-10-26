@@ -3,6 +3,8 @@ using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpMUTerm.Core.Commands;
+using SharpMUTerm.Core.Telnet;
+using SharpMUTerm.Core.Text;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
@@ -10,7 +12,8 @@ namespace SharpMUTerm.Tui;
 /// <summary>What a composed post is, at the moment it is sent or put away.</summary>
 /// <param name="Body">The editor's buffer, exactly as typed.</param>
 /// <param name="Escaping">The window's escaping mode when it happened.</param>
-internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping);
+/// <param name="Edit">The MOO buffer this is an edit of, or null for a post.</param>
+internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping, MooEdit? Edit = null);
 
 /// <summary>
 /// The composer: a full-screen editor for writing a post before sending it, over the workspace.
@@ -46,8 +49,27 @@ internal sealed class ComposeOverlay
     private ComposeEscaping _escaping;
     private string _target = string.Empty;
     private bool _canSend;
+    private MooEdit? _edit;
+    private readonly Func<SpellChecker?>? _openSpelling;
+    private SpellChecker? _spelling;
+    private bool _spellingOpened;
 
-    internal ComposeOverlay(ConsoleWindowSystem system) => _system = system;
+    /// <param name="system">The window system the composer opens in.</param>
+    /// <param name="spelling">
+    /// Opens the dictionary, the first time the composer is opened and never again, so a client nobody writes a
+    /// post in reads no dictionary. Null, or a null answer, is a composer with no spelling, which says so.
+    /// </param>
+    internal ComposeOverlay(ConsoleWindowSystem system, Func<SpellChecker?>? spelling = null)
+    {
+        _system = system;
+        _openSpelling = spelling;
+    }
+
+    /// <summary>
+    /// The dictionary marking this post, or null: none was found, or this is a MOO edit, whose buffer is as often
+    /// code as prose.
+    /// </summary>
+    internal SpellChecker? Spelling => _edit is null ? _spelling : null;
 
     /// <summary>Raised when ⌃S sends. The host decides where it goes and what it does about failure.</summary>
     internal event EventHandler<ComposeResult>? Send;
@@ -67,6 +89,12 @@ internal sealed class ComposeOverlay
     /// <summary>The escaping mode as it stands — the window's own toggle, not a saved setting.</summary>
     internal ComposeEscaping Escaping => _escaping;
 
+    /// <summary>
+    /// The MOO buffer being edited, or null for a post. An edit is saved as its lines, with no <c>%r</c> join and
+    /// no escaping, so ⌥L does nothing while it is open and the footer does not offer it.
+    /// </summary>
+    internal MooEdit? Edit => _edit;
+
     /// <summary>The header row's markup, so a test can read who the window says it will send to.</summary>
     internal string HeaderMarkup => Header();
 
@@ -82,7 +110,8 @@ internal sealed class ComposeOverlay
     /// world briefly down is a real thing to be doing — and refuses at the moment of sending instead,
     /// which is the same rule ⏎ follows on the command line.
     /// </param>
-    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend)
+    /// <param name="edit">The MOO buffer this opens on, or null for a post.</param>
+    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null)
     {
         if (_window is not null)
         {
@@ -93,6 +122,7 @@ internal sealed class ComposeOverlay
         _target = target;
         _escaping = escaping;
         _canSend = canSend;
+        _edit = edit;
 
         _editor = new MultilineEditControl
         {
@@ -112,7 +142,9 @@ internal sealed class ComposeOverlay
             // into browse mode — which would make the key mean two different things depending on a
             // state the writer has no reason to be tracking.
             EscapeExitsEditMode = false,
-            PlaceholderText = "Write your post. ⏎ starts a new line; the game gets one command with %r breaks.",
+            PlaceholderText = edit is null
+                ? "Write your post. ⏎ starts a new line; the game gets one command with %r breaks."
+                : "Empty. ⌃S saves it empty.",
 
             // The screens' own edit colours, so the composer reads as part of this client rather than as
             // the control's grey default sitting in a themed window. Both pairs are set: this control
@@ -126,6 +158,17 @@ internal sealed class ComposeOverlay
             SelectionBackgroundColor = new Color(ScreenPalette.CursorBg),
             SelectionForegroundColor = new Color(ScreenPalette.Value),
         };
+
+        if (!_spellingOpened)
+        {
+            _spellingOpened = true;
+            _spelling = _openSpelling?.Invoke();
+        }
+
+        if (Spelling is { } checker)
+        {
+            _editor.SyntaxHighlighter = new SpellingHighlighter(checker);
+        }
 
         _editor.SetContent(draft);
         FitEditor();
@@ -197,11 +240,20 @@ internal sealed class ComposeOverlay
 
         // ⌥L flips the escaping. Alt rather than Ctrl by this codebase's rule — ESC + a printable byte
         // arrives intact, while half the Ctrl alphabet collapses onto bytes a terminal already spends.
-        if (alt && key.Key == ConsoleKey.L)
+        if (alt && key.Key == ConsoleKey.L && _edit is null)
         {
             e.Handled = true;
             _escaping = _escaping == ComposeEscaping.Literal ? ComposeEscaping.AsTyped : ComposeEscaping.Literal;
             Redraw();
+            return;
+        }
+
+        // ⌥W adds the word at the caret to the dictionary. Alt by the same rule as ⌥L, and W because nothing
+        // in MacroKeys.AppShortcuts takes it — a global shortcut would run before this window ever saw it.
+        if (alt && key.Key == ConsoleKey.W && Spelling is not null)
+        {
+            e.Handled = true;
+            AddWordAtCaret();
             return;
         }
 
@@ -212,6 +264,30 @@ internal sealed class ComposeOverlay
         }
 
         // Everything else is the editor's, including ⏎, the arrows, ⌃Z and a selection drag.
+    }
+
+    /// <summary>
+    /// Adds the word the caret is in, or just after, to the player's word list and repaints the marks. Nothing
+    /// happens on a caret in no word.
+    /// </summary>
+    private void AddWordAtCaret()
+    {
+        if (_editor is null || Spelling is not { } checker)
+        {
+            return;
+        }
+
+        var lines = _editor.GetContent().Split('\n');
+        var row = _editor.CurrentLine - 1;
+        if (row < 0 || row >= lines.Length || SpellChecker.WordAt(lines[row], _editor.CurrentColumn - 1) is not { } word)
+        {
+            return;
+        }
+
+        if (checker.Add(word))
+        {
+            _editor.RefreshSyntaxHighlighting();
+        }
     }
 
     private void SendNow()
@@ -225,7 +301,7 @@ internal sealed class ComposeOverlay
         // the close so the handler sees the buffer rather than an empty window — and Closed still
         // follows, so a send the host refuses (no connection) keeps the post rather than dropping it on
         // the floor.
-        Send?.Invoke(this, new ComposeResult(_editor.GetContent(), _escaping));
+        Send?.Invoke(this, new ComposeResult(_editor.GetContent(), _escaping, _edit));
     }
 
     /// <summary>Shuts the window, handing the buffer back for the host to keep.</summary>
@@ -236,7 +312,7 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        var result = new ComposeResult(Body, _escaping);
+        var result = new ComposeResult(Body, _escaping, _edit);
         _system.CloseModalWindow(window);
         Closed?.Invoke(this, result);
     }
@@ -291,28 +367,48 @@ internal sealed class ComposeOverlay
             ? $"[{ScreenPalette.Warn}]no connection[/]"
             : $"[{ScreenPalette.Value}]{Escape(_target)}[/]";
 
+        if (_edit is { } edit)
+        {
+            return $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
+                + $"[{ScreenPalette.Label}]  {Escape(edit.Type)}  ·  from [/]{target}";
+        }
+
         var mode = _escaping == ComposeEscaping.Literal
             ? $"[{ScreenPalette.Accent}]literal[/]"
             : $"[{ScreenPalette.Value}]as typed[/]";
 
+        var spelling = _spelling is { } checker
+            ? $"[{ScreenPalette.Value}]{Escape(checker.Name)}[/]"
+            : $"[{ScreenPalette.Muted}]no dictionary[/]";
+
         return $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
-            + $"[{ScreenPalette.Label}]  ·  text [/]{mode}";
+            + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"
+            + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}";
     }
 
     /// <summary>
-    /// The key row. It names ⌃S, ⌥L and Esc and nothing else, because this screen is held to the same
+    /// The key row. It names ⌃S, ⌥L, ⌥W (while there is a dictionary) and Esc and nothing else, because this screen is held to the same
     /// honesty rule as the settings screens: every key printed here works, and none that works is
     /// hidden. There is deliberately no <c>⌃F find</c> — the control has a find API but no chord bound
     /// to it, and advertising one would send a reader to press a key that does nothing.
     /// </summary>
     private string Footer()
     {
+        if (_edit is not null)
+        {
+            return (_canSend
+                    ? $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] save[/]"
+                    : $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] save (nothing connected)[/]")
+                + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close (keeps the edit)[/]";
+        }
+
         var send = _canSend
             ? $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] send[/]"
             : $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] send (nothing connected)[/]";
 
         return send
             + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥L[/][{ScreenPalette.Label}] escaping[/]"
+            + (Spelling is null ? string.Empty : $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥W[/][{ScreenPalette.Label}] add word[/]")
             + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close (keeps the draft)[/]";
     }
 
@@ -359,5 +455,6 @@ internal sealed class ComposeOverlay
         _system.ConsoleDriver.ScreenResized -= OnScreenResized;
         _window = null;
         _editor = null;
+        _edit = null;
     }
 }

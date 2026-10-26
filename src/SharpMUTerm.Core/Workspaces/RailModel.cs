@@ -46,7 +46,8 @@ public sealed record RailRow(
     bool Closed = false,
     int Unread = 0,
     string? Chord = null,
-    string? Target = null);
+    string? Target = null,
+    bool InGroup = false);
 
 /// <summary>A world as projected into the rail: its identity, accent, and characters.</summary>
 public sealed record RailWorld(string Name, string Host, int Port, TerminalColor Accent, IReadOnlyList<RailCharacter> Characters);
@@ -76,7 +77,8 @@ public sealed record RailCharacter(
     bool Active,
     int Unread,
     IReadOnlyList<RailWindow> Windows,
-    string? Chord = null);
+    string? Chord = null,
+    bool InGroup = false);
 
 /// <summary>
 /// A window in the rail: its title, the workspace id a click activates, the <c>⌥N</c> chord that goes
@@ -158,7 +160,8 @@ public static class RailModel
                     Connected: character.Connected,
                     Unread: character.Unread,
                     Chord: character.Chord,
-                    Target: CommandIds.Character(character.SessionKey)));
+                    Target: CommandIds.Character(character.SessionKey),
+                    InGroup: character.InGroup));
 
                 if (!character.Active)
                 {

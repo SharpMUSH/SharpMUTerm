@@ -364,15 +364,16 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 18 display rows: 5 section headers + 4 spacers + 9 options. It was 7/4 before WHITESPACE and
+        // 21 display rows: 6 section headers + 5 spacers + 10 options. It was 7/4 before WHITESPACE and
         // its "tab width (spaces)" row, which brought a header and a spacer with it, 10/5 before
         // "detect links in output" joined the COLOUR section, 11/6 before ACTIVITY and its
         // "activity bar holds for (seconds)" row brought a header and a spacer of their own, and 14/7
         // before "keep text legible" joined COLOUR beneath the row it is the other half of, and 15/8
-        // before BACKGROUND and its "background transparency (%)" row.
-        await Assert.That(screen.Rows.Count).IsEqualTo(18);
+        // before BACKGROUND and its "background transparency (%)" row, and 18/9 before STATUS ROW and its
+        // "meters" row.
+        await Assert.That(screen.Rows.Count).IsEqualTo(21);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(9);
+        await Assert.That(model.Sizes[0]).IsEqualTo(10);
     }
 
     /// <summary>
@@ -511,7 +512,7 @@ public class ScreenModelTests
         var model = WorldsScreenRenderer.Model(worlds, Sets(), 0, 0);
         var row = model.RowAt(WorldsScreenRenderer.CharactersPane, 0);
 
-        await Assert.That(row.FieldCount).IsEqualTo(9);
+        await Assert.That(row.FieldCount).IsEqualTo(10);
         await Assert.That(row.FieldAt(WorldsScreenRenderer.CharacterNameField)!.Value.Get()).IsEqualTo("Kaz");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogFormatField)!.Value.Get()).IsEqualTo("Html");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogDirectoryField)!.Value.Get()).IsEqualTo("/logs/kaz");

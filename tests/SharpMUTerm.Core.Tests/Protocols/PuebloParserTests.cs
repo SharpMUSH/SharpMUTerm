@@ -293,11 +293,53 @@ public class PuebloParserTests
         await Assert.That(line.Text).IsEqualTo("love <3");
     }
 
+    /// <summary>
+    /// ANSI is decoded here, because nothing in front of this parser decodes it: a Pueblo world's colour used
+    /// to arrive as a literal <c>&lt;ESC&gt;[33m</c>.
+    /// </summary>
     [Test]
-    public async Task Esc_IsPassedThroughUntouched()
+    public async Task Ansi_SgrSetsTheStyleAndLeavesNoEscapeInTheText()
     {
-        var line = ParseSingleLine("a\x1bb\n");
-        await Assert.That(line.Text).IsEqualTo("a\x1bb");
+        var line = ParseSingleLine("\x1b[33mYellow\x1b[0m plain\n");
+
+        await Assert.That(line.Text).IsEqualTo("Yellow plain");
+        await Assert.That(line.Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(3));
+        await Assert.That(line.Spans[^1].Style.Foreground).IsEqualTo(TerminalColor.Default);
+    }
+
+    [Test]
+    public async Task Ansi_AndPuebloMarkupComposeOnOneSpan()
+    {
+        var line = ParseSingleLine("\x1b[31m<b>red bold</b>\n");
+
+        await Assert.That(line.Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(1));
+        await Assert.That(line.Spans[0].Style.Attributes.HasFlag(TextAttributes.Bold)).IsTrue();
+    }
+
+    [Test]
+    public async Task Ansi_OtherSequencesAreConsumed()
+    {
+        // Cursor movement, an OSC title (BEL- and ST-terminated), a charset select and a two-byte escape.
+        var line = ParseSingleLine("a\x1b[2Kb\x1b]0;title\ac\x1b]2;t\x1b\\d\x1b(Be\x1bMf\n");
+
+        await Assert.That(line.Text).IsEqualTo("abcdef");
+    }
+
+    /// <summary>
+    /// An unterminated string escape a player typed ends with the line, in production's shape: fed without
+    /// its newline (the telnet layer strips it), then flushed.
+    /// </summary>
+    [Test]
+    public async Task Ansi_AnUnterminatedOscEndsWithTheLine()
+    {
+        var parser = new PuebloParser();
+        parser.Feed("before\x1b]0;never closed");
+        var first = parser.Flush();
+        parser.Feed("next line");
+        var second = parser.Flush();
+
+        await Assert.That(first!.Text).IsEqualTo("before");
+        await Assert.That(second!.Text).IsEqualTo("next line");
     }
 
     [Test]

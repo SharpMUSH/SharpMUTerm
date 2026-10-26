@@ -2,6 +2,9 @@ using System.Globalization;
 using SharpMUTerm.Core.Theming;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Mapping;
+using SharpMUTerm.Core.Media;
+using SharpMUTerm.Core.Packages;
 using SharpMUTerm.Core.Telnet.Mssp;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Graphics;
@@ -95,6 +98,17 @@ internal static class Program
             Environment.Exit(0);
         }
 
+        if (args.Contains(PlainHost.Flag))
+        {
+            // The input pump keeps the real stdin; the framework is handed an empty one, or it would read the
+            // same lines behind a modal of its own.
+            var stdin = Console.In;
+            var stdout = Console.Out;
+            Console.SetIn(TextReader.Null);
+            var plain = PlainHost.Create(capabilities, stdout);
+            return RunLive(args, config, loadNotices, plain, app => PlainHost.PumpInput(stdin, (HeadlessConsoleDriver)plain.Driver, app));
+        }
+
         return RunLive(args, config, loadNotices, ClientHost.Terminal(capabilities));
     }
 
@@ -108,7 +122,8 @@ internal static class Program
         string[] args,
         AppConfiguration config,
         IReadOnlyList<string> loadNotices,
-        ClientHost host)
+        ClientHost host,
+        Action<SharpMUTermApp>? ready = null)
     {
         // What this launch connects: the command line's host if one was typed, else whatever is marked
         // `at start` on F5, else nothing at all. The precedence lives in Core (StartupConnections) so it
@@ -169,6 +184,19 @@ internal static class Program
             loadLogger.LogWarning("{Notice}", msspProblem);
         }
 
+        // Lua files are read from <config>/scripts and nowhere else (SessionScripts.Resolve), so a trigger
+        // set naming a path cannot make the client read anything outside it. Created here so a new user has
+        // somewhere obvious to put a file; a failure leaves the folder missing, and each load then says so.
+        var scriptsRoot = Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "scripts");
+        try
+        {
+            Directory.CreateDirectory(scriptsRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            loadLogger.LogWarning("Could not create the scripts folder {Folder}: {Reason}", scriptsRoot, ex.Message);
+        }
+
         var liveApp = new SharpMUTermApp(
             config,
             host,
@@ -176,7 +204,14 @@ internal static class Program
             save: saved => ConfigurationStore.Save(ConfigurationStore.DefaultPath, saved),
             logRoot: logRoot,
             restore: restore,
-            mssp: mssp);
+            mssp: mssp,
+            scriptsRoot: scriptsRoot,
+            maps: new MapStore(MapStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Map") },
+            media: new MediaCache(MediaCache.DefaultRoot),
+            packages: new PackageStore(PackageStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Packages") },
+            scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"),
+            spelling: () => OpenDictionary(loadLogger));
+        ready?.Invoke(liveApp);
         int exitCode;
         try
         {
@@ -307,5 +342,21 @@ internal static class Program
             ClientUsage.Write(text, ClientUsage.Terminal, HostKeys.Terminal);
             return text.ToString();
         }
+    }
+
+    /// <summary>
+    /// The composer's dictionary: <c>dictionaries/</c> beside config.json first, then the system's, in the
+    /// locale's language. Words added with ⌥W go to <c>dictionaries/user-words.txt</c>.
+    /// </summary>
+    private static SpellChecker? OpenDictionary(ILogger logger)
+    {
+        var own = Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "dictionaries");
+        var checker = SpellChecker.Find(SpellChecker.SearchFolders(own), SpellChecker.PreferredLanguage(), Path.Combine(own, "user-words.txt"));
+        if (checker is null)
+        {
+            logger.LogInformation("No Hunspell dictionary found; put an .aff/.dic pair in {Folder} for spelling in the composer", own);
+        }
+
+        return checker;
     }
 }

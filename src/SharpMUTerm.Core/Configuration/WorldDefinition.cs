@@ -15,7 +15,10 @@ public enum LogFormat
 /// <summary>How a world's inbound text is interpreted for styling and interaction.</summary>
 public enum ContentFormat
 {
-    /// <summary>Plain text with ANSI SGR colour (the default).</summary>
+    /// <summary>
+    /// Plain text with ANSI SGR colour, switched to MXP when the connection negotiates it — the default, and
+    /// so it means "nobody chose" (F5's <c>auto</c>).
+    /// </summary>
     Ansi,
 
     /// <summary>MXP markup (tags, SEND/A links) over ANSI.</summary>
@@ -23,6 +26,13 @@ public enum ContentFormat
 
     /// <summary>Pueblo HTML-subset markup.</summary>
     Pueblo,
+
+    /// <summary>
+    /// ANSI colour and nothing else, chosen on purpose: a negotiated MXP does not switch the parser (F5's
+    /// <c>ansi</c>). Appended, because the configuration stores these by name and <see cref="Ansi"/> has to
+    /// keep meaning what every saved world already means by it.
+    /// </summary>
+    AnsiOnly,
 }
 
 /// <summary>Emoji/emoticon substitution options.</summary>
@@ -33,6 +43,34 @@ public sealed class EmojiSettings
     public bool Emoticons { get; set; } = true;
 
     public bool Shortcodes { get; set; } = true;
+}
+
+/// <summary>
+/// The mapper's per-world text patterns, for games that send neither GMCP room data nor MXP room tags. Both
+/// are regular expressions; empty means the text source is off.
+/// </summary>
+public sealed class MapSettings
+{
+    /// <summary>
+    /// Matches the line that names a room. The <c>name</c> group, when there is one, is the name; otherwise the
+    /// whole match is.
+    /// </summary>
+    public string? RoomNamePattern { get; set; }
+
+    /// <summary>
+    /// Matches the line that lists a room's exits, and so ends the room. The <c>exits</c> group holds the list,
+    /// split on spaces, commas and <c>and</c>.
+    /// </summary>
+    public string? ExitsPattern { get; set; }
+
+    /// <summary>
+    /// Matches a line saying a step of a speedwalk did not happen (<c>You can't go that way.</c>), which stops
+    /// the walk at once rather than after its step timeout. Null leaves the timeout as the only stop.
+    /// </summary>
+    public string? WalkFailurePattern { get; set; }
+
+    public MapSettings Clone() =>
+        new() { RoomNamePattern = RoomNamePattern, ExitsPattern = ExitsPattern, WalkFailurePattern = WalkFailurePattern };
 }
 
 /// <summary>Per-character logging configuration.</summary>
@@ -107,6 +145,43 @@ public sealed class WorldDefinition
     public EmojiSettings Emoji { get; set; } = new();
 
     /// <summary>
+    /// GMCP modules to ask this world for beyond the client's defaults, each <c>Name Version</c>
+    /// (<c>IRE.Rift 1</c>) — sent in <c>Core.Supports.Set</c> once the server's GMCP is agreed.
+    /// </summary>
+    public List<string> GmcpModules { get; set; } = new();
+
+    /// <summary>
+    /// Whether to log in over GMCP's <c>Char.Login</c> on a server that offers it, rather than by sending the
+    /// connect line. Off by default. On, the client asks for <c>Char.Login 1</c> and waits a few seconds for the
+    /// server's <c>Char.Login.Default</c>; a server that offers <c>password-credentials</c> is sent the
+    /// character's name and saved password, and any other answer, or none, gets the connect line as before.
+    /// </summary>
+    public bool GmcpLogin { get; set; }
+
+    /// <summary>
+    /// Whether this world may show what you are doing on your Discord profile, through GMCP's
+    /// <c>External.Discord</c>. Off by default. On, the world is asked for <c>External.Discord 1</c> and what it
+    /// sends goes to the Discord app on this computer while one of its characters' windows is in front.
+    /// </summary>
+    public bool DiscordPresence { get; set; }
+
+    /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
+    public MapSettings Map { get; set; } = new();
+
+    /// <summary>
+    /// Whether the client may download the sound files this world asks for (MCMP, MSP). Off still plays what is
+    /// already cached or in a soundpack folder; it only stops new fetches.
+    /// </summary>
+    public bool DownloadMedia { get; set; } = true;
+
+    /// <summary>
+    /// The prefix a MUSH starts a line with when it hands text back to edit — AresMUSH's <c>FugueEdit &gt;</c> —
+    /// or null for none, the default. Such a line is not shown: its text is put on the command line, and the
+    /// player sends it. Never sent by the client, because another player can page a line that starts with it.
+    /// </summary>
+    public string? GrabPrefix { get; set; }
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
@@ -138,6 +213,12 @@ public sealed class WorldDefinition
             Shortcodes = Emoji.Shortcodes,
         },
         Accent = Accent,
+        GmcpModules = GmcpModules.ToList(),
+        Map = Map.Clone(),
+        DownloadMedia = DownloadMedia,
+        GrabPrefix = GrabPrefix,
+        GmcpLogin = GmcpLogin,
+        DiscordPresence = DiscordPresence,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

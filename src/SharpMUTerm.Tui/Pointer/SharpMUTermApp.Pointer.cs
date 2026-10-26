@@ -114,6 +114,15 @@ internal sealed partial class SharpMUTermApp
 
         if (flags.Contains(MouseFlags.Button3Pressed))
         {
+            // A host that draws no menus still gets a server's <SEND> menu, as the client's own chooser.
+            if (_pointer is not { DrawsMenus: true }
+                && TargetAt(point) is { Kind: PointerKind.Link } link
+                && LinkOf(link) is { Payload.Choices: not null } menu)
+            {
+                ShowSendMenu(menu.WindowId, menu.Payload);
+                return;
+            }
+
             ShowPointerMenu(point);
             return;
         }
@@ -335,6 +344,9 @@ internal sealed partial class SharpMUTermApp
     {
         switch (LinkPayload.Parse(payload))
         {
+            case { Choices: { } choices } menu:
+                var verb = menu.Action == LinkAction.Prompt ? "Puts on the command line" : "Sends";
+                return $"{verb}:\n{Snippet(choices[0].Command)}\nright-click for {choices.Count - 1} more";
             case (LinkAction.Send, var command):
                 return WindowSession(windowId) is { } session
                     ? $"Sends to {SessionTitle(session)}:\n{Snippet(command)}"
@@ -451,11 +463,31 @@ internal sealed partial class SharpMUTermApp
         return Tidy(items);
     }
 
+    /// <summary>The window and payload of a link target, read back out of its key.</summary>
+    private static (string WindowId, string Url, LinkPayload Payload)? LinkOf(PointerTarget target)
+    {
+        var parts = target.Key.Split(':', 4);
+        return parts.Length == 4 && parts[0] == "link" ? (parts[1], parts[3], LinkPayload.Parse(parts[3])) : null;
+    }
+
     private void AddLinkItems(List<PointerMenuItem> items, PointerTarget target)
     {
         var parts = target.Key.Split(':', 4);
         var (windowId, payload) = (parts[1], parts[3]);
-        var (action, value) = LinkPayload.Parse(payload);
+        var parsed = LinkPayload.Parse(payload);
+        if (parsed.Choices is { } choices)
+        {
+            // A server's menu: each of its commands, by its label, in its order.
+            foreach (var choice in choices)
+            {
+                items.Add(new PointerMenuItem(Snippet(choice.Label), choice == choices[0] ? "click" : null,
+                    () => OnUiThread(() => RunSendChoice(windowId, parsed.Action, choice.Command))));
+            }
+
+            return;
+        }
+
+        var (action, value) = parsed;
         var label = action switch
         {
             LinkAction.Send => "Send it",

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpMUTerm.Core.Automation;
+using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Logging;
 using SharpMUTerm.Core.Protocols;
@@ -26,7 +27,7 @@ public sealed class WorldSession : IAsyncDisposable
 
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
     private ILineParser _parser;
-    private readonly EmojiSubstitutor? _emoji;
+    private EmojiSubstitutor? _emoji;
     private ILogSink? _log;
     private readonly TextSettings? _text;
     private readonly InputSettings? _input;
@@ -82,9 +83,7 @@ public sealed class WorldSession : IAsyncDisposable
         _input = input;
         _charsetOrder = charsetOrder;
         _parser = NewParser(world.ContentFormat);
-        _emoji = world.Emoji.Enabled
-            ? new EmojiSubstitutor(world.Emoji.Emoticons, world.Emoji.Shortcodes)
-            : null;
+        _emoji = NewEmoji(world.Emoji);
         Scrollback = new ScrollbackBuffer(scrollbackCapacity, CreateSpill(spill ?? new ScrollbackSpillOptions()));
 
         Triggers = new TriggerEngine();
@@ -136,6 +135,9 @@ public sealed class WorldSession : IAsyncDisposable
     private IScrollbackSpill? CreateSpill(ScrollbackSpillOptions options) =>
         options.Enabled ? new FileScrollbackSpill(options, SessionKey) : null;
 
+    private static EmojiSubstitutor? NewEmoji(EmojiSettings emoji) =>
+        emoji.Enabled ? new EmojiSubstitutor(emoji.Emoticons, emoji.Shortcodes) : null;
+
     private static ILineParser CreateParser(ContentFormat format) => format switch
     {
         ContentFormat.Mxp => new MxpParser(),
@@ -157,6 +159,11 @@ public sealed class WorldSession : IAsyncDisposable
         if (parser is MxpParser mxp)
         {
             mxp.ClientReply += (_, reply) => SendProtocolReply(reply);
+            mxp.EntityChanged += (_, e) => GameData.SetMxp(e.Name, e.Value);
+            mxp.Flagged += (_, e) => MxpFlagged?.Invoke(this, e);
+            mxp.GaugeDeclared += (_, e) => DeclareMeter(e);
+            mxp.MediaRequested += (_, e) => MediaReceived?.Invoke(this, e);
+            mxp.Redirected += (_, e) => SpawnLine?.Invoke(this, new SpawnLineEventArgs(e.Frame, ApplyLinks(ApplyEmoji(e.Line))));
         }
 
         return parser;
@@ -219,9 +226,106 @@ public sealed class WorldSession : IAsyncDisposable
     /// what it does cover, and is the right call to keep regardless.
     /// </para>
     /// </remarks>
-    private void OnMxpEnabled(object? sender, EventArgs e)
+    /// <summary>
+    /// Asks an MSDP server for the variables the meters read. MSDP servers commonly send nothing until a
+    /// client <c>REPORT</c>s, so without this a meter pointed at <c>MSDP.HEALTH</c> stayed empty for ever.
+    /// Raised from the read loop; the sends are fire-and-forget because a refused one changes nothing.
+    /// </summary>
+    private void OnMsdpEnabled(object? sender, EventArgs e)
     {
-        if (World.ContentFormat != ContentFormat.Ansi || _parser is MxpParser)
+        if (sender is not ITelnetSession telnet)
+        {
+            return;
+        }
+
+        foreach (var variable in MsdpReports.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            _ = SendMsdpQuietly(telnet, "REPORT", variable);
+        }
+    }
+
+    private async Task SendMsdpQuietly(ITelnetSession telnet, string variable, string value)
+    {
+        try
+        {
+            await telnet.SendMsdpAsync(variable, value).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "MSDP {Variable} {Value} was not sent.", variable, value);
+        }
+    }
+
+    /// <summary>
+    /// What ⇥ completes on this connection's command line: names the game sent over GMCP, and the words of
+    /// the output it shows, in any window. Emptied on connect.
+    /// </summary>
+    public CompletionIndex Completions { get; } = new();
+
+    /// <summary>
+    /// Raised on the read loop when the MOO hands this connection a buffer to edit (MCP simpleedit). Only an
+    /// authenticated MCP message raises it.
+    /// </summary>
+    public event EventHandler<MooEdit>? MooEditReceived;
+
+    /// <summary>The MOO's latest status text (MCP <c>dns-com-awns-status</c>), or null when none arrived this connection.</summary>
+    public string? McpStatus { get; private set; }
+
+    /// <summary>Raised on the read loop when <see cref="McpStatus"/> changes.</summary>
+    public event EventHandler? McpStatusChanged;
+
+    /// <summary>
+    /// Sends an edited buffer back to the MOO. False, and nothing sent, when nothing is connected or the
+    /// connection that handed the edit out is gone, since a reference means nothing to another one.
+    /// </summary>
+    public async Task<bool> SendMooEditAsync(MooEdit edit, IReadOnlyList<string> lines)
+    {
+        if (_telnet is not { IsConnected: true } telnet)
+        {
+            return false;
+        }
+
+        try
+        {
+            await telnet.SendMooEditAsync(edit, lines).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "The edit of {Name} was not sent.", edit.Name);
+            return false;
+        }
+    }
+
+    /// <summary>Sends a GMCP message on this connection; refused (false) when nothing is connected.</summary>
+    public async Task<bool> SendGmcpAsync(string package, string json)
+    {
+        if (_telnet is not { IsConnected: true } telnet)
+        {
+            return false;
+        }
+
+        await telnet.SendGmcpAsync(package, json).ConfigureAwait(false);
+        return true;
+    }
+
+    private void OnMxpEnabled(object? sender, EventArgs e) => UpgradeParser(ContentFormat.Mxp);
+
+    /// <summary>
+    /// Upgrades to the Pueblo parser when the server switches the connection to Pueblo — the same rule as
+    /// MXP's, above: only from the automatic default.
+    /// </summary>
+    private void OnPuebloEnabled(object? sender, EventArgs e) => UpgradeParser(ContentFormat.Pueblo);
+
+    /// <summary>
+    /// The one parser swap. Only from <see cref="ContentFormat.Ansi"/> and only off the plain ANSI parser, so
+    /// <b>the first markup a connection negotiates keeps it</b>: a server that offers both MXP and Pueblo is
+    /// not switched back and forth by the order its handshakes finish in. (The telnet layer also declines to
+    /// answer a Pueblo hello once MXP is on.)
+    /// </summary>
+    private void UpgradeParser(ContentFormat format)
+    {
+        if (World.ContentFormat != ContentFormat.Ansi || _parser is not AnsiParser)
         {
             return;
         }
@@ -231,7 +335,7 @@ public sealed class WorldSession : IAsyncDisposable
             ProcessOutputLine(tail);
         }
 
-        _parser = NewParser(ContentFormat.Mxp);
+        _parser = NewParser(format);
     }
 
     /// <summary>
@@ -292,17 +396,130 @@ public sealed class WorldSession : IAsyncDisposable
 
     public event EventHandler<GmcpMessageEventArgs>? GmcpReceived;
 
+    /// <summary>
+    /// A sound or music command from the server — MCMP's <c>Client.Media.*</c> — raised on the read loop. The
+    /// client hands it to the connection's media queue; with no audio device nothing listens.
+    /// </summary>
+    public event EventHandler<Media.MediaCommand>? MediaReceived;
+
     public event EventHandler<MsdpMessageEventArgs>? MsdpReceived;
 
+    /// <summary>
+    /// The latest GMCP and MSDP data this connection has received. Emptied on connect, because a package a
+    /// previous connection held says nothing about this one.
+    /// </summary>
+    public GameDataStore GameData { get; } = new();
+
+    /// <summary>
+    /// This connection's map, when the client keeps one: set by the client as the session opens, read by the
+    /// scripting bridge's <c>map.*</c>. Null in a session nothing maps.
+    /// </summary>
+    public Mapping.SessionMap? Map { get; set; }
+
+    /// <summary>
+    /// The MSDP variables to ask for with <c>REPORT</c> once MSDP is agreed — the ones the status row's meters
+    /// read. Set by the app; read at that moment, so a change applies from the next connection.
+    /// </summary>
+    public IReadOnlyList<string> MsdpReports { get; set; } = [];
+
+    /// <summary>
+    /// Whether this client will play what the server sends: set by the app when it has an audio device and game
+    /// sound is on. True adds <c>Client.Media 1</c> to the GMCP modules, which is how MCMP asks; read on connect.
+    /// </summary>
+    public bool PlaysMedia { get; set; }
+
+    /// <summary>Whether this connection agreed MSP; written on the read loop, read there too.</summary>
+    private volatile bool _mspActive;
+
+    /// <summary>The GMCP modules a connection asks for beyond the defaults: the world's, then MCMP's when it plays media.</summary>
+    public static string[] GmcpModulesFor(WorldDefinition world, bool playsMedia)
+    {
+        var modules = world.GmcpModules.ToList();
+        if (playsMedia)
+        {
+            modules.Add(Media.MediaCommand.GmcpModule);
+        }
+
+        if (world.GmcpLogin)
+        {
+            modules.Add(GmcpLogin.Module);
+        }
+
+        if (world.DiscordPresence)
+        {
+            modules.Add(Presence.GamePresence.GmcpModule);
+        }
+
+        return modules.ToArray();
+    }
+
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
+
+    /// <summary>
+    /// Raised on the read loop when an MXP element the server flagged closes — <c>RoomName</c>, <c>RoomDesc</c>,
+    /// <c>RoomExit</c>, <c>RoomNum</c> and the like — with its text. What the MXP room source reads.
+    /// </summary>
+    public event EventHandler<MxpFlagText>? MxpFlagged;
+
+    /// <summary>The most meters one connection's <c>&lt;GAUGE&gt;</c>s may add.</summary>
+    public const int MaxMxpMeters = 8;
+
+    private readonly Lock _metersGate = new();
+    private List<StatusMeter> _mxpMeters = [];
+
+    /// <summary>
+    /// The status meters this connection's server asked for with MXP <c>&lt;GAUGE&gt;</c> and <c>&lt;STAT&gt;</c>,
+    /// read from its entities (<c>MXP.hp</c>). Shown after the player's own; emptied on connect.
+    /// </summary>
+    public IReadOnlyList<StatusMeter> MxpMeters
+    {
+        get
+        {
+            lock (_metersGate)
+            {
+                return _mxpMeters;
+            }
+        }
+    }
+
+    /// <summary>Raised on the read loop when <see cref="MxpMeters"/> changes.</summary>
+    public event EventHandler? MxpMetersChanged;
+
+    private void DeclareMeter(MxpGauge gauge)
+    {
+        var meter = new StatusMeter
+        {
+            Label = StatusMeter.Clip(gauge.Caption ?? gauge.Entity),
+            Value = $"{GameDataStore.MxpPrefix}.{gauge.Entity}",
+            Max = gauge.Max is null ? null : $"{GameDataStore.MxpPrefix}.{gauge.Max}",
+        };
+
+        lock (_metersGate)
+        {
+            var kept = _mxpMeters.Where(m => !string.Equals(m.Value, meter.Value, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (kept.Count >= MaxMxpMeters)
+            {
+                return;
+            }
+
+            kept.Add(meter);
+            _mxpMeters = kept;
+        }
+
+        MxpMetersChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public event EventHandler<SpawnLineEventArgs>? SpawnLine;
 
     /// <summary>Raised when the encoding in force changes — see <see cref="CurrentEncoding"/>.</summary>
     public event EventHandler<SessionEncodingEventArgs>? EncodingChanged;
 
-    /// <summary>Raised for each trigger-requested script callback (consumed by the scripting layer).</summary>
-    public event EventHandler<TriggerScriptInvocation>? TriggerScriptRequested;
+    /// <summary>
+    /// Raised when a trigger, alias, timer or macro names a script callback (consumed by the scripting
+    /// layer). Raised on whichever thread ran the rule: the read loop for a trigger, the caller for input
+    /// and keys, the scheduler for a timer.
+    /// </summary>
+    public event EventHandler<ScriptRequest>? ScriptRequested;
 
     public bool IsConnected => _telnet?.IsConnected == true;
 
@@ -371,18 +588,64 @@ public sealed class WorldSession : IAsyncDisposable
         // negotiated again to take it back off ANSI.
         _parser = NewParser(World.ContentFormat);
 
+        // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
+        _emoji = NewEmoji(World.Emoji);
+
         SetState(ConnectionState.Connecting, null);
         PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");
 
         var telnet = _sessionFactory(World.ToConnectionOptions());
         _telnet = telnet;
         telnet.OutputReceived += OnOutputReceived;
-        telnet.GmcpReceived += (_, e) => GmcpReceived?.Invoke(this, e);
-        telnet.MsdpReceived += (_, e) => MsdpReceived?.Invoke(this, e);
+        GameData.Clear();
+        lock (_metersGate)
+        {
+            _mxpMeters = [];
+        }
+
+        telnet.GmcpReceived += (_, e) =>
+        {
+            // Stored before the event, so a handler reading GameData sees the message that raised it.
+            GameData.SetGmcp(e.Package, e.Json);
+            Completions.ObserveGmcp(e.Package, e.Json);
+            OnGmcpLogin(e.Package, e.Json);
+            if (World.DiscordPresence
+                && e.Package.StartsWith("External.Discord.", StringComparison.OrdinalIgnoreCase)
+                && Presence.GamePresence.Apply(GamePresence, e.Package, e.Json) is { } presence
+                && presence != GamePresence)
+            {
+                GamePresence = presence;
+                GamePresenceChanged?.Invoke(this, EventArgs.Empty);
+            }
+            GmcpReceived?.Invoke(this, e);
+            if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
+                && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
+            {
+                MediaReceived?.Invoke(this, media);
+            }
+        };
+        telnet.MsdpReceived += (_, e) =>
+        {
+            GameData.SetMsdp(e.Json);
+            MsdpReceived?.Invoke(this, e);
+        };
+        telnet.MsdpEnabled += OnMsdpEnabled;
         telnet.MsspReceived += (_, e) => MsspReceived?.Invoke(this, e);
         telnet.EncodingChanged += OnEncodingChanged;
         telnet.Disconnected += OnDisconnected;
         telnet.MxpEnabled += OnMxpEnabled;
+        _mspActive = false;
+        telnet.MspChanged += (_, active) => _mspActive = active;
+        telnet.PuebloEnabled += OnPuebloEnabled;
+        McpStatus = null;
+        GamePresence = null;
+        Completions.Clear();
+        telnet.MooEditReceived += (_, edit) => MooEditReceived?.Invoke(this, edit);
+        telnet.McpStatusReceived += (_, text) =>
+        {
+            McpStatus = text;
+            McpStatusChanged?.Invoke(this, EventArgs.Empty);
+        };
 
         try
         {
@@ -441,7 +704,7 @@ public sealed class WorldSession : IAsyncDisposable
             ProcessOutputLine(tail);
             emitted = true;
         }
-        else if (!emitted)
+        else if (!emitted && _parser is not MxpParser { LineSwallowed: true })
         {
             ProcessOutputLine(StyledLine.Empty);
         }
@@ -461,8 +724,50 @@ public sealed class WorldSession : IAsyncDisposable
     /// <paramref name="isPrompt"/> is not threaded through the pipeline below (colour-strip, tab
     /// expand, triggers, emoji) — it is applied once, at the end, to the line actually delivered.
     /// </summary>
+    /// <summary>
+    /// Raised on the read loop with the text of a line that began with the world's
+    /// <see cref="WorldDefinition.GrabPrefix"/>: a MUSH handing back an attribute or a post to edit. The line
+    /// is gagged and the text is the client's to put in front of the player, who sends it themselves.
+    /// </summary>
+    public event EventHandler<string>? EditGrabbed;
+
+    /// <summary>
+    /// Takes a grab line out of the stream. Before the triggers, so a rule cannot send what was grabbed, and
+    /// matched exactly, case and all, because the prefix is a game's fixed marker and not a pattern.
+    /// </summary>
+    private bool TryGrab(StyledLine line)
+    {
+        if (World.GrabPrefix is not { Length: > 0 } prefix || EditGrabbed is null)
+        {
+            return false;
+        }
+
+        var text = line.Text;
+        if (!text.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var rest = text[prefix.Length..];
+        EditGrabbed.Invoke(this, rest.StartsWith(' ') ? rest[1..] : rest);
+        return true;
+    }
+
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {
+        // An MSP trigger is the server asking for a sound, and is taken out before anything else sees the
+        // line — but only on a connection that agreed MSP. Anywhere else it is text a player can type.
+        if (_mspActive && Media.MspTrigger.Parse(line.Text) is { } sound)
+        {
+            MediaReceived?.Invoke(this, sound);
+            return;
+        }
+
+        if (!isPrompt && TryGrab(line))
+        {
+            return;
+        }
+
         // Colour is stripped from what the *server* sent, before the triggers run: a highlight rule
         // and this client's own system/echo lines are not "incoming ANSI colour" and keep theirs.
         if (_text?.StripIncomingColour == true)
@@ -479,7 +784,7 @@ public sealed class WorldSession : IAsyncDisposable
 
         foreach (var invocation in result.ScriptInvocations)
         {
-            TriggerScriptRequested?.Invoke(this, invocation);
+            ScriptRequested?.Invoke(this, ScriptRequest.FromMatch(ScriptSource.Trigger, invocation.Callback, invocation.Match));
         }
 
         // The line as it will be *shown*, computed once and used for both destinations. A spawn window
@@ -490,6 +795,10 @@ public sealed class WorldSession : IAsyncDisposable
         // text and destination disagree is the shape of a phishing link, and this client should not be
         // in the business of manufacturing one.
         var shown = ApplyLinks(ApplyEmoji(result.Line)).WithPrompt(isPrompt);
+        if (result.RouteMain || !result.Suppress || result.SpawnTargets.Count > 0)
+        {
+            Completions.ObserveLine(shown.Text); // only what is shown somewhere: a gagged word was never read
+        }
 
         foreach (var target in result.SpawnTargets)
         {
@@ -551,15 +860,42 @@ public sealed class WorldSession : IAsyncDisposable
 
         if (expansion.Matched)
         {
+            if (expansion.Alias?.ScriptCallback is { Length: > 0 } callback && expansion.Match is { } match)
+            {
+                ScriptRequested?.Invoke(this, ScriptRequest.FromMatch(ScriptSource.Alias, callback, match));
+            }
+
             foreach (var command in expansion.Commands)
             {
-                await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
+                await SendCommandAsync(command, cancellationToken).ConfigureAwait(false);
             }
 
             return;
         }
 
-        await SendRawAsync(input, cancellationToken).ConfigureAwait(false);
+        await SendCommandAsync(input, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Raised for each command the player sends — typed (after alias expansion), from a macro, or from a
+    /// speedwalk — after it has gone to the server. What the mapper reads to know which way a room was left.
+    /// <para>
+    /// <b>Never the login line or the on-connect commands</b>, which go straight to <see cref="SendRawAsync"/>:
+    /// the login line carries the password, and nothing that listens here needs to see it.
+    /// </para>
+    /// </summary>
+    public event EventHandler<string>? CommandSent;
+
+    /// <summary>Sends a command the player chose, and says so on <see cref="CommandSent"/>.</summary>
+    public async Task SendCommandAsync(string command, CancellationToken cancellationToken = default)
+    {
+        if (!IsConnected)
+        {
+            return;
+        }
+
+        await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
+        CommandSent?.Invoke(this, command);
     }
 
     /// <summary>
@@ -596,6 +932,24 @@ public sealed class WorldSession : IAsyncDisposable
         }
 
         var plan = character.Login();
+        if (World.GmcpLogin && plan is LoginPlan.WithPassword)
+        {
+            // Wait for the server to say whether it takes credentials over GMCP; the connect line is the fallback.
+            lock (_gmcpLoginGate)
+            {
+                _gmcpLoginWaiting = true;
+                _gmcpLoginFallback?.Dispose();
+                _gmcpLoginFallback = Scheduler.After(GmcpLoginWait, () => _ = FinishGmcpLoginAsync(credentials: false), "gmcp-login");
+            }
+
+            return;
+        }
+
+        await SendTextLoginAsync(character, plan, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendTextLoginAsync(CharacterDefinition character, LoginPlan plan, CancellationToken cancellationToken)
+    {
         if (plan is not LoginPlan.Nothing)
         {
             await SendRawAsync(character.ResolveConnectString(), cancellationToken).ConfigureAwait(false);
@@ -607,9 +961,100 @@ public sealed class WorldSession : IAsyncDisposable
             PrintSystem(PasswordUnusedWarning(character.Name));
         }
 
+        await SendOnConnectAsync(character, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendOnConnectAsync(CharacterDefinition character, CancellationToken cancellationToken)
+    {
         foreach (var command in SplitCommands(character.OnConnect))
         {
             await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// What the game last said about itself for Discord (<c>External.Discord</c>), when the world allows it; null
+    /// before then and after a reconnect. Written on the read loop.
+    /// </summary>
+    public Presence.GamePresence? GamePresence { get; private set; }
+
+    /// <summary>Raised on the read loop when <see cref="GamePresence"/> changes.</summary>
+    public event EventHandler? GamePresenceChanged;
+
+    /// <summary>How long a GMCP login waits for <c>Char.Login.Default</c> before sending the connect line.</summary>
+    public TimeSpan GmcpLoginWait { get; set; } = TimeSpan.FromSeconds(5);
+
+    private readonly object _gmcpLoginGate = new();
+    private bool _gmcpLoginWaiting;
+    private IDisposable? _gmcpLoginFallback;
+
+    /// <summary>
+    /// The server's half of <c>Char.Login</c>: <c>Default</c> says how it takes a login, <c>Result</c> how one
+    /// went. Runs on the read loop. Nothing here writes the password anywhere but the wire.
+    /// </summary>
+    private void OnGmcpLogin(string package, string json)
+    {
+        if (string.Equals(package, GmcpLogin.DefaultPackage, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = FinishGmcpLoginAsync(credentials: GmcpLogin.OffersCredentials(json));
+        }
+        else if (string.Equals(package, GmcpLogin.ResultPackage, StringComparison.OrdinalIgnoreCase)
+                 && GmcpLogin.ReadResult(json) is { } result
+                 && Character is { } character)
+        {
+            PrintSystem(result.Success
+                ? $"*** Logged in as {character.Name} over GMCP."
+                : $"*** The GMCP login for {character.Name} was refused{(string.IsNullOrWhiteSpace(result.Message) ? "." : ": " + result.Message)}");
+        }
+    }
+
+    /// <summary>
+    /// Ends the wait, once: sends the credentials when the server takes them, the connect line when it does not
+    /// or never said, then the character's on-connect commands.
+    /// </summary>
+    private async Task FinishGmcpLoginAsync(bool credentials)
+    {
+        lock (_gmcpLoginGate)
+        {
+            if (!_gmcpLoginWaiting)
+            {
+                return;
+            }
+
+            _gmcpLoginWaiting = false;
+            _gmcpLoginFallback?.Dispose();
+            _gmcpLoginFallback = null;
+        }
+
+        if (Character is not { } character)
+        {
+            return;
+        }
+
+        try
+        {
+            if (credentials && await SendGmcpAsync(GmcpLogin.CredentialsPackage, GmcpLogin.Credentials(character.Name, character.Password ?? string.Empty)).ConfigureAwait(false))
+            {
+                PrintSystem($"*** Sent the login for {character.Name} over GMCP.");
+                await SendOnConnectAsync(character, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+
+            await SendTextLoginAsync(character, character.Login(), CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "The login for {Character} was not sent.", character.Name);
+        }
+    }
+
+    private void CancelGmcpLogin()
+    {
+        lock (_gmcpLoginGate)
+        {
+            _gmcpLoginWaiting = false;
+            _gmcpLoginFallback?.Dispose();
+            _gmcpLoginFallback = null;
         }
     }
 
@@ -658,12 +1103,20 @@ public sealed class WorldSession : IAsyncDisposable
             var interval = TimeSpan.FromSeconds(definition.IntervalSeconds);
             void Fire()
             {
-                if (!definition.Enabled || string.IsNullOrWhiteSpace(definition.Command))
+                if (!definition.Enabled)
                 {
                     return;
                 }
 
-                _ = SendRawAsync(definition.Command);
+                if (definition.ScriptCallback is { Length: > 0 } callback)
+                {
+                    ScriptRequested?.Invoke(this, ScriptRequest.Bare(ScriptSource.Timer, callback));
+                }
+
+                if (!string.IsNullOrWhiteSpace(definition.Command))
+                {
+                    _ = SendRawAsync(definition.Command);
+                }
             }
 
             _timerHandles.Add(definition.OneShot
@@ -713,12 +1166,22 @@ public sealed class WorldSession : IAsyncDisposable
     public async Task<string?> HandleKeyAsync(string keyDescriptor, CancellationToken cancellationToken = default)
     {
         var macro = Macros.Resolve(keyDescriptor);
-        if (macro is null || string.IsNullOrEmpty(macro.Command))
+        if (macro is null)
         {
             return null;
         }
 
-        await SendRawAsync(macro.Command, cancellationToken).ConfigureAwait(false);
+        if (macro.ScriptCallback is { Length: > 0 } callback)
+        {
+            ScriptRequested?.Invoke(this, ScriptRequest.Bare(ScriptSource.Macro, callback));
+        }
+
+        if (string.IsNullOrEmpty(macro.Command))
+        {
+            return null;
+        }
+
+        await SendCommandAsync(macro.Command, cancellationToken).ConfigureAwait(false);
         return macro.Command;
     }
 
@@ -763,6 +1226,7 @@ public sealed class WorldSession : IAsyncDisposable
 
     private void OnDisconnected(object? sender, SessionDisconnectedEventArgs e)
     {
+        CancelGmcpLogin();
         StopTimers();
         ClearPrompt();
         SetState(e.IsClean ? ConnectionState.Disconnected : ConnectionState.Faulted, e.Error);
@@ -799,9 +1263,43 @@ public sealed class WorldSession : IAsyncDisposable
     {
         if (_telnet is not null)
         {
+            await SendLeavingAsync().ConfigureAwait(false);
             await _telnet.DisconnectAsync().ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Sends the character's <see cref="CharacterDefinition.OnDisconnect"/> commands (<c>QUIT</c>, say)
+    /// before the client closes a connection itself — on Disconnect, Reconnect and quitting the client. A
+    /// connection the server dropped gets none: there is nothing left to send them on.
+    /// <para>
+    /// Bounded by <see cref="LeavingTimeout"/> and never throws, because it runs on the way out of the client
+    /// and a hung socket must not hold the exit.
+    /// </para>
+    /// </summary>
+    private async Task SendLeavingAsync()
+    {
+        if (!IsConnected || Character is not { } character)
+        {
+            return;
+        }
+
+        using var timeout = new CancellationTokenSource(LeavingTimeout);
+        try
+        {
+            foreach (var command in SplitCommands(character.OnDisconnect))
+            {
+                await SendRawAsync(command, timeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or InvalidOperationException)
+        {
+            Logger.LogDebug(ex, "{World}: the on-disconnect commands were not all sent", World.Name);
+        }
+    }
+
+    /// <summary>How long the on-disconnect commands may take before the connection is closed anyway.</summary>
+    internal static readonly TimeSpan LeavingTimeout = TimeSpan.FromSeconds(1);
 
     private void SetState(ConnectionState state, Exception? error)
     {
@@ -849,6 +1347,8 @@ public sealed class WorldSession : IAsyncDisposable
             Logger,
             options: new TelnetSessionOptions
             {
+                GmcpModules = GmcpModulesFor(World, PlaysMedia),
+                AnnouncePueblo = World.ContentFormat is ContentFormat.Ansi or ContentFormat.Pueblo,
                 CharsetOrder = order,
                 EncodingOverride = encodingOverride,
                 KeepaliveInterval = TelnetSessionOptions.ResolveKeepalive(World.KeepaliveSeconds),
@@ -863,6 +1363,7 @@ public sealed class WorldSession : IAsyncDisposable
         Scrollback.Dispose(); // deletes this session's scrollback spill cache; the log above is kept
         if (_telnet is not null)
         {
+            await SendLeavingAsync().ConfigureAwait(false);
             await _telnet.DisposeAsync().ConfigureAwait(false);
             _telnet = null;
         }

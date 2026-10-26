@@ -6,6 +6,9 @@ using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Input;
 using SharpMUTerm.Core.Logging;
+using SharpMUTerm.Core.Mapping;
+using SharpMUTerm.Core.Media;
+using SharpMUTerm.Core.Packages;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Telnet;
@@ -15,6 +18,7 @@ using SharpMUTerm.Core.Transport;
 using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Graphics;
+using SharpMUTerm.Scripting;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Configuration;
@@ -211,7 +215,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly InputBarControl _input = new();
     private readonly InputBarControl _second = new();
     private InputBarControl _armed;
-    private readonly GmcpStats _stats = new();
+
+    /// <summary>
+    /// The game data the demo scene shows, standing in for a session's own <see cref="WorldSession.GameData"/>
+    /// in the views that draw it. Written through the same <see cref="GameDataStore.SetGmcp"/> the wire uses,
+    /// and empty in every other frame, so no frame but those carries a meter.
+    /// </summary>
+    private readonly GameDataStore _demoGameData = new();
     private readonly SharpMUTerm.Web.WebPageFetcher _fetcher = new();
     private readonly WebImageLoader _imageLoader = new();
 
@@ -296,6 +306,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>The ⌃P ▸ <c>Show client messages</c> viewer over the diagnostics log.</summary>
     private readonly MessageLogOverlay _messageLog;
+    private readonly GameDataOverlay _gameData;
 
     /// <summary>The ⌃Q confirmation. Nothing ends the loop except a yes it collected.</summary>
     private readonly QuitOverlay _quit;
@@ -522,6 +533,43 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly RestoreLog? _restore;
 
     /// <summary>
+    /// The folder Lua files are read from, or null for an app that runs no scripts — the default, and what
+    /// every test and snapshot gets. The <c>save</c>/<c>logRoot</c>/<c>restore</c> family once more: a
+    /// trigger set names its files, and only <c>Program</c> may say where on disk they are read from.
+    /// </summary>
+    private readonly string? _scriptsRoot;
+
+    /// <summary>
+    /// The folder each character's <c>store.*</c> file is kept in, or null to keep those values in memory only:
+    /// the same family, so a test or a snapshot that runs scripts still writes no store.
+    /// </summary>
+    private readonly string? _scriptStoreRoot;
+
+    /// <summary>Opens the composer's dictionary; null in a test and a snapshot, which therefore read none.</summary>
+    private readonly Func<SpellChecker?>? _spelling;
+
+    /// <summary>Each open session's scripts. Empty when <see cref="_scriptsRoot"/> is null.</summary>
+    private readonly Dictionary<WorldSession, SessionScripts> _scripts = new();
+
+    /// <summary>
+    /// Where maps are kept: memory-only unless <c>Program</c> hands one a folder, the <c>mssp:</c> rule. Never
+    /// null, so a recorder needs no "is there a store" branch.
+    /// </summary>
+    private readonly MapStore _maps;
+
+    /// <summary>Each open session's map: its recorder, fed by its GMCP and text room sources, and its walk.</summary>
+    private readonly Dictionary<WorldSession, SessionMap> _recorders = new();
+
+    /// <summary>
+    /// The map windows' controls, by window id. Not in <see cref="_panes"/>: a map is drawn from the recorder,
+    /// never from a line buffer, and a control there would be re-fed from one.
+    /// </summary>
+    private readonly Dictionary<string, MarkupControl> _mapControls = new(StringComparer.Ordinal);
+
+    /// <summary>The box each map window was last drawn into, so a resize redraws it and a frame does not.</summary>
+    private readonly Dictionary<string, (int Width, int Height)> _mapSizes = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Every server's last MSSP report, which is what the F5 ▸ <c>i</c> INFO screen reads. Never null,
     /// and that is the difference from the three above rather than an inconsistency with them: a cache
     /// built with no path is memory-only <em>by construction</em> — it reads nothing and writes nothing —
@@ -624,7 +672,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MsspCache? mssp = null,
         bool? focusReporting = null,
         Action<string>? openUrl = null,
-        Action<string>? clipboard = null)
+        Action<string>? clipboard = null,
+        string? scriptsRoot = null,
+        MapStore? maps = null,
+        MediaCache? media = null,
+        PackageStore? packages = null,
+        string? scriptStoreRoot = null,
+        Func<SpellChecker?>? spelling = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -633,7 +687,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             save,
             logRoot,
             restore,
-            mssp)
+            mssp,
+            scriptsRoot,
+            maps,
+            media,
+            packages,
+            scriptStoreRoot,
+            spelling)
     {
     }
 
@@ -649,8 +709,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         Action<AppConfiguration>? save = null,
         string? logRoot = null,
         RestoreLog? restore = null,
-        MsspCache? mssp = null)
+        MsspCache? mssp = null,
+        string? scriptsRoot = null,
+        MapStore? maps = null,
+        MediaCache? media = null,
+        PackageStore? packages = null,
+        string? scriptStoreRoot = null,
+        Func<SpellChecker?>? spelling = null)
     {
+        _spelling = spelling;
         var capabilities = host.Capabilities;
         Host = host;
         _config = config;
@@ -660,10 +727,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _pointer = host.Pointer;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
+        _scriptsRoot = string.IsNullOrWhiteSpace(scriptsRoot) ? null : scriptsRoot;
+        _scriptStoreRoot = string.IsNullOrWhiteSpace(scriptStoreRoot) ? null : scriptStoreRoot;
+        _sessions.SessionAdded += OnSessionAdded;
+        _sessions.SessionRemoved += OnSessionRemoved;
         _inlineImages = new InlineImageHost(
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
             OnUi);
         _mssp = mssp ?? new MsspCache();
+        _maps = maps ?? new MapStore();
+        _media = media ?? new MediaCache();
+        _packages = packages ?? new PackageStore();
+        LoadPackages();
         _capabilities = capabilities;
         if (capabilities.SupportsSixelOverlay)
         {
@@ -819,8 +894,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
+        _gameData = new GameDataOverlay(_system, _time);
         _settings = new SettingsOverlay(_system);
-        _composer = new ComposeOverlay(_system);
+        _composer = new ComposeOverlay(_system, _spelling);
+        _packageView = new ListOverlay(_system);
+        _sendMenu = new ListOverlay(_system);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -893,6 +971,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncTransparentColours();
             DrawSixelOverlay(buffer);
             PublishScrollbars();
+            SyncMapSizes();
         };
         if (_sixel is not null)
         {
@@ -1057,6 +1136,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 canSend: true);
         }
 
+        // The composer holding a MOO verb to edit: the header names it and its type, and the footer offers a
+        // save and no escaping. The demo has no MCP session, so the edit is handed in as the composer takes it.
+        if (string.Equals(view, "moo-edit", StringComparison.OrdinalIgnoreCase))
+        {
+            _composer.Toggle(
+                DemoScene.MainCharacterName,
+                "\"Usage: look [object]\";\nif (!args)\n  player:tell(this.location:description());\n  return 1;\nendif\n"
+                + "thing = player:my_match_object(argstr);\nthing:look_self();",
+                ComposeEscaping.AsTyped,
+                canSend: true,
+                new SharpMUTerm.Core.Telnet.MooEdit("#3:look", "#3:look", "moo-code", []));
+        }
+
         // The reported defect, as a frame: a URL too long for the pane it arrived in. It splits first
         // precisely so the pane is narrower than the terminal — that is the whole bug. The emulator's own
         // URL detection works on the terminal *row*, so a URL wrapped inside a pane is two fragments to
@@ -1110,6 +1202,33 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             AwaitSnapshotPictures();
+        }
+
+        // An MXP <SEND> menu, through the real parser and pane path, and then the real right-click on it:
+        // a snapshot host draws no menus, as a terminal does not, so the client's own chooser opens.
+        if (string.Equals(view, "send-menu", StringComparison.OrdinalIgnoreCase))
+        {
+            var mxp = new MxpParser();
+            foreach (var text in new[]
+            {
+                "A merchant lays out her wares on a striped cloth.",
+                "\x1b[1zOn the cloth: <SEND \"buy &text;|look &text;|haggle over &text;\" hint=\"The lantern|Buy it|Look at it|Haggle\">a brass lantern</SEND>.",
+            })
+            {
+                mxp.Feed(text);
+                if (mxp.Flush() is { } line)
+                {
+                    AppendSessionLine(MainWindowId, line, StampNow());
+                }
+            }
+
+            SettleScroll();
+            // The chooser itself rather than a right-click, which the window answers with its own native
+            // menu: this is the frame of the terminal's chooser, drawn the same in both hosts.
+            if (MenuLinkCell(MainWindowId) is { } cell && TargetAt(cell) is { } target && LinkOf(target) is { } link)
+            {
+                ShowSendMenu(link.WindowId, link.Payload);
+            }
         }
 
         // A figure inside a box, as a server that lays pictures out sends it over MXP: the tag sized in
@@ -1575,6 +1694,58 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice("switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it", MessageSeverity.Info, "⌃P");
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
             _messageLog.Toggle();
+        }
+
+        // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
+        // starts a walk to the docks through the real `/walk`, so the path ahead is marked; `map-split` puts
+        // the map beside the output, the way it is meant to be read.
+        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split")
+        {
+            LoadDemoMap();
+            var split = string.Equals(view, "map-split", StringComparison.OrdinalIgnoreCase);
+            if (split)
+            {
+                // Split first, so the map opens in front in the right-hand pane, then hand the focus back to
+                // the output on the left: the map is read beside what you type into, not instead of it.
+                PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+                RebuildPaneArea();
+                if (_workspace.Layout.Panes[^1].ActiveTab is { } right)
+                {
+                    Activate(right);
+                }
+            }
+
+            DispatchCommand("term:map");
+            if (string.Equals(view, "map-walking", StringComparison.OrdinalIgnoreCase))
+            {
+                MapCommand(MapWindowId(DemoScene.ActiveSessionKey), "walk", "Docks Gate");
+            }
+
+            if (split)
+            {
+                Activate(MainWindowId);
+                RefreshRail();
+            }
+        }
+
+        // The Packages screen with two installed (one switched off), the review an install opens with, and
+        // the index with this world's packages first — all through the real paths, into the snapshot's memory-only store.
+        if (view?.ToLowerInvariant() is "packages" or "package-review" or "package-browse")
+        {
+            LoadDemoPackages(view.ToLowerInvariant());
+        }
+
+        // The status row's meters and the game data inspector, over the demo's game data — written through
+        // GameDataStore.SetGmcp, the call the wire makes, so the frame shows what a server's messages produce.
+        // `meters` is the row alone; `gamedata` opens the inspector through the real ⌃P entry.
+        if (string.Equals(view, "meters", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "gamedata", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            if (string.Equals(view, "gamedata", StringComparison.OrdinalIgnoreCase))
+            {
+                DispatchCommand("term:gamedata");
+            }
         }
 
         // The ⌃Q confirmation, over a workspace that has something to lose: a second world marked
@@ -2375,7 +2546,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             : _sessions.Open(
                 world,
                 character,
-                _config.ResolveTriggerSets(character),
+                _config.ResolveTriggerSets(character, world),
                 _config.ScrollbackLines,
                 OpenLog(world, character),
                 _config.Text,
@@ -2568,14 +2739,32 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // cache so the snapshot's demo report is written by the same code the wire is (see DemoScene's
         // remarks on state a live session writes).
         session.MsspReceived += (_, e) => OnUi(() => CaptureMssp(session.World, e.Data));
-        session.GmcpReceived += (_, e) => OnUi(() =>
+        // The meters read the session's game data, which the session has already stored by the time this is
+        // raised. Only the session the status row describes repaints it.
+        session.GameData.Changed += (_, _) => OnUi(() =>
         {
-            if (_stats.Update(e.Package, e.Json))
+            if (ReferenceEquals(session, _active))
             {
-                UpdateStatus();
+                RefreshStatusBar();
             }
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
+        session.MooEditReceived += (_, edit) => OnUi(() => ReceiveMooEdit(session, edit));
+        session.EditGrabbed += (_, text) => OnUi(() => ReceiveGrab(session, windowId, text));
+        session.McpStatusChanged += (_, _) => OnUi(() =>
+        {
+            if (ReferenceEquals(session, _active))
+            {
+                RefreshStatusBar();
+            }
+        });
+        session.MxpMetersChanged += (_, _) => OnUi(() =>
+        {
+            if (ReferenceEquals(session, _active))
+            {
+                RefreshStatusBar();
+            }
+        });
 
         // The status row's encoding cell is live, so it has to be repainted when the thing it reports
         // changes. WorldSession has already put the change in the client message log by the time this
@@ -2614,7 +2803,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var who = SessionTitle(session);
-        var sets = _config.ResolveTriggerSets(character);
+        var sets = _config.ResolveTriggerSets(character, session.World);
         _diagnostics.Logger.LogInformation(
             "{Notice:l}",
             $"{who}: {TriggerReport.Summary(who, character.TriggerSets, sets)} (/triggers for detail)");
@@ -4336,6 +4525,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(windowId, line, stamp);
         RecordForRestore(session, windowId, WindowTitle(windowId), line, stamp);
+        AnnounceLine(windowId, line.Text);
 
         if (!_workspace.IsCaughtUp(windowId))
         {
@@ -4395,6 +4585,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(window.Id, line, stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
+        AnnounceLine(window.Id, line.Text);
 
         // A first-seen destination adds a tab to its pane, so rebuild; otherwise just refresh badges.
         if (existed)
@@ -4422,6 +4613,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (command.StartsWith("/web ", StringComparison.OrdinalIgnoreCase))
         {
             OpenWeb(windowId, command[5..].Trim());
+            return;
+        }
+
+        // `/package` opens the Packages screen; `/package install …` reads one for review.
+        if (command.StartsWith("/package", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            PackageCommand(command[8..].Trim());
+            return;
+        }
+
+        // `/walk` and `/map` speak to the window's own connection's map.
+        if (command.StartsWith("/walk", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 5 || command[5] == ' '))
+        {
+            MapCommand(windowId, "walk", command[5..].Trim());
+            return;
+        }
+
+        if (command.StartsWith("/map ", StringComparison.OrdinalIgnoreCase))
+        {
+            MapCommand(windowId, "map", command[5..].Trim());
             return;
         }
 
@@ -4523,15 +4736,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         var windowId = ActiveWindowId();
         var session = WindowSession(windowId);
-        var draft = ComposeDraftKey(windowId) is { } key && _composeDrafts.TryGetValue(key, out var kept)
-            ? kept
-            : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
+        var key = ComposeDraftKey(windowId);
+        var draft = key is not null && _mooEdits.TryGetValue(key, out var edit)
+            ? edit
+            : key is not null && _composeDrafts.TryGetValue(key, out var kept)
+                ? kept
+                : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
 
         _composer.Toggle(
             session is null ? string.Empty : SessionTitle(session),
             draft.Body,
             draft.Escaping,
-            canSend: session is not null);
+            canSend: session is not null,
+            draft.Edit);
     }
 
     /// <summary>
@@ -4574,6 +4791,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        if (result.Edit is { } edit)
+        {
+            SaveMooEdit(session, edit, result.Body);
+            return;
+        }
+
         if (ComposeMessage.Build(result.Body, result.Escaping) is not { } line)
         {
             // An empty buffer is not a blank command to send: a MUSH answers a blank line, and some log
@@ -4600,6 +4823,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (ComposeDraftKey(ActiveWindowId()) is not { } key)
         {
+            return;
+        }
+
+        // An edit is kept even empty: emptying a property is an edit, and the post draft is not touched.
+        if (result.Edit is not null)
+        {
+            _mooEdits[key] = result;
             return;
         }
 
@@ -4651,7 +4881,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return TriggerReport.Describe(
             SessionTitle(session),
             character?.TriggerSets ?? (IReadOnlyList<string>)Array.Empty<string>(),
-            character is null ? Array.Empty<TriggerSet>() : _config.ResolveTriggerSets(character),
+            character is null ? Array.Empty<TriggerSet>() : _config.ResolveTriggerSets(character, session.World),
             session.Triggers);
     }
 
@@ -4690,9 +4920,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The recall list for a bar under the focused window's character; see <see cref="_histories"/>.
     /// Created on first use, so a character nobody has typed to holds nothing.
     /// </summary>
-    private InputHistory HistoryFor(InputBar bar)
+    private InputHistory HistoryFor(InputBar bar) => HistoryFor(HistoryOwner(), bar);
+
+    private InputHistory HistoryFor(string owner, InputBar bar)
     {
-        var key = (HistoryOwner(), bar);
+        var key = (owner, bar);
         if (!_histories.TryGetValue(key, out var history))
         {
             // IgnoreForHistory is asked per line, so a list created late follows the setting as it is now.
@@ -4810,7 +5042,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -4923,6 +5155,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _palette.IsOpen ? "the command surface"
         : _quit.IsOpen ? "the quit prompt"
         : _messageLog.IsOpen ? "the client messages"
+        : _gameData.IsOpen ? "the game data"
+        : _packageView.IsOpen ? "the packages"
+        : _sendMenu.IsOpen ? "the menu"
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
@@ -4952,6 +5187,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // and the first chrome refresh.
         PaintInputBands(PaneTint.None);
         bar.HasSibling = () => _second.Visible;
+        bar.Complete = CompleteWord;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
         bar.CutTo = CutToClipboard;
@@ -5110,6 +5346,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         SyncInputBars();
         RecallDrafts(ActiveWindowId());
+        UpdatePresence();
     }
 
     /// <summary>
@@ -5128,6 +5365,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _input.Text = _drafts.Recall(windowId, InputBar.Primary);
         _second.Text = _drafts.Recall(windowId, InputBar.Secondary);
+        if (_pendingGrabs.Remove(windowId, out var grab))
+        {
+            PlaceGrab(_input, grab);
+        }
     }
 
     /// <summary>Which of the two ways into history a keystroke is, or neither.</summary>
@@ -6317,6 +6558,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return () => { ToggleComposer(); return true; };
             }
 
+            if (claim.Key == ConsoleKey.F10)
+            {
+                return () => { ShowPackages(); return true; };
+            }
+
             if (!screens.TryGetValue(claim.Key, out var open))
             {
                 return null;
@@ -6537,6 +6783,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         foreach (var session in _sessions.Sessions)
         {
+            session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
             if (session.Character is not { } character)
             {
                 continue; // an anonymous connection has no character, so nothing resolves for it
@@ -6546,8 +6793,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 + session.Aliases.Aliases.Count
                 + session.Macros.Macros.Count;
 
-            var sets = _config.ResolveTriggerSets(character);
+            var sets = _config.ResolveTriggerSets(character, session.World);
             session.ReloadAutomation(sets);
+
+            // A set gaining or losing a script file reloads that session's Lua; any other edit leaves the
+            // scripts alone, because a rebuild restarts their timers and this runs on every committed change.
+            if (_scripts.TryGetValue(session, out var scripts) && scripts.SyncFiles())
+            {
+                Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", ScriptsLoadedSeverity(scripts));
+            }
 
             var after = session.Triggers.Triggers.Count
                 + session.Aliases.Aliases.Count
@@ -6599,6 +6853,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // the window's own colour and is set here. Kitty's named colours follow on the next frame.
         ApplyDesktopTransparency();
         _window.BackgroundColor = BackdropColor();
+
+        // And F7's sound levels, and F5's per-world download switch, which a playing queue holds a copy of.
+        ApplySoundMix();
 
         PersistConfiguration();
     }
@@ -6919,7 +7176,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>Opens the F7 Text &amp; ANSI screen, bound to the app's text preferences.</summary>
     private ScreenBinding TextAnsiScreen() =>
-        OptionsScreen(() => OptionsScreenRenderer.TextAnsiScreen(_config.Text));
+        OptionsScreen(() => OptionsScreenRenderer.TextAnsiScreen(_config.Text, _config.Sound));
 
     /// <summary>Opens the F8 Input screen, bound to the app's input preferences.</summary>
     private ScreenBinding InputScreen() =>
@@ -7234,7 +7491,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Active: active,
                     Unread: windows.Sum(w => w.Unread),
                     windows,
-                    Chord: characterChords.GetValueOrDefault(key)));
+                    Chord: characterChords.GetValueOrDefault(key),
+                    InGroup: _sendGroup.Contains(key)));
             }
 
             worlds.Add(new RailWorld(world.Name, world.Host, world.Port, accent, characters));
@@ -7435,7 +7693,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             TimestampsOn: ShowTimestamps,
             SecondInputOn: _secondBars.IsShown(ActiveWindowId()),
             ScrolledBack: ScrollTarget() is { CanScrollDown: true },
-            NewlineChord: Host.Keys.Newline.Glyph);
+            NewlineChord: Host.Keys.Newline.Glyph,
+            ScriptsOn: _scriptsRoot is not null,
+            Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
+            Sound: CanPlaySound ? !_muted : null,
+            Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()));
         return CommandCatalog.Build(
             _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
@@ -7472,7 +7734,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     character.Name,
                     key,
                     Connected: connected.Contains(key),
-                    Open: _sessions.Find(key) is not null));
+                    Open: _sessions.Find(key) is not null,
+                    InGroup: _sendGroup.Contains(key)));
             }
         }
 
@@ -7697,6 +7960,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal bool DispatchCommand(string id)
     {
+        if (DispatchGroupCommand(id))
+        {
+            return true;
+        }
+
+        if (id == "a11y:toggle-window")
+        {
+            ToggleAnnounced();
+            return true;
+        }
+
         if (id.StartsWith(CharacterCommandPrefix, StringComparison.Ordinal))
         {
             SwitchToCharacter(id[CharacterCommandPrefix.Length..]);
@@ -7823,6 +8097,27 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 }
 
                 return true;
+            case "term:map":
+                ShowMap();
+                return true;
+            case "term:mute":
+            case "term:unmute":
+                SetMuted(id == "term:mute");
+                return true;
+            case "term:walk-stop":
+                if (SendTarget() is { } walker && _recorders.TryGetValue(walker, out var walking))
+                {
+                    walking.Walk.Stop("stopped");
+                }
+
+                return true;
+            case "term:gamedata":
+                if (!ComposerIsInTheWay("the game data"))
+                {
+                    ShowGameData();
+                }
+
+                return true;
             case "term:restore-purge":
                 PurgeRestoreLog();
                 return true;
@@ -7831,6 +8126,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:compose":
                 ToggleComposer();
+                return true;
+            case "term:packages":
+                ShowPackages();
+                return true;
+            case "term:package-browse":
+                BrowsePackages();
+                return true;
+            case "term:package-install":
+                ActiveBar().SetAndNotify("/package install ");
                 return true;
             case "term:log-on":
                 StartLogging();
@@ -7862,6 +8166,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 break;
             case "world:disconnect":
                 Disconnect();
+                break;
+            case "world:reload-scripts":
+                ReloadScripts();
                 break;
             default:
                 // On the status line, never through _active: an unwired command is exactly what you hit
@@ -7918,6 +8225,495 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// of it: the client asks before ending itself (⌃Q) and before nothing else, and a prompt in front of
     /// the key you press <em>because</em> a connection has gone wrong is friction at the worst moment.
     /// </remarks>
+    /// <summary>
+    /// Starts a session's scripts as it opens. Raised for every session the manager holds, so a session
+    /// opened by any path gets them; Lua printing at load lands in the session's scrollback, which
+    /// <see cref="BindSession"/> replays into its window.
+    /// </summary>
+    private void OnSessionAdded(object? sender, WorldSession session)
+    {
+        session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
+        WatchPresence(session);
+        StartMapping(session);
+        StartSound(session);
+        if (_scriptsRoot is null || _scripts.ContainsKey(session))
+        {
+            return;
+        }
+
+        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript, _scriptStoreRoot, ScriptSendTo);
+        _scripts[session] = scripts;
+        scripts.Reload();
+    }
+
+    private void OnSessionRemoved(object? sender, WorldSession session)
+    {
+        StopSound(session);
+        _sendGroup.Remove(session.SessionKey);
+        if (_scripts.Remove(session, out var scripts))
+        {
+            scripts.Dispose();
+        }
+
+        if (_recorders.Remove(session, out var map))
+        {
+            SaveMap(session, map);
+            session.Map = null;
+            map.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Starts recording the session's map. Observations arrive on the read loop and are applied on the UI
+    /// thread, in the same queue as the commands that say which way a room was left, so the two keep their
+    /// order. The map is written when the connection closes and when the client exits, not per room.
+    /// </summary>
+    private void StartMapping(WorldSession session)
+    {
+        if (_recorders.ContainsKey(session))
+        {
+            return;
+        }
+
+        var text = new TextRoomSource(session, session.World.Map);
+        if (text.Problem is { } problem)
+        {
+            session.PrintSystem($"*** {problem}");
+        }
+
+        IRoomSource[] sources = text.IsActive
+            ? [new GmcpRoomSource(session), new MxpRoomSource(session), text]
+            : [new GmcpRoomSource(session), new MxpRoomSource(session)];
+        if (!text.IsActive)
+        {
+            text.Dispose();
+        }
+
+        var recorder = new MapRecorder(_maps.For(session.World.Host, session.World.Port), sources) { Post = OnUiThread };
+        var walk = new Speedwalk(
+            recorder, command => session.SendCommandAsync(command), session.World.Map.WalkFailurePattern, _time)
+        {
+            Post = OnUiThread,
+        };
+        var map = new SessionMap(recorder, walk) { Post = OnUiThread };
+        _recorders[session] = map;
+        session.Map = map;
+        session.CommandSent += (_, command) => OnUiThread(() => recorder.NoteCommand(command));
+        session.LinePrinted += (_, line) =>
+        {
+            var text = line.Text;
+            OnUiThread(() => walk.Observe(text));
+        };
+        recorder.Changed += (_, _) =>
+        {
+            RenderMap(MapWindowId(session.SessionKey));
+            RefreshStatusBar();
+        };
+        walk.Changed += (_, reason) => OnWalkChanged(session, reason);
+        session.StateChanged += (_, e) =>
+        {
+            if (e.State is ConnectionState.Disconnected or ConnectionState.Faulted)
+            {
+                OnUiThread(() =>
+                {
+                    walk.Stop("stopped: disconnected");
+                    SaveMap(session, map);
+                });
+            }
+        };
+    }
+
+    private void SaveMap(WorldSession session, SessionMap map)
+    {
+        if (!map.Recorder.IsDirty)
+        {
+            return;
+        }
+
+        _maps.Save(session.World.Host, session.World.Port);
+        map.Recorder.MarkSaved();
+    }
+
+    /// <summary>The focused connection's map recorder, or null.</summary>
+    internal MapRecorder? MapFor(WorldSession session) => _recorders.GetValueOrDefault(session)?.Recorder;
+
+    /// <summary>A session's map and walk, or null.</summary>
+    internal SessionMap? SessionMapFor(WorldSession session) => _recorders.GetValueOrDefault(session);
+
+    /// <summary>
+    /// The demo scene's map: recorded through the real <see cref="MapRecorder.Apply"/> by <see cref="LoadDemoMap"/>,
+    /// and filed under the demo's character, which has no session to hold it.
+    /// </summary>
+    private SessionMap? _demoMap;
+
+    /// <summary>The map a session key's connection keeps, or the demo's for the demo character.</summary>
+    private SessionMap? MapOf(string? sessionKey)
+    {
+        if (sessionKey is null)
+        {
+            return null;
+        }
+
+        if (FindSession(sessionKey) is { } session && _recorders.TryGetValue(session, out var map))
+        {
+            return map;
+        }
+
+        return _sessions.Sessions.Count == 0 && sessionKey == DemoScene.ActiveSessionKey ? _demoMap : null;
+    }
+
+    private const string MapWindowPrefix = "map:";
+
+    /// <summary>The id of a session's map window. One per connection, owned by it.</summary>
+    internal static string MapWindowId(string sessionKey) => MapWindowPrefix + sessionKey;
+
+    private static bool IsMapWindow(string windowId) => windowId.StartsWith(MapWindowPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// ⌃P ▸ <c>Show map</c>: opens the focused connection's map as a tab of the focused pane, or goes to it. A
+    /// window with no connection refuses, for <see cref="ShowGameData"/>'s reason.
+    /// </summary>
+    private void ShowMap()
+    {
+        var key = SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey;
+        if (MapOf(key) is null)
+        {
+            RefuseCommand("no map here — pick a character first (⌃P ▸ Switch to …)");
+            return;
+        }
+
+        var windowId = MapWindowId(key!);
+        if (_workspace.FindWindow(windowId) is null)
+        {
+            _workspace.OpenWindow(windowId, "Map", WindowKind.Auxiliary, key);
+            RebuildPaneArea();
+        }
+
+        Activate(windowId);
+        RenderMap(windowId);
+    }
+
+    /// <summary>A map window's control, made on first use with the map's own link handler.</summary>
+    private MarkupControl MapControlFor(string windowId)
+    {
+        if (_mapControls.TryGetValue(windowId, out var existing))
+        {
+            return existing;
+        }
+
+        var control = new MarkupControl(new List<string>())
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Fill,
+        };
+        control.LinkClicked += (_, e) => OnMapLinkClicked(windowId, e.Url);
+        _mapControls[windowId] = control;
+        return control;
+    }
+
+    /// <summary>
+    /// A click on a room walks there. The handler belongs to the map window alone and answers only
+    /// <see cref="MapRenderer.LinkPrefix"/>: a map holds no server text that could carry another scheme, and the
+    /// output panes' handler, which does, never sees a map link. The session is the window's owner, never
+    /// <c>_active</c>.
+    /// </summary>
+    private void OnMapLinkClicked(string windowId, string url)
+    {
+        if (MapRenderer.ParseLink(url) is not { } room
+            || MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        {
+            return;
+        }
+
+        if (map.WalkTo(room) is { } problem)
+        {
+            Notice($"Cannot walk there: {problem}.", key: "map");
+        }
+    }
+
+    /// <summary>
+    /// Draws a map window from its session's recorder, into the box its pane gives it. A window no pane shows
+    /// is left alone until one does (<see cref="SyncMapSizes"/>).
+    /// </summary>
+    private void RenderMap(string windowId)
+    {
+        if (!_mapControls.TryGetValue(windowId, out var control))
+        {
+            return;
+        }
+
+        var (width, height) = MapBox(windowId);
+        _mapSizes[windowId] = (width, height);
+        if (MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        {
+            control.SetContent(new List<string> { "[dim]No map: this character is not connected.[/]" });
+            return;
+        }
+
+        var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
+        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft);
+        var lines = MapRenderer.Render(
+            map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, width, height, ink, walking);
+        _mapMarkup[windowId] = lines;
+        control.SetContent(lines.ToList());
+    }
+
+    /// <summary>What a map window was last drawn as, for a test to read.</summary>
+    private readonly Dictionary<string, List<string>> _mapMarkup = new(StringComparer.Ordinal);
+
+    internal IReadOnlyList<string> MapMarkup(string windowId) =>
+        _mapMarkup.TryGetValue(windowId, out var lines) ? lines : Array.Empty<string>();
+
+    /// <summary>A click on a map window's link, as its own handler receives it.</summary>
+    internal void SimulateMapClick(string windowId, string url) => OnMapLinkClicked(windowId, url);
+
+    /// <summary>The cells a map window has: its pane's output rectangle, or a fallback before one is arranged.</summary>
+    private (int Width, int Height) MapBox(string windowId)
+    {
+        if (_workspace.Layout.FindWindow(windowId) is { } pane
+            && PaneOutputRects().TryGetValue(pane.Id, out var rect)
+            && !rect.IsEmpty)
+        {
+            return (rect.Width, rect.Height);
+        }
+
+        return (Math.Max(20, _system.ConsoleDriver.ScreenSize.Width - 24), Math.Max(4, _system.ConsoleDriver.ScreenSize.Height - 6));
+    }
+
+    /// <summary>Redraws a map whose box changed. Rides <c>PostBufferPaint</c>, where pane rectangles exist.</summary>
+    private void SyncMapSizes()
+    {
+        foreach (var windowId in _mapControls.Keys)
+        {
+            if (_mapSizes.TryGetValue(windowId, out var was) && was == MapBox(windowId))
+            {
+                continue;
+            }
+
+            RenderMap(windowId);
+        }
+    }
+
+    /// <summary>A walk took a step or stopped: redraw its map, and say why it stopped.</summary>
+    private void OnWalkChanged(WorldSession session, string? reason)
+    {
+        RenderMap(MapWindowId(session.SessionKey));
+        if (reason is not null)
+        {
+            Notice($"Walk {reason}.", MessageSeverity.Info, key: "map");
+        }
+    }
+
+    /// <summary>
+    /// <c>/walk &lt;room&gt;</c> (a number or a name), <c>/walk stop</c>; <c>/map lock|unlock [room]</c>, the current
+    /// room when none is named. Answered in the window, like <c>/graphics</c>.
+    /// </summary>
+    private void MapCommand(string windowId, string verb, string argument)
+    {
+        if (MapOf(WindowSession(windowId)?.SessionKey ?? _workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        {
+            AppendWindowLine(windowId, "[dim]*** No map: this window has no connection.[/]");
+            return;
+        }
+
+        string? problem;
+        if (verb == "walk")
+        {
+            if (argument.Equals("stop", StringComparison.OrdinalIgnoreCase) || argument.Length == 0)
+            {
+                problem = map.Walk.IsWalking ? null : "not walking";
+                map.Walk.Stop("stopped");
+            }
+            else
+            {
+                problem = map.WalkTo(argument);
+            }
+        }
+        else
+        {
+            var parts = argument.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var locking = parts.ElementAtOrDefault(0)?.ToLowerInvariant();
+            var target = parts.ElementAtOrDefault(1);
+            var room = target is null ? map.Recorder.CurrentRoom : map.Find(target);
+            problem = locking is not ("lock" or "unlock") ? "use /map lock [room] or /map unlock [room]"
+                : room is null ? "no such room"
+                : map.SetLocked(room.Id, locking == "lock") ? null
+                : "no such room";
+            if (problem is null)
+            {
+                AppendWindowLine(windowId, $"[dim]*** {Escape(room!.Name)} is {(locking == "lock" ? "locked: no walk goes through it" : "unlocked")}.[/]");
+            }
+        }
+
+        if (problem is not null)
+        {
+            AppendWindowLine(windowId, $"[dim]*** {Escape(problem)}.[/]");
+        }
+    }
+
+    /// <summary>
+    /// A script failure is said twice: in the session's own window, where the reader is looking when a
+    /// trigger misfires, and in the client messages, which outlive the scrollback. It can arrive on the
+    /// telnet read loop, so the notice is marshalled; the window line is not, because a session's lines
+    /// already arrive from that thread.
+    /// </summary>
+    private void ReportScript(WorldSession session, string text)
+    {
+        session.PrintSystem($"*** {text}");
+        OnUi(() => Notice($"{SessionTitle(session)}: {text}"));
+    }
+
+    /// <summary>
+    /// What the last load did, counted from the files that loaded rather than the files named, so a missing
+    /// or refused file is not followed by a notice saying it loaded.
+    /// </summary>
+    private static string ScriptsLoaded(SessionScripts scripts) => (scripts.Files.Count, scripts.LoadedCount) switch
+    {
+        (0, _) => "no scripts",
+        (var named, var loaded) when loaded < named => $"{loaded} of {named} scripts loaded",
+        (1, _) => "1 script loaded",
+        (var named, _) => $"{named} scripts loaded",
+    };
+
+    private static MessageSeverity ScriptsLoadedSeverity(SessionScripts scripts) =>
+        scripts.LoadedCount < scripts.Files.Count ? MessageSeverity.Warning : MessageSeverity.Info;
+
+    /// <summary>
+    /// ⌃P ▸ <c>Reload scripts</c>: re-reads the focused character's script files from disk. Resolved through
+    /// <see cref="SendTarget"/>, the window in front of you, for <see cref="Reconnect"/>'s reason.
+    /// </summary>
+    private void ReloadScripts()
+    {
+        if (_scriptsRoot is null)
+        {
+            RefuseCommand("this client runs no scripts");
+            return;
+        }
+
+        if (SendTarget() is not { } session || !_scripts.TryGetValue(session, out var scripts))
+        {
+            RefuseCommand("no scripts to reload — pick a character first (⌃P ▸ Switch to …)");
+            return;
+        }
+
+        scripts.Reload();
+        Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", ScriptsLoadedSeverity(scripts));
+    }
+
+    /// <summary>Whether the focused character's scripts define a function by this name. Null with no scripts.</summary>
+    internal bool? ScriptDefines(string name) =>
+        SendTarget() is { } session && _scripts.TryGetValue(session, out var scripts)
+            ? scripts.Defines(name)
+            : null;
+
+    /// <summary>
+    /// ⌃P ▸ <c>Show game data</c>: the inspector, over the focused window's connection — <see cref="SendTarget"/>,
+    /// for <see cref="Reconnect"/>'s reason. A window with no connection refuses out loud.
+    /// </summary>
+    private void ShowGameData()
+    {
+        if (_gameData.IsOpen)
+        {
+            _gameData.Toggle(_demoGameData, string.Empty);
+            return;
+        }
+
+        if (SendTarget() is { } session)
+        {
+            _gameData.Toggle(session.GameData, SessionTitle(session));
+            return;
+        }
+
+        if (_sessions.Sessions.Count == 0 && _demoGameData.Count > 0)
+        {
+            _gameData.Toggle(_demoGameData, "Corvid");
+            return;
+        }
+
+        RefuseCommand("no game data here — pick a character first (⌃P ▸ Switch to …)");
+    }
+
+    internal bool GameDataIsOpen => _gameData.IsOpen;
+
+    /// <summary>What an IRE-style server sends after the handshake, for the <c>meters</c> and <c>gamedata</c> views.</summary>
+    private void LoadDemoGameData()
+    {
+        _demoGameData.SetGmcp("Char.Vitals", """{"hp":"412","maxhp":"500","mp":"23","maxmp":"120","moves":"88"}""");
+        _demoGameData.SetGmcp("Char.MaxStats", """{"maxmoves":"100"}""");
+        _demoGameData.SetGmcp("Char.Status", """{"name":"Corvid","level":"42","class":"Sentinel","gold":"1275"}""");
+        _demoGameData.SetGmcp(
+            "Room.Info",
+            """{"num":4201,"name":"The Grand Plaza","area":"Aetherfall","environment":"urban","exits":{"n":4202,"e":4210,"s":4199}}""");
+        _demoGameData.SetGmcp("Comm.Channel.List", """[{"name":"ooc","caption":"Out of character"},{"name":"trade","caption":"Trade"}]""");
+        RefreshStatusBar();
+    }
+
+    /// <summary>
+    /// A few streets of Aetherfall, walked through <see cref="MapRecorder.Apply"/> and
+    /// <see cref="MapRecorder.NoteCommand"/> the way a GMCP game is, so the map views show what recording
+    /// produces rather than a map posed by hand. The walk ends back on the plaza.
+    /// </summary>
+    private void LoadDemoMap()
+    {
+        var recorder = new MapRecorder(new WorldMap());
+        var walk = new Speedwalk(recorder, _ => Task.CompletedTask, time: _time);
+        _demoMap = new SessionMap(recorder, walk);
+        recorder.Changed += (_, _) =>
+        {
+            RenderMap(MapWindowId(DemoScene.ActiveSessionKey));
+            RefreshStatusBar();
+        };
+        walk.Changed += (_, _) => RenderMap(MapWindowId(DemoScene.ActiveSessionKey));
+
+        var rooms = new Dictionary<long, (string Name, (string, long?)[] Exits)>
+        {
+            [4201] = ("The Grand Plaza", [("north", 4202), ("east", 4210), ("south", 4199), ("west", 4220)]),
+            [4202] = ("Temple Steps", [("south", 4201), ("north", 4203), ("up", 4250)]),
+            [4203] = ("Temple of the Tide", [("south", 4202)]),
+            [4210] = ("Market Row", [("west", 4201), ("east", 4211), ("southeast", 4212)]),
+            [4211] = ("Spice Stall", [("west", 4210)]),
+            [4212] = ("Docks Gate", [("northwest", 4210), ("south", null)]),
+            [4199] = ("Lantern Street", [("north", 4201), ("south", null), ("southwest", 4198)]),
+            [4198] = ("Old Well", [("northeast", 4199)]),
+            [4220] = ("Guildhall", [("east", 4201), ("west", null)]),
+        };
+        void Arrive(long id) => recorder.Apply(new RoomObservation(
+            id,
+            rooms[id].Name,
+            rooms[id].Exits.Select(e => new ObservedExit(e.Item1, e.Item2)).ToList())
+        {
+            Area = "Aetherfall",
+        });
+
+        Arrive(4201);
+        foreach (var (command, to) in new (string, long)[]
+        {
+            ("n", 4202), ("n", 4203), ("s", 4202), ("s", 4201), ("e", 4210), ("e", 4211), ("w", 4210),
+            ("se", 4212), ("nw", 4210), ("w", 4201), ("s", 4199), ("sw", 4198), ("ne", 4199), ("n", 4201),
+            ("w", 4220), ("e", 4201),
+        })
+        {
+            recorder.NoteCommand(command);
+            Arrive(to);
+        }
+    }
+
+    /// <summary>The game data the status row's meters read: the active session's, or the demo's.</summary>
+    private GameDataStore StatusData() => _active?.GameData ?? _demoGameData;
+
+    /// <summary>The player's own meters, then any a server asked for with MXP <c>&lt;GAUGE&gt;</c> that are not already there.</summary>
+    private IReadOnlyList<StatusMeter> StatusMeters()
+    {
+        var own = _config.Text.StatusMeters;
+        var served = _active?.MxpMeters ?? _demoMeters;
+        return served.Count == 0
+            ? own
+            : [.. own, .. served.Where(m => !own.Any(o => string.Equals(o.Value, m.Value, StringComparison.OrdinalIgnoreCase)))];
+    }
+
+    /// <summary>The demo scene's server meters: written into nothing live, so the snapshot sets them here.</summary>
+    private IReadOnlyList<StatusMeter> _demoMeters = [];
+
     private void Reconnect()
     {
         // Which connection this acts on is decided by the window in front of you — SendTarget, the same
@@ -9602,6 +10398,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return BuildWebContent(window.Title);
         }
 
+        if (IsMapWindow(windowId))
+        {
+            var map = MapControlFor(windowId);
+            RenderMap(windowId);
+            return map;
+        }
+
         return OutputViewFor(windowId, window.Title);
     }
 
@@ -10610,7 +11413,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return null;
         }
 
-        if (session.Macros.Resolve(descriptor) is not { Command.Length: > 0 } macro)
+        // A macro may send a command, call a script, or both; one that does neither leaves the key alone.
+        if (session.Macros.Resolve(descriptor) is not { } macro
+            || (macro.Command.Length == 0 && string.IsNullOrEmpty(macro.ScriptCallback)))
         {
             return null;
         }
@@ -11251,6 +12056,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _paneScrolls.Remove(FrozenRegionKey(id));
         _frozenPanes.Remove(id);
         _drafts.Forget(id);        // both bars: a closed window keeps neither of its two drafts
+        _pendingGrabs.Remove(id);
         _secondBars.Forget(id);    // and a same-id window later starts from F8's default again
         _lines.Remove(id);         // don't resurrect old scrollback if a same-id spawn reopens
         _reservedPictures.Remove(id);
@@ -11310,6 +12116,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             AdoptSessionOf(id);
             SelectTabFor(id);
             SyncToFocusedPane();
+            AnnounceFocus(id);
         }
         finally
         {
@@ -11922,6 +12729,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             "{Notice:l}", // :l renders the string literally; the default quotes it, and a quoted sentence reads as data
             key is null ? text : $"{key} {text}");
 
+        AnnounceNotice(text);
         var body = severity == MessageSeverity.Error
             ? $"[{ScreenPalette.Warn}]{Escape(text)}[/]"
             : $"[dim]{Escape(text)}[/]";
@@ -12209,10 +13017,35 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private SessionEncoding? EffectiveEncoding() => _active?.CurrentEncoding ?? _demoEncoding;
 
+    /// <summary>The cells the status row's room field always takes, whatever the room is called.</summary>
+    internal const int RoomCellWidth = 28;
+
+    /// <summary>The room the active connection's map says the character is in, or null.</summary>
+    private (long Id, string Name, string? Area)? StatusRoom() =>
+        MapOf(_active?.SessionKey ?? (_sessions.Sessions.Count == 0 ? DemoScene.ActiveSessionKey : null))?.Current;
+
+    /// <summary><c>⌂ Room · Area</c>, elided and padded to <see cref="RoomCellWidth"/>. The room leads: it is what
+    /// changes, and it is what an elision should keep.</summary>
+    internal static string RoomCell(string name, string? area)
+    {
+        var text = string.IsNullOrWhiteSpace(area) ? name : $"{name} · {area}";
+        var room = RoomCellWidth - 2;
+        if (text.Length > room)
+        {
+            text = text[..(room - 1)] + "…";
+        }
+
+        return $"[dim]⌂ {Escape(text.PadRight(room))}[/]";
+    }
+
+    /// <summary>The cells the meters leave free for the typed-character count to grow into.</summary>
+    private const int MeterSlack = 4;
+
     private string StatusBarMarkup(string character, string state)
     {
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
+        var meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}");
 
         var right = new List<string>();
 
@@ -12221,6 +13054,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (ScrollbackStatus() is { Length: > 0 } scrollback)
         {
             right.Add(scrollback);
+        }
+
+        // Only while muted, and only by a keystroke: nothing from the wire can make this cell appear.
+        if (_muted)
+        {
+            right.Add($"[{_ink.Notice}]{MutedCell}[/]");
         }
 
         // No latency meter. There was one — a heartbeat glyph, a sparkline and a round-trip figure — and
@@ -12266,6 +13105,35 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // worse trade than a hint that is only there when there is room for it, and this is the same
         // measurement the header already makes to right-align its own cluster.
         var rightBar = string.Join("   ", right);
+
+        // The meters sit beside the identity they describe, and only when the row has room for them with a
+        // few cells to spare: the character count on the right grows as a line is typed, and a cluster that
+        // came and went with it would be worse than one that is absent on a narrow terminal.
+        if (meters.Length > 0
+            && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+        {
+            left = $"{left}   {meters}";
+        }
+
+        // Where the character stands, once the map knows. A reserved width, so a walk does not move the right
+        // cluster with every room name; a name too long for it is elided, never wrapped.
+        if (StatusRoom() is { } here)
+        {
+            var cell = RoomCell(here.Name, here.Area);
+            if (MarkupWidth(left) + 3 + RoomCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+            {
+                left = $"{left}   {cell}";
+            }
+        }
+
+        // What the MOO last put in its status line, once it has put anything there this connection. Reserved
+        // and elided like the room, for the same reason, and dropped first when the row is short.
+        if (_active?.McpStatus is { } mooStatus
+            && MarkupWidth(left) + 3 + MooStatusCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+        {
+            left = $"{left}   {MooStatusCell(mooStatus)}";
+        }
+
         var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
         foreach (var focusHint in FocusHints())
         {
@@ -12318,6 +13186,21 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _inlineImages.Dispose();
         _imageLoader.Dispose();
         _fetcher.Dispose();
+        foreach (var scripts in _scripts.Values)
+        {
+            scripts.Dispose(); // before the sessions, so no timer of theirs fires into a closed one
+        }
+
+        _scripts.Clear();
+        foreach (var (session, map) in _recorders)
+        {
+            SaveMap(session, map);
+            map.Dispose();
+        }
+
+        _recorders.Clear();
+        DisposeSound();
+        DisposePresence();
         await _sessions.DisposeAsync().ConfigureAwait(false);
         _frameworkLog.Dispose();
         if (_ownsDiagnostics)

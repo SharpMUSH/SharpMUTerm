@@ -35,6 +35,8 @@ internal sealed class WindowPointer : IPointerPresenter
 
     public void ShowMenu(System.Drawing.Point cell, IReadOnlyList<PointerMenuItem> items) => MenuRequested?.Invoke(cell, items);
 
+    public bool DrawsMenus => true;
+
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
         Volatile.Write(ref _bars, bars);

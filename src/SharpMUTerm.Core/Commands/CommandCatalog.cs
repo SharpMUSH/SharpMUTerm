@@ -15,7 +15,8 @@ public sealed record CharacterRef(
     string CharacterName,
     string SessionKey,
     bool Connected,
-    bool Open = false);
+    bool Open = false,
+    bool InGroup = false);
 
 /// <summary>Live flags the catalog reads so stateful commands show their current value.</summary>
 /// <param name="LoggingOn">Whether the focused character is logging.</param>
@@ -34,6 +35,17 @@ public sealed record CharacterRef(
 /// The chord that inserts a newline where the client is running — <c>Alt+⏎</c> in a terminal, <c>Ctrl+⏎</c> in
 /// the desktop window, which keeps ⌥⏎ for itself. Supplied by the host for the reason the screens are.
 /// </param>
+/// <param name="ScriptsOn">
+/// Whether this client runs Lua at all, so <c>Reload scripts</c> is offered only where it can do something.
+/// </param>
+/// <param name="Walking">Whether the focused connection is speedwalking, so <c>Stop walking</c> has a walk to stop.</param>
+/// <param name="Sound">
+/// Null where the client cannot play sound, so no mute is offered; otherwise whether sound is playing
+/// (offer <c>Mute sound</c>) or muted (offer <c>Unmute sound</c>).
+/// </param>
+/// <param name="Announced">
+/// Null where the host has no screen reader to tell; otherwise whether the active window's output is read aloud.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -41,7 +53,11 @@ public sealed record CommandContext(
     bool TimestampsOn = false,
     bool SecondInputOn = false,
     bool ScrolledBack = false,
-    string NewlineChord = "Alt+⏎");
+    string NewlineChord = "Alt+⏎",
+    bool ScriptsOn = false,
+    bool Walking = false,
+    bool? Sound = null,
+    bool? Announced = null);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -171,6 +187,47 @@ public static class CommandCatalog
         // can find is the same as no feature — ⌃L's newline sat unused until it was reported missing.
         items.Add(new CommandItem(CommandGroup.World, "Reconnect", "world:reconnect", "⌥R"));
         items.Add(new CommandItem(CommandGroup.World, "Disconnect", "world:disconnect", "⌥D"));
+        // The send group: one line to several characters. Offered once two characters are open, since a
+        // group of one is the command line.
+        var open = characters.Where(c => c.Open).ToList();
+        if (open.Count > 1 || characters.Any(c => c.InGroup))
+        {
+            foreach (var character in open)
+            {
+                items.Add(new CommandItem(
+                    CommandGroup.World,
+                    character.InGroup
+                        ? $"Remove {character.CharacterName} from the send group"
+                        : $"Add {character.CharacterName} to the send group",
+                    CommandIds.GroupToggle(character.SessionKey),
+                    character.WorldName));
+            }
+
+            var members = characters.Count(c => c.InGroup);
+            if (members > 0)
+            {
+                items.Add(new CommandItem(
+                    CommandGroup.World,
+                    "Send the command line to the group",
+                    CommandIds.GroupSend,
+                    members == 1 ? "1 character" : $"{members} characters"));
+                items.Add(new CommandItem(CommandGroup.World, "Clear the send group", CommandIds.GroupClear));
+            }
+        }
+
+        if (context.ScriptsOn)
+        {
+            items.Add(new CommandItem(
+                CommandGroup.World, "Reload scripts", "world:reload-scripts", "re-reads this character's Lua files"));
+        }
+
+        // Only where the host has a screen reader to tell: the window's live region, or --plain.
+        if (context.Announced is { } announced)
+        {
+            items.Add(announced
+                ? new CommandItem(CommandGroup.Terminal, "Stop reading this window aloud", "a11y:toggle-window")
+                : new CommandItem(CommandGroup.Terminal, "Read this window aloud", "a11y:toggle-window"));
+        }
 
         // TERMINAL — stateful labels.
         items.Add(context.LoggingOn
@@ -217,6 +274,28 @@ public static class CommandCatalog
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Show client messages", "term:messages", "status-line notices"));
 
+        // What the server is sending out of band. Listed unconditionally: a meter or a script is written
+        // against a GMCP path, and this is where a player finds out which paths their game has.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Show game data", "term:gamedata", "GMCP and MSDP this connection holds"));
+
+        // The map. Listed unconditionally, like the game data above: a map is recorded from the first room a
+        // game reports, and nothing else on screen says the client keeps one.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Show map", "term:map", "this connection's map · click a room, or /walk <room>"));
+        if (context.Walking)
+        {
+            items.Add(new CommandItem(CommandGroup.Terminal, "Stop walking", "term:walk-stop", "ends the speedwalk"));
+        }
+
+        // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.
+        if (context.Sound is { } playing)
+        {
+            items.Add(playing
+                ? new CommandItem(CommandGroup.Terminal, "Mute sound", "term:mute", "until unmuted or restarted")
+                : new CommandItem(CommandGroup.Terminal, "Unmute sound", "term:unmute", "game sound is muted"));
+        }
+
         // The command line's own history, browsable and searchable. Named here as well as bound to ⌃R
         // because a chord nothing mentions is a chord nobody finds — the same reason every settings screen
         // has a row even though each has an F-key.
@@ -228,6 +307,15 @@ public static class CommandCatalog
         // at from the command line in front of them.
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Compose a post", "term:compose", "F1 · a full editor, sent as one line"));
+
+        // Packages: the list, and the install that starts at the review. F10 can be taken by a terminal's
+        // own menu key (GNOME Terminal), so this surface is the way in that always works.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Packages", "term:packages", "F10 · installed packages, on/off, remove"));
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Install package…", "term:package-install", "from a file or an https link"));
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Browse packages", "term:package-browse", "the package index, this game's first"));
         items.Add(context.TimestampsOn
             ? new CommandItem(CommandGroup.Terminal, "Hide timestamps", "term:timestamps-off")
             : new CommandItem(CommandGroup.Terminal, "Show timestamps", "term:timestamps-on"));

@@ -9,21 +9,23 @@ namespace SharpMUTerm.Scripting;
 /// script-relevant events (trigger fires, GMCP messages) into an attached <see cref="ScriptHost"/>.
 /// </summary>
 /// <remarks>
-/// Alias <em>function</em> callbacks are a known gap: the core <see cref="WorldSession"/> does not
-/// currently raise a script event for script-backed aliases, so a bridged
-/// <c>alias.add(pattern, function ... end)</c> registers the alias but its callback is never
-/// dispatched. String-substitution aliases and all trigger/GMCP callbacks work end to end.
+/// A rule's callback is either an id <c>trigger.add</c>/<c>alias.add</c> generated, or the name of a global
+/// function — the F2 <c>script</c> field. Timers and macros only ever carry a name.
 /// </remarks>
 public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
 {
     private readonly WorldSession _session;
+    private readonly Func<string, string, string?>? _sendTo;
     private ScriptHost? _host;
     private bool _disposed;
 
-    public WorldSessionScriptBridge(WorldSession session)
+    /// <param name="session">The session the scripts belong to.</param>
+    /// <param name="sendTo">What <c>world.sendTo</c> calls; null when this client offers no other characters.</param>
+    public WorldSessionScriptBridge(WorldSession session, Func<string, string, string?>? sendTo = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        _session.TriggerScriptRequested += OnTriggerScriptRequested;
+        _sendTo = sendTo;
+        _session.ScriptRequested += OnScriptRequested;
         _session.GmcpReceived += OnGmcpReceived;
     }
 
@@ -42,6 +44,9 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
     public string WorldName => _session.World.Name;
 
     public void Send(string command) => _ = _session.SendRawAsync(command);
+
+    public string? SendTo(string character, string command) =>
+        _sendTo is null ? "this client cannot send to another character" : _sendTo(character, command);
 
     public void Print(string text) => _session.PrintSystem(text);
 
@@ -62,22 +67,51 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
             ScriptCallback = string.IsNullOrEmpty(callbackId) ? null : callbackId,
         });
 
+    public System.Text.Json.Nodes.JsonNode? GameData(string path) => _session.GameData.Get(path);
+
+    public void SendGmcp(string package, string json) => _ = _session.SendGmcpAsync(package, json);
+
+    public ScriptRoom? CurrentRoom() =>
+        _session.Map?.Current is { } room ? new ScriptRoom(room.Id, room.Name, room.Area) : null;
+
+    public IReadOnlyList<string>? PathTo(string target) =>
+        _session.Map is { } map && map.Find(target) is { } room
+            ? map.PathTo(room.Id)?.Select(step => step.Command).ToArray()
+            : null;
+
+    public string? WalkTo(string target) => _session.Map is { } map ? map.WalkTo(target) : "this client keeps no map";
+
     public IDisposable ScheduleEvery(TimeSpan interval, Action callback) =>
         _session.Scheduler.Every(interval, callback);
 
     public IDisposable ScheduleAfter(TimeSpan delay, Action callback) =>
         _session.Scheduler.After(delay, callback);
 
-    private void OnTriggerScriptRequested(object? sender, TriggerScriptInvocation e)
+    /// <summary>
+    /// Runs the callback a rule asked for. A callback <c>trigger.add</c> or <c>alias.add</c> registered
+    /// has a generated id and is found first; anything else is the name of a global function the user's
+    /// file defines, which is what F2's <c>script</c> field holds.
+    /// </summary>
+    private void OnScriptRequested(object? sender, ScriptRequest e)
     {
-        var match = e.Match;
-        var groups = new string[Math.Max(0, match.Groups.Count - 1)];
-        for (var i = 1; i < match.Groups.Count; i++)
+        if (_host is not { } host)
         {
-            groups[i - 1] = match.Groups[i].Value;
+            return;
         }
 
-        _host?.DispatchTrigger(e.Callback, match.Value, groups);
+        var handled = e.Source switch
+        {
+            ScriptSource.Trigger => host.DispatchTrigger(e.Callback, e.WholeMatch, e.Groups),
+            ScriptSource.Alias => host.DispatchAlias(e.Callback, e.WholeMatch, e.Groups),
+            _ => false,
+        };
+
+        // A generated id ("trigger#3") belongs to a registration a reload has dropped; it is not a name
+        // anyone typed, so it is not reported as a missing function.
+        if (!handled && !e.Callback.Contains('#', StringComparison.Ordinal))
+        {
+            host.DispatchNamed(e.Callback, e.WholeMatch, e.Groups);
+        }
     }
 
     private void OnGmcpReceived(object? sender, GmcpMessageEventArgs e) =>
@@ -91,7 +125,7 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
         }
 
         _disposed = true;
-        _session.TriggerScriptRequested -= OnTriggerScriptRequested;
+        _session.ScriptRequested -= OnScriptRequested;
         _session.GmcpReceived -= OnGmcpReceived;
     }
 }

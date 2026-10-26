@@ -199,6 +199,18 @@ public sealed class TriggerEngine
         }
     }
 
+    /// <summary>
+    /// Drops what a script added and keeps what the configuration contributed: the half of a script
+    /// reload that stops the reloaded script's own registrations arriving twice.
+    /// </summary>
+    public void ClearRuntime()
+    {
+        lock (_gate)
+        {
+            _runtime.Clear();
+        }
+    }
+
     public void Clear()
     {
         lock (_gate)

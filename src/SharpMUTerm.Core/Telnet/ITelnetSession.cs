@@ -39,6 +39,50 @@ public interface ITelnetSession : IAsyncDisposable
     /// </summary>
     event EventHandler? MxpEnabled;
 
+    /// <summary>
+    /// Raised when MSP (option 90) is agreed (<c>true</c>) or withdrawn (<c>false</c>). While it is agreed, a
+    /// line that is an MSP trigger is a sound request rather than text. A session that cannot negotiate MSP
+    /// never raises it, which is what the default does.
+    /// </summary>
+    event EventHandler<bool>? MspChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
+    /// Raised once the server has switched this connection to Pueblo (its start sequence, after our
+    /// <c>PUEBLOCLIENT</c>). The <see cref="MxpEnabled"/> of Pueblo.
+    /// </summary>
+    event EventHandler? PuebloEnabled;
+
+    /// <summary>
+    /// Raised once the client has agreed to the server's MSDP, so a consumer can ask it to <c>REPORT</c> the
+    /// variables it wants. MSDP servers commonly send nothing until asked.
+    /// </summary>
+    event EventHandler? MsdpEnabled;
+
+    /// <summary>
+    /// Raised when a MOO hands this client a buffer to edit (MCP <c>dns-org-mud-moo-simpleedit</c>). Only an
+    /// authenticated MCP message raises it, so a player cannot.
+    /// </summary>
+    event EventHandler<MooEdit>? MooEditReceived
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>Raised with a MOO's status text (MCP <c>dns-com-awns-status</c>).</summary>
+    event EventHandler<string>? McpStatusReceived
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>Sends an edited buffer back to the MOO that handed it out. Throws when MCP editing is not agreed.</summary>
+    ValueTask SendMooEditAsync(MooEdit edit, IReadOnlyList<string> lines) =>
+        ValueTask.FromException(new InvalidOperationException("This session cannot send MOO edits."));
+
     /// <summary>Connects the transport and begins negotiation and the receive loop.</summary>
     Task ConnectAsync(CancellationToken cancellationToken = default);
 
@@ -50,6 +94,9 @@ public interface ITelnetSession : IAsyncDisposable
 
     /// <summary>Sends a GMCP message.</summary>
     ValueTask SendGmcpAsync(string package, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Sends one MSDP variable and value, e.g. <c>REPORT</c> <c>HEALTH</c>.</summary>
+    ValueTask SendMsdpAsync(string variable, string value, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reports the terminal window size via NAWS. Before the server enables NAWS, retains the latest

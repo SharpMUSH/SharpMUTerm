@@ -8,7 +8,7 @@ namespace SharpMUTerm.Scripting;
 /// Hosts a single sandboxed Lua environment for a world and bridges it to an
 /// <see cref="IScriptWorld"/>. Owns the MoonSharp <see cref="Script"/>, injects the client API
 /// (<c>world</c>, <c>output</c>, <c>trigger</c>, <c>alias</c>, <c>timer</c>, <c>gmcp</c>,
-/// <c>log</c>), and routes world events (trigger fires, GMCP messages) back into Lua callbacks.
+/// <c>store</c>, <c>log</c>), and routes world events (trigger fires, GMCP messages) back into Lua callbacks.
 /// </summary>
 /// <remarks>
 /// <para><b>Sandbox.</b> The module set is hand-picked (see <see cref="SandboxModules"/>): no
@@ -40,9 +40,11 @@ public sealed class ScriptHost : IDisposable
         CoreModules.Json;
 
     private readonly IScriptWorld _world;
+    private readonly ScriptStore _store;
     private readonly object _gate = new();
     private readonly Dictionary<string, DynValue> _triggerCallbacks = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DynValue> _aliasCallbacks = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _reportedMissing = new(StringComparer.Ordinal);
     private readonly List<(string Package, DynValue Handler)> _gmcpHandlers = new();
     private readonly List<IDisposable> _timers = new();
     private readonly List<string> _loadedFiles = new();
@@ -51,9 +53,12 @@ public sealed class ScriptHost : IDisposable
     private int _callbackSeed;
     private bool _disposed;
 
-    public ScriptHost(IScriptWorld world)
+    /// <param name="world">What the scripts act on.</param>
+    /// <param name="store">What <c>store.*</c> reads and writes; null gives a store kept in memory only.</param>
+    public ScriptHost(IScriptWorld world, ScriptStore? store = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
+        _store = store ?? new ScriptStore(null);
         ResetScript();
     }
 
@@ -153,8 +158,11 @@ public sealed class ScriptHost : IDisposable
         }
     }
 
-    /// <summary>Delivers a trigger fire into Lua. No-op if the callback id is unknown (e.g. post-reload).</summary>
-    public void DispatchTrigger(string callbackId, string wholeMatch, IReadOnlyList<string> groups)
+    /// <summary>
+    /// Delivers a trigger fire into Lua. Returns false, doing nothing, if the callback id is not one
+    /// <c>trigger.add</c> registered (e.g. post-reload, or a configured rule naming a global function).
+    /// </summary>
+    public bool DispatchTrigger(string callbackId, string wholeMatch, IReadOnlyList<string> groups)
     {
         ArgumentNullException.ThrowIfNull(callbackId);
         DynValue fn;
@@ -162,8 +170,85 @@ public sealed class ScriptHost : IDisposable
         {
             if (_disposed || !_triggerCallbacks.TryGetValue(callbackId, out fn!))
             {
+                return false;
+            }
+        }
+
+        var args = new object[1 + (groups?.Count ?? 0)];
+        args[0] = wholeMatch ?? string.Empty;
+        if (groups is not null)
+        {
+            for (var i = 0; i < groups.Count; i++)
+            {
+                args[i + 1] = groups[i] ?? string.Empty;
+            }
+        }
+
+        InvokeCallback(fn, args);
+        return true;
+    }
+
+    /// <summary>Delivers an alias fire into Lua. Returns false, doing nothing, if the callback id is unknown.</summary>
+    public bool DispatchAlias(string callbackId, string wholeMatch, IReadOnlyList<string> groups)
+    {
+        ArgumentNullException.ThrowIfNull(callbackId);
+        DynValue fn;
+        lock (_gate)
+        {
+            if (_disposed || !_aliasCallbacks.TryGetValue(callbackId, out fn!))
+            {
+                return false;
+            }
+        }
+
+        var args = new object[1 + (groups?.Count ?? 0)];
+        args[0] = wholeMatch ?? string.Empty;
+        if (groups is not null)
+        {
+            for (var i = 0; i < groups.Count; i++)
+            {
+                args[i + 1] = groups[i] ?? string.Empty;
+            }
+        }
+
+        InvokeCallback(fn, args);
+        return true;
+    }
+
+    /// <summary>
+    /// Calls the global function a configured rule names — <c>greet</c>, or <c>combat.onHit</c> for a
+    /// function in a table — with the whole match and its groups. A rule in F2 names a function the
+    /// user's own file defines; <see cref="DispatchTrigger"/> only reaches functions registered at
+    /// runtime with <c>trigger.add</c>, which have generated ids.
+    /// <para>
+    /// A name that resolves to no function is reported through <see cref="Error"/> once per name per load,
+    /// not once per matching line: a busy trigger pointed at a typo would otherwise flood the message log.
+    /// </para>
+    /// </summary>
+    public void DispatchNamed(string name, string wholeMatch, IReadOnlyList<string> groups)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        DynValue fn;
+        bool report;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
                 return;
             }
+
+            fn = ResolveGlobal(name);
+            report = fn.Type is not (DataType.Function or DataType.ClrFunction) && _reportedMissing.Add(name);
+        }
+
+        if (fn.Type is not (DataType.Function or DataType.ClrFunction))
+        {
+            if (report)
+            {
+                Error?.Invoke(this, new ScriptException($"No Lua function named '{name}' is defined."));
+            }
+
+            return;
         }
 
         var args = new object[1 + (groups?.Count ?? 0)];
@@ -179,30 +264,35 @@ public sealed class ScriptHost : IDisposable
         InvokeCallback(fn, args);
     }
 
-    /// <summary>Delivers an alias fire into Lua. No-op if the callback id is unknown.</summary>
-    public void DispatchAlias(string callbackId, string wholeMatch, IReadOnlyList<string> groups)
+    /// <summary>True when <paramref name="name"/> resolves to a function in the loaded scripts.</summary>
+    public bool Defines(string name)
     {
-        ArgumentNullException.ThrowIfNull(callbackId);
-        DynValue fn;
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
         lock (_gate)
         {
-            if (_disposed || !_aliasCallbacks.TryGetValue(callbackId, out fn!))
-            {
-                return;
-            }
+            return !_disposed && ResolveGlobal(name).Type is DataType.Function or DataType.ClrFunction;
         }
+    }
 
-        var args = new object[1 + (groups?.Count ?? 0)];
-        args[0] = wholeMatch ?? string.Empty;
-        if (groups is not null)
+    /// <summary>Walks a dotted name through the globals; anything that is not there is nil.</summary>
+    private DynValue ResolveGlobal(string name)
+    {
+        var current = DynValue.NewTable(_script.Globals);
+        foreach (var part in name.Split('.'))
         {
-            for (var i = 0; i < groups.Count; i++)
+            if (current.Type != DataType.Table || part.Length == 0)
             {
-                args[i + 1] = groups[i] ?? string.Empty;
+                return DynValue.Nil;
             }
+
+            current = current.Table.Get(part);
         }
 
-        InvokeCallback(fn, args);
+        return current;
     }
 
     /// <summary>Delivers a GMCP message into Lua, firing every handler whose package matches.</summary>
@@ -268,9 +358,18 @@ public sealed class ScriptHost : IDisposable
         _triggerCallbacks.Clear();
         _aliasCallbacks.Clear();
         _gmcpHandlers.Clear();
+        _reportedMissing.Clear();
 
         _script = new Script(SandboxModules);
         InjectApi(_script);
+    }
+
+    private void StoreSet(string key, DynValue value)
+    {
+        if (_store.Set(key ?? string.Empty, LuaJson.FromLua(value, context: "store.set")) is { } refusal)
+        {
+            throw new ScriptRuntimeException("store.set: " + refusal);
+        }
     }
 
     private string NextCallbackId(string prefix)
@@ -287,6 +386,11 @@ public sealed class ScriptHost : IDisposable
         var world = new Table(script)
         {
             ["send"] = (Action<string>)(cmd => _world.Send(cmd ?? string.Empty)),
+            // sendTo(name, cmd) returns true, or false and why — the map.walk shape.
+            ["sendTo"] = (Func<string, string, DynValue>)((name, cmd) =>
+                _world.SendTo(name ?? string.Empty, cmd ?? string.Empty) is { } refusal
+                    ? DynValue.NewTuple(DynValue.False, DynValue.NewString(refusal))
+                    : DynValue.True),
             ["print"] = (Action<string>)(text => _world.Print(text ?? string.Empty)),
             ["name"] = _world.WorldName,
         };
@@ -324,12 +428,52 @@ public sealed class ScriptHost : IDisposable
         };
         globals["timer"] = timer;
 
-        // gmcp.*
+        // gmcp.* — `on` hears a package arrive, `get` reads what the session holds, `send` writes one.
         var gmcp = new Table(script)
         {
             ["on"] = (Action<string, DynValue>)OnGmcp,
+            ["get"] = (Func<string, DynValue>)(path => LuaJson.ToLua(script, _world.GameData(path ?? string.Empty))),
+            ["send"] = (Action<string, DynValue>)SendGmcp,
         };
         globals["gmcp"] = gmcp;
+
+        // msdp.* — read only: what to REPORT is the status row's to ask for, at the moment MSDP is agreed.
+        var msdp = new Table(script)
+        {
+            ["get"] = (Func<string, DynValue>)(name =>
+                LuaJson.ToLua(script, _world.GameData("MSDP." + (name ?? string.Empty)))),
+        };
+        globals["msdp"] = msdp;
+
+        // map.* — read the recorded map and walk it. `walk` returns true, or false and why.
+        var map = new Table(script)
+        {
+            ["current"] = (Func<DynValue>)(() => CurrentRoom(script)),
+            ["path"] = (Func<string, DynValue>)(target => MapPath(script, target)),
+            ["walk"] = (Func<string, DynValue>)(target =>
+                _world.WalkTo(target ?? string.Empty) is { } problem
+                    ? DynValue.NewTuple(DynValue.False, DynValue.NewString(problem))
+                    : DynValue.True),
+        };
+        globals["map"] = map;
+
+        // store.* — values kept between runs, for this character. set(key, nil) removes one.
+        var store = new Table(script)
+        {
+            ["get"] = (Func<string, DynValue>)(key => LuaJson.ToLua(script, _store.Get(key ?? string.Empty))),
+            ["set"] = (Action<string, DynValue>)StoreSet,
+            ["keys"] = (Func<DynValue>)(() =>
+            {
+                var keys = new Table(script);
+                foreach (var key in _store.Keys)
+                {
+                    keys.Append(DynValue.NewString(key));
+                }
+
+                return DynValue.NewTable(keys);
+            }),
+        };
+        globals["store"] = store;
 
         // log.*
         var log = new Table(script)
@@ -357,6 +501,60 @@ public sealed class ScriptHost : IDisposable
             _world.Print(sb.ToString());
             return DynValue.Nil;
         });
+    }
+
+    private DynValue CurrentRoom(Script script)
+    {
+        if (_world.CurrentRoom() is not { } room)
+        {
+            return DynValue.Nil;
+        }
+
+        var table = new Table(script)
+        {
+            ["id"] = (double)room.Id,
+            ["name"] = room.Name,
+        };
+        if (room.Area is { } area)
+        {
+            table["area"] = area;
+        }
+
+        return DynValue.NewTable(table);
+    }
+
+    private DynValue MapPath(Script script, string? target)
+    {
+        if (_world.PathTo(target ?? string.Empty) is not { } steps)
+        {
+            return DynValue.Nil;
+        }
+
+        var table = new Table(script);
+        foreach (var step in steps)
+        {
+            table.Append(DynValue.NewString(step));
+        }
+
+        return DynValue.NewTable(table);
+    }
+
+    /// <summary>
+    /// <c>gmcp.send(package, value)</c>. A string is sent as it is — raw JSON, Mudlet's <c>sendGMCP</c>
+    /// convention — and anything else is serialised, so <c>gmcp.send("Char.Skills.Get", {group = "combat"})</c>
+    /// works without a JSON library in the sandbox.
+    /// </summary>
+    private void SendGmcp(string package, DynValue value)
+    {
+        if (string.IsNullOrWhiteSpace(package))
+        {
+            throw new ScriptRuntimeException("gmcp.send: a package name is required.");
+        }
+
+        var body = value.Type == DataType.String
+            ? value.String
+            : LuaJson.FromLua(value)?.ToJsonString() ?? string.Empty;
+        _world.SendGmcp(package.Trim(), body);
     }
 
     private void AddTrigger(string pattern, DynValue fn)
