@@ -65,14 +65,14 @@ public sealed class TelnetSessionOptions
     /// What the interactive client announces: its own name, the terminal class it renders as, and an
     /// MTTS bit vector claiming only what it actually does.
     /// <para>
-    /// <b>2333</b> = ANSI (1) + UTF-8 (4) + 256 colours (8) + mouse tracking (16) + true colour (256)
-    /// + SSL (2048). Every one of those is implemented: SGR through <c>AnsiParser</c>, UTF-8 through
-    /// CHARSET negotiation, mouse through the pane drag/wheel/click routing, TLS through
-    /// <c>TcpTransport</c>.
+    /// <b>2845</b> = ANSI (1) + UTF-8 (4) + 256 colours (8) + mouse tracking (16) + true colour (256)
+    /// + MNES (512) + SSL (2048). Every one of those is implemented: SGR through <c>AnsiParser</c>, UTF-8
+    /// through CHARSET negotiation, mouse through the pane drag/wheel/click routing, MNES through
+    /// <see cref="MnesVariables"/> on NEW-ENVIRON, TLS through <c>TcpTransport</c>.
     /// </para>
     /// <para>
     /// Not <b>3853</b>, which the library claimed on our behalf and which is wrong in both directions:
-    /// it asserts <b>MNES (512)</b> — NEW-ENVIRON is not registered by this client at all — and
+    /// it asserted <b>MNES (512)</b> before this client registered NEW-ENVIRON, and
     /// <b>MSLP (1024)</b>, which is not implemented anywhere in the stack, while omitting the mouse
     /// tracking that is. A terminal-type string is a claim a server acts on; MTTS exists so a server
     /// can decide what to send us, and over-claiming makes it send what we cannot render.
@@ -84,7 +84,35 @@ public sealed class TelnetSessionOptions
     /// </para>
     /// </summary>
     public static IReadOnlyList<string> SharpMUTermTerminalTypes { get; } =
-        ["SHARPMUTERM", "XTERM", "MTTS 2333"];
+        ["SHARPMUTERM", "XTERM", "MTTS 2845"];
+
+    /// <summary>
+    /// What this client says over NEW-ENVIRON when a server asks (MNES): its name, version, terminal type and
+    /// the same MTTS bit vector TTYPE ends on, so the two channels cannot disagree. Nothing about the machine:
+    /// no <c>IPADDRESS</c>, no <c>USER</c>. No <c>CHARSET</c> either, because the answer is fixed when the
+    /// connection opens and CHARSET may settle on something else afterwards, and the library has no way yet
+    /// to send the <c>INFO</c> that would correct it.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> MnesIdentity(IReadOnlyList<string>? terminalTypes)
+    {
+        var types = terminalTypes is { Count: > 0 } ? terminalTypes : SharpMUTermTerminalTypes;
+        var variables = new Dictionary<string, string>
+        {
+            [MnesVariables.ClientName] = GmcpHandshake.ClientName,
+            [MnesVariables.ClientVersion] = GmcpHandshake.ClientVersion,
+        };
+        if (types.Count > 1 && !types[1].StartsWith("MTTS ", StringComparison.Ordinal))
+        {
+            variables[MnesVariables.TerminalType] = types[1];
+        }
+
+        if (types.FirstOrDefault(t => t.StartsWith("MTTS ", StringComparison.Ordinal)) is { } mtts)
+        {
+            variables[MnesVariables.Mtts] = mtts["MTTS ".Length..];
+        }
+
+        return variables;
+    }
 
     /// <summary>
     /// How long the connection may sit silent before a keepalive goes out, or null for none — a
@@ -429,6 +457,8 @@ public sealed class TelnetSession : ITelnetSession
             .AddPlugin<MSDPProtocol>().OnMSDPMessage(OnMsdpAsync)
             .AddPlugin<MSSPProtocol>().OnMSSP(OnMsspAsync).WithMSSPConfig(static () => new MSSPConfig())
             .AddPlugin<TerminalTypeProtocol>()
+            // Answers a server's DO NEW-ENVIRON; offers nothing on its own (the unsolicited-negotiation rule).
+            .AddPlugin<NewEnvironProtocol>().WithClientEnvironmentVariables(TelnetSessionOptions.MnesIdentity(_options.TerminalTypes))
             .AddPlugin<CharsetProtocol>().WithCharsetOrder(_options.CharsetOrder)
             .AddPlugin<EORProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<SuppressGoAheadProtocol>().OnPrompt(OnPromptAsync)
