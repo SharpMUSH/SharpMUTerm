@@ -63,7 +63,14 @@ public sealed class MapSettings
     /// </summary>
     public string? ExitsPattern { get; set; }
 
-    public MapSettings Clone() => new() { RoomNamePattern = RoomNamePattern, ExitsPattern = ExitsPattern };
+    /// <summary>
+    /// Matches a line saying a step of a speedwalk did not happen (<c>You can't go that way.</c>), which stops
+    /// the walk at once rather than after its step timeout. Null leaves the timeout as the only stop.
+    /// </summary>
+    public string? WalkFailurePattern { get; set; }
+
+    public MapSettings Clone() =>
+        new() { RoomNamePattern = RoomNamePattern, ExitsPattern = ExitsPattern, WalkFailurePattern = WalkFailurePattern };
 }
 
 /// <summary>Per-character logging configuration.</summary>

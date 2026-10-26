@@ -25,6 +25,7 @@ public sealed class MapRecorder : IDisposable
 {
     private readonly IReadOnlyList<IRoomSource> _sources;
     private string? _walked;
+    private bool _touched;
 
     public MapRecorder(WorldMap map, params IRoomSource[] sources)
     {
@@ -51,6 +52,13 @@ public sealed class MapRecorder : IDisposable
 
     public void MarkSaved() => IsDirty = false;
 
+    /// <summary>
+    /// Held while the map is being changed. The client changes it only on its UI thread, so that thread needs no
+    /// lock to read it; a script, which runs elsewhere, takes this to read a consistent map. It is never held
+    /// while <see cref="Changed"/> is raised, so a handler that ends up waiting on a script cannot deadlock.
+    /// </summary>
+    public object SyncRoot { get; } = new();
+
     public void Dispose()
     {
         foreach (var source in _sources)
@@ -65,6 +73,14 @@ public sealed class MapRecorder : IDisposable
     /// is the next move.
     /// </summary>
     public void NoteCommand(string command)
+    {
+        lock (SyncRoot)
+        {
+            NoteCommandCore(command);
+        }
+    }
+
+    private void NoteCommandCore(string command)
     {
         var trimmed = command.Trim();
         if (MapDirections.Normalise(trimmed) is { } direction)
@@ -95,10 +111,38 @@ public sealed class MapRecorder : IDisposable
         }
     }
 
+    /// <summary>A change made by hand (a room locked, say): applied under the lock, saved, and redrawn.</summary>
+    public void Edit(Action<WorldMap> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        lock (SyncRoot)
+        {
+            change(Map);
+            IsDirty = true;
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>Applies one observation. Public so a test, or a script, can drive the recorder directly.</summary>
     public void Apply(RoomObservation observation)
     {
         ArgumentNullException.ThrowIfNull(observation);
+        lock (SyncRoot)
+        {
+            _touched = false;
+            ApplyCore(observation);
+        }
+
+        if (_touched)
+        {
+            _touched = false;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void ApplyCore(RoomObservation observation)
+    {
         if (observation.ExitsOnly)
         {
             if (Map.Room(observation.Id ?? CurrentRoomId ?? long.MinValue) is { } here)
@@ -157,7 +201,7 @@ public sealed class MapRecorder : IDisposable
     private void Touch()
     {
         IsDirty = true;
-        Changed?.Invoke(this, EventArgs.Empty);
+        _touched = true;
     }
 
     private long Identify(RoomObservation observation, MapRoom? previous, string? walked)

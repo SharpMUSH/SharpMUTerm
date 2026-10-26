@@ -546,8 +546,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly MapStore _maps;
 
-    /// <summary>Each open session's map recorder, fed by its GMCP and text room sources.</summary>
-    private readonly Dictionary<WorldSession, MapRecorder> _recorders = new();
+    /// <summary>Each open session's map: its recorder, fed by its GMCP and text room sources, and its walk.</summary>
+    private readonly Dictionary<WorldSession, SessionMap> _recorders = new();
+
+    /// <summary>
+    /// The map windows' controls, by window id. Not in <see cref="_panes"/>: a map is drawn from the recorder,
+    /// never from a line buffer, and a control there would be re-fed from one.
+    /// </summary>
+    private readonly Dictionary<string, MarkupControl> _mapControls = new(StringComparer.Ordinal);
+
+    /// <summary>The box each map window was last drawn into, so a resize redraws it and a frame does not.</summary>
+    private readonly Dictionary<string, (int Width, int Height)> _mapSizes = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Every server's last MSSP report, which is what the F5 ▸ <c>i</c> INFO screen reads. Never null,
@@ -932,6 +941,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncTransparentColours();
             DrawSixelOverlay(buffer);
             PublishScrollbars();
+            SyncMapSizes();
         };
         if (_sixel is not null)
         {
@@ -1614,6 +1624,38 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice("switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it", MessageSeverity.Info, "⌃P");
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
             _messageLog.Toggle();
+        }
+
+        // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
+        // starts a walk to the docks through the real `/walk`, so the path ahead is marked; `map-split` puts
+        // the map beside the output, the way it is meant to be read.
+        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split")
+        {
+            LoadDemoMap();
+            var split = string.Equals(view, "map-split", StringComparison.OrdinalIgnoreCase);
+            if (split)
+            {
+                // Split first, so the map opens in front in the right-hand pane, then hand the focus back to
+                // the output on the left: the map is read beside what you type into, not instead of it.
+                PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+                RebuildPaneArea();
+                if (_workspace.Layout.Panes[^1].ActiveTab is { } right)
+                {
+                    Activate(right);
+                }
+            }
+
+            DispatchCommand("term:map");
+            if (string.Equals(view, "map-walking", StringComparison.OrdinalIgnoreCase))
+            {
+                MapCommand(MapWindowId(DemoScene.ActiveSessionKey), "walk", "Docks Gate");
+            }
+
+            if (split)
+            {
+                Activate(MainWindowId);
+                RefreshRail();
+            }
         }
 
         // The status row's meters and the game data inspector, over the demo's game data — written through
@@ -4476,6 +4518,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (command.StartsWith("/web ", StringComparison.OrdinalIgnoreCase))
         {
             OpenWeb(windowId, command[5..].Trim());
+            return;
+        }
+
+        // `/walk` and `/map` speak to the window's own connection's map.
+        if (command.StartsWith("/walk", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 5 || command[5] == ' '))
+        {
+            MapCommand(windowId, "walk", command[5..].Trim());
+            return;
+        }
+
+        if (command.StartsWith("/map ", StringComparison.OrdinalIgnoreCase))
+        {
+            MapCommand(windowId, "map", command[5..].Trim());
             return;
         }
 
@@ -7499,7 +7555,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SecondInputOn: _secondBars.IsShown(ActiveWindowId()),
             ScrolledBack: ScrollTarget() is { CanScrollDown: true },
             NewlineChord: Host.Keys.Newline.Glyph,
-            ScriptsOn: _scriptsRoot is not null);
+            ScriptsOn: _scriptsRoot is not null,
+            Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking);
         return CommandCatalog.Build(
             _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
@@ -7887,6 +7944,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 }
 
                 return true;
+            case "term:map":
+                ShowMap();
+                return true;
+            case "term:walk-stop":
+                if (SendTarget() is { } walker && _recorders.TryGetValue(walker, out var walking))
+                {
+                    walking.Walk.Stop("stopped");
+                }
+
+                return true;
             case "term:gamedata":
                 if (!ComposerIsInTheWay("the game data"))
                 {
@@ -8018,10 +8085,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             scripts.Dispose();
         }
 
-        if (_recorders.Remove(session, out var recorder))
+        if (_recorders.Remove(session, out var map))
         {
-            SaveMap(session, recorder);
-            recorder.Dispose();
+            SaveMap(session, map);
+            session.Map = null;
+            map.Dispose();
         }
     }
 
@@ -8050,30 +8118,266 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var recorder = new MapRecorder(_maps.For(session.World.Host, session.World.Port), sources) { Post = OnUiThread };
-        _recorders[session] = recorder;
+        var walk = new Speedwalk(
+            recorder, command => session.SendCommandAsync(command), session.World.Map.WalkFailurePattern, _time)
+        {
+            Post = OnUiThread,
+        };
+        var map = new SessionMap(recorder, walk) { Post = OnUiThread };
+        _recorders[session] = map;
+        session.Map = map;
         session.CommandSent += (_, command) => OnUiThread(() => recorder.NoteCommand(command));
+        session.LinePrinted += (_, line) =>
+        {
+            var text = line.Text;
+            OnUiThread(() => walk.Observe(text));
+        };
+        recorder.Changed += (_, _) =>
+        {
+            RenderMap(MapWindowId(session.SessionKey));
+            RefreshStatusBar();
+        };
+        walk.Changed += (_, reason) => OnWalkChanged(session, reason);
         session.StateChanged += (_, e) =>
         {
             if (e.State is ConnectionState.Disconnected or ConnectionState.Faulted)
             {
-                OnUiThread(() => SaveMap(session, recorder));
+                OnUiThread(() =>
+                {
+                    walk.Stop("stopped: disconnected");
+                    SaveMap(session, map);
+                });
             }
         };
     }
 
-    private void SaveMap(WorldSession session, MapRecorder recorder)
+    private void SaveMap(WorldSession session, SessionMap map)
     {
-        if (!recorder.IsDirty)
+        if (!map.Recorder.IsDirty)
         {
             return;
         }
 
         _maps.Save(session.World.Host, session.World.Port);
-        recorder.MarkSaved();
+        map.Recorder.MarkSaved();
     }
 
     /// <summary>The focused connection's map recorder, or null.</summary>
-    internal MapRecorder? MapFor(WorldSession session) => _recorders.GetValueOrDefault(session);
+    internal MapRecorder? MapFor(WorldSession session) => _recorders.GetValueOrDefault(session)?.Recorder;
+
+    /// <summary>A session's map and walk, or null.</summary>
+    internal SessionMap? SessionMapFor(WorldSession session) => _recorders.GetValueOrDefault(session);
+
+    /// <summary>
+    /// The demo scene's map: recorded through the real <see cref="MapRecorder.Apply"/> by <see cref="LoadDemoMap"/>,
+    /// and filed under the demo's character, which has no session to hold it.
+    /// </summary>
+    private SessionMap? _demoMap;
+
+    /// <summary>The map a session key's connection keeps, or the demo's for the demo character.</summary>
+    private SessionMap? MapOf(string? sessionKey)
+    {
+        if (sessionKey is null)
+        {
+            return null;
+        }
+
+        if (FindSession(sessionKey) is { } session && _recorders.TryGetValue(session, out var map))
+        {
+            return map;
+        }
+
+        return _sessions.Sessions.Count == 0 && sessionKey == DemoScene.ActiveSessionKey ? _demoMap : null;
+    }
+
+    private const string MapWindowPrefix = "map:";
+
+    /// <summary>The id of a session's map window. One per connection, owned by it.</summary>
+    internal static string MapWindowId(string sessionKey) => MapWindowPrefix + sessionKey;
+
+    private static bool IsMapWindow(string windowId) => windowId.StartsWith(MapWindowPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// ⌃P ▸ <c>Show map</c>: opens the focused connection's map as a tab of the focused pane, or goes to it. A
+    /// window with no connection refuses, for <see cref="ShowGameData"/>'s reason.
+    /// </summary>
+    private void ShowMap()
+    {
+        var key = SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey;
+        if (MapOf(key) is null)
+        {
+            RefuseCommand("no map here — pick a character first (⌃P ▸ Switch to …)");
+            return;
+        }
+
+        var windowId = MapWindowId(key!);
+        if (_workspace.FindWindow(windowId) is null)
+        {
+            _workspace.OpenWindow(windowId, "Map", WindowKind.Auxiliary, key);
+            RebuildPaneArea();
+        }
+
+        Activate(windowId);
+        RenderMap(windowId);
+    }
+
+    /// <summary>A map window's control, made on first use with the map's own link handler.</summary>
+    private MarkupControl MapControlFor(string windowId)
+    {
+        if (_mapControls.TryGetValue(windowId, out var existing))
+        {
+            return existing;
+        }
+
+        var control = new MarkupControl(new List<string>())
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Fill,
+        };
+        control.LinkClicked += (_, e) => OnMapLinkClicked(windowId, e.Url);
+        _mapControls[windowId] = control;
+        return control;
+    }
+
+    /// <summary>
+    /// A click on a room walks there. The handler belongs to the map window alone and answers only
+    /// <see cref="MapRenderer.LinkPrefix"/>: a map holds no server text that could carry another scheme, and the
+    /// output panes' handler, which does, never sees a map link. The session is the window's owner, never
+    /// <c>_active</c>.
+    /// </summary>
+    private void OnMapLinkClicked(string windowId, string url)
+    {
+        if (MapRenderer.ParseLink(url) is not { } room
+            || MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        {
+            return;
+        }
+
+        if (map.WalkTo(room) is { } problem)
+        {
+            Notice($"Cannot walk there: {problem}.", key: "map");
+        }
+    }
+
+    /// <summary>
+    /// Draws a map window from its session's recorder, into the box its pane gives it. A window no pane shows
+    /// is left alone until one does (<see cref="SyncMapSizes"/>).
+    /// </summary>
+    private void RenderMap(string windowId)
+    {
+        if (!_mapControls.TryGetValue(windowId, out var control))
+        {
+            return;
+        }
+
+        var (width, height) = MapBox(windowId);
+        _mapSizes[windowId] = (width, height);
+        if (MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        {
+            control.SetContent(new List<string> { "[dim]No map: this character is not connected.[/]" });
+            return;
+        }
+
+        var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
+        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft);
+        var lines = MapRenderer.Render(
+            map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, width, height, ink, walking);
+        _mapMarkup[windowId] = lines;
+        control.SetContent(lines.ToList());
+    }
+
+    /// <summary>What a map window was last drawn as, for a test to read.</summary>
+    private readonly Dictionary<string, List<string>> _mapMarkup = new(StringComparer.Ordinal);
+
+    internal IReadOnlyList<string> MapMarkup(string windowId) =>
+        _mapMarkup.TryGetValue(windowId, out var lines) ? lines : Array.Empty<string>();
+
+    /// <summary>A click on a map window's link, as its own handler receives it.</summary>
+    internal void SimulateMapClick(string windowId, string url) => OnMapLinkClicked(windowId, url);
+
+    /// <summary>The cells a map window has: its pane's output rectangle, or a fallback before one is arranged.</summary>
+    private (int Width, int Height) MapBox(string windowId)
+    {
+        if (_workspace.Layout.FindWindow(windowId) is { } pane
+            && PaneOutputRects().TryGetValue(pane.Id, out var rect)
+            && !rect.IsEmpty)
+        {
+            return (rect.Width, rect.Height);
+        }
+
+        return (Math.Max(20, _system.ConsoleDriver.ScreenSize.Width - 24), Math.Max(4, _system.ConsoleDriver.ScreenSize.Height - 6));
+    }
+
+    /// <summary>Redraws a map whose box changed. Rides <c>PostBufferPaint</c>, where pane rectangles exist.</summary>
+    private void SyncMapSizes()
+    {
+        foreach (var windowId in _mapControls.Keys)
+        {
+            if (_mapSizes.TryGetValue(windowId, out var was) && was == MapBox(windowId))
+            {
+                continue;
+            }
+
+            RenderMap(windowId);
+        }
+    }
+
+    /// <summary>A walk took a step or stopped: redraw its map, and say why it stopped.</summary>
+    private void OnWalkChanged(WorldSession session, string? reason)
+    {
+        RenderMap(MapWindowId(session.SessionKey));
+        if (reason is not null)
+        {
+            Notice($"Walk {reason}.", MessageSeverity.Info, key: "map");
+        }
+    }
+
+    /// <summary>
+    /// <c>/walk &lt;room&gt;</c> (a number or a name), <c>/walk stop</c>; <c>/map lock|unlock [room]</c>, the current
+    /// room when none is named. Answered in the window, like <c>/graphics</c>.
+    /// </summary>
+    private void MapCommand(string windowId, string verb, string argument)
+    {
+        if (MapOf(WindowSession(windowId)?.SessionKey ?? _workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        {
+            AppendWindowLine(windowId, "[dim]*** No map: this window has no connection.[/]");
+            return;
+        }
+
+        string? problem;
+        if (verb == "walk")
+        {
+            if (argument.Equals("stop", StringComparison.OrdinalIgnoreCase) || argument.Length == 0)
+            {
+                problem = map.Walk.IsWalking ? null : "not walking";
+                map.Walk.Stop("stopped");
+            }
+            else
+            {
+                problem = map.WalkTo(argument);
+            }
+        }
+        else
+        {
+            var parts = argument.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var locking = parts.ElementAtOrDefault(0)?.ToLowerInvariant();
+            var target = parts.ElementAtOrDefault(1);
+            var room = target is null ? map.Recorder.CurrentRoom : map.Find(target);
+            problem = locking is not ("lock" or "unlock") ? "use /map lock [room] or /map unlock [room]"
+                : room is null ? "no such room"
+                : map.SetLocked(room.Id, locking == "lock") ? null
+                : "no such room";
+            if (problem is null)
+            {
+                AppendWindowLine(windowId, $"[dim]*** {Escape(room!.Name)} is {(locking == "lock" ? "locked: no walk goes through it" : "unlocked")}.[/]");
+            }
+        }
+
+        if (problem is not null)
+        {
+            AppendWindowLine(windowId, $"[dim]*** {Escape(problem)}.[/]");
+        }
+    }
 
     /// <summary>
     /// A script failure is said twice: in the session's own window, where the reader is looking when a
@@ -8170,6 +8474,56 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             """{"num":4201,"name":"The Grand Plaza","area":"Aetherfall","environment":"urban","exits":{"n":4202,"e":4210,"s":4199}}""");
         _demoGameData.SetGmcp("Comm.Channel.List", """[{"name":"ooc","caption":"Out of character"},{"name":"trade","caption":"Trade"}]""");
         RefreshStatusBar();
+    }
+
+    /// <summary>
+    /// A few streets of Aetherfall, walked through <see cref="MapRecorder.Apply"/> and
+    /// <see cref="MapRecorder.NoteCommand"/> the way a GMCP game is, so the map views show what recording
+    /// produces rather than a map posed by hand. The walk ends back on the plaza.
+    /// </summary>
+    private void LoadDemoMap()
+    {
+        var recorder = new MapRecorder(new WorldMap());
+        var walk = new Speedwalk(recorder, _ => Task.CompletedTask, time: _time);
+        _demoMap = new SessionMap(recorder, walk);
+        recorder.Changed += (_, _) =>
+        {
+            RenderMap(MapWindowId(DemoScene.ActiveSessionKey));
+            RefreshStatusBar();
+        };
+        walk.Changed += (_, _) => RenderMap(MapWindowId(DemoScene.ActiveSessionKey));
+
+        var rooms = new Dictionary<long, (string Name, (string, long?)[] Exits)>
+        {
+            [4201] = ("The Grand Plaza", [("north", 4202), ("east", 4210), ("south", 4199), ("west", 4220)]),
+            [4202] = ("Temple Steps", [("south", 4201), ("north", 4203), ("up", 4250)]),
+            [4203] = ("Temple of the Tide", [("south", 4202)]),
+            [4210] = ("Market Row", [("west", 4201), ("east", 4211), ("southeast", 4212)]),
+            [4211] = ("Spice Stall", [("west", 4210)]),
+            [4212] = ("Docks Gate", [("northwest", 4210), ("south", null)]),
+            [4199] = ("Lantern Street", [("north", 4201), ("south", null), ("southwest", 4198)]),
+            [4198] = ("Old Well", [("northeast", 4199)]),
+            [4220] = ("Guildhall", [("east", 4201), ("west", null)]),
+        };
+        void Arrive(long id) => recorder.Apply(new RoomObservation(
+            id,
+            rooms[id].Name,
+            rooms[id].Exits.Select(e => new ObservedExit(e.Item1, e.Item2)).ToList())
+        {
+            Area = "Aetherfall",
+        });
+
+        Arrive(4201);
+        foreach (var (command, to) in new (string, long)[]
+        {
+            ("n", 4202), ("n", 4203), ("s", 4202), ("s", 4201), ("e", 4210), ("e", 4211), ("w", 4210),
+            ("se", 4212), ("nw", 4210), ("w", 4201), ("s", 4199), ("sw", 4198), ("ne", 4199), ("n", 4201),
+            ("w", 4220), ("e", 4201),
+        })
+        {
+            recorder.NoteCommand(command);
+            Arrive(to);
+        }
     }
 
     /// <summary>The game data the status row's meters read: the active session's, or the demo's.</summary>
@@ -9857,6 +10211,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (windowId == WebWindowId)
         {
             return BuildWebContent(window.Title);
+        }
+
+        if (IsMapWindow(windowId))
+        {
+            var map = MapControlFor(windowId);
+            RenderMap(windowId);
+            return map;
         }
 
         return OutputViewFor(windowId, window.Title);
@@ -12468,6 +12829,27 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private SessionEncoding? EffectiveEncoding() => _active?.CurrentEncoding ?? _demoEncoding;
 
+    /// <summary>The cells the status row's room field always takes, whatever the room is called.</summary>
+    internal const int RoomCellWidth = 28;
+
+    /// <summary>The room the active connection's map says the character is in, or null.</summary>
+    private (long Id, string Name, string? Area)? StatusRoom() =>
+        MapOf(_active?.SessionKey ?? (_sessions.Sessions.Count == 0 ? DemoScene.ActiveSessionKey : null))?.Current;
+
+    /// <summary><c>⌂ Room · Area</c>, elided and padded to <see cref="RoomCellWidth"/>. The room leads: it is what
+    /// changes, and it is what an elision should keep.</summary>
+    internal static string RoomCell(string name, string? area)
+    {
+        var text = string.IsNullOrWhiteSpace(area) ? name : $"{name} · {area}";
+        var room = RoomCellWidth - 2;
+        if (text.Length > room)
+        {
+            text = text[..(room - 1)] + "…";
+        }
+
+        return $"[dim]⌂ {Escape(text.PadRight(room))}[/]";
+    }
+
     /// <summary>The cells the meters leave free for the typed-character count to grow into.</summary>
     private const int MeterSlack = 4;
 
@@ -12539,6 +12921,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             left = $"{left}   {meters}";
         }
 
+        // Where the character stands, once the map knows. A reserved width, so a walk does not move the right
+        // cluster with every room name; a name too long for it is elided, never wrapped.
+        if (StatusRoom() is { } here)
+        {
+            var cell = RoomCell(here.Name, here.Area);
+            if (MarkupWidth(left) + 3 + RoomCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+            {
+                left = $"{left}   {cell}";
+            }
+        }
+
         var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
         foreach (var focusHint in FocusHints())
         {
@@ -12597,10 +12990,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _scripts.Clear();
-        foreach (var (session, recorder) in _recorders)
+        foreach (var (session, map) in _recorders)
         {
-            SaveMap(session, recorder);
-            recorder.Dispose();
+            SaveMap(session, map);
+            map.Dispose();
         }
 
         _recorders.Clear();

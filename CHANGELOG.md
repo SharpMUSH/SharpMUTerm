@@ -29,8 +29,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   offers MXP), its `emoji` substitution (off, emoticons, shortcodes or both), and a character's
   `disconnect` commands.
 - The client records a map of each game as you walk it, from GMCP `Room.Info` (Iron Realms, Aardwolf and
-  MUME shapes) or, for games that send no room data, from a room-name and exits pattern set in
-  `config.json`. Maps are saved per server in a `maps` folder beside `config.json`.
+  MUME shapes) or, for games that send no room data, from the `map room` and `map exits` patterns in
+  Worlds & Characters (F5). Maps are saved per server in a `maps` folder beside `config.json`.
+- Ctrl+P ▸ *Show map* opens the focused character's map as a tab, centred on where you stand. Click a room
+  to walk there, or type `/walk <room name or number>`; the walk sends one step at a time and stops when a
+  step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
+  answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
+  out of a room. The status row names the room you are in.
+- Lua scripts can use the map: `map.current()`, `map.path('Town Square')` and `map.walk('Town Square')`.
 
 ### Changed
 

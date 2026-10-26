@@ -74,6 +74,15 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.Emoji"/>'s three switches, as one of <see cref="EmojiChoices"/>.</summary>
     internal const int EmojiField = 7;
 
+    /// <summary><see cref="MapSettings.RoomNamePattern"/>: the line naming a room, for a game that sends no GMCP room.</summary>
+    internal const int MapRoomField = 8;
+
+    /// <summary><see cref="MapSettings.ExitsPattern"/>: the line listing a room's exits.</summary>
+    internal const int MapExitsField = 9;
+
+    /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
+    internal const int WalkFailField = 10;
+
     /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
     /// CHARACTER form draws them, top to bottom. The name leads, as on every list screen. The password
@@ -428,7 +437,10 @@ internal static class WorldsScreenRenderer
             ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400),
             ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v)),
             ScreenField.Choice("content", () => ContentName(w.ContentFormat), v => w.ContentFormat = ContentOf(v), ContentChoices),
-            ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices)))
+            ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices),
+            ScreenField.OptionalPattern("map room", () => w.Map.RoomNamePattern, v => w.Map.RoomNamePattern = v),
+            ScreenField.OptionalPattern("map exits", () => w.Map.ExitsPattern, v => w.Map.ExitsPattern = v),
+            ScreenField.OptionalPattern("walk fail", () => w.Map.WalkFailurePattern, v => w.Map.WalkFailurePattern = v)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -536,6 +548,9 @@ internal static class WorldsScreenRenderer
     /// Writes the well back: split on commas, and only entries <see cref="GmcpHandshake.Parse"/> accepts are
     /// kept, normalised to <c>Name Version</c>, so what is saved is what will be sent.
     /// </summary>
+    private static string PatternDetail(string? pattern, string unset) =>
+        string.IsNullOrWhiteSpace(pattern) ? $"[{Label}]{unset}[/]" : $"[{Value}]{Escape(pattern)}[/]";
+
     internal static void SplitModules(WorldDefinition world, string? value)
     {
         world.GmcpModules.Clear();
@@ -945,6 +960,12 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 EmojiField)),
+            WorldField("map room", Field(
+                PatternDetail(world.Map.RoomNamePattern, "from GMCP"), cursor, selectedWorld, MapRoomField)),
+            WorldField("map exits", Field(
+                PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField)),
+            WorldField("walk fail", Field(
+                PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

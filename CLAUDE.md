@@ -130,6 +130,18 @@ fallbacks) for inline images/maps.
     `CommandSent` carries player commands only — never the login line or on-connect commands.
   - Maps are written on disconnect, session removal and exit, not per room (`IsDirty`). MXP room tags wait
     for `<!ELEMENT>` (Phase 5a).
+  - **The map window is a window, not a pane control** (`map:<SessionKey>`, `WindowKind.Auxiliary`, owned by
+    the session; `MapRenderer`, Tui). It is drawn from the recorder on `Changed` and whenever its pane's box
+    changes (`SyncMapSizes` on `PostBufferPaint`), never fed from a line buffer, so its control lives in
+    `_mapControls` and not `_panes`. Its `LinkClicked` is its own and answers only `mux:map:<id>` —
+    the output panes' handler never sees a map link, and the map's never sees a send.
+  - **A speedwalk sends one step and waits for the map to say it arrived** (`Speedwalk`); it goes through
+    `SendCommandAsync`, so the recorder sees the step. It stops off the path, on the world's
+    `WalkFailurePattern`, after `StepTimeout` with no room, and on disconnect.
+  - **Scripts reach the map through `WorldSession.Map` (`SessionMap`)**, and that is the one place the map is
+    read off the UI thread: every such read takes `MapRecorder.SyncRoot`, which the recorder holds while it
+    changes the map and never while it raises `Changed` (a handler can end in the alias engine, which takes
+    the script host's lock). A change a script asks for (`map.walk`, a lock) is posted to the UI thread.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a

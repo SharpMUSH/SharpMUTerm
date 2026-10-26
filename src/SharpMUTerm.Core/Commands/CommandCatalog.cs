@@ -37,6 +37,7 @@ public sealed record CharacterRef(
 /// <param name="ScriptsOn">
 /// Whether this client runs Lua at all, so <c>Reload scripts</c> is offered only where it can do something.
 /// </param>
+/// <param name="Walking">Whether the focused connection is speedwalking, so <c>Stop walking</c> has a walk to stop.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -45,7 +46,8 @@ public sealed record CommandContext(
     bool SecondInputOn = false,
     bool ScrolledBack = false,
     string NewlineChord = "Alt+⏎",
-    bool ScriptsOn = false);
+    bool ScriptsOn = false,
+    bool Walking = false);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -230,6 +232,15 @@ public static class CommandCatalog
         // against a GMCP path, and this is where a player finds out which paths their game has.
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Show game data", "term:gamedata", "GMCP and MSDP this connection holds"));
+
+        // The map. Listed unconditionally, like the game data above: a map is recorded from the first room a
+        // game reports, and nothing else on screen says the client keeps one.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Show map", "term:map", "this connection's map · click a room, or /walk <room>"));
+        if (context.Walking)
+        {
+            items.Add(new CommandItem(CommandGroup.Terminal, "Stop walking", "term:walk-stop", "ends the speedwalk"));
+        }
 
         // The command line's own history, browsable and searchable. Named here as well as bound to ⌃R
         // because a chord nothing mentions is a chord nobody finds — the same reason every settings screen

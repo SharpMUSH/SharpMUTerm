@@ -64,6 +64,16 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
 
     public void SendGmcp(string package, string json) => _ = _session.SendGmcpAsync(package, json);
 
+    public ScriptRoom? CurrentRoom() =>
+        _session.Map?.Current is { } room ? new ScriptRoom(room.Id, room.Name, room.Area) : null;
+
+    public IReadOnlyList<string>? PathTo(string target) =>
+        _session.Map is { } map && map.Find(target) is { } room
+            ? map.PathTo(room.Id)?.Select(step => step.Command).ToArray()
+            : null;
+
+    public string? WalkTo(string target) => _session.Map is { } map ? map.WalkTo(target) : "this client keeps no map";
+
     public IDisposable ScheduleEvery(TimeSpan interval, Action callback) =>
         _session.Scheduler.Every(interval, callback);
 

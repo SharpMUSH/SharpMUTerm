@@ -23,6 +23,6 @@ internal static class SnapshotViews
         "search", "search-regex", "search-all", "search-landed", "activity-bar",
         "mxp-image", "mxp-figure", "input-selection", "selection",
         "prefix", "prefix-panel", "focus", "focus-moved", "tabs", "tabs-many",
-        "collapsed", "timestamps", "timestamps-toggled", "prompt", "meters", "gamedata",
+        "collapsed", "timestamps", "timestamps-toggled", "prompt", "meters", "gamedata", "map", "map-walking", "map-split",
     ];
 }
