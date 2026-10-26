@@ -10,7 +10,7 @@
     <PackageVersion Include="SharpConsoleUI" Version="2.7.8" />
 
     <!-- Telnet negotiation: TELOPT/NAWS/MTTS/EOR/CHARSET/MSSP/GMCP/MSDP/MCCP/MXP negotiation. -->
-    <PackageVersion Include="TelnetNegotiationCore" Version="4.5.2" />
+    <PackageVersion Include="TelnetNegotiationCore" Version="4.5.3" />
 
     <!-- The version, from the git tag (see Directory.Build.props). Build-time only. -->
     <PackageVersion Include="MinVer" Version="8.0.0" />
