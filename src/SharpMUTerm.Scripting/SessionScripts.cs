@@ -53,6 +53,9 @@ public sealed class SessionScripts : IDisposable
     /// <summary>The file names the host was last built from, as the trigger sets spell them.</summary>
     public IReadOnlyList<string> Files => _files;
 
+    /// <summary>How many of <see cref="Files"/> the last <see cref="Reload"/> actually loaded.</summary>
+    public int LoadedCount { get; private set; }
+
     /// <summary>The live host, or null before the first <see cref="Reload"/>.</summary>
     public ScriptHost? Host => _host;
 
@@ -111,6 +114,7 @@ public sealed class SessionScripts : IDisposable
             }
         }
 
+        LoadedCount = loaded;
         return loaded;
     }
 

@@ -6570,7 +6570,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // scripts alone, because a rebuild restarts their timers and this runs on every committed change.
             if (_scripts.TryGetValue(session, out var scripts) && scripts.SyncFiles())
             {
-                Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", MessageSeverity.Info);
+                Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", ScriptsLoadedSeverity(scripts));
             }
 
             var after = session.Triggers.Triggers.Count
@@ -7983,12 +7983,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         OnUi(() => Notice($"{SessionTitle(session)}: {text}"));
     }
 
-    private static string ScriptsLoaded(SessionScripts scripts) => scripts.Files.Count switch
+    /// <summary>
+    /// What the last load did, counted from the files that loaded rather than the files named, so a missing
+    /// or refused file is not followed by a notice saying it loaded.
+    /// </summary>
+    private static string ScriptsLoaded(SessionScripts scripts) => (scripts.Files.Count, scripts.LoadedCount) switch
     {
-        0 => "no scripts",
-        1 => "1 script loaded",
-        var n => $"{n} scripts loaded",
+        (0, _) => "no scripts",
+        (var named, var loaded) when loaded < named => $"{loaded} of {named} scripts loaded",
+        (1, _) => "1 script loaded",
+        (var named, _) => $"{named} scripts loaded",
     };
+
+    private static MessageSeverity ScriptsLoadedSeverity(SessionScripts scripts) =>
+        scripts.LoadedCount < scripts.Files.Count ? MessageSeverity.Warning : MessageSeverity.Info;
 
     /// <summary>
     /// ⌃P ▸ <c>Reload scripts</c>: re-reads the focused character's script files from disk. Resolved through
@@ -8009,7 +8017,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         scripts.Reload();
-        Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", MessageSeverity.Info);
+        Notice($"{SessionTitle(session)}: {ScriptsLoaded(scripts)}", ScriptsLoadedSeverity(scripts));
     }
 
     /// <summary>Whether the focused character's scripts define a function by this name. Null with no scripts.</summary>
@@ -10710,7 +10718,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return null;
         }
 
-        if (session.Macros.Resolve(descriptor) is not { Command.Length: > 0 } macro)
+        // A macro may send a command, call a script, or both; one that does neither leaves the key alone.
+        if (session.Macros.Resolve(descriptor) is not { } macro
+            || (macro.Command.Length == 0 && string.IsNullOrEmpty(macro.ScriptCallback)))
         {
             return null;
         }

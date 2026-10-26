@@ -29,6 +29,7 @@ public class ScriptsEndToEndTests
             Pattern = "^ping$",
             Actions = new TriggerActions { ScriptCallback = "on_ping" },
         });
+        set.Macros.Add(new Macro { Name = "scripted", Key = "F12", ScriptCallback = "on_key" });
 
         var config = new AppConfiguration();
         config.TriggerSets.Add(set);
@@ -135,6 +136,49 @@ public class ScriptsEndToEndTests
 
             var lines = app.FindSession(Ann)!.Scrollback.Snapshot().Select(l => l.ToString());
             await Assert.That(string.Join("\n", lines)).Contains("boom");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>A macro that only names a function runs it from a real key press, through the key chain.</summary>
+    [Test]
+    public async Task AScriptOnlyMacroRunsItsFunctionFromAKeyPress()
+    {
+        var root = Root("function on_key() world.send('keyed') end");
+        try
+        {
+            var (app, wire) = await Open(root);
+            await using var _ = app;
+
+            app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F12, shift: false, alt: false, control: false));
+
+            await Assert.That(wire.Lines).Contains("keyed");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>A reload that could not read its file says so, rather than reporting the file as loaded.</summary>
+    [Test]
+    public async Task AReloadThatLoadsNothingDoesNotSayItLoaded()
+    {
+        var root = Root("function on_ping() world.send('pong') end");
+        try
+        {
+            var (app, _) = await Open(root);
+            await using var __ = app;
+
+            File.Delete(Path.Combine(root, "main.lua"));
+            await Assert.That(app.DispatchCommand("world:reload-scripts")).IsTrue();
+
+            var texts = app.Messages.Entries.Select(m => m.Text).ToArray();
+            await Assert.That(texts.Any(t => t.Contains("0 of 1 scripts loaded"))).IsTrue();
+            await Assert.That(texts.Any(t => t.EndsWith(": 1 script loaded"))).IsFalse();
         }
         finally
         {
