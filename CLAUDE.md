@@ -1626,6 +1626,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `CurrentPrompt`, which nothing renders — the text is simply gone, silently. Before 2.12.0 that same
     fragment was merely glued to the head of the next line, which reads as a cosmetic wrap issue rather
     than lost text. Revert both together or neither.
+  - **The 2.x → 4.x jump compiled with no source change here.** 4.0.0 replaced the interpreter with a
+    generated state machine (4 KiB batches, returning at MCCP boundaries); 3.0.0 dropped OneOf; 4.1.1
+    made a second plugin for one protocol throw (EOR, SGA and PacketPatch are three plugins, each
+    registered once — keep it that way). The two reflective reaches above (`CallbackOnByteAsync`,
+    `CurrentEncoding`'s internal setter) and `NAWSProtocol`'s subclassability are unchanged. The only
+    build change was `Microsoft.Extensions.Logging.Abstractions`, which 4.x needs at a newer patch.
+    What the jump *makes available* and is not yet used: a GMCP `Core` client session
+    (`UseGmcpClientSession`, `TelnetNegotiationCore.Gmcp`), typed GMCP packages, MSDP over GMCP,
+    `PuebloProtocol`, and MCP 2.1 (`MudClientProtocol`).
   - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A
     pin that only resolves from a local `nuget.config` builds here and fails `NU1101` everywhere else;
     if a locally-built nupkg of that version is already in `~/.nuget/packages/`, the real package
