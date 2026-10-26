@@ -26,7 +26,7 @@ public sealed class WorldSession : IAsyncDisposable
 
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
     private ILineParser _parser;
-    private readonly EmojiSubstitutor? _emoji;
+    private EmojiSubstitutor? _emoji;
     private ILogSink? _log;
     private readonly TextSettings? _text;
     private readonly InputSettings? _input;
@@ -82,9 +82,7 @@ public sealed class WorldSession : IAsyncDisposable
         _input = input;
         _charsetOrder = charsetOrder;
         _parser = NewParser(world.ContentFormat);
-        _emoji = world.Emoji.Enabled
-            ? new EmojiSubstitutor(world.Emoji.Emoticons, world.Emoji.Shortcodes)
-            : null;
+        _emoji = NewEmoji(world.Emoji);
         Scrollback = new ScrollbackBuffer(scrollbackCapacity, CreateSpill(spill ?? new ScrollbackSpillOptions()));
 
         Triggers = new TriggerEngine();
@@ -135,6 +133,9 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     private IScrollbackSpill? CreateSpill(ScrollbackSpillOptions options) =>
         options.Enabled ? new FileScrollbackSpill(options, SessionKey) : null;
+
+    private static EmojiSubstitutor? NewEmoji(EmojiSettings emoji) =>
+        emoji.Enabled ? new EmojiSubstitutor(emoji.Emoticons, emoji.Shortcodes) : null;
 
     private static ILineParser CreateParser(ContentFormat format) => format switch
     {
@@ -428,6 +429,9 @@ public sealed class WorldSession : IAsyncDisposable
         // state too: ContentFormat is what the next connection starts from, and MXP has to be
         // negotiated again to take it back off ANSI.
         _parser = NewParser(World.ContentFormat);
+
+        // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
+        _emoji = NewEmoji(World.Emoji);
 
         SetState(ConnectionState.Connecting, null);
         PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");
@@ -891,9 +895,43 @@ public sealed class WorldSession : IAsyncDisposable
     {
         if (_telnet is not null)
         {
+            await SendLeavingAsync().ConfigureAwait(false);
             await _telnet.DisconnectAsync().ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Sends the character's <see cref="CharacterDefinition.OnDisconnect"/> commands (<c>QUIT</c>, say)
+    /// before the client closes a connection itself — on Disconnect, Reconnect and quitting the client. A
+    /// connection the server dropped gets none: there is nothing left to send them on.
+    /// <para>
+    /// Bounded by <see cref="LeavingTimeout"/> and never throws, because it runs on the way out of the client
+    /// and a hung socket must not hold the exit.
+    /// </para>
+    /// </summary>
+    private async Task SendLeavingAsync()
+    {
+        if (!IsConnected || Character is not { } character)
+        {
+            return;
+        }
+
+        using var timeout = new CancellationTokenSource(LeavingTimeout);
+        try
+        {
+            foreach (var command in SplitCommands(character.OnDisconnect))
+            {
+                await SendRawAsync(command, timeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or InvalidOperationException)
+        {
+            Logger.LogDebug(ex, "{World}: the on-disconnect commands were not all sent", World.Name);
+        }
+    }
+
+    /// <summary>How long the on-disconnect commands may take before the connection is closed anyway.</summary>
+    internal static readonly TimeSpan LeavingTimeout = TimeSpan.FromSeconds(1);
 
     private void SetState(ConnectionState state, Exception? error)
     {
@@ -956,6 +994,7 @@ public sealed class WorldSession : IAsyncDisposable
         Scrollback.Dispose(); // deletes this session's scrollback spill cache; the log above is kept
         if (_telnet is not null)
         {
+            await SendLeavingAsync().ConfigureAwait(false);
             await _telnet.DisposeAsync().ConfigureAwait(false);
             _telnet = null;
         }

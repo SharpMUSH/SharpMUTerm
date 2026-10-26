@@ -68,6 +68,12 @@ internal static class WorldsScreenRenderer
     /// </summary>
     internal const int GmcpModulesField = 5;
 
+    /// <summary><see cref="WorldDefinition.ContentFormat"/>, as <see cref="ContentChoices"/>.</summary>
+    internal const int ContentField = 6;
+
+    /// <summary><see cref="WorldDefinition.Emoji"/>'s three switches, as one of <see cref="EmojiChoices"/>.</summary>
+    internal const int EmojiField = 7;
+
     /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
     /// CHARACTER form draws them, top to bottom. The name leads, as on every list screen. The password
@@ -84,6 +90,13 @@ internal static class WorldsScreenRenderer
     internal const int OnConnectField = 3;
 
     /// <summary>
+    /// <see cref="CharacterDefinition.OnDisconnect"/>, labelled <c>disconnect</c> as the counterpart of the
+    /// <c>connect</c> line (and because <c>on disconnect</c> is wider than the form's label column). Inserted
+    /// under the on-connect lines, not appended, so ⇥ reads the form top to bottom (the password's rule).
+    /// </summary>
+    internal const int OnDisconnectField = 4;
+
+    /// <summary>
     /// <see cref="CharacterDefinition.ConnectAtStartup"/>, placed with the connection rows it belongs to:
     /// the connect line, the on-connect lines and the login readout all answer "what happens when this
     /// character connects", and this one answers "does it, unasked".
@@ -93,11 +106,11 @@ internal static class WorldsScreenRenderer
     /// all. This one has a well, and ⏎ opens it.
     /// </para>
     /// </summary>
-    internal const int StartupField = 4;
+    internal const int StartupField = 5;
 
-    internal const int LogFormatField = 5;
+    internal const int LogFormatField = 6;
 
-    internal const int LogDirectoryField = 6;
+    internal const int LogDirectoryField = 7;
 
     /// <summary>
     /// <see cref="LoggingSettings.RestoreLog"/> — whether this character's panes come back holding their
@@ -105,7 +118,7 @@ internal static class WorldsScreenRenderer
     /// because it is the third answer to "what does this client write down about me". A field and not a
     /// toggle for <see cref="StartupField"/>'s reason.
     /// </summary>
-    internal const int RestoreLogField = 7;
+    internal const int RestoreLogField = 8;
 
     /// <summary>
     /// <see cref="CharacterDefinition.Tint"/> — the colour this character's panes are painted in.
@@ -113,7 +126,7 @@ internal static class WorldsScreenRenderer
     /// numbering reason above and because it is the one row on this form that is about
     /// <em>appearance</em>: it belongs at the end, where a reader stops looking for behaviour.
     /// </summary>
-    internal const int PaneTintField = 8;
+    internal const int PaneTintField = 9;
 
     /// <summary>
     /// The trigger-set row's field ordinals. A set's name leads, as every list row's does — and here it
@@ -413,7 +426,9 @@ internal static class WorldsScreenRenderer
             ScreenField.Integer("port", () => w.Port, v => w.Port = v, 1, 65535),
             ScreenField.Choice("encoding", () => w.Encoding, v => w.Encoding = v, Encodings),
             ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400),
-            ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v))))
+            ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v)),
+            ScreenField.Choice("content", () => ContentName(w.ContentFormat), v => w.ContentFormat = ContentOf(v), ContentChoices),
+            ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -431,6 +446,7 @@ internal static class WorldsScreenRenderer
                 ScreenField.Defaulted(
                     "connect", () => c.ConnectString, v => c.ConnectString = v, ConnectStringTemplate.Default),
                 ScreenField.Optional("on connect", () => c.OnConnect, v => c.OnConnect = v),
+                ScreenField.Optional("disconnect", () => c.OnDisconnect, v => c.OnDisconnect = v),
                 ScreenField.Choice(
                     StartupLabel,
                     () => c.ConnectAtStartup ? StartupOn : StartupOff,
@@ -915,6 +931,20 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 GmcpModulesField)),
+            WorldField("content", Field(
+                world.ContentFormat == ContentFormat.Ansi
+                    ? $"[{Label}]{ContentName(world.ContentFormat)}[/]"
+                    : $"[{Value}]{ContentName(world.ContentFormat)}[/]",
+                cursor,
+                selectedWorld,
+                ContentField)),
+            WorldField("emoji", Field(
+                world.Emoji.Enabled
+                    ? $"[{Value}]{EmojiName(world.Emoji)}[/]"
+                    : $"[{Label}]{EmojiOff}[/]",
+                cursor,
+                selectedWorld,
+                EmojiField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });
@@ -1065,6 +1095,12 @@ internal static class WorldsScreenRenderer
                 selectedCharacter,
                 OnConnectField,
                 pane: CharactersPane)),
+            CharField("disconnect", Field(
+                $"[{Value}]{Escape(character.OnDisconnect ?? "—")}[/]",
+                cursor,
+                selectedCharacter,
+                OnDisconnectField,
+                pane: CharactersPane)),
             CharField(StartupLabel, Field(
                 StartupDetail(character.ConnectAtStartup),
                 cursor,
@@ -1108,6 +1144,55 @@ internal static class WorldsScreenRenderer
         // is a grid row in WorldsScreenView, which is the other half of why a list overlays rather than
         // pushes: growing one would resize the pane and shove the whole screen about.
         return ScreenChrome.Choices(form, cursor.Edit, CharDetailColumnWidth);
+    }
+
+    /// <summary>
+    /// The <c>content</c> field's words. <c>auto</c> is <see cref="ContentFormat.Ansi"/>, the stored default,
+    /// which starts on ANSI and follows a negotiated MXP; <c>ansi</c> is the deliberate choice not to.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ContentChoices = ["auto", "ansi", "mxp", "pueblo"];
+
+    internal static string ContentName(ContentFormat format) => format switch
+    {
+        ContentFormat.AnsiOnly => "ansi",
+        ContentFormat.Mxp => "mxp",
+        ContentFormat.Pueblo => "pueblo",
+        _ => "auto",
+    };
+
+    internal static ContentFormat ContentOf(string name) => name.ToLowerInvariant() switch
+    {
+        "ansi" => ContentFormat.AnsiOnly,
+        "mxp" => ContentFormat.Mxp,
+        "pueblo" => ContentFormat.Pueblo,
+        _ => ContentFormat.Ansi,
+    };
+
+    internal const string EmojiOff = "off";
+
+    /// <summary>
+    /// The <c>emoji</c> field's words: which of the two substitutions run. Three switches in the
+    /// configuration, one field here, because "on, with neither kind" is not a state anybody wants.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> EmojiChoices = [EmojiOff, "emoticons", "shortcodes", "both"];
+
+    internal static string EmojiName(EmojiSettings emoji) => (emoji.Enabled, emoji.Emoticons, emoji.Shortcodes) switch
+    {
+        (false, _, _) or (true, false, false) => EmojiOff,
+        (true, true, false) => "emoticons",
+        (true, false, true) => "shortcodes",
+        _ => "both",
+    };
+
+    internal static void SetEmoji(EmojiSettings emoji, string name)
+    {
+        var choice = name.ToLowerInvariant();
+        emoji.Enabled = choice != EmojiOff;
+        if (emoji.Enabled)
+        {
+            emoji.Emoticons = choice is "emoticons" or "both";
+            emoji.Shortcodes = choice is "shortcodes" or "both";
+        }
     }
 
     /// <summary>
