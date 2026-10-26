@@ -160,6 +160,13 @@ public sealed class WorldDefinition
     public bool DownloadMedia { get; set; } = true;
 
     /// <summary>
+    /// The prefix a MUSH starts a line with when it hands text back to edit — AresMUSH's <c>FugueEdit &gt;</c> —
+    /// or null for none, the default. Such a line is not shown: its text is put on the command line, and the
+    /// player sends it. Never sent by the client, because another player can page a line that starts with it.
+    /// </summary>
+    public string? GrabPrefix { get; set; }
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
@@ -194,6 +201,7 @@ public sealed class WorldDefinition
         GmcpModules = GmcpModules.ToList(),
         Map = Map.Clone(),
         DownloadMedia = DownloadMedia,
+        GrabPrefix = GrabPrefix,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

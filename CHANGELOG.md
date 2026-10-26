@@ -61,6 +61,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   for line. An edit that arrives while another window or screen is in front waits for F1 in that
   character's window. The client also tells the MOO its name, version and window size, and shows the MOO's
   status text on the status row.
+- An `edit grab` prefix per world in Worlds & Characters (F5), empty by default. A line from the game that
+  starts with it is not shown; its text goes on that character's command line for you to change and send.
+  AresMUSH uses `FugueEdit >` for its edit commands. The client never sends a grabbed line itself, and a
+  line you were typing is kept in history (Alt+Up).
 - More of MXP: elements a game defines with `<!ELEMENT>` (including room names, exits and numbers, which
   feed the automapper), entities from `<!ENTITY>` and `<VAR>` (kept with the game data on Ctrl+P ▸ *Show game
   data*), `<GAUGE>` and `<STAT>` meters on the status row, `<SOUND>` and `<MUSIC>`, which play as MSP sounds

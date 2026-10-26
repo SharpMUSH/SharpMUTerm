@@ -687,6 +687,35 @@ public sealed class WorldSession : IAsyncDisposable
     /// <paramref name="isPrompt"/> is not threaded through the pipeline below (colour-strip, tab
     /// expand, triggers, emoji) — it is applied once, at the end, to the line actually delivered.
     /// </summary>
+    /// <summary>
+    /// Raised on the read loop with the text of a line that began with the world's
+    /// <see cref="WorldDefinition.GrabPrefix"/>: a MUSH handing back an attribute or a post to edit. The line
+    /// is gagged and the text is the client's to put in front of the player, who sends it themselves.
+    /// </summary>
+    public event EventHandler<string>? EditGrabbed;
+
+    /// <summary>
+    /// Takes a grab line out of the stream. Before the triggers, so a rule cannot send what was grabbed, and
+    /// matched exactly, case and all, because the prefix is a game's fixed marker and not a pattern.
+    /// </summary>
+    private bool TryGrab(StyledLine line)
+    {
+        if (World.GrabPrefix is not { Length: > 0 } prefix || EditGrabbed is null)
+        {
+            return false;
+        }
+
+        var text = line.Text;
+        if (!text.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var rest = text[prefix.Length..];
+        EditGrabbed.Invoke(this, rest.StartsWith(' ') ? rest[1..] : rest);
+        return true;
+    }
+
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {
         // An MSP trigger is the server asking for a sound, and is taken out before anything else sees the
@@ -694,6 +723,11 @@ public sealed class WorldSession : IAsyncDisposable
         if (_mspActive && Media.MspTrigger.Parse(line.Text) is { } sound)
         {
             MediaReceived?.Invoke(this, sound);
+            return;
+        }
+
+        if (!isPrompt && TryGrab(line))
+        {
             return;
         }
 

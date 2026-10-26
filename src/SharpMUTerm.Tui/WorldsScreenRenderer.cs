@@ -86,6 +86,12 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
     internal const int SoundsField = 11;
 
+    /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
+    internal const int GrabField = 12;
+
+    /// <summary>The prefix the grab row suggests while it is off: AresMUSH's, and the one its /edit commands use.</summary>
+    internal const string SuggestedGrabPrefix = "FugueEdit >";
+
     /// <summary>F5's words for <see cref="WorldDefinition.DownloadMedia"/>: on fetches what the game asks for.</summary>
     internal static readonly string[] SoundChoices = ["download", "cached only"];
 
@@ -451,7 +457,8 @@ internal static class WorldsScreenRenderer
                 "sounds",
                 () => w.DownloadMedia ? SoundChoices[0] : SoundChoices[1],
                 v => w.DownloadMedia = v == SoundChoices[0],
-                SoundChoices)))
+                SoundChoices),
+            ScreenField.Optional("edit grab", () => w.GrabPrefix, v => w.GrabPrefix = v)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -982,6 +989,13 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 SoundsField)),
+            WorldField("edit grab", Field(
+                world.GrabPrefix is { } grab
+                    ? $"[{Value}]{Escape(grab)}[/]"
+                    : $"[{Label}]off · e.g. {Escape(SuggestedGrabPrefix)}[/]",
+                cursor,
+                selectedWorld,
+                GrabField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

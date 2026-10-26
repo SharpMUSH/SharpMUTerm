@@ -2733,6 +2733,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
         session.MooEditReceived += (_, edit) => OnUi(() => ReceiveMooEdit(session, edit));
+        session.EditGrabbed += (_, text) => OnUi(() => ReceiveGrab(session, windowId, text));
         session.McpStatusChanged += (_, _) => OnUi(() =>
         {
             if (ReferenceEquals(session, _active))
@@ -4900,9 +4901,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The recall list for a bar under the focused window's character; see <see cref="_histories"/>.
     /// Created on first use, so a character nobody has typed to holds nothing.
     /// </summary>
-    private InputHistory HistoryFor(InputBar bar)
+    private InputHistory HistoryFor(InputBar bar) => HistoryFor(HistoryOwner(), bar);
+
+    private InputHistory HistoryFor(string owner, InputBar bar)
     {
-        var key = (HistoryOwner(), bar);
+        var key = (owner, bar);
         if (!_histories.TryGetValue(key, out var history))
         {
             // IgnoreForHistory is asked per line, so a list created late follows the setting as it is now.
@@ -5341,6 +5344,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _input.Text = _drafts.Recall(windowId, InputBar.Primary);
         _second.Text = _drafts.Recall(windowId, InputBar.Secondary);
+        if (_pendingGrabs.Remove(windowId, out var grab))
+        {
+            PlaceGrab(_input, grab);
+        }
     }
 
     /// <summary>Which of the two ways into history a keystroke is, or neither.</summary>
@@ -12012,6 +12019,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _paneScrolls.Remove(FrozenRegionKey(id));
         _frozenPanes.Remove(id);
         _drafts.Forget(id);        // both bars: a closed window keeps neither of its two drafts
+        _pendingGrabs.Remove(id);
         _secondBars.Forget(id);    // and a same-id window later starts from F8's default again
         _lines.Remove(id);         // don't resurrect old scrollback if a same-id spawn reopens
         _reservedPictures.Remove(id);
