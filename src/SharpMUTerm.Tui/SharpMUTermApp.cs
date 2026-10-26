@@ -1193,9 +1193,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             SettleScroll();
-            if (MenuLinkCell(MainWindowId) is { } cell)
+            // The chooser itself rather than a right-click, which the window answers with its own native
+            // menu: this is the frame of the terminal's chooser, drawn the same in both hosts.
+            if (MenuLinkCell(MainWindowId) is { } cell && TargetAt(cell) is { } target && LinkOf(target) is { } link)
             {
-                OnPointerFrame([SharpConsoleUI.Drivers.MouseFlags.Button3Pressed], cell);
+                ShowSendMenu(link.WindowId, link.Payload);
             }
         }
 
@@ -2717,6 +2719,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
+        session.MxpMetersChanged += (_, _) => OnUi(() =>
+        {
+            if (ReferenceEquals(session, _active))
+            {
+                RefreshStatusBar();
+            }
+        });
 
         // The status row's encoding cell is live, so it has to be repainted when the thing it reports
         // changes. WorldSession has already put the change in the client message log by the time this
@@ -8190,7 +8199,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             session.PrintSystem($"*** {problem}");
         }
 
-        IRoomSource[] sources = text.IsActive ? [new GmcpRoomSource(session), text] : [new GmcpRoomSource(session)];
+        IRoomSource[] sources = text.IsActive
+            ? [new GmcpRoomSource(session), new MxpRoomSource(session), text]
+            : [new GmcpRoomSource(session), new MxpRoomSource(session)];
         if (!text.IsActive)
         {
             text.Dispose();
@@ -8607,6 +8618,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>The game data the status row's meters read: the active session's, or the demo's.</summary>
     private GameDataStore StatusData() => _active?.GameData ?? _demoGameData;
+
+    /// <summary>The player's own meters, then any a server asked for with MXP <c>&lt;GAUGE&gt;</c> that are not already there.</summary>
+    private IReadOnlyList<StatusMeter> StatusMeters()
+    {
+        var own = _config.Text.StatusMeters;
+        var served = _active?.MxpMeters ?? _demoMeters;
+        return served.Count == 0
+            ? own
+            : [.. own, .. served.Where(m => !own.Any(o => string.Equals(o.Value, m.Value, StringComparison.OrdinalIgnoreCase)))];
+    }
+
+    /// <summary>The demo scene's server meters: written into nothing live, so the snapshot sets them here.</summary>
+    private IReadOnlyList<StatusMeter> _demoMeters = [];
 
     private void Reconnect()
     {
@@ -12936,7 +12960,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
-        var meters = StatusMeterRenderer.Render(_config.Text.StatusMeters, StatusData(), $"{_ink.Notice}");
+        var meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}");
 
         var right = new List<string>();
 

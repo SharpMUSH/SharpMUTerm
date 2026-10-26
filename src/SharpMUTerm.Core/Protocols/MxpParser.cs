@@ -45,7 +45,7 @@ namespace SharpMUTerm.Core.Protocols;
 /// capped to avoid runaway on malformed input.</item>
 /// </list>
 /// </summary>
-public sealed class MxpParser : ILineParser
+public sealed partial class MxpParser : ILineParser
 {
     private const int MaxTagLength = 4096;
     private const int MaxEntityLength = 32;
@@ -65,7 +65,7 @@ public sealed class MxpParser : ILineParser
     private const int MaxSequenceLength = 128;
 
     /// <summary>A single open MXP element on the tag stack.</summary>
-    private sealed class Frame
+    private sealed record Frame
     {
         public required string Name { get; init; }
         public TextStyle SavedStyle { get; init; }
@@ -82,6 +82,18 @@ public sealed class MxpParser : ILineParser
 
         /// <summary>The menu labels a <c>&lt;SEND&gt;</c>'s hint gave its commands, if it gave any.</summary>
         public IReadOnlyList<string>? Labels { get; init; }
+
+        /// <summary>An element's <c>FLAG</c>: what its text is (<c>RoomName</c>…), or <c>set name</c> to store it.</summary>
+        public string? Flag { get; init; }
+
+        /// <summary>A <c>&lt;DEST&gt;</c>'s window: the frame's text is cut from the line and delivered there.</summary>
+        public string? Destination { get; init; }
+
+        /// <summary>Closed at the end of its line whatever the mode: opened by an <c>ESC[#z</c> line tag.</summary>
+        public bool EndsWithLine { get; init; }
+
+        /// <summary>The text of earlier lines, for a flagged frame that spans a line boundary.</summary>
+        public StringBuilder? Captured { get; init; }
 
         /// <summary>
         /// True when the element was opened while the line was in <see cref="MxpLineMode.Open"/> —
@@ -107,6 +119,10 @@ public sealed class MxpParser : ILineParser
     private SpanInteraction? _interaction;
     private readonly StringBuilder _run = new();
     private readonly StringBuilder _tag = new();
+
+    // The quote an attribute value inside the tag being read is open in, or '\0'. A '>' inside one does not
+    // end the tag: an <!ELEMENT> definition carries markup in a quoted value.
+    private char _tagQuote;
     private readonly StringBuilder _entity = new();
     private readonly StringBuilder _seq = new();
     private readonly List<StyledSpan> _lineSpans = new();
@@ -158,7 +174,8 @@ public sealed class MxpParser : ILineParser
     /// dropped — so it is deliberately not claimed here.
     /// </remarks>
     private static readonly string[] SupportedTags =
-        ["+b", "+i", "+u", "+s", "+color", "+font", "+send", "+a", "+br", "+image"];
+        ["+b", "+i", "+u", "+s", "+color", "+font", "+send", "+a", "+br", "+image",
+         "+!element", "+!entity", "+var", "+gauge", "+stat", "+sound", "+music", "+frame", "+dest"];
 
     /// <summary>True when a partial line, an open tag/entity, or unclosed markup is buffered.</summary>
     public bool HasPendingContent =>
@@ -199,15 +216,34 @@ public sealed class MxpParser : ILineParser
     public StyledLine? Flush()
     {
         EndLine();
+        var markup = _markupThisLine;
+        _markupThisLine = false;
+        LineSwallowed = false;
         if (_lineSpans.Count == 0)
         {
+            // A line that was all markup — definitions, a VERSION request, a DEST that took everything — is
+            // not a blank line the server sent, and a session should not print one for it.
+            LineSwallowed = markup;
             return null;
         }
 
         var line = new StyledLine(_lineSpans);
         _lineSpans.Clear();
+        if (_redirect is { } frame)
+        {
+            Redirected?.Invoke(this, new MxpRedirect(frame, line));
+            LineSwallowed = true;
+            return null;
+        }
+
         return line;
     }
+
+    /// <summary>
+    /// Whether the line the last <see cref="Flush"/> ended was taken entirely by markup or sent to another
+    /// window, so that its returning null is not a blank line.
+    /// </summary>
+    public bool LineSwallowed { get; private set; }
 
     /// <summary>Resets all parser state, including the current style and the open-tag stack.</summary>
     public void Reset()
@@ -222,10 +258,12 @@ public sealed class MxpParser : ILineParser
         _interaction = null;
         _run.Clear();
         _tag.Clear();
+        _tagQuote = '\0';
         _entity.Clear();
         _seq.Clear();
         _lineSpans.Clear();
         _stack.Clear();
+        ResetDefinitions();
     }
 
     private void Process(char ch)
@@ -324,6 +362,7 @@ public sealed class MxpParser : ILineParser
         {
             case '<':
                 _tag.Clear();
+                _tagQuote = '\0';
                 _mode = Mode.Tag;
                 break;
 
@@ -514,6 +553,7 @@ public sealed class MxpParser : ILineParser
             case 5: SetLineMode(MxpLineMode.Open); _defaultMode = MxpLineMode.Open; break;
             case 6: SetLineMode(MxpLineMode.Secure); _defaultMode = MxpLineMode.Secure; break;
             case 7: SetLineMode(MxpLineMode.Locked); _defaultMode = MxpLineMode.Locked; break;
+            case >= 10 and <= 99: OpenLineTagElement(tag); break;
         }
     }
 
@@ -591,16 +631,23 @@ public sealed class MxpParser : ILineParser
     /// on because <see cref="Canonical"/> only ever folds an open tag's alternative spellings onto
     /// another open tag (BOLD → B, C → COLOR); no secure tag can canonicalise into the allow-list.
     /// </param>
-    private bool ConsumeAuthorizationFor(string name)
+    private bool ConsumeAuthorizationFor(string name) => Authorize(name) != Trust.None;
+
+    /// <summary>
+    /// <see cref="ConsumeAuthorizationFor"/>, saying <em>why</em> a tag is allowed: a secure line (or TEMP
+    /// SECURE) allows anything, an open one allows the open tags and the elements a server defined
+    /// <c>OPEN</c>. The difference matters to an element's own tags, which inherit the trust it was opened with.
+    /// </summary>
+    private Trust Authorize(string name)
     {
         if (_lineMode == MxpLineMode.Secure || _tempSecure)
         {
             // TEMP SECURE is spent by the next tag whatever that tag turns out to be.
             _tempSecure = false;
-            return true;
+            return Trust.Secure;
         }
 
-        return MxpTagCategory.IsOpen(name);
+        return MxpTagCategory.IsOpen(name) || (_elements.TryGetValue(name, out var element) && element.Open) ? Trust.Open : Trust.None;
     }
 
     private void ProcessOsc(char ch)
@@ -653,33 +700,54 @@ public sealed class MxpParser : ILineParser
 
         switch (ch)
         {
-            case '>':
-                ProcessTag(_tag.ToString());
+            case '>' when _tagQuote == '\0':
+                // Back in text before the tag runs: a <BR> ends the line, and the end of a line abandons a tag
+                // still being read.
+                var tag = _tag.ToString();
                 _tag.Clear();
                 _mode = Mode.Text;
+                ProcessTag(tag);
                 break;
 
             case '\n':
                 // A newline inside a "tag" means it was never a tag; bail out literally.
-                _run.Append('<').Append(_tag);
-                _tag.Clear();
-                _mode = Mode.Text;
+                AbandonTag();
                 ProcessText('\n');
                 break;
 
             default:
                 if (_tag.Length >= MaxTagLength)
                 {
-                    _run.Append('<').Append(_tag);
-                    _tag.Clear();
-                    _mode = Mode.Text;
+                    AbandonTag();
                     ProcessText(ch);
                     return;
+                }
+
+                if (ch is '"' or '\'')
+                {
+                    // A quote opens only where a value can start, so the apostrophe in "<don't>" opens nothing.
+                    if (_tagQuote == '\0' && (_tag[^1] == '=' || char.IsWhiteSpace(_tag[^1])))
+                    {
+                        _tagQuote = ch;
+                    }
+                    else if (_tagQuote == ch)
+                    {
+                        _tagQuote = '\0';
+                    }
                 }
 
                 _tag.Append(ch);
                 break;
         }
+    }
+
+    /// <summary>What was read as a tag was never one: it goes out as the text it was.</summary>
+    private void AbandonTag()
+    {
+        _run.Append('<').Append(_tag);
+        _tag.Clear();
+        _tagQuote = '\0';
+        _mode = Mode.Text;
     }
 
     private void ProcessEntityChar(char ch)
@@ -690,7 +758,7 @@ public sealed class MxpParser : ILineParser
             _entity.Clear();
             _mode = Mode.Text;
 
-            var replacement = ResolveEntity(content);
+            var replacement = ResolveEntity(content) ?? UserEntity(content);
             if (replacement is not null)
             {
                 // An entity is text like any other: &nbsp; pays a blank a picture's label owes, anything else ends the debt.
@@ -716,7 +784,7 @@ public sealed class MxpParser : ILineParser
             return;
         }
 
-        if ((char.IsLetterOrDigit(ch) || ch == '#') && _entity.Length < MaxEntityLength)
+        if ((char.IsLetterOrDigit(ch) || ch == '#' || ch == '_') && _entity.Length < MaxEntityLength)
         {
             _entity.Append(ch);
             return;
@@ -787,6 +855,8 @@ public sealed class MxpParser : ILineParser
             return;
         }
 
+        _markupThisLine = true;
+
         if (trimmed[0] == '/')
         {
             // A closing tag takes the category of the element it closes, so the slash comes off
@@ -829,13 +899,26 @@ public sealed class MxpParser : ILineParser
         }
 
         var name = Canonical(trimmed[..nameEnd]);
-        if (!ConsumeAuthorizationFor(name))
+        var trust = Authorize(name);
+        if (trust == Trust.None)
         {
             EmitLiteralTag(raw);
             return;
         }
 
         var attrs = nameEnd < trimmed.Length ? trimmed[(nameEnd + 1)..] : string.Empty;
+        Open(name, attrs, trust);
+    }
+
+    /// <summary>Opens a tag that has been allowed: a server-defined element, or one of the built-ins.</summary>
+    private void Open(string name, string attrs, Trust trust)
+    {
+        if (_elements.TryGetValue(name, out var element))
+        {
+            OpenElement(element, attrs, trust, endsWithLine: false);
+            return;
+        }
+
         HandleOpener(name, attrs);
     }
 
@@ -882,6 +965,29 @@ public sealed class MxpParser : ILineParser
                 break;
             case "IMAGE":
                 HandleImage(attrs);
+                break;
+            case "!ELEMENT":
+                DefineElement(attrs);
+                break;
+            case "!ENTITY":
+                DefineEntity(attrs);
+                break;
+            case "VAR":
+                OpenVar(attrs);
+                break;
+            case "GAUGE":
+            case "STAT":
+                DeclareGauge(attrs, isStat: name == "STAT");
+                break;
+            case "SOUND":
+            case "MUSIC":
+                RequestMedia(name == "MUSIC" ? Media.MediaKind.Music : Media.MediaKind.Sound, attrs);
+                break;
+            case "FRAME":
+                DeclareFrame(attrs);
+                break;
+            case "DEST":
+                OpenDest(attrs);
                 break;
             default:
                 // Unknown/unsupported tag (VAR, EXPIRE, H1, P, …) — consumed and ignored.
@@ -1097,7 +1203,10 @@ public sealed class MxpParser : ILineParser
         string? hint,
         bool promptOnly,
         IReadOnlyList<string>? templates = null,
-        IReadOnlyList<string>? labels = null)
+        IReadOnlyList<string>? labels = null,
+        string? flag = null,
+        string? destination = null,
+        bool endsWithLine = false)
     {
         FlushRun();
         _stack.Add(new Frame
@@ -1114,6 +1223,10 @@ public sealed class MxpParser : ILineParser
             OpenedInOpenMode = _lineMode == MxpLineMode.Open,
             Templates = templates,
             Labels = labels,
+            Flag = flag,
+            Destination = destination,
+            EndsWithLine = endsWithLine,
+            Captured = flag is null ? null : new StringBuilder(),
         });
     }
 
@@ -1164,6 +1277,7 @@ public sealed class MxpParser : ILineParser
                 FinalizeDeferredInteraction(frame);
             }
 
+            CompleteDefinitionFrame(frame, closing: true);
             _stack.RemoveAt(i);
         }
 
@@ -1232,27 +1346,15 @@ public sealed class MxpParser : ILineParser
 
         // A formatting frame opened *inside* an interaction still holds it in SavedInteraction;
         // if it closes on a later line, CloseTag would resurrect the ended interaction. Clear it
-        // (and rebase SpanStart, which pointed into the now-cleared line) on surviving frames.
+        // (and rebase SpanStart, which pointed into the now-cleared line) on surviving frames. A flagged
+        // or redirected frame takes this line's share of its text with it first.
         for (var i = 0; i < _stack.Count; i++)
         {
             var frame = _stack[i];
+            CompleteDefinitionFrame(frame, closing: false);
             if (frame.SavedInteraction is not null || frame.SpanStart != 0)
             {
-                _stack[i] = new Frame
-                {
-                    Name = frame.Name,
-                    SavedStyle = frame.SavedStyle,
-                    SavedInteraction = null,
-                    IsInteraction = frame.IsInteraction,
-                    IsLink = frame.IsLink,
-                    DeferCommand = frame.DeferCommand,
-                    Hint = frame.Hint,
-                    PromptOnly = frame.PromptOnly,
-                    SpanStart = 0,
-                    OpenedInOpenMode = frame.OpenedInOpenMode,
-                    Templates = frame.Templates,
-                    Labels = frame.Labels,
-                };
+                _stack[i] = frame with { SavedInteraction = null, SpanStart = 0 };
             }
         }
 
@@ -1265,6 +1367,13 @@ public sealed class MxpParser : ILineParser
 
         var line = _lineSpans.Count == 0 ? StyledLine.Empty : new StyledLine(_lineSpans);
         _lineSpans.Clear();
+        _markupThisLine = false;
+        if (_redirect is { } frame && line.Spans.Count > 0)
+        {
+            Redirected?.Invoke(this, new MxpRedirect(frame, line));
+            return;
+        }
+
         (_emit ??= new List<StyledLine>()).Add(line);
     }
 
@@ -1288,9 +1397,27 @@ public sealed class MxpParser : ILineParser
     /// </remarks>
     private void EndLine()
     {
+        // Nor can a tag: the '\n' rule in ProcessTagChar never runs in production, so without this an
+        // unclosed '<' went on reading the next line as part of its tag.
+        if (_mode == Mode.Tag)
+        {
+            AbandonTag();
+        }
+
         FlushRun();
         _owedBlanks = 0;
         _owedBy = -1;
+        _expansionsThisLine = 0;
+
+        // An element a line tag opened lasts until the end of its line, in any mode.
+        for (var i = 0; i < _stack.Count; i++)
+        {
+            if (_stack[i].EndsWithLine)
+            {
+                CloseFramesFrom(i);
+                break;
+            }
+        }
 
         // Spec: "when in OPEN mode, any unclosed OPEN tags are automatically closed when a newline is
         // received from the MUD." Only open-mode ones: "secure tags are never automatically closed",
@@ -1333,6 +1460,9 @@ public sealed class MxpParser : ILineParser
         "U" or "UNDERLINE" => "U",
         "S" or "STRIKEOUT" => "S",
         "C" or "COLOR" => "COLOR",
+        "!EL" or "!ELEMENT" => "!ELEMENT",
+        "!EN" or "!ENTITY" => "!ENTITY",
+        "V" or "VAR" => "VAR",
         var other => other,
     };
 

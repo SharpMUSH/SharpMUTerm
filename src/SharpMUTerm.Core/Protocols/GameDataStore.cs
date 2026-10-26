@@ -41,6 +41,9 @@ public sealed class GameDataStore
     /// <summary>The prefix MSDP variables are kept under.</summary>
     public const string MsdpPrefix = "MSDP";
 
+    /// <summary>The prefix MXP entities are kept under.</summary>
+    public const string MxpPrefix = "MXP";
+
     private readonly Lock _gate = new();
     private readonly Dictionary<string, GameDataEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeProvider _time;
@@ -140,6 +143,37 @@ public sealed class GameDataStore
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// Takes one MXP entity (<c>&lt;!ENTITY&gt;</c>, <c>&lt;VAR&gt;</c>, an element's <c>FLAG="set x"</c>), held as
+    /// <c>MXP.&lt;name&gt;</c>; null removes it. Returns whether anything changed.
+    /// </summary>
+    public bool SetMxp(string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 64 || (value?.Length ?? 0) > MaxPayloadBytes)
+        {
+            return false;
+        }
+
+        var package = $"{MxpPrefix}.{name}";
+        if (value is null)
+        {
+            bool removed;
+            lock (_gate)
+            {
+                removed = _entries.Remove(package);
+            }
+
+            if (removed)
+            {
+                Changed?.Invoke(this, package);
+            }
+
+            return removed;
+        }
+
+        return Store(package, JsonValue.Create(value));
     }
 
     /// <summary>

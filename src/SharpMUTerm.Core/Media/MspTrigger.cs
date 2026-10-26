@@ -68,6 +68,18 @@ public static class MspTrigger
             fields[char.ToUpperInvariant(word[0])] = word[2..];
         }
 
+        return FromFields(kind, name, fields);
+    }
+
+    /// <summary>
+    /// A sound or music request from its parts: a name and MSP's one-letter fields (<c>V L P C T U</c>). MXP's
+    /// <c>&lt;SOUND&gt;</c> and <c>&lt;MUSIC&gt;</c> carry the same fields as attributes and come through here, so
+    /// both protocols follow one set of defaults.
+    /// </summary>
+    public static MediaCommand FromFields(MediaKind kind, string name, IReadOnlyDictionary<char, string> fields)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(fields);
         var url = fields.GetValueOrDefault('U');
         if (string.Equals(name, "Off", StringComparison.OrdinalIgnoreCase))
         {
@@ -91,7 +103,7 @@ public static class MspTrigger
             : request with { Continue = Number(fields, 'C') != 0, Key = MusicKey });
     }
 
-    private static int? Number(Dictionary<char, string> fields, char key) =>
+    private static int? Number(IReadOnlyDictionary<char, string> fields, char key) =>
         fields.TryGetValue(key, out var value) && int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number)
             ? number
             : null;

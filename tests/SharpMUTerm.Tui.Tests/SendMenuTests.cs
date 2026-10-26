@@ -63,7 +63,9 @@ public class SendMenuTests
         await using var app = new SharpMUTermApp(DemoScene.Build(), host);
         app.RenderSnapshot("send-menu");
 
-        await Assert.That(app.SendMenu.IsOpen).IsFalse();
+        // The view opens the terminal's chooser; this is about the menu a right-click gets in the window.
+        app.SendMenu.Close();
+        app.RenderWholeFrame();
         var cell = app.MenuLinkCell(SharpMUTermApp.MainWindowId)!.Value;
         var labels = app.PointerMenu(cell).Select(i => i.Label).ToArray();
         await Assert.That(labels).Contains("Buy it");
