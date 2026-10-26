@@ -381,6 +381,9 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     public bool PlaysMedia { get; set; }
 
+    /// <summary>Whether this connection agreed MSP; written on the read loop, read there too.</summary>
+    private volatile bool _mspActive;
+
     /// <summary>The GMCP modules a connection asks for beyond the defaults: the world's, then MCMP's when it plays media.</summary>
     public static string[] GmcpModulesFor(WorldDefinition world, bool playsMedia) =>
         playsMedia ? [.. world.GmcpModules, Media.MediaCommand.GmcpModule] : world.GmcpModules.ToArray();
@@ -497,6 +500,8 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.EncodingChanged += OnEncodingChanged;
         telnet.Disconnected += OnDisconnected;
         telnet.MxpEnabled += OnMxpEnabled;
+        _mspActive = false;
+        telnet.MspChanged += (_, active) => _mspActive = active;
         telnet.PuebloEnabled += OnPuebloEnabled;
 
         try
@@ -578,6 +583,14 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {
+        // An MSP trigger is the server asking for a sound, and is taken out before anything else sees the
+        // line — but only on a connection that agreed MSP. Anywhere else it is text a player can type.
+        if (_mspActive && Media.MspTrigger.Parse(line.Text) is { } sound)
+        {
+            MediaReceived?.Invoke(this, sound);
+            return;
+        }
+
         // Colour is stripped from what the *server* sent, before the triggers run: a highlight rule
         // and this client's own system/echo lines are not "incoming ANSI colour" and keep theirs.
         if (_text?.StripIncomingColour == true)

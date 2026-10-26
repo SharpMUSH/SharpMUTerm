@@ -25,6 +25,7 @@ internal sealed class FakeTelnetSession : ITelnetSession
     public event EventHandler? MxpEnabled;
     public event EventHandler? PuebloEnabled;
     public event EventHandler? MsdpEnabled;
+    public event EventHandler<bool>? MspChanged;
 
     public List<(string Variable, string Value)> SentMsdp { get; } = new();
 
@@ -90,6 +91,8 @@ internal sealed class FakeTelnetSession : ITelnetSession
     public void RaiseMxpEnabled() => MxpEnabled?.Invoke(this, EventArgs.Empty);
 
     public void RaisePuebloEnabled() => PuebloEnabled?.Invoke(this, EventArgs.Empty);
+
+    public void RaiseMsp(bool active) => MspChanged?.Invoke(this, active);
 
     public void RaiseMsdpEnabled() => MsdpEnabled?.Invoke(this, EventArgs.Empty);
 

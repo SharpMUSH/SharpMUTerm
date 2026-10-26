@@ -40,6 +40,17 @@ public interface ITelnetSession : IAsyncDisposable
     event EventHandler? MxpEnabled;
 
     /// <summary>
+    /// Raised when MSP (option 90) is agreed (<c>true</c>) or withdrawn (<c>false</c>). While it is agreed, a
+    /// line that is an MSP trigger is a sound request rather than text. A session that cannot negotiate MSP
+    /// never raises it, which is what the default does.
+    /// </summary>
+    event EventHandler<bool>? MspChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Raised once the server has switched this connection to Pueblo (its start sequence, after our
     /// <c>PUEBLOCLIENT</c>). The <see cref="MxpEnabled"/> of Pueblo.
     /// </summary>
