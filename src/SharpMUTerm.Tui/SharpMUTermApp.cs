@@ -539,6 +539,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly string? _scriptsRoot;
 
+    /// <summary>
+    /// The folder each character's <c>store.*</c> file is kept in, or null to keep those values in memory only:
+    /// the same family, so a test or a snapshot that runs scripts still writes no store.
+    /// </summary>
+    private readonly string? _scriptStoreRoot;
+
     /// <summary>Each open session's scripts. Empty when <see cref="_scriptsRoot"/> is null.</summary>
     private readonly Dictionary<WorldSession, SessionScripts> _scripts = new();
 
@@ -667,7 +673,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         string? scriptsRoot = null,
         MapStore? maps = null,
         MediaCache? media = null,
-        PackageStore? packages = null)
+        PackageStore? packages = null,
+        string? scriptStoreRoot = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -680,7 +687,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             scriptsRoot,
             maps,
             media,
-            packages)
+            packages,
+            scriptStoreRoot)
     {
     }
 
@@ -700,7 +708,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         string? scriptsRoot = null,
         MapStore? maps = null,
         MediaCache? media = null,
-        PackageStore? packages = null)
+        PackageStore? packages = null,
+        string? scriptStoreRoot = null)
     {
         var capabilities = host.Capabilities;
         Host = host;
@@ -712,6 +721,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
         _restore = restore;
         _scriptsRoot = string.IsNullOrWhiteSpace(scriptsRoot) ? null : scriptsRoot;
+        _scriptStoreRoot = string.IsNullOrWhiteSpace(scriptStoreRoot) ? null : scriptStoreRoot;
         _sessions.SessionAdded += OnSessionAdded;
         _sessions.SessionRemoved += OnSessionRemoved;
         _inlineImages = new InlineImageHost(
@@ -8206,7 +8216,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript);
+        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript, _scriptStoreRoot);
         _scripts[session] = scripts;
         scripts.Reload();
     }

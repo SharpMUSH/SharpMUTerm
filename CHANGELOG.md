@@ -36,6 +36,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
+- Lua scripts can keep values between sessions: `store.set('kills', 3)`, `store.get('kills')` and
+  `store.keys()`. Each character has its own store, kept in `script-data/` beside `config.json`. A store holds
+  at most 1,024 keys and 256 KB, and `store.set(key, nil)` removes a key.
 - Lua scripts can use the map: `map.current()`, `map.path('Town Square')` and `map.walk('Town Square')`.
 - Game sound. A GMCP game that uses MCMP (`Client.Media`, as Mudlet does) can now play sounds and music:
   the client asks for it, fetches the files the game names into a cache folder, and plays WAV, MP3, OGG and
