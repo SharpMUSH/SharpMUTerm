@@ -1911,6 +1911,16 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **⇥ completes the last word on the command line** (`CompletionIndex`, Core, one per `WorldSession`;
+  `InputBarControl.Complete`; `SharpMUTermApp.Completion.cs`). Names from GMCP (`Room.Players`,
+  `Room.AddPlayer`, `Comm.Channel.Players`, `Comm.Channel.Text`'s talker) first, then words of output the
+  session *showed* (a gagged line's words were never read), newest first, capped at 4,096 words and 512
+  names. Repeated ⇥ cycles and ends on what was typed; any edit ends the cycle, because the cycle is keyed
+  on the exact text it left. **Only at the end of the buffer**: the bar exposes no caret offset to replace a
+  mid-line word through, and that is where a MUD line is typed. **Ahead of the sibling-bar cycle, and only
+  when there is a candidate**, so ⇥ with nothing to complete still moves to the second bar. A focus-in Tab
+  never reaches the bar: `TerminalFocusWatcher` claims it as a global shortcut first. Not on F4, because ⇥
+  is not taken outright.
 - **A MUSH's edit grab goes on the command line and is never sent** (`WorldDefinition.GrabPrefix`, F5 ▸
   `edit grab`, null by default; `WorldSession.TryGrab`; `SharpMUTermApp.Grab.cs`). Another player can page a
   line that starts with the prefix, so the player always sees the text and presses ⏎. Matched exactly and at
