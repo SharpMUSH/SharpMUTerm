@@ -1911,6 +1911,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **Discord presence is a host member and a per-world opt-in** (`ClientHost.Presence`, a lazy
+  `Func<IPresence?>?`; `GamePresence`/`DiscordIpc`, Core; F5 ▸ `discord`, off by default). The world asks for
+  `External.Discord 1`. `WorldSession.GamePresence` folds `Info` (application id: digits only) and `Status`
+  (fields trimmed to Discord's 128). The app shows the `SendTarget()` session's presence while it is connected
+  and opted in, and clears it on a window change, a state change or a world that has not opted in. The host is
+  opened only when there is something to show, so a client whose worlds never opt in never touches the socket.
+  `DiscordIpc.Show` never blocks: a worker sends only the newest value, reads and discards each reply (bounded
+  in size and time), and on a failed connect does not retry until the next update. The application id is the
+  game's; this client registers none. The snapshot and every test host have `Presence = null`.
 - **The send group is session keys in memory** (`SendGroup`, Core; `SharpMUTermApp.SendGroup.cs`; ⌃P `group:`
   ids). It is never saved, because a saved group would be a standing order to send one line to several worlds.
   It is offered once two characters are open. Members are marked on the rail by swapping the dot for ◆/◇ in

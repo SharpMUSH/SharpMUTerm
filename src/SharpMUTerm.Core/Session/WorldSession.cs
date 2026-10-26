@@ -445,6 +445,11 @@ public sealed class WorldSession : IAsyncDisposable
             modules.Add(GmcpLogin.Module);
         }
 
+        if (world.DiscordPresence)
+        {
+            modules.Add(Presence.GamePresence.GmcpModule);
+        }
+
         return modules.ToArray();
     }
 
@@ -604,6 +609,14 @@ public sealed class WorldSession : IAsyncDisposable
             GameData.SetGmcp(e.Package, e.Json);
             Completions.ObserveGmcp(e.Package, e.Json);
             OnGmcpLogin(e.Package, e.Json);
+            if (World.DiscordPresence
+                && e.Package.StartsWith("External.Discord.", StringComparison.OrdinalIgnoreCase)
+                && Presence.GamePresence.Apply(GamePresence, e.Package, e.Json) is { } presence
+                && presence != GamePresence)
+            {
+                GamePresence = presence;
+                GamePresenceChanged?.Invoke(this, EventArgs.Empty);
+            }
             GmcpReceived?.Invoke(this, e);
             if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
                 && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
@@ -625,6 +638,7 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.MspChanged += (_, active) => _mspActive = active;
         telnet.PuebloEnabled += OnPuebloEnabled;
         McpStatus = null;
+        GamePresence = null;
         Completions.Clear();
         telnet.MooEditReceived += (_, edit) => MooEditReceived?.Invoke(this, edit);
         telnet.McpStatusReceived += (_, text) =>
@@ -957,6 +971,15 @@ public sealed class WorldSession : IAsyncDisposable
             await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// What the game last said about itself for Discord (<c>External.Discord</c>), when the world allows it; null
+    /// before then and after a reconnect. Written on the read loop.
+    /// </summary>
+    public Presence.GamePresence? GamePresence { get; private set; }
+
+    /// <summary>Raised on the read loop when <see cref="GamePresence"/> changes.</summary>
+    public event EventHandler? GamePresenceChanged;
 
     /// <summary>How long a GMCP login waits for <c>Char.Login.Default</c> before sending the connect line.</summary>
     public TimeSpan GmcpLoginWait { get; set; } = TimeSpan.FromSeconds(5);

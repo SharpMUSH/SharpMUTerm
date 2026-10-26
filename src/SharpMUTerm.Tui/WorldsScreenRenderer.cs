@@ -92,6 +92,12 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
     internal const int GmcpLoginField = 13;
 
+    /// <summary><see cref="WorldDefinition.DiscordPresence"/>, as one of <see cref="DiscordChoices"/>.</summary>
+    internal const int DiscordField = 14;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.DiscordPresence"/>.</summary>
+    internal static readonly string[] DiscordChoices = ["off", "show status"];
+
     /// <summary>F5's words for <see cref="WorldDefinition.GmcpLogin"/>: how a character with a saved password logs in.</summary>
     internal static readonly string[] LoginChoices = ["off", "if offered"];
 
@@ -469,7 +475,12 @@ internal static class WorldsScreenRenderer
                 "gmcp login",
                 () => w.GmcpLogin ? LoginChoices[1] : LoginChoices[0],
                 v => w.GmcpLogin = v == LoginChoices[1],
-                LoginChoices)))
+                LoginChoices),
+            ScreenField.Choice(
+                "discord",
+                () => w.DiscordPresence ? DiscordChoices[1] : DiscordChoices[0],
+                v => w.DiscordPresence = v == DiscordChoices[1],
+                DiscordChoices)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -1012,6 +1023,11 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 GmcpLoginField)),
+            WorldField("discord", Field(
+                world.DiscordPresence ? $"[{Value}]{DiscordChoices[1]}[/]" : $"[{Label}]{DiscordChoices[0]}[/]",
+                cursor,
+                selectedWorld,
+                DiscordField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

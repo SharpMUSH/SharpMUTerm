@@ -46,7 +46,7 @@ public class HostParityTests
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using (var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, RunsInline = true }))
+            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, RunsInline = true }))
         {
             window.RenderSnapshot(view);
         }
@@ -83,7 +83,7 @@ public class HostParityTests
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null });
+            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null });
         window.OnUiThread(() => _ = window.RenderSnapshot(view));
         var loop = new Thread(() => window.Run([])) { IsBackground = true };
         loop.Start();

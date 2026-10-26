@@ -36,6 +36,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   step goes somewhere else, when a line matches the world's `walk fail` pattern (F5), or when a step gets no
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
+- Games that publish a Discord status (GMCP `External.Discord`) can show it on your Discord profile. It is off
+  for every world; turn it on with F5 ▸ `discord`. Only the world whose window is in front is shown, and it
+  is cleared when you switch away or disconnect. It talks only to the Discord app on your computer.
 - One line can go to several characters. With two characters open, ⌃P offers `Add Ann to the send group` for
   each of them, and the rail marks members with ◆. `Send the command line to the group` sends what you typed
   to every connected member once and names any that are not connected. Lua scripts can send to another open
