@@ -156,14 +156,7 @@ internal sealed record ClientHost
     {
         if (driver is null)
         {
-            return Terminal(capabilities) with
-            {
-                Clipboard = clipboard,
-                OpenUrl = openUrl,
-                FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
-                Audio = null, // a test never makes a noise
-                Presence = null, // nor talks to Discord
-            };
+            return HarnessTerminal(capabilities, new NetConsoleDriver(RenderMode.Buffer), focusReporting, openUrl, clipboard);
         }
 
         var inline = driver is HeadlessConsoleDriver;
@@ -176,4 +169,24 @@ internal sealed record ClientHost
             RunsInline = inline,
         };
     }
+
+    /// <summary>
+    /// <see cref="ForHarness"/> with no driver of its own: the terminal host on <paramref name="driver"/>, with
+    /// what a test overrides. Apart so a test can read it on a driver that needs no console, because the
+    /// framework's own driver throws on Windows when stdin and stdout are redirected, as they are in CI.
+    /// </summary>
+    internal static ClientHost HarnessTerminal(
+        TerminalCapabilities capabilities,
+        IConsoleDriver driver,
+        bool? focusReporting,
+        Action<string>? openUrl,
+        Action<string>? clipboard) =>
+        Terminal(capabilities, driver) with
+        {
+            Clipboard = clipboard,
+            OpenUrl = openUrl,
+            FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
+            Audio = null, // a test never makes a noise
+            Presence = null, // nor talks to Discord
+        };
 }

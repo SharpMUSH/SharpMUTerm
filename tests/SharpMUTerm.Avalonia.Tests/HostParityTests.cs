@@ -13,7 +13,7 @@ namespace SharpMUTerm.Avalonia.Tests;
 /// </summary>
 /// <remarks>Serialised: a headless frame is captured by redirecting the process-global <c>Console.Out</c>.</remarks>
 [NotInParallel]
-public class HostParityTests
+public partial class HostParityTests
 {
     private const int Width = 140;
     private const int Height = 40;
@@ -104,7 +104,7 @@ public class HostParityTests
         {
             var expected = FrameGrid.Decode(ansi, Width, Height)[y];
             var actual = frame.RowText(y);
-            if (!string.Equals(expected, actual, StringComparison.Ordinal))
+            if (!string.Equals(WithoutClockTimes(expected), WithoutClockTimes(actual), StringComparison.Ordinal))
             {
                 differences.Add($"row {y}:\n  terminal |{expected}|\n  window   |{actual}|");
                 continue;
@@ -123,6 +123,15 @@ public class HostParityTests
 
         return differences;
     }
+
+    /// <summary>
+    /// A row with each <c>hh:mm:ss</c> blanked. The client's messages are stamped by the logger's wall clock,
+    /// which no test pins, and the two hosts draw a second apart often enough to fail on the second changing.
+    /// </summary>
+    private static string WithoutClockTimes(string row) => ClockTime().Replace(row, "--:--:--");
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b\d{2}:\d{2}:\d{2}\b")]
+    private static partial System.Text.RegularExpressions.Regex ClockTime();
 
     public static IEnumerable<string> Hosts() => ["terminal", "window"];
 
