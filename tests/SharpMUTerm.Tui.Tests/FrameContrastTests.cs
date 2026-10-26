@@ -40,7 +40,7 @@ public class FrameContrastTests
     private static readonly string[] Views =
     [
         "", "freeze", "away", "highlight", "scrollback", "links", "mxp-image", "mxp-figure", "connections", "tint", "tint-input",
-        "characters", "compose", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
+        "characters", "compose", "moo-edit", "mssp", "web", "spawn", "split", "menu", "quit", "worlds", "triggers",
         "logging", "startup", "history", "prefix-panel", "keypad",
 
         // The selection band is the one plane this client invents rather than derives from a pane, and

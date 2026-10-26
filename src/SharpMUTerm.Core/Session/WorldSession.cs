@@ -255,6 +255,41 @@ public sealed class WorldSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Raised on the read loop when the MOO hands this connection a buffer to edit (MCP simpleedit). Only an
+    /// authenticated MCP message raises it.
+    /// </summary>
+    public event EventHandler<MooEdit>? MooEditReceived;
+
+    /// <summary>The MOO's latest status text (MCP <c>dns-com-awns-status</c>), or null when none arrived this connection.</summary>
+    public string? McpStatus { get; private set; }
+
+    /// <summary>Raised on the read loop when <see cref="McpStatus"/> changes.</summary>
+    public event EventHandler? McpStatusChanged;
+
+    /// <summary>
+    /// Sends an edited buffer back to the MOO. False, and nothing sent, when nothing is connected or the
+    /// connection that handed the edit out is gone, since a reference means nothing to another one.
+    /// </summary>
+    public async Task<bool> SendMooEditAsync(MooEdit edit, IReadOnlyList<string> lines)
+    {
+        if (_telnet is not { IsConnected: true } telnet)
+        {
+            return false;
+        }
+
+        try
+        {
+            await telnet.SendMooEditAsync(edit, lines).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "The edit of {Name} was not sent.", edit.Name);
+            return false;
+        }
+    }
+
     /// <summary>Sends a GMCP message on this connection; refused (false) when nothing is connected.</summary>
     public async Task<bool> SendGmcpAsync(string package, string json)
     {
@@ -567,6 +602,13 @@ public sealed class WorldSession : IAsyncDisposable
         _mspActive = false;
         telnet.MspChanged += (_, active) => _mspActive = active;
         telnet.PuebloEnabled += OnPuebloEnabled;
+        McpStatus = null;
+        telnet.MooEditReceived += (_, edit) => MooEditReceived?.Invoke(this, edit);
+        telnet.McpStatusReceived += (_, text) =>
+        {
+            McpStatus = text;
+            McpStatusChanged?.Invoke(this, EventArgs.Empty);
+        };
 
         try
         {

@@ -258,18 +258,10 @@ public sealed class TelnetSessionOptions
 /// </summary>
 public sealed class TelnetSession : ITelnetSession
 {
-    // TelnetInterpreter.CallbackOnByteAsync is init-only and not exposed by the builder, so
-    // we assign it reflectively after building. This is the one seam where we reach past the
-    // library's public surface; a first-class OnByte builder hook is a candidate upstream PR.
-    private static readonly PropertyInfo ByteCallbackProperty =
-        typeof(TelnetInterpreter).GetProperty(nameof(TelnetInterpreter.CallbackOnByteAsync))
-        ?? throw new InvalidOperationException("TelnetInterpreter.CallbackOnByteAsync not found.");
-
     // TelnetInterpreter.CurrentEncoding has an internal setter, which CharsetProtocol itself writes
     // through reflection once negotiation settles. We seed it the same way at connect time, for two
     // reasons. It *defaults to Encoding.UTF8* (TelnetStandardInterpreter.cs:46), and that default is
-    // not inert: it is handed to CallbackOnByteAsync once per byte and to CallbackOnSubmitAsync once
-    // per submitted line, and used to decode GMCP, MSDP and MSSP payloads and to encode everything we
+    // not inert: it is handed to CallbackOnSubmitAsync once per submitted line, and used to decode GMCP, MSDP and MSSP payloads and to encode everything we
     // send — so before negotiation, a
     // world pinned to a non-UTF-8 override, or a server that never implements RFC 2066 at all, would
     // decode against UTF-8 regardless of what this session decided. And because the seed is an
@@ -283,8 +275,6 @@ public sealed class TelnetSession : ITelnetSession
     private readonly ITransport _transport;
     private readonly ILogger _logger;
     private readonly TelnetSessionOptions _options;
-
-    private readonly List<byte> _pending = new();
 
     /// <summary>
     /// The instance seeded into the interpreter at connect time, held so negotiation can be told apart
@@ -401,7 +391,6 @@ public sealed class TelnetSession : ITelnetSession
         try
         {
             _interpreter = await BuildInterpreterAsync().ConfigureAwait(false);
-            ByteCallbackProperty.SetValue(_interpreter, new Func<byte, Encoding, ValueTask>(OnByteAsync));
             SeedInterpreterEncoding(_interpreter);
             ApplyTerminalTypes(_interpreter);
             WireCharsetCallback(_interpreter);
@@ -446,7 +435,16 @@ public sealed class TelnetSession : ITelnetSession
             .AddPlugin<PacketPatchProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<MXPProtocol>().OnMXPEnabled(OnMxpEnabledAsync)
             .AddPlugin<PuebloProtocol>().OnPuebloOffered(OnPuebloOfferedAsync).OnPuebloEnabled(OnPuebloEnabledAsync)
-            .AddPlugin<MCCPProtocol>().OnCompressionEnabled(OnCompressionAsync);
+            .AddPlugin<MCCPProtocol>().OnCompressionEnabled(OnCompressionAsync)
+            // MCP is in-band and the server opens it (#$#mcp version), so registering it sends nothing to a
+            // server that never offers it. The library takes every MCP line out of the stream.
+            .AddPlugin<MudClientProtocol>()
+                .SupportsMcpPackage(MooEditing.SimpleEdit, MooEditing.Version, MooEditing.Version)
+                .SupportsMcpPackage(MooEditing.VmooClient, MooEditing.Version, MooEditing.Version)
+                .SupportsMcpPackage(MooEditing.AwnsStatus, MooEditing.Version, MooEditing.Version)
+                .OnMcpMessage(MooEditing.SimpleEditContent, OnMooEditAsync)
+                .OnMcpMessage(MooEditing.AwnsStatus, OnMcpStatusAsync)
+                .OnMcpNegotiationComplete(OnMcpAgreedAsync);
 
         // An idle keepalive, when the world asks for one: IAC NOP after the configured silence, so a
         // NAT or load balancer doesn't evict a connection that is merely quiet. It is filler traffic,
@@ -615,42 +613,32 @@ public sealed class TelnetSession : ITelnetSession
         }
     }
 
-    private ValueTask OnByteAsync(byte value, Encoding encoding)
-    {
-        // The encoding the interpreter offers here is deliberately ignored: it is the negotiated one,
-        // which CurrentEncoding already consults and an override deliberately outranks.
-        _pending.Add(value);
-        return ValueTask.CompletedTask;
-    }
-
     private ValueTask OnSubmitAsync(byte[] bytes, Encoding? encoding, TelnetInterpreter interpreter)
     {
         // A newline-terminated line. Prefer the interpreter's own line bytes for the content, but
         // decode them with what this session has decided is in force — the interpreter's own encoding
         // is the negotiated one, and an override outranks that.
         var text = CurrentEncoding.Encoding.GetString(bytes);
-        _pending.Clear();
         Emit(text, isPrompt: false);
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// A GA, EOR or inferred boundary: the partial line the interpreter just handed over is the prompt.
+    /// <para>
+    /// Read from <c>LastPromptBytes</c>, which the library sets on the read loop before raising this, rather
+    /// than from a copy of every byte. A copy also held the lines the library consumes — an MCP message, a
+    /// Pueblo hello — since nothing marks where those end, and a boundary straight after one printed it.
+    /// </para>
+    /// </summary>
     private ValueTask OnPromptAsync()
     {
-        // GA/EOR boundary: flush whatever data has accumulated as a prompt.
-        FlushPending(isPrompt: true);
-        return ValueTask.CompletedTask;
-    }
-
-    private void FlushPending(bool isPrompt)
-    {
-        if (_pending.Count == 0)
+        if (_interpreter?.LastPromptBytes is { Length: > 0 } bytes)
         {
-            return;
+            Emit(CurrentEncoding.Encoding.GetString(bytes.Span), isPrompt: true);
         }
 
-        var text = CurrentEncoding.Encoding.GetString(_pending.ToArray());
-        _pending.Clear();
-        Emit(text, isPrompt);
+        return ValueTask.CompletedTask;
     }
 
     private void Emit(string text, bool isPrompt) =>
@@ -690,12 +678,10 @@ public sealed class TelnetSession : ITelnetSession
 
     /// <summary>
     /// The server's Pueblo hello: answered with <c>PUEBLOCLIENT</c> unless the world says otherwise or MXP is
-    /// already in use. The hello is consumed by the library, so its bytes are dropped from the pending line
-    /// here — they were never going to be submitted, and a prompt boundary would otherwise flush them.
+    /// already in use. The hello is consumed by the library.
     /// </summary>
     private async ValueTask OnPuebloOfferedAsync()
     {
-        _pending.Clear();
         if (!_options.AnnouncePueblo || _mxpOn || _interpreter?.PluginManager?.GetPlugin<PuebloProtocol>() is not { } pueblo)
         {
             _logger.LogInformation("The server offered Pueblo; not announcing (content format or MXP).");
@@ -715,13 +701,100 @@ public sealed class TelnetSession : ITelnetSession
     /// <summary>The server's Pueblo start sequence, consumed by the library like the hello.</summary>
     private ValueTask OnPuebloEnabledAsync(PuebloClient client)
     {
-        _pending.Clear();
         _logger.LogInformation("Pueblo negotiated.");
         PuebloEnabled?.Invoke(this, EventArgs.Empty);
         return ValueTask.CompletedTask;
     }
 
     private volatile bool _mxpOn;
+
+    // ----- MCP ----------------------------------------------------------------------
+
+    private MudClientProtocol? Mcp => _interpreter?.PluginManager?.GetPlugin<MudClientProtocol>();
+
+    /// <summary>The latest window size reported, held so a MOO that agrees screensize after NAWS still hears it.</summary>
+    private (int Width, int Height)? _screenSize;
+
+    /// <inheritdoc />
+    public event EventHandler<MooEdit>? MooEditReceived;
+
+    /// <inheritdoc />
+    public event EventHandler<string>? McpStatusReceived;
+
+    private bool Agreed(string package) => Mcp?.Agreed.ContainsKey(package) == true;
+
+    /// <summary>
+    /// <c>dns-org-mud-moo-simpleedit-content</c>. The library has already checked the key, so this is the
+    /// server's and not a line a player typed. One without a reference cannot be saved and is dropped.
+    /// </summary>
+    private ValueTask OnMooEditAsync(McpMessage message)
+    {
+        if (message.Value("reference") is not { Length: > 0 } reference)
+        {
+            _logger.LogDebug("Dropping a simpleedit message with no reference.");
+            return ValueTask.CompletedTask;
+        }
+
+        var edit = new MooEdit(
+            reference,
+            message.Value("name") is { Length: > 0 } name ? name : reference,
+            message.Value("type") is { Length: > 0 } type ? type : MooEditing.StringList,
+            message.Lines("content"));
+        MooEditReceived?.Invoke(this, edit);
+        return ValueTask.CompletedTask;
+    }
+
+    private ValueTask OnMcpStatusAsync(McpMessage message)
+    {
+        McpStatusReceived?.Invoke(this, message.Value("text") ?? string.Empty);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Once the packages are settled: tell a MOO that speaks vmoo-client who this is and how wide.</summary>
+    private async ValueTask OnMcpAgreedAsync(IReadOnlyDictionary<string, McpVersion> agreed)
+    {
+        if (!agreed.ContainsKey(MooEditing.VmooClient) || Mcp is not { } mcp)
+        {
+            return;
+        }
+
+        try
+        {
+            await mcp.SendAsync(
+                MooEditing.VmooClientInfo,
+                ("name", GmcpHandshake.ClientName),
+                ("text-version", GmcpHandshake.ClientVersion),
+                ("internal-version", "0")).ConfigureAwait(false);
+            if (_screenSize is { } size)
+            {
+                await SendScreenSizeAsync(mcp, size).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            _logger.LogWarning(ex, "Could not send the MCP client information.");
+        }
+    }
+
+    private static ValueTask SendScreenSizeAsync(MudClientProtocol mcp, (int Width, int Height) size) =>
+        mcp.SendAsync(
+            MooEditing.VmooClientScreenSize,
+            ("cols", size.Width.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("rows", size.Height.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <inheritdoc />
+    public async ValueTask SendMooEditAsync(MooEdit edit, IReadOnlyList<string> lines)
+    {
+        if (Mcp is not { } mcp || !Agreed(MooEditing.SimpleEdit))
+        {
+            throw new InvalidOperationException("The server has not agreed MOO editing on this connection.");
+        }
+
+        await mcp.SendMultilineAsync(
+            MooEditing.SimpleEditSet,
+            [("reference", edit.Reference), ("type", edit.Type)],
+            ("content", lines.ToArray())).ConfigureAwait(false);
+    }
 
     private ValueTask OnMxpEnabledAsync()
     {
@@ -817,7 +890,17 @@ public sealed class TelnetSession : ITelnetSession
         var interpreter = _interpreter ?? throw new InvalidOperationException("Session is not connected.");
         var protocol = interpreter.PluginManager?.GetPlugin<NAWSProtocol>() as WindowSizeProtocol
             ?? throw new InvalidOperationException("Window size protocol is not configured.");
-        return protocol.ReportAsync(width, height);
+        var changed = _screenSize != (width, height);
+        _screenSize = (width, height);
+        return changed && Agreed(MooEditing.VmooClient) && Mcp is { } mcp
+            ? ReportBothAsync(protocol, mcp, width, height)
+            : protocol.ReportAsync(width, height);
+    }
+
+    private static async ValueTask ReportBothAsync(WindowSizeProtocol protocol, MudClientProtocol mcp, int width, int height)
+    {
+        await protocol.ReportAsync(width, height).ConfigureAwait(false);
+        await SendScreenSizeAsync(mcp, (width, height)).ConfigureAwait(false);
     }
 
     public async Task DisconnectAsync()

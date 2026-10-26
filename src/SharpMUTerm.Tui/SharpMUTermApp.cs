@@ -1119,6 +1119,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 canSend: true);
         }
 
+        // The composer holding a MOO verb to edit: the header names it and its type, and the footer offers a
+        // save and no escaping. The demo has no MCP session, so the edit is handed in as the composer takes it.
+        if (string.Equals(view, "moo-edit", StringComparison.OrdinalIgnoreCase))
+        {
+            _composer.Toggle(
+                DemoScene.MainCharacterName,
+                "\"Usage: look [object]\";\nif (!args)\n  player:tell(this.location:description());\n  return 1;\nendif\n"
+                + "thing = player:my_match_object(argstr);\nthing:look_self();",
+                ComposeEscaping.AsTyped,
+                canSend: true,
+                new SharpMUTerm.Core.Telnet.MooEdit("#3:look", "#3:look", "moo-code", []));
+        }
+
         // The reported defect, as a frame: a URL too long for the pane it arrived in. It splits first
         // precisely so the pane is narrower than the terminal — that is the whole bug. The emulator's own
         // URL detection works on the terminal *row*, so a URL wrapped inside a pane is two fragments to
@@ -2719,6 +2732,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
+        session.MooEditReceived += (_, edit) => OnUi(() => ReceiveMooEdit(session, edit));
+        session.McpStatusChanged += (_, _) => OnUi(() =>
+        {
+            if (ReferenceEquals(session, _active))
+            {
+                RefreshStatusBar();
+            }
+        });
         session.MxpMetersChanged += (_, _) => OnUi(() =>
         {
             if (ReferenceEquals(session, _active))
@@ -4695,15 +4716,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         var windowId = ActiveWindowId();
         var session = WindowSession(windowId);
-        var draft = ComposeDraftKey(windowId) is { } key && _composeDrafts.TryGetValue(key, out var kept)
-            ? kept
-            : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
+        var key = ComposeDraftKey(windowId);
+        var draft = key is not null && _mooEdits.TryGetValue(key, out var edit)
+            ? edit
+            : key is not null && _composeDrafts.TryGetValue(key, out var kept)
+                ? kept
+                : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
 
         _composer.Toggle(
             session is null ? string.Empty : SessionTitle(session),
             draft.Body,
             draft.Escaping,
-            canSend: session is not null);
+            canSend: session is not null,
+            draft.Edit);
     }
 
     /// <summary>
@@ -4746,6 +4771,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        if (result.Edit is { } edit)
+        {
+            SaveMooEdit(session, edit, result.Body);
+            return;
+        }
+
         if (ComposeMessage.Build(result.Body, result.Escaping) is not { } line)
         {
             // An empty buffer is not a blank command to send: a MUSH answers a blank line, and some log
@@ -4772,6 +4803,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (ComposeDraftKey(ActiveWindowId()) is not { } key)
         {
+            return;
+        }
+
+        // An edit is kept even empty: emptying a property is an edit, and the post draft is not touched.
+        if (result.Edit is not null)
+        {
+            _mooEdits[key] = result;
             return;
         }
 
@@ -13039,6 +13077,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 left = $"{left}   {cell}";
             }
+        }
+
+        // What the MOO last put in its status line, once it has put anything there this connection. Reserved
+        // and elided like the room, for the same reason, and dropped first when the row is short.
+        if (_active?.McpStatus is { } mooStatus
+            && MarkupWidth(left) + 3 + MooStatusCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+        {
+            left = $"{left}   {MooStatusCell(mooStatus)}";
         }
 
         var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
