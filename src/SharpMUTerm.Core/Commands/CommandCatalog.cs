@@ -38,6 +38,10 @@ public sealed record CharacterRef(
 /// Whether this client runs Lua at all, so <c>Reload scripts</c> is offered only where it can do something.
 /// </param>
 /// <param name="Walking">Whether the focused connection is speedwalking, so <c>Stop walking</c> has a walk to stop.</param>
+/// <param name="Sound">
+/// Null where the client cannot play sound, so no mute is offered; otherwise whether sound is playing
+/// (offer <c>Mute sound</c>) or muted (offer <c>Unmute sound</c>).
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -47,7 +51,8 @@ public sealed record CommandContext(
     bool ScrolledBack = false,
     string NewlineChord = "Alt+⏎",
     bool ScriptsOn = false,
-    bool Walking = false);
+    bool Walking = false,
+    bool? Sound = null);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -240,6 +245,14 @@ public static class CommandCatalog
         if (context.Walking)
         {
             items.Add(new CommandItem(CommandGroup.Terminal, "Stop walking", "term:walk-stop", "ends the speedwalk"));
+        }
+
+        // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.
+        if (context.Sound is { } playing)
+        {
+            items.Add(playing
+                ? new CommandItem(CommandGroup.Terminal, "Mute sound", "term:mute", "until unmuted or restarted")
+                : new CommandItem(CommandGroup.Terminal, "Unmute sound", "term:unmute", "game sound is muted"));
         }
 
         // The command line's own history, browsable and searchable. Named here as well as bound to ⌃R

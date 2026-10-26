@@ -151,6 +151,19 @@ fallbacks) for inline images/maps.
   names with no `..`, four extensions, per-file and per-world caps enforced while reading, files named by a
   hash of their URL; with no root it fetches nothing (the `mssp:` rule). A stop that arrives while a file is
   being fetched cancels it.
+  - **The device is `SharpMUTerm.Audio`'s `DesktopAudio`** (SoundFlow 1.4.2 over miniaudio, plus NVorbis,
+    because miniaudio reads no Vorbis: an OGG is decoded to a WAV in memory first). It reaches the app as
+    `ClientHost.Audio`, a *factory*, null in a test, a snapshot and the parity harness; the app calls it on
+    the first media command, never at start. Opening a device can print on stderr (ALSA, JACK), which in a
+    terminal paints over the frame, so `TryCreate` points fd 2 at `/dev/null` while it opens. Playback is
+    verified only against a PulseAudio null sink on Linux; nobody has heard it on Windows or macOS.
+  - **`Client.Media 1` is advertised only when something can play** (`WorldSession.PlaysMedia`, read at
+    connect): a host with a device and F7's `game sound` on. A game that checks first then sends nothing.
+  - **Captions are chrome rows** (`AppendWindowLine`), not session lines, so they reach no transcript, no
+    trigger and no restore log. With no device they are the only thing a sound becomes.
+  - **⌃P ▸ Mute is per run and never saved**; F7 is the setting. The `♪ muted` status cell is volatile
+    only by keystroke, so it needs no reserved width. The cache is `MediaCache.DefaultRoot`, beside the
+    scrollback spill under the platform cache folder, not beside `config.json`.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a

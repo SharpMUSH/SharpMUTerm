@@ -46,5 +46,8 @@ internal static class WindowHost
         RunsInline = false,
         Pointer = driver.Pointer,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
+
+        // The same desktop device as the terminal: both are desktop processes on the same machine.
+        Audio = () => SharpMUTerm.Audio.DesktopAudio.TryCreate(),
     };
 }

@@ -154,6 +154,12 @@ public sealed class WorldDefinition
     public MapSettings Map { get; set; } = new();
 
     /// <summary>
+    /// Whether the client may download the sound files this world asks for (MCMP, MSP). Off still plays what is
+    /// already cached or in a soundpack folder; it only stops new fetches.
+    /// </summary>
+    public bool DownloadMedia { get; set; } = true;
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
@@ -187,6 +193,7 @@ public sealed class WorldDefinition
         Accent = Accent,
         GmcpModules = GmcpModules.ToList(),
         Map = Map.Clone(),
+        DownloadMedia = DownloadMedia,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

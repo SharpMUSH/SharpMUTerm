@@ -37,6 +37,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   answer for 8 seconds. `/walk stop` or Ctrl+P ▸ *Stop walking* ends it, and `/map lock <room>` keeps walks
   out of a room. The status row names the room you are in.
 - Lua scripts can use the map: `map.current()`, `map.path('Town Square')` and `map.walk('Town Square')`.
+- Game sound. A GMCP game that uses MCMP (`Client.Media`, as Mudlet does) can now play sounds and music:
+  the client asks for it, fetches the files the game names into a cache folder, and plays WAV, MP3, OGG and
+  FLAC. Text & ANSI (F7) has a SOUND section: on or off, master, sound and music volume, and *sound
+  captions*, which prints a dim `♪ …` line for each sound. Ctrl+P ▸ *Mute sound* silences everything until
+  you unmute or restart, and the status row says `♪ muted` meanwhile. Worlds & Characters (F5) has a
+  `sounds` field to stop a world downloading new files.
 
 ### Changed
 

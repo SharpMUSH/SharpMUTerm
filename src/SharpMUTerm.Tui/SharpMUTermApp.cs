@@ -7,6 +7,7 @@ using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Input;
 using SharpMUTerm.Core.Logging;
 using SharpMUTerm.Core.Mapping;
+using SharpMUTerm.Core.Media;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Telnet;
@@ -663,7 +664,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         Action<string>? openUrl = null,
         Action<string>? clipboard = null,
         string? scriptsRoot = null,
-        MapStore? maps = null)
+        MapStore? maps = null,
+        MediaCache? media = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -674,7 +676,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             restore,
             mssp,
             scriptsRoot,
-            maps)
+            maps,
+            media)
     {
     }
 
@@ -692,7 +695,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         RestoreLog? restore = null,
         MsspCache? mssp = null,
         string? scriptsRoot = null,
-        MapStore? maps = null)
+        MapStore? maps = null,
+        MediaCache? media = null)
     {
         var capabilities = host.Capabilities;
         Host = host;
@@ -711,6 +715,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             OnUi);
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
+        _media = media ?? new MediaCache();
         _capabilities = capabilities;
         if (capabilities.SupportsSixelOverlay)
         {
@@ -6719,6 +6724,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         ApplyDesktopTransparency();
         _window.BackgroundColor = BackdropColor();
 
+        // And F7's sound levels, and F5's per-world download switch, which a playing queue holds a copy of.
+        ApplySoundMix();
+
         PersistConfiguration();
     }
 
@@ -7038,7 +7046,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>Opens the F7 Text &amp; ANSI screen, bound to the app's text preferences.</summary>
     private ScreenBinding TextAnsiScreen() =>
-        OptionsScreen(() => OptionsScreenRenderer.TextAnsiScreen(_config.Text));
+        OptionsScreen(() => OptionsScreenRenderer.TextAnsiScreen(_config.Text, _config.Sound));
 
     /// <summary>Opens the F8 Input screen, bound to the app's input preferences.</summary>
     private ScreenBinding InputScreen() =>
@@ -7556,7 +7564,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ScrolledBack: ScrollTarget() is { CanScrollDown: true },
             NewlineChord: Host.Keys.Newline.Glyph,
             ScriptsOn: _scriptsRoot is not null,
-            Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking);
+            Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
+            Sound: CanPlaySound ? !_muted : null);
         return CommandCatalog.Build(
             _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
@@ -7947,6 +7956,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "term:map":
                 ShowMap();
                 return true;
+            case "term:mute":
+            case "term:unmute":
+                SetMuted(id == "term:mute");
+                return true;
             case "term:walk-stop":
                 if (SendTarget() is { } walker && _recorders.TryGetValue(walker, out var walking))
                 {
@@ -8068,6 +8081,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         StartMapping(session);
+        StartSound(session);
         if (_scriptsRoot is null || _scripts.ContainsKey(session))
         {
             return;
@@ -8080,6 +8094,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     private void OnSessionRemoved(object? sender, WorldSession session)
     {
+        StopSound(session);
         if (_scripts.Remove(session, out var scripts))
         {
             scripts.Dispose();
@@ -12868,6 +12883,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             right.Add(scrollback);
         }
 
+        // Only while muted, and only by a keystroke: nothing from the wire can make this cell appear.
+        if (_muted)
+        {
+            right.Add($"[{_ink.Notice}]{MutedCell}[/]");
+        }
+
         // No latency meter. There was one — a heartbeat glyph, a sparkline and a round-trip figure — and
         // every part of it was invented: the sparkline came from a literal `{ 38, 44, 41, 47, 40, 43 }`
         // and the figure was the literal 41 whenever keepalive was switched on. It read as telemetry, so
@@ -12997,6 +13018,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _recorders.Clear();
+        DisposeSound();
         await _sessions.DisposeAsync().ConfigureAwait(false);
         _frameworkLog.Dispose();
         if (_ownsDiagnostics)

@@ -226,3 +226,35 @@ public sealed class InputSettings
     /// </summary>
     public bool SecondBar { get; set; }
 }
+
+/// <summary>
+/// Game sound: whether it plays at all, the player's three levels, and whether a caption line is printed for
+/// each sound. Edited on F7's SOUND rows. Levels are 0 to 100 and multiply: a sound's own volume, then its
+/// kind's, then the master.
+/// </summary>
+public sealed class SoundSettings
+{
+    public const int MaxVolume = 100;
+
+    /// <summary>
+    /// Whether game sound plays. Off also stops the client telling a GMCP game it can play media, so a game
+    /// that asks first sends none.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    public int MasterVolume { get; set; } = MaxVolume;
+
+    public int SoundVolume { get; set; } = MaxVolume;
+
+    public int MusicVolume { get; set; } = MaxVolume;
+
+    /// <summary>
+    /// Print a dim <c>♪ caption</c> line in the character's window when a sound starts: the game's caption, or
+    /// the file's name. For a player who has sound off or cannot hear it.
+    /// </summary>
+    public bool Captions { get; set; }
+
+    /// <summary>The levels as a queue mix; <paramref name="muted"/> is the session's ⌃P mute.</summary>
+    public Media.MediaMix Mix(bool muted) =>
+        new(MasterVolume, SoundVolume, MusicVolume, Muted: muted || !Enabled);
+}

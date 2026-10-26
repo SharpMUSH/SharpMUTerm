@@ -88,6 +88,9 @@ public sealed record MediaFilter
 /// <summary>What a server asked the media queue to do.</summary>
 public abstract record MediaCommand
 {
+    /// <summary>The module a client lists in <c>Core.Supports.Set</c> to say it plays MCMP media.</summary>
+    public const string GmcpModule = "Client.Media 1";
+
     /// <summary>
     /// The command a <c>Client.Media.*</c> GMCP message carries, or null for anything else — another package,
     /// a body that does not parse, or a video, which this client does not play.

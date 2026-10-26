@@ -3,6 +3,7 @@ using SharpMUTerm.Core.Theming;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Mapping;
+using SharpMUTerm.Core.Media;
 using SharpMUTerm.Core.Telnet.Mssp;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Graphics;
@@ -192,7 +193,8 @@ internal static class Program
             restore: restore,
             mssp: mssp,
             scriptsRoot: scriptsRoot,
-            maps: new MapStore(MapStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Map") });
+            maps: new MapStore(MapStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Map") },
+            media: new MediaCache(MediaCache.DefaultRoot));
         int exitCode;
         try
         {
