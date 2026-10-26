@@ -266,6 +266,13 @@ public static class CommandCatalog
         // at from the command line in front of them.
         items.Add(new CommandItem(
             CommandGroup.Terminal, "Compose a post", "term:compose", "F1 · a full editor, sent as one line"));
+
+        // Packages: the list, and the install that starts at the review. F10 can be taken by a terminal's
+        // own menu key (GNOME Terminal), so this surface is the way in that always works.
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Packages", "term:packages", "F10 · installed packages, on/off, remove"));
+        items.Add(new CommandItem(
+            CommandGroup.Terminal, "Install package…", "term:package-install", "from a file or an https link"));
         items.Add(context.TimestampsOn
             ? new CommandItem(CommandGroup.Terminal, "Hide timestamps", "term:timestamps-off")
             : new CommandItem(CommandGroup.Terminal, "Show timestamps", "term:timestamps-on"));

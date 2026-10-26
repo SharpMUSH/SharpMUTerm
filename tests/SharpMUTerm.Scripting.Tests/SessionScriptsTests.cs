@@ -188,4 +188,30 @@ public class SessionScriptsTests
 
         await Assert.That(f.Reports).HasSingleItem();
     }
+
+    [Test]
+    public async Task APackageScriptLoadsThroughThePackageResolverAndNowhereElse()
+    {
+        var root = Directory.CreateTempSubdirectory("sharpmuterm-pkgscript-").FullName;
+        try
+        {
+            var lua = Path.Combine(root, "status.lua");
+            File.WriteAllText(lua, "function pkg_hello() world.send('hello') end");
+            var set = new TriggerSet { Name = "pkg", ScriptFiles = { "package:demo/status.lua", "package:gone/x.lua" } };
+            var telnet = new FakeTelnetSession();
+            var session = new WorldSession(
+                new WorldDefinition { Name = "T", Host = "h", Port = 1 }, triggerSets: new[] { set }, sessionFactory: _ => telnet);
+            var reports = new List<string>();
+            using var scripts = new SessionScripts(
+                session, root, reports.Add, name => name == "package:demo/status.lua" ? lua : null);
+
+            await Assert.That(scripts.Reload()).IsEqualTo(1);
+            await Assert.That(scripts.Defines("pkg_hello")).IsTrue();
+            await Assert.That(reports.Single()).Contains("not in an installed package");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

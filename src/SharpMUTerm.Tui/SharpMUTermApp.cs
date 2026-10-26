@@ -8,6 +8,7 @@ using SharpMUTerm.Core.Input;
 using SharpMUTerm.Core.Logging;
 using SharpMUTerm.Core.Mapping;
 using SharpMUTerm.Core.Media;
+using SharpMUTerm.Core.Packages;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Telnet;
@@ -665,7 +666,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         Action<string>? clipboard = null,
         string? scriptsRoot = null,
         MapStore? maps = null,
-        MediaCache? media = null)
+        MediaCache? media = null,
+        PackageStore? packages = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -677,7 +679,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             mssp,
             scriptsRoot,
             maps,
-            media)
+            media,
+            packages)
     {
     }
 
@@ -696,7 +699,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MsspCache? mssp = null,
         string? scriptsRoot = null,
         MapStore? maps = null,
-        MediaCache? media = null)
+        MediaCache? media = null,
+        PackageStore? packages = null)
     {
         var capabilities = host.Capabilities;
         Host = host;
@@ -716,6 +720,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
         _media = media ?? new MediaCache();
+        _packages = packages ?? new PackageStore();
+        LoadPackages();
         _capabilities = capabilities;
         if (capabilities.SupportsSixelOverlay)
         {
@@ -874,6 +880,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _gameData = new GameDataOverlay(_system, _time);
         _settings = new SettingsOverlay(_system);
         _composer = new ComposeOverlay(_system);
+        _packageView = new PackagesOverlay(_system);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -1661,6 +1668,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 Activate(MainWindowId);
                 RefreshRail();
             }
+        }
+
+        // The Packages screen with two installed (one switched off), and the review an install opens with —
+        // both through the real paths, into the snapshot's memory-only store.
+        if (view?.ToLowerInvariant() is "packages" or "package-review")
+        {
+            LoadDemoPackages(review: string.Equals(view, "package-review", StringComparison.OrdinalIgnoreCase));
         }
 
         // The status row's meters and the game data inspector, over the demo's game data — written through
@@ -2474,7 +2488,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             : _sessions.Open(
                 world,
                 character,
-                _config.ResolveTriggerSets(character),
+                _config.ResolveTriggerSets(character, world),
                 _config.ScrollbackLines,
                 OpenLog(world, character),
                 _config.Text,
@@ -2715,7 +2729,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var who = SessionTitle(session);
-        var sets = _config.ResolveTriggerSets(character);
+        var sets = _config.ResolveTriggerSets(character, session.World);
         _diagnostics.Logger.LogInformation(
             "{Notice:l}",
             $"{who}: {TriggerReport.Summary(who, character.TriggerSets, sets)} (/triggers for detail)");
@@ -4526,6 +4540,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // `/package` opens the Packages screen; `/package install …` reads one for review.
+        if (command.StartsWith("/package", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            PackageCommand(command[8..].Trim());
+            return;
+        }
+
         // `/walk` and `/map` speak to the window's own connection's map.
         if (command.StartsWith("/walk", StringComparison.OrdinalIgnoreCase)
             && (command.Length == 5 || command[5] == ' '))
@@ -4766,7 +4788,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return TriggerReport.Describe(
             SessionTitle(session),
             character?.TriggerSets ?? (IReadOnlyList<string>)Array.Empty<string>(),
-            character is null ? Array.Empty<TriggerSet>() : _config.ResolveTriggerSets(character),
+            character is null ? Array.Empty<TriggerSet>() : _config.ResolveTriggerSets(character, session.World),
             session.Triggers);
     }
 
@@ -4925,7 +4947,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -5039,6 +5061,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _quit.IsOpen ? "the quit prompt"
         : _messageLog.IsOpen ? "the client messages"
         : _gameData.IsOpen ? "the game data"
+        : _packageView.IsOpen ? "the packages"
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
@@ -6433,6 +6456,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return () => { ToggleComposer(); return true; };
             }
 
+            if (claim.Key == ConsoleKey.F10)
+            {
+                return () => { ShowPackages(); return true; };
+            }
+
             if (!screens.TryGetValue(claim.Key, out var open))
             {
                 return null;
@@ -6663,7 +6691,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 + session.Aliases.Aliases.Count
                 + session.Macros.Macros.Count;
 
-            var sets = _config.ResolveTriggerSets(character);
+            var sets = _config.ResolveTriggerSets(character, session.World);
             session.ReloadAutomation(sets);
 
             // A set gaining or losing a script file reloads that session's Lua; any other edit leaves the
@@ -7983,6 +8011,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "term:compose":
                 ToggleComposer();
                 return true;
+            case "term:packages":
+                ShowPackages();
+                return true;
+            case "term:package-install":
+                ActiveBar().SetAndNotify("/package install ");
+                return true;
             case "term:log-on":
                 StartLogging();
                 break;
@@ -8087,7 +8121,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text));
+        var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript);
         _scripts[session] = scripts;
         scripts.Reload();
     }
