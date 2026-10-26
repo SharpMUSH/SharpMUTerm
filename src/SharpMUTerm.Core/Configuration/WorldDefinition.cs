@@ -150,6 +150,14 @@ public sealed class WorldDefinition
     /// </summary>
     public List<string> GmcpModules { get; set; } = new();
 
+    /// <summary>
+    /// Whether to log in over GMCP's <c>Char.Login</c> on a server that offers it, rather than by sending the
+    /// connect line. Off by default. On, the client asks for <c>Char.Login 1</c> and waits a few seconds for the
+    /// server's <c>Char.Login.Default</c>; a server that offers <c>password-credentials</c> is sent the
+    /// character's name and saved password, and any other answer, or none, gets the connect line as before.
+    /// </summary>
+    public bool GmcpLogin { get; set; }
+
     /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
     public MapSettings Map { get; set; } = new();
 
@@ -202,6 +210,7 @@ public sealed class WorldDefinition
         Map = Map.Clone(),
         DownloadMedia = DownloadMedia,
         GrabPrefix = GrabPrefix,
+        GmcpLogin = GmcpLogin,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

@@ -432,8 +432,21 @@ public sealed class WorldSession : IAsyncDisposable
     private volatile bool _mspActive;
 
     /// <summary>The GMCP modules a connection asks for beyond the defaults: the world's, then MCMP's when it plays media.</summary>
-    public static string[] GmcpModulesFor(WorldDefinition world, bool playsMedia) =>
-        playsMedia ? [.. world.GmcpModules, Media.MediaCommand.GmcpModule] : world.GmcpModules.ToArray();
+    public static string[] GmcpModulesFor(WorldDefinition world, bool playsMedia)
+    {
+        var modules = world.GmcpModules.ToList();
+        if (playsMedia)
+        {
+            modules.Add(Media.MediaCommand.GmcpModule);
+        }
+
+        if (world.GmcpLogin)
+        {
+            modules.Add(GmcpLogin.Module);
+        }
+
+        return modules.ToArray();
+    }
 
     public event EventHandler<MsspReceivedEventArgs>? MsspReceived;
 
@@ -590,6 +603,7 @@ public sealed class WorldSession : IAsyncDisposable
             // Stored before the event, so a handler reading GameData sees the message that raised it.
             GameData.SetGmcp(e.Package, e.Json);
             Completions.ObserveGmcp(e.Package, e.Json);
+            OnGmcpLogin(e.Package, e.Json);
             GmcpReceived?.Invoke(this, e);
             if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
                 && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
@@ -904,6 +918,24 @@ public sealed class WorldSession : IAsyncDisposable
         }
 
         var plan = character.Login();
+        if (World.GmcpLogin && plan is LoginPlan.WithPassword)
+        {
+            // Wait for the server to say whether it takes credentials over GMCP; the connect line is the fallback.
+            lock (_gmcpLoginGate)
+            {
+                _gmcpLoginWaiting = true;
+                _gmcpLoginFallback?.Dispose();
+                _gmcpLoginFallback = Scheduler.After(GmcpLoginWait, () => _ = FinishGmcpLoginAsync(credentials: false), "gmcp-login");
+            }
+
+            return;
+        }
+
+        await SendTextLoginAsync(character, plan, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendTextLoginAsync(CharacterDefinition character, LoginPlan plan, CancellationToken cancellationToken)
+    {
         if (plan is not LoginPlan.Nothing)
         {
             await SendRawAsync(character.ResolveConnectString(), cancellationToken).ConfigureAwait(false);
@@ -915,9 +947,91 @@ public sealed class WorldSession : IAsyncDisposable
             PrintSystem(PasswordUnusedWarning(character.Name));
         }
 
+        await SendOnConnectAsync(character, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendOnConnectAsync(CharacterDefinition character, CancellationToken cancellationToken)
+    {
         foreach (var command in SplitCommands(character.OnConnect))
         {
             await SendRawAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>How long a GMCP login waits for <c>Char.Login.Default</c> before sending the connect line.</summary>
+    public TimeSpan GmcpLoginWait { get; set; } = TimeSpan.FromSeconds(5);
+
+    private readonly object _gmcpLoginGate = new();
+    private bool _gmcpLoginWaiting;
+    private IDisposable? _gmcpLoginFallback;
+
+    /// <summary>
+    /// The server's half of <c>Char.Login</c>: <c>Default</c> says how it takes a login, <c>Result</c> how one
+    /// went. Runs on the read loop. Nothing here writes the password anywhere but the wire.
+    /// </summary>
+    private void OnGmcpLogin(string package, string json)
+    {
+        if (string.Equals(package, GmcpLogin.DefaultPackage, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = FinishGmcpLoginAsync(credentials: GmcpLogin.OffersCredentials(json));
+        }
+        else if (string.Equals(package, GmcpLogin.ResultPackage, StringComparison.OrdinalIgnoreCase)
+                 && GmcpLogin.ReadResult(json) is { } result
+                 && Character is { } character)
+        {
+            PrintSystem(result.Success
+                ? $"*** Logged in as {character.Name} over GMCP."
+                : $"*** The GMCP login for {character.Name} was refused{(string.IsNullOrWhiteSpace(result.Message) ? "." : ": " + result.Message)}");
+        }
+    }
+
+    /// <summary>
+    /// Ends the wait, once: sends the credentials when the server takes them, the connect line when it does not
+    /// or never said, then the character's on-connect commands.
+    /// </summary>
+    private async Task FinishGmcpLoginAsync(bool credentials)
+    {
+        lock (_gmcpLoginGate)
+        {
+            if (!_gmcpLoginWaiting)
+            {
+                return;
+            }
+
+            _gmcpLoginWaiting = false;
+            _gmcpLoginFallback?.Dispose();
+            _gmcpLoginFallback = null;
+        }
+
+        if (Character is not { } character)
+        {
+            return;
+        }
+
+        try
+        {
+            if (credentials && await SendGmcpAsync(GmcpLogin.CredentialsPackage, GmcpLogin.Credentials(character.Name, character.Password ?? string.Empty)).ConfigureAwait(false))
+            {
+                PrintSystem($"*** Sent the login for {character.Name} over GMCP.");
+                await SendOnConnectAsync(character, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+
+            await SendTextLoginAsync(character, character.Login(), CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "The login for {Character} was not sent.", character.Name);
+        }
+    }
+
+    private void CancelGmcpLogin()
+    {
+        lock (_gmcpLoginGate)
+        {
+            _gmcpLoginWaiting = false;
+            _gmcpLoginFallback?.Dispose();
+            _gmcpLoginFallback = null;
         }
     }
 
@@ -1089,6 +1203,7 @@ public sealed class WorldSession : IAsyncDisposable
 
     private void OnDisconnected(object? sender, SessionDisconnectedEventArgs e)
     {
+        CancelGmcpLogin();
         StopTimers();
         ClearPrompt();
         SetState(e.IsClean ? ConnectionState.Disconnected : ConnectionState.Faulted, e.Error);

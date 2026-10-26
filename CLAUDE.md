@@ -1911,6 +1911,13 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     never reaches this client. Supporting it needs the library to hand such a line back outside a session.
   - **vmoo-client info goes out on `OnMcpNegotiationComplete`**, which a 1.0 peer (no `mcp-negotiate-end`)
     never raises; such a MOO gets no client info. Editing does not depend on it.
+- **GMCP `Char.Login` is opt-in per world** (`WorldDefinition.GmcpLogin`, F5 ▸ `gmcp login`; `GmcpLogin`, Core).
+  On, the world asks for `Char.Login 1`, and a character whose `LoginPlan` is `WithPassword` holds its connect
+  line back. `Char.Login.Default` offering `password-credentials` gets `Char.Login.Credentials`; any other
+  answer gets the connect line; silence gets it after `GmcpLoginWait` (5 s). The wait ends once, under a lock,
+  so a late offer cannot log in twice. The on-connect commands go after whichever login was sent. The password
+  goes only to `SendGmcpAsync`; `Char.Login.Result` is printed, bounded to one line. Not done: a server that
+  never negotiates GMCP still costs the five seconds, because `TelnetSession` raises nothing on a refusal.
 - **Lua's `store.*` is one JSON file per character** (`ScriptStore`, Scripting; `script-data/<session key>.json`
   beside `config.json`, `0600`). The `scriptStoreRoot:` constructor parameter is null by default, the
   `save:`/`logRoot:` family, but the host's store never is: with no folder it is memory-only by construction, the

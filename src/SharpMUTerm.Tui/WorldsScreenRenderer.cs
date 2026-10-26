@@ -89,6 +89,12 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
     internal const int GrabField = 12;
 
+    /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
+    internal const int GmcpLoginField = 13;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.GmcpLogin"/>: how a character with a saved password logs in.</summary>
+    internal static readonly string[] LoginChoices = ["off", "if offered"];
+
     /// <summary>The prefix the grab row suggests while it is off: AresMUSH's, and the one its /edit commands use.</summary>
     internal const string SuggestedGrabPrefix = "FugueEdit >";
 
@@ -458,7 +464,12 @@ internal static class WorldsScreenRenderer
                 () => w.DownloadMedia ? SoundChoices[0] : SoundChoices[1],
                 v => w.DownloadMedia = v == SoundChoices[0],
                 SoundChoices),
-            ScreenField.Optional("edit grab", () => w.GrabPrefix, v => w.GrabPrefix = v)))
+            ScreenField.Optional("edit grab", () => w.GrabPrefix, v => w.GrabPrefix = v),
+            ScreenField.Choice(
+                "gmcp login",
+                () => w.GmcpLogin ? LoginChoices[1] : LoginChoices[0],
+                v => w.GmcpLogin = v == LoginChoices[1],
+                LoginChoices)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -996,6 +1007,11 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 GrabField)),
+            WorldField("gmcp login", Field(
+                world.GmcpLogin ? $"[{Value}]{LoginChoices[1]}[/]" : $"[{Label}]{LoginChoices[0]} · connect line[/]",
+                cursor,
+                selectedWorld,
+                GmcpLoginField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });
