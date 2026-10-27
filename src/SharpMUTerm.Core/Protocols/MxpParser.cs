@@ -150,7 +150,16 @@ public sealed partial class MxpParser : ILineParser
     public event EventHandler<string>? ClientReply;
 
     /// <summary>What this client answers a VERSION request with.</summary>
-    private const string ClientName = "SharpMUTerm";
+    public const string ClientName = "SharpMUTerm";
+
+    /// <summary>The MXP revision a VERSION reply names (see <see cref="HandleVersionRequest"/>).</summary>
+    public const string MxpRevision = "1.0";
+
+    /// <summary>The style-sheet version a VERSION reply names: none is ever in effect.</summary>
+    public const string StyleVersion = "0";
+
+    /// <summary>The client version a VERSION reply names: a fixed placeholder.</summary>
+    public const string ClientVersion = "1";
 
     /// <summary>
     /// Spec: "the response is sent as a secure-tagged line: <c>&lt;ESC&gt;[1z</c> prefix with newline
@@ -163,7 +172,9 @@ public sealed partial class MxpParser : ILineParser
     private const string SecureLinePrefix = "\x1b[1z";
 
     /// <summary>
-    /// The tags this parser genuinely implements, in the spec's <c>+tag</c> form.
+    /// The tags this parser genuinely implements, by name. The telnet layer answers a server's
+    /// <c>&lt;SUPPORT&gt;</c> from this list too (<see cref="AnswerSupport"/>), because the library takes
+    /// that line out of the stream before this parser can see it.
     /// </summary>
     /// <remarks>
     /// An honest list, and deliberately not an aspirational one: a SUPPORTS answer is a claim a
@@ -173,9 +184,85 @@ public sealed partial class MxpParser : ILineParser
     /// <see cref="HandleOpener"/> has no case for it — it falls to the default and is silently
     /// dropped — so it is deliberately not claimed here.
     /// </remarks>
-    private static readonly string[] SupportedTags =
-        ["+b", "+i", "+u", "+s", "+color", "+font", "+send", "+a", "+br", "+image",
-         "+!element", "+!entity", "+var", "+gauge", "+stat", "+sound", "+music", "+frame", "+dest"];
+    public static IReadOnlyList<string> SupportedTags { get; } =
+        ["b", "i", "u", "s", "color", "font", "send", "a", "br", "image",
+         "!element", "!entity", "var", "gauge", "stat", "sound", "music", "frame", "dest"];
+
+    /// <summary>
+    /// The attributes a handler here reads, by tag, for a <c>&lt;SUPPORT tag.attr&gt;</c> or
+    /// <c>&lt;SUPPORT tag.*&gt;</c>. The same honesty rule as <see cref="SupportedTags"/>: an attribute
+    /// is listed only when its handler acts on it, so <c>image.ismap</c>, read and ignored, is not.
+    /// A supported tag missing here has no attribute this client claims.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string[]> SupportedAttributes { get; } =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["color"] = ["fore", "back"],
+            ["send"] = ["href", "hint", "prompt"],
+            ["a"] = ["href", "hint"],
+            ["image"] = ["fname", "url", "t", "w", "h"],
+            ["gauge"] = ["entity", "max", "caption"],
+            ["stat"] = ["entity", "max", "caption"],
+            ["sound"] = ["fname", "v", "l", "p", "t", "u"],
+            ["music"] = ["fname", "v", "l", "c", "t", "u"],
+            ["frame"] = ["name", "action", "title"],
+            ["dest"] = ["name"],
+        };
+
+    /// <summary>
+    /// The answer to a <c>&lt;SUPPORT&gt;</c> that asked about <paramref name="asked"/>: every tag in
+    /// <see cref="SupportedTags"/> when it asked about nothing, otherwise each entry it named, as one this
+    /// client renders or one it does not. <c>tag.attr</c> is supported when <see cref="SupportedAttributes"/>
+    /// lists it, and <c>tag.*</c> is answered with each attribute listed for the tag, as the specification
+    /// asks; a tag this client does not render is answered <c>-tag.*</c>.
+    /// </summary>
+    public static (IReadOnlyList<string> Supported, IReadOnlyList<string> Unsupported) AnswerSupport(IReadOnlyList<string> asked)
+    {
+        if (asked.Count == 0)
+        {
+            return (SupportedTags, []);
+        }
+
+        var supported = new List<string>();
+        var unsupported = new List<string>();
+        foreach (var entry in asked)
+        {
+            var name = entry.Trim('"', '\'');
+            if (name.Length == 0)
+            {
+                continue;
+            }
+
+            var dot = name.IndexOf('.', StringComparison.Ordinal);
+            if (dot < 0)
+            {
+                (SupportedTags.Contains(name, StringComparer.OrdinalIgnoreCase) ? supported : unsupported).Add(name);
+                continue;
+            }
+
+            var tag = name[..dot];
+            var attribute = name[(dot + 1)..];
+            var known = SupportedTags.Contains(tag, StringComparer.OrdinalIgnoreCase);
+            var attributes = known ? SupportedAttributes.GetValueOrDefault(tag) ?? [] : [];
+            if (attribute == "*")
+            {
+                if (known)
+                {
+                    supported.AddRange(attributes.Select(a => $"{tag}.{a}"));
+                }
+                else
+                {
+                    unsupported.Add(name);
+                }
+            }
+            else
+            {
+                (attributes.Contains(attribute, StringComparer.OrdinalIgnoreCase) ? supported : unsupported).Add(name);
+            }
+        }
+
+        return (supported, unsupported);
+    }
 
     /// <summary>True when a partial line, an open tag/entity, or unclosed markup is buffered.</summary>
     public bool HasPendingContent =>
@@ -1019,12 +1106,12 @@ public sealed partial class MxpParser : ILineParser
     /// </remarks>
     private void HandleVersionRequest()
     {
-        ClientReply?.Invoke(this, $"{SecureLinePrefix}<VERSION MXP=1.0 STYLE=0 CLIENT={ClientName} VERSION=1>");
+        ClientReply?.Invoke(this, $"{SecureLinePrefix}<VERSION MXP={MxpRevision} STYLE={StyleVersion} CLIENT={ClientName} VERSION={ClientVersion}>");
     }
 
     private void HandleSupportRequest()
     {
-        ClientReply?.Invoke(this, $"{SecureLinePrefix}<SUPPORTS {string.Join(' ', SupportedTags)}>");
+        ClientReply?.Invoke(this, $"{SecureLinePrefix}<SUPPORTS {string.Join(' ', SupportedTags.Select(t => "+" + t))}>");
     }
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpMUTerm.Core.Telnet.Mssp;
+using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Transport;
 using TelnetNegotiationCore.Builders;
 using TelnetNegotiationCore.Gmcp;
@@ -473,6 +474,7 @@ public sealed class TelnetSession : ITelnetSession
             .AddPlugin<SuppressGoAheadProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<PacketPatchProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<MXPProtocol>().OnMXPEnabled(OnMxpEnabledAsync)
+                .OnMxpSupportRequested(OnMxpSupportRequestedAsync).OnMxpVersionRequested(OnMxpVersionRequestedAsync)
             .AddPlugin<PuebloProtocol>().OnPuebloOffered(OnPuebloOfferedAsync).OnPuebloEnabled(OnPuebloEnabledAsync)
             .AddPlugin<MCCPProtocol>().OnCompressionEnabled(OnCompressionAsync)
             // MCP is in-band and the server opens it (#$#mcp version), so registering it sends nothing to a
@@ -753,6 +755,52 @@ public sealed class TelnetSession : ITelnetSession
     }
 
     private volatile bool _mxpOn;
+
+    private MXPProtocol? Mxp => _interpreter?.PluginManager?.GetPlugin<MXPProtocol>();
+
+    /// <summary>
+    /// A server's <c>&lt;SUPPORT&gt;</c>. Once MXP mode has started the library takes the line out of the
+    /// stream and sends nothing unless asked to, so <see cref="MxpParser"/> never sees it. Left unanswered, a
+    /// server that waits for the reply (SharpMUSH does) records that this client renders none of the tags it
+    /// asked about, and sends a picture's address as text instead of an <c>&lt;IMAGE&gt;</c>.
+    /// </summary>
+    private async ValueTask OnMxpSupportRequestedAsync(IReadOnlyList<string> asked)
+    {
+        if (Mxp is not { } mxp)
+        {
+            return;
+        }
+
+        var (supported, unsupported) = MxpParser.AnswerSupport(asked);
+        try
+        {
+            await mxp.SendSupportsAsync(supported, unsupported).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            _logger.LogWarning(ex, "Could not answer the server's MXP SUPPORT request.");
+        }
+    }
+
+    /// <summary>A server's <c>&lt;VERSION&gt;</c>, taken out of the stream by the library like <c>&lt;SUPPORT&gt;</c>.</summary>
+    private async ValueTask OnMxpVersionRequestedAsync()
+    {
+        if (Mxp is not { } mxp)
+        {
+            return;
+        }
+
+        try
+        {
+            await mxp.SendVersionAsync(new MxpVersion(
+                MxpParser.MxpRevision, MxpParser.StyleVersion, MxpParser.ClientName, MxpParser.ClientVersion, Registered: null))
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            _logger.LogWarning(ex, "Could not answer the server's MXP VERSION request.");
+        }
+    }
 
     // ----- MCP ----------------------------------------------------------------------
 

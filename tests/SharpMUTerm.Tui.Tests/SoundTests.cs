@@ -180,9 +180,14 @@ public class SoundTests
     [Test]
     public async Task TheTestHarnessHasNoDevice()
     {
-        var host = ClientHost.ForHarness(Headless, null, null, null, null);
+        // The terminal arm on a headless driver: the framework's own driver cannot be built with stdio
+        // redirected on Windows, which is how CI runs the suites.
+        using var driver = new HeadlessConsoleDriver(80, 24);
+        var host = ClientHost.HarnessTerminal(Headless, driver, null, null, null);
 
+        await Assert.That(host.Name).IsEqualTo("terminal");
         await Assert.That(host.Audio is null).IsTrue();
+        await Assert.That(host.Presence is null).IsTrue();
     }
 
     /// <summary>A device that records what it was asked to play.</summary>

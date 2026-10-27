@@ -83,8 +83,12 @@ internal sealed class ComposeOverlay
 
     internal bool IsOpen => _window is not null;
 
-    /// <summary>The buffer as it stands, or empty when the window is shut. Internal for the tests.</summary>
-    internal string Body => _editor?.GetContent() ?? string.Empty;
+    /// <summary>
+    /// The buffer as it stands, or empty when the window is shut, with its lines broken by <c>\n</c>. The editor
+    /// joins them with <see cref="Environment.NewLine"/>, so on Windows a post or an edit would otherwise carry
+    /// CRLF in one host and LF in the other.
+    /// </summary>
+    internal string Body => _editor?.GetContent().Replace("\r\n", "\n", StringComparison.Ordinal) ?? string.Empty;
 
     /// <summary>The escaping mode as it stands — the window's own toggle, not a saved setting.</summary>
     internal ComposeEscaping Escaping => _escaping;
