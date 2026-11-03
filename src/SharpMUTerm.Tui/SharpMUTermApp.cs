@@ -2472,7 +2472,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>The empty-workspace message when there is nothing to connect because there is nothing at all.</summary>
     internal const string NoWorldsNotice =
-        "No world configured. Pass a host/port on the command line, or add one on F5.";
+        "No world configured. Type /connect <host> <port>, pass one on the command line, or add one on F5.";
 
     /// <summary>
     /// And when there are worlds but none of their characters is marked. It is the ordinary state of a
@@ -4613,6 +4613,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (command.StartsWith("/web ", StringComparison.OrdinalIgnoreCase))
         {
             OpenWeb(windowId, command[5..].Trim());
+            return;
+        }
+
+        // `/connect` opens a world by name, or adds one from a host and dials it.
+        if (command.StartsWith("/connect", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            ConnectCommand(windowId, command[8..].Trim());
             return;
         }
 
