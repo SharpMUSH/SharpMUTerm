@@ -95,7 +95,7 @@ internal static class OptionsScreenRenderer
             Escape(fkey),
             model?.HasEditableRow ?? false,
             focus);
-        return SpreadLR(" " + heading, hints, width);
+        return SpreadTitle(" " + heading, hints, width);
     }
 
     /// <summary>

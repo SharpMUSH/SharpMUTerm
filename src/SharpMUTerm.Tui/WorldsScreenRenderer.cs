@@ -299,7 +299,7 @@ internal static class WorldsScreenRenderer
             focus,
             model?.HasRemovableRow ?? false,
             model?.HasDetailRow ?? false);
-        return SpreadLR(" " + title, hints, width);
+        return SpreadTitle(" " + title, hints, width);
     }
 
     /// <summary>

@@ -35,12 +35,25 @@ internal static class TriggersScreenView
         // Body: rule list │ editor, as two real columns. The split is a function of the screen's width:
         // at 120 the rule list keeps the share it was designed with, and at 100 it gives cells back to
         // the editor rather than letting the attribute legend run off the right-hand edge.
+        var body = ScreenChrome.Rows(height);
+        if (ScreenChrome.TooNarrowForTwo(
+                width, TriggersScreenRenderer.MinColumnWidth, TriggersScreenRenderer.MinEditorWidth))
+        {
+            // One column at a time: the rule list, or the editor once the keyboard has moved into it or
+            // ⏎ has opened one of the rule's fields, which are drawn in the editor and nowhere else.
+            var only = focus is { } f && (f.InPane(1) || f.IsEditing)
+                ? TriggersScreenRenderer.EditorColumn(sets, selectedTrigger, routeTargets, focus, width, body, theme)
+                : TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, width);
+            return ScreenChrome.Single(
+                header, footer, ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(only, body))),
+                only.Count, body);
+        }
+
         var rules = ScreenChrome.SplitWidth(
             width,
             TriggersScreenRenderer.ColumnWidth,
             TriggersScreenRenderer.MinColumnWidth,
             TriggersScreenRenderer.MinEditorWidth);
-        var body = ScreenChrome.Rows(height);
         var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules);
         var right = TriggersScreenRenderer.EditorColumn(
             sets, selectedTrigger, routeTargets, focus,

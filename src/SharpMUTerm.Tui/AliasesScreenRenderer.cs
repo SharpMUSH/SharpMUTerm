@@ -114,7 +114,7 @@ internal static class AliasesScreenRenderer
         var title = $"[bold {Value}] Aliases[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints, "F3", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false);
-        return SpreadLR(" " + title, hints, width);
+        return SpreadTitle(" " + title, hints, width);
     }
 
     /// <summary>

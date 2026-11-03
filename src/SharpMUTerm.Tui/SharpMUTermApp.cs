@@ -13084,9 +13084,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // "utf-8" means the server agreed, "utf-8 assumed" means nobody said, "iso-8859-1 forced" means
         // you did. With nothing connected there is no fact to report, and the cell is not drawn — the
         // same rule that took the address and the invented latency meter off this row.
+        string? encodingCell = null;
         if (EffectiveEncoding() is { } encoding)
         {
-            right.Add($"[dim]{Escape(encoding.Label)}[/]");
+            encodingCell = $"[dim]{Escape(encoding.Label)}[/]";
+            right.Add(encodingCell);
         }
 
         // The character count lives at the bottom now (the input gutter is gone); while recalling
@@ -13096,7 +13098,39 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ? $"[{AccentHex(AccentPalette[0])}]history[/] [dim]· ↓ back to draft[/]"
             : $"[dim]{ActiveBar().Text.Length} chars[/]");
 
-        right.Add("[dim]⌃P palette[/]");
+        const string paletteCell = "[dim]⌃P palette[/]";
+        right.Add(paletteCell);
+
+        // The cluster above is built unconditionally, and at 80 columns a scrolled-back pane's segment
+        // made it one cell too wide: the row wrapped, a pane lost a row and every server was told a new
+        // size. Give cells back until it fits, least useful first — the encoding (a fact that rarely
+        // changes), then the palette hint (⌃P is also on the header's menu button), and only then the
+        // character count. The scrollback segment and the identity are never dropped: they are the
+        // only places those facts are said.
+        //
+        // The meters count here too: on a narrow terminal they are worth more to someone in a fight than
+        // either of those two cells, and they used to be the thing that lost — at 80 columns a world
+        // publishing HP showed none of it.
+        var compactMeters = meters.Length > 0
+            ? StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}", compact: true)
+            : string.Empty;
+        var meterCost = compactMeters.Length > 0 ? 3 + MarkupWidth(compactMeters) + MeterSlack : 0;
+        foreach (var droppable in new[] { encodingCell, paletteCell })
+        {
+            if (droppable is null
+                || MarkupWidth(left) + MinStatusGap + MarkupWidth(string.Join("   ", right)) + meterCost <= HeaderWidth())
+            {
+                continue;
+            }
+
+            right.Remove(droppable);
+        }
+
+        if (right.Count > 1
+            && MarkupWidth(left) + MinStatusGap + MarkupWidth(string.Join("   ", right)) > HeaderWidth())
+        {
+            right.RemoveAt(right.Count - 1);
+        }
 
         // The focus hint goes in last and only if it fits. This row is a *sticky* band whose length
         // changes at runtime, and a cluster that overflows the width wraps it onto a second row — which
@@ -13109,6 +13143,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The meters sit beside the identity they describe, and only when the row has room for them with a
         // few cells to spare: the character count on the right grows as a line is typed, and a cluster that
         // came and went with it would be worse than one that is absent on a narrow terminal.
+        if (meters.Length > 0
+            && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack > HeaderWidth())
+        {
+            // Too narrow for value/max: the share alone, in a field just as fixed.
+            meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}", compact: true);
+        }
+
         if (meters.Length > 0
             && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
         {

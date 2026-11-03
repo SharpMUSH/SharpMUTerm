@@ -68,7 +68,86 @@ internal static class MarkupText
             return $"{left}   {right}";
         }
 
+        // When both do not fit, the left gives way: on every bar that calls this the right is the keys
+        // (Esc, ⏎), and a bar that clipped them off the edge named an action without its key.
+        var room = width - VisibleLength(right) - 1;
+        if (VisibleLength(left) > room)
+        {
+            left = ElideVisible(left, room);
+        }
+
         var gap = Math.Max(1, width - VisibleLength(left) - VisibleLength(right));
         return left + new string(' ', gap) + right;
+    }
+
+    /// <summary>
+    /// <see cref="SpreadLR"/> for a screen's header, where the left is the screen's title and the right
+    /// its key hints. Here the right gives way: the title says where the reader is, and the hints that
+    /// fall off the end (the close key last of all) are repeated in the action bar.
+    /// </summary>
+    internal static string SpreadTitle(string title, string hints, int width)
+    {
+        if (width > 0 && VisibleLength(title) + 1 + VisibleLength(hints) > width)
+        {
+            hints = ElideVisible(hints, Math.Max(0, width - VisibleLength(title) - 1));
+        }
+
+        return SpreadLR(title, hints, width);
+    }
+
+    /// <summary>
+    /// Cuts a markup string to <paramref name="width"/> visible cells, ending in <c>…</c> when anything
+    /// was cut. Tags are kept, including those after the cut, so every span that opened still closes.
+    /// </summary>
+    internal static string ElideVisible(string markup, int width)
+    {
+        if (VisibleLength(markup) <= width)
+        {
+            return markup;
+        }
+
+        var budget = Math.Max(0, width - 1);
+        var result = new System.Text.StringBuilder(markup.Length);
+        var shown = 0;
+        var cut = false;
+
+        void Visible(string text)
+        {
+            if (shown < budget)
+            {
+                result.Append(text);
+                shown++;
+            }
+            else if (!cut)
+            {
+                cut = true;
+                if (width > 0)
+                {
+                    result.Append('…');
+                }
+            }
+        }
+
+        for (var i = 0; i < markup.Length; i++)
+        {
+            var c = markup[i];
+            if ((c == '[' || c == ']') && i + 1 < markup.Length && markup[i + 1] == c)
+            {
+                Visible(new string(c, 2));
+                i++;
+                continue;
+            }
+
+            if (c == '[' && markup.IndexOf(']', i) is var close and > 0)
+            {
+                result.Append(markup, i, close - i + 1);
+                i = close;
+                continue;
+            }
+
+            Visible(c.ToString());
+        }
+
+        return result.ToString();
     }
 }

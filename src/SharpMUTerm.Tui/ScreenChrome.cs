@@ -773,6 +773,47 @@ internal static class ScreenChrome
         return root.Build();
     }
 
+    /// <summary>
+    /// Whether a two-column screen has too few cells for both columns at their minimums. Below that
+    /// <see cref="SplitWidth"/> still hands the list its minimum, and the column beside it runs off the
+    /// right-hand edge: F2 and F4 lost their editors that way at 80 columns. Such a screen shows one
+    /// column at a time instead (<see cref="Single"/>), the one the keyboard is in.
+    /// </summary>
+    internal static bool TooNarrowForTwo(int width, int minimum, int companion) =>
+        width > 0 && width < minimum + ColumnDivider + companion;
+
+    /// <summary>
+    /// <see cref="Split"/>'s frame with one column in the body, for a screen too narrow for two
+    /// (<see cref="TooNarrowForTwo"/>). Same header, same action bar, same content-sized body.
+    /// </summary>
+    internal static IWindowControl Single(
+        MarkupControl header, MarkupControl footer, MarkupControl column, int content, int rows)
+    {
+        var root = Controls.Grid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill);
+
+        if (rows <= 0)
+        {
+            root.Rows(GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
+            root.Place(header, 0, 0, 1, 1);
+            root.Place(column, 1, 0, 1, 1);
+            root.Place(footer, 2, 0, 1, 1);
+            return root.Build();
+        }
+
+        root.Rows(
+                GridLength.Cells(1),
+                GridLength.Cells(Math.Clamp(content, 1, rows)),
+                GridLength.Star(1),
+                GridLength.Cells(1))
+            .Columns(GridLength.Star(1));
+        root.Place(header, 0, 0, 1, 1);
+        root.Place(column, 1, 0, 1, 1);
+        root.Place(footer, 3, 0, 1, 1);
+        return root.Build();
+    }
+
     /// <summary>Widens a column panel to its arranged width so its content isn't hugged.</summary>
     internal static MarkupControl Stretch(MarkupControl control)
     {

@@ -38,14 +38,25 @@ internal static class KeypadScreenView
         // While a key capture is armed the binding row swaps its key well for a prompt twice the width,
         // so the list asks for more and the diagram gives it up for as long as the prompt is up. The
         // numpad is the one thing on this screen with nothing to do with the keystroke being waited for.
+        var rows = ScreenChrome.Rows(height);
+        var hotkeysMinimum = focus?.Edit is { Capture: true }
+            ? KeypadScreenRenderer.CaptureWidth
+            : KeypadScreenRenderer.MinHotkeysWidth;
+        if (ScreenChrome.TooNarrowForTwo(width, KeypadScreenRenderer.MinNumpadWidth, hotkeysMinimum))
+        {
+            // The diagram is a picture of the bindings the list already holds, so a narrow screen drops it
+            // and keeps the list, which is where every key on this screen acts.
+            var only = KeypadScreenRenderer.HotkeysColumn(macros, focus, sets, selected, width);
+            return ScreenChrome.Single(
+                header, footer, ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(only, rows))),
+                only.Count, rows);
+        }
+
         var numpad = ScreenChrome.SplitWidth(
             width,
             KeypadScreenRenderer.NumpadWidth(macros),
             KeypadScreenRenderer.MinNumpadWidth,
-            focus?.Edit is { Capture: true }
-                ? KeypadScreenRenderer.CaptureWidth
-                : KeypadScreenRenderer.MinHotkeysWidth);
-        var rows = ScreenChrome.Rows(height);
+            hotkeysMinimum);
         var left = KeypadScreenRenderer.NumpadColumn(macros, numpad);
         var right = KeypadScreenRenderer.HotkeysColumn(
             macros, focus, sets, selected, width <= 0 ? numpad : width - numpad - ScreenChrome.ColumnDivider);

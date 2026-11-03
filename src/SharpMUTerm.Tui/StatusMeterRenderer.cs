@@ -26,8 +26,16 @@ internal static class StatusMeterRenderer
     /// <summary>Below this share of its maximum a value is drawn in the warning ink.</summary>
     internal const double LowShare = 0.25;
 
-    /// <summary>The meters that have a value, as one markup run, or empty when none does.</summary>
-    internal static string Render(IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk)
+    /// <summary>The cells a compact meter's share takes: <c>100%</c>.</summary>
+    internal const int ShareWidth = 4;
+
+    /// <summary>
+    /// The meters that have a value, as one markup run, or empty when none does. <paramref name="compact"/>
+    /// draws a meter that has a numeric maximum as its share (<c>hp  82%</c>) in a reserved
+    /// <see cref="ShareWidth"/>-cell field, for a status row too narrow for <c>value/max</c>; a meter with no
+    /// usable maximum is drawn as its value either way.
+    /// </summary>
+    internal static string Render(IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, bool compact = false)
     {
         var cells = new List<string>();
         foreach (var meter in meters)
@@ -40,6 +48,15 @@ internal static class StatusMeterRenderer
             var max = string.IsNullOrWhiteSpace(meter.Max) ? null : StatusMeter.Read(data, meter.Max);
             var low = IsLow(value, max);
             var label = MarkupText.Escape(meter.Label);
+            if (compact && Share(value, max) is { } share)
+            {
+                var percent = $"{Math.Clamp((int)Math.Round(share * 100), 0, 999)}%".PadLeft(ShareWidth);
+                cells.Add(low
+                    ? $"[dim]{label}[/] [bold {lowInk}]{percent}[/]"
+                    : $"[dim]{label}[/] [bold]{percent}[/]");
+                continue;
+            }
+
             var shown = MarkupText.Escape(StatusMeter.Fit(value, ValueWidth).PadLeft(ValueWidth));
             var cell = low
                 ? $"[dim]{label}[/] [bold {lowInk}]{shown}[/]"
@@ -55,10 +72,13 @@ internal static class StatusMeterRenderer
         return string.Join("  ", cells);
     }
 
-    private static bool IsLow(string value, string? max) =>
+    private static bool IsLow(string value, string? max) => Share(value, max) < LowShare;
+
+    private static double? Share(string value, string? max) =>
         max is not null
         && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
         && double.TryParse(max, NumberStyles.Float, CultureInfo.InvariantCulture, out var m)
         && m > 0
-        && v / m < LowShare;
+            ? v / m
+            : null;
 }
