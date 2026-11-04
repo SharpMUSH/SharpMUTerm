@@ -11,12 +11,26 @@ internal sealed class WindowPointer : IPointerPresenter
 {
     private PointerTarget _target = PointerTarget.Nothing;
     private IReadOnlyList<PaneScrollbar> _bars = [];
+    private IReadOnlyList<PanelOverlay> _panels = [];
+    private IReadOnlyList<HeaderAction> _actions = [];
 
     /// <summary>What the pointer is over, as of the client's last word.</summary>
     public PointerTarget Target => Volatile.Read(ref _target);
 
     /// <summary>The panes' scroll positions, as of the client's last word.</summary>
     public IReadOnlyList<PaneScrollbar> Bars => Volatile.Read(ref _bars);
+
+    /// <summary>The panels on screen the window draws natively, as of the client's last word.</summary>
+    public IReadOnlyList<PanelOverlay> Panels => Volatile.Read(ref _panels);
+
+    /// <summary>The header buttons the client offers, said once at start.</summary>
+    public IReadOnlyList<HeaderAction> Actions => Volatile.Read(ref _actions);
+
+    /// <summary>Raised on the client's thread when <see cref="Panels"/> changes.</summary>
+    public event Action? PanelsChanged;
+
+    /// <summary>Raised on the client's thread when <see cref="Actions"/> changes.</summary>
+    public event Action? ActionsChanged;
 
     /// <summary>Raised on the client's thread when <see cref="Target"/> changes.</summary>
     public event Action<PointerTarget>? HoverChanged;
@@ -41,5 +55,17 @@ internal sealed class WindowPointer : IPointerPresenter
     {
         Volatile.Write(ref _bars, bars);
         ScrollbarsChanged?.Invoke(bars);
+    }
+
+    void IPointerPresenter.Panels(IReadOnlyList<PanelOverlay> panels)
+    {
+        Volatile.Write(ref _panels, panels);
+        PanelsChanged?.Invoke();
+    }
+
+    void IPointerPresenter.HeaderActions(IReadOnlyList<HeaderAction> actions)
+    {
+        Volatile.Write(ref _actions, actions);
+        ActionsChanged?.Invoke();
     }
 }

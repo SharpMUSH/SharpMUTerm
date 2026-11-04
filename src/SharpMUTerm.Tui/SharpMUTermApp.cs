@@ -785,6 +785,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _workspace = ResumeOrNew(config);
         NoteRestoredOwners();
         RegisterTerminalPanels();
+        AnnounceHeaderActions();
 
         var headless = host.RunsInline;
         _headless = headless;
@@ -998,6 +999,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncTransparentColours();
             DrawSixelOverlay(buffer);
             PublishScrollbars();
+            PublishPanels();
             SyncMapSizes();
             SyncPanelSizes();
         };
@@ -8161,6 +8163,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool RunBuiltInCommand(string id)
     {
+        if (id.StartsWith(SharpMUTerm.Client.Commands.LayoutCommands.Prefix, StringComparison.Ordinal))
+        {
+            return RunLayoutCommand(id);
+        }
+
         if (DispatchGroupCommand(id))
         {
             return true;
@@ -8635,8 +8642,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnMapLinkClicked(string windowId, string url)
     {
-        if (MapRenderer.ParseLink(url) is not { } room
-            || MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        if (MapRenderer.ParseLink(url) is { } room)
+        {
+            WalkFromMap(windowId, room);
+        }
+    }
+
+    /// <summary>
+    /// Walks a map window's own character to a room: a cell map's click and the window's native map both end here,
+    /// so there is one walk and one refusal.
+    /// </summary>
+    private void WalkFromMap(string windowId, long room)
+    {
+        if (MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
         {
             return;
         }
@@ -8660,6 +8678,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         var (width, height) = MapBox(windowId);
         _mapSizes[windowId] = (width, height);
+        _mapRevisions[windowId] = _mapRevisions.GetValueOrDefault(windowId) + 1;
         if (MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
         {
             control.SetContent(new List<string> { "[dim]No map: this character is not connected.[/]" });

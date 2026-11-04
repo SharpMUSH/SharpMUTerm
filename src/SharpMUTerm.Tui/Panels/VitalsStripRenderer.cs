@@ -1,4 +1,5 @@
 using System.Text;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 using static SharpMUTerm.Tui.MarkupText;
@@ -69,6 +70,14 @@ internal static class VitalsStripRenderer
 
         return ElideVisible(last!, width);
     }
+
+    /// <summary>The strip for a <see cref="VitalsModel"/>: the same model the window's native gauges are drawn from.</summary>
+    internal static string Render(VitalsModel vitals, int width, Ink ink) =>
+        Render(
+            [.. vitals.Meters.Select(m => new StatusMeterRenderer.MeterReading(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low))],
+            vitals.Target is { } target ? new CombatTarget(target.Name, target.Share) : null,
+            width,
+            ink);
 
     private static string Compose(
         IReadOnlyList<StatusMeterRenderer.MeterReading> meters, CombatTarget? target, Level level, int width, Ink ink)

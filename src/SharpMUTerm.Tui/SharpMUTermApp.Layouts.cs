@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Layouts;
@@ -504,34 +505,16 @@ internal sealed partial class SharpMUTermApp
                 Notice($"{selected.Name} layout applied — c keeps it for this character, w for the world", MessageSeverity.Info, "⌥M");
                 return false;
             case ConsoleKey.S when k.Modifiers == 0:
-                SaveLayoutChanges(key, selected, world, character);
+                _layoutsStatus = SaveLayoutChanges(key, selected, world, character).Status;
                 return true;
             case ConsoleKey.N when k.Modifiers == 0:
-                SaveLayoutAsNew(key, selected);
+                _layoutsStatus = SaveLayoutAsNew(key, selected).Status;
                 return true;
             case ConsoleKey.W when k.Modifiers == 0:
-                if (world is null)
-                {
-                    _layoutsStatus = "this character's world is not configured";
-                    return true;
-                }
-
-                world.Layout = selected.Id;
-                PersistConfiguration();
-                _layoutsStatus = $"{selected.Name} is now {world.Name}'s layout";
-                ReapplyIfResolvedChanged(key);
+                _layoutsStatus = UseLayoutForWorld(key, selected, world).Status;
                 return true;
             case ConsoleKey.C when k.Modifiers == 0:
-                if (character is null)
-                {
-                    _layoutsStatus = "no configured character to keep it for";
-                    return true;
-                }
-
-                character.Layout = selected.Id;
-                PersistConfiguration();
-                _layoutsStatus = $"{character.Name} uses {selected.Name}";
-                ReapplyIfResolvedChanged(key);
+                _layoutsStatus = UseLayoutForCharacter(key, selected, character).Status;
                 return true;
             default:
                 return true;
@@ -556,12 +539,42 @@ internal sealed partial class SharpMUTermApp
     private CapturedLayout? CaptureArrangement(string key, LayoutDefinition? previous) =>
         LayoutCapture.Capture(_workspace.Layout.Root, window => PanelOf(key, window), previous);
 
-    private void SaveLayoutChanges(string key, LayoutDefinition target, WorldDefinition? world, CharacterDefinition? character)
+    /// <summary>What one of the list's actions did: whether it did it, and the line that says so.</summary>
+    private readonly record struct LayoutActionResult(bool Done, string Status);
+
+    /// <summary>⌥M <c>w</c> and <see cref="LayoutCommands.UseForWorld"/>: <paramref name="layout"/> becomes the world's default.</summary>
+    private LayoutActionResult UseLayoutForWorld(string key, LayoutDefinition layout, WorldDefinition? world)
+    {
+        if (world is null)
+        {
+            return new(false, "this character's world is not configured");
+        }
+
+        world.Layout = layout.Id;
+        PersistConfiguration();
+        ReapplyIfResolvedChanged(key);
+        return new(true, $"{layout.Name} is now {world.Name}'s layout");
+    }
+
+    /// <summary>⌥M <c>c</c> and <see cref="LayoutCommands.UseForCharacter"/>: <paramref name="layout"/> becomes the character's own.</summary>
+    private LayoutActionResult UseLayoutForCharacter(string key, LayoutDefinition layout, CharacterDefinition? character)
+    {
+        if (character is null)
+        {
+            return new(false, "no configured character to keep it for");
+        }
+
+        character.Layout = layout.Id;
+        PersistConfiguration();
+        ReapplyIfResolvedChanged(key);
+        return new(true, $"{character.Name} uses {layout.Name}");
+    }
+
+    private LayoutActionResult SaveLayoutChanges(string key, LayoutDefinition target, WorldDefinition? world, CharacterDefinition? character)
     {
         if (CaptureArrangement(key, target) is not { } captured)
         {
-            _layoutsStatus = "nothing to save — no pane holds this character's output";
-            return;
+            return new(false, "nothing to save — no pane holds this character's output");
         }
 
         var result = Layouts.Update(target.Id, captured.Placements, captured.RegionShares);
@@ -576,31 +589,25 @@ internal sealed partial class SharpMUTermApp
             {
                 world.Layout = result.Layout.Id;
             }
-
-            _layoutsStatus = $"{target.Name} is built in — saved as {result.Layout.Name}";
-        }
-        else
-        {
-            _layoutsStatus = $"saved {result.Layout.Name}";
         }
 
         PersistConfiguration();
         _layoutsSelected = Layouts.All.ToList().FindIndex(l => l.Id == result.Layout.Id);
         AdoptArrangementAs(key, result.Layout);
+        return new(true, result.CreatedNew ? $"{target.Name} is built in — saved as {result.Layout.Name}" : $"saved {result.Layout.Name}");
     }
 
-    private void SaveLayoutAsNew(string key, LayoutDefinition from)
+    private LayoutActionResult SaveLayoutAsNew(string key, LayoutDefinition from)
     {
         if (CaptureArrangement(key, from) is not { } captured)
         {
-            _layoutsStatus = "nothing to save — no pane holds this character's output";
-            return;
+            return new(false, "nothing to save — no pane holds this character's output");
         }
 
         var saved = Layouts.SaveAsNew(from.Name, captured.Placements, captured.RegionShares);
         PersistConfiguration();
         _layoutsSelected = Layouts.All.ToList().FindIndex(l => l.Id == saved.Id);
-        _layoutsStatus = $"saved as {saved.Name} — c or w puts it to use";
+        return new(true, $"saved as {saved.Name} — c or w puts it to use");
     }
 
     /// <summary>

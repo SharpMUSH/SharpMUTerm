@@ -11,6 +11,7 @@ using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Workspaces;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Tui.Panels;
 
 namespace SharpMUTerm.Tui;
@@ -164,16 +165,12 @@ internal sealed partial class SharpMUTermApp
     {
         var view = NewPanelView(context, (width, _) =>
         {
-            if (PanelGameData(context.SessionKey) is not { } data)
+            if (ReadVitals(context.SessionKey) is not { } vitals)
             {
                 return ["[dim]No vitals: this character is not connected.[/]"];
             }
 
-            var strip = VitalsStripRenderer.Render(
-                StatusMeterRenderer.Read(PanelMeters(context.SessionKey), data),
-                CombatTarget.Read(data),
-                width,
-                VitalsInk());
+            var strip = VitalsStripRenderer.Render(vitals, width, VitalsInk());
             return [strip.Length > 0 ? strip : "[dim]No vitals yet — the game has sent none of the meters F7 names.[/]"];
         });
 
@@ -184,6 +181,23 @@ internal sealed partial class SharpMUTermApp
         }
 
         return view.Control;
+    }
+
+    /// <summary>
+    /// A character's vitals as the one model every view draws (<see cref="VitalsModel"/>): the cell strip here, and
+    /// the window's native gauges through <see cref="PublishPanels"/>. Null when the character has no game data.
+    /// </summary>
+    internal VitalsModel? ReadVitals(string sessionKey)
+    {
+        if (PanelGameData(sessionKey) is not { } data)
+        {
+            return null;
+        }
+
+        var meters = StatusMeterRenderer.Read(PanelMeters(sessionKey), data)
+            .Select(m => new VitalsMeter(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low))
+            .ToList();
+        return new VitalsModel(meters, VitalsModel.TargetFrom(CombatTarget.Read(data)));
     }
 
     /// <summary>

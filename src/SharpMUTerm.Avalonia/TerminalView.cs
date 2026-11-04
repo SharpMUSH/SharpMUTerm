@@ -93,6 +93,21 @@ internal sealed class TerminalView : Control
         pointer.MenuRequested += (_, items) => Dispatcher.UIThread.Post(() => OpenMenu(items));
     }
 
+    /// <summary>The cell size in logical units, for placing a native view over cells (<see cref="DesktopLayer"/>).</summary>
+    internal Size CellExtent => CellSize;
+
+    /// <summary>What draws the cells, for a native view that matches their colours.</summary>
+    internal CellRenderer Renderer => _renderer;
+
+    /// <summary>The driver this view paints.</summary>
+    internal AvaloniaConsoleDriver Driver => _driver;
+
+    /// <summary>
+    /// Raised on the window's thread after a new frame is taken for painting, and when the cell size or the view's
+    /// size changes: when anything placed over cells may need to move.
+    /// </summary>
+    internal event Action? Repainted;
+
     /// <summary>The cell size in logical units, for mapping a pointer position to a cell.</summary>
     private Size CellSize => new(_renderer.Fonts.CellWidth / _scale, _renderer.Fonts.CellHeight / _scale);
 
@@ -117,6 +132,7 @@ internal sealed class TerminalView : Control
         base.OnSizeChanged(e);
         var (columns, rows) = GridFor(e.NewSize);
         _driver.Resize(columns, rows);
+        Repainted?.Invoke();
     }
 
     public override void Render(DrawingContext context)
@@ -152,6 +168,7 @@ internal sealed class TerminalView : Control
             new CellFonts((float)(_fontPoints * scale), _family),
             _renderer.DefaultForeground,
             _renderer.DefaultBackground);
+        Repainted?.Invoke();
     }
 
     private void OnFrameReady()
@@ -163,6 +180,7 @@ internal sealed class TerminalView : Control
             {
                 Volatile.Write(ref _invalidatePending, 0);
                 InvalidateVisual();
+                Repainted?.Invoke();
             }, DispatcherPriority.Render);
         }
     }
@@ -258,14 +276,7 @@ internal sealed class TerminalView : Control
         var modifiers = Modifiers(e.KeyModifiers);
         if (button == PointerButton.Right)
         {
-            // The client answers a right press with a menu, which takes the pointer, so this view never sees the
-            // release: the click is sent whole, and nothing is left held to repeat or to turn into a drag.
-            _driver.RaiseMouse(_mouse.Pressed(button, cell, 1, modifiers), cell);
-            if (_mouse.Released(button, cell, modifiers) is { } released)
-            {
-                _driver.RaiseMouse(released, cell);
-            }
-
+            SendRightClick(cell, modifiers);
             e.Handled = true;
             return;
         }
@@ -275,6 +286,25 @@ internal sealed class TerminalView : Control
         _repeat.Start();
         e.Handled = true;
     }
+
+    /// <summary>
+    /// A right click on a cell, sent whole. The client answers a right press with a menu, which takes the pointer, so
+    /// the release would never arrive: nothing is left held to repeat or to turn into a drag.
+    /// </summary>
+    private void SendRightClick(System.Drawing.Point cell, PointerModifiers modifiers)
+    {
+        _driver.RaiseMouse(_mouse.Pressed(PointerButton.Right, cell, 1, modifiers), cell);
+        if (_mouse.Released(PointerButton.Right, cell, modifiers) is { } released)
+        {
+            _driver.RaiseMouse(released, cell);
+        }
+    }
+
+    /// <summary>
+    /// A right click a native view over the cells took and hands on (<see cref="MapCanvas"/>), so the pane's menu is
+    /// the same over a native view as over its cells. <paramref name="position"/> is in this view's coordinates.
+    /// </summary>
+    internal void ForwardRightClick(Point position, KeyModifiers keys) => SendRightClick(Cell(position), Modifiers(keys));
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -475,41 +505,10 @@ internal sealed class TerminalView : Control
     private void OpenMenu(IReadOnlyList<PointerMenuItem> items)
     {
         CloseTip();
-        var menu = new ContextMenu { Placement = PlacementMode.Pointer, PlacementTarget = this };
-        Grid.SetIsSharedSizeScope(menu, true);
-        foreach (var item in items)
-        {
-            if (item.IsSeparator)
-            {
-                menu.Items.Add(new Separator());
-                continue;
-            }
-
-            var entry = new MenuItem { Header = MenuHeader(item), IsEnabled = item.Enabled };
-            entry.Click += (_, _) => item.Run();
-            menu.Items.Add(entry);
-        }
-
+        var menu = NativeMenu.Build(items, PlacementMode.Pointer, this);
         menu.Closed += (_, _) => Focus();
         OpenedMenu = menu;
         menu.Open(this);
-    }
-
-    /// <summary>A menu entry's label with its key after it, the keys lined up in a column of their own.</summary>
-    private static Control MenuHeader(PointerMenuItem item)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "label" });
-        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "hint" });
-        grid.Children.Add(new TextBlock { Text = item.Label, VerticalAlignment = VerticalAlignment.Center });
-        if (item.Hint is { } hint)
-        {
-            var key = new TextBlock { Text = hint, Opacity = 0.6, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(key, 1);
-            grid.Children.Add(key);
-        }
-
-        return grid;
     }
 
     // ── Scrollbars ──────────────────────────────────────────────────────────────────────────────

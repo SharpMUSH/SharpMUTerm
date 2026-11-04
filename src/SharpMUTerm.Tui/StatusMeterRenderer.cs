@@ -24,7 +24,7 @@ internal static class StatusMeterRenderer
     internal const int ValueWidth = 5;
 
     /// <summary>Below this share of its maximum a value is drawn in the warning ink.</summary>
-    internal const double LowShare = 0.25;
+    internal const double LowShare = SharpMUTerm.Client.Panels.VitalsModel.LowShare;
 
     /// <summary>The cells a compact meter's share takes: <c>100%</c>.</summary>
     internal const int ShareWidth = 4;

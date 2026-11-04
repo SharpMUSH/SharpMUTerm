@@ -61,6 +61,9 @@ internal sealed class MainWindow : Window
         }
 
         root.Children.Add(_view);
+
+        // The window's native views over the cells: the header's Layouts button and native panels (DesktopLayer).
+        root.Children.Add(new DesktopLayer(_view));
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
         var size = _view.SizeFor(options.Columns, options.Rows);

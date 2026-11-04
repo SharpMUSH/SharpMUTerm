@@ -239,14 +239,14 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
         }
     }
 
-    private SKColor Background(GridCell cell)
+    internal SKColor Background(GridCell cell)
     {
         var colour = (cell.Decorations & TextDecoration.Invert) != 0 ? cell.Foreground : cell.Background;
         var fallback = (cell.Decorations & TextDecoration.Invert) != 0 ? DefaultForeground : DefaultBackground;
         return Resolve(colour, fallback);
     }
 
-    private SKColor Foreground(GridCell cell)
+    internal SKColor Foreground(GridCell cell)
     {
         var inverted = (cell.Decorations & TextDecoration.Invert) != 0;
         var colour = Resolve(inverted ? cell.Background : cell.Foreground, inverted ? DefaultBackground : DefaultForeground);

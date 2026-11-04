@@ -201,6 +201,10 @@ public static class BuiltInCommands
         // nowhere on the main screen, so this entry and its chord are how a reader finds that layouts exist.
         Add("layout:layouts", CommandGroup.Layout, "Layouts", "⌥M", "built in and yours · apply, save, set a default");
 
+        // The ⌥M list's actions as commands, for a surface that is not the list (the window's Layouts menu). They
+        // generate no entries: ⌥M is the keyboard's way to them, and listing every layout twice would crowd ⌃P.
+        Family("layout:library", LayoutCommands.Prefix, _ => []);
+
         // Pane size, in the plain words the request used ("increase/decrease a pane's horizontal or
         // vertical character size") rather than in the chord's terms. Listed for the same reason the
         // directional entries and the newline chord are: ⌥⇧+arrow is not a chord anybody guesses, and a

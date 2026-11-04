@@ -74,7 +74,8 @@ internal sealed record PointerTarget(PointerKind Kind, PaneRect Area, PointerSha
 /// <param name="Hint">The key that does the same, when there is one, drawn after the label.</param>
 /// <param name="Run">What choosing it does.</param>
 /// <param name="Enabled">False draws it dimmed and unclickable, which says the action exists but not here.</param>
-internal sealed record PointerMenuItem(string Label, string? Hint, Action Run, bool Enabled = true)
+/// <param name="Checked">Whether the entry is the one in force (the layout in use), drawn with a check by a host that can.</param>
+internal sealed record PointerMenuItem(string Label, string? Hint, Action Run, bool Enabled = true, bool Checked = false)
 {
     /// <summary>A rule between groups of entries.</summary>
     public static PointerMenuItem Separator { get; } = new("-", null, () => { }, false);
@@ -122,4 +123,65 @@ internal interface IPointerPresenter
 
     /// <summary>The panes' scroll positions, whenever one of them changes.</summary>
     void Scrollbars(IReadOnlyList<PaneScrollbar> bars);
+
+    /// <summary>
+    /// The panels on screen that a host may draw natively over their cells, whenever one moves or its content
+    /// changes. The cells stay what they are; a host that draws no native panels ignores this (the default).
+    /// </summary>
+    void Panels(IReadOnlyList<PanelOverlay> panels)
+    {
+    }
+
+    /// <summary>
+    /// The actions a host may offer as native buttons along the header, said once when the app starts. A host
+    /// with no buttons ignores this (the default); every action is also a key and a ⌃P entry.
+    /// </summary>
+    void HeaderActions(IReadOnlyList<HeaderAction> actions)
+    {
+    }
+}
+
+/// <summary>
+/// One panel on screen, for a host that draws it natively over its pane rather than in cells: where it is and what
+/// it shows. The cells under it are drawn as in any host, so a host that draws nothing loses nothing, and the
+/// terminal-and-window parity, which compares cells, is unaffected.
+/// </summary>
+/// <param name="PanelId">The panel (<c>vitals</c>, <c>map</c>, …; <c>PanelIds</c>).</param>
+/// <param name="WindowId">The window the panel is drawn in, which is the pane's front tab.</param>
+/// <param name="Rect">The pane's output rectangle, in desktop cells — the area the cells of the panel cover.</param>
+/// <param name="Ink">The colours the cells are drawn in, so a native view says the same things in the same hues.</param>
+/// <param name="Vitals">For the vitals panel, its content: the same model its cell strip is drawn from.</param>
+/// <param name="Map">For the map, the rooms around the character, drawn from the recorder the cell map is drawn from.</param>
+/// <param name="WalkTo">
+/// For the map, walks the panel's own character to a room by id, through the speedwalk a click on a cell map uses.
+/// Safe to call from any thread. The same instance for as long as the window lives, so an overlay compares equal.
+/// </param>
+internal sealed record PanelOverlay(
+    string PanelId,
+    string WindowId,
+    PaneRect Rect,
+    PanelInk Ink,
+    SharpMUTerm.Client.Panels.VitalsModel? Vitals,
+    SharpMUTerm.Client.Panels.MapViewModel? Map = null,
+    Action<long>? WalkTo = null);
+
+/// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
+internal sealed record PanelInk(string Bar, string Low, string Track);
+
+/// <summary>
+/// An action a host may draw as a native button in the header, over blank header cells. Its menu is built by the
+/// client, on the client's thread, from the same commands its key runs — a host never builds one of its own.
+/// </summary>
+/// <param name="Id">Which action (<see cref="LayoutsId"/>); a host picks its icon by this.</param>
+/// <param name="Label">What it is, for a tooltip and a screen reader.</param>
+/// <param name="Hint">The key that does the same, for the tooltip.</param>
+/// <param name="Menu">
+/// Builds the menu; safe to call from any thread. The client builds it on its own thread and hands it to the
+/// callback there, so a host marshals in the callback itself. Each entry's <see cref="PointerMenuItem.Run"/> is
+/// already marshalled.
+/// </param>
+internal sealed record HeaderAction(string Id, string Label, string? Hint, Action<Action<IReadOnlyList<PointerMenuItem>>> Menu)
+{
+    /// <summary>The layouts button: built-in and saved layouts, save, and a default for a world or a character.</summary>
+    public const string LayoutsId = "layouts";
 }

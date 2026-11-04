@@ -9,6 +9,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: a Layouts button at the right end of the header opens a menu of the built-in and your saved
+  layouts (the one in use is checked), with *Save changes*, *Save as new*, *Use for* the world or the character,
+  and *Manage layouts…*. It runs the same actions as Alt+M.
+- Desktop window: the vitals panel is drawn as smooth gauges, with each meter's name and numbers, the low ones
+  in the warning colour (*Mana · low*) and what you are fighting. A tall vitals pane stacks them; a strip lays
+  them side by side.
+- Desktop window: the map is drawn as a canvas of rooms and exits. The wheel zooms, a drag pans, a
+  double-click re-centres on you, and a click on a room walks there. Hovering a room shows its name.
 - Ctrl+P matches as you type by initials and fragments, not only by prefix: `trig sel` finds *Make a trigger
   from the selection*, and the letters it matched are highlighted. The commands you last ran from it are
   listed first under RECENT, followed by what the moment suggests (copy while something is selected, back to
