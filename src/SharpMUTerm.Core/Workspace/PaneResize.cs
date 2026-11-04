@@ -279,8 +279,7 @@ public static class PaneResize
             return split.Children.Max(child => Minimum(child, horizontal));
         }
 
-        return split.Children.Sum(child => Minimum(child, horizontal))
-            + (LayoutSolver.DividerThickness * (split.Children.Count - 1));
+        return split.Children.Sum(child => Minimum(child, horizontal)) + PaneExtent.Dividers(split);
     }
 
     /// <summary>The arrow a direction is spelled with, for the surfaces that name the chord.</summary>

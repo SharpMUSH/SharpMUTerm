@@ -999,6 +999,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ReportPaneSizes();
             SyncTabStripWidths();
             SyncTransparentColours();
+            PaintHeaderDividers(buffer);
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             PublishPanels();
@@ -1321,6 +1322,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
             RebuildPaneArea();
+        }
+
+        // The same split stacked, through the real ⌃B - keys: Chat lands in the lower pane, whose tab strip is the
+        // boundary between the two — there is no divider row above a pane that draws its own tab strip.
+        if (string.Equals(view, "split-stacked", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateKey(Stroke('\u0002', ConsoleKey.B, ctrl: true));
+            SimulateKey(Stroke('-', ConsoleKey.OemMinus));
         }
 
         // More tabs than the strip can hold, which is the state every other tab view is too small to
@@ -10111,6 +10120,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var paneArea = zoomed is not null
             ? OnSurface(BuildPaneTabs(zoomed), zoomed.Id)
             : BuildLayoutNode(_workspace.Layout.Root);
+        PublishHeaderDividers();
 
         // Size the rail to what its rows actually need (clamped), so it never hogs width nor clips.
         var railLines = RenderRailLines();
@@ -10242,12 +10252,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// Only the body. The tab chips keep <see cref="PaneSurfaceTone"/>, so the selected chip still carries
     /// the focused pane's lift: the plane behind the text is the one cue that can be given up, because the
     /// chip, the <c>▌</c> and the armed command line all say the same thing. A tinted pane stays painted —
-    /// its colour says whose pane it is, and nothing else on the plane says that. On kitty none of this
+    /// its colour says whose pane it is, and nothing else on the plane says that. So does a strip panel: no divider
+    /// row separates it from its neighbour, and its recessed plane is the only thing that does. On kitty none of this
     /// applies: every plane stays painted and is named to the terminal instead (<see cref="SyncTransparentColours"/>).
     /// </para>
     /// </summary>
     private SColor PaneBodyColor(string? paneId) =>
-        HandsPlanesToTheTerminal && PaneTintOf(paneId) == PaneTint.None
+        HandsPlanesToTheTerminal && PaneTintOf(paneId) == PaneTint.None && !IsStripPane(paneId)
             ? SColor.Transparent
             : ToColor(PaneSurfaceTone(paneId));
 
@@ -10457,8 +10468,21 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private Rgb SurfaceToneIn(string? paneId, PaneTint tint)
     {
         var plane = WorkspacePalette.Tint(_theme, tint);
-        return paneId is not null && IsFocusedPane(paneId) ? WorkspacePalette.Focus(plane) : plane;
+        if (paneId is not null && IsFocusedPane(paneId))
+        {
+            return WorkspacePalette.Focus(plane);
+        }
+
+        // A fixed strip (vitals, the quick bar) sits flush against its neighbour with no divider row between them
+        // (PaneExtent.DividerRows), so an unfocused one is recessed the backdrop's step: two unfocused panes are
+        // otherwise one plane, and the strip would run straight into the output under it. Focused, it takes the
+        // focus lift like any pane — recessed strip, then unfocused pane, then the focused one, in luminance.
+        return IsStripPane(paneId) ? WorkspacePalette.Recessed(plane) : plane;
     }
+
+    /// <summary>Whether a pane is a fixed-height strip panel (<see cref="PaneNode.FixedRows"/>, derived on every rebuild).</summary>
+    private bool IsStripPane(string? paneId) =>
+        paneId is not null && _workspace.Layout.FindPane(paneId) is { FixedRows: not null };
 
     /// <summary>
     /// The chip an <em>unselected</em> tab is painted on: its own character's plane, recessed the same
@@ -10642,21 +10666,35 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var children = split.Children.Select(BuildLayoutNode).ToList();
 
         // Interleave a thin 1-cell divider between children (a solid border-colour bar) instead of the
-        // framework's double-line splitter, so splits read as a single calm line.
+        // framework's double-line splitter, so splits read as a single calm line — but only where
+        // PaneExtent.DividerRows says one is drawn. Stacked, there is none above a pane whose tab strip is its top
+        // row (that strip is the boundary, and its empty run is registered as the divider's handle) and none beside a
+        // fixed strip, which sits flush on a plane of its own. LayoutSolver reads the same rule, so the panes nothing
+        // has arranged yet are solved to the same rectangles.
         // A stacked split gives a strip pane exactly its rows (Cells) and an editor its floor (Star's min); the rest
         // share by weight. PaneExtent.DistributeRows is the same rule, for the panes nothing has arranged yet.
         var stacked = split.Direction == SplitDirection.Column;
         var fixedRows = stacked ? PaneExtent.FixedChildren(split) : new int?[children.Count];
         var tracks = new List<GridLength>();
+        var cells = new List<IWindowControl>();
         for (var i = 0; i < children.Count; i++)
         {
             var floor = stacked ? PaneExtent.MinRows(split.Children[i]) : 0;
             tracks.Add(fixedRows[i] is { } rows
                 ? GridLength.Cells(rows)
                 : GridLength.Star(Math.Max(0.01, split.Sizes[i]), min: floor > 0 ? floor : null));
+            cells.Add(children[i]);
             if (i < children.Count - 1)
             {
-                tracks.Add(GridLength.Cells(1));
+                if (PaneExtent.DividerRows(split, i) > 0)
+                {
+                    tracks.Add(GridLength.Cells(1));
+                    cells.Add(PaneDivider(split, i));
+                }
+                else
+                {
+                    RegisterHeaderDivider(split, i);
+                }
             }
         }
 
@@ -10666,25 +10704,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (split.Direction == SplitDirection.Row)
         {
             grid.Columns(tracks.ToArray()).Rows(GridLength.Star(1));
-            for (var i = 0; i < children.Count; i++)
+            for (var i = 0; i < cells.Count; i++)
             {
-                grid.Place(children[i], 0, i * 2, 1, 1);
-                if (i < children.Count - 1)
-                {
-                    grid.Place(PaneDivider(split, i), 0, i * 2 + 1, 1, 1);
-                }
+                grid.Place(cells[i], 0, i, 1, 1);
             }
         }
         else
         {
             grid.Rows(tracks.ToArray()).Columns(GridLength.Star(1));
-            for (var i = 0; i < children.Count; i++)
+            for (var i = 0; i < cells.Count; i++)
             {
-                grid.Place(children[i], i * 2, 0, 1, 1);
-                if (i < children.Count - 1)
-                {
-                    grid.Place(PaneDivider(split, i), i * 2 + 1, 0, 1, 1);
-                }
+                grid.Place(cells[i], i, 0, 1, 1);
             }
         }
 
@@ -12188,7 +12218,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         }
 
-        return new PaneDragSurface(rects, windows);
+        return new PaneDragSurface(rects, windows, HeaderDividerCells());
     }
 
     /// <summary>

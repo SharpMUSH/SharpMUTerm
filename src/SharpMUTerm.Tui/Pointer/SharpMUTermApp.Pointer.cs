@@ -36,8 +36,12 @@ internal sealed partial class SharpMUTermApp
     private DividerDrag? _dividerDrag;
     private IReadOnlyList<PaneScrollbar> _scrollbars = Array.Empty<PaneScrollbar>();
 
-    /// <summary>One divider between two children of a split, and the control that draws it.</summary>
-    private sealed record DividerSlot(HorizontalGridControl Control, SplitNode Split, int Index);
+    /// <summary>
+    /// One divider between two children of a split: either the control that draws it, or — in a stack where the pane
+    /// below draws a tab strip and so needs no divider row (<see cref="PaneExtent.DividerRows"/>) — that pane's id,
+    /// whose strip's empty run past its last tab is the handle instead (<see cref="HeaderFill"/>).
+    /// </summary>
+    private sealed record DividerSlot(HorizontalGridControl? Control, SplitNode Split, int Index, string? HeaderPaneId = null);
 
     /// <summary>A divider by what it divides, which survives the rebuild that replaces its control.</summary>
     private readonly record struct DividerKey(SplitNode Split, int Index)
@@ -62,8 +66,8 @@ internal sealed partial class SharpMUTermApp
         var key = new DividerKey(split, index);
         var rule = Divider(_litDivider is { } lit && lit.Equals(key));
 
-        // The rule beside a fixed-height strip is drawn but not registered: it cannot move, so it offers no
-        // resize cue to hover, no drag and no double-click to even.
+        // Beside a fixed-height strip no rule is drawn at all (PaneExtent.DividerRows: it sits flush); should one
+        // ever be, it is not registered: it cannot move, so it offers no resize cue, no drag and no double-click.
         var held = split.Direction == SplitDirection.Column
             && (PaneExtent.FixedRows(split.Children[index]) is not null
                 || PaneExtent.FixedRows(split.Children[index + 1]) is not null);
@@ -73,6 +77,118 @@ internal sealed partial class SharpMUTermApp
         }
 
         return rule;
+    }
+
+    /// <summary>
+    /// Registers the tab strips of the panes along the top of a stacked split's child <paramref name="index"/> + 1 as
+    /// the divider above it, where <see cref="PaneExtent.DividerRows"/> drew no row. Nothing is registered beside a
+    /// fixed strip, for <see cref="PaneDivider"/>'s reason: it cannot move.
+    /// </summary>
+    private void RegisterHeaderDivider(SplitNode split, int index)
+    {
+        if (split.Direction != SplitDirection.Column
+            || PaneExtent.FixedRows(split.Children[index]) is not null
+            || PaneExtent.FixedRows(split.Children[index + 1]) is not null)
+        {
+            return;
+        }
+
+        foreach (var pane in PaneExtent.HeaderPanes(split.Children[index + 1]))
+        {
+            _dividers.Add(new DividerSlot(null, split, index, pane.Id));
+        }
+    }
+
+    /// <summary>
+    /// The run of a pane's tab strip to the right of its last tab, in desktop cells, or null when the strip is not
+    /// drawn or its tabs fill it. Only that run is the divider: a tab, its <c>×</c> and the separators between tabs
+    /// stay the framework's, and its own hit test is what says where the last tab ends.
+    /// </summary>
+    private PaneRect? HeaderFill(string paneId)
+    {
+        TabControl? tabs;
+        lock (_paneTabsLock)
+        {
+            tabs = _paneTabs.GetValueOrDefault(paneId);
+        }
+
+        if (tabs is not { ShowTabHeader: true } || BoundsOf(tabs) is not { Height: > 0 } rect)
+        {
+            return null;
+        }
+
+        var from = rect.Width;
+        while (from > 0 && FrameworkHitTests.TabAt(tabs, from - 1) < 0)
+        {
+            from--;
+        }
+
+        // A strip whose hit test answers nothing at all (a framework that renamed it) offers no handle rather than
+        // turning its tabs into one.
+        if (from == 0 && tabs.TabCount > 0)
+        {
+            return null;
+        }
+
+        return from >= rect.Width ? null : new PaneRect(rect.X + from, rect.Y, rect.Width - from, 1);
+    }
+
+    /// <summary>Every tab strip's run that is a divider's handle, for the pane drag to leave alone.</summary>
+    /// <remarks>
+    /// Called from the driver's input thread (<see cref="PaneSnapshot"/>), so it reads the copy
+    /// <see cref="PublishHeaderDividers"/> swapped in, never the list a rebuild is filling.
+    /// </remarks>
+    private List<PaneRect> HeaderDividerCells() =>
+        Volatile.Read(ref _headerDividerSlots)
+            .Select(AreaOf)
+            .Where(area => area is not null)
+            .Select(area => area!.Value)
+            .ToList();
+
+    /// <summary>The tab strips standing in for dividers, as of the last rebuild; swapped whole, read off-thread.</summary>
+    private DividerSlot[] _headerDividerSlots = [];
+
+    /// <summary>Publishes the rebuilt pane area's tab-strip dividers for <see cref="HeaderDividerCells"/>.</summary>
+    private void PublishHeaderDividers() =>
+        Volatile.Write(ref _headerDividerSlots, _dividers.Where(slot => slot.HeaderPaneId is not null).ToArray());
+
+    /// <summary>Where a divider's handle is, in desktop cells: its control's cells, or the empty run of a tab strip.</summary>
+    private PaneRect? AreaOf(DividerSlot slot) =>
+        slot.Control is { } control ? BoundsOf(control) : slot.HeaderPaneId is { } paneId ? HeaderFill(paneId) : null;
+
+    /// <summary>
+    /// Lights the tab strip standing in for the divider under the pointer (or being dragged). A recolour of cells the
+    /// strip already drew, after the frame is painted — the framework paints that run in the control's own
+    /// background, which is also what the pane's content inherits, so it cannot be set on the control.
+    /// </summary>
+    private void PaintHeaderDividers(SharpConsoleUI.Layout.CharacterBuffer buffer)
+    {
+        if (_litDivider is not { } lit)
+        {
+            return;
+        }
+
+        var hover = ToColor(WorkspacePalette.RuleHover(_theme));
+        foreach (var slot in _dividers)
+        {
+            if (slot.HeaderPaneId is null || !lit.Equals(new DividerKey(slot.Split, slot.Index)) || AreaOf(slot) is not { } fill)
+            {
+                continue;
+            }
+
+            var top = _window.Top + _system.DesktopUpperLeft.Y;
+            for (var x = fill.X; x < fill.X + fill.Width; x++)
+            {
+                var bx = x - _window.Left;
+                var by = fill.Y - top;
+                if (bx < 0 || by < 0 || bx >= buffer.Width || by >= buffer.Height)
+                {
+                    continue;
+                }
+
+                buffer.SetCellColors(bx, by, buffer.GetCell(bx, by).Foreground, hover);
+            }
+        }
     }
 
     /// <summary>
@@ -174,6 +290,11 @@ internal sealed partial class SharpMUTermApp
     {
         foreach (var slot in _dividers)
         {
+            if (slot.Control is null)
+            {
+                continue; // a tab strip standing in for the divider is lit after the paint (PaintHeaderDividers)
+            }
+
             var lit = _litDivider is { } key && key.Equals(new DividerKey(slot.Split, slot.Index));
             slot.Control.BackgroundColor = ToColor(lit ? WorkspacePalette.RuleHover(_theme) : WorkspacePalette.Rule(_theme));
         }
@@ -200,7 +321,7 @@ internal sealed partial class SharpMUTermApp
     {
         foreach (var slot in _dividers)
         {
-            if (BoundsOf(slot.Control) is { } rect && Contains(rect, point))
+            if (AreaOf(slot) is { } rect && Contains(rect, point))
             {
                 return slot;
             }
@@ -210,14 +331,14 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>The divider occupying exactly <paramref name="area"/>, or null.</summary>
-    private DividerSlot? DividerAt(PaneRect area) => _dividers.FirstOrDefault(slot => BoundsOf(slot.Control) == area);
+    private DividerSlot? DividerAt(PaneRect area) => _dividers.FirstOrDefault(slot => AreaOf(slot) == area);
 
     /// <summary>
     /// What is at a desktop cell, as the pointer sees it. Internal so a test can ask without a mouse.
     /// </summary>
     internal PointerTarget TargetAt(System.Drawing.Point point)
     {
-        if (DividerAt(point) is { } divider && BoundsOf(divider.Control) is { } line)
+        if (DividerAt(point) is { } divider && AreaOf(divider) is { } line)
         {
             var columns = divider.Split.Direction == SplitDirection.Row;
             return new PointerTarget(

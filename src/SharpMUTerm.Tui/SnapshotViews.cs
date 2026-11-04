@@ -15,7 +15,7 @@ internal static class SnapshotViews
         "input", "logging", "password", "startup", "deletions",
         "settings-search", "settings-meters", "settings-meters-pick", "settings-changed",
         "triggers-edit", "logging-edit", "keypad-edit", "password-edit", "startup-edit",
-        "freeze", "freeze-scrollback", "spawn", "split", "move", "drag",
+        "freeze", "freeze-scrollback", "spawn", "split", "split-stacked", "move", "drag",
         "history", "history-search", "history-search-filter", "draft", "draft2",
         "menu", "menu-split", "menu-fuzzy", "menu-recent", "messages", "quit", "connections", "characters",
         "tint", "tint-input", "tint-input-moved", "tint-tabs",
