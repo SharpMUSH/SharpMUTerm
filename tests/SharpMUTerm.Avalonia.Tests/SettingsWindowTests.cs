@@ -142,7 +142,7 @@ public class SettingsWindowTests
             var rows = grid.RowDefinitions.Count;
             var now = grid.Children.OfType<TextBlock>().Where(t => Grid.GetRow(t) == 1 && Grid.GetColumn(t) == 3).Select(t => t.Text).Single();
 
-            var add = window.GetVisualDescendantsOf<Button>().Single(b => Equals(b.Content, "+ Meter"));
+            var add = window.GetVisualDescendantsOf<Button>().Single(b => Equals(b.Content, "+ Add a meter"));
             add.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             return (rows, now, window.MeterGrid!.RowDefinitions.Count);

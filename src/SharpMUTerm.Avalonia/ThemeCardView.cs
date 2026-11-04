@@ -29,7 +29,7 @@ internal sealed class ThemeCardView : Button
         BorderThickness = new Thickness(0);
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         Margin = new Thickness(0, 0, 14, 14);
-        Width = 300;
+        Width = 264;
         AutomationProperties.SetName(this, $"Use the {card.Name} theme");
         ToolTip.SetTip(this, $"Use {card.Name}");
 
@@ -46,7 +46,7 @@ internal sealed class ThemeCardView : Button
         _frame = new Border
         {
             Child = body,
-            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
             ClipToBounds = true,
             BorderThickness = new Thickness(2),
         };
@@ -64,12 +64,13 @@ internal sealed class ThemeCardView : Button
     public void SetInUse(bool inUse, NativeTokens tokens)
     {
         ArgumentNullException.ThrowIfNull(tokens);
-        _frame.Background = tokens.Brush(tokens.Raised);
-        _state.Foreground = tokens.Brush(tokens.Dim);
+        var page = tokens.Page;
+        _frame.Background = page.Brush(page.Button);
+        _state.Foreground = page.Brush(page.Dim);
         InUse = inUse;
         var kind = $"{(Card.IsDark ? "dark" : "light")} · {(Card.IsCustom ? "your own" : "built in")}";
         _state.Text = inUse ? $"In use · {kind}" : kind;
-        _frame.BorderBrush = tokens.Brush(inUse ? tokens.Accent : tokens.Edge);
+        _frame.BorderBrush = inUse ? page.Brush(page.Link) : page.Brush(page.Rule);
     }
 
     private static readonly FontFamily Mono = NativeTokens.MonoFont;

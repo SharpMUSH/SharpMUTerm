@@ -144,7 +144,7 @@ public class NativeTokenTests
     }
 
     /// <summary>
-    /// The settings window wears the tokens: its plane is the palette's card and Fluent's accent is the client's, not
+    /// The settings window wears the tokens: its plane is the page tokens' ground and Fluent's accent is the client's, not
     /// Fluent's own blue (<c>#60cdff</c>/<c>#005fb8</c>) — and it follows a Light theme the same way.
     /// </summary>
     [Test]
@@ -174,9 +174,39 @@ public class NativeTokenTests
         }, CancellationToken.None);
 
         var tokens = NativeTokens.For(theme);
-        await Assert.That(background).IsEqualTo(tokens.Card);
+        await Assert.That(background).IsEqualTo(tokens.Page.Ground).Because("a page stands on the page tokens' ground");
         await Assert.That(accent).IsEqualTo(tokens.Accent);
         await Assert.That(close).IsTrue().Because("the frame has its own close button");
+    }
+
+    /// <summary>
+    /// The page tokens are the settings mockup's on Dark, and on every built-in theme each page ink clears the floor on
+    /// every page plane it can land on (and the search mark's ink on the mark).
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task ThePageInksClearTheFloorOnEveryPagePlane(string name)
+    {
+        var page = NativeTokens.For(ThemeLibrary.Get(name)).Page;
+        static Rgb Of(Color c) => new(c.R, c.G, c.B);
+        foreach (var plane in new[] { page.Ground, page.Nav, page.Card, page.Field, page.Button, page.Popup, page.PopupSelected })
+        {
+            foreach (var ink in new[] { page.Text, page.Dim, page.Link })
+            {
+                await Assert.That(Contrast.Ratio(Of(ink), Of(plane))).IsGreaterThanOrEqualTo(NativeTokens.TextFloor)
+                    .Because($"{name}: {ink} on {plane}");
+            }
+        }
+
+        await Assert.That(Contrast.Ratio(Of(page.MarkInk), Of(page.Mark))).IsGreaterThanOrEqualTo(NativeTokens.TextFloor);
+        if (name == "Dark")
+        {
+            await Assert.That(page.Ground).IsEqualTo(Color.Parse("#10131a")).Because("the mockup's ground");
+            await Assert.That(page.Card).IsEqualTo(Color.Parse("#171b24")).Because("the mockup's card");
+            await Assert.That(page.Rule).IsEqualTo(Color.Parse("#2c3447")).Because("the mockup's rule");
+        }
     }
 
     /// <summary>

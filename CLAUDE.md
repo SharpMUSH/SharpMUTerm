@@ -2336,6 +2336,17 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     move), the tokens' card and edge, and a scrim over the main window (`SettingsPresenter.Scrim`; a press on it
     closes). Opened from the trigger builder (`SettingsForm.BesideOutput`) it is docked to the main window's right
     half with no scrim, so the line the rule came from stays in view. Still a separate OS window, not an overlay.
+  - **It is laid out as the Desktop-Settings mockup, on page tokens** (`NativeTokens.Page` → `PageTokens`, in
+    `NativeTokens.Page.cs`: ground, nav, card, rule, field, focus edge, button, popup, inks, link, search mark; the Dark
+    set is the mockup's hexes, Light mirrors it, other themes get the card's shift, every ink held to `TextFloor` on
+    every page plane; `PageTokens.Apply` lays them over `Apply` for Fluent). A 56 px header (title, search box with
+    glass and `N settings`, the scoped section's subject as *Applies to*, ✕), a 232 px nav (accent row for the section
+    in front, counts while searching, a note at its foot), a 36 px footer, and the page: a 20 px title, a line saying
+    what it shows (*Showing settings that match “x”. Show all N*, which clears the search; F5/F9's door is a link
+    there), then **one card per declared group** with its fields as rows (label in the label weight with search words
+    marked, `● Changed`, help under it; *Reset to default* link and the control on the right). A group whose name is its
+    only field's label draws no heading. List and package pages put both halves in cards. Still generated from the
+    declarations; nothing is placed by hand. Fonts are inherited (the window sets no UI family).
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

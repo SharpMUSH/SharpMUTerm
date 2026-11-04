@@ -186,25 +186,20 @@ internal sealed class PackagePageView : Grid
 
     private Grid MasterDetail(Control list, Control detail)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("260,*"), Margin = new Thickness(0, 10, 0, 0) };
-        grid.Children.Add(new Border
-        {
-            Child = list,
-            BorderThickness = new Thickness(1),
-            BorderBrush = Hairline,
-            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Margin = new Thickness(0, 0, 14, 0),
-        });
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("260,*"), Margin = new Thickness(0, 12, 0, 0) };
+        var page = _tokens.Page;
+        grid.Children.Add(ListEditorView.PageCard(list, page, new Thickness(4, 6), new Thickness(0, 0, 16, 0)));
         var scroller = new ScrollViewer { Content = detail, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        SetColumn(scroller, 1);
-        grid.Children.Add(scroller);
+        var card = ListEditorView.PageCard(scroller, page, new Thickness(16, 12, 4, 0), new Thickness(0));
+        SetColumn(card, 1);
+        grid.Children.Add(card);
         return grid;
     }
 
-    private IBrush Hairline => _tokens.Brush(_tokens.Edge);
+    private IBrush Hairline => _tokens.Page.Brush(_tokens.Page.Rule);
 
     /// <summary>A quiet line's ink, held to the floor (an opacity would not be).</summary>
-    private IBrush DimInk => _tokens.Brush(_tokens.Dim);
+    private IBrush DimInk => _tokens.Page.Brush(_tokens.Page.Dim);
 
     private IBrush Warning => _tokens.Brush(_tokens.Warn);
 
