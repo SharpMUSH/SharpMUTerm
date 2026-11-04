@@ -513,6 +513,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly Action<string>? _openUrl;
 
+    /// <summary>The host's file opener for a saved scene (<see cref="ClientHost.OpenFile"/>), or null.</summary>
+    private readonly Action<string>? _openFile;
+
     /// <summary>
     /// Where a copied selection goes, or null when this app may not reach a clipboard at all.
     /// <para>
@@ -741,6 +744,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _startedEmpty = config.Worlds.Count == 0;
         _save = save;
         _openUrl = host.OpenUrl;
+        _openFile = host.OpenFile;
         _clipboard = host.Clipboard;
         _pointer = host.Pointer;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
@@ -1990,7 +1994,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 new NoticeAction(Client.Commands.LayoutCommands.Manage, "Change layout"));
             RefusePrefix(PrefixPanel.NoSplitRefusal);
             Notice("muted.", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Sound);
-            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
+            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, action: ShowMessagesAction);
         }
 
         // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
@@ -2993,7 +2997,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             OnUi(() => Notice(
                 $"could not connect {SessionTitle(session)} — {Snippet(ex.Message)}",
                 MessageSeverity.Error,
-                "⌃P"));
+                action: ShowMessagesAction));
         }
     }
 
@@ -3585,7 +3589,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // every line of every window (see PaneLine.Plain). A world's line is read from its spans, not from the
         // markup: the markup carries the client's own decoration (a highlight's `▌ ` left rule), and a search or a
         // trigger's live test that saw it would miss `^[public]` on the very line that rule highlighted.
-        buffer.Add(new PaneLine(markup, stamp, source?.Text ?? MarkupText.Plain(markup), imageAnchor, pictures, source, bar));
+        // A chrome row (one drawn by a bar function) carries no plain text, so ⌃F never finds the client's own rows.
+        buffer.Add(new PaneLine(markup, stamp, bar is not null ? string.Empty : source?.Text ?? MarkupText.Plain(markup), imageAnchor, pictures, source, bar));
 
 
         // Cap what the pane holds, and trim its control with it. The control re-parses every line it
@@ -8503,7 +8508,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Floats: FloatRefs(),
             RaggedWraps: RaggedWraps(),
             NoDictionary: NoOwnDictionary,
-            SceneLogging: _sceneLogs.ContainsKey(ActiveWindowId()));
+            SceneLogging: _sceneLogs.ContainsKey(ActiveWindowId()),
+            NewConfiguration: _config.Worlds.Count == 0 || _config.KeyTourPending,
+            MapFound: MapFoundRooms());
     }
 
     /// <summary>
@@ -8772,6 +8779,21 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (DispatchGroupCommand(id))
         {
             return true;
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.MapWalkPrefix, StringComparison.Ordinal))
+        {
+            return WalkToFoundRoom(id[SharpMUTerm.Client.Commands.BuiltInCommands.MapWalkPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SceneOpenPrefix, StringComparison.Ordinal))
+        {
+            return OpenSavedScene(id[SceneOpenPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SceneCopyPrefix, StringComparison.Ordinal))
+        {
+            return CopySavedScenePath(id[SceneCopyPrefix.Length..]);
         }
 
         if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.JoinWrapsPrefix, StringComparison.Ordinal))
@@ -9092,6 +9114,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// afterwards, and it is echoed into the output window so a missed one is still findable.
     /// </summary>
     private void RefuseCommand(string reason) => Notice(reason, MessageSeverity.Warning, "⌃P");
+
+    /// <summary>
+    /// A failure's action: the message log, where the whole story is. In place of a bare <c>⌃P</c> chip, which named a key
+    /// and not what it would do.
+    /// </summary>
+    private static readonly NoticeAction ShowMessagesAction = new("term:messages", "Show messages");
 
     /// <summary>
     /// The task the last dispatched command started, or a completed one when it ran synchronously.
@@ -9692,7 +9720,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             if (session.State is ConnectionState.Connected or ConnectionState.Connecting)
             {
-                session.PrintSystem("*** Reconnecting...");
+                SayInSessionWindow(session, ReconnectLabel, "dialling again");
                 await session.DisconnectAsync().ConfigureAwait(false);
             }
 
@@ -9720,7 +9748,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             OnUi(() => Notice(
                 $"could not connect to {session.World.Host}:{session.World.Port} — {ex.Message}",
                 MessageSeverity.Error,
-                "⌃P"));
+                action: ShowMessagesAction));
         }
     }
 
@@ -9741,7 +9769,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // Not connected but waiting to dial again: Disconnect means "stay disconnected".
             if (CancelReconnect(session))
             {
-                session.PrintSystem("*** Stopped reconnecting.");
+                SayInSessionWindow(session, ReconnectLabel, "stopped · ⌥R dials again");
                 Notice($"stopped reconnecting {SessionTitle(session)} — ⌥R dials it", MessageSeverity.Info, "⌥R");
                 return;
             }
@@ -13856,12 +13884,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// A command the notice offers. The status row never draws it (a terminal cell is not a button, and the text
     /// already names the key); a host that draws notices natively offers it as a click (<see cref="NoticeModel"/>).
     /// </param>
-    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null, string? source = null)
+    /// <param name="toast">
+    /// False keeps the notice off a host's toast stack: the status row still says it and the message log keeps it. For a
+    /// notice the surface it answers already shows (a map edit, under the window's map inspector).
+    /// </param>
+    /// <param name="second">A second command the notice offers, after <paramref name="action"/>.</param>
+    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null, string? source = null, bool toast = true, NoticeAction? second = null)
     {
         // The same notice raised again while it is still up is one notice: it keeps the row for another few seconds and
         // is not said, toasted or announced a second time. Two identical toasts stacked in the window were the report.
         if (_notice is not null && _noticeShown is { } shown && shown.Text == text && shown.Key == key && shown.Source == source
-            && shown.Severity == NoticeSeverityOf(severity) && shown.Action == action)
+            && shown.Severity == NoticeSeverityOf(severity) && shown.Action == action && shown.Second == second)
         {
             _noticeTimer?.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
             return;
@@ -13884,13 +13917,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var model = Drawing(
             SurfaceCatalog.Notice,
             string.Empty,
-            new NoticeModel(text, NoticeSeverityOf(severity), source is null ? key : null, action, _time.GetUtcNow(), ++_noticeSequence, source));
+            new NoticeModel(text, NoticeSeverityOf(severity), source is null ? key : null, action, _time.GetUtcNow(), ++_noticeSequence, source)
+            {
+                Second = action is null ? null : second,
+            });
         var markup = NoticeMarkup(model);
 
         _notice = markup;
         _noticeShown = model;
         PaintStatus(markup);
-        PublishNotice(model);
+        if (toast)
+        {
+            PublishNotice(model);
+        }
         _noticeTimer ??= _time.CreateTimer(
             _ => OnUiThread(ClearNotice), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _noticeTimer.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
@@ -13901,6 +13940,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// that a message which dismissed itself was still recorded.
     /// </summary>
     internal ClientMessageLog Messages => _messages;
+
+    /// <summary>Lifts the notice off the row now, as its timer would; for a test reading the resting row under it.</summary>
+    internal void ClearNoticeForTest() => ClearNotice();
 
     /// <summary>Lifts the notice off the row, putting the resting line back under it.</summary>
     private void ClearNotice()
@@ -13926,7 +13968,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var scrollback = ScrollbackStatus();
         var suffix = scrollback.Length == 0 ? string.Empty : $"   {scrollback}";
-        var row = $"[dim]not connected · Graphics {Escape(_capabilities.Protocol.ToString())} · ⌃P palette · ⌃Q quit[/]{suffix}";
+        // No graphics readout: which protocol the probe chose is a startup fact (--help and the session's first line say it), and on a
+        // first run it was the one technical word on the screen.
+        var row = $"[dim]not connected · ⌃P palette · ⌃Q quit[/]{suffix}";
 
         // A client with nothing connected is still read back through, frozen and searched: the mode's keys go on
         // the end where they fit, the longest that does.
@@ -14028,6 +14072,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _prefixArmed)
         {
             Prefix = _prefixArmed ? PrefixPanel.Model(PrefixFactsNow()) : null,
+            Recording = SceneRecording,
         };
     }
 
@@ -14335,6 +14380,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (ScrollbackStatus() is { Length: > 0 } scrollback)
         {
             right.Add(scrollback);
+        }
+
+        // While a scene is being recorded (⌃P ▸ Start scene log), in any window: a three-hour scene is easy to forget.
+        // Only by a keystroke, like the mute cell below, so it needs no reserved width; and never given up for room.
+        if (SceneRecording)
+        {
+            right.Add($"[{HeldOn(ScreenPalette.Warn, WorkspacePalette.Backdrop(_theme))}]{RecordingCell}[/]");
         }
 
         // Only while muted, and only by a keystroke: nothing from the wire can make this cell appear.

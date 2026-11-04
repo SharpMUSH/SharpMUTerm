@@ -25,6 +25,7 @@ internal static class PlainHost
         {
             Name = "plain",
             OpenUrl = ExternalBrowser.Open,
+            OpenFile = ExternalBrowser.OpenFile,
             RunsInline = false,
             Audio = () => DesktopAudio.TryCreate(),
             Presence = () => new DiscordIpc(),

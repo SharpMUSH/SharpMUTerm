@@ -113,7 +113,7 @@ internal sealed class NoticeToasts : Control
     /// Runs or dismisses the toast showing notice <paramref name="sequence"/>, as a left click on it does. Internal for
     /// tests; a real click comes through <see cref="OnPointerPressed"/>.
     /// </summary>
-    internal void Click(long sequence)
+    internal void Click(long sequence, bool second = false)
     {
         var toast = _toasts.FirstOrDefault(t => t.Overlay.Notice.Sequence == sequence);
         if (toast is null)
@@ -122,7 +122,7 @@ internal sealed class NoticeToasts : Control
         }
 
         _toasts.Remove(toast);
-        if (toast.Overlay.Notice.Action is { } action)
+        if ((second ? toast.Overlay.Notice.Second : toast.Overlay.Notice.Action) is { } action)
         {
             toast.Overlay.Run(action.Command);
         }
@@ -144,7 +144,7 @@ internal sealed class NoticeToasts : Control
 
     /// <summary>The words each toast draws — its key chip, its text and its action — oldest first. Internal for tests.</summary>
     internal IReadOnlyList<string> DrawnText() =>
-        Layout().SelectMany(l => new[] { SourceText(l.Toast), ChipText(l.Toast), BodyText(l.Toast), ActionText(l.Toast) }).OfType<string>().ToList();
+        Layout().SelectMany(l => new[] { SourceText(l.Toast), ChipText(l.Toast), BodyText(l.Toast), ActionText(l.Toast), SecondText(l.Toast) }).OfType<string>().ToList();
 
     /// <summary>Whether each toast's label is a key chip (true) or a source caption (false), oldest first; null for none. Internal for tests.</summary>
     internal IReadOnlyList<bool?> LabelIsChip() =>
@@ -160,6 +160,29 @@ internal sealed class NoticeToasts : Control
     private static string BodyText(Toast toast) => NativeKeys.Words(toast.Overlay.Notice.Text);
 
     private static string? ActionText(Toast toast) => toast.Overlay.Notice.Action is { } a ? $"{NativeKeys.Words(a.Label)}  ›" : null;
+
+    // A second action (a saved scene's Copy path beside Open) sits on the same line, after the first, as its own click.
+    private static string? SecondText(Toast toast) =>
+        toast.Overlay.Notice.Action is not null && toast.Overlay.Notice.Second is { } a ? $"{NativeKeys.Words(a.Label)}  ›" : null;
+
+    /// <summary>Where a toast's second action is drawn, or an empty rect when it has none.</summary>
+    private static Rect SecondArea(Placed placed)
+    {
+        if (placed.Action is not { } action || placed.Second is not { } second)
+        {
+            return default;
+        }
+
+        var y = placed.Rect.Y + Padding + (placed.Source is null ? 0 : placed.Source.Height + 2) + placed.Text.Height + 6;
+        var x = placed.Rect.X + EdgeWidth + Padding + action.Width + SecondGap;
+        return new Rect(x - (SecondGap / 2), y - 3, second.Width + SecondGap, second.Height + 6);
+    }
+
+    /// <summary>The gap between a toast's two actions, in pixels.</summary>
+    private const double SecondGap = 20;
+
+    /// <summary>Where each toast's second action is, oldest first (empty for none). Internal for tests.</summary>
+    internal IReadOnlyList<Rect> SecondAreas() => Layout().Select(SecondArea).ToList();
 
     /// <summary>Where each toast is drawn, oldest first, in this control's coordinates. Internal for tests.</summary>
     internal IReadOnlyList<Rect> Rects() => Layout().Select(l => l.Rect).ToList();
@@ -228,7 +251,7 @@ internal sealed class NoticeToasts : Control
 
     // ── Layout ───────────────────────────────────────────────────────────────────────────────
 
-    private readonly record struct Placed(Toast Toast, Rect Rect, FormattedText Text, FormattedText? Chip, FormattedText? Action, FormattedText? Source = null);
+    private readonly record struct Placed(Toast Toast, Rect Rect, FormattedText Text, FormattedText? Chip, FormattedText? Action, FormattedText? Source = null, FormattedText? Second = null);
 
     private List<Placed> Layout()
     {
@@ -308,10 +331,13 @@ internal sealed class NoticeToasts : Control
         var textWidth = inner - (chip is null ? 0 : chip.Width + 8);
         var text = Format(BodyText(toast), TextSize, ink, bold: false, Math.Max(40, textWidth), lines: 3);
         var action = ActionText(toast) is { } a ? Format(a, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var second = action is not null && SecondText(toast) is { } b
+            ? Format(b, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, Math.Max(1, inner - action.Width - SecondGap))
+            : null;
         var source = SourceText(toast) is { } said ? Format(said.ToUpperInvariant(), ChipSize - 1, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
         var height = (2 * Padding) + text.Height + (action is null ? 0 : action.Height + 6) + (source is null ? 0 : source.Height + 2);
         var top = bottom - height;
-        return top < Inset ? null : new Placed(toast, new Rect(x, top, width, height), text, chip, action, source);
+        return top < Inset ? null : new Placed(toast, new Rect(x, top, width, height), text, chip, action, source, second);
     }
 
     private static FormattedText Format(string text, double size, Color colour, bool bold, double maxWidth, int lines = 1) =>
@@ -368,7 +394,7 @@ internal sealed class NoticeToasts : Control
 
         if (point.Properties.IsLeftButtonPressed)
         {
-            Click(hit.Toast.Overlay.Notice.Sequence);
+            Click(hit.Toast.Overlay.Notice.Sequence, SecondArea(hit).Contains(at));
         }
     }
 
@@ -390,8 +416,9 @@ internal sealed class NoticeToasts : Control
     {
         var now = _clock.Elapsed;
         var hovered = HoveredToast();
-        foreach (var (toast, rect, text, chip, action, source) in Layout())
+        foreach (var placed in Layout())
         {
+            var (toast, rect, text, chip, action, source, second) = placed;
             var palette = toast.Overlay.Palette;
             var plane = PanelText.Parse(palette.Plane);
             var edge = PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity));
@@ -432,6 +459,10 @@ internal sealed class NoticeToasts : Control
             if (action is not null)
             {
                 context.DrawText(action, new Point(rect.X + EdgeWidth + Padding, y + text.Height + 6));
+                if (second is not null)
+                {
+                    context.DrawText(second, new Point(rect.X + EdgeWidth + Padding + action.Width + SecondGap, y + text.Height + 6));
+                }
             }
         }
     }

@@ -72,4 +72,45 @@ internal static class ExternalBrowser
 
         Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
     }
+
+    /// <summary>The kinds of file <see cref="OpenFile"/> hands to the desktop: what a transcript or scene log is written as.</summary>
+    internal static readonly IReadOnlyList<string> OpenableFileExtensions = [".html", ".htm", ".txt", ".log"];
+
+    /// <summary>
+    /// Whether <paramref name="path"/> is a file this client will hand to the desktop, and its full form if so: an
+    /// absolute path to an existing regular file whose extension is one a log is written as. Never a script, a
+    /// <c>.desktop</c> entry or an executable, whatever asks — the desktop's handler for those would <em>run</em> them.
+    /// </summary>
+    internal static bool TryParseOpenableFile(string? path, out string full)
+    {
+        full = string.Empty;
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path) || path.Contains('\0'))
+        {
+            return false;
+        }
+
+        var resolved = Path.GetFullPath(path);
+        if (!OpenableFileExtensions.Contains(Path.GetExtension(resolved).ToLowerInvariant()) || !File.Exists(resolved))
+        {
+            return false;
+        }
+
+        full = resolved;
+        return true;
+    }
+
+    /// <summary>
+    /// Opens a log file the client wrote in the desktop's viewer for its kind (a browser for HTML, an editor for text),
+    /// with the same shell-execute and the same gate-in-the-launcher rule as <see cref="Open"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The path is not an existing log file (<see cref="TryParseOpenableFile"/>).</exception>
+    internal static void OpenFile(string path)
+    {
+        if (!TryParseOpenableFile(path, out var target))
+        {
+            throw new ArgumentException($"not a log file this client opens: {path}", nameof(path));
+        }
+
+        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
+    }
 }

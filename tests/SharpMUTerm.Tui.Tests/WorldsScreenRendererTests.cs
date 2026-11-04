@@ -76,9 +76,9 @@ public class WorldsScreenRendererTests
         var lines = WorldsScreenRenderer.Render(Worlds(), TriggerSets(), selectedWorld: 0, selectedCharacter: 0);
 
         await Assert.That(lines.Any(l => l.Contains("Aetherfall"))).IsTrue();
-        await Assert.That(lines.Any(l => l.Contains("2 chars"))).IsTrue();
+        await Assert.That(lines.Any(l => l.Contains("2 characters"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("Voidmoor"))).IsTrue();
-        await Assert.That(lines.Any(l => l.Contains("0 chars"))).IsTrue();
+        await Assert.That(lines.Any(l => l.Contains("0 characters"))).IsTrue();
     }
 
     [Test]

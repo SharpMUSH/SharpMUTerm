@@ -84,7 +84,11 @@ public static class CommandPaletteModel
         CommandGroup.GoTo,
         CommandGroup.World,
         CommandGroup.Terminal,
+        CommandGroup.Compose,
+        CommandGroup.Map,
+        CommandGroup.Panels,
         CommandGroup.Layout,
+        CommandGroup.Help,
         CommandGroup.Settings,
     };
 
@@ -92,9 +96,13 @@ public static class CommandPaletteModel
     public static string GroupLabel(CommandGroup group) => group switch
     {
         CommandGroup.GoTo => "GO TO",
-        CommandGroup.World => "WORLD",
+        CommandGroup.World => "CONNECTION",
         CommandGroup.Terminal => "OUTPUT",
-        CommandGroup.Layout => "LAYOUT",
+        CommandGroup.Compose => "WRITING",
+        CommandGroup.Map => "MAP",
+        CommandGroup.Panels => "PANELS",
+        CommandGroup.Layout => "WINDOWS & PANES",
+        CommandGroup.Help => "HELP & SETUP",
         CommandGroup.Settings => "SETTINGS",
         _ => group.ToString().ToUpperInvariant(),
     };
@@ -108,6 +116,15 @@ public static class CommandPaletteModel
     {
         ArgumentNullException.ThrowIfNull(state);
         var ids = new List<string>();
+
+        // A configuration that is new (no world yet, or the key tour still owed): where to start, before anything else.
+        if (state.NewConfiguration)
+        {
+            ids.Add(BuiltInCommands.HelpCommand);
+            ids.Add(BuiltInCommands.WelcomeCommand);
+            ids.Add(BuiltInCommands.ImportCommand);
+        }
+
         if (state.OutputSelected)
         {
             ids.Add("term:copy");

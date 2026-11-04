@@ -20,6 +20,70 @@ internal sealed partial class SharpMUTermApp
     /// <summary>Where each map window looks, when it is not where its character is.</summary>
     private readonly Dictionary<string, MapViewpoint> _mapLooks = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The rooms the last <c>/map find</c> listed, and whose map they are on: ⌃P's <c>Walk to …</c> entries
+    /// (<see cref="Client.Commands.BuiltInCommands.MapWalkPrefix"/>), for the run. Replaced by the next search.
+    /// </summary>
+    private (string SessionKey, IReadOnlyList<Core.Commands.FoundRoom> Rooms)? _mapFound;
+
+    /// <summary>The rooms ⌃P offers to walk to, for the catalog.</summary>
+    private IReadOnlyList<Core.Commands.FoundRoom>? MapFoundRooms() => _mapFound?.Rooms;
+
+    /// <summary>
+    /// A search's answer: a picker, not lines in the output. The rooms become ⌃P entries (<c>Walk to …</c>, the client's own
+    /// commands, run by the registry) and the palette opens listing them, so ⏎ walks — in the cells and in the window's
+    /// native palette alike, from the one model. Nothing is a link in a pane: the panes' link handler takes server text,
+    /// and a client action reached through it would be a new trust path. Where no screen is seen (<c>--plain</c>) a
+    /// modal would take the reader's typing, so the rooms are said as client rows instead (never session lines: they
+    /// reach no transcript, restore log, trigger or search).
+    /// </summary>
+    private void ShowFoundRooms(string windowId, string sessionKey, string text, IReadOnlyList<MapFoundRoom> rooms, int total)
+    {
+        _mapFound = (sessionKey, [.. rooms.Select(r => new Core.Commands.FoundRoom(r.Id, r.Name, r.Area, r.Level))]);
+        var shown = total > rooms.Count
+            ? $"the first {rooms.Count.ToString(CultureInfo.InvariantCulture)} of {total.ToString(CultureInfo.InvariantCulture)}"
+            : total.ToString(CultureInfo.InvariantCulture);
+        if (!Host.ScreenIsSeen)
+        {
+            AppendClientRow(windowId, "FIND", $"rooms matching {text} ({shown}) · /walk <number> goes there");
+            foreach (var room in rooms)
+            {
+                var where = (room.Area is { } area ? area + " · " : string.Empty) + "level " + room.Level.ToString(CultureInfo.InvariantCulture);
+                AppendClientRow(windowId, room.Id.ToString(CultureInfo.InvariantCulture), $"{room.Name} · {where}");
+            }
+
+            return;
+        }
+
+        Notice($"{shown} room{(total == 1 ? string.Empty : "s")} match {text} — ⏎ walks to one", MessageSeverity.Info, source: NoticeModel.Sources.Map, toast: false);
+        OpenMenu(Client.Commands.BuiltInCommands.MapWalkQuery);
+    }
+
+    /// <summary>⌃P ▸ <c>Walk to …</c>: walks the found room's own character there, whichever window is focused.</summary>
+    private bool WalkToFoundRoom(string id)
+    {
+        if (_mapFound is not { } found
+            || !long.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var room)
+            || !found.Rooms.Any(r => r.Id == room))
+        {
+            RefuseCommand("that room is not in the last /map find");
+            return true;
+        }
+
+        if (MapOf(found.SessionKey) is not { } map)
+        {
+            RefuseCommand("no map here: that character has no connection");
+            return true;
+        }
+
+        if (map.WalkTo(room) is { } problem)
+        {
+            Notice($"cannot walk there: {problem}.", source: NoticeModel.Sources.Map);
+        }
+
+        return true;
+    }
+
     /// <summary>The window's look callback, one instance per map window so an overlay compares equal frame to frame.</summary>
     private readonly Dictionary<string, Action<MapLook>> _mapLookers = new(StringComparer.Ordinal);
 
@@ -45,7 +109,8 @@ internal sealed partial class SharpMUTermApp
             SetMapLook(windowId, map, result.Next);
         }
 
-        Notice(result.Message + ".", result.Done ? MessageSeverity.Info : MessageSeverity.Warning, source: NoticeModel.Sources.Map);
+        // The map itself shows a level or area it moved to; only a refusal is toasted (ApplyMapEdit's rule).
+        Notice(result.Message + ".", result.Done ? MessageSeverity.Info : MessageSeverity.Warning, source: NoticeModel.Sources.Map, toast: !result.Done);
         return result.Done ? null : result.Message;
     }
 
@@ -158,25 +223,19 @@ internal sealed partial class SharpMUTermApp
             var text = words.Length > 4 ? words[4..].Trim() : string.Empty;
             if (text.Length == 0)
             {
-                AppendWindowLine(windowId, "[dim]*** use /map find <part of a room's name or area>.[/]");
+                Notice("use /map find <part of a room's name or area>.", source: NoticeModel.Sources.Map);
                 return;
             }
 
             var (rooms, total) = MapLooking.Find(map.Map, text);
             if (rooms.Count == 0)
             {
-                AppendWindowLine(windowId, $"[dim]*** no room on the map matches {Escape(text)}.[/]");
+                _mapFound = null;
+                Notice($"no room on the map matches {text}.", source: NoticeModel.Sources.Map);
                 return;
             }
 
-            var shown = total > rooms.Count ? $"the first {rooms.Count.ToString(CultureInfo.InvariantCulture)} of {total.ToString(CultureInfo.InvariantCulture)}" : total.ToString(CultureInfo.InvariantCulture);
-            AppendWindowLine(windowId, $"[dim]*** rooms matching {Escape(text)} ({shown}) · /walk <number> goes there:[/]");
-            foreach (var room in rooms)
-            {
-                var where = (room.Area is { } area ? Escape(area) + " · " : string.Empty) + "level " + room.Level.ToString(CultureInfo.InvariantCulture);
-                AppendWindowLine(windowId, $"[dim]***[/]   [bold]{room.Id.ToString(CultureInfo.InvariantCulture)}[/]  {Escape(room.Name)}  [dim]{where}[/]");
-            }
-
+            ShowFoundRooms(windowId, sessionKey, text, rooms, total);
             // The map shows the first match's area and level, so the room found is on screen.
             var first = rooms[0];
             var home = map.Recorder.CurrentRoom ?? map.Map.Rooms.Values.LastOrDefault();

@@ -20,6 +20,33 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal sealed partial class SharpMUTermApp
 {
+    /// <summary>The status row's mark while a scene records (<see cref="SceneRecording"/>).</summary>
+    internal const string RecordingCell = SharpMUTerm.Client.Chrome.HeaderModel.RecordingText;
+
+    /// <summary>A saved scene's notice action: open it.</summary>
+    internal const string SceneOpenPrefix = SharpMUTerm.Client.Commands.BuiltInCommands.SceneOpenPrefix;
+
+    /// <summary>A saved scene's notice action: copy its path.</summary>
+    internal const string SceneCopyPrefix = SharpMUTerm.Client.Commands.BuiltInCommands.SceneCopyPrefix;
+
+    /// <summary>
+    /// The files this run's scene logs were saved to, in order: what a saved notice's <c>scene:open:N</c> and
+    /// <c>scene:copy:N</c> name by index, so no path ever travels in a command id.
+    /// </summary>
+    private readonly List<string> _savedScenes = [];
+
+    /// <summary>Whether any window is being recorded as a scene: the status row's and the header's mark.</summary>
+    internal bool SceneRecording
+    {
+        get
+        {
+            lock (_sceneLogs)
+            {
+                return _sceneLogs.Count > 0;
+            }
+        }
+    }
+
     /// <summary>The scenes being recorded, by window.</summary>
     private readonly Dictionary<string, SceneLog> _sceneLogs = new(StringComparer.Ordinal);
 
@@ -86,10 +113,11 @@ internal sealed partial class SharpMUTermApp
             _sceneLogs[windowId] = log;
         }
 
+        SceneMarkChanged();
         Notice(
             $"Recording {Snippet(title)} as a scene ({(_config.SceneLog.Content == SceneLogContent.Poses ? "poses" : "every line")}) → {log.Path}",
             MessageSeverity.Info,
-            "⌃P");
+            source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Scene);
     }
 
     /// <summary>Stops the focused window's scene log, writing its ending and closing the file.</summary>
@@ -109,7 +137,101 @@ internal sealed partial class SharpMUTermApp
         }
 
         log.Stop(_time.GetLocalNow());
-        Notice($"Scene saved · {log.Lines} line{(log.Lines == 1 ? string.Empty : "s")} · {log.Path}", MessageSeverity.Info, "⌃P");
+        SceneMarkChanged();
+        _savedScenes.Add(log.Path);
+        var index = (_savedScenes.Count - 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Notice(
+            $"Scene saved · {log.Lines} line{(log.Lines == 1 ? string.Empty : "s")} · {log.Path}",
+            MessageSeverity.Info,
+            source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Scene,
+            action: new SharpMUTerm.Client.Chrome.NoticeAction(SceneOpenPrefix + index, "Open"),
+            second: new SharpMUTerm.Client.Chrome.NoticeAction(SceneCopyPrefix + index, "Copy path"));
+    }
+
+    /// <summary>Redraws the two places the recording mark is shown, after a scene starts or stops.</summary>
+    private void SceneMarkChanged()
+    {
+        RefreshHeader();
+        RefreshStatusBar();
+    }
+
+    /// <summary>The saved scene a notice action names by index, or null when the index names none this run saved.</summary>
+    private string? SavedScene(string index) =>
+        int.TryParse(index, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var at)
+        && at >= 0 && at < _savedScenes.Count ? _savedScenes[at] : null;
+
+    /// <summary>
+    /// A saved scene's <em>Open</em>: handed to the desktop's viewer through the host's file opener, and only a file under
+    /// this client's own log root — the scene folder is the only place a scene is written, and an index the client
+    /// assigned is the only way to name one, so nothing a server sent can choose what is opened.
+    /// </summary>
+    private bool OpenSavedScene(string index)
+    {
+        if (SavedScene(index) is not { } path)
+        {
+            RefuseCommand("no such saved scene");
+            return true;
+        }
+
+        if (_openFile is null)
+        {
+            RefuseCommand($"this client opens no files — the scene is at {path}");
+            return true;
+        }
+
+        if (!IsUnderLogRoot(path) || !File.Exists(path))
+        {
+            RefuseCommand($"the scene is no longer at {path}");
+            return true;
+        }
+
+        try
+        {
+            _openFile(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+        {
+            RefuseCommand($"could not open {path}: {ex.Message}");
+        }
+
+        return true;
+    }
+
+    /// <summary>A saved scene's <em>Copy path</em>, through the client's clipboard; refused out loud where there is none.</summary>
+    private bool CopySavedScenePath(string index)
+    {
+        if (SavedScene(index) is not { } path)
+        {
+            RefuseCommand("no such saved scene");
+            return true;
+        }
+
+        if (_clipboard is null)
+        {
+            RefuseCommand($"this client has no clipboard — the scene is at {path}");
+            return true;
+        }
+
+        _clipboard(path);
+        Notice($"copied {path}", MessageSeverity.Info);
+        return true;
+    }
+
+    /// <summary>Whether <paramref name="path"/> is inside this client's log root, after resolving it (no <c>..</c> escapes).</summary>
+    private bool IsUnderLogRoot(string path)
+    {
+        if (_logRoot is null)
+        {
+            return false;
+        }
+
+        var root = Path.GetFullPath(_logRoot);
+        if (!root.EndsWith(Path.DirectorySeparatorChar))
+        {
+            root += Path.DirectorySeparatorChar;
+        }
+
+        return Path.GetFullPath(path).StartsWith(root, StringComparison.Ordinal);
     }
 
     /// <summary>A line a window showed: the scene recording that window, if any, decides whether to keep it.</summary>
@@ -135,6 +257,7 @@ internal sealed partial class SharpMUTermApp
                 _sceneLogs.Remove(windowId);
             }
 
+            SceneMarkChanged();
             RefuseCommand($"the scene log stopped: {ex.Message}");
         }
     }

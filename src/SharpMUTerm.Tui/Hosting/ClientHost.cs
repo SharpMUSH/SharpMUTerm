@@ -42,6 +42,13 @@ internal sealed record ClientHost
     /// <summary>Opens an http(s) link in the desktop's browser, or null for a client that refuses and says so.</summary>
     public required Action<string>? OpenUrl { get; init; }
 
+    /// <summary>
+    /// Opens a file the client wrote (a saved scene log) in the desktop's viewer for it, or null for a client that refuses
+    /// and says so. The client checks the file is its own (under the log root); the opener refuses anything but a log's
+    /// own kinds of file (<see cref="ExternalBrowser.OpenFile"/>).
+    /// </summary>
+    public required Action<string>? OpenFile { get; init; }
+
     /// <summary>Whether to ask for terminal focus reports (<see cref="TerminalFocusWatcher"/>).</summary>
     public required bool FocusReporting { get; init; }
 
@@ -188,6 +195,7 @@ internal sealed record ClientHost
         // Win32), so a copy lands whether the client is local or on the far end of an ssh session.
         Clipboard = SharpConsoleUI.Helpers.ClipboardHelper.SetText,
         OpenUrl = ExternalBrowser.Open,
+        OpenFile = ExternalBrowser.OpenFile,
         FocusReporting = PlatformDecodesFocusReports,
         Keys = HostKeys.Terminal,
         Pointer = TerminalPointer.Create(driver),
@@ -219,6 +227,7 @@ internal sealed record ClientHost
         Capabilities = capabilities,
         Clipboard = null,
         OpenUrl = null,
+        OpenFile = null,
         FocusReporting = false,
         Keys = HostKeys.Terminal,
         Pointer = null,
@@ -282,6 +291,7 @@ internal sealed record ClientHost
         {
             Clipboard = clipboard,
             OpenUrl = openUrl,
+            OpenFile = null, // a test never opens a viewer
             FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
             Audio = null, // a test never makes a noise
             Presence = null, // nor talks to Discord

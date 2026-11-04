@@ -98,7 +98,7 @@ public class CommandPaletteModelTests
     public async Task AnEmptyQueryListsEveryGroupInItsFixedOrder()
     {
         var view = CommandPaletteModel.Build("", Items);
-        await Assert.That(Headers(view)).IsEquivalentTo(new[] { "GO TO", "OUTPUT", "LAYOUT" }, CollectionOrdering.Matching);
+        await Assert.That(Headers(view)).IsEquivalentTo(new[] { "GO TO", "OUTPUT", "WINDOWS & PANES" }, CollectionOrdering.Matching);
         await Assert.That(view.Entries.Count).IsEqualTo(Items.Length);
         await Assert.That(view.Total).IsEqualTo(Items.Length);
     }
@@ -108,7 +108,7 @@ public class CommandPaletteModelTests
     {
         var view = CommandPaletteModel.Build("lay", Items);
         await Assert.That(view.Entries[0].Item.Id).IsEqualTo("layout:layouts");
-        await Assert.That(view.Rows[0]).IsEqualTo(new PaletteHeader("LAYOUT"));
+        await Assert.That(view.Rows[0]).IsEqualTo(new PaletteHeader("WINDOWS & PANES"));
     }
 
     [Test]

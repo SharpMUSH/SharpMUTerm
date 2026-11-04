@@ -17,13 +17,9 @@ public class WorldFieldScrollTests
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
     /// <summary>Fields whose row is labelled shorter than the field's own name.</summary>
-    private static readonly Dictionary<string, string> RowLabels = new()
-    {
-        ["gmcp modules"] = "gmcp",
-        ["command stacking"] = "stacking",
-        ["capture channels"] = "channels",
-        ["highlight names"] = "names",
-    };
+    // The cell column draws every world field under its declared label (no shortened row labels), so the label the
+    // model reports is the label to look for.
+    private static readonly Dictionary<string, string> RowLabels = new();
 
     private static ConsoleKeyInfo Key(ConsoleKey key) => new('\0', key, false, false, false);
 

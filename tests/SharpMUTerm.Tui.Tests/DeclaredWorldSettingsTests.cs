@@ -56,6 +56,31 @@ public class DeclaredWorldSettingsTests
         }
     }
 
+    /// <summary>
+    /// F5's world column is drawn in the declaration's order under its group headings, with the declared labels, and ⇥
+    /// walks it in that order: the thirty-field scroll with shortened labels ("names", "channels") was the report.
+    /// </summary>
+    [Test]
+    public async Task TheCellWorldColumnIsGroupedAndLabelledAsDeclared()
+    {
+        var declared = BuiltInSettings.World.Fields.Select(f => f.Id)
+            .Where(id => !WorldsScreenRenderer.SecurityFieldOrder.Contains(id)).ToList();
+        await Assert.That(WorldsScreenRenderer.WorldFieldOrder).IsEquivalentTo(declared, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+
+        var worlds = DemoScene.Build().Worlds;
+        var column = WorldsScreenRenderer.DetailColumn(worlds, [], 0, 0, "#00f5b7").Select(MarkupText.Plain).ToList();
+        var groups = BuiltInSettings.World.Fields.Select(f => f.Group!).Distinct().ToList();
+        await Assert.That(groups.Count).IsGreaterThanOrEqualTo(5);
+        var at = groups.Select(g => column.FindIndex(l => l.Trim() == g.ToUpperInvariant())).ToList();
+        await Assert.That(at.All(i => i >= 0)).IsTrue();
+        await Assert.That(at).IsEquivalentTo(at.Order().ToList(), TUnit.Assertions.Enums.CollectionOrdering.Matching);
+
+        foreach (var label in new[] { "highlight names", "capture channels", "command stacking", "gmcp modules" })
+        {
+            await Assert.That(column.Any(l => l.TrimStart().StartsWith(label + "  ", StringComparison.Ordinal))).IsTrue().Because(label);
+        }
+    }
+
     [Test]
     public async Task TheCellScreenAndTheWindowListTheSameCharacterFields()
     {

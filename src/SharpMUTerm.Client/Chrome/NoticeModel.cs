@@ -54,7 +54,16 @@ public sealed record NoticeModel(string Text, NoticeSeverity Severity, string? K
 
         /// <summary>Imports from another client.</summary>
         public const string Import = "Import";
+
+        /// <summary>Scene logs: recording, saved.</summary>
+        public const string Scene = "Scene log";
     }
+
+    /// <summary>
+    /// A second command the notice offers, after <see cref="Action"/> (a saved scene's <em>Copy path</em> beside
+    /// <em>Open</em>); null for none, and always null without a first. Only the window offers it, as its own click.
+    /// </summary>
+    public NoticeAction? Second { get; init; }
 
     /// <summary>How long a notice holds the status row, and how long a toast stays before it fades.</summary>
     public static readonly TimeSpan Duration = TimeSpan.FromSeconds(6);

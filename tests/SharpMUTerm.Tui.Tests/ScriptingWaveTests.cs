@@ -40,11 +40,11 @@ public class ScriptingWaveTests
     }
 
     private static async Task<(SharpMUTermApp App, RecordingTelnetSession Wire)> Open(
-        AppConfiguration config, string? scriptsRoot = null, string? logRoot = null)
+        AppConfiguration config, string? scriptsRoot = null, string? logRoot = null, Action<string>? clipboard = null)
     {
         Console.SetIn(TextReader.Null);
         var wire = new RecordingTelnetSession();
-        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(120, 32), logRoot: logRoot, scriptsRoot: scriptsRoot);
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(120, 32), logRoot: logRoot, scriptsRoot: scriptsRoot, clipboard: clipboard);
         app.TelnetFactory = _ => wire;
         if (!app.DispatchCommand(CommandIds.Character(Ann)))
         {
@@ -296,6 +296,78 @@ public class ScriptingWaveTests
         finally
         {
             Directory.Delete(logs, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// While a scene records, the status row and the header model say so; the saved notice offers Open and Copy path,
+    /// both client commands naming the scene by index, and Open refuses out loud in a host that opens no files.
+    /// </summary>
+    [Test]
+    public async Task ARecordingSceneIsMarkedAndItsSavedNoticeOffersOpenAndCopyPath()
+    {
+        var logs = Directory.CreateTempSubdirectory("sharpmuterm-scene-").FullName;
+        try
+        {
+            var copied = new List<string>();
+            var (app, wire) = await Open(Config(), logRoot: logs, clipboard: copied.Add);
+            await using var _app = app;
+            await Assert.That(MarkupText.Plain(app.StatusMarkup)).DoesNotContain(SharpMUTermApp.RecordingCell);
+
+            app.DispatchCommand(BuiltInCommands.SceneStartCommand);
+            var log = app.SceneLogOf(app.ActiveWindowId())!;
+            await Assert.That(app.BuildHeaderModel().Recording).IsTrue();
+            await Assert.That(app.LastNoticeModel!.Source).IsEqualTo(SharpMUTerm.Client.Chrome.NoticeModel.Sources.Scene);
+            await Assert.That(app.LastNoticeModel!.Key).IsNull().Because("no bare chip");
+
+            // The notice covers the row for a while; once it goes, the resting row carries the mark.
+            app.ClearNoticeForTest();
+            await Assert.That(MarkupText.Plain(app.StatusMarkup)).Contains(SharpMUTermApp.RecordingCell);
+
+            wire.Receive("Ann says, \"Evening.\"\n");
+            app.DispatchCommand(BuiltInCommands.SceneStopCommand);
+            await Assert.That(app.BuildHeaderModel().Recording).IsFalse();
+            var saved = app.LastNoticeModel!;
+            await Assert.That(saved.Action!.Label).IsEqualTo("Open");
+            await Assert.That(saved.Second!.Label).IsEqualTo("Copy path");
+            await Assert.That(saved.Action.Command).DoesNotContain(logs).Because("a command id names a scene by index, never by path");
+
+            await Assert.That(app.DispatchCommand(saved.Second.Command)).IsTrue();
+            await Assert.That(copied).IsEquivalentTo(new[] { log.Path });
+
+            await Assert.That(app.DispatchCommand(saved.Action.Command)).IsTrue();
+            await Assert.That(app.StatusMarkup).Contains("opens no files");
+
+            await Assert.That(app.DispatchCommand(BuiltInCommands.SceneOpenPrefix + "7")).IsTrue();
+            await Assert.That(app.StatusMarkup).Contains("no such saved scene");
+        }
+        finally
+        {
+            Directory.Delete(logs, recursive: true);
+        }
+    }
+
+    /// <summary>The file opener's own gate: only an existing log file, never a script or a relative path.</summary>
+    [Test]
+    public async Task TheFileOpenerTakesOnlyALogFile()
+    {
+        var dir = Directory.CreateTempSubdirectory("sharpmuterm-open-").FullName;
+        try
+        {
+            var html = Path.Combine(dir, "scene.html");
+            var script = Path.Combine(dir, "launch.desktop");
+            File.WriteAllText(html, "<p>x</p>");
+            File.WriteAllText(script, "[Desktop Entry]");
+
+            await Assert.That(ExternalBrowser.TryParseOpenableFile(html, out var full)).IsTrue();
+            await Assert.That(full).IsEqualTo(html);
+            await Assert.That(ExternalBrowser.TryParseOpenableFile(script, out _)).IsFalse();
+            await Assert.That(ExternalBrowser.TryParseOpenableFile("scene.html", out _)).IsFalse();
+            await Assert.That(ExternalBrowser.TryParseOpenableFile(Path.Combine(dir, "gone.txt"), out _)).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
         }
     }
 

@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- While a scene log records, the status row shows `● REC` and the desktop window's header says so. The "scene saved"
+  notice offers Open (the scene file in your viewer; only files the client saved under its own log folder) and Copy
+  path.
+- `/map find` lists the rooms it found in Ctrl+P as "Walk to …" entries; Enter walks there.
+
 - Import worlds, characters, triggers, aliases, timers and keys from MUSHclient (.mcl), Mudlet (a profile folder,
   an XML package or a .mpackage) and TinTin++ with `/import <file>`, Ctrl+P ▸ Import from another client… or the welcome
   screen. A review shows what can act as you, what will be added and what was left out (scripts are never imported or
@@ -320,6 +325,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- F5's world page lists its fields under headings (Connection, Login & protocols, Text & input, Alerts & channels,
+  Map, Sound & layout) with their full names, in the same order in the terminal and in the desktop window.
+- Ctrl+P's OUTPUT group is split into WRITING, MAP, PANELS and HELP & SETUP. A new configuration's palette suggests
+  Help, Welcome and Import first.
+- Reconnect messages are written as a client row in the window, not as session lines, so they no longer reach
+  transcripts, the restore log, scene logs or Ctrl+F.
+- The desktop window no longer shows a toast for each map edit; failed edits still do. A connection failure's notice
+  offers Show messages instead of a bare Ctrl+P.
+- The first-run status row no longer says which graphics protocol is in use, and F5 says "1 character", not "1 chars".
 - Light theme: background tabs and one-row panels (vitals, quick bar) sit on a lighter grey, and small text on the
   settings screens is darker, so it is as easy to read as body text.
 - Desktop window: the composer's "no dictionary" chip is a button that offers to get one; in the terminal F1 names

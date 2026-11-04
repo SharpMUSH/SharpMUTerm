@@ -129,7 +129,8 @@ internal sealed partial class SharpMUTermApp
         RenderMap(windowId);
         if (entering)
         {
-            Notice("map: ←↑→↓ select · r rename · l lock · Del delete · u undo · Esc done", MessageSeverity.Info, "⌃P", source: NoticeModel.Sources.Map);
+            // Not toasted: the window's map inspector shows these as buttons; the status row says them for the cells.
+            Notice("map: ←↑→↓ select · r rename · l lock · Del delete · u undo · Esc done", MessageSeverity.Info, source: NoticeModel.Sources.Map, toast: false);
         }
     }
 
@@ -183,7 +184,10 @@ internal sealed partial class SharpMUTermApp
         }
 
         RenderMap(windowId);
-        Notice(result.Message + ".", result.Done ? MessageSeverity.Info : MessageSeverity.Warning, source: NoticeModel.Sources.Map);
+
+        // A done edit is said on the status row and not toasted: the map shows it, and so does the window's inspector, so a
+        // toast per edit only stacked over the map. A refusal is still toasted — nothing else says it.
+        Notice(result.Message + ".", result.Done ? MessageSeverity.Info : MessageSeverity.Warning, source: NoticeModel.Sources.Map, toast: !result.Done);
         return result.Done ? null : result.Message;
     }
 
