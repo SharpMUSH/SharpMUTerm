@@ -19,7 +19,12 @@ namespace SharpMUTerm.Client.Chrome;
 /// <param name="Worlds">The worlds in configuration order, each with its characters.</param>
 /// <param name="SelectedWindowId">The window in front of the focused pane, or null.</param>
 /// <param name="Collapsed">Whether the rail is the narrow strip (⌃B b) rather than the full sidebar.</param>
-public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? SelectedWindowId, bool Collapsed)
+/// <param name="Cursor">
+/// The row the keyboard is on (<see cref="KeyOf(RailRow)"/>) while the sidebar holds the keys (⌥C), or null. Both views
+/// draw it — the cell rail as a band across the row, the native sidebar as a focus ring — so a reader sees where ⏎ goes
+/// in either host.
+/// </param>
+public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? SelectedWindowId, bool Collapsed, string? Cursor = null)
 {
     /// <summary>No worlds: the sidebar of a client with nothing configured.</summary>
     public static SidebarModel Empty { get; } = new([], null, false);
@@ -39,6 +44,22 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
 
     /// <summary>The flat rows the cell rail draws (<see cref="RailModel.Build"/>).</summary>
     public IReadOnlyList<RailRow> Rows() => RailModel.Build(Worlds);
+
+    /// <summary>
+    /// A row's identity, which outlives a rebuild of the model: its kind and its click target. The kind is part of it
+    /// because a world's target is one of its characters', and the two rows are different places to stand.
+    /// </summary>
+    public static string KeyOf(RailRowKind kind, string? target) => $"{kind}|{target}";
+
+    /// <inheritdoc cref="KeyOf(RailRowKind, string?)"/>
+    public static string KeyOf(RailRow row) => KeyOf(row.Kind, row.Target);
+
+    /// <summary>
+    /// The rows the keyboard walks, in the order both views draw them: every row with a target, and while folded only
+    /// the worlds and characters, because the strip draws nothing else.
+    /// </summary>
+    public IReadOnlyList<RailRow> NavigableRows() =>
+        [.. Rows().Where(r => r.Target is not null && (!Collapsed || r.Kind is RailRowKind.World or RailRowKind.Character))];
 
     /// <summary>Where a click on a world goes: the character already in front there, else a live one, else the first.</summary>
     public static string TargetOf(RailWorld world) => RailModel.TargetFor(world);
@@ -77,6 +98,7 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
     public bool Equals(SidebarModel? other) =>
         other is not null
         && Collapsed == other.Collapsed
+        && string.Equals(Cursor, other.Cursor, StringComparison.Ordinal)
         && string.Equals(SelectedWindowId, other.SelectedWindowId, StringComparison.Ordinal)
         && Worlds.Count == other.Worlds.Count
         && Worlds.Zip(other.Worlds).All(p => SameWorld(p.First, p.Second));
@@ -86,6 +108,7 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
         var hash = new HashCode();
         hash.Add(Collapsed);
         hash.Add(SelectedWindowId);
+        hash.Add(Cursor);
         foreach (var world in Worlds)
         {
             hash.Add(world.Name);

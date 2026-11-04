@@ -38,7 +38,7 @@ internal sealed partial class SharpMUTermApp
         AppendWindowLine(MainWindowId, $"[dim]── join wraps off · as sent, wrapped at {ReflowSceneColumn}[/]");
         foreach (var row in rows)
         {
-            AppendWindowLine(MainWindowId, _formatter.ToMarkup(row));
+            AppendWindowLine(MainWindowId, row);
         }
 
         AppendWindowLine(MainWindowId, "[dim]── join wraps on · the same rows, joined[/]");
@@ -58,13 +58,13 @@ internal sealed partial class SharpMUTermApp
         {
             foreach (var ready in joiner.Push(row))
             {
-                AppendWindowLine(MainWindowId, _formatter.ToMarkup(ready));
+                AppendWindowLine(MainWindowId, ready);
             }
         }
 
         if (joiner.Flush() is { } held)
         {
-            AppendWindowLine(MainWindowId, _formatter.ToMarkup(held));
+            AppendWindowLine(MainWindowId, held);
         }
     }
 

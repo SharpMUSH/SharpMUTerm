@@ -171,6 +171,10 @@ internal static class MacroKeys
         // chord like ⌥D/⌥R/⌥F; nothing in the framework or the command line's key table takes it, and the
         // window host does not keep it for itself (HostKeys.Reserved holds ⌥⏎ and the paste chords).
         new(ConsoleModifiers.Alt, ConsoleKey.M, "opens Layouts"),
+        // The connection sidebar from the keyboard (⌃P ▸ Move into the connection sidebar). ⌥C is `ESC c`, a printable
+        // byte after ESC, so one Alt chord in the terminal; the window reports it whole and keeps nothing on it
+        // (HostKeys.Reserved is ⌥⏎ and the paste chords). C for CONNECTIONS, the sidebar's own heading.
+        new(ConsoleModifiers.Alt, ConsoleKey.C, "moves the keyboard into the connection sidebar"),
         // The character cycle. Letters and not digits because the digit row is spent (⌥N windows, ⌃B N
         // panes) and there is no third digit-bearing modifier this terminal delivers: read off a pty,
         // kitty writes ⌥⇧1 as `CSI 49;4u` and ⌃⇧N as `CSI 110;6u` — kitty-keyboard-protocol sequences

@@ -11,6 +11,7 @@ using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Layouts;
+using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Tui;
 using SharpMUTerm.Tui.Panels;
 
@@ -235,6 +236,20 @@ public class SurfaceParityTests
         await Same("sidebar: add a game", "layout-combat",
             (app, _) => app.ActivateChromeTarget(SidebarModel.AddGameTarget),
             (app, _) => app.DispatchCommand(SidebarModel.AddGameTarget));
+
+        // Sidebar: a window row's menu, Close this window — the row is brought forward, then ⌃W's command runs.
+        await Same("sidebar: row menu", "layout-combat",
+            (app, _) =>
+            {
+                var target = OtherWindow(app);
+                var menu = app.SidebarRowMenu(SidebarModel.KeyOf(RailRowKind.Window, target));
+                app.RunSidebarMenuEntry(menu.Entries.Single(e => e.Command == "layout:close").Command!);
+            },
+            (app, _) =>
+            {
+                app.DispatchRailTarget(OtherWindow(app));
+                app.DispatchCommand("layout:close");
+            });
         probed.Add(SurfaceCatalog.Sidebar);
 
         // The folded rail: the strip's fold button, and the ⌃P command beside ⌃B b.

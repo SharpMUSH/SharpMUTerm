@@ -63,6 +63,14 @@ internal sealed partial class SharpMUTermApp
     internal ChromeOverlay BuildChromeOverlay()
     {
         _chromeActivate ??= target => OnUiThread(() => ActivateChromeTarget(target));
+        _sidebarMenuRequest ??= (row, show) => OnUiThread(() =>
+        {
+            if (MainWindowInFront())
+            {
+                show(SidebarRowMenu(row));
+            }
+        });
+        _sidebarMenuRun ??= id => OnUiThread(() => RunSidebarMenuEntry(id));
         var header = BuildHeaderModel();
         var brand = FillHex(AccentPalette[2]);
         var palette = new ChromePalette(
@@ -82,7 +90,9 @@ internal sealed partial class SharpMUTermApp
             header,
             BuildSidebar(),
             palette,
-            _chromeActivate);
+            _chromeActivate,
+            _sidebarMenuRequest,
+            _sidebarMenuRun);
     }
 
     /// <summary>
@@ -167,13 +177,21 @@ internal sealed partial class SharpMUTermApp
 /// Acts on a target from <see cref="HeaderModel"/> or <see cref="Sidebar"/>; safe to call from any thread. The same
 /// instance for the life of the app, so an overlay compares equal from frame to frame.
 /// </param>
+/// <param name="RowMenu">
+/// Asks the client for a sidebar row's menu, by the row's key (<see cref="SidebarModel.KeyOf(RailRow)"/>); the client
+/// builds it on its thread and hands it to the callback, which runs there (the host marshals). Nothing is handed back
+/// while a modal of the client's is in front. Same instance for the life of the app.
+/// </param>
+/// <param name="RunRowMenu">Runs an entry of the menu <see cref="RowMenu"/> last built, by its command id; safe from any thread.</param>
 internal sealed record ChromeOverlay(
     HostChrome Drawn,
     bool Interactive,
     HeaderModel HeaderModel,
     SidebarModel Sidebar,
     ChromePalette Palette,
-    Action<string> Activate)
+    Action<string> Activate,
+    Action<string, Action<SharpMUTerm.Client.Commands.MenuModel>> RowMenu,
+    Action<string> RunRowMenu)
 {
     /// <summary>Whether <paramref name="target"/> is one this overlay offered a click on.</summary>
     public bool Offers(string target) =>

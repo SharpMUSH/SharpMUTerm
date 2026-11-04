@@ -55,13 +55,33 @@ public class NativeChromeTests
             : null,
     };
 
-    private static ChromeOverlay Overlay(Action<string> activate, bool interactive = true, bool collapsed = false, bool prefix = false) => new(
+    private static ChromeOverlay Overlay(Action<string> activate, bool interactive = true, bool collapsed = false, bool prefix = false) =>
+        Overlay(activate, Sidebar(collapsed), interactive, prefix);
+
+    /// <summary>A sidebar with more rows than the window holds: one character with forty windows.</summary>
+    private static SidebarModel LongSidebar(string? cursor = null) => new(
+        [
+            new RailWorld("Aetherfall", "aether.example", 4000, Teal,
+            [
+                new RailCharacter("Corvid", "Aetherfall.Corvid", Connected: true, Active: true, Unread: 0,
+                    [.. Enumerable.Range(1, 40).Select(i => new RailWindow($"Channel {i}", $"spawn:{i}", null, 0, i == 1, false))]),
+            ]),
+        ],
+        "spawn:1",
+        false,
+        cursor);
+
+    private static ChromeOverlay Overlay(
+        Action<string> activate, SidebarModel sidebar, bool interactive = true, bool prefix = false,
+        Action<string, Action<SharpMUTerm.Client.Commands.MenuModel>>? rowMenu = null) => new(
         HostChrome.HeaderAndRail,
         interactive,
         Header(prefix),
-        Sidebar(collapsed),
+        sidebar,
         new ChromePalette("#9d7cff", "#00f5b7", "#00f5b7", "#ffd700", "#00f5b7", "#ffaf00", "#202028", "#18181d", "#e0e0e0"),
-        activate);
+        activate,
+        rowMenu ?? ((_, show) => show(SharpMUTerm.Client.Commands.MenuModel.Empty)),
+        _ => { });
 
     [Test]
     public async Task TheHeaderAndTheSidebarSitBesideTheCellsAndNoCellIsUnderThem()
@@ -179,6 +199,113 @@ public class NativeChromeTests
         await Assert.That(clientSaw.Count).IsEqualTo(0).Because("every press, release and wheel over native chrome is the window's");
         await Assert.That(focused).IsTrue().Because("the keyboard stays with the client");
         await Assert.That(rows).IsEquivalentTo(new[] { RailRowKind.World, RailRowKind.Character, RailRowKind.Window, RailRowKind.Window, RailRowKind.Character });
+    }
+
+    /// <summary>
+    /// More rows than fit scroll under the title, with the wheel and with an overlay bar like the panes': the rows
+    /// move, the hit areas stay inside the list, and nothing reaches the client.
+    /// </summary>
+    [Test]
+    public async Task ALongSidebarScrollsWithTheWheelAndItsBarAndNothingReachesTheClient()
+    {
+        var (range, bar, wheeled, firstBefore, firstAfter, hitsInside, dragged, clientSaw) = await Run((window, view, layer, driver) =>
+        {
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }, LongSidebar()));
+            Drain();
+            window.UpdateLayout();
+            Drain();
+            var clientSaw = 0;
+            driver.MouseEvent += (_, _, _) => clientSaw++;
+            var sidebar = layer.Sidebar;
+            var range = sidebar.ScrollRange;
+            var bar = sidebar.Bar();
+            var firstBefore = sidebar.Rows[0].Kind;
+
+            var middle = sidebar.TranslatePoint(new Point(sidebar.Bounds.Width / 2, sidebar.Bounds.Height / 2), window)!.Value;
+            window.MouseWheel(middle, new Vector(0, -2));
+            Drain();
+            var wheeled = sidebar.ScrollOffset;
+            var firstAfter = sidebar.Rows[0].Kind;
+            var hitsInside = sidebar.Hits.Where(h => h.Target.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal))
+                .All(h => h.Area.Top >= bar!.Value.Zone.Top - 0.5 && h.Area.Bottom <= bar.Value.Zone.Bottom + 0.5);
+
+            // Drag the thumb to the bottom of its track.
+            var thumb = sidebar.Bar()!.Value.Thumb;
+            var from = sidebar.TranslatePoint(thumb.Center, window)!.Value;
+            var to = sidebar.TranslatePoint(new Point(thumb.Center.X, sidebar.Bounds.Height), window)!.Value;
+            window.MouseMove(from);
+            window.MouseDown(from, MouseButton.Left);
+            window.MouseMove(to);
+            window.MouseUp(to, MouseButton.Left);
+            Drain();
+            return (range, bar, wheeled, firstBefore, firstAfter, hitsInside, sidebar.ScrollOffset, clientSaw);
+        });
+
+        await Assert.That(range).IsGreaterThan(0);
+        await Assert.That(bar).IsNotNull();
+        await Assert.That(wheeled).IsGreaterThan(0).Because("the wheel scrolls the rows");
+        await Assert.That(firstBefore).IsEqualTo(RailRowKind.World);
+        await Assert.That(firstAfter).IsNotEqualTo(RailRowKind.World).Because("the world row scrolled out of the list");
+        await Assert.That(hitsInside).IsTrue().Because("a row half under the title is clickable only where it shows");
+        await Assert.That(dragged).IsEqualTo(range).Because("the thumb dragged to the end scrolls to the end");
+        await Assert.That(clientSaw).IsEqualTo(0);
+    }
+
+    /// <summary>The keyboard's row (⌥C) wears a ring and is scrolled into view, however far down the list it is.</summary>
+    [Test]
+    public async Task TheKeyboardsRowIsScrolledIntoView()
+    {
+        var key = SidebarModel.KeyOf(RailRowKind.Window, CommandIds.Window("spawn:40"));
+        var (offset, shown) = await Run((window, view, layer, driver) =>
+        {
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }, LongSidebar(key)));
+            Drain();
+            window.UpdateLayout();
+            Drain();
+            var sidebar = layer.Sidebar;
+            var row = sidebar.Rows.SingleOrDefault(r => NativeSidebar.KeyOf(r) == key);
+            return (sidebar.ScrollOffset, row is not null && row.Area.Bottom <= sidebar.Bar()!.Value.Zone.Bottom + 0.5);
+        });
+
+        await Assert.That(offset).IsGreaterThan(0);
+        await Assert.That(shown).IsTrue();
+    }
+
+    /// <summary>A right click on a row asks the client for that row's menu, by the row's key, and opens it natively.</summary>
+    [Test]
+    public async Task ARightClickOnARowOpensTheClientsMenuForThatRow()
+    {
+        var (asked, opened, entries, clientSaw) = await Run((window, view, layer, driver) =>
+        {
+            var asked = new List<string>();
+            var menu = new SharpMUTerm.Client.Commands.MenuModel([new SharpMUTerm.Client.Commands.MenuEntry("Close this window", "⌃W", "layout:close")]);
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }, Sidebar(), rowMenu: (row, show) =>
+            {
+                asked.Add(row);
+                show(menu);
+            }));
+            Drain();
+            window.UpdateLayout();
+            Drain();
+            var clientSaw = 0;
+            driver.MouseEvent += (_, _, _) => clientSaw++;
+            var chat = layer.Sidebar.Rows.Single(r => r.Window?.Id == "spawn:2");
+            var centre = layer.Sidebar.TranslatePoint(chat.Area.Center, window)!.Value;
+            window.MouseMove(centre);
+            window.MouseDown(centre, MouseButton.Right);
+            window.MouseUp(centre, MouseButton.Right);
+            Drain();
+            var opened = layer.Sidebar.OpenedMenu;
+            var entries = opened?.Items.OfType<MenuItem>().Count() ?? 0;
+            opened?.Close();
+            Drain();
+            return (asked, opened is not null, entries, clientSaw);
+        });
+
+        await Assert.That(asked).IsEquivalentTo(new[] { SidebarModel.KeyOf(RailRowKind.Window, CommandIds.Window("spawn:2")) });
+        await Assert.That(opened).IsTrue();
+        await Assert.That(entries).IsEqualTo(1);
+        await Assert.That(clientSaw).IsEqualTo(0);
     }
 
     [Test]

@@ -161,6 +161,21 @@ public class DeclaredWorldSettingsTests
         await Assert.That(saves()).IsEqualTo(1);
     }
 
+    /// <summary>Space on a theme row is ⏎, as it is the commit on a checkbox row: the cursor already previews.</summary>
+    [Test]
+    public async Task SpaceOnAThemeUsesItAsEnterDoes()
+    {
+        var (app, config, saves) = App();
+        app.DispatchCommand("screen:textansi");
+        Key(app, ConsoleKey.DownArrow);
+        Key(app, ConsoleKey.Spacebar, ' ');
+
+        await Assert.That(config.ThemeName).IsEqualTo("Light");
+        await Assert.That(app.ThemeName).IsEqualTo("Light");
+        await Assert.That(saves()).IsEqualTo(1);
+        await Assert.That(app.SettingsOpenKey).IsNotNull();
+    }
+
     [Test]
     public async Task F7OpensWithTheCursorOnTheThemeInForce()
     {

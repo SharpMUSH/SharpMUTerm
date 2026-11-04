@@ -57,9 +57,24 @@ namespace SharpMUTerm.Tui;
 /// drawn there and <see cref="Markup"/> is rebuilt from these; <see cref="Plain"/> keeps the text the
 /// server sent, so a search still finds the picture's label.
 /// </param>
+/// <param name="Source">
+/// The world's line this markup was formatted from, or null when the row is not one (client replies, a picture's
+/// rows, the numbered demo scene). Held so the colour decision is a <b>render-time</b> one, like the gutter: a theme
+/// change re-formats every line that has one against the new theme's reading plane
+/// (<c>SharpMUTermApp.RestylePaneLines</c>), where markup alone would keep the colours the old theme resolved —
+/// faint greys on a light theme until they scrolled away. A spawn window's history exists nowhere else, so it has to
+/// be kept here rather than re-read from <c>WorldSession.Scrollback</c>. For a session window the instance is usually
+/// the one the session's ring already holds, so it costs a reference.
+/// </param>
+/// <param name="Bar">
+/// For a chrome row (the restore, away, activity and search bars), how to draw it again in a given accent, so a
+/// theme change recolours the bars as well as the lines between them. Null on every other row.
+/// </param>
 internal readonly record struct PaneLine(
     string Markup,
     string? Stamp = null,
     string Plain = "",
     long ImageAnchor = 0,
-    PictureSlots? Pictures = null);
+    PictureSlots? Pictures = null,
+    Core.Text.StyledLine? Source = null,
+    Func<string, string>? Bar = null);

@@ -495,7 +495,7 @@ internal static class OptionsScreenRenderer
             ?? cards[0];
         var caption = under is null || string.Equals(under, current, StringComparison.OrdinalIgnoreCase)
             ? $"[dim]preview · {Escape(shown.Name)} · {ThemeInUse}[/]"
-            : $"[dim]preview · {Escape(shown.Name)} · ⏎ uses it, Esc keeps {Escape(current)}[/]";
+            : $"[dim]preview · {Escape(shown.Name)} · ⏎ or Space uses it, Esc keeps {Escape(current)}[/]";
         rows.Add(new OptionRow(string.Empty, null, null, Static: true, Draw: (_, _) => new string(' ', AffordanceWidth) + caption));
         for (var line = 0; line < PreviewRows; line++)
         {
