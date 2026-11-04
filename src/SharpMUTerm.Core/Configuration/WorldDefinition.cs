@@ -221,11 +221,30 @@ public sealed class WorldDefinition
     public string? CommandSeparator { get; set; }
 
     /// <summary>
-    /// Whether a line naming this world's character, or a page or a tell, asks for attention while the player is in
-    /// another window (F5 ▸ <c>alert on</c>; <see cref="Automation.AttentionMatcher"/>). Off by default. A trigger can
-    /// ask for the same with its own <c>alert</c> flag on any world.
+    /// Whether a line naming this world's character asks for attention while the player is in another window, and a
+    /// page, tell or whisper with it (F5 ▸ <c>alert on</c> ▸ <c>name &amp; pages</c>;
+    /// <see cref="Automation.AttentionMatcher"/>). Off by default: a name is said in every scene the character is in,
+    /// so a name alert is noisy and the player opts in. A trigger can ask for attention with its own <c>alert</c> flag
+    /// on any world.
     /// </summary>
     public bool AlertOnName { get; set; }
+
+    /// <summary>
+    /// Whether a page, tell or whisper to the character asks for attention while the player is in another window
+    /// (F5 ▸ <c>alert on</c> ▸ <c>pages</c>). <b>On for a world made now, off for one saved before the field existed</b>:
+    /// a page is addressed to the player and rare, so it is the alert worth having unasked, but a world the player
+    /// already set up is not changed under them — <see cref="ConfigurationMigrator"/> writes <c>false</c> into a saved
+    /// world that lacks the field, with no schema step. <see cref="AlertOnName"/> covers pages as well, as it always did.
+    /// </summary>
+    public bool AlertOnPage { get; set; } = true;
+
+    /// <summary>Whether <paramref name="reason"/> may ask for attention on this world (a trigger's flag always may).</summary>
+    public bool Alerts(Automation.AttentionReason reason) => reason switch
+    {
+        Automation.AttentionReason.Name => AlertOnName,
+        Automation.AttentionReason.Page => AlertOnPage || AlertOnName,
+        _ => true,
+    };
 
     /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
@@ -281,6 +300,7 @@ public sealed class WorldDefinition
         AutoReconnect = AutoReconnect,
         CommandSeparator = CommandSeparator,
         AlertOnName = AlertOnName,
+        AlertOnPage = AlertOnPage,
         GmcpLogin = GmcpLogin,
         DiscordPresence = DiscordPresence,
         CaptureChannels = CaptureChannels,

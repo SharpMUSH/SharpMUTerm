@@ -97,8 +97,22 @@ public static class WorldFieldValues
     /// <summary>The words for <see cref="WorldDefinition.AutoReconnect"/>.</summary>
     public static IReadOnlyList<string> ReconnectChoices { get; } = ["off", "after a drop"];
 
-    /// <summary>The words for <see cref="WorldDefinition.AlertOnName"/>.</summary>
-    public static IReadOnlyList<string> AlertChoices { get; } = ["off", "name & pages"];
+    /// <summary>
+    /// The words for <see cref="WorldDefinition.AlertOnPage"/> and <see cref="WorldDefinition.AlertOnName"/> together:
+    /// nothing, pages only (a new world's default), or the character's name as well.
+    /// </summary>
+    public static IReadOnlyList<string> AlertChoices { get; } = ["off", "pages", "name & pages"];
+
+    /// <summary>The <c>alert on</c> row's word for <paramref name="world"/>.</summary>
+    public static string AlertName(WorldDefinition world) =>
+        world.AlertOnName ? AlertChoices[2] : world.AlertOnPage ? AlertChoices[1] : AlertChoices[0];
+
+    /// <summary>Sets both alert fields from one of <see cref="AlertChoices"/>.</summary>
+    public static void SetAlert(WorldDefinition world, string choice)
+    {
+        world.AlertOnName = choice == AlertChoices[2];
+        world.AlertOnPage = choice == AlertChoices[1] || choice == AlertChoices[2];
+    }
 
     /// <summary>
     /// The words for <see cref="WorldDefinition.CommandSeparator"/>: off, or the separator itself. A closed list, so a

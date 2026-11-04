@@ -9,6 +9,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Alerts reach more of the desktop. On Linux (X11, and XWayland) the window is marked as wanting attention, so the
+  taskbar or window list highlights it until you come back. On Windows, an installed copy shows a toast as well as
+  flashing the taskbar, and the window groups with its Start menu shortcut.
+- A new world alerts you when you are paged, told or whispered to while you are in another window (F5 ▸ alert on ▸
+  pages). Alerts for your character's name stay off until you choose "name & pages", since a name comes up in every
+  scene. Worlds you already have keep the setting they had.
 - Import worlds, characters, triggers, aliases, timers and keys from MUSHclient (.mcl), Mudlet (a profile folder,
   an XML package or a .mpackage) and TinTin++ with `/import <file>`, Ctrl+P ▸ Import from another client… or the welcome
   screen. A review shows what can act as you, what will be added and what was left out (scripts are never imported or

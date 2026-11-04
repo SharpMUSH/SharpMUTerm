@@ -35,6 +35,8 @@ internal static class Program
             return 0;
         }
 
+        // The taskbar groups the window under the id its installed shortcut carries, and a toast is shown under it.
+        WindowsAppId.Adopt();
         App.Options = options;
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(options.ClientArgs);
     }

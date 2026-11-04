@@ -75,6 +75,20 @@ arguments of its own. The link itself is read as server text (`TelnetLink`): hos
 name or password, no path, no command. A running client is handed the link over a socket in
 `$XDG_RUNTIME_DIR/sharpmuterm/` (or beside `config.json`), and the new launch exits.
 
+### Alerts and the AppUserModelID
+
+The window takes the AppUserModelID `SharpMUTerm.Window` at start (`SetCurrentProcessExplicitAppUserModelID`), and
+the installer gives its Start menu and desktop shortcuts the same id and writes
+`Software\Classes\AppUserModelId\SharpMUTerm.Window` (`DisplayName`, and `IconUri` pointing at the installed
+`sharpmuterm.png`) under `HKA`, removed on uninstall. That key is what Windows needs before it shows a toast under the
+id, and its presence is how the window knows it may: an alert then shows a toast (through Windows PowerShell 5.1's
+WinRT `ToastNotificationManager`, the text base64-encoded inside the script) as well as flashing the taskbar. A copy
+run from the `.zip` has no key and only flashes. The program never writes the key itself. **Built, never run on
+Windows**: neither the toast nor the shortcut's id has been seen on a desktop.
+
+Linux needs nothing from the package: `notify-send` and, on X11, the window's urgency hint. macOS uses
+`/usr/bin/osascript`, which files the notification under Script Editor and asks once whether to allow it.
+
 ### Passwords
 
 Character passwords go to the system's credential store when there is one that answers: Windows Credential Manager

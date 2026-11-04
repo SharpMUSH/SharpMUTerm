@@ -2985,8 +2985,19 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   with F5 ▸ `alert on` a line naming the character (whole word, not the line's first) or paging/telling/whispering
   them (`WorldSession.AttentionRequested`, raised after the line is shown, never for a prompt or a gagged line). The
   client asks only with F7 ▸ `alert when away` on, the host not in front, and one per 10 s. The window
-  (`WindowAttention`, `DesktopAlert`) knows its focus: Windows flashes the taskbar, macOS `osascript`, Linux
-  `notify-send`, all argv, errors swallowed. A terminal cannot tell focus-out, so `TerminalAttention.Focused` is null:
+  (`WindowAttention`, `DesktopAlert`, which decides through an `IDesktopNative` seam tests fake) knows its focus.
+  Windows: `FlashWindowEx`, plus a toast only where the installer registered the AUMID `SharpMUTerm.Window`
+  (`HKA\Software\Classes\AppUserModelId\…`; the shortcuts carry it too; the process adopts it in `Program`),
+  shown by `powershell.exe -EncodedCommand` reaching WinRT (`net10.0` has no WinRT), the text base64 inside a fixed
+  script; built, never run on Windows. macOS: `/usr/bin/osascript`, argv; never run. Linux: `notify-send`, and on an
+  `XID` handle the urgency hint (`X11Urgency`: `WM_HINTS` UrgencyHint and `_NET_WM_STATE_DEMANDS_ATTENTION` via a
+  root client message, own Xlib connection, 64-bit only), taken back on `Activated`. Seen under Xvfb + openbox (a
+  page from a fake server sets both, activation clears both); Avalonia has no Wayland back end, so Wayland is
+  XWayland's mapping of the hint, untried. **Page alerts are on for a new world, name alerts off**
+  (`WorldDefinition.AlertOnPage = true`, `AlertOnName` false and still covering pages; F5 ▸ `alert on`: off / pages /
+  name & pages): a page is addressed to the player, a name comes up in every scene. A saved world lacking the field
+  gets `false` at load (`ConfigurationMigrator.AdoptPageAlerts`, every load, no schema step), so nobody's existing
+  world changes. A terminal cannot tell focus-out, so `TerminalAttention.Focused` is null:
   kitty gets OSC 99 with `o=unfocused` (kitty filters), WezTerm/Ghostty/foot OSC 777, anything else BEL, and those last
   two only after 30 s with no input (`AwayAfter`). Text is stripped of control characters and base64'd for OSC 99.
   While a host that knows its focus is behind, the title leads with the count of lines that arrived (`(3) …`,

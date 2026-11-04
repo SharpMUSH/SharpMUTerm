@@ -45,13 +45,20 @@ internal sealed class MainWindow : Window
         _driver.TitleBar.Changed += title => Dispatcher.UIThread.Post(() => Title = title);
 
         // Whether the window is in front decides whether an alert is shown at all, and the title's unread count.
-        Activated += (_, _) => _driver.Attention.SetFocused(true);
+        // Activation also takes back an X11 urgency hint the alert set (DesktopAlert).
+        var alert = DesktopAlert.ForThisMachine();
+        Activated += (_, _) =>
+        {
+            _driver.Attention.SetFocused(true);
+            alert.Clear();
+        };
         Deactivated += (_, _) => _driver.Attention.SetFocused(false);
         _driver.Attention.Requested += request => Dispatcher.UIThread.Post(() =>
         {
             if (!IsActive)
             {
-                DesktopAlert.Show(request, TryGetPlatformHandle()?.Handle);
+                var handle = TryGetPlatformHandle();
+                alert.Show(request, handle?.Handle, handle?.HandleDescriptor);
             }
         });
         _driver.Settings.Owner = this;

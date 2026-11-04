@@ -110,7 +110,7 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.CommandSeparator"/>, as one of <see cref="SeparatorChoices"/>.</summary>
     internal const int StackingField = 18;
 
-    /// <summary><see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
+    /// <summary><see cref="WorldDefinition.AlertOnPage"/> and <see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
     internal const int AlertOnField = 19;
 
     /// <summary><see cref="WorldDefinition.CaptureChannels"/>, as one of <see cref="ChannelCaptureChoices"/>.</summary>
@@ -1093,8 +1093,8 @@ internal static class WorldsScreenRenderer
                 selectedWorld,
                 StackingField)),
             WorldField("alert on", Field(
-                world.AlertOnName
-                    ? $"[{Value}]{AlertChoices[1]}[/]"
+                world.AlertOnName || world.AlertOnPage
+                    ? $"[{Value}]{WorldFieldValues.AlertName(world)}[/]"
                     : $"[{Label}]{AlertChoices[0]} · alert triggers only[/]",
                 cursor,
                 selectedWorld,

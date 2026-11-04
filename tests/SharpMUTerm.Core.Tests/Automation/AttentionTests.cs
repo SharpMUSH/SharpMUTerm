@@ -43,10 +43,11 @@ public class AttentionTests
         await Assert.That(throttle.TryTake()).IsTrue();
     }
 
-    private static async Task<(FakeTelnetSession Telnet, List<AttentionEventArgs> Raised)> Open(bool alertOnName, Trigger? trigger = null)
+    private static async Task<(FakeTelnetSession Telnet, List<AttentionEventArgs> Raised)> Open(
+        bool alertOnName, Trigger? trigger = null, bool alertOnPage = false)
     {
         var telnet = new FakeTelnetSession();
-        var world = new WorldDefinition { Name = "Aetherfall", Host = "h", Port = 1, AlertOnName = alertOnName };
+        var world = new WorldDefinition { Name = "Aetherfall", Host = "h", Port = 1, AlertOnName = alertOnName, AlertOnPage = alertOnPage };
         var set = new TriggerSet { Name = "s" };
         if (trigger is not null)
         {
@@ -86,11 +87,61 @@ public class AttentionTests
     }
 
     [Test]
+    public async Task AWorldWithPageAlertsIsToldOfAPageAndNotOfAMention()
+    {
+        var (telnet, raised) = await Open(alertOnName: false, alertOnPage: true);
+
+        telnet.EmitLine("Rivane nods to Corvid.");
+        telnet.EmitLine("Rivane tells you 'hi'");
+
+        await Assert.That(raised.Select(e => e.Reason)).IsEquivalentTo([AttentionReason.Page]);
+    }
+
+    [Test]
+    public async Task ANewWorldAlertsOnPagesAndNotOnTheName()
+    {
+        var world = new WorldDefinition();
+
+        await Assert.That(world.AlertOnPage).IsTrue();
+        await Assert.That(world.AlertOnName).IsFalse();
+        await Assert.That(world.Alerts(AttentionReason.Page)).IsTrue();
+        await Assert.That(world.Alerts(AttentionReason.Name)).IsFalse();
+        await Assert.That(world.Alerts(AttentionReason.Trigger)).IsTrue();
+
+        // The name rule covers pages, as it did before pages had a field of their own.
+        world.AlertOnPage = false;
+        world.AlertOnName = true;
+        await Assert.That(world.Alerts(AttentionReason.Page)).IsTrue();
+    }
+
+    [Test]
+    public async Task AWorldSavedBeforePageAlertsKeepsWhatItHad()
+    {
+        const string json = """
+            { "version": 5, "worlds": [
+              { "name": "Old", "host": "h", "port": 1 },
+              { "name": "Named", "host": "h", "port": 2, "alertOnName": true },
+              { "name": "New", "host": "h", "port": 3, "alertOnPage": true } ] }
+            """;
+
+        var config = ConfigurationStore.Deserialize(json);
+
+        await Assert.That(config.Worlds.Select(w => w.AlertOnPage)).IsEquivalentTo([false, false, true]);
+        await Assert.That(config.Worlds[1].Alerts(AttentionReason.Page)).IsTrue();
+
+        // A world made now and saved comes back with page alerts on.
+        var saved = new AppConfiguration();
+        saved.Worlds.Add(new WorldDefinition { Name = "Fresh", Host = "h", Port = 4 });
+        var reloaded = ConfigurationStore.Deserialize(ConfigurationStore.Serialize(saved));
+        await Assert.That(reloaded.Worlds[0].AlertOnPage).IsTrue();
+    }
+
+    [Test]
     public async Task TheAlertFlagIsCopiedWithTheRule()
     {
         var trigger = new Trigger { Name = "t", Pattern = "x", Actions = { Alert = true } };
         await Assert.That(trigger.Clone().Actions.Alert).IsTrue();
-        await Assert.That(new WorldDefinition { AutoReconnect = true, CommandSeparator = ";", AlertOnName = true }.Clone() is
-            { AutoReconnect: true, CommandSeparator: ";", AlertOnName: true }).IsTrue();
+        await Assert.That(new WorldDefinition { AutoReconnect = true, CommandSeparator = ";", AlertOnName = true, AlertOnPage = false }.Clone() is
+            { AutoReconnect: true, CommandSeparator: ";", AlertOnName: true, AlertOnPage: false }).IsTrue();
     }
 }

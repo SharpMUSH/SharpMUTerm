@@ -1088,9 +1088,12 @@ public sealed class WorldSession : IAsyncDisposable
         // Asked for by a rule (shown or not: the rule said so), or by the world for a line that mentions the
         // character or pages them — only a line someone will see, and never a prompt.
         var shownSomewhere = result.RouteMain || !suppress || result.SpawnTargets.Count > 0;
-        var reason = result.Matched.Any(t => t.Actions.Alert)
+        AttentionReason? reason = result.Matched.Any(t => t.Actions.Alert)
             ? AttentionReason.Trigger
-            : World.AlertOnName && shownSomewhere && !isPrompt ? AttentionMatcher.Classify(shown.Text, Character?.Name) : null;
+            : (World.AlertOnName || World.AlertOnPage) && shownSomewhere && !isPrompt
+                && AttentionMatcher.Classify(shown.Text, Character?.Name) is { } matched && World.Alerts(matched)
+                ? matched
+                : null;
         if (reason is { } why)
         {
             AttentionRequested?.Invoke(this, new AttentionEventArgs(why, shown.Text));
