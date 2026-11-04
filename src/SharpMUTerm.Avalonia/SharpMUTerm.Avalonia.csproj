@@ -21,6 +21,7 @@
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Simple" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="SharpConsoleUI" />
   </ItemGroup>
 

@@ -1,6 +1,8 @@
 using SharpMUTerm.Client.Contributions;
 using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
+using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Tui;
 
@@ -55,6 +57,12 @@ internal sealed partial class SharpMUTermApp
             return true;
         }
 
+        // A declared section is the host's own settings window where the host has one.
+        if (TryOpenNativeSettings(match.Section))
+        {
+            return true;
+        }
+
         if (!Enum.TryParse<ConsoleKey>(match.Section.Key, out var key)
             || SettingsScreens().FirstOrDefault(s => s.Key == key) is not { Open: not null } screen)
         {
@@ -78,6 +86,86 @@ internal sealed partial class SharpMUTermApp
         "input" => OptionsScreenRenderer.IndexOf(InputProjection(), field),
         _ => null,
     };
+
+    /// <summary>
+    /// Opens the settings screen on <paramref name="key"/>: the host's own settings window when the host has one and
+    /// the screen's section declares its fields, otherwise the cell screen, toggled as it always was. Every way in —
+    /// the F-key, ⌃P's SETTINGS entries — comes through here, so a window host's F7 never shows the cell overlay.
+    /// </summary>
+    private void OpenSettingsScreen(ConsoleKey key, Func<ScreenBinding> open)
+    {
+        var name = key.ToString();
+        var section = _contributions.SettingsSections.Ordered
+            .FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.Ordinal));
+        if (!TryOpenNativeSettings(section))
+        {
+            _settings.Toggle(key, open);
+        }
+    }
+
+    /// <summary>
+    /// Shows <paramref name="section"/> in the host's settings window, closing any cell screen first; false when the
+    /// host has none (the terminal, the snapshot, the tests) or the section declares no fields, which keep their
+    /// cell screens.
+    /// </summary>
+    private bool TryOpenNativeSettings(SettingsSectionContribution? section)
+    {
+        if (Host.NativeSettings is not { } native || section is null || !SettingsForm.IsDeclared(section))
+        {
+            return false;
+        }
+
+        _settings.CloseAll();
+        native.Show(NativeSettingsForm(section.Id));
+        return true;
+    }
+
+    /// <summary>
+    /// The declared settings as a form a host draws natively, opening on <paramref name="initial"/>. Every change it
+    /// makes goes through a <see cref="ScreenEdits"/> over <see cref="SaveConfiguration"/> — the cell screens' own
+    /// funnel — on this thread, so it is saved and reaches the bars and live sessions exactly as an F7 edit does. The
+    /// meter table reads the game data of the window focused when the form opened (<see cref="SettingsGameData"/>),
+    /// captured here because the store is thread-safe and the focus is not.
+    /// </summary>
+    internal SettingsForm NativeSettingsForm(string initial)
+    {
+        var edits = new ScreenEdits(SaveConfiguration);
+        var data = SettingsGameData();
+        SettingsForm? form = null;
+        form = new SettingsForm(
+            _contributions.SettingsSections.Ordered,
+            _config,
+            change => OnUiThread(() =>
+            {
+                edits.Apply(change);
+                form?.NotifyChanged();
+            }),
+            id => OnUiThread(() => OpenSectionScreen(id)),
+            initial,
+            ThemeIsDark(),
+            () => OptionsScreenRenderer.ReceivedPaths(data).Select(r => new ReceivedValue(r.Path, r.Value)).ToList(),
+            meter => OptionsScreenRenderer.NowText(meter, data));
+        return form;
+    }
+
+    /// <summary>
+    /// The settings window's way to a section it cannot draw: close the window and open that section's own screen.
+    /// </summary>
+    private void OpenSectionScreen(string id)
+    {
+        Host.NativeSettings?.Close();
+        if (_contributions.SettingsSections.Find(id) is { } section)
+        {
+            GoToSetting(new SettingsMatch(section, null, section.Title, -1, 0));
+        }
+    }
+
+    /// <summary>Whether the client's theme is a dark one: its default background is darker than mid-grey.</summary>
+    private bool ThemeIsDark()
+    {
+        var bg = _theme.Resolve(TerminalColor.Default, isBackground: true);
+        return (0.2126 * bg.R) + (0.7152 * bg.G) + (0.0722 * bg.B) < 128;
+    }
 
     /// <summary>Whether the settings search is up, for a test.</summary>
     internal bool SettingsSearchIsOpen => _settings.IsSearching;

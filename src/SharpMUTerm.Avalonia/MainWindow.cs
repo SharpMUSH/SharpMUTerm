@@ -40,6 +40,7 @@ internal sealed class MainWindow : Window
         _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily);
 
         Title = "SharpMUTerm";
+        _driver.Settings.Owner = this;
 
         // The window's own pop-ups (tooltips, the right-click menu) follow the client's theme: a light menu
         // over a dark client reads as somebody else's.

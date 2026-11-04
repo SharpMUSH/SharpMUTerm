@@ -6878,7 +6878,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 if (!ComposerIsInTheWay("a settings screen"))
                 {
-                    _settings.Toggle(key, open);
+                    OpenSettingsScreen(key, open);
                 }
 
                 return true;
@@ -8376,7 +8376,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var view = id[ScreenCommandPrefix.Length..];
             if (SettingsScreens().FirstOrDefault(s => s.Views[0] == view) is { Open: not null } screen)
             {
-                _settings.Toggle(screen.Key, screen.Open);
+                OpenSettingsScreen(screen.Key, screen.Open);
                 return true;
             }
 

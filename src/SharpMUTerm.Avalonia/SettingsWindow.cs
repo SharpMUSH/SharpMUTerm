@@ -1,0 +1,720 @@
+using System.Globalization;
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
+using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Configuration;
+
+namespace SharpMUTerm.Avalonia;
+
+/// <summary>
+/// The desktop's settings window, generated from the declared sections (<see cref="SettingsForm"/>): a search box,
+/// the sections down the left with match counts while searching, and the chosen section's fields on the right under
+/// their group headings — each with its label, its help, the native control for its kind, a dot while it differs
+/// from its default and a reset beside it. The meters are a table with a live <c>now</c> column and the paths this
+/// connection has received to pick from.
+/// <para>
+/// Nothing here writes the configuration: every change goes to the form, which commits it through the client's own
+/// save funnel on the client's thread. Changes apply as they are made; there is no OK and no Cancel, as there is
+/// none on a cell screen. A section that declares no fields is listed and opens its own cell screen.
+/// </para>
+/// </summary>
+internal sealed class SettingsWindow : Window
+{
+    private readonly TextBox _search;
+    private readonly ListBox _sections;
+    private readonly StackPanel _page;
+    private readonly ScrollViewer _scroller;
+    private readonly List<Action> _refreshers = [];
+    private readonly DispatcherTimer _clock;
+    private readonly Dictionary<string, Control> _controls = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Button> _resets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TextBlock> _badges = new(StringComparer.Ordinal);
+    private readonly List<(StatusMeter Meter, TextBlock Now)> _meterNow = [];
+    private SettingsForm _form;
+    private IReadOnlyList<SettingsMatch> _matches = [];
+    private string? _shown;
+    private bool _syncing;
+    private bool _choosing;
+    private int _meterRows = -1;
+
+    public SettingsWindow(SettingsForm form)
+    {
+        _form = form;
+        Title = "Settings";
+        Width = 960;
+        Height = 680;
+        MinWidth = 640;
+        MinHeight = 420;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Styles.Add(new FluentTheme());
+
+        _search = new TextBox { PlaceholderText = "Search settings", Margin = new Thickness(16, 14, 16, 10) };
+        AutomationProperties.SetName(_search, "Search settings");
+        _search.TextChanged += (_, _) => OnQuery();
+        DockPanel.SetDock(_search, Dock.Top);
+
+        _sections = new ListBox { Width = 250, Margin = new Thickness(8, 0, 0, 12), Background = Brushes.Transparent };
+        _sections.SelectionChanged += (_, _) => OnSectionChosen();
+        DockPanel.SetDock(_sections, Dock.Left);
+
+        _page = new StackPanel { Margin = new Thickness(28, 4, 28, 28), Spacing = 2 };
+        _scroller = new ScrollViewer { Content = _page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+
+        var dock = new DockPanel { LastChildFill = true };
+        dock.Children.Add(_search);
+        dock.Children.Add(_sections);
+        dock.Children.Add(_scroller);
+        Content = dock;
+
+        _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());
+        Opened += (_, _) => _clock.Start();
+        Closed += (_, _) =>
+        {
+            _clock.Stop();
+            _form.Changed -= OnChanged;
+        };
+        KeyDown += OnKey;
+
+        Load(form);
+    }
+
+    /// <summary>The section on the right, by id.</summary>
+    public string? ShownSection => _shown;
+
+    /// <summary>The ids of the fields drawn on the right, in order, for a test.</summary>
+    public IReadOnlyList<string> ShownFields { get; private set; } = [];
+
+    /// <summary>The control drawn for each field on the right, by field id, for a test.</summary>
+    public IReadOnlyDictionary<string, Control> FieldControls => _controls;
+
+    /// <summary>The reset button of each field on the right, by field id, for a test.</summary>
+    public IReadOnlyDictionary<string, Button> ResetButtons => _resets;
+
+    /// <summary>What each section's row says beside its title — its match count while searching — by id, for a test.</summary>
+    public IReadOnlyDictionary<string, string> SectionBadges =>
+        _badges.ToDictionary(b => b.Key, b => b.Value.Text ?? string.Empty, StringComparer.Ordinal);
+
+    /// <summary>The search box.</summary>
+    public TextBox SearchBox => _search;
+
+    /// <summary>The section list.</summary>
+    public ListBox SectionList => _sections;
+
+    /// <summary>The meter table, for a test: a heading row and one row per meter.</summary>
+    public Grid? MeterGrid { get; private set; }
+
+    /// <summary>Shows <paramref name="form"/>, on its initial section, replacing the form shown before.</summary>
+    public void Load(SettingsForm form)
+    {
+        _form.Changed -= OnChanged;
+        _form = form;
+        _form.Changed += OnChanged;
+        RequestedThemeVariant = form.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        _shown = null;
+        _matches = _form.Search(_search.Text);
+        BuildSectionList();
+        Choose(form.Section(form.Initial) is { } initial && SettingsForm.IsDeclared(initial)
+            ? initial.Id
+            : form.Sections.FirstOrDefault(SettingsForm.IsDeclared)?.Id);
+    }
+
+    // ── the section list ─────────────────────────────────────────────────────────────────────────
+
+    private IEnumerable<ListBoxItem> Items => _sections.ItemsSource as IEnumerable<ListBoxItem> ?? [];
+
+    private void BuildSectionList()
+    {
+        _badges.Clear();
+        var items = new List<ListBoxItem>();
+        foreach (var section in _form.Sections)
+        {
+            var title = new TextBlock { Text = section.Title, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            var badge = new TextBlock { Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            _badges[section.Id] = badge;
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            row.Children.Add(title);
+            Grid.SetColumn(badge, 1);
+            row.Children.Add(badge);
+            var item = new ListBoxItem { Content = row, Tag = section.Id, Padding = new Thickness(12, 9) };
+            ToolTip.SetTip(item, SettingsForm.IsDeclared(section) ? section.Key : $"Opens the {section.Key} screen");
+            items.Add(item);
+        }
+
+        _choosing = true;
+        _sections.ItemsSource = items;
+        _choosing = false;
+        UpdateBadges();
+    }
+
+    private void UpdateBadges()
+    {
+        var counts = SettingsSearch.CountBySection(_matches);
+        var searching = Searching;
+        foreach (var section in _form.Sections)
+        {
+            var count = counts.GetValueOrDefault(section.Id);
+            _badges[section.Id].Text = searching
+                ? count.ToString(CultureInfo.InvariantCulture)
+                : SettingsForm.IsDeclared(section) ? string.Empty : "↗";
+            if (Items.FirstOrDefault(i => Equals(i.Tag, section.Id)) is { } item)
+            {
+                item.Opacity = searching && count == 0 ? 0.45 : 1;
+            }
+        }
+    }
+
+    private void OnSectionChosen()
+    {
+        if (_choosing || _sections.SelectedItem is not ListBoxItem { Tag: string id } || _form.Section(id) is not { } section)
+        {
+            return;
+        }
+
+        if (!SettingsForm.IsDeclared(section))
+        {
+            // Not drawn here yet: its own screen is the way to it, and this window gets out of its way.
+            Select(_shown);
+            _form.OpenScreen(id);
+            return;
+        }
+
+        if (!string.Equals(id, _shown, StringComparison.Ordinal))
+        {
+            Choose(id);
+        }
+    }
+
+    private void Choose(string? id)
+    {
+        _shown = id;
+        Select(id);
+        BuildPage();
+    }
+
+    private void Select(string? id)
+    {
+        _choosing = true;
+        _sections.SelectedItem = Items.FirstOrDefault(i => Equals(i.Tag, id));
+        _choosing = false;
+    }
+
+    // ── search ───────────────────────────────────────────────────────────────────────────────────
+
+    private bool Searching => !string.IsNullOrWhiteSpace(_search.Text);
+
+    private void OnQuery()
+    {
+        _matches = _form.Search(_search.Text);
+        UpdateBadges();
+        if (Searching
+            && !_matches.Any(m => m.Field is not null && m.Section.Id == _shown)
+            && _matches.FirstOrDefault(m => m.Field is not null) is { } first)
+        {
+            // The section on show has nothing matching: go to the first that has.
+            Choose(first.Section.Id);
+            return;
+        }
+
+        BuildPage();
+    }
+
+    // ── the page ─────────────────────────────────────────────────────────────────────────────────
+
+    private void BuildPage()
+    {
+        _page.Children.Clear();
+        _refreshers.Clear();
+        _controls.Clear();
+        _resets.Clear();
+        _meterNow.Clear();
+        MeterGrid = null;
+        _meterRows = -1;
+        if (_shown is null || _form.Section(_shown) is not { } section)
+        {
+            ShownFields = [];
+            return;
+        }
+
+        _page.Children.Add(new TextBlock { Text = section.Title, FontSize = 24, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 2) });
+        if (section.Key is { } key)
+        {
+            _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Opacity = 0.7, Margin = new Thickness(0, 0, 0, 6) });
+        }
+
+        var visible = Searching
+            ? section.Fields.Where(f => _matches.Any(m => ReferenceEquals(m.Field, f))).ToList()
+            : section.Fields.ToList();
+        if (visible.Count == 0)
+        {
+            _page.Children.Add(new TextBlock { Text = "No setting here matches the search.", Opacity = 0.7, Margin = new Thickness(0, 16, 0, 0) });
+        }
+
+        string? group = null;
+        foreach (var field in visible)
+        {
+            if (field.Group is { } heading && !string.Equals(heading, group, StringComparison.Ordinal))
+            {
+                group = heading;
+                _page.Children.Add(new TextBlock
+                {
+                    Text = heading,
+                    FontSize = 15,
+                    FontWeight = FontWeight.SemiBold,
+                    Margin = new Thickness(0, 18, 0, 4),
+                    Foreground = Accent,
+                });
+            }
+
+            _page.Children.Add(field is ListField { Id: BuiltInSettings.MetersField } meters ? MeterTable(meters) : FieldRow(field));
+        }
+
+        ShownFields = visible.Select(f => f.Id).ToList();
+    }
+
+    /// <summary>The accent the changed dot and headings wear: Fluent's own, for the theme variant.</summary>
+    private SolidColorBrush Accent => new(_form.IsDark ? Color.Parse("#60cdff") : Color.Parse("#005fb8"));
+
+    /// <summary>One field: label and help on the left, its control, then the changed dot and the reset.</summary>
+    private Grid FieldRow(SettingsField field)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 4), MinHeight = 44 };
+
+        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1, Margin = new Thickness(0, 0, 16, 0) };
+        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 14, TextWrapping = TextWrapping.Wrap });
+        if (field.Help is { } help)
+        {
+            words.Children.Add(new TextBlock { Text = Capitalise(help), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+        }
+
+        grid.Children.Add(words);
+
+        var control = ControlFor(field);
+        control.VerticalAlignment = VerticalAlignment.Center;
+        AutomationProperties.SetName(control, field.Label);
+        Grid.SetColumn(control, 1);
+        grid.Children.Add(control);
+        _controls[field.Id] = control;
+
+        grid.Children.Add(ChangedMark(field, column: 2));
+        return grid;
+    }
+
+    /// <summary>The dot and reset button for <paramref name="field"/>, shown only while it differs from its default.</summary>
+    private StackPanel ChangedMark(SettingsField field, int column)
+    {
+        var dot = new Ellipse { Width = 8, Height = 8, Fill = Accent, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 8, 0) };
+        ToolTip.SetTip(dot, "Changed from its default");
+        var reset = new Button { Content = "Reset", Padding = new Thickness(10, 3), VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(reset, $"Back to the default: {SettingsForm.DefaultText(field)}");
+        AutomationProperties.SetName(reset, $"Reset {field.Label}");
+        reset.Click += (_, _) => _form.Reset(field);
+        _resets[field.Id] = reset;
+
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, MinWidth = 100 };
+        panel.Children.Add(dot);
+        panel.Children.Add(reset);
+        Grid.SetColumn(panel, column);
+
+        void Refresh()
+        {
+            var changed = !_form.IsDefault(field);
+            dot.Opacity = changed ? 1 : 0;
+            reset.IsVisible = changed;
+        }
+
+        Refresh();
+        _refreshers.Add(Refresh);
+        return panel;
+    }
+
+    /// <summary>The native control for a field's kind, wired to the form and refreshed from it.</summary>
+    private Control ControlFor(SettingsField field)
+    {
+        switch (field)
+        {
+            case BoolField when field.Binding is SettingBinding<bool> flag:
+            {
+                var toggle = new ToggleSwitch { OnContent = "On", OffContent = "Off", IsChecked = _form.Get(flag) };
+                toggle.IsCheckedChanged += (_, _) =>
+                {
+                    if (!_syncing && toggle.IsChecked is { } on && on != _form.Get(flag))
+                    {
+                        _form.Set(flag, on);
+                    }
+                };
+                _refreshers.Add(() => toggle.IsChecked = _form.Get(flag));
+                return toggle;
+            }
+
+            case NumberField number when field.Binding is SettingBinding<int> count:
+            {
+                var box = new NumericUpDown
+                {
+                    Minimum = number.Minimum,
+                    Maximum = number.Maximum,
+                    Increment = 1,
+                    FormatString = "0",
+                    Value = _form.Get(count),
+                    Width = 150,
+                    ClipValueToMinMax = true,
+                };
+                box.ValueChanged += (_, e) =>
+                {
+                    if (!_syncing && e.NewValue is { } value && (int)value != _form.Get(count))
+                    {
+                        _form.SetNumber(number, (int)value);
+                    }
+                };
+                _refreshers.Add(() =>
+                {
+                    if (!box.IsKeyboardFocusWithin)
+                    {
+                        box.Value = _form.Get(count);
+                    }
+                });
+                return box;
+            }
+
+            case ChoiceField choice when field.Binding is SettingBinding<string> named:
+            {
+                var combo = new ComboBox { ItemsSource = choice.Choices, SelectedItem = _form.Get(named), MinWidth = 180 };
+                combo.SelectionChanged += (_, _) =>
+                {
+                    if (!_syncing && combo.SelectedItem is string value && value != _form.Get(named))
+                    {
+                        _form.Set(named, value);
+                    }
+                };
+                _refreshers.Add(() => combo.SelectedItem = _form.Get(named));
+                return combo;
+            }
+
+            case ColourField colour when field.Binding is SettingBinding<string> named:
+            {
+                var swatches = colour.Names.Select(Swatch).ToList();
+                var combo = new ComboBox { ItemsSource = swatches, MinWidth = 180 };
+                void Pick() => combo.SelectedItem = swatches.FirstOrDefault(c => Equals(c.Tag, _form.Get(named)));
+                Pick();
+                combo.SelectionChanged += (_, _) =>
+                {
+                    if (!_syncing && combo.SelectedItem is Control { Tag: string value } && value != _form.Get(named))
+                    {
+                        _form.Set(named, value);
+                    }
+                };
+                _refreshers.Add(Pick);
+                return combo;
+            }
+
+            case TextField text when field.Binding is SettingBinding<string?> optional:
+            {
+                var box = new TextBox { Text = _form.Get(optional) ?? string.Empty, Width = 260 };
+                if (text.Masked)
+                {
+                    box.PasswordChar = '•';
+                }
+
+                if (text.MaxLength is { } max)
+                {
+                    box.MaxLength = max;
+                }
+
+                void Commit()
+                {
+                    if (!_syncing && (box.Text ?? string.Empty) != (_form.Get(optional) ?? string.Empty))
+                    {
+                        _form.SetText(text, box.Text);
+                    }
+                }
+
+                box.LostFocus += (_, _) => Commit();
+                box.KeyDown += (_, e) =>
+                {
+                    if (e.Key == Key.Enter)
+                    {
+                        Commit();
+                        e.Handled = true;
+                    }
+                };
+                _refreshers.Add(() =>
+                {
+                    if (!box.IsKeyboardFocusWithin)
+                    {
+                        box.Text = _form.Get(optional) ?? string.Empty;
+                    }
+                });
+                return box;
+            }
+
+            default:
+                return new TextBlock { Text = "set on its own screen", Opacity = 0.7 };
+        }
+    }
+
+    private static StackPanel Swatch(string name)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Tag = name };
+        if (Color.TryParse(name, out var colour))
+        {
+            panel.Children.Add(new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(colour) });
+        }
+
+        panel.Children.Add(new TextBlock { Text = name });
+        return panel;
+    }
+
+    // ── the meter table ──────────────────────────────────────────────────────────────────────────
+
+    private StackPanel MeterTable(ListField field)
+    {
+        var outer = new StackPanel { Spacing = 8, Margin = new Thickness(0, 4, 0, 4) };
+
+        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var words = new StackPanel { Spacing = 1 };
+        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 14 });
+        if (field.Help is { } help)
+        {
+            words.Children.Add(new TextBlock { Text = Capitalise(help), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+        }
+
+        top.Children.Add(words);
+        top.Children.Add(ChangedMark(field, column: 1));
+        outer.Children.Add(top);
+
+        var received = _form.Received();
+        var paths = received.Select(r => r.Path).ToList();
+        var meters = _form.Meters(field);
+        _meterRows = meters.Count;
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*,*,100,Auto"), ColumnSpacing = 8, RowSpacing = 6 };
+        MeterGrid = grid;
+        _controls[field.Id] = grid;
+        string[] headings = ["Label", "Value path", "Maximum path", "Now"];
+        grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        for (var c = 0; c < headings.Length; c++)
+        {
+            var heading = new TextBlock { Text = headings[c], FontSize = 12, FontWeight = FontWeight.SemiBold, Opacity = 0.78 };
+            Grid.SetColumn(heading, c);
+            grid.Children.Add(heading);
+        }
+
+        AutoCompleteBox? lastPath = null;
+        void Commit() => _form.SetMeters(field, meters);
+
+        for (var i = 0; i < meters.Count; i++)
+        {
+            var meter = meters[i];
+            var row = i + 1;
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
+            var label = new TextBox { Text = meter.Label, MaxLength = StatusMeter.MaxLabelLength };
+            AutomationProperties.SetName(label, $"meter {row} label");
+            label.LostFocus += (_, _) =>
+            {
+                if ((label.Text ?? string.Empty) != meter.Label)
+                {
+                    meter.Label = label.Text ?? string.Empty;
+                    Commit();
+                }
+            };
+
+            var value = PathBox(meter.Value, paths, $"meter {row} value path", v => meter.Value = v ?? string.Empty, Commit);
+            var max = PathBox(meter.Max, paths, $"meter {row} maximum path", v => meter.Max = v, Commit);
+            value.GotFocus += (_, _) => lastPath = value;
+            max.GotFocus += (_, _) => lastPath = max;
+
+            var now = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold };
+            _meterNow.Add((meter, now));
+
+            var remove = new Button { Content = "✕", Padding = new Thickness(9, 3) };
+            ToolTip.SetTip(remove, $"Remove {meter.Label}");
+            AutomationProperties.SetName(remove, $"Remove meter {meter.Label}");
+            var index = i;
+            remove.Click += (_, _) =>
+            {
+                meters.RemoveAt(index);
+                Commit();
+            };
+
+            Control[] cells = [label, value, max, now, remove];
+            for (var c = 0; c < cells.Length; c++)
+            {
+                Grid.SetRow(cells[c], row);
+                Grid.SetColumn(cells[c], c);
+                grid.Children.Add(cells[c]);
+            }
+        }
+
+        outer.Children.Add(grid);
+
+        var add = new Button { Content = "+ Meter", HorizontalAlignment = HorizontalAlignment.Left };
+        AutomationProperties.SetName(add, "Add a meter");
+        add.Click += (_, _) =>
+        {
+            meters.Add(new StatusMeter { Label = "new" });
+            Commit();
+        };
+        outer.Children.Add(add);
+
+        // What this connection has received, to pick a path from: a click puts it in the path box last used.
+        var box = new StackPanel { Spacing = 2 };
+        box.Children.Add(new TextBlock { Text = "Received on this connection", FontSize = 12, FontWeight = FontWeight.SemiBold, Opacity = 0.78, Margin = new Thickness(0, 2, 0, 2) });
+        if (received.Count == 0)
+        {
+            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = 12, Opacity = 0.72 });
+        }
+
+        foreach (var item in received.Take(40))
+        {
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            line.Children.Add(new TextBlock { Text = item.Path, FontFamily = FontFamily.Parse("monospace"), FontSize = 12 });
+            var v = new TextBlock { Text = item.Value, FontSize = 12, Opacity = 0.72, Margin = new Thickness(16, 0, 0, 0) };
+            Grid.SetColumn(v, 1);
+            line.Children.Add(v);
+            var pick = new Button
+            {
+                Content = line,
+                Background = Brushes.Transparent,
+                Padding = new Thickness(6, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            };
+            ToolTip.SetTip(pick, "Use this path in the path box you were last in");
+            pick.Click += (_, _) =>
+            {
+                if (lastPath is { } target)
+                {
+                    target.Text = item.Path;
+                    target.Focus();
+                }
+            };
+            box.Children.Add(pick);
+        }
+
+        outer.Children.Add(new Border
+        {
+            Child = box,
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(_form.IsDark ? Color.Parse("#46464e") : Color.Parse("#c8c8d0")),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 6, 10, 8),
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+
+        Tick();
+        return outer;
+    }
+
+    private static AutoCompleteBox PathBox(string? text, IReadOnlyList<string> paths, string name, Action<string?> set, Action commit)
+    {
+        var box = new AutoCompleteBox
+        {
+            Text = text ?? string.Empty,
+            ItemsSource = paths,
+            FilterMode = AutoCompleteFilterMode.ContainsOrdinal,
+            MinimumPrefixLength = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        AutomationProperties.SetName(box, name);
+        var held = string.IsNullOrWhiteSpace(text) ? null : text;
+        void Commit()
+        {
+            var now = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
+            if (!string.Equals(now, held, StringComparison.Ordinal))
+            {
+                held = now;
+                set(now);
+                commit();
+            }
+        }
+
+        box.LostFocus += (_, _) => Commit();
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                Commit();
+            }
+        };
+        return box;
+    }
+
+    /// <summary>The meters' <c>now</c> column, re-read each second while the window is open.</summary>
+    private void Tick()
+    {
+        foreach (var (meter, now) in _meterNow)
+        {
+            var text = _form.Now(meter);
+            now.Text = text ?? "waiting";
+            now.Opacity = text is null ? 0.6 : 1;
+        }
+    }
+
+    // ── changes landing ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Raised on the client's thread once a change has landed; the page catches up on this one.</summary>
+    private void OnChanged() => Dispatcher.UIThread.Post(Refresh);
+
+    /// <summary>Re-reads every value and indicator on the page. A meter added or removed rebuilds the page, whose rows moved.</summary>
+    internal void Refresh()
+    {
+        if (_meterRows >= 0
+            && _form.Section(_shown ?? string.Empty)?.Fields.OfType<ListField>().FirstOrDefault() is { } meters
+            && _form.Meters(meters).Count != _meterRows)
+        {
+            var offset = _scroller.Offset;
+            BuildPage();
+            _scroller.Offset = offset;
+            return;
+        }
+
+        _syncing = true;
+        try
+        {
+            foreach (var refresh in _refreshers)
+            {
+                refresh();
+            }
+        }
+        finally
+        {
+            _syncing = false;
+        }
+    }
+
+    private void OnKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            if (Searching)
+            {
+                _search.Text = string.Empty;
+            }
+            else
+            {
+                Close();
+            }
+
+            e.Handled = true;
+        }
+        else if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.Control)
+        {
+            _search.Focus();
+            _search.SelectAll();
+            e.Handled = true;
+        }
+    }
+
+    private static string Capitalise(string text) =>
+        text.Length == 0 ? text : char.ToUpper(text[0], CultureInfo.InvariantCulture) + text[1..];
+}

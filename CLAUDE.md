@@ -1126,7 +1126,7 @@ The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the 
 one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
-the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), and whether it draws the declared settings natively (`INativeSettings`, null for the cell screens). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1470,7 +1470,38 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     trailing Remove button added only while the cursor is on one; the received-data box shows only while the
     cursor is in the table; path fields offer the received paths with their values as `ChoiceNotes`.
   - F7 and F8 are windowed to the screen height (`ScreenChrome.Window`), because F7 is taller than 24 rows.
-  - Not declared yet: F2–F6, F9 (F5's character form) and F10 are listed by title only.
+  - Not declared yet: F2–F6, F9 (F5's character form) and F10 are listed by title only. F9 was not declared
+    for the native window either: its fields are per *character*, and a `SettingBinding` reads an
+    `AppConfiguration`, so declaring it needs a binding that knows which character first.
+- **In the window, a declared section opens a native settings window, generated from the declarations**
+  (`ClientHost.NativeSettings` → `INativeSettings`; Client `SettingsForm`; Avalonia `SettingsWindow`,
+  `SettingsPresenter` on the driver; `OpenSettingsScreen`/`TryOpenNativeSettings` in `SharpMUTermApp.Settings.cs`).
+  The terminal, the snapshot, the tests and the parity harness pass null, so their cells do not change. Decisions
+  not to relitigate:
+  - **Every way in goes through `OpenSettingsScreen`**: the F-key, ⌃P's `screen:` entries and the cell search's ⏎
+    (`GoToSetting`). A section with fields goes native and any open cell screen is closed first. A section with
+    none is a cell screen as before. In the window's list it carries `↗`, and choosing it calls
+    `SettingsForm.OpenScreen`, which closes the window and opens the cell screen through `GoToSetting`.
+  - **The window only draws; the client commits.** `SettingsForm` reads values through each field's
+    `SettingBinding` and sends every write through one delegate. The app's delegate runs
+    `ScreenEdits(SaveConfiguration).Apply` on its own thread (`OnUiThread`), so a native edit is saved and re-syncs
+    bars, panels and automation exactly as an F7 edit does. `Changed` is raised after the change lands, and the
+    window re-reads values and marks. A number is clamped to its field's bounds and a text to its length, the cell
+    field's rules. Reset is `binding.Reset`, the default `r` uses.
+  - **Reads cross threads, so lists are replaced and never edited.** The window reads the live configuration on
+    Avalonia's thread. A declared value is a scalar or a list, so `SetMeters` builds a new list every time.
+  - **The meter table reads the game data of the window focused when the form opened**, captured on the client's
+    thread. `GameDataStore` is locked, but the focus is not safe to read from another thread. The `now` column is
+    re-read each second (`OptionsScreenRenderer.NowText`). The received paths feed each path box's auto-complete
+    and a list below it; clicking a path fills the path box last used.
+  - **Search is `SettingsSearch.Find` and nothing else**, so the two surfaces always find the same fields. While
+    searching, the page shows only matched fields, and if the section on show has none it moves to the first that
+    has some.
+  - **Fluent is applied to this window only** (`Styles.Add(new FluentTheme())`), and `RequestedThemeVariant`
+    follows the client's theme (`SettingsForm.IsDark`). The rest of the window stays on the Simple theme the
+    native menu and tooltips were built against.
+  - Not done: the window is not modal and does not follow a theme change while it is open. Screenshots come from a
+    real window under Xvfb, driven with XTest (`ux-wave4/native-settings-*.png`).
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on

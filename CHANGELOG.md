@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: F7 (Text & display) and F8 (Input) open a settings window with real switches, number boxes
+  and a search box. Matches are counted per section as you type. A changed setting shows a dot and a Reset
+  button, and every change applies and saves as you make it. The status-row meters are a table that shows each
+  meter's current value, with the paths your game has sent listed for you to pick from. The other screens are
+  listed in the window and open as before.
 - Desktop window: a Layouts button at the right end of the header opens a menu of the built-in and your saved
   layouts (the one in use is checked), with *Save changes*, *Save as new*, *Use for* the world or the character,
   and *Manage layouts…*. It runs the same actions as Alt+M.

@@ -92,6 +92,13 @@ internal sealed record ClientHost
     public required bool ScreenIsSeen { get; init; }
 
     /// <summary>
+    /// Draws the declared settings sections (F7, F8) with the host's own controls, or null for a host whose settings
+    /// are the cell screens. Only a section that declares its fields goes here; the others keep their cell screen.
+    /// Null in the terminal, the snapshot, the tests and the parity harness, so every cell frame is unchanged.
+    /// </summary>
+    public required INativeSettings? NativeSettings { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -128,6 +135,7 @@ internal sealed record ClientHost
         Presence = () => new DiscordIpc(),
         Announcer = null,
         ScreenIsSeen = true,
+        NativeSettings = null,
     };
 
     /// <summary>
@@ -150,6 +158,7 @@ internal sealed record ClientHost
         Presence = null,
         Announcer = null,
         ScreenIsSeen = true,
+        NativeSettings = null,
     };
 
     /// <summary>
