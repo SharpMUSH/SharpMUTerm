@@ -205,6 +205,52 @@ public class NativePackagesTests
         await Assert.That(rig.Applies).IsFalse();
     }
 
+    /// <summary>
+    /// F10's switch goes through the settings funnel, so ⌃Z on F10 puts it back and ⌃Y makes it again — each saved, with
+    /// the package's sets following — on the cell screen and in the window's page alike.
+    /// </summary>
+    [Test]
+    public async Task ControlZUndoesASwitchOnTheCellScreen()
+    {
+        await using var rig = Open(native: false);
+        Install(rig);
+        rig.App.ShowPackages();
+        rig.App.PackageView.SimulateKey(Key(ConsoleKey.Spacebar, ' '));
+        await Assert.That(rig.Applies).IsFalse();
+        var saves = rig.Saves;
+
+        rig.App.PackageView.SimulateKey(new ConsoleKeyInfo('\u001a', ConsoleKey.Z, false, false, true));
+
+        await Assert.That(rig.Applies).IsTrue().Because("⌃Z switched it back on");
+        await Assert.That(rig.Config.DisabledPackages).IsEmpty();
+        await Assert.That(rig.Saves - saves).IsEqualTo(1);
+
+        rig.App.PackageView.SimulateKey(new ConsoleKeyInfo('\u0019', ConsoleKey.Y, false, false, true));
+        await Assert.That(rig.Applies).IsFalse().Because("⌃Y switched it off again");
+        await Assert.That(rig.Config.DisabledPackages).Contains("aether.basics");
+    }
+
+    [Test]
+    public async Task ControlZUndoesASwitchInTheWindowsPage()
+    {
+        await using var rig = Open(native: true);
+        Install(rig);
+        rig.App.SimulateKey(Key(ConsoleKey.F10));
+        var form = rig.Native.Shown.Last();
+        var manager = rig.App.PackageManager;
+        manager.SetEnabled(manager.Items.Single(), false);
+        await Assert.That(rig.Applies).IsFalse();
+
+        await Assert.That(form.Undo("packages")).IsTrue();
+
+        await Assert.That(rig.Applies).IsTrue();
+        await Assert.That(form.HistoryNote).IsEqualTo("Undid Aether basics switched off.");
+        await Assert.That(manager.IsEnabled(manager.Items.Single())).IsTrue().Because("the page reads the package back on");
+
+        await Assert.That(form.Redo("packages")).IsTrue();
+        await Assert.That(rig.Applies).IsFalse();
+    }
+
     [Test]
     public async Task RemovingInTheWindowDeletesThePackageAndItsFolder()
     {

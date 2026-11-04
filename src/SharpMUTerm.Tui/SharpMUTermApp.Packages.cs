@@ -45,6 +45,9 @@ internal sealed partial class SharpMUTermApp
     internal PackageStore Packages => _packages;
 
     /// <summary>F10's declaration, from the registry.</summary>
+    /// <summary>F10's section id: the key its edits are recorded under in the settings history.</summary>
+    private const string PackageSectionId = "packages";
+
     private PackageCollection PackageDeclaration => Section("packages").Packages ?? BuiltInSettings.Packages.Packages!;
 
     /// <summary>
@@ -480,6 +483,13 @@ internal sealed partial class SharpMUTermApp
         var current = installed[Math.Clamp(_packageSelected, 0, installed.Count - 1)];
         switch (key.Key)
         {
+            case ConsoleKey.Z when key.Modifiers == ConsoleModifiers.Control:
+                StepPackageHistory(redo: false);
+                break;
+            case ConsoleKey.Y when key.Modifiers == ConsoleModifiers.Control:
+            case ConsoleKey.Z when key.Modifiers == (ConsoleModifiers.Control | ConsoleModifiers.Shift):
+                StepPackageHistory(redo: true);
+                break;
             case ConsoleKey.UpArrow:
                 _packageSelected = Math.Max(0, _packageSelected - 1);
                 break;
@@ -506,16 +516,48 @@ internal sealed partial class SharpMUTermApp
         return true;
     }
 
-    /// <summary>Switches a package on or off and saves once — F10's Space and the window's check box.</summary>
+    /// <summary>
+    /// Switches a package on or off and saves once — F10's Space and the window's check box. Through the settings funnel
+    /// (<see cref="PackageEdits"/>), so the switch is recorded under F10's section and ⌃Z undoes it in either host.
+    /// </summary>
     internal void SetPackageEnabled(string id, bool on)
     {
-        if (_packages.Find(id) is null || !PackageCollection.SetEnabled(_config, id, on))
+        if (_packages.Find(id) is not { } package)
         {
             return;
         }
 
+        PackageEdits().Apply(
+            () => PackageCollection.SetEnabled(_config, id, on) ? 0 : (int?)null,
+            $"{package.Manifest.Name} switched {(on ? "on" : "off")}");
+    }
+
+    /// <summary>
+    /// The settings funnel for F10's section: recorded in <see cref="_settingsHistory"/> under <c>packages</c>, saved
+    /// with the package state re-synced (media folders, the window's page) — so an undo or redo of a switch is applied
+    /// exactly as the switch was. The cell F10 and the native page both commit and undo through one of these.
+    /// </summary>
+    private ScreenEdits PackageEdits()
+    {
+        var edits = new ScreenEdits(SavePackageChange);
+        edits.Track(_settingsHistory, PackageSectionId);
+        return edits;
+    }
+
+    /// <summary>Saves a change to which packages are on: the package state first, then the configuration.</summary>
+    private void SavePackageChange()
+    {
         SyncPackages();
         SaveConfiguration();
+    }
+
+    /// <summary>⌃Z / ⌃Y (⌃⇧Z) on the cell F10: steps F10's history and says what it did on the status row.</summary>
+    private void StepPackageHistory(bool redo)
+    {
+        var edits = PackageEdits();
+        var result = redo ? edits.Redo() : edits.Undo();
+        Notice(result.Note, result.Done ? MessageSeverity.Info : MessageSeverity.Warning, toast: false);
+        _packageManager?.PublishStatus(result.Note);
     }
 
     /// <summary>Removes a package and its folder and saves — F10's Del Del and the window's Remove.</summary>

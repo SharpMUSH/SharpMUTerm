@@ -589,6 +589,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- On the Light theme the history half of a pane you have scrolled back is now a visibly different shade from the live
+  lines below it, in the terminal and in the window; before it was the same white.
+- Dragging a tab in the desktop window no longer draws the drop zone twice: only the window's wash shows where the tab
+  will land.
+- Switching a package on or off on F10 can now be undone with Ctrl+Z (and redone with Ctrl+Y), in the terminal and in
+  the window's package page.
 - The desktop window's welcome page now takes the keyboard when it opens; typing used to land on the command line
   hidden under it.
 - In the desktop window the command line no longer shrinks to a sliver under a narrow output pane: when the output's

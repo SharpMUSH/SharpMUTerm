@@ -316,17 +316,44 @@ internal static class WorkspacePalette
     /// <c>#1e1e24</c> live tail): one small step <em>away from the text</em> off the pane's own plane — deeper on a dark
     /// plane, toward white on a light one — so the rows being read and the rows still arriving are two planes, and the
     /// step can only widen the contrast <see cref="ReadingPlane"/> already guarantees.
+    /// <para>
+    /// <b>A light plane with no room above it steps down instead</b> (<see cref="LightHistoryScale"/>): Light's focused pane
+    /// is white, so toward white was no step at all and the history was the pane (the wave 27 report), and its unfocused
+    /// pane had 2.7 L* of room. Where lifting gives less than <see cref="HistoryMinStep"/> L* the history is a 0.96 step
+    /// darker (about 3.5 L*). It never reaches the reading plane: only a pane near white lacks the room, and the reading
+    /// plane is the darkest (tinted, unfocused) pane, which has plenty and is lifted, so text still clears the floor on it
+    /// (<c>WorkspacePaletteTests.TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane</c>).
+    /// </para>
     /// </summary>
-    internal static Rgb History(Rgb plane) =>
-        Contrast.RelativeLuminance(plane) < LightPlaneLuminance
-            ? Scale(plane, HistoryScale)
-            : Mix(plane, new Rgb(0xff, 0xff, 0xff), HistoryLift);
+    internal static Rgb History(Rgb plane)
+    {
+        if (Contrast.RelativeLuminance(plane) < LightPlaneLuminance)
+        {
+            return Scale(plane, HistoryScale);
+        }
+
+        var lifted = Mix(plane, new Rgb(0xff, 0xff, 0xff), HistoryLift);
+        return Lightness(lifted) - Lightness(plane) >= HistoryMinStep ? lifted : Scale(plane, LightHistoryScale);
+    }
 
     /// <summary>The history's step on a dark plane: the terminal mockup's ratio.</summary>
     private const double HistoryScale = 0.87;
 
     /// <summary>The history's step toward white on a light plane.</summary>
     private const double HistoryLift = 0.6;
+
+    /// <summary>The least L* a light plane's history may differ from it by; below it the history steps down.</summary>
+    private const double HistoryMinStep = 3;
+
+    /// <summary>The history's step down on a light plane with no room above it: about 3.5 L* off white.</summary>
+    private const double LightHistoryScale = 0.96;
+
+    /// <summary>CIE L*: lightness as the eye reads it, even across the range.</summary>
+    private static double Lightness(Rgb rgb)
+    {
+        var y = Contrast.RelativeLuminance(rgb);
+        return y > 0.008856 ? (116 * Math.Cbrt(y)) - 16 : 903.3 * y;
+    }
 
     /// <summary>The recess as a fraction of a light plane: about L* 87 under Light's L* 96 panes.</summary>
     private const double LightRecessScale = 0.90;

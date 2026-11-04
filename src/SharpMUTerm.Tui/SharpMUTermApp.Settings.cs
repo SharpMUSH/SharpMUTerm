@@ -170,7 +170,8 @@ internal sealed partial class SharpMUTermApp
         {
             if (!sectionEdits.TryGetValue(section, out var found))
             {
-                found = new ScreenEdits(SaveConfiguration);
+                // F10's switches re-sync the packages as they save, undone or redone as when made.
+                found = new ScreenEdits(section == PackageSectionId ? SavePackageChange : SaveConfiguration);
                 found.Track(_settingsHistory, section);
                 sectionEdits[section] = found;
             }

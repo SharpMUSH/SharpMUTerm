@@ -13491,6 +13491,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // A native tab drag freezes its own geometry (SharpMUTermApp.TabDrag.cs); the cell drag's is the tracker's.
         var rect = (_tabDrag?.Surface ?? _paneDrag.Surface)?.RectOf(pane.Id) ?? default;
         var hovered = pane.Id == _dragTargetPaneId;
+
+        // A native tab drag on a host that draws the strips washes the zone and says the drop itself (TabDragView), so
+        // the target pane draws neither the zone nor the words under it — the two framed the zone twice. The other
+        // panes still dim to their names, and the status row keeps its prompt. A terminal's mouse drag is unchanged.
+        if (hovered && _tabDrag is not null && Host.Chrome.Tabs)
+        {
+            return new MarkupControl(PaneDropRenderer.Render(string.Empty, string.Empty, rect.Width, rect.Height, false, null))
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+        }
+
         var lines = PaneDropRenderer.Render(
             PaneLabel(pane.Id),
             DropLabel(pane.Id, _dragEdge),

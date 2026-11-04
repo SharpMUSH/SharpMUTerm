@@ -102,6 +102,61 @@ public class NativeTabDragTests
         await Assert.That(native.PaneIds.Count).IsEqualTo(3);
     }
 
+    /// <summary>
+    /// The window washes the zone and says the drop itself, so under a native drag the target pane's cells draw neither the
+    /// zone band nor the words — they framed the zone twice. The status row keeps its prompt. The terminal's own mouse
+    /// drag over the same edge still draws both.
+    /// </summary>
+    [Test]
+    public async Task ANativeDragLeavesTheZoneToTheWindowAndTheTerminalsDragStillDrawsIt()
+    {
+        await using var native = App(HostChrome.Native, new PanePresenter(), out _);
+        var strip = TwoTabStrip(native);
+        var window = strip.Model.Tabs.Single(t => t.Selected).WindowId;
+        var other = native.PaneSnapshot().Rects.Single(r => r.Key != strip.Model.PaneId);
+        var at = LeftEdgeOf(other.Value);
+        native.DragStripTab(Step(TabDragPhase.Begin, strip, window, strip.Row.X + 2, strip.Row.Y, 0));
+        native.DragStripTab(Step(TabDragPhase.Move, strip, window, at.X, at.Y));
+        var nativeFrame = native.RenderWholeFrame();
+
+        await using var cells = App(HostChrome.None, null, out var driver);
+        var surface = cells.PaneSnapshot();
+        var source = surface.Rects.Single(r => surface.ActiveWindow(r.Key) == window).Value;
+        var targetRect = surface.Rects.Single(r => surface.ActiveWindow(r.Key) != window).Value;
+        var target = LeftEdgeOf(targetRect);
+        driver.SimulateMouseEvent([MouseFlags.Button1Pressed], new Point(source.X + 2, source.Y));
+        driver.SimulateMouseEvent([MouseFlags.Button1Pressed, MouseFlags.Button1Dragged, MouseFlags.ReportMousePosition], target);
+        var cellFrame = cells.RenderWholeFrame();
+
+        static (string Text, int Zone) Read(string frame, PaneRect rect, SharpMUTerm.Core.Text.Rgb? zoneColour)
+        {
+            var rows = FrameGrid.Decode(frame, Width, Height);
+            var grid = FrameGrid.Cells(frame, Width, Height);
+            var text = string.Join("\n", Enumerable.Range(rect.Y, rect.Height).Select(y => rows[y].Substring(rect.X, rect.Width)));
+            var zone = 0;
+            for (var y = rect.Y; y < rect.Y + rect.Height; y++)
+            {
+                if (zoneColour is not null && grid[(y, rect.X)].Background == zoneColour)
+                {
+                    zone++;
+                }
+            }
+
+            return (text, zone);
+        }
+
+        // The terminal's zone colour: the left band's background, read off its paint.
+        var terminalZone = FrameGrid.Cells(cellFrame, Width, Height)[(targetRect.Y + (targetRect.Height / 2), targetRect.X)].Background;
+        var terminal = Read(cellFrame, targetRect, terminalZone);
+        await Assert.That(terminal.Zone).IsGreaterThan(0).Because("the terminal's drag draws its zone band");
+        await Assert.That(terminal.Text).Contains("left");
+
+        var window2 = Read(nativeFrame, other.Value, terminalZone);
+        await Assert.That(window2.Zone).IsEqualTo(0).Because("the window washes the zone; the cells draw none under it");
+        await Assert.That(window2.Text).DoesNotContain("left");
+        await Assert.That(native.BuildStatusModel().Text).Contains("DRAG").Because("the status row keeps the prompt");
+    }
+
     [Test]
     public async Task ATabDroppedInAPanesMiddleJoinsItsTabs()
     {

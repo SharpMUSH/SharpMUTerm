@@ -672,7 +672,10 @@ fallbacks) for inline images/maps.
     it was 30%); a pane shorter than 7 rows does not split. Fixed when the split opens (a `Cells` row), not re-derived
     per frame.
   - **The history is a plane of its own** (`WorkspacePalette.History`: ×0.87 on a dark plane, toward white on a light
-    one, so it only widens the contrast `ReadingPlane` guarantees; the terminal mockup's `#1a1a20` over `#1e1e24`). The
+    one, so it only widens the contrast `ReadingPlane` guarantees; the terminal mockup's `#1a1a20` over `#1e1e24`). A light
+    plane with under 3 L* of room above it (Light's white focused pane, its L* 96 unfocused one) steps *down* ×0.96 instead
+    (wave 27: the history was the pane); only near-white panes lack the room, the reading plane never does, so it is never
+    passed (`TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane`, all three themes). The
     history viewport is wrapped in a grid wearing it (`_scrollHistorySurfaces`, re-coloured in `RefreshPaneFocus`); the
     tail keeps the pane's plane. Where the host keeps a gutter, `PaintScrollHistoryGutters` paints the blank gutter and
     pad-row cells beside it after the frame, and the window's overlay scrollbar runs beside the history alone.
@@ -1459,7 +1462,8 @@ fallbacks) for inline images/maps.
     strips down for its drop preview, which would lose a strip's capture); each move goes to `TabStripOverlay.Drag` as a
     desktop cell, plus the slot among the strip's tabs (frozen at begin) while over that strip — the only thing the window
     works out. The client does the rest with the cell drag's pieces: frozen `PaneSnapshot`, `DropZones`, the cells' drop
-    preview and `DRAG … → …` prompt, and on release `DropWindowOnPane` (the cell commit's method too: edge splits, centre
+    preview (the target pane drawn blank under `Tabs`, so the native wash is the only zone; `BuildDragPane`) and
+    `DRAG … → …` prompt, and on release `DropWindowOnPane` (the cell commit's method too: edge splits, centre
     joins). Over its own strip it is `ReorderStripTab` → `ReorderFocusedTab`, the method ⌃B &lt;/&gt; end in (declared
     `CellsVia: prefix`, the ⌃B keymap's `< >` row). A slot is used only on that strip's row and in range; a drag the strip
     did not offer is refused; Esc abandons it. What it would do is published back (`PaneChromeOverlay.Drag`): the layer
@@ -2374,7 +2378,9 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     *before* values back only at the paths that step changed, onto the configuration as it is now (an F5 edit made since
     survives an F7 undo), merged into the live objects: an unchanged list element stays its instance, a changed list is
     replaced. The snapshot carries the password (an ignored scalar), never `lastSession`/`version`/`keyTourPending`. It is
-    saved through the funnel. A deletion undone leaves the closing review; redone, it rejoins it. Cells: ⌃Z / ⌃Y (⌃⇧Z
+    saved through the funnel. A deletion undone leaves the closing review; redone, it rejoins it. F10's on/off switch is
+    recorded under `packages` too (`SetPackageEnabled` → `PackageEdits`, saved through `SavePackageChange`, which re-syncs
+    the packages; the cell F10 list takes ⌃Z/⌃Y itself, `StepPackageHistory`). Cells: ⌃Z / ⌃Y (⌃⇧Z
     where reported) only while navigating, the note in the header in place of the verbs until the next key, `⌃Z undo` a
     low-drop ladder key. Window: a tunnel handler leaves the chord to a `TextBox` that has its own typing to undo; the
     footer reads `Undo Ctrl+Z · Redo …` (the mockup's) and shows the note on the left.
