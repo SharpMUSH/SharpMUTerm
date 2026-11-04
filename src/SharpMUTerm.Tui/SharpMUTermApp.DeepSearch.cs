@@ -105,7 +105,6 @@ internal sealed partial class SharpMUTermApp
         var sources = HistorySources(all, out var captures);
         EnsureDeepSearch(query, regex, all, older && held.Error is null, sources);
 
-        var total = sources.Sum(s => s.Buffer.AvailableLines);
         var who = sources.Count == 1 ? sources[0].Label : $"{sources.Count} windows";
         var spill = captures switch
         {
@@ -116,10 +115,20 @@ internal sealed partial class SharpMUTermApp
 
         if (!older || held.Error is not null || _deep is not { } deep)
         {
-            var note = sources.Count == 0
-                ? (spill.Length > 0 ? spill.TrimStart(' ', '·') : null)
-                : $"⌥H searches older history · {N(total)} lines in {who}{spill}";
-            return held with { Older = older, HistoryNote = note };
+            // What the pane cap trimmed: the scrollback's lines the panes no longer hold. While there are some, the status
+            // line offers ⌥H (SearchModel.OlderHintLadder); while there are none, older history has nothing more to find.
+            long trimmed = 0;
+            foreach (var source in sources)
+            {
+                var inPane = _lines.TryGetValue(source.WindowId, out var buffer) ? buffer.Count(l => l.Source is StyledLine) : 0;
+                trimmed += Math.Max(0, source.Buffer.AvailableLines - inPane);
+            }
+
+            var model = held with { Older = older, OlderLines = older ? 0 : trimmed, OlderSource = sources.Count == 0 ? string.Empty : who };
+            var note = model.OffersOlder
+                ? model.OlderHintLadder[0] + spill
+                : spill.Length > 0 ? spill.TrimStart(' ', '·') : null;
+            return model with { HistoryNote = note };
         }
 
         var rows = new List<SearchRow>(held.Rows);

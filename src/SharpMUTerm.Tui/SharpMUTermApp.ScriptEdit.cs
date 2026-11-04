@@ -1,5 +1,5 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
+using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Diagnostics;
@@ -60,8 +60,6 @@ internal sealed partial class SharpMUTermApp
         "end\n" +
         "\n" +
         "trigger.add('^(\\\\w+) tells you', 'on_tell')\n";
-
-    private static readonly Regex ErrorAt = new(@"(?<file>[A-Za-z0-9_.\-]+\.lua):\(?(?<line>\d+)", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
 
     /// <summary>Whether the focused window is the demo's, in a client with no scripts folder — the snapshot's scripts.</summary>
     private bool DemoScriptsShown =>
@@ -137,23 +135,7 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>The line of the newest console error naming <paramref name="name"/>'s file, or null.</summary>
-    private static int? LastErrorLine(IReadOnlyList<string> errors, string name)
-    {
-        var file = name[(name.LastIndexOf('/') + 1)..];
-        for (var i = errors.Count - 1; i >= 0; i--)
-        {
-            foreach (Match match in ErrorAt.Matches(errors[i]))
-            {
-                if (string.Equals(match.Groups["file"].Value, file, StringComparison.Ordinal)
-                    && int.TryParse(match.Groups["line"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var line))
-                {
-                    return line;
-                }
-            }
-        }
-
-        return null;
-    }
+    private static int? LastErrorLine(IReadOnlyList<string> errors, string name) => ScriptErrors.LineIn(errors, name);
 
     /// <summary>
     /// ⌃P ▸ Edit script…, the console's ⌃E and a bare <c>/script edit</c>: the palette, opened on the script files. From
@@ -202,7 +184,8 @@ internal sealed partial class SharpMUTermApp
 
         var owner = ScriptOwner();
         var errors = owner is null ? [] : ConsoleLog(owner).Lines.Where(l => l.Kind == ScriptConsoleKind.Error).Select(l => l.Text).ToArray();
-        OpenScript(name, LastErrorLine(errors, name) ?? 0);
+        var line = LastErrorLine(errors, name) ?? 0;
+        OpenScript(name, line, errorLine: line);
         return true;
     }
 
@@ -263,7 +246,8 @@ internal sealed partial class SharpMUTermApp
     /// Opens script <paramref name="name"/> in the composer's script mode: a package's read-only, anything else from the
     /// scripts folder (the template when it does not exist yet), or the unsaved text Esc kept for it.
     /// </summary>
-    internal void OpenScript(string name, int line = 0)
+    /// <param name="errorLine">The line the console's newest error names in it, marked in the editor; 0 for none.</param>
+    internal void OpenScript(string name, int line = 0, int errorLine = 0)
     {
         if (ComposerOpen || AnyOverlayOpen)
         {
@@ -330,7 +314,7 @@ internal sealed partial class SharpMUTermApp
         var target = session is not null
             ? SessionTitle(session)
             : owner is not null ? FindCharacter(owner)?.Character.Name ?? string.Empty : string.Empty;
-        OpenComposer(target, text, ComposeEscaping.AsTyped, canSend: true, edit: null, script: new ScriptEdit(name, owner, package, status, line));
+        OpenComposer(target, text, ComposeEscaping.AsTyped, canSend: true, edit: null, script: new ScriptEdit(name, owner, package, status, line, errorLine));
     }
 
     /// <summary>
@@ -398,7 +382,7 @@ internal sealed partial class SharpMUTermApp
     {
         if (_nativeCompose is { Script: { } script } open)
         {
-            open.Script = script with { Status = status };
+            open.Script = script.Said(status);
             open.Session.Publish(NativeComposeModel(open));
             return;
         }

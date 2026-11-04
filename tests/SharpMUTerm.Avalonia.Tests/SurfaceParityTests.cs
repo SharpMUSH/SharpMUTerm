@@ -220,6 +220,10 @@ public class SurfaceParityTests
             await Assert.That(composer.Session).IsNotNull().Because($"{view}: F1 opened in the window's editor");
             await Assert.That(native.Composer.IsOpen).IsFalse().Because($"{view}: and not in cells under it");
             await Assert.That(cells.DrawnModel(SurfaceCatalog.Compose)).IsEqualTo((object)composer.Session!.Model).Because(view);
+            if (view == "script-edit")
+            {
+                await Assert.That(composer.Session.Model.Edit!.ErrorLine).IsEqualTo(14).Because("both hosts mark the line the error named");
+            }
         }
 
         covered.Add(SurfaceCatalog.Compose);
@@ -279,6 +283,17 @@ public class SurfaceParityTests
             await Assert.That(drawn).IsNotNull().Because($"{view}: the cell modal is open in the cell client");
             await Assert.That(drawn).IsEqualTo(ModelOf(session!)).Because(view);
             covered.Add(surface);
+        }
+
+        // ⌃F's ⌥H offer: the model both hosts draw offers older history while the pane cap trimmed what was searched.
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            var modals = new FakeModals();
+            await using var native = App(nativeDriver, DemoScene.Build(), modals: modals);
+            native.RenderSnapshot("search");
+            var offered = ((SearchSession)modals.Open(SurfaceCatalog.Search)!).Model;
+            await Assert.That(offered.OffersOlder).IsTrue();
+            await Assert.That(offered.HistoryNote).StartsWith(SearchModel.OlderKey);
         }
 
         // ⌃R filtered: the view hands its query to the native box, and the native list's rows for it are the cell list's.

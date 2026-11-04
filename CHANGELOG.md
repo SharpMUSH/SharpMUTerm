@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The script editor numbers its lines in the desktop window too, and after a save whose reload fails, the line the
+  error names is marked in both the terminal and the window.
+- When Ctrl+F finds fewer matches than it might because the pane no longer holds older lines, its status line offers
+  Alt+H to search older history, saying how many more lines there are (in the window, clicking the hint does it).
+- The read-only history page an older match opens is centred on the match, with the three lines either side drawn as
+  its context and the rest of the page quieter.
+
 - Scripts can be edited without leaving the client. ⌃P ▸ Edit script… (or ⌃E in the script console, or `/script edit`)
   lists your character's script files; one opens in the composer with line numbers, exactly as written. ⌃S saves it,
   reloads that character's scripts and shows the first error with its file and line. ⌃P ▸ New script… (or

@@ -99,12 +99,15 @@ internal sealed class ScrollbackView : DockPanel, IModalView
         var mono = new FontFamily($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
         foreach (var line in _model.Lines)
         {
-            var marked = line.Index == _model.Marked;
+            // The hit on the selection plane, its context in the body ink behind a rule, the rest of the page in the dim ink:
+            // the model's roles, which the cells draw too.
+            var role = _model.Role(line);
+            var marked = role == ScrollbackLineRole.Hit;
             var text = new TextBlock
             {
                 FontFamily = mono,
                 FontSize = NativeTokens.Body,
-                Foreground = _colours.Brush(_colours.Text),
+                Foreground = _colours.Brush(role == ScrollbackLineRole.Page ? _colours.Dim : _colours.Text),
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             text.Inlines = ModalParts.Marked(line.Text, line.MatchStart, line.MatchLength, _colours);
@@ -113,6 +116,8 @@ internal sealed class ScrollbackView : DockPanel, IModalView
                 CornerRadius = new CornerRadius(NativeTokens.RadiusM),
                 Padding = new Thickness(12, 2),
                 Background = marked ? _colours.Brush(_colours.Selected) : Brushes.Transparent,
+                BorderBrush = role == ScrollbackLineRole.Context ? _colours.Brush(_colours.Rule) : null,
+                BorderThickness = new Thickness(role == ScrollbackLineRole.Context ? 2 : 0, 0, 0, 0),
                 Child = text,
             });
         }

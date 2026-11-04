@@ -6,7 +6,8 @@ namespace SharpMUTerm.Tui;
 
 /// <summary>
 /// The read-only history view in cells: a page of a session's scrollback (ring or spill) around the line ⌃F's older-history
-/// search found, that line on the accent band and the query's run in every line in bold accent. Pure: the page is the
+/// search found, centred: that line on the accent band, its context (<see cref="ScrollbackViewModel.ContextRows"/> either side)
+/// in the body ink behind a <c>│</c>, the rest of the page muted, and the query's run in every line in bold accent. Pure: the page is the
 /// <see cref="ScrollbackViewModel"/> the window's native view draws too, and every move is the client's ranged read.
 /// Always <see cref="ScrollbackViewModel.PageRows"/> rows of page, so the overlay sized once at open keeps fitting.
 /// </summary>
@@ -27,7 +28,7 @@ internal static class ScrollbackViewSurface
 
         for (var i = 0; i < ScrollbackViewModel.PageRows; i++)
         {
-            lines.Add(i < model.Lines.Count ? Row(model.Lines[i], model.Lines[i].Index == model.Marked, width) : string.Empty);
+            lines.Add(i < model.Lines.Count ? Row(model.Lines[i], model.Role(model.Lines[i]), width) : string.Empty);
         }
 
         lines.Add(string.Empty);
@@ -35,10 +36,10 @@ internal static class ScrollbackViewSurface
         return lines;
     }
 
-    private static string Row(ScrollbackViewLine line, bool marked, int width)
+    private static string Row(ScrollbackViewLine line, ScrollbackLineRole role, int width)
     {
         var text = ElidePlain(line.Text.Replace('\t', ' '), width - 2);
-        if (marked)
+        if (role == ScrollbackLineRole.Hit)
         {
             var pad = new string(' ', Math.Max(0, width - 2 - text.Length));
             return $"[{Ink} on {Accent}]▸ {Escape(text)}{pad}[/]";
@@ -46,14 +47,16 @@ internal static class ScrollbackViewSurface
 
         if (line.MatchStart < 0 || line.MatchStart >= text.Length || line.MatchLength <= 0)
         {
-            return $"  [{Value}]{Escape(text)}[/]";
+            return role == ScrollbackLineRole.Context ? $"[{Muted}]│[/] [{Value}]{Escape(text)}[/]" : $"  [{Muted}]{Escape(text)}[/]";
         }
 
         var length = Math.Min(line.MatchLength, text.Length - line.MatchStart);
         var before = text[..line.MatchStart];
         var hit = text.Substring(line.MatchStart, length);
         var after = text[(line.MatchStart + length)..];
-        return $"  [{Value}]{Escape(before)}[/][bold {Accent}]{Escape(hit)}[/][{Value}]{Escape(after)}[/]";
+        var ink = role == ScrollbackLineRole.Context ? Value : Muted;
+        var lead = role == ScrollbackLineRole.Context ? $"[{Muted}]│[/] " : "  ";
+        return $"{lead}[{ink}]{Escape(before)}[/][bold {Accent}]{Escape(hit)}[/][{ink}]{Escape(after)}[/]";
     }
 
     private static string ElidePlain(string text, int width) =>

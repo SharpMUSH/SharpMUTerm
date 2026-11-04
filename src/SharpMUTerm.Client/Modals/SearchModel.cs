@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace SharpMUTerm.Client.Modals;
 
 /// <summary>
@@ -49,6 +51,70 @@ public sealed record SearchModel(
     /// <summary>The toggles and what they mean now, in words: <c>text · Corvid</c>, <c>regex · every window · older history</c>.</summary>
     public string StateText => $"{(Regex ? "regex" : "text")} · {(AllWindows ? "every window" : Scope)}{(Older ? " · older history" : string.Empty)}";
 
+    /// <summary>
+    /// How many lines the scrollback behind the searched windows holds that their panes no longer do — what the pane cap
+    /// trimmed, and so what this search could not see. Set only while ⌥H is off; 0 when the panes hold everything.
+    /// </summary>
+    public long OlderLines { get; init; }
+
+    /// <summary>Whose older history <see cref="OlderLines"/> counts: the window's name, or <c>3 windows</c>.</summary>
+    public string OlderSource { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Whether the status line offers ⌥H: a query was searched, ⌥H is off, and the pane cap trimmed lines the scrollback
+    /// still holds, so this search found fewer hits than it might. A hint on the line under the query, never a modal.
+    /// </summary>
+    public bool OffersOlder => !Older && Error is null && Query.Length > 0 && OlderLines > 0;
+
+    /// <summary>The offer's chord, which a host draws as a key.</summary>
+    public const string OlderKey = "⌥H";
+
+    /// <summary>
+    /// The offer, longest first, for a status line too narrow for all of it: whose history and how much, then how much,
+    /// then the offer alone, then the chord and two words. Every rung starts with <see cref="OlderKey"/>. Empty when
+    /// nothing is offered.
+    /// </summary>
+    public IReadOnlyList<string> OlderHintLadder
+    {
+        get
+        {
+            if (!OffersOlder)
+            {
+                return [];
+            }
+
+            var lines = OlderLines.ToString("N0", CultureInfo.InvariantCulture);
+            var more = $"{lines} more line{(OlderLines == 1 ? string.Empty : "s")}";
+            return
+            [
+                OlderSource.Length > 0 ? $"{OlderKey} searches older history · {more} in {OlderSource}" : $"{OlderKey} searches older history · {more}",
+                $"{OlderKey} searches older history · {more}",
+                $"{OlderKey} searches older history",
+                $"{OlderKey} older history",
+            ];
+        }
+    }
+
+    /// <summary>
+    /// The status line's note in <paramref name="room"/> cells (0 for no limit): the longest rung of
+    /// <see cref="OlderHintLadder"/> that fits while ⌥H is offered (its last rung if none does), else <see cref="HistoryNote"/>.
+    /// </summary>
+    public string? NoteFor(int room)
+    {
+        var ladder = OlderHintLadder;
+        if (ladder.Count == 0)
+        {
+            return HistoryNote;
+        }
+
+        if (room <= 0)
+        {
+            return HistoryNote ?? ladder[0];
+        }
+
+        return ladder.FirstOrDefault(r => r.Length <= room) ?? ladder[^1];
+    }
+
     /// <summary>How many rows are the pane buffer's (the rest are older history's, listed after them).</summary>
     public int HeldRows => Rows.Count(r => !r.IsOlder);
 
@@ -78,6 +144,7 @@ public sealed record SearchModel(
         && Query == other.Query && Regex == other.Regex && AllWindows == other.AllWindows
         && Scope == other.Scope && Held == other.Held && Error == other.Error
         && Older == other.Older && HistoryNote == other.HistoryNote && HistoryRunning == other.HistoryRunning
+        && OlderLines == other.OlderLines && OlderSource == other.OlderSource
         && ModelLists.Same(Rows, other.Rows);
 
     public override int GetHashCode() => HashCode.Combine(Query, Regex, AllWindows, Scope, Held, Error, ModelLists.Hash(Rows));

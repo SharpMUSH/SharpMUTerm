@@ -224,10 +224,7 @@ internal static class SearchPrompt
         var lines = new List<string>
         {
             SpreadLR($"[{Label}]search[/] {QueryMarkup(query)}", $"[{Label}]{Escape(model.StateText)}[/]", width),
-            SpreadLR(
-                model.HistoryNote is { } note ? $"[{(model.HistoryRunning ? Accent : Muted)}]{Escape(note)}[/]" : string.Empty,
-                $"[{Label}]{Escape(model.CountText)}[/]",
-                width),
+            SpreadLR(NoteMarkup(model, width), $"[{Label}]{Escape(model.CountText)}[/]", width),
         };
 
         var body = new List<string>();
@@ -252,6 +249,26 @@ internal static class SearchPrompt
         lines.Add(string.Empty);
         lines.Add($"[{Label}]{Escape(HintsFor(width))}[/]");
         return lines;
+    }
+
+    /// <summary>
+    /// The status line's left half: older history's note, or — while the pane cap trimmed what this search could see — the
+    /// ⌥H offer, laddered to the room the count leaves (<see cref="SearchModel.NoteFor"/>), its chord in the accent.
+    /// </summary>
+    private static string NoteMarkup(SearchModel model, int width)
+    {
+        var room = width > 0 ? width - VisibleLength(model.CountText) - 2 : 0;
+        if (model.NoteFor(room) is not { } note)
+        {
+            return string.Empty;
+        }
+
+        if (model.OffersOlder && note.StartsWith(SearchModel.OlderKey, StringComparison.Ordinal))
+        {
+            return $"[bold {Accent}]{SearchModel.OlderKey}[/][{Muted}]{Escape(note[SearchModel.OlderKey.Length..])}[/]";
+        }
+
+        return $"[{(model.HistoryRunning ? Accent : Muted)}]{Escape(note)}[/]";
     }
 
     /// <summary>

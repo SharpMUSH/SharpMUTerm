@@ -114,6 +114,13 @@ fallbacks) for inline images/maps.
     line numbers, monospace). ⌃S saves, reloads that character's scripts and says the first error (`file:line`) in the
     header and the console; the editor stays open. Esc keeps unsaved text per file for the run. `package:` scripts open
     read only. The demo saves nothing.
+  - **The error's line is one model field, `ComposerEdit.ErrorLine`** (Client `ScriptErrors.LineIn`, the one reader of
+    `file.lua:(N,…)`, also behind ⌃P's `! line N`; `ScriptEdit.Said(status)` sets it from a `! …` status naming this file
+    and clears it on anything else). The cell editor puts that line on a band (`MultilineEditControl.SetLineHighlight`,
+    `ComposeOverlay.ErrorBand`: warn 28% over the well — a syntax token carries a foreground only); the window numbers
+    lines in a gutter (`ComposerView.LineGutter`, read off the `TextBox`'s own layout via `ComposerEditor.LineSpans`) and
+    flags the line there and with a band over the text (`DrawMarks`). The gutter re-measures only when its digits or face
+    change: the editor's layout raises `MarksMoved`, and measuring on each was an infinite layout loop.
 - **GMCP and MSDP data is held per session in `GameDataStore`, and three things read it**: the status row's
   meters (`StatusMeter`, F7 ▸ `meters`), ⌃P ▸ *Show game data* (`GameDataOverlay`) and Lua (`gmcp.get`,
   `msdp.get`). GMCP packages are stored by name with objects merged key by key, because IRE and Aardwolf send
@@ -414,7 +421,14 @@ fallbacks) for inline images/maps.
     reference (a session window's `PaneLine.Source` is the ring's instance). Older rows list after the pane's, tagged
     `older`; the note on the count row says the bound and the progress, and that captures keep no older history. ⏎ on
     one goes to the pane if it holds the line, else opens the **history view**: a modal page of 20 lines, every move a
-    ranged read, never inserted into a pane buffer. ⌥G stays pane-only.
+    ranged read, never inserted into a pane buffer. ⌥G stays pane-only. It opens **centred on the hit**
+    (`ScrollbackViewModel.TopFor`, clamped at the ends), and `Role(line)` makes the `ContextRows` (3) either side context:
+    body ink behind a `│` in cells, a rule in the window; the rest of the page muted/dim.
+  - **⌥H is offered on the status line, not in a modal, only while the pane cap trimmed what ⌃F searched**
+    (`SearchModel.OlderLines`/`OlderSource`/`OffersOlder`: a query, ⌥H off, and the session scrollback holding lines the pane
+    does not). `OlderHintLadder` is four rungs, all starting `⌥H`; the cells take the longest that fits beside the count
+    (`NoteFor(room)`, chord in bold accent), the window shows the first in words, accent, and a click on it is ⌥H. Nothing
+    trimmed, nothing said. `FooterFitTests` pins the offer and the count on one row at 80×24.
   - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
     first frame, and every line would otherwise count as missed — so any frame that later made such a
     window visible carried an activity bar reporting the client's own setup as news.
@@ -1463,7 +1477,8 @@ fallbacks) for inline images/maps.
     (glyph runs, F-keys, Esc, PgUp…), two-space-indented lines stay rows. The cells draw bold headings and accent keys;
     the window draws headings and key chips (`NativeKeys.Words`). The cell topic header is one elided row.
   - **F5's world column at 80×24 drops its group headings** when the fields do not fit, naming the top row's group on the
-    column's first row (`├ WORLD · CONNECTION`, `⌃ 12 more · MAP`); while a world field is focused the character form and
+    column's first row (`├ WORLD · CONNECTION`, `⌃ 12 more · MAP`) — re-read at every scroll step from the first field
+    shown, which `SearchAndScriptWaveTests` walks with ⇥ (checked in wave 18: it was already right); while a world field is focused the character form and
     trigger sets are capped to a third of the height. ⇥ order is unchanged. An open `highlight names` edit draws the
     syntax and colours under its well (`NamesHelpRows`; `ScreenChrome.Window(…, keepBelow)` keeps them on screen); the
     window's field help is `HighlightColours.NamesHelp`, the same words.

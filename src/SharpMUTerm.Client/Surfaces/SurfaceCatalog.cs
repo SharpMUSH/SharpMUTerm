@@ -450,6 +450,7 @@ public static class SurfaceCatalog
             [
                 // Typing, ⌥E, ⌥A and ⌥H re-run the search over the pane buffers (and, with ⌥H, the sessions' scrollback off
                 // the UI thread); ⏎ goes to the row through the one path to a hit, or opens an older one in the history view.
+                // The status line's ⌥H offer (SearchModel.OlderHintLadder) is the same query: a click on it in the window is ⌥H.
                 new(SurfaceActionKind.Modal, "query", "SearchModelFor"),
                 new(SurfaceActionKind.Modal, "go", "GoToSearchHit"),
             ],

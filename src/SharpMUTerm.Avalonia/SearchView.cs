@@ -74,6 +74,16 @@ internal sealed class SearchView : DockPanel, IModalView
         Children.Add(_state);
 
         _note = ModalParts.Dim(string.Empty, colours, new Thickness(20, 0, 20, 6));
+
+        // While the pane cap trimmed what was searched, the note is the ⌥H offer, and a click on it is ⌥H.
+        _note.PointerPressed += (_, e) =>
+        {
+            if (_model.OffersOlder)
+            {
+                e.Handled = true;
+                _older.IsChecked = true;
+            }
+        };
         SetDock(_note, Dock.Top);
         Children.Add(_note);
 
@@ -227,7 +237,8 @@ internal sealed class SearchView : DockPanel, IModalView
         _count.Text = _model.CountText;
         _note.Text = NativeKeys.Words(_model.HistoryNote ?? string.Empty);
         _note.IsVisible = _model.HistoryNote is not null;
-        _note.Foreground = _colours.Brush(_model.HistoryRunning ? _colours.Accent : _colours.Dim);
+        _note.Foreground = _colours.Brush(_model.HistoryRunning || _model.OffersOlder ? _colours.Accent : _colours.Dim);
+        _note.Cursor = _model.OffersOlder ? new Cursor(StandardCursorType.Hand) : null;
         _list.Children.Clear();
         _rows.Clear();
         _selected = _model.Rows.Count == 0 ? 0 : Math.Clamp(_selected, 0, _model.Rows.Count - 1);

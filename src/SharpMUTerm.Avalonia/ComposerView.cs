@@ -37,6 +37,7 @@ internal sealed class ComposerView : Border
     private readonly bool _fullScreen;
     private readonly ComposerEditor _editor;
     private readonly MarkLayer _marks;
+    private readonly LineGutter _gutter;
     private readonly Border _header;
     private readonly TextBlock _title;
     private readonly TextBlock _target;
@@ -78,6 +79,7 @@ internal sealed class ComposerView : Border
         _editor.GotFocus += (_, _) => AskToArm();
         _editor.ContextRequested += OnContextRequested;
         _marks = new MarkLayer(_editor);
+        _gutter = new LineGutter(_editor) { IsVisible = false };
 
         _title = new TextBlock { FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         _target = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -110,10 +112,17 @@ internal sealed class ComposerView : Border
         // The armed rule down the docked editor's left edge: the cell composer's ▌ marker, in the accent.
         _rule = new Border { Width = 3, HorizontalAlignment = HorizontalAlignment.Left };
 
-        var body = new Panel();
-        body.Children.Add(_editor);
-        body.Children.Add(_marks);
-        body.Children.Add(_rule);
+        var text = new Panel();
+        text.Children.Add(_editor);
+        text.Children.Add(_marks);
+        text.Children.Add(_rule);
+
+        // A script's lines are numbered in a gutter beside the editor, the cells' line numbers; the error line is marked there.
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        Grid.SetColumn(_gutter, 0);
+        Grid.SetColumn(text, 1);
+        body.Children.Add(_gutter);
+        body.Children.Add(text);
 
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto") };
         Grid.SetRow(_header, 0);
@@ -236,6 +245,11 @@ internal sealed class ComposerView : Border
         // A package's script is only read: the editor shows it and keeps every edit out.
         _editor.IsReadOnly = model.Edit?.ReadOnly == true;
 
+        // A script: its lines numbered, and the line the last load error named marked in the gutter and behind the text,
+        // from the model's one field the cell editor marks too.
+        _gutter.IsVisible = model.Edit is { Script: true };
+        _editor.ErrorLine = model.Edit is { Script: true, ErrorLine: > 0 } failed ? failed.ErrorLine : 0;
+
         if (coloursChanged || previous is null)
         {
             Paint();
@@ -264,6 +278,9 @@ internal sealed class ComposerView : Border
             }
         }
     }
+
+    /// <summary>The gutter of line numbers, shown for a script. Internal for tests.</summary>
+    internal LineGutter Gutter => _gutter;
 
     /// <summary>The header's length cell as drawn. Internal for tests.</summary>
     internal string CountText => _count.Text ?? string.Empty;
@@ -301,6 +318,11 @@ internal sealed class ComposerView : Border
         _editor.SelectionBrush = new SolidColorBrush(Color.FromArgb(0x70, Accent.R, Accent.G, Accent.B));
         _editor.SelectionForegroundBrush = new SolidColorBrush(_text);
         _editor.MarkColour = Warn;
+        _editor.ErrorColour = Warn;
+        _gutter.Ink = Dim;
+        _gutter.Warn = Warn;
+        _gutter.Background = new SolidColorBrush(Band);
+        _gutter.InvalidateVisual();
         _title.Foreground = new SolidColorBrush(Accent);
         _target.Foreground = new SolidColorBrush(_text);
         _count.Foreground = new SolidColorBrush(Dim);
@@ -786,5 +808,88 @@ internal sealed class ComposerView : Border
         }
 
         public override void Render(DrawingContext context) => _editor.DrawMarks(context, this);
+    }
+
+    /// <summary>
+    /// A script's line numbers, beside the editor and level with each source line's first row (read off the editor's own
+    /// layout, so a wrapped line is numbered once and scrolling moves the numbers): the window's form of the cell editor's
+    /// numbered gutter. The line <see cref="ComposerEditor.ErrorLine"/> names is drawn in the warning ink with a bar at the
+    /// edge. It takes no input.
+    /// </summary>
+    internal sealed class LineGutter : Control
+    {
+        private readonly ComposerEditor _editor;
+
+        public LineGutter(ComposerEditor editor)
+        {
+            _editor = editor;
+            IsHitTestVisible = false;
+            Focusable = false;
+            ClipToBounds = true;
+            // Repainted whenever the text moves (the editor's layout, a scroll); re-measured only when the width it needs
+            // changed — a digit more, another face or size — because the editor's own layout pass raises MarksMoved, and a
+            // gutter that re-measured on every one would never let layout settle.
+            editor.MarksMoved += () =>
+            {
+                if (_measured != (Digits, _editor.FontSize, _editor.FontFamily))
+                {
+                    InvalidateMeasure();
+                }
+
+                InvalidateVisual();
+            };
+        }
+
+        private (int Digits, double Size, FontFamily Face) _measured;
+
+        /// <summary>The numbers' ink.</summary>
+        public Color Ink { get; set; } = Colors.Gray;
+
+        /// <summary>The error line's ink.</summary>
+        public Color Warn { get; set; } = Colors.IndianRed;
+
+        /// <summary>The gutter's plane.</summary>
+        public IBrush? Background { get; set; }
+
+        /// <summary>The numbers drawn now, by line, for a test: the lines in view with the error line's flagged.</summary>
+        public IReadOnlyList<(int Line, bool Error)> Numbers =>
+            [.. _editor.LineSpans().Select(s => (s.Line, s.Line == _editor.ErrorLine))];
+
+        private int Digits => Math.Max(2, (_editor.Text ?? string.Empty).Count(c => c == '\n') + 1).ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
+
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            _measured = (Digits, _editor.FontSize, _editor.FontFamily);
+            var sample = Text(new string('8', Digits), Ink, FontWeight.Normal);
+            return new Size(Math.Ceiling(sample.Width) + 22, 0);
+        }
+
+        public override void Render(DrawingContext context)
+        {
+            if (Background is { } plane)
+            {
+                context.FillRectangle(plane, new Rect(Bounds.Size));
+            }
+
+            foreach (var (line, top, bottom) in _editor.LineSpans())
+            {
+                if (_editor.TranslatePoint(new Point(0, top), this) is not { } at)
+                {
+                    continue;
+                }
+
+                var error = line == _editor.ErrorLine;
+                var number = Text(line.ToString(System.Globalization.CultureInfo.InvariantCulture), error ? Warn : Ink, error ? FontWeight.Bold : FontWeight.Normal);
+                context.DrawText(number, new Point(Bounds.Width - 10 - number.Width, at.Y));
+                if (error)
+                {
+                    context.FillRectangle(new SolidColorBrush(Warn), new Rect(Bounds.Width - 4, at.Y, 3, bottom - top));
+                }
+            }
+        }
+
+        private FormattedText Text(string text, Color ink, FontWeight weight) =>
+            new(text, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                new Typeface(_editor.FontFamily, FontStyle.Normal, weight), _editor.FontSize, new SolidColorBrush(ink));
     }
 }

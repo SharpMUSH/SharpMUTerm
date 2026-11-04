@@ -24,9 +24,9 @@ public class DeepSearchTests
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
     /// <summary>A connected Ann whose pane holds the newest 40 lines of 400, with goblins at lines 10 and 395.</summary>
-    private static async Task<SharpMUTermApp> Live()
+    private static async Task<SharpMUTermApp> Live(int paneLines = 40)
     {
-        var config = new AppConfiguration { PaneLines = 40 };
+        var config = new AppConfiguration { PaneLines = paneLines };
         config.Worlds.Add(new WorldDefinition
         {
             Name = "Convergence",
@@ -59,6 +59,20 @@ public class DeepSearchTests
         await Assert.That(model.Rows.Count).IsEqualTo(1);
         await Assert.That(model.Rows[0].IsOlder).IsFalse();
         await Assert.That(model.HistoryNote).Contains("⌥H searches older history");
+        await Assert.That(model.OffersOlder).IsTrue();
+        await Assert.That(model.OlderLines).IsGreaterThan(300).Because("400 lines arrived and the pane keeps about 40");
+    }
+
+    [Test]
+    public async Task NothingIsOfferedWhileThePaneHoldsEveryLine()
+    {
+        await using var app = await Live(paneLines: 2_000);
+
+        var model = app.SearchModelFor("goblin", false, false);
+
+        await Assert.That(model.Rows.Count).IsEqualTo(2).Because("both goblins are in the pane");
+        await Assert.That(model.OffersOlder).IsFalse();
+        await Assert.That(model.HistoryNote).IsNull();
     }
 
     [Test]

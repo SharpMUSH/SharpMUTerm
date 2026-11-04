@@ -37,7 +37,12 @@ public sealed record ComposerKey(string Key, string Label, string? Short = null)
 /// <param name="ReadOnly">Whether it can only be read: a package's script.</param>
 /// <param name="Status">What the last save said (<c>saved · 2 files loaded</c>, or the first load error), or null.</param>
 /// <param name="Line">The line the caret opens on, from 1; 0 for the end.</param>
-public sealed record ComposerEdit(string Name, string Type, bool Script = false, bool ReadOnly = false, string? Status = null, int Line = 0);
+/// <param name="ErrorLine">
+/// The line of this script the last load error named (<c>corvid.lua:(14,…)</c>), from 1; 0 for none. Both hosts mark it
+/// from this one field — the cells on a warning band behind the line, the window in its gutter and behind the line
+/// (<see cref="ScriptErrors.LineIn(string?, string)"/>).
+/// </param>
+public sealed record ComposerEdit(string Name, string Type, bool Script = false, bool ReadOnly = false, string? Status = null, int Line = 0, int ErrorLine = 0);
 
 /// <summary>
 /// <b>A composer, as both hosts draw it.</b> The terminal draws F1 and the docked panel in cells; the window draws them

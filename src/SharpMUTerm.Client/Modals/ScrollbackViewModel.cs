@@ -5,10 +5,25 @@ namespace SharpMUTerm.Client.Modals;
 /// <summary>One line of the history view: its absolute index in the session's scrollback, its text, and where the query matched.</summary>
 public readonly record struct ScrollbackViewLine(long Index, string Text, int MatchStart, int MatchLength);
 
+/// <summary>What a line of the history view is to the line the search found.</summary>
+public enum ScrollbackLineRole
+{
+    /// <summary>A line of the page, away from the hit: drawn quieter.</summary>
+    Page,
+
+    /// <summary>One of the <see cref="ScrollbackViewModel.ContextRows"/> lines either side of the hit: the body ink.</summary>
+    Context,
+
+    /// <summary>The line the search found: marked.</summary>
+    Hit,
+}
+
 /// <summary>
 /// The read-only history view (⏎ on an older-history hit in ⌃F): <see cref="PageRows"/> lines of a session's scrollback
 /// — the ring or the file-backed spill — around the line the search found, the found line marked and the query's run in
-/// each line marked. Drawn by the cell surface (<c>ScrollbackViewSurface.Render</c>) and the window's native modal from
+/// each line marked. It opens <b>centred on the found line</b> (<see cref="TopFor"/>), and the <see cref="ContextRows"/> lines
+/// either side of it are its context (<see cref="Role"/>): drawn in the body ink, the rest of the page quieter, so the hit
+/// reads with what was said around it. Drawn by the cell surface (<c>ScrollbackViewSurface.Render</c>) and the window's native modal from
 /// the same record; every move is a ranged read the client makes (<c>ScrollHistoryView</c>), so the two show the same page.
 /// <para>
 /// <b>A view, not a pane.</b> It never puts old lines back into a pane buffer: a pane holds the newest
@@ -35,6 +50,9 @@ public sealed record ScrollbackViewModel(
     /// <summary>The lines a page holds, the same in both hosts.</summary>
     public const int PageRows = 20;
 
+    /// <summary>How many lines either side of the found line are its context.</summary>
+    public const int ContextRows = 3;
+
     /// <summary>The keys, in glyphs (a native view spells them in words).</summary>
     public const string Keys = "↑↓ a line · PgUp PgDn a page · Home End the ends · Esc closes";
 
@@ -59,8 +77,17 @@ public sealed record ScrollbackViewModel(
     /// <summary>The title row: whose history, and that it is only read.</summary>
     public string Title => $"OLDER HISTORY · {Window} · read only";
 
-    /// <summary>The top that shows <paramref name="marked"/> a third of the way down a page, clamped to what is held.</summary>
-    public static long TopFor(long marked, long oldest, long end) => Clamp(marked - PageRows / 3, oldest, end);
+    /// <summary>
+    /// The top that shows <paramref name="marked"/> in the middle of a page — <see cref="PageRows"/> / 2 lines above it, the
+    /// rest below — clamped to what is held, so a hit near either end sits as near the middle as the history allows.
+    /// </summary>
+    public static long TopFor(long marked, long oldest, long end) => Clamp(marked - PageRows / 2, oldest, end);
+
+    /// <summary>What a line of the page is to the hit: the hit itself, its context (<see cref="ContextRows"/> either side), or the rest.</summary>
+    public ScrollbackLineRole Role(ScrollbackViewLine line) =>
+        line.Index == Marked ? ScrollbackLineRole.Hit
+        : Math.Abs(line.Index - Marked) <= ContextRows ? ScrollbackLineRole.Context
+        : ScrollbackLineRole.Page;
 
     /// <summary><paramref name="top"/> kept to a page that starts at or after the oldest line and ends at or before the newest.</summary>
     public static long Clamp(long top, long oldest, long end) => Math.Max(oldest, Math.Min(top, Math.Max(oldest, end - PageRows)));

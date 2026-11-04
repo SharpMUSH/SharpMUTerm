@@ -134,12 +134,94 @@ internal sealed class ComposerEditor : TextBox
     }
 
     /// <summary>
+    /// The line a script's last load error named, from 1, or 0: <see cref="ComposerEdit.ErrorLine"/>, the field the cell
+    /// editor marks too. Drawn as a band over the line by <see cref="DrawMarks"/> and in the gutter.
+    /// </summary>
+    public int ErrorLine
+    {
+        get => _errorLine;
+        set
+        {
+            if (_errorLine != value)
+            {
+                _errorLine = value;
+                MarksMoved?.Invoke();
+            }
+        }
+    }
+
+    private int _errorLine;
+
+    /// <summary>The band's colour (the warning ink, mostly transparent so the text under it reads).</summary>
+    public Color ErrorColour { get; set; } = Color.FromRgb(0xff, 0x6b, 0x6b);
+
+    /// <summary>
+    /// Each source line (from 1) in view, with the top and bottom of all the rows it wraps onto, in this control's
+    /// coordinates: what the gutter numbers and the error band covers. Read off the box's own layout, so it follows
+    /// wrapping, scrolling and the face. Empty before the template is applied.
+    /// </summary>
+    public IReadOnlyList<(int Line, double Top, double Bottom)> LineSpans()
+    {
+        if (_presenter is not { TextLayout: { } layout } presenter)
+        {
+            return [];
+        }
+
+        var text = Text ?? string.Empty;
+        var spans = new List<(int, double, double)>();
+        var start = 0;
+        var line = 1;
+        var height = Bounds.Height;
+        while (start <= text.Length)
+        {
+            var end = text.IndexOf('\n', start);
+            var stop = end < 0 ? text.Length : end;
+            var first = layout.HitTestTextPosition(start);
+            var last = layout.HitTestTextPosition(stop);
+            if (presenter.TranslatePoint(first.TopLeft, this) is { } top && presenter.TranslatePoint(last.BottomLeft, this) is { } bottom)
+            {
+                if (top.Y > height)
+                {
+                    break;
+                }
+
+                if (bottom.Y >= 0)
+                {
+                    spans.Add((line, top.Y, Math.Max(bottom.Y, top.Y + first.Height)));
+                }
+            }
+
+            if (end < 0)
+            {
+                break;
+            }
+
+            start = end + 1;
+            line++;
+        }
+
+        return spans;
+    }
+
+    /// <summary>
     /// Draws the wavy lines onto <paramref name="surface"/>. A <see cref="TextBox"/> paints its text and its own
     /// background in children of its template, which are drawn after anything the box itself draws, so the lines are
     /// drawn by a layer lying over the editor (<see cref="ComposerView.MarkLayer"/>), which calls this.
     /// </summary>
     public void DrawMarks(DrawingContext context, Visual surface)
     {
+        if (_errorLine > 0)
+        {
+            foreach (var (line, top, bottom) in LineSpans())
+            {
+                if (line == _errorLine && this.TranslatePoint(new Point(0, top), surface) is { } at)
+                {
+                    var band = Color.FromArgb(0x3a, ErrorColour.R, ErrorColour.G, ErrorColour.B);
+                    context.FillRectangle(new SolidColorBrush(band), new Rect(at.X, at.Y, Bounds.Width, bottom - top));
+                }
+            }
+        }
+
         var rects = MarkRects();
         if (rects.Count == 0)
         {

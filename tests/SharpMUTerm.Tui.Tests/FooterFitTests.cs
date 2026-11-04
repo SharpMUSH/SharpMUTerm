@@ -39,6 +39,7 @@ public class FooterFitTests
         ("dictionary-offer", ["⏎ download", "Esc not now"]),
         ("quit", ["⏎ stay", "Esc stays"]),
         ("search", ["↑↓ pick", "⌃F closes"]),
+        ("search", ["⌥H searches older history", "lines held"]),
         ("history-search", ["type to filter", "⌃R closes"]),
         ("layouts", ["↑↓ pick", "[⏎] Apply"]),
         ("welcome", ["↑↓ pick", "Esc closes"]),

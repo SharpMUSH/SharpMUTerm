@@ -26,10 +26,21 @@ internal readonly record struct ComposeResult(string Body, ComposeEscaping Escap
 /// <param name="ReadOnly">A package's script: shown, never saved.</param>
 /// <param name="Status">What the last save said, or null.</param>
 /// <param name="Line">The line the caret opens on, from 1; 0 for the top.</param>
-internal sealed record ScriptEdit(string Name, string? Owner, bool ReadOnly, string? Status = null, int Line = 0)
+/// <param name="ErrorLine">The line the last load error named in this file, from 1; 0 for none.</param>
+internal sealed record ScriptEdit(string Name, string? Owner, bool ReadOnly, string? Status = null, int Line = 0, int ErrorLine = 0)
 {
     /// <summary>What the editor says this is: the MOO edit's shape, read by both hosts.</summary>
-    internal ComposerEdit Describe() => new(Name, "lua", Script: true, ReadOnly, Status, Line);
+    internal ComposerEdit Describe() => new(Name, "lua", Script: true, ReadOnly, Status, Line, ErrorLine);
+
+    /// <summary>
+    /// This edit after a save said <paramref name="status"/>: an error (<c>! …</c>) naming a line of this file marks that
+    /// line; anything else clears the mark.
+    /// </summary>
+    internal ScriptEdit Said(string status) => this with
+    {
+        Status = status,
+        ErrorLine = status.StartsWith('!') ? ScriptErrors.LineIn(status, Name) ?? 0 : 0,
+    };
 }
 
 /// <summary>
@@ -148,7 +159,8 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        _script = _script with { Status = status };
+        _script = _script.Said(status);
+        MarkErrorLine();
         RefreshBands();
     }
 
@@ -274,6 +286,8 @@ internal sealed class ComposeOverlay
             _editor.GoToLine(at.Line);
         }
 
+        MarkErrorLine();
+
         _editor.ContentChanged += (_, _) => RefreshBands();
         FitEditor();
 
@@ -301,6 +315,34 @@ internal sealed class ComposeOverlay
         // Nothing focuses a control for you in this framework, and an unfocused editor takes no
         // keystrokes at all — the window would open looking right and swallow everything typed into it.
         _window.FocusManager.SetFocus(_editor, FocusReason.Programmatic);
+    }
+
+    /// <summary>
+    /// The line the last load error named (<see cref="ComposerEdit.ErrorLine"/>, the field the window's editor marks too)
+    /// on a band behind it in the warning ink, the rest cleared. A background, because the editor's syntax tokens carry a
+    /// foreground only.
+    /// </summary>
+    private void MarkErrorLine()
+    {
+        if (_editor is null)
+        {
+            return;
+        }
+
+        _editor.ClearLineHighlights();
+        if (_script is { ErrorLine: > 0 } script)
+        {
+            _editor.SetLineHighlight(script.ErrorLine - 1, ErrorBand(_scheme));
+        }
+    }
+
+    /// <summary>The error line's band: the warning ink part of the way over the editor's well, so the text on it stays legible.</summary>
+    internal static Color ErrorBand(ScreenTheme scheme)
+    {
+        var well = scheme.Colour(ScreenPalette.EditBg);
+        var warn = scheme.Colour(ScreenPalette.Warn);
+        static byte Mix(byte a, byte b) => (byte)Math.Round(a + ((b - a) * 0.28));
+        return new Color(Mix(well.R, warn.R), Mix(well.G, warn.G), Mix(well.B, warn.B));
     }
 
     /// <summary>
