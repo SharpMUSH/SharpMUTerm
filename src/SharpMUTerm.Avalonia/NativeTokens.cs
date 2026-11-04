@@ -322,12 +322,16 @@ internal sealed partial record NativeTokens(
         new Rgb(0x10, 0x13, 0x1a),
         new Rgb(0x3a, 0x4f, 0x73));
 
-    /// <summary>The palette's light card.</summary>
+    /// <summary>
+    /// The palette's light card: the dark set mirrored. Its edge and rule hold the dark set's step against the plane they
+    /// sit on (the mockup's <c>#2c3447</c> on <c>#141822</c> is about 1.4:1), so a field on a light panel keeps an edge
+    /// rather than the near-white hairline (1.1:1 on Light's <c>#f2f2f5</c> side column) it had.
+    /// </summary>
     private static readonly Canon LightCanon = new(
         Color.FromArgb(0x4d, 0, 0, 0),
         new Rgb(0xff, 0xff, 0xff),
-        new Rgb(0xd4, 0xd4, 0xdd),
-        new Rgb(0xe6, 0xe6, 0xec),
+        new Rgb(0xc4, 0xc8, 0xd2),
+        new Rgb(0xdc, 0xdf, 0xe6),
         new Rgb(0x1d, 0x1d, 0x24),
         new Rgb(0x62, 0x62, 0x70),
         new Rgb(0x6a, 0x6a, 0x78),

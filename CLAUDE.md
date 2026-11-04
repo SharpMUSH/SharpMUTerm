@@ -2481,6 +2481,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `TheSpacingScaleAndTheChromeSizesAreWholeDevicePixels…` pins the multiples of 4. Not done: the quick bar is still one
     cell row (the mockup's is a 56 px strip of 34 px buttons), and panel internals' font sizes are not on the scale.
 
+- **Wave 23 B (Light window, settings window).** The native header's plane is `WorkspacePalette.NativeHeaderPlane`: the
+  status band on a dark theme, the backdrop on a light one (Light's status band is a lavender that sat beside the neutral
+  rail and footer as a third grey); `HeaderMuted(theme, plane)` holds the quiet ink on it. Native only — the cell header
+  keeps its band. `LightCanon`'s `Edge`/`Rule` are `#c4c8d2`/`#dcdfe6`, the dark set's ~1.4:1 step mirrored, so a field on
+  Light's side column has an edge. The welcome's search and form fields are `ModalParts.Sunk` (Fluent's default text
+  background is `Raised`, the cards' own plane). Settings: a section with no match shows no count (not a greyed `0`);
+  page monospace is `NativeTokens.Code` (12); the received-paths panel scrolls past `MeterPathsMaxHeight`; list-editor
+  combos stretch like the text boxes; a disabled button keeps the button plane with a `Rule` edge.
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

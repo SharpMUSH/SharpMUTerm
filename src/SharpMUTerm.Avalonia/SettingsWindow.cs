@@ -34,6 +34,9 @@ internal sealed class SettingsWindow : Window
     /// <summary>How far the meter table's received-paths box sits in: under the path columns, past the label column.</summary>
     private const double MeterPathsIndent = 128;
 
+    /// <summary>The received-paths panel's height before it scrolls: its heading and about six paths.</summary>
+    private const double MeterPathsMaxHeight = 200;
+
     private readonly TextBox _search;
     private readonly ListBox _sections;
     private readonly StackPanel _page;
@@ -426,13 +429,11 @@ internal sealed class SettingsWindow : Window
         foreach (var section in _form.Sections)
         {
             var count = counts.GetValueOrDefault(section.Id);
+            // While searching a section with matches says how many and one without says nothing (the mockup's rows):
+            // a column of greyed zeros read as a column of disabled sections.
             _badges[section.Id].Text = searching
-                ? count.ToString(CultureInfo.InvariantCulture)
+                ? count > 0 ? count.ToString(CultureInfo.InvariantCulture) : string.Empty
                 : SettingsForm.IsDeclared(section) ? string.Empty : "↗";
-            if (Items.FirstOrDefault(i => Equals(i.Tag, section.Id)) is { } item)
-            {
-                item.Opacity = searching && count == 0 ? 0.45 : 1;
-            }
         }
 
         StyleNavigation();
@@ -1167,7 +1168,7 @@ internal sealed class SettingsWindow : Window
             value.GotFocus += (_, _) => lastPath = value;
             max.GotFocus += (_, _) => lastPath = max;
 
-            var now = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontFamily = Mono, FontSize = NativeTokens.Body };
+            var now = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontFamily = Mono, FontSize = NativeTokens.Code };
             _meterNow.Add((meter, now));
 
             var remove = new Button
@@ -1210,7 +1211,7 @@ internal sealed class SettingsWindow : Window
 
         foreach (var item in received.Take(40))
         {
-            var line = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Body, TextTrimming = TextTrimming.CharacterEllipsis };
+            var line = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Code, TextTrimming = TextTrimming.CharacterEllipsis };
             line.Inlines!.Add(new Run(item.Path) { Foreground = page.Brush(page.Text) });
             line.Inlines.Add(new Run($"  = {item.Value}") { Foreground = DimInk });
             var pick = new Button
@@ -1235,9 +1236,17 @@ internal sealed class SettingsWindow : Window
             box.Children.Add(pick);
         }
 
+        // The mockup's drop-down shows a handful of rows; a connection that has sent sixty paths scrolls inside the panel
+        // rather than pushing "+ Add a meter" and the next card a screen down.
+        var list = new ScrollViewer
+        {
+            Content = box,
+            MaxHeight = MeterPathsMaxHeight,
+            HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        };
         outer.Children.Add(new Border
         {
-            Child = box,
+            Child = list,
             Background = page.Brush(page.Popup),
             BorderThickness = new Thickness(NativeTokens.Hairline),
             BorderBrush = page.Brush(page.FocusEdge),
@@ -1271,7 +1280,7 @@ internal sealed class SettingsWindow : Window
             Text = text ?? string.Empty,
             ItemsSource = paths,
             FontFamily = Mono,
-            FontSize = NativeTokens.Body,
+            FontSize = NativeTokens.Code,
             FilterMode = AutoCompleteFilterMode.ContainsOrdinal,
             MinimumPrefixLength = 0,
             HorizontalAlignment = HorizontalAlignment.Stretch,

@@ -90,6 +90,9 @@ internal sealed class WelcomeView : DockPanel, IModalView
             MaxLength = WorldDirectory.MaxQuery,
         };
         global::Avalonia.Automation.AutomationProperties.SetName(_search, WelcomeModel.FindHeading);
+        // Sunk into the ground with the mockup's magnifier, as every search box is: on the raised card a field on Fluent's
+        // default (the raised plane itself) had no plane of its own and on Light read as no field at all.
+        ModalParts.Sunk(_search, colours);
         _search.TextChanged += (_, _) => DrawRows();
         _findNote = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
         var find = new StackPanel { Spacing = NativeTokens.Space12 };
@@ -104,6 +107,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _port = Field(WelcomeModel.FieldLabel(WelcomeField.Port), "4000", 5);
         _port.FontFamily = Mono;
         _character = Field(WelcomeModel.FieldLabel(WelcomeField.Character), "Name", WelcomeModel.MaxCharacter);
+        foreach (var box in new[] { _host, _port, _character })
+        {
+            ModalParts.Sunk(box, colours, magnifier: false);
+        }
+
         _tls = new CheckBox { Content = "Encrypt the connection (TLS)", FontSize = NativeTokens.Title };
         _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body };
         _command = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };

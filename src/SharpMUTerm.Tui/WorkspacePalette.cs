@@ -383,10 +383,26 @@ internal static class WorkspacePalette
     }
 
     /// <summary>The header's quiet text (the counts, the log state), held to <see cref="HeaderTextFloor"/> on its band.</summary>
-    internal static Rgb HeaderMuted(Theme theme)
+    internal static Rgb HeaderMuted(Theme theme) => HeaderMuted(theme, theme?.StatusBackground ?? throw new ArgumentNullException(nameof(theme)));
+
+    /// <summary>The header's quiet text held to <see cref="HeaderTextFloor"/> on <paramref name="plane"/>.</summary>
+    internal static Rgb HeaderMuted(Theme theme, Rgb plane)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Contrast.Legible(Mix(theme.StatusBackground, theme.StatusForeground, MutedLean), theme.StatusBackground, HeaderTextFloor);
+        return Contrast.Legible(Mix(plane, theme.StatusForeground, MutedLean), plane, HeaderTextFloor);
+    }
+
+    /// <summary>
+    /// The plane a host draws its native header on. A dark theme keeps the status band (a step above the backdrop, the
+    /// mockup's header over its navigation). A light theme's status band is a tinted grey (Light's lavender
+    /// <c>#dcdce6</c>) that sat beside the neutral rail and footer as a third, unrelated grey; there the header shares the
+    /// backdrop with the rail and the footer, and the rule under it is the boundary. Native only: the cell header keeps
+    /// its band.
+    /// </summary>
+    internal static Rgb NativeHeaderPlane(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance ? theme.StatusBackground : Backdrop(theme);
     }
 
     /// <summary>

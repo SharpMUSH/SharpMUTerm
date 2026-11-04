@@ -73,6 +73,7 @@ internal sealed partial class SharpMUTermApp
         _sidebarMenuRun ??= id => OnUiThread(() => RunSidebarMenuEntry(id));
         var header = BuildHeaderModel();
         var brand = FillHex(AccentPalette[2]);
+        var headerPlane = WorkspacePalette.NativeHeaderPlane(_theme);
         var palette = new ChromePalette(
             brand,
             header.World is { } world ? FillHex(world.Accent) : null,
@@ -80,12 +81,12 @@ internal sealed partial class SharpMUTermApp
             _ink.Draft,
             UnreadBadge.TintFor(_ink),
             _ink.Notice,
-            Hex(_theme.StatusBackground),
+            Hex(headerPlane),
             Hex(WorkspacePalette.Backdrop(_theme)),
             Hex(_theme.Resolve(Core.Text.TerminalColor.Default, isBackground: false)))
         {
             BrandInk = WorkspacePalette.HeaderInk(_theme, ParseHex(brand)).ToHex(),
-            HeaderMuted = WorkspacePalette.HeaderMuted(_theme).ToHex(),
+            HeaderMuted = WorkspacePalette.HeaderMuted(_theme, headerPlane).ToHex(),
         };
 
         return new ChromeOverlay(

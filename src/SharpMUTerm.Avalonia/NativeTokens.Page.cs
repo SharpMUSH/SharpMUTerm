@@ -23,6 +23,9 @@ internal sealed partial record NativeTokens
     /// <summary>A field's label on a page.</summary>
     public const double Label = 13;
 
+    /// <summary>Monospace text on a page: a path, a live value (the mockup's 12 px JetBrains Mono).</summary>
+    public const double Code = 12;
+
     /// <summary>Corner radius of an input, a button or a navigation row on a page.</summary>
     public const double RadiusControl = 6;
 
@@ -156,7 +159,12 @@ internal sealed record PageTokens(
         Set(FocusEdge,
             "TextControlBorderBrushFocused", "ComboBoxBorderBrushPointerOver", "ButtonBorderBrushPointerOver",
             "TextControlBorderBrushPointerOver", "ComboBoxDropDownBorderBrush");
-        Set(Button, "ButtonBackground", "RepeatButtonBackground", "ToggleSwitchFillOff", "ToggleSwitchFillOffPointerOver");
+        Set(Button, "ButtonBackground", "RepeatButtonBackground", "ToggleSwitchFillOff", "ToggleSwitchFillOffPointerOver",
+            "ButtonBackgroundDisabled", "RepeatButtonBackgroundDisabled");
+
+        // A disabled button is the enabled one with its edge and ink quieter, never a darker fill: Fluent's own grey made
+        // the one button that does nothing (the list's ↑ at the top) the heaviest thing in its row on a light page.
+        Set(Rule, "ButtonBorderBrushDisabled", "RepeatButtonBorderBrushDisabled");
         Set(PopupSelected,
             "ButtonBackgroundPointerOver", "ButtonBackgroundPressed", "RepeatButtonBackgroundPointerOver",
             "ComboBoxItemBackgroundPointerOver", "ComboBoxItemBackgroundSelected", "ComboBoxItemBackgroundSelectedPointerOver",

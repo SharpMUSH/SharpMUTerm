@@ -17,6 +17,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   divider is a filled band too, modal pop-ups have a quiet grey frame instead of a cyan one, the header shows your
   character in the world's colour without a grey chip, the vitals card no longer draws a stray rule when nothing is
   targeted, and the welcome's `/connect` example is highlighted — closer to the terminal mockups.
+- In the desktop window's Light theme, the header sits on the same plane as the sidebar and status row instead of a
+  separate lavender grey, text fields in the composer, the welcome and the pop-ups have a visible edge, and the
+  welcome's fields are sunk into their cards (with a magnifier in the search box) in every theme.
+- The settings window is closer to its mockup: while searching, a section with no match no longer shows a greyed `0`,
+  the meter table's paths and live values are in the 12-point monospace face, the list of received paths scrolls inside
+  its panel instead of pushing the page down, the list editors' drop-downs line up with the text boxes beside them,
+  and a disabled button no longer looks heavier than an enabled one.
 
 - In the desktop window, the map is drawn the way the mockups draw it: dark rooms outlined in a rule, exits as thin lines,
   your room ringed in the accent with an `@`, Up/Down/Areas as proper buttons, and the legend in a strip at the foot with

@@ -128,7 +128,7 @@ public class SettingsWindowTests
         await Assert.That(section).IsEqualTo("text").Because("the section on show had nothing matching, so the first that has is shown");
         await Assert.That(fields).IsEquivalentTo(expected.Where(m => m.Section.Id == "text").Select(m => m.Field!.Id).ToArray());
         await Assert.That(badges["text"]).IsEqualTo(expected.Count(m => m.Section.Id == "text").ToString(System.Globalization.CultureInfo.InvariantCulture));
-        await Assert.That(badges["input"]).IsEqualTo("0");
+        await Assert.That(badges["input"]).IsEqualTo(string.Empty).Because("a section with no match says nothing, as the mockup's rows do");
     }
 
     [Test]

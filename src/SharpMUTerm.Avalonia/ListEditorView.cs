@@ -618,7 +618,9 @@ internal sealed class ListEditorView : Grid
 
             case ChoiceField choice when field.Binding is SettingBinding<string> named:
             {
-                var combo = new ComboBox { ItemsSource = _form.Choices(choice), SelectedItem = _form.Get(named), MaxWidth = 280 };
+                // Stretched as the text boxes are, so every control in the column shares both edges: a combo capped at 280 px was
+                // centred in a wider cell, 25 px in from the Name box above it.
+                var combo = new ComboBox { ItemsSource = _form.Choices(choice), SelectedItem = _form.Get(named), HorizontalAlignment = HorizontalAlignment.Stretch };
                 combo.SelectionChanged += (_, _) =>
                 {
                     if (!_syncing && combo.SelectedItem is string value && value != _form.Get(named))
@@ -678,7 +680,7 @@ internal sealed class ListEditorView : Grid
                 {
                     ItemsSource = names,
                     ItemTemplate = new FuncDataTemplate<string>((name, _) => Swatch(name)),
-                    MaxWidth = 280,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
                 void Pick() => combo.SelectedItem = names.FirstOrDefault(n =>
                     string.Equals(n, HighlightColours.Format(_form.Get(colour)), StringComparison.OrdinalIgnoreCase));
