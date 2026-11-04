@@ -99,4 +99,11 @@ internal static class ScreenPalette
     /// palette that shouts at every risky-looking row teaches the eye to skip the colour.
     /// </summary>
     internal const string Warn = "#ff6b6b";
+
+    /// <summary>
+    /// A binding that works and costs something: F4's <c>△</c> on a macro that hides one of the client's own
+    /// keys or another binding on its chord. Amber rather than <see cref="Warn"/>, because nothing here is
+    /// refused — the binding runs, and the colour only says what it is standing in front of.
+    /// </summary>
+    internal const string Caution = "#e8b04a";
 }

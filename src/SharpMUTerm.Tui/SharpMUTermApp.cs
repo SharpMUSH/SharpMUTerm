@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -900,7 +901,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _window.IsScrollable = false;
 
         RegisterBuiltInContributions();
-        _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
+        _palette = new CommandPalette(
+            _system,
+            BuildCatalog,
+            () => _active?.SessionKey,
+            id => DispatchCommand(id),
+            _recentCommands,
+            () => CommandPaletteModel.Suggested(CommandState()));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
         _screens = ScreenTheme.For(_theme);
@@ -1686,6 +1693,27 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 RebuildPaneArea();
             }
 
+            _palette.Toggle();
+        }
+
+        // The command surface searched: a real drag across the output first, because "Make a trigger from
+        // the selection" is offered only while something is selected, then `trig sel` typed into it — the
+        // frame that shows a fuzzy match across two words, its characters highlighted, at the top.
+        if (string.Equals(view, "menu-fuzzy", StringComparison.OrdinalIgnoreCase))
+        {
+            RenderWholeFrame();
+            SimulatePaneDrag(MainWindowId, 0, 1, 46, 3);
+            ReArmWholeFrame();
+            _palette.Toggle();
+            _palette.SetQuery("trig sel");
+        }
+
+        // The command surface opened with nothing typed after two commands were run through the palette's
+        // own path: RECENT at the top, newest first, and neither entry listed a second time in its group.
+        if (string.Equals(view, "menu-recent", StringComparison.OrdinalIgnoreCase))
+        {
+            RunFromPalette("layout:split-right");
+            RunFromPalette("layout:cycle");
             _palette.Toggle();
         }
 
@@ -7744,7 +7772,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
-            OutputSelected: HasOutputSelection);
+            OutputSelected: HasOutputSelection,
+            KeyClashes: KeyClashes.Count(Macros()));
     }
 
     /// <summary>
@@ -8069,6 +8098,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         switch (id)
         {
+            case "settings:key-clashes":
+                // The keypad screen is where each clash is marked and explained; this entry is its way in.
+                return RunBuiltInCommand(ScreenCommandPrefix + "keypad");
             case "layout:zoom":
             case "layout:unzoom":
                 _workspace.Layout.ToggleZoom();

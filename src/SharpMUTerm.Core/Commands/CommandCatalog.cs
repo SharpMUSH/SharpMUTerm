@@ -45,6 +45,10 @@ public sealed record CharacterRef(
 /// Null where the host has no screen reader to tell; otherwise whether the active window's output is read aloud.
 /// </param>
 /// <param name="OutputSelected">Whether some pane's output is selected, so a trigger can be made from it.</param>
+/// <param name="KeyClashes">
+/// How many F4 bindings share a chord with the client or with each other, so <c>Key clashes (N)</c> is offered
+/// only when there is one to show.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -57,7 +61,8 @@ public sealed record CommandContext(
     bool Walking = false,
     bool? Sound = null,
     bool? Announced = null,
-    bool OutputSelected = false);
+    bool OutputSelected = false,
+    int KeyClashes = 0);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host

@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Core.Commands;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -6,10 +7,11 @@ using SharpConsoleUI.Controls;
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// The command surface (⌃P): a modal search box over a live-generated catalog, ranked with
-/// <see cref="CommandMatcher"/> and rendered grouped by <see cref="CommandSurfaceRenderer"/>. ↑↓
-/// walk the flattened results, ⏎ dispatches the selected id, Esc closes. The catalog and dispatch
-/// are supplied by the app so this stays a thin view over tested logic.
+/// The command surface (⌃P): a modal search box over a live-generated catalog, ordered and grouped by the
+/// shared view-model (<see cref="CommandPaletteModel"/>, in Client, so the window's palette can list the same
+/// rows) and drawn by <see cref="CommandSurfaceRenderer"/>. ↑↓ walk the entries, ⏎ dispatches the selected id
+/// and records it among the recent ones, Esc closes. The catalog, the suggestions and dispatch are supplied by
+/// the app so this stays a thin view over tested logic.
 /// </summary>
 internal sealed class CommandPalette
 {
@@ -17,13 +19,13 @@ internal sealed class CommandPalette
     private readonly Func<IReadOnlyList<CommandItem>> _catalog;
     private readonly Func<string?> _context;
     private readonly Action<string> _dispatch;
+    private readonly RecentCommands _recent;
+    private readonly Func<IReadOnlyList<string>> _suggested;
 
     private Window? _window;
     private PromptControl? _search;
     private MarkupControl? _results;
-    private IReadOnlyList<RankedCommand> _ranked = Array.Empty<RankedCommand>();
-    private IReadOnlyList<CommandItem> _ordered = Array.Empty<CommandItem>();
-    private int _total;
+    private PaletteView _view = Empty;
     private int _selected;
     private int _contentWidth;
 
@@ -31,15 +33,40 @@ internal sealed class CommandPalette
         ConsoleWindowSystem system,
         Func<IReadOnlyList<CommandItem>> catalog,
         Func<string?> context,
-        Action<string> dispatch)
+        Action<string> dispatch,
+        RecentCommands recent,
+        Func<IReadOnlyList<string>> suggested)
     {
         _system = system;
         _catalog = catalog;
         _context = context;
         _dispatch = dispatch;
+        _recent = recent;
+        _suggested = suggested;
     }
 
+    private static PaletteView Empty { get; } = new([], [], 0);
+
     public bool IsOpen => _window is not null;
+
+    /// <summary>What the surface is listing right now, for a test.</summary>
+    internal PaletteView View => _view;
+
+    /// <summary>The selected entry's index in <see cref="PaletteView.Entries"/>, for a test.</summary>
+    internal int Selected => _selected;
+
+    /// <summary>Types <paramref name="query"/> into the open surface, as if it had been keyed in.</summary>
+    internal void SetQuery(string query)
+    {
+        if (_search is null)
+        {
+            return;
+        }
+
+        _search.SetInput(query);
+        _selected = 0;
+        Refresh(query);
+    }
 
     /// <summary>Opens the surface if closed, closes it if open (bound to ⌃P).</summary>
     public void Toggle()
@@ -64,13 +91,15 @@ internal sealed class CommandPalette
         _results = new MarkupControl(new List<string>());
 
         // Size the surface to hug the full (unfiltered) catalog so nothing scrolls and there's no empty
-        // gutter: fit height to the row count and width to the widest row, both capped to the desktop.
-        var catalog = _catalog();
-        var initial = CommandSurfaceRenderer.Render(
-            CommandMatcher.Rank(string.Empty, catalog), 0, catalog.Count, _context());
+        // gutter: fit height to the row count and width to the widest row, both capped to the desktop. A
+        // narrower desktop elides titles and details, never keys (CommandSurfaceRenderer).
+        var initial = Build(string.Empty);
         var desktop = _system.DesktopDimensions;
-        var height = Math.Clamp(initial.Count + 3, 6, Math.Max(6, desktop.Height - 2));
-        _contentWidth = Math.Clamp(CommandSurfaceRenderer.MaxWidth(initial) + 1, 32, Math.Max(32, desktop.Width - 6));
+        var height = Math.Clamp(initial.Rows.Count + 1 + 3, 6, Math.Max(6, desktop.Height - 2));
+        _contentWidth = Math.Clamp(
+            Math.Max(CommandSurfaceRenderer.NaturalWidth(initial), HeaderWidth(initial)) + 1,
+            32,
+            Math.Max(32, desktop.Width - 6));
         var width = _contentWidth + 2; // + the 1-cell left/right border
 
         // A clean overlay: single border, but no window chrome — no minimize/maximize/close buttons
@@ -99,36 +128,42 @@ internal sealed class CommandPalette
         Refresh(string.Empty);
     }
 
+    private PaletteView Build(string query) =>
+        CommandPaletteModel.Build(query, _catalog(), _recent.Ids, _suggested());
+
+    // The context line ("N of M   acting on X") is measured too, so a long character name is not cut off.
+    private int HeaderWidth(PaletteView view) =>
+        CommandSurfaceRenderer.MaxWidth(CommandSurfaceRenderer.Render(view, -1, _context()).Take(1).ToList());
+
     private void Refresh(string query)
     {
-        var catalog = _catalog();
-        _total = catalog.Count;
-        _ranked = CommandMatcher.Rank(query, catalog);
-        _ordered = CommandSurfaceRenderer.Order(_ranked);
-        _selected = _ordered.Count == 0 ? -1 : Math.Clamp(_selected, 0, _ordered.Count - 1);
+        _view = Build(query);
+        _selected = _view.Entries.Count == 0 ? -1 : Math.Clamp(_selected, 0, _view.Entries.Count - 1);
         Paint();
     }
 
     private void Paint() =>
-        _results?.SetContent(CommandSurfaceRenderer.Render(_ranked, _selected, _total, _context(), _contentWidth));
+        _results?.SetContent(CommandSurfaceRenderer.Render(_view, _selected, _context(), _contentWidth));
 
     private void Move(int delta)
     {
-        if (_ordered.Count == 0)
+        var count = _view.Entries.Count;
+        if (count == 0)
         {
             return;
         }
 
-        _selected = ((_selected + delta) % _ordered.Count + _ordered.Count) % _ordered.Count;
+        _selected = ((_selected + delta) % count + count) % count;
         Paint();
     }
 
     private void Commit()
     {
-        if (_selected >= 0 && _selected < _ordered.Count)
+        if (_selected >= 0 && _selected < _view.Entries.Count)
         {
-            var id = _ordered[_selected].Id;
+            var id = _view.Entries[_selected].Item.Id;
             Close();
+            _recent.Record(id);
             _dispatch(id);
         }
     }
@@ -169,7 +204,6 @@ internal sealed class CommandPalette
         _window = null;
         _search = null;
         _results = null;
-        _ranked = Array.Empty<RankedCommand>();
-        _ordered = Array.Empty<CommandItem>();
+        _view = Empty;
     }
 }

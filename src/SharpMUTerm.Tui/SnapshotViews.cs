@@ -16,7 +16,7 @@ internal static class SnapshotViews
         "triggers-edit", "logging-edit", "keypad-edit", "password-edit", "startup-edit",
         "freeze", "freeze-scrollback", "spawn", "split", "move", "drag",
         "history", "history-search", "history-search-filter", "draft", "draft2",
-        "menu", "menu-split", "messages", "quit", "connections", "characters",
+        "menu", "menu-split", "menu-fuzzy", "menu-recent", "messages", "quit", "connections", "characters",
         "tint", "tint-input", "tint-input-moved", "tint-tabs",
         "compose", "compose-literal", "moo-edit", "mssp", "mssp-none", "mssp-never", "web",
         "rail-long", "scrollback", "scrollback-up", "links", "away", "away-scrollback",

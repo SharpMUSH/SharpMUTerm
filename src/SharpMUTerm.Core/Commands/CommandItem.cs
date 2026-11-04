@@ -24,4 +24,18 @@ public enum CommandGroup
 /// value), the group it renders under, and a stable <see cref="Id"/> the UI dispatches on. The
 /// catalog is generated from live state, so <see cref="Subtitle"/> often carries dynamic detail.
 /// </summary>
-public sealed record CommandItem(CommandGroup Group, string Title, string Id, string? Subtitle = null);
+public sealed record CommandItem(CommandGroup Group, string Title, string Id, string? Subtitle = null)
+{
+    /// <summary>
+    /// The chord that runs this entry on the running host, held apart from <see cref="Subtitle"/> so a surface
+    /// can draw keys in a column of their own. Null when nothing but the surface runs it. <see cref="Subtitle"/>
+    /// still carries it too, joined with the detail, for the readers that show one line.
+    /// </summary>
+    public string? Key { get; init; }
+
+    /// <summary>
+    /// The few words describing the entry, without the key. Null when there are none, and also null on an entry
+    /// that set only <see cref="Subtitle"/>; a surface then treats the whole subtitle as the detail.
+    /// </summary>
+    public string? Detail { get; init; }
+}

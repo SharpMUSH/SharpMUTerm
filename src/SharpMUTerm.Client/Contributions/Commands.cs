@@ -175,7 +175,11 @@ public sealed class SingleCommand : CommandContribution
     {
         if (IsAvailable is null || IsAvailable(context))
         {
-            yield return new CommandItem(Category, TitleFor?.Invoke(context) ?? Title, Id, SubtitleFor(context));
+            yield return new CommandItem(Category, TitleFor?.Invoke(context) ?? Title, Id, SubtitleFor(context))
+            {
+                Key = Key?.Resolve(context.Keys),
+                Detail = Detail,
+            };
         }
     }
 

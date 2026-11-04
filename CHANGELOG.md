@@ -9,6 +9,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Ctrl+P matches as you type by initials and fragments, not only by prefix: `trig sel` finds *Make a trigger
+  from the selection*, and the letters it matched are highlighted. The commands you last ran from it are
+  listed first under RECENT, followed by what the moment suggests (copy while something is selected, back to
+  live output while scrolled back). Every entry's key sits in one right-aligned column, spelt one way (⌥⏎,
+  not Alt+⏎), and a narrow window shortens titles but never keys.
+- Keypad & hotkeys (F4) marks a binding that hides one of the client's own keys (such as Ctrl+C copy) with an
+  amber △ and says the binding wins, and marks a second binding on the same key as one that never runs.
+  Ctrl+P lists *Key clashes (N)* while there are any.
 - Make a trigger without writing a regex: select a line of output and choose Ctrl+P ▸ *Make a trigger from
   the selection* (also on the right-click menu). Triggers (F2) opens on a new rule whose pattern is the line
   with its numbers, quoted speech and known player names turned into `*`, and shows the regex behind it.

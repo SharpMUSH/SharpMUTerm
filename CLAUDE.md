@@ -209,6 +209,34 @@ fallbacks) for inline images/maps.
     availability (a rail row or the other half of a stateful pair still runs). A new ⌃P command is a
     contribution in `BuiltInCommands` plus a case in `RunBuiltInCommand`; Core's `CommandCatalog` keeps only
     `CharacterCycle`.
+- **⌃P's ranking and grouping are the Client's, so both hosts list the same rows** (`CommandPaletteModel`,
+  `FuzzyMatch`, `RecentCommands`, `KeyGlyphs` in `Client/Palette`; the Tui only draws, `CommandSurfaceRenderer`).
+  Core's `CommandMatcher` is gone. Decisions not to relitigate:
+  - **Matching is subsequence, word by word, in order**, scored per character: +1 matched, +8 at a word start,
+    +6 straight after the previous match, +4 on the first character, −1 per skipped character (−4 at most
+    per gap), +20 when the title starts with the whole query. Each word is aligned by dynamic programming,
+    falling back to the leftmost alignment so anything that is a subsequence matches. A title match always
+    lists above a match on the detail, the key or the group's name; ties keep catalog order. Groups keep
+    their headers but are ordered by their best entry, so the best match is the first row.
+  - **An empty query lists RECENT, then SUGGESTED, then the groups**, each entry once. SUGGESTED is read off
+    `CommandContext` flags alone (selection → copy and make-a-trigger, frozen, scrolled back, walking,
+    zoomed, clashes) — not a guess at habit, which is RECENT's job. ⌃P refuses over the composer and the
+    settings screens are modal, so there is no "screen open" mode for it to adapt to.
+  - **Recents are in memory for the run** (eight, newest first, `SharpMUTermApp._recentCommands`). The only
+    view state that outlives a run goes into `config.json`, and which menu entries were clicked is not
+    configuration; command-line history, the nearest relative, is in memory too. Recorded when chosen on ⌃P
+    (`CommandPalette.Commit`, `RunFromPalette`), never on a key or a rail click.
+  - **A `CommandItem` carries `Key` and `Detail` apart from `Subtitle`**; `Subtitle` stays the joined line
+    for the pointer menu and the tests that read it. Keys are shown through `KeyGlyphs.Normalize`, so the
+    host's `Alt+⏎`/`Ctrl+⏎` read `⌥⏎`/`⌃⏎` in the column while `--help` keeps the words. The key column is
+    right-aligned at the widest key; a narrow surface drops the detail, then elides the title, never the key.
+  - **Clashes come from `MacroKeys`, never a second table** (`KeyClashes`, Tui). `ClaimedBy` (a global
+    shortcut: the client wins, `Verdict` already says Taken) and `YieldedBy` (what the main window does with a
+    chord only after `DispatchMacro` declined it: the binding wins, a warning). `YieldedBy`'s list mirrors the
+    window chain below `DispatchMacro` and the bar's key table, and must move with them. Two bindings on one
+    chord resolve as `MacroEngine.Resolve` does — the first answers even disabled. F4 marks a binding that wins
+    with an amber `△` (`ScreenPalette.Caution`) in the key's own well, a loser with `▲`, and says which side
+    wins in the footer; ⌃P lists `Key clashes (N)` only while N > 0, and it opens F4.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
@@ -1001,6 +1029,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
 - **Views:** `worlds`/`settings`, `triggers`, `route`, `highlight`, `aliases`, `timers`, `keypad`,
   `set`, `textansi`, `input`, `logging`, `password`, `startup`, `freeze`, `spawn`, `split`, `move`, `drag`,
   `history`, `history-search`, `history-search-filter`, `draft`, `draft2`, `menu`, `menu-split`,
+  `menu-fuzzy` (`trig sel` typed into ⌃P after a real drag, so the trigger builder's entry is offered — the
+  frame showing a two-word fuzzy match highlighted), `menu-recent` (⌃P opened empty after two commands ran
+  through the palette's own path, `RunFromPalette` — RECENT at the top, newest first, listed once),
   `messages`, `quit`, `connections` (**two connections on one world** — the one view where the header's
   fraction, the rail's dots and the quit prompt's count are all visible together and all have to agree;
   every other view has at most one character connected per world, which is what hid a header dividing

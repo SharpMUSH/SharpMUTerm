@@ -196,6 +196,67 @@ internal static class MacroKeys
     private static readonly Dictionary<string, string> Claimed = BuildClaims();
 
     /// <summary>
+    /// What the app's own global shortcut on this descriptor does, or null when no shortcut holds it. A macro
+    /// on such a chord never runs: a global shortcut is tried before any window sees the key, which is why
+    /// <see cref="Verdict"/> reports it <see cref="MacroKeyDelivery.Taken"/>.
+    /// </summary>
+    internal static string? ClaimedBy(string? descriptor) =>
+        MacroKey.Canonicalise(descriptor) is { } canonical && Claimed.TryGetValue(canonical, out var does) ? does : null;
+
+    /// <summary>
+    /// What the client does with this chord <em>after</em> <c>DispatchMacro</c> has had it, or null when
+    /// nothing does. A macro bound here runs and the client's own action does not — the chord is the user's
+    /// once they bind it, which is why <see cref="Verdict"/> reports these as firing. F4 marks such a binding
+    /// as a warning rather than a fault (<see cref="KeyClashes"/>).
+    /// <para>
+    /// The list is the main window's key chain below <c>DispatchMacro</c>, in its order: the pane resize
+    /// (<c>TryResizeKey</c>), copy, pane selection (<c>TryFocusKey</c>), scrollback (<c>TryScrollKey</c>),
+    /// recall (<c>TryRecallKey</c>), then the command line's own table (<c>InputBarControl.ProcessKey</c>).
+    /// Unmodified keys are not here: a macro cannot be bound to one (the prompt has them).
+    /// </para>
+    /// </summary>
+    internal static string? YieldedBy(string? descriptor) =>
+        MacroKey.Canonicalise(descriptor) is { } canonical && Yielded.TryGetValue(canonical, out var does) ? does : null;
+
+    private static readonly Dictionary<string, string> Yielded = BuildYielded();
+
+    private static Dictionary<string, string> BuildYielded()
+    {
+        var yielded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string key, bool ctrl, bool alt, bool shift, string does) =>
+            yielded[MacroKey.Describe(key, ctrl, alt, shift)] = does;
+
+        foreach (var arrow in new[] { "Left", "Right", "Up", "Down" })
+        {
+            Add(arrow, ctrl: false, alt: true, shift: true, "resizes the pane");
+            Add(arrow, ctrl: true, alt: false, shift: false, "moves between panes");
+        }
+
+        Add("C", ctrl: true, alt: false, shift: false, "copies the selection");
+        Add("Home", ctrl: true, alt: false, shift: false, "scrolls to the oldest output");
+        Add("End", ctrl: true, alt: false, shift: false, "goes back to live output");
+        Add("Up", ctrl: false, alt: false, shift: true, "scrolls the pane");
+        Add("Down", ctrl: false, alt: false, shift: true, "scrolls the pane");
+        Add("Up", ctrl: false, alt: true, shift: false, "recalls history");
+        Add("Down", ctrl: false, alt: true, shift: false, "recalls history");
+        Add("Left", ctrl: false, alt: true, shift: false, "moves a word");
+        Add("Right", ctrl: false, alt: true, shift: false, "moves a word");
+        foreach (var key in new[] { "Left", "Right", "Home", "End" })
+        {
+            Add(key, ctrl: false, alt: false, shift: true, "selects in the command line");
+        }
+
+        Add("A", ctrl: true, alt: false, shift: false, "selects the command line");
+        Add("X", ctrl: true, alt: false, shift: false, "cuts the selection");
+        Add("E", ctrl: true, alt: false, shift: false, "goes to the end of the line");
+        Add("K", ctrl: true, alt: false, shift: false, "deletes to the end of the line");
+        Add("U", ctrl: true, alt: false, shift: false, "deletes to the start of the line");
+        Add("Z", ctrl: true, alt: false, shift: false, "undoes");
+        Add("Y", ctrl: true, alt: false, shift: false, "redoes");
+        return yielded;
+    }
+
+    /// <summary>
     /// The canonical descriptor for a keystroke, whatever it is worth — what the capture mode writes
     /// into a binding, before the field's validator has a word to say about it. Null when the key has no
     /// name this client can store (a lone modifier, an undecoded sequence arriving as

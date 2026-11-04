@@ -1,5 +1,6 @@
 using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Workspaces;
 
@@ -15,6 +16,28 @@ namespace SharpMUTerm.Tui;
 internal sealed partial class SharpMUTermApp
 {
     private readonly ContributionRegistry _contributions = new();
+
+    /// <summary>
+    /// What was last run from ⌃P, newest first, listed under RECENT when the surface opens with nothing typed.
+    /// In memory for the run and never saved: see <see cref="RecentCommands"/> for why.
+    /// </summary>
+    private readonly RecentCommands _recentCommands = new();
+
+    /// <summary>The ⌃P surface itself, for a test that reads what it is listing.</summary>
+    internal CommandPalette Palette => _palette;
+
+    /// <summary>The ids the RECENT group lists, newest first, for a test.</summary>
+    internal IReadOnlyList<string> RecentCommandIds => _recentCommands.Ids;
+
+    /// <summary>
+    /// Runs an entry the way choosing it on ⌃P does: recorded among the recent ones, then dispatched. Internal
+    /// so a test and the <c>menu-recent</c> snapshot run commands through the palette's own path.
+    /// </summary>
+    internal bool RunFromPalette(string id)
+    {
+        _recentCommands.Record(id);
+        return DispatchCommand(id);
+    }
 
     /// <summary>The registry the surfaces read. A host or a package adds to it; the views pick it up on their next read.</summary>
     internal ContributionRegistry Contributions => _contributions;

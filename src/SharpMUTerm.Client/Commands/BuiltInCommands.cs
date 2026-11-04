@@ -134,6 +134,10 @@ public static class BuiltInCommands
         // has a row even though each has an F-key.
         Add("term:history", CommandGroup.Terminal, "Search command history", "⌃R");
 
+        // A macro on a chord the client also takes, or two macros on one chord: only when there is one.
+        Add("settings:key-clashes", CommandGroup.Settings, "Key clashes", "F4", "which binding wins, on the keypad screen",
+            when: c => c.State.KeyClashes > 0, titleFor: c => $"Key clashes ({c.State.KeyClashes})");
+
         // The composer. Named here as well as bound to F1 for the reason the row above it is: a surface
         // nobody can find is a surface nobody uses, and this one is not something a reader would guess
         // at from the command line in front of them.
@@ -262,7 +266,11 @@ public static class BuiltInCommands
                 CommandGroup.GoTo,
                 $"Switch to {character.CharacterName}",
                 CommandIds.Character(character.SessionKey),
-                $"{chord}{character.WorldName} · {state}");
+                $"{chord}{character.WorldName} · {state}")
+            {
+                Key = chord.Length == 0 ? null : chord[..^3],
+                Detail = $"{character.WorldName} · {state}",
+            };
         }
     }
 
@@ -303,7 +311,11 @@ public static class BuiltInCommands
                 CommandGroup.GoTo,
                 $"Go to {window.Title}",
                 CommandIds.Window(window.Id),
-                $"{chord}{owner}{unread}");
+                $"{chord}{owner}{unread}")
+            {
+                Key = chord.Length == 0 ? null : chord[..^3],
+                Detail = $"{owner}{unread}",
+            };
         }
     }
 
@@ -365,11 +377,17 @@ public static class BuiltInCommands
                 CommandGroup.Layout,
                 $"Go to pane {n}",
                 CommandIds.Pane(n),
-                n <= CommandIds.PaneJumpDigits ? $"⌃B {n}" : null);
+                n <= CommandIds.PaneJumpDigits ? $"⌃B {n}" : null)
+            {
+                Key = n <= CommandIds.PaneJumpDigits ? $"⌃B {n}" : null,
+            };
         }
     }
 
     private static IEnumerable<CommandItem> Screens(ICommandContext context) =>
         context.Settings.Select(screen =>
-            new CommandItem(CommandGroup.Settings, $"Open {screen.Title}", screen.Id, screen.Shortcut));
+            new CommandItem(CommandGroup.Settings, $"Open {screen.Title}", screen.Id, screen.Shortcut)
+            {
+                Key = string.IsNullOrEmpty(screen.Shortcut) ? null : screen.Shortcut,
+            });
 }

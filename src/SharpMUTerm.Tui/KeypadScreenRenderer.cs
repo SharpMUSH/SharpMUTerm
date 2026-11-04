@@ -393,10 +393,13 @@ internal static class KeypadScreenRenderer
             // The row can only spare a handful of cells for a reason; the footer has the width to give
             // the whole one, for the binding the cursor is actually on.
             var verdict = MacroKeys.Verdict(macros[at].Key);
+            var clash = KeyClashes.For(macros[at], macros);
             context = ScreenChrome.Context(
                 ScreenChrome.Position("binding", at, macros.Count),
                 Escape(Identify(macros[at])),
-                verdict.Fires ? null : "▲ " + Escape(verdict.Reason));
+                clash is { } c
+                    ? (c.BindingRuns ? "△ " : "▲ ") + Escape(c.Reason)
+                    : verdict.Fires ? null : "▲ " + Escape(verdict.Reason));
         }
 
         var actions = ScreenChrome.Actions(focus: focus);
@@ -458,6 +461,7 @@ internal static class KeypadScreenRenderer
             lines.Add(ScreenChrome.Cursor(
                 Hotkey(
                     macros[i],
+                    macros,
                     sets is null ? null : ScreenLists.OwnerOf(sets, s => s.Macros, macros[i])?.Name,
                     cursor.EditOn(0, i, NameField),
                     cursor.EditOn(0, i, CommandField),
@@ -530,6 +534,7 @@ internal static class KeypadScreenRenderer
     /// </summary>
     private static string Hotkey(
         Macro macro,
+        IReadOnlyList<Macro> macros,
         string? setName,
         ScreenFieldEdit? name,
         ScreenFieldEdit? command,
@@ -537,10 +542,17 @@ internal static class KeypadScreenRenderer
         ScreenFieldEdit? set)
     {
         var verdict = MacroKeys.Verdict(macro.Key);
+        var clash = KeyClashes.For(macro, macros);
         var tick = macro.Enabled ? $"[{Accent}]✓[/]" : "[dim]·[/]";
-        var chord = verdict.Fires
-            ? $"[bold]{Escape(macro.Key)}[/]"
-            : $"[{Muted}]▲ {Escape(macro.Key)}[/]";
+
+        // A clash is marked inside the key's own well, where the ▲ already goes, so it costs the row no
+        // cell: △ in amber for a binding that runs and hides something (a client key, or a later binding),
+        // ▲ for one that never runs. The footer says which side wins for the row the cursor is on.
+        var chord = clash is { BindingRuns: true }
+            ? $"[{Caution}]△ {Escape(macro.Key)}[/]"
+            : verdict.Fires && clash is null
+                ? $"[bold]{Escape(macro.Key)}[/]"
+                : $"[{Muted}]▲ {Escape(macro.Key)}[/]";
         var bound = ScreenChrome.Field(PadVisible(chord, KeyColumnWidth), key);
 
         // A binding that has never been named still gets its well — the name is editable whether or not
@@ -578,10 +590,11 @@ internal static class KeypadScreenRenderer
     /// </summary>
     private static string DeadCount(IReadOnlyList<Macro> macros)
     {
-        var dead = macros.Count(m => !MacroKeys.Verdict(m.Key).Fires);
-        return dead == 0
-            ? string.Empty
-            : $"  [{Muted}]▲ {dead} of {macros.Count} cannot fire[/]";
+        var dead = macros.Count(m =>
+            !MacroKeys.Verdict(m.Key).Fires || KeyClashes.For(m, macros) is { Kind: KeyClashKind.Shadowed });
+        var hiding = macros.Count(m => KeyClashes.For(m, macros) is { Kind: KeyClashKind.BindingWins });
+        var caption = dead == 0 ? string.Empty : $"  [{Muted}]▲ {dead} of {macros.Count} cannot fire[/]";
+        return hiding == 0 ? caption : caption + $"  [{Caution}]△ {hiding} hide a client key[/]";
     }
 
     private static Macro? FindByKey(IReadOnlyList<Macro> macros, string key)
