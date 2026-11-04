@@ -57,6 +57,25 @@ internal static class MarkupText
     }
 
     /// <summary>
+    /// The first of <paramref name="candidates"/> (longest first) whose visible length fits <paramref name="room"/>,
+    /// else the last: a footer's drop-order ladder, so a narrow bar gives up whole parts in a chosen order rather
+    /// than being cut off mid-word at its end.
+    /// </summary>
+    internal static string FirstFitting(int room, params string[] candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        foreach (var candidate in candidates)
+        {
+            if (VisibleLength(candidate) <= room)
+            {
+                return candidate;
+            }
+        }
+
+        return candidates.Length == 0 ? string.Empty : candidates[^1];
+    }
+
+    /// <summary>
     /// Lays a left- and right-hand fragment on one line, right-aligning the right to
     /// <paramref name="width"/>. A non-positive width means "width unknown" (the unit-test path), which
     /// falls back to a fixed gap.

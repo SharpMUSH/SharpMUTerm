@@ -921,7 +921,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _palette = new CommandPalette(
             _system,
             BuildCatalog,
-            () => _active?.SessionKey,
+            () => _active is { } acting ? DisplayName(acting.SessionKey) : null,
             id => DispatchCommand(id),
             _recentCommands,
             () => CommandPaletteModel.Suggested(CommandState()));
@@ -1019,6 +1019,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncMapSizes();
             SyncPanelSizes();
             SyncScrollSplitBars();
+            SyncChromeBarWidths();
             SyncStatusMode();
         };
 
@@ -1876,11 +1877,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RefusePrefix(PrefixPanel.NoSplitRefusal);
             RefuseCommand("nothing to reconnect — pick a character first (⌃P ▸ Switch to …)");
             Notice(
-                "switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it",
+                $"switched to Corvid · offline — {ReconnectHint()} connects it",
                 MessageSeverity.Info,
-                "⌃P",
-                new NoticeAction("world:reconnect", "Reconnect"));
-            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
+                action: new NoticeAction("world:reconnect", "Reconnect"));
+            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error);
             _messageLog.Toggle();
         }
 
@@ -2590,8 +2590,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var written = window.LastWritten;
             AppendWindowLine(
                 windowId,
-                RestoreBarRenderer.Bar(restored, written, FrozenAccentHex()),
-                bar: accent => RestoreBarRenderer.Bar(restored, written, accent));
+                RestoreBarRenderer.Bar(restored, written, FrozenAccentHex(), BarWidth(windowId)),
+                bar: accent => RestoreBarRenderer.Bar(restored, written, accent, BarWidth(windowId)));
 
             restoredWindows++;
             restoredLines += window.Lines.Count;
@@ -3315,7 +3315,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             if (FindCharacter(sessionKey) is not { } found)
             {
-                Notice($"no character called {sessionKey} is configured — F5 adds one", key: "⌃P");
+                Notice($"no character called {Snippet(DisplayName(sessionKey))} is configured — F5 adds one");
                 return;
             }
 
@@ -3335,12 +3335,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         var state = session.IsConnected
             ? "connected"
-            : "offline — Alt+R (⌃P ▸ Reconnect) connects it";
+            : $"offline — {ReconnectHint()} connects it";
         Notice(
             $"switched to {SessionTitle(session)} · {state}",
             MessageSeverity.Info,
-            "⌃P",
-            session.IsConnected ? null : new NoticeAction("world:reconnect", "Reconnect"));
+            action: session.IsConnected ? null : new NoticeAction("world:reconnect", "Reconnect"));
     }
 
     /// <summary>
@@ -3449,8 +3448,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
-        // every line of every window (see PaneLine.Plain).
-        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor, pictures, source, bar));
+        // every line of every window (see PaneLine.Plain). A world's line is read from its spans, not from the
+        // markup: the markup carries the client's own decoration (a highlight's `▌ ` left rule), and a search or a
+        // trigger's live test that saw it would miss `^[public]` on the very line that rule highlighted.
+        buffer.Add(new PaneLine(markup, stamp, source?.Text ?? MarkupText.Plain(markup), imageAnchor, pictures, source, bar));
 
 
         // Cap what the pane holds, and trim its control with it. The control re-parses every line it
@@ -3886,7 +3887,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            InsertChromeRow(windowId, at, ink => AwayBarRenderer.Bar(missed, away, ink));
+            InsertChromeRow(windowId, at, ink => AwayBarRenderer.Bar(missed, away, ink, BarWidth(windowId)));
 
             var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount, DrawnAt = _time.GetUtcNow() };
             _awayMarks[windowId] = mark;
@@ -3958,7 +3959,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             var count = buffer.Count - at;
-            InsertChromeRow(windowId, at, accent => AwayBarRenderer.Missed(count, accent));
+            InsertChromeRow(windowId, at, accent => AwayBarRenderer.Missed(count, accent, BarWidth(windowId)));
 
             var mark = new AwayMark
             {
@@ -4836,7 +4837,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var at = Math.Clamp(row.LineIndex, 0, buffer.Count);
-        InsertChromeRow(row.WindowId, at, accent => SearchBarRenderer.Bar(query, ordinal, total, accent));
+        var searchWindow = row.WindowId;
+        InsertChromeRow(row.WindowId, at, accent => SearchBarRenderer.Bar(query, ordinal, total, accent, BarWidth(searchWindow)));
         _searchMark = (row.WindowId, at);
 
         RepaintPane(row.WindowId);
@@ -5211,8 +5213,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 ? kept
                 : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
 
+        // The target is resolved the way the docked composer's is (DescribeDocked): the session's title, else the
+        // window's owner by name, with nothing sendable. "no connection" is left for a window that belongs to nobody.
+        var target = session is not null
+            ? SessionTitle(session)
+            : _workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner
+                ? FindCharacter(owner)?.Character.Name ?? string.Empty
+                : string.Empty;
         OpenComposer(
-            session is null ? string.Empty : SessionTitle(session),
+            target,
             draft.Body,
             draft.Escaping,
             canSend: session is not null,
@@ -5328,7 +5337,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var window = _workspace.FindWindow(windowId);
         if (window?.SessionKey is { Length: > 0 } owner)
         {
-            return $"{owner} has no open session — ⌃P ▸ Switch to it opens one; nothing was sent";
+            return $"{Snippet(DisplayName(owner))} has no open session — ⌃P ▸ Switch to it opens one; nothing was sent";
         }
 
         // Through Snippet: a window's title can be a world's own text (the web view is titled from the
@@ -7242,7 +7251,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // — 3 unsaved edits", which was true while closing a screen could throw its edits away; now every
         // committed value is already written to disk when it is committed, so the count is always zero and a
         // line that could never appear is a line to delete rather than to leave hanging.
-        return new QuitModel(ConnectedCharacters(), drafts, holding.Select(w => w.Title).ToList());
+        return new QuitModel(ConnectedCharacters().Select(DisplayName).ToList(), drafts, holding.Select(w => w.Title).ToList());
     }
 
     /// <summary>
@@ -12992,7 +13001,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // the page it loaded — and the status row is not a place to paste an unbounded string from the wire.
         Notice(
             owner is { Length: > 0 }
-                ? $"{owner} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere from this pane"
+                ? $"{Snippet(DisplayName(owner))} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere from this pane"
                 : $"{Snippet(_workspace.FindWindow(windowId)?.Title ?? windowId)} belongs to no connection — " +
                   "⏎ sends nowhere from this pane");
     }

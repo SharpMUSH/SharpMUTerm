@@ -103,6 +103,6 @@ public class SurfaceCellTests
         await Assert.That(app.SimulateKey(new ConsoleKeyInfo('3', ConsoleKey.D3, false, false, true))).IsNull();
 
         var hotkeys = string.Join('\n', KeypadScreenRenderer.HotkeysColumn(keys, config.TriggerSets.SelectMany(s => s.Macros).ToList()));
-        await Assert.That(hotkeys).Contains("▲ Ctrl+3");
+        await Assert.That(hotkeys).Contains("▲ ⌃3");
     }
 }

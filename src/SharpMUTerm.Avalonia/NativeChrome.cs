@@ -341,7 +341,7 @@ internal abstract class NativeChromeView : Control
 internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 {
     /// <summary>What the search box says. ⌃P lists commands, characters and windows, and settings screens.</summary>
-    internal const string SearchText = "Search commands, windows, settings";
+    internal const string SearchText = "Command palette";
 
     /// <summary>The prefix's leading word, beside its chord.</summary>
     internal const string PrefixWord = "awaiting a pane key";
@@ -590,7 +590,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 {
     /// <summary>What the button at the foot says.</summary>
-    internal const string AddGameText = "+ Add a game or connect";
+    internal const string AddGameText = "+ Add a world or connect";
 
     /// <summary>The fold button's tooltip, open and folded.</summary>
     internal const string FoldTip = "Fold the sidebar (Ctrl+B b)", UnfoldTip = "Open the sidebar (Ctrl+B b)";

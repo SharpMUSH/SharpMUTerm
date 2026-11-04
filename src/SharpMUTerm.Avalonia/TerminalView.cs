@@ -239,7 +239,9 @@ internal sealed class TerminalView : Control
         if (mapped is { } key)
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
-            _swallowText = key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control)
+            // So is a numpad digit, which KeyMapper has already sent with its digit.
+            _swallowText = (key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || key.Key is >= ConsoleKey.NumPad0 and <= ConsoleKey.NumPad9
                 ? key.KeyChar
                 : null;
             _driver.RaiseKey(key);

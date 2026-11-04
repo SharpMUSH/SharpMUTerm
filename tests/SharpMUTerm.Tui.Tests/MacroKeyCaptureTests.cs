@@ -159,7 +159,7 @@ public class MacroKeyCaptureTests
         await Assert.That(dead).Contains("▲");
         await Assert.That(dead).Contains(ScreenPalette.Muted);
 
-        var live = rows.Single(l => l.Contains("Ctrl+F1", StringComparison.Ordinal));
+        var live = rows.Single(l => l.Contains("⌃F1", StringComparison.Ordinal));
         await Assert.That(live).DoesNotContain("▲");
 
         await Assert.That(rows[0]).Contains("HOTKEYS");

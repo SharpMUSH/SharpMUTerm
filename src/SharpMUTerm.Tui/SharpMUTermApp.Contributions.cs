@@ -95,6 +95,20 @@ internal sealed partial class SharpMUTermApp
 
     private HostKeyGlyphs HostKeyGlyphs() => new(Host.Keys.Newline.Glyph);
 
+    /// <summary>
+    /// The key a registered command answers to on this host, spelt the way every surface spells keys
+    /// (<see cref="KeyGlyphs.Normalize"/>), or null when it has none. A notice that names a key reads it here rather
+    /// than spelling it in its own text, so the key it names is the one that runs the command.
+    /// </summary>
+    internal string? CommandKey(string id) =>
+        _contributions.Commands.Resolve(id) is SingleCommand { Key: { } key }
+            ? KeyGlyphs.Normalize(key.Resolve(HostKeyGlyphs()))
+            : null;
+
+    /// <summary>How the status row says what reconnects: <c>⌥R (⌃P ▸ Reconnect)</c>.</summary>
+    private string ReconnectHint() =>
+        CommandKey("world:reconnect") is { } key ? $"{key} (⌃P ▸ Reconnect)" : "⌃P ▸ Reconnect";
+
     private sealed class AppCommandContext(SharpMUTermApp app) : ICommandContext
     {
         private CommandContext? _state;

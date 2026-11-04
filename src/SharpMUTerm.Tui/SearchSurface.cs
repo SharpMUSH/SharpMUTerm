@@ -32,11 +32,10 @@ internal readonly record struct SearchCorpus(string WindowId, string Label, IRea
 internal sealed class SearchSurface
 {
     /// <summary>
-    /// The narrowest the surface goes. Set by the footer: a surface too narrow for its own key hints
-    /// would wrap them onto a second row and push the list up. Checked by test against
-    /// <see cref="SearchPrompt.Hints"/> rather than trusted.
+    /// The narrowest the surface goes. Set by the footer's shortest rung (<see cref="SearchPrompt.HintLadder"/>): a
+    /// surface too narrow for it would wrap the keys onto a second row and push the list up.
     /// </summary>
-    internal const int MinimumWidth = 78;
+    internal const int MinimumWidth = 44;
 
     /// <summary>
     /// The rows the surface spends on something other than results: the query line, the count line, the

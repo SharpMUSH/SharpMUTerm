@@ -12,8 +12,29 @@ public class FuzzyMatchTests
     public async Task AQueryMatchesWhenItIsASubsequence_IgnoringCase()
     {
         await Assert.That(FuzzyMatch.Match("SPLIT", "Split right")).IsNotNull();
-        await Assert.That(FuzzyMatch.Match("lgg", "Start logging")).IsNotNull();
+        await Assert.That(FuzzyMatch.Match("loggng", "Start logging")).IsNotNull();
         await Assert.That(FuzzyMatch.Match("zzz", "Start logging")).IsNull();
+    }
+
+    /// <summary>A short word may not scatter its letters across a title: the reported noise for <c>trig</c>.</summary>
+    [Test]
+    public async Task AShortWordMatchesOnlyAtWordStartsAndRuns()
+    {
+        await Assert.That(FuzzyMatch.Match("trig", "Make a trigger from the selection")).IsNotNull();
+        await Assert.That(FuzzyMatch.Match("trig", "Stop reading this window aloud")).IsNull();
+        await Assert.That(FuzzyMatch.Match("trig", "Start logging")).IsNull();
+        await Assert.That(FuzzyMatch.Match("lgg", "Start logging")).IsNull();
+
+        // Acronyms are word starts, so they still match.
+        await Assert.That(FuzzyMatch.Match("fp", "Freeze pane")).IsNotNull();
+        await Assert.That(FuzzyMatch.Match("sl", "Start logging")).IsNotNull();
+    }
+
+    /// <summary>A longer word keeps the subsequence rule, where scattered letters are rare enough to mean something.</summary>
+    [Test]
+    public async Task ALongerWordMayStillScatter()
+    {
+        await Assert.That(FuzzyMatch.Match("tstamp", "Show timestamps")).IsNotNull();
     }
 
     [Test]
@@ -28,17 +49,20 @@ public class FuzzyMatchTests
     [Test]
     public async Task AWholePrefixBeatsAScatteredMatch()
     {
-        var prefix = FuzzyMatch.Match("lay", "Layouts")!;
-        var scattered = FuzzyMatch.Match("lay", "Clear window, say")!;
+        var prefix = FuzzyMatch.Match("layou", "Layouts")!;
+        var scattered = FuzzyMatch.Match("layou", "Clear window, say you")!;
         await Assert.That(prefix.Score).IsGreaterThan(scattered.Score);
+
+        // And a short query cannot scatter at all.
+        await Assert.That(FuzzyMatch.Match("lay", "Clear window, say")).IsNull();
     }
 
     [Test]
     public async Task WordStartsBeatTheMiddleOfAWord()
     {
         // f…p at two word starts, against an f and a p buried in words.
-        var starts = FuzzyMatch.Match("fp", "Freeze pane")!;
-        var buried = FuzzyMatch.Match("fp", "Self-help")!;
+        var starts = FuzzyMatch.Match("frzpn", "Freeze pane")!;
+        var buried = FuzzyMatch.Match("frzpn", "Fur-zip ink")!;
         await Assert.That(starts.Score).IsGreaterThan(buried.Score);
     }
 
@@ -74,7 +98,7 @@ public class CommandPaletteModelTests
     public async Task AnEmptyQueryListsEveryGroupInItsFixedOrder()
     {
         var view = CommandPaletteModel.Build("", Items);
-        await Assert.That(Headers(view)).IsEquivalentTo(new[] { "GO TO", "TERMINAL", "LAYOUT" }, CollectionOrdering.Matching);
+        await Assert.That(Headers(view)).IsEquivalentTo(new[] { "GO TO", "OUTPUT", "LAYOUT" }, CollectionOrdering.Matching);
         await Assert.That(view.Entries.Count).IsEqualTo(Items.Length);
         await Assert.That(view.Total).IsEqualTo(Items.Length);
     }
@@ -100,10 +124,10 @@ public class CommandPaletteModelTests
     [Test]
     public async Task TheBestGroupComesFirst_EvenWhenItIsNotTheFirstGroup()
     {
-        // "log" is a title prefix only in TERMINAL; GO TO's entry does not match at all.
+        // "log" is a title prefix only in OUTPUT; GO TO's entry does not match at all.
         var view = CommandPaletteModel.Build("log", Items);
         await Assert.That(view.Entries[0].Item.Id).IsEqualTo("term:log-on");
-        await Assert.That(Headers(view).First()).IsEqualTo("TERMINAL");
+        await Assert.That(Headers(view).First()).IsEqualTo("OUTPUT");
     }
 
     [Test]

@@ -68,7 +68,7 @@ internal sealed class PaletteOverlay : Panel
             Padding = new Thickness(12, 9),
             CornerRadius = new CornerRadius(8),
         };
-        AutomationProperties.SetName(_search, "Search commands");
+        AutomationProperties.SetName(_search, "Command palette");
         _search.TextChanged += (_, _) => Refresh(resetSelection: true);
         DockPanel.SetDock(_search, Dock.Top);
 

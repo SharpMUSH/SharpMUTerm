@@ -85,7 +85,7 @@ public class RailRendererTests
     {
         var lines = RailRenderer.RenderCollapsed(Scene());
         // Two world separators (▚), and Corvid's initial with a connected dot + unread count.
-        await Assert.That(lines.Count(l => l.Contains("▚"))).IsEqualTo(2);
+        await Assert.That(lines.Count(l => l.Contains(RailRenderer.CollapsedWorldMark))).IsEqualTo(2);
         await Assert.That(lines.Any(l => l.Contains("●") && l.Contains("C") && l.Contains("5"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("○") && l.Contains("R"))).IsTrue();
     }

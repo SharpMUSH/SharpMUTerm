@@ -166,7 +166,7 @@ internal sealed partial class SharpMUTermApp
     /// are left out, so a test cannot match the client's own bars. <see cref="TriggerPreview"/> takes the
     /// newest <see cref="TriggerPreview.MaxLines"/> of it.
     /// </summary>
-    private IReadOnlyList<string> TriggerTestLines()
+    internal IReadOnlyList<string> TriggerTestLines()
     {
         var focused = ActiveWindowId();
         var windows = SearchableWindows(all: true);

@@ -24,12 +24,12 @@ internal sealed partial class SharpMUTermApp
             var key = id[CommandIds.GroupTogglePrefix.Length..];
             if (_sessions.Find(key) is null && !_sendGroup.Contains(key))
             {
-                RefuseCommand($"{key} is not open");
+                RefuseCommand($"{DisplayName(key)} is not open");
                 return true;
             }
 
             Notice(
-                _sendGroup.Toggle(key) ? $"{key} is in the send group" : $"{key} has left the send group",
+                _sendGroup.Toggle(key) ? $"{DisplayName(key)} is in the send group" : $"{DisplayName(key)} has left the send group",
                 MessageSeverity.Info);
             RefreshRail();
             return true;

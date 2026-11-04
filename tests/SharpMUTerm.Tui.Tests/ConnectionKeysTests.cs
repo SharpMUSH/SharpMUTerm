@@ -386,7 +386,7 @@ public class ConnectionKeysTests
 
         app.DispatchCommand($"char:{Corvid}");
 
-        await Assert.That(app.StatusMarkup).Contains("Alt+R");
+        await Assert.That(app.StatusMarkup).Contains("⌥R");
         await Assert.That(app.StatusMarkup).Contains("Reconnect"); // the surface is still named too
     }
 }

@@ -110,7 +110,7 @@ public class PackagePageTests
         await Assert.That(shown).IsEquivalentTo(cells, TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(shown).IsEquivalentTo(BuiltInSettings.Packages.Packages!.Fields.Select(f => f.Id), TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(values["scripts"]).IsEqualTo("basics.lua");
-        await Assert.That(values["characters"]).IsEqualTo("Corvid (Aetherfall)");
+        await Assert.That(values["characters"]).IsEqualTo("Corvid · Aetherfall");
     }
 
     [Test]
@@ -183,7 +183,7 @@ public class PackagePageTests
     public async Task TheReviewIsTheModelsRowsAndInstallIsTheConsent()
     {
         var harness = new Harness();
-        var model = PackageReviewModel.From(Contents(), ["Corvid (Aetherfall)"], harness.Config.Packages.Single());
+        var model = PackageReviewModel.From(Contents(), ["Corvid · Aetherfall"], harness.Config.Packages.Single());
         var (lines, shown, log, gone) = await Run(harness, window =>
         {
             var page = window.PackagePage!;

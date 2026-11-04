@@ -336,8 +336,8 @@ internal sealed class WelcomeSurface
     {
         var lines = new List<string>
         {
-            Accent("Welcome to SharpMUTerm"),
-            Label("No games yet. Pick one of these to start."),
+            Accent(WelcomeModel.Heading),
+            Label(WelcomeModel.Intro),
             string.Empty,
         };
 
@@ -350,7 +350,7 @@ internal sealed class WelcomeSurface
         }
 
         lines.Add(model.Problem is null ? string.Empty : $"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
-        lines.Add(Label("Or type it on the command line below:"));
+        lines.Add(Label(WelcomeModel.ExampleLead));
         lines.Add("  " + Value(ExampleCommand));
         lines.Add(string.Empty);
         lines.Add(Label(model.LayoutHeading));
@@ -362,9 +362,9 @@ internal sealed class WelcomeSurface
                 : $"[{ScreenPalette.Value}] {Escape(name)} [/]";
         }));
         lines.Add("  " + chips);
-        lines.Add("  " + Label("saved per world · ⌥M changes it later"));
+        lines.Add("  " + Label(WelcomeModel.LayoutNote));
         lines.Add(string.Empty);
-        lines.Add(Footer(width, "↑↓ select · ←→ layout", "Esc close · ⏎ choose"));
+        lines.Add(Footer(width, WelcomeModel.MenuKeys.Left, WelcomeModel.MenuKeys.Right));
         return lines;
     }
 
@@ -372,29 +372,30 @@ internal sealed class WelcomeSurface
     {
         var lines = new List<string>
         {
-            Accent("Connect to a host"),
-            Label("Saved as a world, so you can come back to it."),
+            Accent(WelcomeModel.FormHeading),
+            Label(WelcomeModel.FormIntro),
             string.Empty,
         };
 
         var boxWidth = Math.Clamp(width - 16, 12, 44);
         var field = model.Field;
-        lines.Add(Row(field, WelcomeField.Host, "host", Box(model.Host, boxWidth, field == WelcomeField.Host, "mud.example.org")));
-        lines.Add(Row(field, WelcomeField.Port, "port", Box(model.Port, 7, field == WelcomeField.Port, null)));
-        lines.Add(Row(field, WelcomeField.Tls, "TLS", Toggle(model.Tls, "on, encrypted", "off")));
-        lines.Add(Row(field, WelcomeField.Character, "character", Box(model.Character, boxWidth, field == WelcomeField.Character, "optional, the name you log in as")));
-        lines.Add(Row(field, WelcomeField.Password, "password", Toggle(model.PasswordLater, "save it on F5 after connecting", "type it at the login prompt")));
+        lines.Add(Row(field, WelcomeField.Host, Box(model.Host, boxWidth, field == WelcomeField.Host, WelcomeModel.HostPlaceholder)));
+        lines.Add(Row(field, WelcomeField.Port, Box(model.Port, 7, field == WelcomeField.Port, null)));
+        lines.Add(Row(field, WelcomeField.Tls, Toggle(model.Tls, WelcomeModel.TlsOn, WelcomeModel.TlsOff)));
+        lines.Add(Row(field, WelcomeField.Character, Box(model.Character, boxWidth, field == WelcomeField.Character, WelcomeModel.CharacterPlaceholder)));
+        lines.Add(Row(field, WelcomeField.Password, Toggle(model.PasswordLater, WelcomeModel.PasswordOn, WelcomeModel.PasswordOff)));
         lines.Add(string.Empty);
         lines.Add(model.Problem is null
             ? Label(model.FormLayoutLine)
             : $"[{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
         lines.Add(string.Empty);
-        lines.Add(Footer(width, "↑↓ field · Space toggle", "Esc back · ⏎ connect"));
+        lines.Add(Footer(width, "↑↓ field · Space toggle", WelcomeModel.FormKeys));
         return lines;
     }
 
-    private static string Row(WelcomeField current, WelcomeField field, string label, string value)
+    private static string Row(WelcomeField current, WelcomeField field, string value)
     {
+        var label = WelcomeModel.FieldLabel(field);
         var selected = current == field;
         var marker = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
         return $"{marker} {Pad(selected ? Value(label, bold: true) : Label(label), 11)} {value}";
@@ -426,11 +427,11 @@ internal sealed class WelcomeSurface
     /// </summary>
     public static IReadOnlyList<string> PlainLines(WelcomeLayout layout, string? indexProblem) =>
     [
-        "Welcome to SharpMUTerm. No games yet.",
+        "Welcome to SharpMUTerm. No worlds yet.",
         "To connect, type /connect, a host and a port, and tls for an encrypted connection: " + ExampleCommand,
         indexProblem is null
-            ? "To browse games from the package index, type /package browse"
-            : "Browsing games is not available: " + indexProblem,
+            ? "To browse worlds from the package index, type /package browse"
+            : "Browsing worlds is not available: " + indexProblem,
         "Starting layout: " + (layout == WelcomeLayout.Suggested ? "suggested from what the game sends" : layout.ToString())
             + ". Type /welcome layout roleplay, combat or suggested to change it.",
         "Type /welcome to hear this again.",

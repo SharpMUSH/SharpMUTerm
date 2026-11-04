@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Settings;
 using System.Globalization;
 using SharpMUTerm.Core.Automation;
@@ -402,12 +403,20 @@ internal static class KeypadScreenRenderer
             // the whole one, for the binding the cursor is actually on.
             var verdict = MacroKeys.Verdict(keys, macros[at].Key);
             var clash = KeyClashes.For(keys, macros[at], macros);
-            context = ScreenChrome.Context(
-                ScreenChrome.Position("binding", at, macros.Count),
-                Escape(Identify(macros[at])),
-                clash is { } c
-                    ? (c.BindingRuns ? "△ " : "▲ ") + Escape(c.Reason)
-                    : verdict.Fires ? null : "▲ " + Escape(verdict.Reason));
+            var position = ScreenChrome.Position("binding", at, macros.Count);
+            var name = Escape(Identify(macros[at]));
+            var reason = clash is { } c
+                ? (c.BindingRuns ? "△ " : "▲ ") + Escape(c.Reason)
+                : verdict.Fires ? null : "▲ " + Escape(verdict.Reason);
+
+            // A drop-order ladder, the status row's rule (FocusHints): every footer opens with the cursor's position,
+            // and the reason is what this one is for, so the name the cursor row already shows goes first; only then
+            // is the line elided.
+            var actionsWidth = VisibleLength(ScreenChrome.Actions(focus: focus));
+            context = FirstFitting(
+                width <= 0 ? int.MaxValue : width - actionsWidth - 2,
+                ScreenChrome.Context(position, name, reason),
+                ScreenChrome.Context(position, reason ?? name));
         }
 
         var actions = ScreenChrome.Actions(focus: focus);
@@ -559,11 +568,13 @@ internal static class KeypadScreenRenderer
         // A clash is marked inside the key's own well, where the ▲ already goes, so it costs the row no
         // cell: △ in amber for a binding that runs and hides something (a client key, or a later binding),
         // ▲ for one that never runs. The footer says which side wins for the row the cursor is on.
+        // Spelt as every other surface spells a key (⌃F1, not Ctrl+F1); the binding keeps its stored form.
+        var shown = Escape(KeyGlyphs.Normalize(macro.Key));
         var chord = clash is { BindingRuns: true }
-            ? $"[{Caution}]△ {Escape(macro.Key)}[/]"
+            ? $"[{Caution}]△ {shown}[/]"
             : verdict.Fires && clash is null
-                ? $"[bold]{Escape(macro.Key)}[/]"
-                : $"[{Muted}]▲ {Escape(macro.Key)}[/]";
+                ? $"[bold]{shown}[/]"
+                : $"[{Muted}]▲ {shown}[/]";
         var bound = ScreenChrome.Field(PadVisible(chord, KeyColumnWidth), key);
 
         // A binding that has never been named still gets its well — the name is editable whether or not

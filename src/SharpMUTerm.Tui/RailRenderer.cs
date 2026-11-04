@@ -1,3 +1,4 @@
+using System.Text;
 using SharpConsoleUI.Parsing;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Text;
@@ -140,25 +141,31 @@ internal static partial class RailRenderer
     }
 
     /// <summary>
-    /// Renders the collapsed rail (⌃B b): a ~6-col strip of per-world accent separators and, under
+    /// Renders the collapsed rail (⌃B b): a ~6-col strip of per-world accent marks and, under
     /// each, its characters as a status dot + initial + unread count. Both stay clickable — an initial
     /// is the only handle a collapsed rail offers.
+    /// <para>
+    /// A world is a solid <c>▌</c> in its accent, the bar the window's folded sidebar draws (a <c>▚</c> read as a
+    /// glyph glitch at one cell). Characters show one letter, or two for every character once two of them share a
+    /// first letter (<see cref="InitialLength"/>): <c>Ro</c> and <c>Ri</c> rather than two <c>R</c>s nobody can tell
+    /// apart. The length is the whole strip's, so every row keeps one width and it changes only when the set of
+    /// characters does.
+    /// </para>
     /// </summary>
     public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows, ChromeInk? ink = null)
     {
         var voice = ink ?? ChromeInk.Default;
         var lines = new List<string>();
+        var letters = InitialLength(rows.Where(r => r.Kind == RailRowKind.Character).Select(r => r.Label));
         foreach (var row in rows)
         {
             switch (row.Kind)
             {
                 case RailRowKind.World:
-                    lines.Add(Link(row, $"[{Accent(row, voice)}]▚[/]"));
+                    lines.Add(Link(row, $"[{Accent(row, voice)}]{CollapsedWorldMark}[/]"));
                     break;
                 case RailRowKind.Character:
-                    var initial = row.Label.Length > 0
-                        ? Escape(row.Label.EnumerateRunes().First().ToString())
-                        : "?";
+                    var initial = Escape(Initials(row.Label, letters));
                     var dot = row.Connected ? "●" : "○";
                     var name = row.Active ? $"[bold]{initial}[/]" : initial;
 
@@ -170,6 +177,27 @@ internal static partial class RailRenderer
         }
 
         return lines;
+    }
+
+    /// <summary>The collapsed strip's mark for a world: a solid bar in the world's accent.</summary>
+    internal const string CollapsedWorldMark = "▌";
+
+    /// <summary>
+    /// How many letters the collapsed strip gives each character: 1, or 2 once two names share a first letter
+    /// (case ignored). Two at most — the strip is a handle, and past two letters the tooltip and the open rail say it.
+    /// </summary>
+    internal static int InitialLength(IEnumerable<string> names)
+    {
+        var firsts = names.Select(n => Initials(n, 1).ToUpperInvariant()).ToList();
+        return firsts.Count == firsts.Distinct(StringComparer.Ordinal).Count() ? 1 : 2;
+    }
+
+    /// <summary>The first <paramref name="letters"/> letters of a name, padded so every row is as wide; <c>?</c> for none.</summary>
+    internal static string Initials(string name, int letters)
+    {
+        var runes = name.EnumerateRunes().Where(r => !Rune.IsWhiteSpace(r)).Take(letters).Select(r => r.ToString()).ToList();
+        var text = runes.Count == 0 ? "?" : string.Concat(runes);
+        return text.PadRight(letters);
     }
 
     /// <summary>

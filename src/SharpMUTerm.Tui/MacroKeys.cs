@@ -347,9 +347,10 @@ internal static class MacroKeys
         if (parts.Key.Length == 4 && parts.Key.StartsWith("Num", StringComparison.Ordinal)
             && char.IsAsciiDigit(parts.Key[3]))
         {
-            // No DECKPAM is ever sent and no application-keypad SS3 is decoded, so the numpad either
-            // reports as the main row's digits or is dropped. Either way this descriptor never arrives.
-            return Never("no numpad key ever arrives");
+            // A window reads the physical key (HostKeys.DeliversNumpad). A terminal is sent no DECKPAM and no
+            // application-keypad SS3 is decoded, so its numpad either reports as the main row's digits or is
+            // dropped. Either way this descriptor never arrives there.
+            return keys.DeliversNumpad ? new MacroKeyVerdict(MacroKeyDelivery.Fires) : Never("no numpad key ever arrives");
         }
 
         if (parts.Ctrl && parts.Alt)

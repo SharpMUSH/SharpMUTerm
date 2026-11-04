@@ -943,8 +943,18 @@ public class SurfaceParityTests
         await Assert.That(app.SimulateKey(key!.Value)).IsEqualTo("score");
 
         var hotkeys = string.Join('\n', KeypadScreenRenderer.HotkeysColumn(app.Host.Keys, config.TriggerSets.SelectMany(s => s.Macros).ToList()));
-        await Assert.That(hotkeys).Contains("Ctrl+3");
-        await Assert.That(hotkeys).DoesNotContain("▲ Ctrl+3");
+        await Assert.That(hotkeys).Contains("⌃3");
+        await Assert.That(hotkeys).DoesNotContain("▲ ⌃3");
+
+        // The numpad is a key the window delivers: F4 marks no numpad binding dead, and Num7 reaches its macro.
+        await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Num7").Fires).IsTrue();
+        await Assert.That(hotkeys).DoesNotContain("▲ Num7");
+        var numpad = KeyMapper.FromKeyDown(Key.NumPad7, KeyModifiers.None);
+        await Assert.That(numpad).IsNotNull();
+        await Assert.That(numpad!.Value.Key).IsEqualTo(ConsoleKey.NumPad7);
+        await Assert.That(numpad.Value.KeyChar).IsEqualTo('7');
+        var walk = config.TriggerSets.SelectMany(s => s.Macros).First(m => m.Key == "Num7").Command;
+        await Assert.That(app.SimulateKey(numpad.Value)).IsEqualTo(walk);
     }
 
     /// <summary>The quick bar reads the host's keys: a chord the host keeps for itself is drawn as one that does not fire.</summary>

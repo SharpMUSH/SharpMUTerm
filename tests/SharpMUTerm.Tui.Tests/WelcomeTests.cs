@@ -85,7 +85,7 @@ public class WelcomeTests
 
         await Assert.That(run.App.WelcomeIsOpen).IsTrue();
         var text = string.Join('\n', run.App.WelcomeLines.Select(MarkupText.Plain));
-        await Assert.That(text).Contains("Connect to a host").And.Contains("Browse games").And.Contains("Open settings");
+        await Assert.That(text).Contains("Connect to a world").And.Contains("Browse worlds").And.Contains("Open settings");
         await Assert.That(text).Contains(WelcomeSurface.ExampleCommand);
         await Assert.That(run.App.StatusMarkup).Contains("No world configured");
     }

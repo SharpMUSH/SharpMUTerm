@@ -266,6 +266,19 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- A character is named the same way everywhere — `Corvid · Aetherfall` — in the quit prompt, the command palette,
+  the layouts list, Packages and the client's messages, instead of `Aetherfall.Corvid` in some places and
+  `Corvid (Aetherfall)` in others.
+- The command palette is called that everywhere, its output commands are grouped under OUTPUT, and a short word
+  you type (four letters or fewer) now matches only at the start of words, so `layo` finds the layout commands
+  rather than unrelated entries that happen to contain those letters.
+- The keypad screen (F4) and the quick bar show keys as `⌃F1`, `⌥M` like every other surface.
+- The welcome says *world* throughout, labels every field of its connect form, and the desktop window's version
+  matches the terminal's word for word.
+- The folded sidebar marks each world with a coloured bar and gives two characters with the same initial two
+  letters each, so they can be told apart.
+- Desktop window: a trigger's route on F2 is a drop-down listing every window, and still takes a new name typed in.
+- "Offline" notices and messages that tell you how to reconnect name the key (`⌥R`) as well as the palette entry.
 - Panes stacked one above the other no longer have an empty row between them when the lower pane shows its
   tabs: the tab row is the boundary, and the panes get the row back. Drag the empty part of that tab row to
   resize, or double-click it to even the panes out. The vitals and quick-bar strips sit flush against their
@@ -287,6 +300,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The away, new-activity, search and restore bars fit the pane they are in: their rule runs to the pane's edge,
+  never past it, and the words shorten before the rule does in a narrow pane. They redraw when the pane is resized.
+- Search (Ctrl+F) fits an 80-column terminal: its key hints shorten instead of pushing the window wider than the
+  screen.
+- A trigger pattern anchored at the start of the line (`^\[public\]`) now finds lines in search and in F2's live
+  test that a highlight rule has marked, as it already did in the game.
+- Desktop window: number-pad keys bound on F4 fire, and F4 no longer marks them as keys that never arrive.
+- F1 opened from an offline character's window names that character instead of no one.
 - Starting the client with a saved workspace whose panes held a panel (vitals, who is here, the quick bar, the
   composer) or the map no longer fails before the first frame.
 - Desktop window: the "no world configured" notice at first start shows once, not as two identical toasts.

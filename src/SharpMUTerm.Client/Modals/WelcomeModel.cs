@@ -61,11 +61,66 @@ public sealed record WelcomeModel(
     /// <summary>A character name long enough for any game's.</summary>
     public const int MaxCharacter = 40;
 
+    // The welcome's words, said once here so both hosts say the same thing in the same case. One noun, "world":
+    // it is what F5, the rail and every other surface call a place you connect to.
+
+    /// <summary>The welcome's heading.</summary>
+    public const string Heading = "Welcome to SharpMUTerm";
+
+    /// <summary>The line under the heading on the menu.</summary>
+    public const string Intro = "No worlds yet. Pick a way in — you can add more at any time.";
+
+    /// <summary>What leads the example command.</summary>
+    public const string ExampleLead = "Or type it on the command line:";
+
+    /// <summary>The line under the layout chips.</summary>
+    public const string LayoutNote = "Saved per world · ⌥M changes it later";
+
+    /// <summary>The form's heading.</summary>
+    public const string FormHeading = "Connect to a world";
+
+    /// <summary>The line under the form's heading.</summary>
+    public const string FormIntro = "Saved as a world, so you can come back to it.";
+
+    /// <summary>The TLS row's words when on; the window's check box carries these words.</summary>
+    public const string TlsOn = "On, encrypted";
+
+    /// <summary>The TLS row's words when off.</summary>
+    public const string TlsOff = "Off";
+
+    /// <summary>The password row's words when on (no password now); the window's check box carries these words.</summary>
+    public const string PasswordOn = "Set it on F5 after connecting";
+
+    /// <summary>The password row's words when off.</summary>
+    public const string PasswordOff = "Type it at the login prompt";
+
+    /// <summary>The host box's placeholder.</summary>
+    public const string HostPlaceholder = "mud.example.org";
+
+    /// <summary>The character box's placeholder.</summary>
+    public const string CharacterPlaceholder = "Optional, the name you log in as";
+
+    /// <summary>The menu's keys: what moves (left) and what acts (right). The window joins the two.</summary>
+    public static (string Left, string Right) MenuKeys => ("↑↓ pick · ←→ layout", "⏎ choose · Esc closes");
+
+    /// <summary>The form's keys that act, in both hosts (how a host moves between fields is its own).</summary>
+    public const string FormKeys = "⏎ connect · Esc back";
+
+    /// <summary>A form row's label, as both hosts write it.</summary>
+    public static string FieldLabel(WelcomeField field) => field switch
+    {
+        WelcomeField.Host => "Host",
+        WelcomeField.Port => "Port",
+        WelcomeField.Tls => "TLS",
+        WelcomeField.Character => "Character",
+        _ => "Password",
+    };
+
     /// <summary>A choice's title and the words beside it.</summary>
     public (string Title, string Detail) Describe(WelcomeChoice choice) => choice switch
     {
-        WelcomeChoice.Connect => ("Connect to a host", "type a host and port"),
-        WelcomeChoice.Browse => ("Browse games", IndexProblem is null ? "from the package index" : "no package index set"),
+        WelcomeChoice.Connect => ("Connect to a world", "Type a host and port"),
+        WelcomeChoice.Browse => ("Browse worlds", IndexProblem is null ? "From the package index" : "No package index set"),
         _ => ("Open settings", "F5, add a world by hand"),
     };
 

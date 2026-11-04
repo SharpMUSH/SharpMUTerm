@@ -92,7 +92,7 @@ public static class CommandPaletteModel
     {
         CommandGroup.GoTo => "GO TO",
         CommandGroup.World => "WORLD",
-        CommandGroup.Terminal => "TERMINAL",
+        CommandGroup.Terminal => "OUTPUT",
         CommandGroup.Layout => "LAYOUT",
         CommandGroup.Settings => "SETTINGS",
         _ => group.ToString().ToUpperInvariant(),

@@ -100,7 +100,7 @@ public class PackagesAppTests
         var text = string.Join("\n", rig.App.PackageView.Lines.Select(MarkupText.Plain));
         await Assert.That(text).Contains("1 rule sends commands as you");
         await Assert.That(text).Contains("basics.lua");
-        await Assert.That(text).Contains("Corvid (Aetherfall)");
+        await Assert.That(text).Contains("Corvid · Aetherfall");
         await Assert.That(rig.App.Packages.Installed).IsEmpty();
         await Assert.That(Directory.Exists(Path.Combine(rig.Root, "packages"))).IsFalse();
 
