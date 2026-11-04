@@ -72,6 +72,7 @@ internal sealed partial class SharpMUTermApp
         _stripMenu ??= (pane, window) => OnUiThread(() => OpenTabMenu(pane, window));
         _stripOverflow ??= pane => OnUiThread(() => OpenOfferedTabOverflow(pane));
         _bandJump ??= window => OnUiThread(() => ReturnFromOfferedBand(window));
+        _stripDrag ??= step => OnUiThread(() => DragStripTab(step));
 
         // A modal over the main window is drawn in cells over the panes; a native strip would sit on top of it.
         var covered = _system.ModalStateService.HasModals || _nativeCompose is not null;
@@ -98,7 +99,8 @@ internal sealed partial class SharpMUTermApp
                         _stripActivate,
                         _stripClose,
                         _stripMenu,
-                        _stripOverflow));
+                        _stripOverflow,
+                        _stripDrag));
                 }
 
                 if (_workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId && _scrollSplits.ContainsKey(windowId)
@@ -118,7 +120,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         _nativeStripRows = [.. strips.Select(s => s.Row)];
-        return new PaneChromeOverlay(strips, bands, _theme, MainWindowInFront());
+        return new PaneChromeOverlay(strips, bands, _theme, MainWindowInFront(), _tabDrag?.Model);
     }
 
     /// <summary>
@@ -320,15 +322,17 @@ internal sealed partial class SharpMUTermApp
 /// <param name="Bands">One per pane whose front window is split by scrolling back.</param>
 /// <param name="Theme">The client's theme, from which the host derives its inks.</param>
 /// <param name="Interactive">Whether the main window is in front; under a modal the chrome takes no click.</param>
+/// <param name="Drag">A tab being dragged off a native strip, as the client resolved it; null when none is.</param>
 internal sealed record PaneChromeOverlay(
     IReadOnlyList<TabStripOverlay> Strips,
     IReadOnlyList<ScrollBandOverlay> Bands,
     Theme Theme,
-    bool Interactive)
+    bool Interactive,
+    TabDragModel? Drag = null)
 {
     public bool Equals(PaneChromeOverlay? other) =>
         other is not null && Strips.SequenceEqual(other.Strips) && Bands.SequenceEqual(other.Bands)
-        && ReferenceEquals(Theme, other.Theme) && Interactive == other.Interactive;
+        && ReferenceEquals(Theme, other.Theme) && Interactive == other.Interactive && Equals(Drag, other.Drag);
 
     public override int GetHashCode() => HashCode.Combine(Strips.Count, Bands.Count, Interactive);
 }
@@ -346,6 +350,7 @@ internal sealed record PaneChromeOverlay(
 /// <param name="Close">Closes a tab the strip offered a close on, by pane and window id; any thread.</param>
 /// <param name="Menu">Opens a tab's menu, by pane and window id; any thread.</param>
 /// <param name="OpenOverflow">Opens the overflow list, by pane id; any thread.</param>
+/// <param name="Drag">A step of dragging one of its tabs (<see cref="SharpMUTermApp.DragStripTab"/>); any thread.</param>
 internal sealed record TabStripOverlay(
     PaneRect Row,
     TabStripModel Model,
@@ -356,7 +361,8 @@ internal sealed record TabStripOverlay(
     Action<string, string> Activate,
     Action<string, string> Close,
     Action<string, string> Menu,
-    Action<string> OpenOverflow)
+    Action<string> OpenOverflow,
+    Action<TabDragStep>? Drag = null)
 {
     public bool Equals(TabStripOverlay? other) =>
         other is not null && Row == other.Row && Model.Equals(other.Model) && Plane == other.Plane

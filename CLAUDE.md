@@ -1451,7 +1451,19 @@ fallbacks) for inline images/maps.
     the cells, where the strip row is the stacked divider (`HeaderFill` returns the whole row under `Tabs`) and
     `TakesNativeStripPress` strikes the button flags after the client's own handlers, so the framework never selects
     or closes a tab under the native one. `PaneTargetAt` says Nothing on a strip row.
-  - **Not done**: no dragging a native tab to another pane (the cell drag handle is under it, unreachable); no hover
+  - **A native tab drags** (`SharpMUTermApp.TabDrag.cs`; Avalonia `DesktopLayer.TabDrag.cs`, `TabDragView`; Client
+    `TabDragModel`, `TabDragStep`). A press pulled 5 px off a tab hands the pointer to the *layer* (the client tears the
+    strips down for its drop preview, which would lose a strip's capture); each move goes to `TabStripOverlay.Drag` as a
+    desktop cell, plus the slot among the strip's tabs (frozen at begin) while over that strip — the only thing the window
+    works out. The client does the rest with the cell drag's pieces: frozen `PaneSnapshot`, `DropZones`, the cells' drop
+    preview and `DRAG … → …` prompt, and on release `DropWindowOnPane` (the cell commit's method too: edge splits, centre
+    joins). Over its own strip it is `ReorderStripTab` → `ReorderFocusedTab`, the method ⌃B &lt;/&gt; end in (declared
+    `CellsVia: prefix`, the ⌃B keymap's `< >` row). A slot is used only on that strip's row and in range; a drag the strip
+    did not offer is refused; Esc abandons it. What it would do is published back (`PaneChromeOverlay.Drag`): the layer
+    washes the zone (`TabDragModel.ZoneOf`: the half a split takes, or the pane) with the prompt's words, carries a card
+    under the pointer, and the strip draws an insertion bar. `SurfaceParityTests` holds a native drag to an edge against
+    the terminal's mouse drag, and a reorder against ⌃→ then ⌃B &gt;, by `WorkspaceDigest()`.
+  - **Not done**: a cell tab still drags only to panes (no reorder by dragging in a terminal: ⌃B &lt;/&gt;); no hover
     plate on the empty run.
 
 - **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →

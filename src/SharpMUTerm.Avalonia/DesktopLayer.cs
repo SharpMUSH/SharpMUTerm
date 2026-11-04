@@ -31,7 +31,7 @@ namespace SharpMUTerm.Avalonia;
 /// click on to the client. None of them takes keyboard focus.
 /// </para>
 /// </summary>
-internal sealed class DesktopLayer : Canvas
+internal sealed partial class DesktopLayer : Canvas
 {
     /// <summary>How many header cells a button covers. The header always ends in three blank cells.</summary>
     internal const int ButtonCells = 3;
@@ -82,6 +82,9 @@ internal sealed class DesktopLayer : Canvas
         Children.Add(_sidebar);
         Children.Add(_footer);
         _pointer.StatusChanged += () => Dispatcher.UIThread.Post(Sync);
+
+        // A dragged tab's hint over the panels; the toasts still over it.
+        Children.Add(_dragView);
 
         // The toasts last, over everything: a notice is the one thing the window says over a panel.
         _toasts = new NoticeToasts();
@@ -185,6 +188,7 @@ internal sealed class DesktopLayer : Canvas
         SyncButtons(frame, cell);
         SyncPanels(frame, cell);
         SyncPaneChrome(cell);
+        SyncTabDrag(cell);
         SyncToasts(frame, cell);
     }
 
@@ -216,10 +220,10 @@ internal sealed class DesktopLayer : Canvas
         }
 
         var origin = CellOrigin;
-        Sync(_strips, strips.Select(s => (s.Model.PaneId, s.Row)), () => new NativeTabStrip(), origin, cell);
+        Sync(_strips, strips.Select(s => (s.Model.PaneId, s.Row)), NewStrip, origin, cell);
         foreach (var strip in strips)
         {
-            _strips[strip.Model.PaneId].Show(strip, tokens, said!.Interactive);
+            _strips[strip.Model.PaneId].Show(strip, tokens, said!.Interactive, said.Drag);
         }
 
         Sync(_bands, bands.Select(b => (b.Model.WindowId, b.Row)), () => new ScrollBandView(), origin, cell);

@@ -106,3 +106,59 @@ public sealed record ScrollBandModel(string WindowId, int RowsBack)
     /// <summary>The native button's words, before its key.</summary>
     public const string Action = "Jump to latest";
 }
+
+/// <summary>
+/// A tab being dragged off a native strip, as the client resolved it (<c>SurfaceCatalog.TabStrip</c>'s drag): where it
+/// would land, in the words the cells' drop preview and status prompt use. The window draws its hint from this — the
+/// zone over the target pane, or an insertion mark on the tab's own strip — and never decides a drop itself.
+/// </summary>
+/// <param name="WindowId">The window the dragged tab brings forward.</param>
+/// <param name="SourcePaneId">The pane whose strip the tab was taken from.</param>
+/// <param name="TargetPaneId">The pane it would land in, or null when it is over no pane (a release there drops nothing).</param>
+/// <param name="Edge">The edge of the target pane it would split toward, or null for a tab in it (or a reorder).</param>
+/// <param name="ReorderIndex">Where in its own strip it would go, while it is over that strip; else null.</param>
+/// <param name="Zone">The cells the drop would take, in desktop cells: the target pane, or the half of it a split gives; null for none.</param>
+/// <param name="Label">What the drop does, as the cells' prompt says it: <c>split pane 2 left</c>, <c>tab in pane 1</c>.</param>
+public sealed record TabDragModel(
+    string WindowId,
+    string SourcePaneId,
+    string? TargetPaneId,
+    Edge? Edge,
+    int? ReorderIndex,
+    PaneRect? Zone,
+    string Label)
+{
+    /// <summary>The cells a drop on <paramref name="pane"/> toward <paramref name="edge"/> takes: the half a split gives the new pane, or the whole pane.</summary>
+    public static PaneRect ZoneOf(PaneRect pane, Edge? edge) => edge switch
+    {
+        Core.Workspaces.Edge.Left => new PaneRect(pane.X, pane.Y, Math.Max(1, pane.Width / 2), pane.Height),
+        Core.Workspaces.Edge.Right => new PaneRect(pane.X + (pane.Width / 2), pane.Y, pane.Width - (pane.Width / 2), pane.Height),
+        Core.Workspaces.Edge.Top => new PaneRect(pane.X, pane.Y, pane.Width, Math.Max(1, pane.Height / 2)),
+        Core.Workspaces.Edge.Bottom => new PaneRect(pane.X, pane.Y + (pane.Height / 2), pane.Width, pane.Height - (pane.Height / 2)),
+        _ => pane,
+    };
+}
+
+/// <summary>The steps of a native tab drag, as the window hands them back.</summary>
+public enum TabDragPhase
+{
+    /// <summary>The pointer left the pressed tab with the button held: the drag starts.</summary>
+    Begin,
+
+    /// <summary>The pointer moved.</summary>
+    Move,
+
+    /// <summary>The button came up: the drop is made where the client resolves it.</summary>
+    Drop,
+
+    /// <summary>The drag was abandoned (a right press, the pointer lost).</summary>
+    Cancel,
+}
+
+/// <summary>
+/// One step of a native tab drag: the pane and window it started from, and where the pointer is in desktop cells. The
+/// window adds <paramref name="ReorderIndex"/> — the slot among the strip's tabs the pointer is over — only while the
+/// pointer is over the tab's own strip, because only the window knows where it drew its tabs; the client checks the cell
+/// is on that strip and the slot exists before it uses it.
+/// </summary>
+public readonly record struct TabDragStep(TabDragPhase Phase, string PaneId, string WindowId, int X, int Y, int? ReorderIndex);

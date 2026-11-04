@@ -9,6 +9,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window a tab can be dragged: along its own strip to change its place, onto another pane's middle to
+  join its tabs, or near a pane's edge to split it there. While you drag, the window shades where it would land and
+  says what the drop will do, as the terminal's drag preview does; Esc or a right click cancels.
 - Settings edits can be undone and redone for the rest of the session: Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y) in the
   desktop settings window, ⌃Z and ⌃Y on the terminal's settings screens. Each settings page keeps its own last 50
   changes, an undo is saved and reaches connected sessions like any other change, and the footer (window) or header

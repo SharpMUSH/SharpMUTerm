@@ -316,7 +316,11 @@ public static class SurfaceCatalog
         new(
             Prefix,
             typeof(HeaderPrefix),
-            [],
+            [
+                // The keymap's `< >` row: ⌃B < and ⌃B > move the focused pane's front tab a slot along its strip. It is the
+                // cells' way to what dragging a native tab along its own strip does.
+                new(SurfaceActionKind.Pick, "reorder", "ReorderFocusedTab"),
+            ],
             NativeChrome,
             "SharpMUTerm.Tui.PrefixPanel.Render",
             ["SharpMUTerm.Avalonia.NativeHeader"]),
@@ -647,10 +651,16 @@ public static class SurfaceCatalog
                 new(SurfaceActionKind.Pick, "close", "CloseStripTab"),
                 new(SurfaceActionKind.Pick, "tab menu", "OpenTabMenu"),
                 new(SurfaceActionKind.Target, "overflow", "OpenTabOverflow"),
+
+                // A tab dragged onto a pane: an edge splits it, the centre moves the window in as a tab — the cell drag's
+                // commit. Dragged along its own strip it changes place there, as ⌃B < and ⌃B > do, which the cells offer
+                // through the ⌃B keymap rather than the strip.
+                new(SurfaceActionKind.Pick, "drag", "DropWindowOnPane"),
+                new(SurfaceActionKind.Pick, "reorder", "ReorderFocusedTab", CellsVia: Prefix),
             ],
             NativeChrome,
             "SharpMUTerm.Tui.TabTitles.Strip",
-            ["SharpMUTerm.Avalonia.NativeTabStrip"]),
+            ["SharpMUTerm.Avalonia.NativeTabStrip", "SharpMUTerm.Avalonia.TabDragView"]),
         new(
             CollapsedPanel,
             typeof(CollapsedPanelModel),

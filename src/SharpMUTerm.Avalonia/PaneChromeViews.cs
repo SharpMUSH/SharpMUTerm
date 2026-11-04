@@ -37,6 +37,17 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     private bool _hoverClose;
     private bool _hoverOverflow;
     private (string? Tab, bool Close, bool Overflow) _pressed;
+    private Point _pressedAt;
+    private TabDragModel? _drag;
+
+    /// <summary>How far the pointer moves off a pressed tab, in pixels, before the press is a drag rather than a click.</summary>
+    internal const double DragThreshold = 5;
+
+    /// <summary>
+    /// Raised when a pressed tab is pulled past <see cref="DragThreshold"/> with the left button held: the layer takes the
+    /// pointer from here (<see cref="DesktopLayer"/>), because this strip is not drawn while the drop preview is.
+    /// </summary>
+    internal event Action<NativeTabStrip, TabChipModel, PointerEventArgs>? DragStarted;
 
     public NativeTabStrip()
     {
@@ -66,9 +77,10 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     };
 
     /// <summary>Takes the client's strip and the window's tokens, lays the tabs out and redraws.</summary>
-    public void Show(TabStripOverlay overlay, NativeTokens tokens, bool interactive)
+    public void Show(TabStripOverlay overlay, NativeTokens tokens, bool interactive, TabDragModel? drag = null)
     {
         Overlay = overlay;
+        _drag = drag is not null && drag.SourcePaneId == overlay.Model.PaneId ? drag : null;
         Tokens = tokens;
         Interactive = interactive;
         Lay();
@@ -187,6 +199,17 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     {
         base.OnPointerMoved(e);
         var p = e.GetPosition(this);
+        if (_pressed is { Tab: { } pulled, Close: false, Overflow: false } && Overlay?.Drag is not null
+            && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+            && Math.Abs(p.X - _pressedAt.X) + Math.Abs(p.Y - _pressedAt.Y) >= DragThreshold
+            && _tabs.FirstOrDefault(t => t.Tab.WindowId == pulled).Tab is { } dragged)
+        {
+            _pressed = default;
+            e.Handled = true;
+            DragStarted?.Invoke(this, dragged, e);
+            return;
+        }
+
         var hit = _tabs.FirstOrDefault(t => t.Area.Contains(p));
         var tab = hit.Tab?.WindowId;
         var close = hit.Close?.Contains(p) == true;
@@ -235,6 +258,33 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
         }
 
         _pressed = (hit.Tab?.WindowId, hit.Close?.Contains(p) == true, _overflow?.Contains(p) == true);
+        _pressedAt = p;
+    }
+
+    /// <summary>
+    /// The slot among a strip's tabs a dragged tab would take with the pointer at <paramref name="x"/> (strip pixels): how
+    /// many of the <em>other</em> tabs have their middle left of it. <paramref name="areas"/> is the strip as laid out when
+    /// the drag began.
+    /// </summary>
+    internal static int Slot(IReadOnlyList<(string WindowId, Rect Area)> areas, string dragged, double x) =>
+        areas.Count(a => a.WindowId != dragged && a.Area.Center.X < x);
+
+    /// <summary>Each tab's window and area, as last laid out: what a drag freezes when it begins. Internal for tests.</summary>
+    internal IReadOnlyList<(string WindowId, Rect Area)> TabAreas => [.. _tabs.Select(t => (t.Tab.WindowId, t.Area))];
+
+    /// <summary>
+    /// Where the insertion mark for slot <paramref name="slot"/> goes, in strip pixels: between the other tabs, at the
+    /// gap the dragged one would fill. Null when there is no other tab to stand beside.
+    /// </summary>
+    internal static double? MarkAt(IReadOnlyList<(string WindowId, Rect Area)> areas, string dragged, int slot)
+    {
+        var others = areas.Where(a => a.WindowId != dragged).Select(a => a.Area).ToList();
+        if (others.Count == 0)
+        {
+            return null;
+        }
+
+        return slot <= 0 ? others[0].X - 1 : others[Math.Min(slot, others.Count) - 1].Right + 1;
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -363,6 +413,23 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
                 var m = c.Center;
                 context.DrawLine(pen, new Point(m.X - 3.5, m.Y - 3.5), new Point(m.X + 3.5, m.Y + 3.5));
                 context.DrawLine(pen, new Point(m.X + 3.5, m.Y - 3.5), new Point(m.X - 3.5, m.Y + 3.5));
+            }
+        }
+
+        if (_drag is { ReorderIndex: { } slot } drag && MarkAt(TabAreas, drag.WindowId, slot) is { } mark)
+        {
+            // Where the dragged tab would go: an accent bar in the gap, the height of the tabs, and the tab itself veiled.
+            var dragged = _tabs.FirstOrDefault(t => t.Tab.WindowId == drag.WindowId);
+            if (dragged.Tab is not null)
+            {
+                context.FillRectangle(new SolidColorBrush(PanelText.Alpha(strip, 0xa0)), dragged.Area);
+            }
+
+            // No mark where the tab already is: dropping there moves nothing.
+            if (TabAreas.Select(a => a.WindowId).ToList().IndexOf(drag.WindowId) != slot)
+            {
+                var w = NativeTokens.Snap(this, 3);
+                context.DrawRectangle(new SolidColorBrush(Tokens.Accent), null, new Rect(mark - (w / 2), top, w, bounds.Height - top - 2), 1.5, 1.5);
             }
         }
 
@@ -563,5 +630,83 @@ internal sealed class ScrollBandView : Control, ICustomHitTest
         var shade = _hover && Interactive ? 0xe8 : 0xff;
         context.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)shade, fill.R, fill.G, fill.B)), null, _button, NativeTokens.RadiusS + 2, NativeTokens.RadiusS + 2);
         PanelText.Draw(context, ButtonText, _button.X + 10, _button.Center.Y, size, Tokens.AccentInk, true, _button.Width - 12);
+    }
+}
+
+/// <summary>
+/// The hint while a native tab is dragged, over the whole cell area and hit by nothing: the zone the client says the drop
+/// would take (<see cref="TabDragModel.Zone"/>) washed in the accent with what the drop does written on it, and a card
+/// carrying the tab's name under the pointer. The insertion mark on the tab's own strip is the strip's
+/// (<see cref="NativeTabStrip"/>). The cells under it show the drag as a terminal does — the drop preview over the panes
+/// and the <c>DRAG … → …</c> prompt — so this adds a picture and decides nothing.
+/// </summary>
+internal sealed class TabDragView : Control
+{
+    public TabDragView()
+    {
+        Focusable = false;
+        IsHitTestVisible = false;
+        IsVisible = false;
+    }
+
+    /// <summary>The drop as the client resolved it, the cells' origin and size, the tab's name and where the pointer is.</summary>
+    internal (TabDragModel? Drag, Point Origin, Size Cell, string Name, Point Pointer)? State { get; private set; }
+
+    private NativeTokens Tokens { get; set; } = NativeTokens.Dark;
+
+    /// <summary>Shows the hint, or clears it with a null state.</summary>
+    public void Show((TabDragModel? Drag, Point Origin, Size Cell, string Name, Point Pointer)? state, NativeTokens tokens)
+    {
+        State = state;
+        Tokens = tokens;
+        IsVisible = state is not null;
+        InvalidateVisual();
+    }
+
+    /// <summary>The zone in this view's pixels, or null when the drop takes none. Internal for tests.</summary>
+    internal Rect? ZoneRect => State is { Drag.Zone: { } z } s
+        ? new Rect(s.Origin.X + (z.X * s.Cell.Width), s.Origin.Y + (z.Y * s.Cell.Height), z.Width * s.Cell.Width, z.Height * s.Cell.Height)
+        : null;
+
+    public override void Render(DrawingContext context)
+    {
+        if (State is not { } state)
+        {
+            return;
+        }
+
+        var size = NativeTokens.Body;
+        if (ZoneRect is { } zone && state.Drag is { } drag)
+        {
+            var inset = zone.Deflate(NativeTokens.Space4);
+            context.DrawRectangle(
+                new SolidColorBrush(PanelText.Alpha(Tokens.Accent, 0x2e)),
+                new Pen(new SolidColorBrush(Tokens.Accent), NativeTokens.BorderStrong),
+                inset,
+                NativeTokens.RadiusM,
+                NativeTokens.RadiusM);
+
+            // What the drop does, on a plate at the zone's middle: the cells' prompt's words.
+            var w = Math.Min(inset.Width - 16, PanelText.Measure(drag.Label, size, bold: true) + 24);
+            if (w > 24)
+            {
+                var plate = new Rect(inset.Center.X - (w / 2), inset.Center.Y - 14, w, 28);
+                context.DrawRectangle(new SolidColorBrush(Tokens.Accent), null, plate, NativeTokens.RadiusM, NativeTokens.RadiusM);
+                PanelText.Draw(context, drag.Label, plate.X + 12, plate.Center.Y, size, Tokens.AccentInk, true, plate.Width - 24);
+            }
+        }
+
+        // The tab under the pointer, as a card: the thing being carried.
+        var name = state.Name;
+        var cw = Math.Min(240, PanelText.Measure(name, size, bold: true) + 28);
+        var card = new Rect(state.Pointer.X + 12, state.Pointer.Y + 8, cw, 28);
+        context.DrawRectangle(
+            new SolidColorBrush(Tokens.Raised),
+            new Pen(new SolidColorBrush(Tokens.Edge), NativeTokens.Hairline),
+            card,
+            NativeTokens.RadiusM,
+            NativeTokens.RadiusM);
+        context.DrawRectangle(new SolidColorBrush(Tokens.Accent), null, new Rect(card.X, card.Y + 6, 3, card.Height - 12), 1.5, 1.5);
+        PanelText.Draw(context, name, card.X + 14, card.Center.Y, size, NativeTabStrip.Held(Tokens.Text, Tokens.Raised), true, card.Width - 20);
     }
 }

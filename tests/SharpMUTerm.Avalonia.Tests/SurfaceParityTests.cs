@@ -1132,6 +1132,63 @@ public class SurfaceParityTests
             });
         probed.Add(SurfaceCatalog.TabStrip);
 
+        // A tab dragged onto another pane's left edge: the native strip's drag (the window hands back cells) and the
+        // terminal's drag of the same tab through real mouse frames split that pane the same way (DropWindowOnPane). The
+        // cell side is a terminal's arrangement, because where the window draws the strips their cell row is the divider.
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var a = App(nativeDriver, DemoScene.Build());
+            a.RenderSnapshot("tabs");
+            var before = a.WorkspaceDigest();
+            var strip = a.PaneChromePublished!.Strips.First(s => s.Model.Tabs.Count > 1);
+            var window = strip.Model.Tabs.Single(t => t.Selected).WindowId;
+            var other = a.PaneSnapshot().Rects.Single(r => r.Key != strip.Model.PaneId).Value;
+            var (x, y) = (other.X + 1, other.Y + (other.Height / 2));
+            strip.Drag!(new TabDragStep(TabDragPhase.Begin, strip.Model.PaneId, window, strip.Row.X + 2, strip.Row.Y, 0));
+            strip.Drag!(new TabDragStep(TabDragPhase.Move, strip.Model.PaneId, window, x, y, null));
+            strip.Drag!(new TabDragStep(TabDragPhase.Drop, strip.Model.PaneId, window, x, y, null));
+
+            using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var b = App(cellDriver, DemoScene.Build(), chrome: HostChrome.None);
+            b.RenderSnapshot("tabs");
+            var surface = b.PaneSnapshot();
+            var source = surface.Rects.Single(r => surface.ActiveWindow(r.Key) == window).Value;
+            var target = surface.Rects.Single(r => surface.ActiveWindow(r.Key) != window).Value;
+            var to = new System.Drawing.Point(target.X + 1, target.Y + (target.Height / 2));
+            IMouseInjector mouse = cellDriver;
+            mouse.InjectMouse([SharpConsoleUI.Drivers.MouseFlags.Button1Pressed], new System.Drawing.Point(source.X + 2, source.Y));
+            mouse.InjectMouse([SharpConsoleUI.Drivers.MouseFlags.Button1Pressed, SharpConsoleUI.Drivers.MouseFlags.Button1Dragged], to);
+            mouse.InjectMouse([SharpConsoleUI.Drivers.MouseFlags.Button1Released], to);
+
+            await Assert.That(a.WorkspaceDigest()).IsNotEqualTo(before).Because("tab-strip: drag: the native drop did something");
+            await Assert.That(a.WorkspaceDigest()).IsEqualTo(b.WorkspaceDigest()).Because("tab-strip: drag");
+        }
+
+        // A tab dragged one place along its own strip, and the same tab's pane focused and the tab moved by ⌃B > in the cells (the
+        // ⌃B keymap's `< >` row, which is where the cells offer it): the same order, the same tab in front.
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var a = App(nativeDriver, DemoScene.Build());
+            a.RenderSnapshot("tabs");
+            var before = a.WorkspaceDigest();
+            var strip = a.PaneChromePublished!.Strips.First(s => s.Model.Tabs.Count > 1);
+            var window = strip.Model.Tabs[0].WindowId;
+            strip.Drag!(new TabDragStep(TabDragPhase.Begin, strip.Model.PaneId, window, strip.Row.X + 2, strip.Row.Y, 0));
+            strip.Drag!(new TabDragStep(TabDragPhase.Drop, strip.Model.PaneId, window, strip.Row.X + 30, strip.Row.Y, 1));
+
+            using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var b = App(cellDriver, DemoScene.Build());
+            b.RenderSnapshot("tabs");
+            // That tab is already its strip's front one, so a click on it changes nothing; ⌃→ takes the focus to its pane.
+            b.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, true));
+            b.SimulatePrefixedKey(new ConsoleKeyInfo('>', ConsoleKey.NoName, false, false, false));
+
+            await Assert.That(a.WorkspaceDigest()).IsNotEqualTo(before).Because("tab-strip: reorder: the native drop did something");
+            await Assert.That(a.WorkspaceDigest()).IsEqualTo(b.WorkspaceDigest()).Because("tab-strip: reorder");
+        }
+
+        probed.Add(SurfaceCatalog.Prefix);
+
         // The band's Jump to latest ends where End does: the split closes and the pane follows its live tail again.
         await Same("scroll-band: jump to latest", "scrollback-split",
             (app, _) => app.ReturnFromOfferedBand(app.PaneChromePublished!.Bands.Single().Model.WindowId),
@@ -1626,8 +1683,9 @@ public class SurfaceParityTests
         Action<AppConfiguration>? save = null,
         HostKeys? keys = null,
         INativeComposer? composer = null,
-        INativeModals? modals = null) =>
-        new(config, WindowHost.Create(driver, clipboard: null) with
+        INativeModals? modals = null,
+        HostChrome? chrome = null) =>
+        new(config, WindowHost.Create(driver, clipboard: null, chrome) with
         {
             Capabilities = WindowOptions.Capabilities,
             Audio = null,

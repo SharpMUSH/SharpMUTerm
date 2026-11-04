@@ -12629,7 +12629,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Escape abandons a mouse drag. A terminal that loses the button-up (the pointer left the
         // window, the terminal dropped a frame) would otherwise strand the preview over the panes.
-        if (_dragActive && e.KeyInfo.Key == ConsoleKey.Escape)
+        if ((_dragActive || _tabDrag is not null) && e.KeyInfo.Key == ConsoleKey.Escape)
         {
             e.Handled = true;
             _paneDrag.Reset(); // no mouse frame ends this one, so the gesture has to be dropped here
@@ -12836,17 +12836,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case '<':
             case '>':
                 var tabs = _workspace.Layout.FocusedPane.Tabs.Count;
-                if (_workspace.Layout.ReorderActiveTab(key == '<' ? -1 : 1))
+                if (ReorderFocusedTab(key == '<' ? -1 : 1))
                 {
-                    // The strip has to be rebuilt, not retitled. A reorder changes the *order* of the
-                    // pane's tabs, and `TabControl` has no way to move a page — `TabPages` is a copy and
-                    // the only mutators are Add/Insert — so `RefreshTabTitles`, which repaints each page
-                    // by its own `Tag`, left the strip exactly as it was. That is not a cosmetic lag: the
-                    // model then holds an order the screen does not, and the *refusal* is read against the
-                    // model. Reordering the middle of three tabs looked like nothing happened, and the
-                    // next press — genuinely at the end, in a strip still showing it in the middle — said
-                    // "the tab is already at that end of the strip", which is how it was reported.
-                    RebuildPaneArea();
                     break;
                 }
 
@@ -13418,10 +13409,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case PaneDragAction.Commit:
                 if (result.WindowId is { } windowId && result.TargetPaneId is { } paneId)
                 {
-                    if (PaneDrop.Apply(_workspace.Layout, windowId, paneId, result.Edge))
-                    {
-                        _workspace.ActivateWindow(windowId);
-                    }
+                    DropWindowOnPane(windowId, paneId, result.Edge);
                 }
 
                 EndDrag();
@@ -13440,6 +13428,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void EndDrag()
     {
+        _tabDrag = null;
         _dragActive = false;
         _dragTargetPaneId = null;
         _dragEdge = null;
@@ -13461,7 +13450,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>A pane rendered as a live drop target, sized from the drag's frozen geometry.</summary>
     private IWindowControl BuildDragPane(PaneNode pane)
     {
-        var rect = _paneDrag.Surface?.RectOf(pane.Id) ?? default;
+        // A native tab drag freezes its own geometry (SharpMUTermApp.TabDrag.cs); the cell drag's is the tracker's.
+        var rect = (_tabDrag?.Surface ?? _paneDrag.Surface)?.RectOf(pane.Id) ?? default;
         var hovered = pane.Id == _dragTargetPaneId;
         var lines = PaneDropRenderer.Render(
             PaneLabel(pane.Id),
