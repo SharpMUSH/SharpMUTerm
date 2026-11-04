@@ -24,11 +24,14 @@ public class SettingsWindowTests
 
         public List<string> Opened { get; } = [];
 
+        /// <summary>The sections the form lists; every built-in one is declared now, so a test adds one that is not.</summary>
+        public IReadOnlyList<SettingsSectionContribution> Sections { get; init; } = BuiltInSettings.All;
+
         public SettingsForm Form(string initial = "text")
         {
             SettingsForm? form = null;
             form = new SettingsForm(
-                BuiltInSettings.All,
+                Sections,
                 Config,
                 change =>
                 {
@@ -147,16 +150,19 @@ public class SettingsWindowTests
     [Test]
     public async Task AnUndeclaredSectionOpensItsOwnScreen()
     {
-        var harness = new Harness();
+        var harness = new Harness
+        {
+            Sections = [.. BuiltInSettings.All, new SettingsSectionContribution { Id = "elsewhere", Title = "Elsewhere", Key = "F11", Order = 95 }],
+        };
         var shown = await Run(harness, "text", window =>
         {
-            var item = window.SectionList.Items.OfType<ListBoxItem>().Single(i => Equals(i.Tag, "packages"));
+            var item = window.SectionList.Items.OfType<ListBoxItem>().Single(i => Equals(i.Tag, "elsewhere"));
             window.SectionList.SelectedItem = item;
             Dispatcher.UIThread.RunJobs();
             return window.ShownSection;
         });
 
-        await Assert.That(harness.Opened).IsEquivalentTo(new[] { "packages" });
+        await Assert.That(harness.Opened).IsEquivalentTo(new[] { "elsewhere" });
         await Assert.That(shown).IsEqualTo("text");
     }
 

@@ -373,7 +373,7 @@ public static partial class BuiltInSettings
         Text,
         Input,
         Character,
-        Listed("packages", "Packages", "F10", 90),
+        Packages,
     ];
 
     private static IReadOnlyList<SettingsSectionContribution>? _all;
@@ -387,9 +387,6 @@ public static partial class BuiltInSettings
             sections.Add(section);
         }
     }
-
-    private static SettingsSectionContribution Listed(string id, string title, string key, int order) =>
-        new() { Id = id, Title = title, Key = key, Order = order };
 
     private static BoolField Flag(
         string id,

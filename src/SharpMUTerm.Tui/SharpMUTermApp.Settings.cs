@@ -57,7 +57,7 @@ internal sealed partial class SharpMUTermApp
     /// </param>
     private bool GoToSetting(SettingsMatch match, bool native)
     {
-        if (string.Equals(match.Section.Id, "packages", StringComparison.Ordinal))
+        if (string.Equals(match.Section.Id, "packages", StringComparison.Ordinal) && !(native && NativePackages))
         {
             _settings.CloseAll();
             ShowPackages();
@@ -101,13 +101,17 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void OpenSettingsScreen(ConsoleKey key, Func<ScreenBinding> open)
     {
-        var name = key.ToString();
-        var section = _contributions.SettingsSections.Ordered
-            .FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.Ordinal));
-        if (!TryOpenNativeSettings(section))
+        if (!TryOpenNativeSettings(SectionForKey(key)))
         {
             _settings.Toggle(key, open);
         }
+    }
+
+    /// <summary>The declared section a settings screen's F-key opens, or null.</summary>
+    private SettingsSectionContribution? SectionForKey(ConsoleKey key)
+    {
+        var name = key.ToString();
+        return _contributions.SettingsSections.Ordered.FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -178,7 +182,10 @@ internal sealed partial class SharpMUTermApp
             world,
             character,
             ListContext(),
-            item);
+            item)
+        {
+            Packages = PackageManager,
+        };
         return form;
     }
 

@@ -191,7 +191,9 @@ fallbacks) for inline images/maps.
     character's own, so an update replaces them wholesale and never touches the player's edits; `c` on F10
     copies them into the player's sets to edit. The only thing saved is `DisabledPackages`.
   - **The review is the consent step**: nothing is written until ⏎, and it leads with what can act as the
-    player (rules that send, scripts that run). Downloads are https only, capped while streaming.
+    player (rules that send, scripts that run). Downloads are https only, capped while streaming. The review is one
+    `PackageReviewModel` (Client) drawn by both hosts, and F10 itself is declared in Client
+    (`BuiltInSettings.Packages`); see *F10 is a package manager page* under the native settings window.
   - **Scripts are `package:<id>/<file>`** and `SessionScripts` resolves them only under that package's
     `scripts/`, through `PackageStore.ResolveScript`. They still need the scripts root, like any script.
   - One folder per package (`packages/<id>/`, beside `config.json`), swapped in through a `.id.new` staging
@@ -1715,8 +1717,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     - **⌥↑/⌥↓ move an item within its set on the cell screens** (`ScreenRow.Move`, `ScreenLists.Mover`,
       `SettingsSession.Reorder`), saved only when it moved, the cursor following; a `⌥↑↓ moves …` hint row sits
       under `Del removes …`. That is the one cell row this added. Order is meaning for a trigger (first stop wins).
-    - The search searches item fields too (`SettingsSearch.Searchable`). F10 is the one section left listed by
-      title only.
+    - The search searches item fields too (`SettingsSearch.Searchable`), F10's package fields included.
 - **In the window, a declared section opens a native settings window, generated from the declarations**
   (`ClientHost.NativeSettings` → `INativeSettings`; Client `SettingsForm`; Avalonia `SettingsWindow`,
   `SettingsPresenter` on the driver; `OpenSettingsScreen`/`TryOpenNativeSettings` in `SharpMUTermApp.Settings.cs`).
@@ -1758,6 +1759,29 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     has the live test under it, re-run on every keystroke, each matching line with the match marked. The trigger
     builder opens it on the rule it made (`TryOpenNativeSettings(section, item)`); with no window it opens the cell
     F2 as before.
+  - **F10 is a package manager page** (`PackagePageView`, Avalonia; Client `PackageCollection`, `PackageManager`,
+    `PackageReviewModel`, `PackageBrowseModel`; `SharpMUTermApp.Packages.cs`). F10 is declared as a list of
+    installed packages (`SettingsSectionContribution.Packages`): one `BoolField` (`enabled`, whose binding replaces
+    `DisabledPackages`, the one thing it writes) and read-only `InfoField`s (name, version, games, by, about, sets,
+    scripts, media, update, characters), plus four actions (Space, `c`, Del, `b`). The cell modal
+    (`PackageScreen.List`) and the page draw the same fields in the same order
+    (`PackagePageTests.ThePageDrawsTheDeclaredFieldsTheCellScreenDraws`). Decisions:
+    - **Every gesture goes to the client** through `IPackageHost` (`PackageHostCalls`, marshalled with `OnUiThread`):
+      on/off (`SetPackageEnabled`, one `SaveConfiguration`), remove, copy sets, fetch the index, install, accept,
+      cancel. The page writes nothing; `PackageManager` is what the client publishes for it to read
+      (`PublishIndex`/`PublishReview`/`PublishStatus`, `Changed`).
+    - **One consent path in both hosts**: `ReviewPackage` checks the SHA-256, id and version, then builds one
+      `PackageReviewModel`; the cell overlay draws it with `PackageScreen.Review`, the window as a card over the page.
+      Both end in `AcceptPackage(model)`, which refuses a model that is not the pending one, so a stale review
+      cannot install. It leads with `WHAT CAN ACT AS YOU`.
+    - **The index is fetched only from the Browse tab's button** (or `b`/⌃P ▸ *Browse packages*, which bring the tab
+      forward through `BrowseRequests`), never when the page opens. The browse list is `PackageBrowseModel`, the
+      focused world's packages first, as on the cells.
+    - The `--demo-config` scene installs two fake packages and serves a fake index from memory (`DemoFetch`, real
+      SHA-256s); screenshots `ux-wave8/packages-window-*.png` and `packages-terminal-*.png`.
+  - **A settings `--view` opens the native window when the host has one** (`RenderSnapshot`: a declared screen with
+    no `-edit` goes through `TryOpenNativeSettings`, as do `packages`/`package-browse`/`package-review`). The parity
+    harness passes `NativeSettings = null`, so its cells are still compared.
   - Not done: the window is not modal. Screenshots come from a real window under Xvfb, driven with XTest
     (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`, `ux-wave7/lists-*.png`).
 - **In the window, ⌃P is a native palette over the window, listing the cell palette's rows** (`ClientHost.NativePalette`

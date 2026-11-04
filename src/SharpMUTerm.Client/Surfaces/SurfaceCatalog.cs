@@ -252,7 +252,7 @@ public static class SurfaceCatalog
                 [SurfaceHosts.Window] = SurfaceDrawing.Native,
             },
             "SharpMUTerm.Tui.OptionsScreenRenderer.FromSection",
-            ["SharpMUTerm.Avalonia.SettingsWindow", "SharpMUTerm.Avalonia.ThemeCardView", "SharpMUTerm.Avalonia.ListEditorView"]),
+            ["SharpMUTerm.Avalonia.SettingsWindow", "SharpMUTerm.Avalonia.ThemeCardView", "SharpMUTerm.Avalonia.ListEditorView", "SharpMUTerm.Avalonia.PackagePageView"]),
         new(
             LayoutsMenu,
             typeof(MenuModel),
