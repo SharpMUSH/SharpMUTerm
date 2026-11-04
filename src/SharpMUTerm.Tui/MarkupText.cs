@@ -82,14 +82,19 @@ internal static class MarkupText
 
     /// <summary>
     /// <see cref="SpreadLR"/> for a screen's header, where the left is the screen's title and the right
-    /// its key hints. Here the right gives way: the title says where the reader is, and the hints that
-    /// fall off the end (the close key last of all) are repeated in the action bar.
+    /// its key hints. Here the hints give way, from the middle: the title says where the reader is, and
+    /// the last hint is the key that closes the screen, which is the one a lost reader needs.
     /// </summary>
     internal static string SpreadTitle(string title, string hints, int width)
     {
-        if (width > 0 && VisibleLength(title) + 1 + VisibleLength(hints) > width)
+        var room = width - VisibleLength(title) - 1;
+        if (width > 0 && VisibleLength(hints) > room)
         {
-            hints = ElideVisible(hints, Math.Max(0, width - VisibleLength(title) - 1));
+            var last = hints.LastIndexOf(" · ", StringComparison.Ordinal);
+            var tail = last > 0 ? hints[last..] : string.Empty;
+            hints = tail.Length > 0 && VisibleLength(tail) < room
+                ? ElideVisible(hints[..last], room - VisibleLength(tail)) + tail
+                : ElideVisible(hints, Math.Max(0, room));
         }
 
         return SpreadLR(title, hints, width);

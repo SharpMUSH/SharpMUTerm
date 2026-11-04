@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- `/connect <host> [port] [tls]` adds a world and connects to it, and `/connect <name>` opens a configured
+  one. It is the way to add a world in `--plain`, where the settings screens cannot be used.
+- The desktop window bundles JetBrains Mono and the Nerd Font symbols, so its icons draw on a machine with no
+  Nerd Font installed instead of showing boxes.
 - A crash now leaves its stack in `logs/client-diagnostics-*.log`, in the window and the terminal alike,
   along with errors the UI framework used to swallow without a trace.
 - A `scripts` field on each trigger set in Worlds & Characters (F5), and Ctrl+P ▸ *Reload scripts*, which
@@ -112,6 +116,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- At 80 columns the status row no longer wraps onto a second row: the encoding and the Ctrl+P hint are
+  dropped first.
+- Health, mana and movement meters stay on the status row on a narrow terminal, shown as percentages when
+  the full numbers do not fit.
+- Triggers (F2) and Keypad (F4) no longer draw their editors off the right-hand edge on a narrow terminal.
+  When both columns do not fit, the screen shows the one you are in, and header and action bars shorten
+  their text rather than cutting off the keys.
 - MXP pictures draw again. Since the TelnetNegotiationCore update the client stopped answering a
   server's MXP `<SUPPORT>` and `<VERSION>` questions, so a game such as SharpMUSH decided it could not show
   `<IMAGE>` and sent the picture's address as text instead.
