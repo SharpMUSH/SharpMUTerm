@@ -331,6 +331,16 @@ internal static class WorkspacePalette
     }
 
     /// <summary>
+    /// Whether a theme's panes are dark — a foreground on them is lifted rather than darkened. The map's area colours
+    /// take their dark or light set by this (<c>MapAreaPalette.For</c>).
+    /// </summary>
+    internal static bool DarkPanes(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(Surface(theme)) < LightPlaneLuminance;
+    }
+
+    /// <summary>
     /// The band a selected run of a pane's output is painted on.
     /// <para>
     /// <b>One pair per theme, not per pane</b>, and for a reason of its own rather than
