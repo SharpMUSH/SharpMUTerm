@@ -458,10 +458,10 @@ internal sealed class ComposeOverlay
     }
 
     /// <summary>
-    /// The preview's rows for <paramref name="model"/>: a heading, then the command ⌃S would send, cut into rows of
-    /// <paramref name="width"/> characters — hard, not at words, because this shows the exact characters the game gets
-    /// and a wrap at a space would hide one — ending in <c>…</c> when it runs past the rows there are. Always
-    /// <see cref="PreviewRows"/> rows, so typing never moves the editor.
+    /// The preview's rows for <paramref name="model"/>: a heading, then the command ⌃S would send, cut into rows of at
+    /// most <paramref name="width"/> characters at a space (<see cref="WrapExact"/>) — the space kept at the end of its
+    /// row, so the rows joined are exactly the characters the game gets — ending in <c>…</c> when it runs past the
+    /// rows there are. Always <see cref="PreviewRows"/> rows, so typing never moves the editor.
     /// </summary>
     internal static IReadOnlyList<string> PreviewLines(ComposerModel model, int width)
     {
@@ -472,25 +472,56 @@ internal sealed class ComposeOverlay
             $"[{ScreenPalette.Accent}]AS SENT[/][{ScreenPalette.Label}]  the one command ⌃S sends · ⌥P hides this[/]",
         };
         var rows = PreviewRows - 1;
+        var pieces = WrapExact(command, width);
         for (var row = 0; row < rows; row++)
         {
-            var start = row * width;
-            if (start >= command.Length)
+            if (row >= pieces.Count)
             {
                 lines.Add(row == 0 && command.Length == 0 ? $"[{ScreenPalette.Muted}]nothing yet[/]" : string.Empty);
                 continue;
             }
 
-            var piece = command.Substring(start, Math.Min(width, command.Length - start));
-            if (row == rows - 1 && start + width < command.Length)
+            var piece = pieces[row];
+            if (row == rows - 1 && pieces.Count > rows)
             {
-                piece = piece[..^1] + "…";
+                piece = (piece.Length >= width ? piece[..^1] : piece.TrimEnd()) + "…";
             }
 
             lines.Add($"[{ScreenPalette.Value}]{Escape(piece)}[/]");
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> cut into rows of at most <paramref name="width"/> characters, each ending after the last
+    /// space that fits (a word longer than a row is cut hard). Nothing is dropped or added: the rows joined are
+    /// <paramref name="text"/>, so the preview never hides a space the game will get.
+    /// </summary>
+    internal static IReadOnlyList<string> WrapExact(string text, int width)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        width = Math.Max(1, width);
+        var rows = new List<string>();
+        var start = 0;
+        while (start < text.Length)
+        {
+            var length = Math.Min(width, text.Length - start);
+            if (start + length < text.Length)
+            {
+                // Break after the last space inside the row, so the next row starts with a word.
+                var space = text.LastIndexOf(' ', start + length - 1, length);
+                if (space > start)
+                {
+                    length = space - start + 1;
+                }
+            }
+
+            rows.Add(text.Substring(start, length));
+            start += length;
+        }
+
+        return rows;
     }
 
     private MarkupControl FooterBand()

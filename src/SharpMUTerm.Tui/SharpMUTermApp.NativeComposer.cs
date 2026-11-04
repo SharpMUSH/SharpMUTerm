@@ -63,7 +63,33 @@ internal sealed partial class SharpMUTermApp
             _composerSpelling = _spelling?.Invoke();
         }
 
+        _composerSpelling?.KnowNames(SpellingNames());
         return _composerSpelling;
+    }
+
+    /// <summary>
+    /// The proper names the composer never marks: every configured world and character, and the names each open
+    /// session's game has reported (<see cref="Core.Commands.CompletionIndex.Names"/>). A post that names its writer or
+    /// the people in the room is not misspelt.
+    /// </summary>
+    private IEnumerable<string> SpellingNames()
+    {
+        foreach (var world in _config.Worlds)
+        {
+            yield return world.Name;
+            foreach (var character in world.Characters)
+            {
+                yield return character.Name;
+            }
+        }
+
+        foreach (var session in _sessions.Sessions)
+        {
+            foreach (var name in session.Completions.Names())
+            {
+                yield return name;
+            }
+        }
     }
 
     /// <summary>
@@ -72,6 +98,12 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void OpenComposer(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null)
     {
+        // The names a game reports change between openings; the dictionary learns them each time F1 opens.
+        if (_composerSpellingOpened)
+        {
+            ComposerSpelling();
+        }
+
         if (NativeComposerHost is not { } native)
         {
             _composer.Toggle(target, draft, escaping, canSend, edit);
@@ -233,7 +265,7 @@ internal sealed partial class SharpMUTermApp
             composer.Escaping,
             edit: null,
             composer.Spelling,
-            canSend: session is not null,
+            canSend: ComposerCanSend(session, composer.SessionKey),
             composer.Armed,
             composer.Revision);
         Drawing(PanelIds.Composer, composer.WindowId, model);

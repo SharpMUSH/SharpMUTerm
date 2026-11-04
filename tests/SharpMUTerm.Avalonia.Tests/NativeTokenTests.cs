@@ -112,6 +112,36 @@ public class NativeTokenTests
     }
 
     /// <summary>
+    /// The native header's and sidebar's secondary text (<c>offline</c>, <c>Alt+2</c>, <c>CONNECTIONS</c>) is small
+    /// text, held to <see cref="NativeTokens.TextFloor"/> on the planes the client hands the chrome — the sidebar's
+    /// backdrop and the header's status plane. It was the ink at two-thirds alpha, 3.1–3.4:1 on Light's sidebar (UX audit
+    /// wave 11, #7); and Light's backdrop itself is no longer mid-grey.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task TheChromesSecondaryTextIsBodyText(string name)
+    {
+        var theme = ThemeLibrary.Get(name);
+        var ink = theme.Resolve(SharpMUTerm.Core.Text.TerminalColor.Default, isBackground: false);
+        foreach (var plane in new[] { SharpMUTerm.Tui.WorkspacePalette.Backdrop(theme), theme.StatusBackground })
+        {
+            var dim = SharpMUTerm.Avalonia.NativeChromeView.SecondaryInk(
+                Color.FromRgb(ink.R, ink.G, ink.B), Color.FromRgb(plane.R, plane.G, plane.B));
+            await Assert.That(Contrast.Ratio(Rgb(dim), plane)).IsGreaterThanOrEqualTo(NativeTokens.TextFloor)
+                .Because($"{name}: {dim} on {plane.ToHex()}");
+        }
+
+        if (name == "Light")
+        {
+            var backdrop = SharpMUTerm.Tui.WorkspacePalette.Backdrop(theme);
+            await Assert.That(Contrast.RelativeLuminance(backdrop)).IsGreaterThan(0.7)
+                .Because($"Light's rail and status plane {backdrop.ToHex()} read as disabled at mid-grey");
+        }
+    }
+
+    /// <summary>
     /// The settings window wears the tokens: its plane is the palette's card and Fluent's accent is the client's, not
     /// Fluent's own blue (<c>#60cdff</c>/<c>#005fb8</c>) — and it follows a Light theme the same way.
     /// </summary>

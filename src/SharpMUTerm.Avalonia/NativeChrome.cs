@@ -190,7 +190,21 @@ internal abstract class NativeChromeView : Control
     /// <summary>The UI font size the chrome's text is set in.</summary>
     protected const double FontSize = NativeTokens.Body + 1;
 
-    protected Color Dim => Color.FromArgb(0xA8, Ink.R, Ink.G, Ink.B);
+    /// <summary>
+    /// Secondary text (<c>offline</c>, a chord, <c>CONNECTIONS</c>): the ink two thirds of the way from the plane,
+    /// opaque and held to <see cref="NativeTokens.TextFloor"/> on it. It is small text; a translucent ink was
+    /// 3.1–3.4:1 on Light's sidebar.
+    /// </summary>
+    protected Color Dim => SecondaryInk(Ink, Plane);
+
+    /// <summary><see cref="Dim"/> for an ink on a plane. Internal for tests.</summary>
+    internal static Color SecondaryInk(Color ink, Color plane)
+    {
+        const double share = 0xA8 / 255.0;
+        byte Mix(byte a, byte b) => (byte)Math.Round((a * share) + (b * (1 - share)));
+        var mixed = new Rgb(Mix(ink.R, plane.R), Mix(ink.G, plane.G), Mix(ink.B, plane.B));
+        return ToColour(Contrast.Legible(mixed, new Rgb(plane.R, plane.G, plane.B), NativeTokens.TextFloor));
+    }
 
     protected Color Faint(byte alpha) => Color.FromArgb(alpha, Ink.R, Ink.G, Ink.B);
 

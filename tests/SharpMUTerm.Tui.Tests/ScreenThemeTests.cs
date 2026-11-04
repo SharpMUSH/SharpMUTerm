@@ -152,21 +152,40 @@ public class ScreenThemeTests
     [Arguments("compose")]
     [Arguments("deletions")]
     [Arguments("packages")]
-    public async Task NoLightSettingsFramePaintsADarkPlane(string view)
+    public async Task NoLightSettingsFramePaintsADarkPlane(string view) => await AssertNoDarkPlane(view, 120, 32);
+
+    /// <summary>
+    /// The same at 80 columns, where F2, F4 and the settings search draw one column at a time
+    /// (<c>ScreenChrome.Single</c>). That path built its column from the renderer's markup unresolved, so on Light the
+    /// name and pattern wells kept Dark's <c>#0a0e18</c> under Dark's ink (UX audit wave 11, #1) while 120 columns was
+    /// right.
+    /// </summary>
+    [Test]
+    [Arguments("triggers")]
+    [Arguments("triggers-edit")]
+    [Arguments("keypad")]
+    [Arguments("keypad-edit")]
+    [Arguments("settings-search")]
+    [Arguments("aliases")]
+    [Arguments("timers")]
+    [Arguments("worlds")]
+    public async Task NoLightSettingsFramePaintsADarkPlaneAt80Columns(string view) => await AssertNoDarkPlane(view, 80, 24);
+
+    private static async Task AssertNoDarkPlane(string view, int width, int height)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.ThemeName = "Light";
         config.Theme = ThemeLibrary.Get("Light");
         var caps = new TerminalCapabilities(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
-        var app = new SharpMUTermApp(config, caps, new HeadlessConsoleDriver(120, 32));
+        var app = new SharpMUTermApp(config, caps, new HeadlessConsoleDriver(width, height));
         var frame = app.RenderSnapshot(view);
 
         var dark = Planes.Select(Rgb).ToHashSet();
-        var cells = FrameGrid.Cells(frame, 120, 32).Values.ToList();
+        var cells = FrameGrid.Cells(frame, width, height).Values.ToList();
         var offending = cells.Count(c => c.Background is { } bg && dark.Contains(bg));
 
-        await Assert.That(cells.Count).IsGreaterThan(1000);
-        await Assert.That(offending).IsEqualTo(0).Because($"--theme Light --view {view}");
+        await Assert.That(cells.Count).IsGreaterThan(width * height / 2);
+        await Assert.That(offending).IsEqualTo(0).Because($"--theme Light --view {view} --size {width}x{height}");
     }
 }

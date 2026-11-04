@@ -328,6 +328,16 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - Desktop window: the settings window can be resized again from any edge, and opens at the size you last left it
   for the rest of the session. Notification cards disappear as soon as it opens rather than showing beside it.
 - Clicking a tab strip's `+N ▾` no longer also selects (or closes) the tab drawn underneath it.
+- Light theme: the trigger and keypad screens at 80 columns are no longer drawn in the dark theme's colours, error
+  notices on the status row are readable, the command palette's selected row is readable, and the sidebar and status
+  row are a light grey rather than a mid-grey that looked disabled. The window's sidebar labels are easier to read too.
+- The composer no longer marks the command word (`+bbpost`, `@emit`) or your own character's and the room's names as
+  misspelt.
+- Who is here keeps whole names at 80 columns by dropping the "active" / "idle" words first (the dot still says it).
+- The status row's room name uses the space a wide terminal has instead of being cut short.
+- The composer's "as sent" preview wraps at spaces instead of in the middle of a word.
+- Desktop window: the docked composer no longer says "click to write" twice.
+- Demo: the composer and the startup message no longer say nothing is connected while the header says Corvid is.
 
 - The away, new-activity, search and restore bars fit the pane they are in: their rule runs to the pane's edge,
   never past it, and the words shorten before the rule does in a narrow pane. They redraw when the pane is resized.

@@ -263,8 +263,20 @@ internal static class WorkspacePalette
     /// <summary>
     /// The plane everything that is not a pane sits on: the rail, the status line, and the gaps a split
     /// leaves between panes.
+    /// <para>
+    /// A light theme takes a shallower step (<see cref="LightBackdropScale"/>): the backdrop's ratio taken off a
+    /// near-white surface landed at mid-grey (<c>#b7b7b9</c>, L* 75, 21 L* under the panes), and a rail and status
+    /// row that grey read as disabled. The step on Light is now about 4 L*, Solarized Dark's size.
+    /// </para>
     /// </summary>
-    internal static Rgb Backdrop(Theme theme) => Recessed(Surface(theme));
+    internal static Rgb Backdrop(Theme theme)
+    {
+        var surface = Surface(theme);
+        return Contrast.RelativeLuminance(surface) < LightPlaneLuminance ? Recessed(surface) : Scale(surface, LightBackdropScale);
+    }
+
+    /// <summary>The backdrop as a fraction of a light theme's surface: about L* 91 under Light's L* 96 panes.</summary>
+    private const double LightBackdropScale = 0.95;
 
     /// <summary>
     /// One step behind a plane — the backdrop's step, reused for the chips of a tab strip's unselected
@@ -323,6 +335,16 @@ internal static class WorkspacePalette
     {
         ArgumentNullException.ThrowIfNull(theme);
         return Contrast.Legible(theme.Background, fill, HeaderTextFloor);
+    }
+
+    /// <summary>
+    /// A notice's quiet text on the status row: the framework's <c>[dim]</c> grey, which is fixed and fell to 2.4:1 on
+    /// Light, replaced by the same grey held to <see cref="HeaderTextFloor"/> on <paramref name="plane"/>.
+    /// </summary>
+    internal static Rgb NoticeMuted(Theme theme, Rgb plane)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(new Rgb(0x80, 0x80, 0x80), plane, HeaderTextFloor);
     }
 
     /// <summary>The header's quiet text (the counts, the log state), held to <see cref="HeaderTextFloor"/> on its band.</summary>

@@ -70,7 +70,7 @@ public class LayoutStripTests
         app.RenderSnapshot("layout-combat");
 
         await Assert.That(app.VitalsStripShowing()).IsTrue();
-        await Assert.That(app.StatusMarkup).DoesNotContain("[dim]hp[/]");
+        await Assert.That(app.StatusMarkup).DoesNotContain("]hp[/]");
         await Assert.That(app.StatusMarkup).Contains("Corvid");
     }
 
@@ -81,7 +81,7 @@ public class LayoutStripTests
         app.RenderSnapshot("meters");
 
         await Assert.That(app.VitalsStripShowing()).IsFalse();
-        await Assert.That(app.StatusMarkup).Contains("[dim]hp[/]");
+        await Assert.That(app.StatusMarkup).Contains("]hp[/]");
     }
 
     [Test]
@@ -93,7 +93,7 @@ public class LayoutStripTests
         app.DispatchCommand("layout:zoom");
 
         await Assert.That(app.VitalsStripShowing()).IsFalse();
-        await Assert.That(app.StatusMarkup).Contains("[dim]hp[/]");
+        await Assert.That(app.StatusMarkup).Contains("]hp[/]");
     }
 
     [Test]

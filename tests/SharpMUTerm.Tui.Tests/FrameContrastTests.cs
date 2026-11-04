@@ -89,12 +89,77 @@ public class FrameContrastTests
         from view in Views
         select (theme, view);
 
+    /// <summary>
+    /// The views walked again at 80×24, where the layout is a different one: F2, F4 and the settings search draw one
+    /// column at a time, the rail folds, and the status row is short. The 80-column settings path kept Dark's colours on
+    /// Light (UX audit wave 11, #1: wells at 1.34:1, <c>F11</c> at 1.05:1) while every 140-column frame here was green.
+    /// </summary>
+    private static readonly string[] NarrowViews =
+    [
+        "", "triggers", "triggers-edit", "keypad", "keypad-edit", "settings-search", "aliases", "timers", "worlds",
+        "menu", "menu-fuzzy", "notices", "compose", "panel-who", "layout-roleplay", "layout-combat",
+    ];
+
+    public static IEnumerable<(string Theme, string View)> NarrowCases() =>
+        from theme in ThemeLibrary.Names
+        from view in NarrowViews
+        select (theme, view);
+
     [Test]
     [MethodDataSource(nameof(Cases))]
-    public async Task NoPaintedTextIsBelowTheLegibilityFloor((string Theme, string View) test)
+    public async Task NoPaintedTextIsBelowTheLegibilityFloor((string Theme, string View) test) =>
+        await AssertFloor(test.Theme, test.View, Width, Height);
+
+    [Test]
+    [MethodDataSource(nameof(NarrowCases))]
+    public async Task NoPaintedTextIsBelowTheLegibilityFloorAt80Columns((string Theme, string View) test) =>
+        await AssertFloor(test.Theme, test.View, 80, 24);
+
+    /// <summary>
+    /// <b>Small text the reader must act on is held to 4.5:1, not 3.</b> The status row (a notice, and an error above
+    /// all) and the selected row of ⌃P: an error notice was the raw warning red on Light's status plane, 1.39:1, and ⌃P's
+    /// selected row was grey on deep teal at exactly 3.00:1 — which the 3:1 floor passes. Every theme, both sizes.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(BodyTextCases))]
+    public async Task TheStatusRowAndThePalettesSelectedRowAreBodyText((string Theme, string View, int Width) test)
     {
-        var frame = Render(test.Theme, test.View);
-        var pairs = Pairs(frame);
+        var height = test.Width == Width ? Height : 24;
+        var frame = Render(test.Theme, test.View, test.Width, height);
+        var cells = FrameGrid.Cells(frame, test.Width, height);
+
+        // The cells to hold: the last row (the status row), and ⌃P's selected row — the cells on the band its ▸ marker
+        // is drawn on, in the marker's row (a pane beside the palette is not the palette).
+        var band = test.View.StartsWith("menu", StringComparison.Ordinal)
+            ? cells.Where(c => c.Value.Glyph == '▸').Select(c => (c.Key.Row, c.Value.Background)).FirstOrDefault()
+            : default;
+        var failures = cells
+            .Where(c => c.Key.Row == height - 1 || (c.Key.Row == band.Row && band.Background is { } bg && c.Value.Background == bg))
+            .Select(c => c.Value)
+            .Where(c => c.Glyph is not (' ' or '\n' or '\r') && !IsFill(c.Glyph) && c.Glyph is not ('▌' or '▐' or '●' or '○' or '◆' or '◇'))
+            .Where(c => c.Foreground is { } && c.Background is { })
+            .Select(c => (Fg: c.Foreground!.Value, Bg: c.Background!.Value))
+            .Distinct()
+            .Select(p => (p.Fg, p.Bg, Ratio: Contrast.Ratio(p.Fg, p.Bg)))
+            .Where(t => t.Ratio < 4.5)
+            .Select(t => $"{t.Ratio:0.00} {t.Fg.ToHex()} on {t.Bg.ToHex()}")
+            .ToList();
+
+        await Assert.That(failures).IsEmpty()
+            .Because($"--theme \"{test.Theme}\" --view {(test.View.Length == 0 ? "(default)" : test.View)} at {test.Width} columns");
+    }
+
+    public static IEnumerable<(string Theme, string View, int Width)> BodyTextCases() =>
+        from theme in ThemeLibrary.Names
+        from view in new[] { "notices", "menu", "menu-fuzzy" }
+        from width in new[] { 80, Width }
+        select (theme, view, width);
+
+    private static async Task AssertFloor(string theme, string view, int width, int height)
+    {
+        var frame = Render(theme, view, width, height);
+        var pairs = Pairs(frame, width, height);
+        var test = (Theme: theme, View: view);
 
         // A walker handed the wrong dimensions, or one that stopped recognising an escape, decodes
         // nothing — and an audit over nothing passes every assertion below it. That is the failure
@@ -158,14 +223,14 @@ public class FrameContrastTests
         || ch is >= '\u2500' and <= '\u257f'
         || ch is '█' or '░' or '▒' or '▓';
 
-    private static string Render(string themeName, string view)
+    private static string Render(string themeName, string view, int width = Width, int height = Height)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.ThemeName = themeName;
         config.Theme = ThemeLibrary.Get(themeName);
 
-        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(width, height));
         return app.RenderSnapshot(view.Length == 0 ? null : view);
     }
 
@@ -179,11 +244,11 @@ public class FrameContrastTests
     /// names.
     /// </para>
     /// </summary>
-    private static Dictionary<(Rgb Fg, Rgb Bg), int> Pairs(string frame)
+    private static Dictionary<(Rgb Fg, Rgb Bg), int> Pairs(string frame, int width, int height)
     {
         var pairs = new Dictionary<(Rgb, Rgb), int>();
 
-        foreach (var cell in FrameGrid.Cells(frame, Width, Height).Values)
+        foreach (var cell in FrameGrid.Cells(frame, width, height).Values)
         {
             if (cell.Glyph is ' ' or '\n' or '\r' || IsFill(cell.Glyph)
                 || cell.Foreground is not { } ink || cell.Background is not { } plane)

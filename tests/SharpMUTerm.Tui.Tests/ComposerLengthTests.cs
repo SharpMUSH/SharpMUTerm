@@ -82,4 +82,26 @@ public class ComposerLengthTests
 
         await Assert.That(model.Preview).IsFalse();
     }
+
+    /// <summary>
+    /// The as-sent preview breaks at a space, never mid-word (it read <c>Corv</c> / <c>id</c>), and still shows every
+    /// character the game gets: the rows joined are the command.
+    /// </summary>
+    [Test]
+    [Arguments("+bbpost 12=The Long Winter%r%rThe caravan reached the pass at dusk", 20)]
+    [Arguments("word", 3)]
+    [Arguments("a  b   c", 2)]
+    [Arguments("", 10)]
+    public async Task ThePreviewWrapsAtWordsAndKeepsEveryCharacter(string command, int width)
+    {
+        var rows = ComposeOverlay.WrapExact(command, width);
+
+        await Assert.That(string.Concat(rows)).IsEqualTo(command);
+        await Assert.That(rows.All(r => r.Length <= width)).IsTrue();
+        // A word is split across rows only where its row had no space to break at.
+        var splits = Enumerable.Range(0, Math.Max(0, rows.Count - 1))
+            .Where(i => rows[i].Length > 0 && rows[i][^1] != ' ' && rows[i + 1][0] != ' ' && rows[i][1..].Contains(' '))
+            .ToList();
+        await Assert.That(splits).IsEmpty().Because("a row with a space in it breaks after one");
+    }
 }

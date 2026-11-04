@@ -41,19 +41,27 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// The status row's markup for a notice: the key chip in the notice ink, then the text — in the warning red when
-    /// something failed, otherwise dim. The cell renderer of the notice surface; byte for byte what the row drew
-    /// before the model existed.
+    /// something failed, otherwise a muted grey. Every ink is held to 4.5:1 on the backdrop the row is painted on: a
+    /// failure in the raw red was 1.39:1 on Light, and the framework's fixed <c>[dim]</c> grey 2.4:1. The cell
+    /// renderer of the notice surface.
     /// </summary>
     internal string NoticeMarkup(NoticeModel notice)
     {
         ArgumentNullException.ThrowIfNull(notice);
-        var body = notice.Severity == NoticeSeverity.Warning
-            ? $"[{ScreenPalette.Warn}]{Escape(notice.Text)}[/]"
-            : $"[dim]{Escape(notice.Text)}[/]";
+        var plane = WorkspacePalette.Backdrop(_theme);
+        var ink = notice.Severity == NoticeSeverity.Warning
+            ? HeldOn(ScreenPalette.Warn, plane)
+            : Hex(WorkspacePalette.NoticeMuted(_theme, plane));
+        var body = $"[{ink}]{Escape(notice.Text)}[/]";
+        var label = HeldOn(_ink.Notice, plane);
         // A source is a label (Sound:), a key a chord chip (⌃P): two shapes, so a word is never read as a key to press.
-        return notice.Source is { } source ? $"[{_ink.Notice}]{Escape(source)}:[/] {body}"
-            : notice.Key is null ? body : $"[{_ink.Notice}]{Escape(notice.Key)}[/] {body}";
+        return notice.Source is { } source ? $"[{label}]{Escape(source)}:[/] {body}"
+            : notice.Key is null ? body : $"[{label}]{Escape(notice.Key)}[/] {body}";
     }
+
+    /// <summary>A colour held to <see cref="WorkspacePalette.HeaderTextFloor"/> on <paramref name="plane"/>: notice text is small text.</summary>
+    private static string HeldOn(string hex, Rgb plane) =>
+        TryParseRgb(hex, out var rgb) ? Hex(Contrast.Legible(rgb, plane, WorkspacePalette.HeaderTextFloor)) : hex;
 
     /// <summary>Hands a notice to a host that draws notices natively; nothing for one that does not.</summary>
     private void PublishNotice(NoticeModel notice)

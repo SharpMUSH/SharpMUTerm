@@ -33,7 +33,8 @@ internal static class WhoHereRenderer
 
     /// <summary>
     /// The panel's rows for a box <paramref name="width"/> by <paramref name="height"/> cells. Never wider than the
-    /// box and never taller: a room fuller than the box ends in <c>… and N more</c>.
+    /// box and never taller: a room fuller than the box ends in <c>… and N more</c>. The idle column is dropped (the
+    /// dot keeps saying it) before a name would be cut to make room for it.
     /// </summary>
     internal static List<string> Render(string? room, IReadOnlyList<RoomOccupant> occupants, int width, int height, Ink ink) =>
         Render(WhoHereModel.From(room, occupants), width, height, ink);
@@ -65,10 +66,13 @@ internal static class WhoHereRenderer
             return lines;
         }
 
-        var showIdle = model.ShowsIdle && width >= IdleWidth + 8;
-        var nameWidth = width - 2 - (showIdle ? IdleWidth + 1 : 0);
         var rows = height - 1;
         var fits = rowsIn.Count <= rows ? rowsIn.Count : Math.Max(0, rows - 1);
+
+        // The idle words go before any name is cut: the dot already says active or idle, and a name is who it is.
+        var longest = rowsIn.Take(fits).Select(r => r.Display.Length).DefaultIfEmpty(0).Max();
+        var showIdle = model.ShowsIdle && width >= IdleWidth + 8 && longest <= width - 2 - (IdleWidth + 1);
+        var nameWidth = width - 2 - (showIdle ? IdleWidth + 1 : 0);
         for (var i = 0; i < fits; i++)
         {
             lines.Add(Row(rowsIn[i], i, nameWidth, showIdle, ink));

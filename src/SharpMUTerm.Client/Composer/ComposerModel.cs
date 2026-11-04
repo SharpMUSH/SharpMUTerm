@@ -141,6 +141,16 @@ public sealed record ComposerModel(
         };
     }
 
+    /// <summary>
+    /// The window's docked editor placeholder while it does not hold the keyboard. It says what <see cref="ClickHint"/>
+    /// says, so the window leaves that hint out of its key row (the cells draw no placeholder on an idle editor, and
+    /// keep it).
+    /// </summary>
+    public const string ClickToWrite = "Click to write a post";
+
+    /// <summary>The docked key row's keyless hint while the editor does not hold the keyboard.</summary>
+    public const string ClickHint = "click here to write";
+
     /// <summary>The key row for a composer in this state.</summary>
     /// <param name="preview">Whether F1's as-sent preview is showing, which names what ⌥P does next.</param>
     public static IReadOnlyList<ComposerKey> KeysFor(ComposerPlace place, bool edit, bool dictionary, bool canSend, bool armed, bool preview = false)
@@ -149,7 +159,7 @@ public sealed record ComposerModel(
         {
             if (!armed)
             {
-                return [new(string.Empty, "click here to write", "click to write"), new("F1", "full screen", "full")];
+                return [new(string.Empty, ClickHint, "click to write"), new("F1", "full screen", "full")];
             }
 
             var docked = new List<ComposerKey> { new("⌃S", "send"), new("⌥L", "literal") };

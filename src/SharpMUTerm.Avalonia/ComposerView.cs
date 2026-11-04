@@ -363,8 +363,17 @@ internal sealed class ComposerView : Border
 
         _keys.Children.Clear();
         var narrow = !_fullScreen && Bounds.Width is > 0 and < 560;
+        // The idle editor's placeholder says "Click to write a post"; the row's keyless hint saying it again was the
+        // panel saying one thing twice.
+        var placeholder = !model.Armed && !_fullScreen;
+        var placeholderShown = placeholder && model.Body.Length == 0;
         foreach (var key in model.Keys)
         {
+            if (placeholderShown && key.Key.Length == 0 && key.Label == ComposerModel.ClickHint)
+            {
+                continue;
+            }
+
             var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 1, 14, 1) };
             if (key.Key.Length > 0)
             {
@@ -383,7 +392,7 @@ internal sealed class ComposerView : Border
 
         // A docked composer too short for its key row keeps the editor and drops the row.
         _footer.IsVisible = _fullScreen || Bounds.Height is 0 or >= 64;
-        _editor.PlaceholderText = model.Armed || _fullScreen ? null : "Click to write a post";
+        _editor.PlaceholderText = placeholder ? ComposerModel.ClickToWrite : null;
         _editor.PlaceholderForeground = new SolidColorBrush(Dim);
     }
 
