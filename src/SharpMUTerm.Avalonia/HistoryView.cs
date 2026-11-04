@@ -56,6 +56,8 @@ internal sealed class HistoryView : DockPanel, IModalView
         frame.MinHeight = 120;
         Children.Add(frame);
 
+        _box.Text = session.InitialQuery;
+        _box.CaretIndex = session.InitialQuery.Length;
         _box.TextChanged += (_, _) =>
         {
             _selected = 0;

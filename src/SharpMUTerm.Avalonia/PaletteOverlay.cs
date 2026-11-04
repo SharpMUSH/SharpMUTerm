@@ -17,7 +17,7 @@ namespace SharpMUTerm.Avalonia;
 /// The window's ⌃P: a rounded card near the top of the window over a faint scrim, with a search box that has the
 /// keyboard, the status line the cell palette leads with, and the rows of <see cref="PaletteSession.View"/> — group
 /// headers, each entry's title with the matched characters in the accent, its detail dimmed, and its key in a
-/// right-aligned column in the host's words (<see cref="KeyGlyphs.Words"/>). ↑↓ and PgUp/PgDn walk the entries,
+/// right-aligned column in the host's words (<see cref="NativeKeys.Words"/>). ↑↓ and PgUp/PgDn walk the entries,
 /// ⏎ runs the selected one, Esc (or ⌃P, or a click outside the card) closes. The pointer selects what it hovers
 /// and runs what it clicks.
 /// <para>
@@ -82,7 +82,7 @@ internal sealed class PaletteOverlay : Panel
 
         var footer = new TextBlock
         {
-            Text = "↑↓ move   ⏎ run   Esc close",
+            Text = "↑↓ move   Enter run   Esc close",
             FontSize = 11.5,
             Foreground = new SolidColorBrush(_colours.Dim),
             Margin = new Thickness(20, 6, 20, 10),
@@ -237,7 +237,7 @@ internal sealed class PaletteOverlay : Panel
                     break;
                 case PaletteEntry entry:
                     _rowTexts.Add(entry.Item.Title);
-                    var key = entry.Key is null ? null : KeyGlyphs.Words(entry.Key);
+                    var key = entry.Key is null ? null : NativeKeys.Words(entry.Key);
                     _keyTexts.Add(key);
                     var drawn = EntryRow(entry, key, _entryRows.Count);
                     _entryRows.Add(drawn);
@@ -283,7 +283,7 @@ internal sealed class PaletteOverlay : Panel
         {
             var words = new TextBlock
             {
-                Text = detail,
+                Text = NativeKeys.Words(detail),
                 FontSize = 12.5,
                 Foreground = new SolidColorBrush(_colours.Dim),
                 Margin = new Thickness(12, 0, 0, 0),

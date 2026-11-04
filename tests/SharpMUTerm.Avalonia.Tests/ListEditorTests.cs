@@ -187,6 +187,44 @@ public class ListEditorTests
     }
 
     [Test]
+    public async Task AListKeepsItsSelectionAcrossASectionSwitchAndAReopen()
+    {
+        var harness = new Harness();
+        harness.Config.TriggerSets[0].Aliases.Add(new Alias { Name = "n", Pattern = "n" });
+        var kept = new Dictionary<string, object>(StringComparer.Ordinal);
+        var tell = harness.Own.Triggers[1];
+        var (afterSwitch, afterReopen) = await TerminalViewTests.Session.Dispatch(() =>
+        {
+            static void Pick(SettingsWindow window, string id)
+            {
+                window.SectionList.SelectedItem = window.SectionList.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, id));
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            var form = new SettingsForm(BuiltInSettings.All, harness.Config, c => c(), _ => { }, "triggers", isDark: true) { Selections = kept };
+            var window = new SettingsWindow(form);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            window.ListEditor!.Choose(tell);
+            Pick(window, "aliases");
+            Pick(window, "triggers");
+            var switched = window.ListEditor!.SelectedItem;
+            window.Close();
+
+            // A new window, on a new form, as F2 opens one: the run's memory brings it back to the same rule.
+            var again = new SettingsWindow(new SettingsForm(BuiltInSettings.All, harness.Config, c => c(), _ => { }, "triggers", isDark: true) { Selections = kept });
+            again.Show();
+            Dispatcher.UIThread.RunJobs();
+            var reopened = again.ListEditor!.SelectedItem;
+            again.Close();
+            return (switched, reopened);
+        }, CancellationToken.None);
+
+        await Assert.That(afterSwitch).IsSameReferenceAs(tell);
+        await Assert.That(afterReopen).IsSameReferenceAs(tell);
+    }
+
+    [Test]
     public async Task TheSearchFindsAnItemFieldAndShowsOnlyIt()
     {
         var harness = new Harness();

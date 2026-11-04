@@ -181,6 +181,18 @@ internal sealed class DesktopLayer : Canvas
         _toasts.Height = Math.Max(0, frame.Height * cell.Height);
         var above = _noticeAboveRow > 0 && _noticeAboveRow < frame.Height ? _noticeAboveRow : Math.Max(0, frame.Height - 2);
         _toasts.Bottom = above * cell.Height;
+
+        // The native maps' legends, in the toasts' coordinates: a toast is stacked clear of one rather than over it.
+        var avoid = new List<Rect>();
+        foreach (var map in _maps.Values)
+        {
+            if (map.LegendRect(new Size(map.Width, map.Height)) is { } legend)
+            {
+                avoid.Add(legend.Translate(new Vector(GetLeft(map) - origin.X, GetTop(map) - origin.Y)));
+            }
+        }
+
+        _toasts.Avoid = avoid;
     }
 
     /// <summary>The notice toasts. Internal for tests.</summary>
@@ -248,7 +260,7 @@ internal sealed class DesktopLayer : Canvas
                 button = new HeaderButton(action.Id);
                 button.Click += () => OpenMenu(action, button);
                 AutomationProperties.SetName(button, action.Label);
-                ToolTip.SetTip(button, action.Hint is { } hint ? $"{action.Label} ({hint})" : action.Label);
+                ToolTip.SetTip(button, NativeKeys.Words(action.Hint is { } hint ? $"{action.Label} ({hint})" : action.Label));
                 _buttons[action.Id] = button;
                 Children.Add(button);
             }

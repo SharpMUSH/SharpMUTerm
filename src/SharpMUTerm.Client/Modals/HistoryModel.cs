@@ -56,6 +56,12 @@ public sealed class HistorySession : ModalSession<HistoryModel>
 
     public override string Surface => "history";
 
+    /// <summary>
+    /// What the filter box opens with typed in; empty for nothing. The <c>history-search-filter</c> view hands its query
+    /// here, as <c>menu-fuzzy</c> hands its query to the palette, so the window's frame is filtered as the cells' is.
+    /// </summary>
+    public string InitialQuery { get; init; } = string.Empty;
+
     /// <summary>The host's: ⏎ on the entry at <paramref name="entryIndex"/> in <see cref="HistoryModel.Entries"/>.</summary>
     public void Insert(int entryIndex)
     {

@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Layout;
 using SharpMUTerm.Core.Packages;
 
 namespace SharpMUTerm.Tui;
@@ -68,7 +69,7 @@ internal sealed class ListOverlay
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
         var lines = render(outer - 4);
-        var height = Math.Clamp(lines.Count + 2, 8, Math.Max(8, desktop.Height - 2));
+        var height = Math.Clamp(Rows(lines, outer - 3) + 2, 8, Math.Max(8, desktop.Height - 2));
         _content = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
 
         // Centered() after WithSize(), for CommandPalette's reason.
@@ -100,6 +101,24 @@ internal sealed class ListOverlay
 
         // Last, so a test (or anything else) that waits on the mode finds the window already up.
         Mode = mode;
+    }
+
+    /// <summary>
+    /// The rows <paramref name="lines"/> take at <paramref name="width"/>, wrapped the way the window's control will wrap
+    /// them — measured by the framework, never counted. A line wider than the window (F10's key line at 80 columns) is
+    /// two rows, and sizing the modal by the line count left the last row of F10's detail under its bottom edge. One
+    /// column narrower than the content, so a scroll bar's column cannot add a row the measure missed.
+    /// </summary>
+    internal static int Rows(IReadOnlyList<string> lines, int width)
+    {
+        if (lines.Count == 0)
+        {
+            return 0;
+        }
+
+        var probe = new MarkupControl(lines.ToList());
+        width = Math.Max(1, width);
+        return Math.Max(lines.Count, probe.MeasureDOM(new LayoutConstraints(width, width, 0, int.MaxValue)).Height);
     }
 
     public void Repaint()

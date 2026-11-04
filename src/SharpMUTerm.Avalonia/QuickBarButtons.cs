@@ -125,7 +125,7 @@ internal sealed class QuickBarButtons : Control
     {
         var size = FontSize;
         var title = Math.Min(MaxTitleWidth, PanelText.Measure(Trim(item), size, false));
-        return PadX + PanelText.Measure(item.Key, size, true) + 5 + title + PadX;
+        return PadX + PanelText.Measure(NativeKeys.Words(item.Key), size, true) + 5 + title + PadX;
     }
 
     private double MoreWidth(int hidden) => PadX + PanelText.Measure($"+{hidden.ToString(CultureInfo.InvariantCulture)}", FontSize, true) + PadX;
@@ -220,7 +220,7 @@ internal sealed class QuickBarButtons : Control
 
     private string? Tip(Slot slot) => slot.Kind switch
     {
-        SlotKind.Item when slot.Index < _model.Items.Count => $"{_model.Items[slot.Index].Title} ({_model.Items[slot.Index].Key})",
+        SlotKind.Item when slot.Index < _model.Items.Count => $"{_model.Items[slot.Index].Title} ({NativeKeys.Words(_model.Items[slot.Index].Key)})",
         SlotKind.More => $"{slot.Index.ToString(CultureInfo.InvariantCulture)} more",
         SlotKind.Edit => "Edit the keys (F4)",
         _ => null,
@@ -351,7 +351,7 @@ internal sealed class QuickBarButtons : Control
                     var keyInk = item.Fires ? accent : dim;
                     var titleInk = item.Fires ? _text : dim;
                     var x = rect.Left + PadX;
-                    x += PanelText.Draw(context, item.Key, x, middle, size, keyInk, true, rect.Width) + 5;
+                    x += PanelText.Draw(context, NativeKeys.Words(item.Key), x, middle, size, keyInk, true, rect.Width) + 5;
                     PanelText.Draw(context, Trim(item), x, middle, size, titleInk, false, rect.Right - PadX - x + 0.5);
                     break;
                 }

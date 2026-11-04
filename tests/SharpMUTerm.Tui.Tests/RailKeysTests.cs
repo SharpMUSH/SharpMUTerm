@@ -48,6 +48,21 @@ public class RailKeysTests
         await Assert.That(app.BuildChromeOverlay().Sidebar.Cursor).IsNull();
     }
 
+    /// <summary>While the sidebar holds the keys the command line is drawn idle — ⏎ goes to a row, not to the game.</summary>
+    [Test]
+    public async Task TheCommandLineIsIdleWhileTheSidebarHoldsTheKeys()
+    {
+        await using var app = await App();
+        var (armed, idle) = app.InputBandColors;
+        await Assert.That(app.PrimaryBandColor).IsEqualTo(armed);
+
+        app.SimulateKey(AltC);
+        await Assert.That(app.PrimaryBandColor).IsEqualTo(idle);
+
+        app.SimulateKey(Key(ConsoleKey.Escape));
+        await Assert.That(app.PrimaryBandColor).IsEqualTo(armed).Because("handing the keys back arms the bar again");
+    }
+
     [Test]
     public async Task TheArrowsWalkTheRowsAClickWouldReachAndStopAtTheEnds()
     {

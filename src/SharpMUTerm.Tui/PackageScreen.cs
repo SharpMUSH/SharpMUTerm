@@ -121,11 +121,12 @@ internal static class PackageScreen
                 + $"[{ScreenPalette.Value}]{Escape(Elide(Read(field.Id, current), Math.Max(10, width - 14)))}[/]");
         }
 
-        if (confirmingRemove)
-        {
-            lines.Add(string.Empty);
-            lines.Add($"[bold {ScreenPalette.Warn}]Remove {Escape(Read(name, current))} and its files? Del again removes it, any other key keeps it.[/]");
-        }
+        // The question's rows are always there, blank until Del asks it: the modal is sized once, when it opens, and a
+        // question added later would land under its bottom edge. Elided to one row for the same reason.
+        lines.Add(string.Empty);
+        lines.Add(confirmingRemove
+            ? $"[bold {ScreenPalette.Warn}]{Escape(Elide($"Remove {Read(name, current)} and its files? Del again removes it, any other key keeps it.", width))}[/]"
+            : string.Empty);
 
         return lines;
     }

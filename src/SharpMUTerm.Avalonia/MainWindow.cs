@@ -76,6 +76,9 @@ internal sealed class MainWindow : Window
         // armed docked composer if there is one, else to the cells.
         _driver.Composer.Attach(root, layer, _view, () => layer.FocusArmedComposer());
 
+        // The settings window takes the keyboard when it opens and hands it back here when it closes.
+        _driver.Settings.Refocus = () => layer.FocusArmedComposer();
+
         // ⌃P, over everything above; it is added last when it opens, and gives the keyboard back to the cells.
         _driver.Palette.Attach(root, () => layer.FocusArmedComposer());
 

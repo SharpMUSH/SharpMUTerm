@@ -164,7 +164,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
 
         _status.Text = _confirming && _model.Current is { } doomed
             ? $"Delete {doomed.Name}? Y deletes, any other key keeps it."
-            : _model.Status ?? string.Empty;
+            : NativeKeys.Words(_model.Status);
         _status.Foreground = _colours.Brush(_confirming ? _colours.Warn : _colours.Dim);
         _status.IsVisible = _status.Text.Length > 0;
         _rename.IsVisible = _renaming;

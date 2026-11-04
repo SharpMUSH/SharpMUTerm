@@ -132,8 +132,8 @@ internal sealed class SearchView : DockPanel, IModalView
     private ToggleButton Toggle(string label, string key, bool on)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal };
-        content.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
-        content.Children.Add(new TextBlock { Text = key, FontSize = 11, Opacity = 0.7, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = NativeKeys.Words(key), FontSize = 11, Opacity = 0.7, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         var toggle = new ToggleButton
         {
             Content = content,
@@ -184,7 +184,7 @@ internal sealed class SearchView : DockPanel, IModalView
             _syncing = false;
         }
 
-        _state.Text = _model.StateText;
+        _state.Text = NativeKeys.Words(_model.StateText);
         _count.Text = _model.CountText;
         _list.Children.Clear();
         _rows.Clear();

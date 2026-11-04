@@ -96,6 +96,27 @@ public class NativeModalTests
         await Assert.That(colours).IsEqualTo(ModalColours.Dark).Because("the demo's theme is Dark");
     }
 
+    /// <summary>
+    /// The <c>history-search-filter</c> view opens the native ⌃R with its query in the box, so the window's frame lists
+    /// the filtered rows the cells list — not the whole history.
+    /// </summary>
+    [Test]
+    public async Task TheHistoryFilterViewOpensTheNativeListFiltered()
+    {
+        var (text, rows, all) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("history-search-filter");
+            DesktopLayerTests.Drain();
+            var view = (HistoryView)rig.Driver.Modals.Modal!.View;
+            return (view.Box.Text, view.Matches.Select(m => m.Text).ToArray(), ((HistorySession)rig.App.NativeHistory!).Model.Entries.Count);
+        });
+
+        await Assert.That(text).IsEqualTo("north");
+        await Assert.That(rows).IsNotEmpty();
+        await Assert.That(rows.Length).IsLessThan(all).Because("the list is filtered, not the whole history");
+        await Assert.That(rows.All(r => r.Contains("north", StringComparison.OrdinalIgnoreCase))).IsTrue();
+    }
+
     [Test]
     public async Task TheCardFollowsALightTheme()
     {

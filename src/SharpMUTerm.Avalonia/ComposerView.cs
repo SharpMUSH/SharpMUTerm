@@ -109,13 +109,18 @@ internal sealed class ComposerView : Border
     }
 
     /// <summary>
-    /// Whether the editors write in the UI's proportional face rather than the cells' monospace one. For the run, for
-    /// every composer the window draws; chosen from the editor's right-click menu.
+    /// Whether this editor writes in the UI's proportional face rather than the cells' monospace one: its character's
+    /// choice, kept in the configuration (<c>CharacterDefinition.ComposerProportional</c>) and chosen from the editor's
+    /// right-click menu. Until the session says (and with no session) it is the last face chosen in this window, so a
+    /// choice shows at once rather than when the client has stored it.
     /// </summary>
-    internal static bool Proportional { get; set; }
+    internal bool Proportional => _faceChosen ?? _session?.Proportional ?? false;
 
-    /// <summary>Raised when the face changes, so every composer on screen follows.</summary>
+    /// <summary>Raised when a face is chosen, so every composer on screen re-reads its own.</summary>
     internal static event Action? FaceChanged;
+
+    // The face just chosen here, until the client has it; cleared when any face changes.
+    private bool? _faceChosen;
 
     /// <summary>The editor. Internal for tests.</summary>
     internal ComposerEditor Editor => _editor;
@@ -171,6 +176,10 @@ internal sealed class ComposerView : Border
             _session = session;
             _applied = -1;
             _armed = null;
+
+            // Another character's composer, or the same one opened again: its face is the session's.
+            _faceChosen = null;
+            ApplyFont();
         }
 
         var coloursChanged = ink != _ink || plane != _plane || text != _text;
@@ -320,12 +329,12 @@ internal sealed class ComposerView : Border
             var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 1, 14, 1) };
             if (key.Key.Length > 0)
             {
-                item.Children.Add(Chip(key.Key, Accent, ui - 1.5));
+                item.Children.Add(Chip(NativeKeys.Words(key.Key), Accent, ui - 1.5));
             }
 
             item.Children.Add(new TextBlock
             {
-                Text = narrow && key.Short is { } brief ? brief : key.Label,
+                Text = NativeKeys.Words(narrow && key.Short is { } brief ? brief : key.Label),
                 FontSize = ui - 1,
                 Foreground = new SolidColorBrush(Dim),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -563,17 +572,22 @@ internal sealed class ComposerView : Border
         items.Add(Item("Paste", _editor.Paste, enabled: _editor.CanPaste));
         items.Add(Item("Select all", _editor.SelectAll));
         items.Add(new Separator());
-        items.Add(Item(Proportional ? "Monospace font" : "Proportional font", () =>
-        {
-            Proportional = !Proportional;
-            FaceChanged?.Invoke();
-        }));
+        items.Add(Item(Proportional ? "Monospace font" : "Proportional font", () => ChooseFace(!Proportional)));
 
         var menu = new ContextMenu { ItemsSource = items };
         menu.Closed += (_, _) => _editor.Focus();
         OpenedMenu = menu;
         menu.Open(_editor);
         return menu;
+    }
+
+    /// <summary>The menu's face entry: the character keeps it (through the session), and every composer re-reads its own.</summary>
+    internal void ChooseFace(bool proportional)
+    {
+        _faceChosen = proportional;
+        _session?.ChooseFace(proportional);
+        FaceChanged?.Invoke();
+        ApplyFont();
     }
 
     private static MenuItem Item(string header, Action act, bool enabled = true, bool bold = false)

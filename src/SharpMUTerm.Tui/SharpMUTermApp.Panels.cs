@@ -357,7 +357,8 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// Paints who holds the keyboard: the armed composer's header marker, and both command lines idle while a
-    /// composer has it — ⏎ there inserts a line, it does not send.
+    /// composer has it — ⏎ there inserts a line, it does not send — or while ⌥C has put the keys on the sidebar, where ⏎
+    /// goes to a row. Cells in both hosts, so the window's command line follows with nothing of its own.
     /// </summary>
     private void SyncComposerBands()
     {
@@ -375,8 +376,9 @@ internal sealed partial class SharpMUTermApp
             composer.Armed = ReferenceEquals(composer, armed);
         }
 
-        _input.Armed = armed is null && ReferenceEquals(_armed, _input);
-        _second.Armed = armed is null && ReferenceEquals(_armed, _second);
+        var barHolds = armed is null && _railCursor is null;
+        _input.Armed = barHolds && ReferenceEquals(_armed, _input);
+        _second.Armed = barHolds && ReferenceEquals(_armed, _second);
         SyncStatusMode(); // the composer's keys on the status row, or the pane's again
     }
 
