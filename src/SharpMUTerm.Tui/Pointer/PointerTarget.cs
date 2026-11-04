@@ -219,6 +219,15 @@ internal interface IPointerPresenter
 /// host that can float a panel (<see cref="ClientHost.FloatingPanels"/>); null elsewhere, and for a panel that cannot
 /// float. Safe to call from any thread; one instance per window.
 /// </param>
+/// <param name="SelectRoom">
+/// For the map, selects a room for editing (<c>SelectMapRoom</c>), or with null ends editing: what a click on a cell room
+/// does while the cell map is in edit mode. Safe to call from any thread; one instance per window.
+/// </param>
+/// <param name="EditMap">
+/// For the map, makes one edit (<c>ApplyMapEdit</c>), the funnel the cell map's keys and <c>/map</c> commands end in. The
+/// client checks it; the window only builds a <see cref="SharpMUTerm.Client.Panels.MapEdit"/> from its inspector. Safe to
+/// call from any thread; one instance per window.
+/// </param>
 internal sealed record PanelOverlay(
     string PanelId,
     string WindowId,
@@ -233,7 +242,9 @@ internal sealed record PanelOverlay(
     Action<string>? Dispatch = null,
     SharpMUTerm.Client.Composer.ComposerModel? Composer = null,
     SharpMUTerm.Client.Composer.ComposerSession? ComposerSession = null,
-    Action? PopOut = null);
+    Action? PopOut = null,
+    Action<long?>? SelectRoom = null,
+    Action<SharpMUTerm.Client.Panels.MapEdit>? EditMap = null);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);

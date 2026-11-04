@@ -124,6 +124,158 @@ public sealed class MapRecorder : IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>The most edits <see cref="Undo"/> can take back.</summary>
+    public const int UndoDepth = 10;
+
+    /// <summary>What an undo puts back: the rooms an edit touched as they were (null where it made one), the areas, and the pending link.</summary>
+    private sealed record UndoEntry(string Label, IReadOnlyDictionary<long, MapRoom?> Rooms, IReadOnlyDictionary<int, MapArea> Areas, (long From, string Exit)? Pending);
+
+    private readonly LinkedList<UndoEntry> _undo = new();
+
+    /// <summary>
+    /// An exit waiting for the next room the character walks into: <c>From</c>'s <c>Exit</c> will lead there. Set by
+    /// <see cref="LinkNext"/>; read by a view to say so.
+    /// </summary>
+    public (long From, string Exit)? PendingLink { get; private set; }
+
+    /// <summary>What <see cref="Undo"/> would take back, or null when nothing would.</summary>
+    public string? UndoLabel
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _undo.First?.Value.Label;
+            }
+        }
+    }
+
+    /// <summary>How many edits <see cref="Undo"/> can take back.</summary>
+    public int UndoCount
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _undo.Count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A change made by hand that can be undone: the rooms <paramref name="touched"/> names are copied first, the
+    /// change is applied under the lock, and when it answers true it is kept for <see cref="Undo"/> (the last
+    /// <see cref="UndoDepth"/>), the map is marked dirty and redrawn. When it answers false nothing is kept or raised.
+    /// </summary>
+    public bool Edit(string label, IEnumerable<long> touched, Func<WorldMap, bool> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        bool changed;
+        lock (SyncRoot)
+        {
+            var entry = Snapshot(label, touched);
+            changed = change(Map);
+            if (changed)
+            {
+                Push(entry);
+                IsDirty = true;
+            }
+        }
+
+        if (changed)
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Arms <paramref name="exit"/> of room <paramref name="from"/> to lead to the next room the character walks into
+    /// (Mudlet's "the room I go to next"). Undoable like any edit; a second arming replaces the first.
+    /// </summary>
+    public bool LinkNext(long from, string exit)
+    {
+        var key = WorldMap.ExitKey(exit);
+        if (key.Length == 0)
+        {
+            return false;
+        }
+
+        lock (SyncRoot)
+        {
+            if (Map.Room(from) is null || PendingLink == (from, key))
+            {
+                return false;
+            }
+
+            Push(Snapshot($"wait to link {key}", []));
+            PendingLink = (from, key);
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    /// <summary>Takes back the last edit. Returns what it took back, or null when there was nothing to.</summary>
+    public string? Undo()
+    {
+        string label;
+        lock (SyncRoot)
+        {
+            if (_undo.First?.Value is not { } entry)
+            {
+                return null;
+            }
+
+            _undo.RemoveFirst();
+            foreach (var (id, room) in entry.Rooms)
+            {
+                if (room is null)
+                {
+                    Map.Rooms.Remove(id);
+                }
+                else
+                {
+                    Map.Rooms[id] = room.Clone();
+                }
+            }
+
+            // Areas the edit made go again unless a room has come to use one since; the ones it had are put back.
+            foreach (var id in Map.Areas.Keys.Where(id => !entry.Areas.ContainsKey(id) && Map.Rooms.Values.All(r => r.AreaId != id)).ToList())
+            {
+                Map.Areas.Remove(id);
+            }
+
+            foreach (var (id, area) in entry.Areas)
+            {
+                Map.Areas[id] = new MapArea { Id = area.Id, Name = area.Name };
+            }
+
+            PendingLink = entry.Pending;
+            IsDirty = true;
+            label = entry.Label;
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+        return label;
+    }
+
+    private UndoEntry Snapshot(string label, IEnumerable<long> touched) => new(
+        label,
+        touched.Distinct().ToDictionary(id => id, id => Map.Room(id)?.Clone()),
+        Map.Areas.ToDictionary(a => a.Key, a => new MapArea { Id = a.Value.Id, Name = a.Value.Name }),
+        PendingLink);
+
+    private void Push(UndoEntry entry)
+    {
+        _undo.AddFirst(entry);
+        while (_undo.Count > UndoDepth)
+        {
+            _undo.RemoveLast();
+        }
+    }
+
     /// <summary>Applies one observation. Public so a test, or a script, can drive the recorder directly.</summary>
     public void Apply(RoomObservation observation)
     {
@@ -192,6 +344,14 @@ public sealed class MapRecorder : IDisposable
         if (previous is not null && walked is not null && previous.Id != room.Id)
         {
             Link(previous, walked, room);
+        }
+
+        // An exit the player asked to lead to "the next room I go to": this is it, unless it is the room it leaves.
+        if (PendingLink is { } pending && pending.From != room.Id && Map.Room(pending.From) is not null)
+        {
+            Push(Snapshot($"link {pending.Exit}", [pending.From]));
+            Map.SetExit(pending.From, pending.Exit, room.Id);
+            PendingLink = null;
         }
 
         CurrentRoomId = room.Id;

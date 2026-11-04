@@ -152,6 +152,18 @@ fallbacks) for inline images/maps.
     read off the UI thread: every such read takes `MapRecorder.SyncRoot`, which the recorder holds while it
     changes the map and never while it raises `Changed` (a handler can end in the alias engine, which takes
     the script host's lock). A change a script asks for (`map.walk`, a lock) is posted to the UI thread.
+  - **The map names rooms, and is edited by hand in both hosts** (`WorldMap.Rename`/`SetArea`/`SetExit`/`Remove`/…, Core;
+    `MapRecorder.Edit(label, touched, change)`, `LinkNext`, `Undo`; Client `MapEditing`, `MapEdit`; Tui
+    `SharpMUTermApp.MapEdit.cs`; Avalonia `MapInspector`; the `map-edit` view). The cell title is the current room's name,
+    and `MapViewModel.Nearby` (each exit and where it leads) fills a side column from 64 cells or the rows under the grid
+    from 18. Every edit is a `MapEdit` through `ApplyMapEdit` → `MapEditing.Apply` → `MapRecorder.Edit`, on the UI thread
+    under `SyncRoot`, dirty and saved like a recorded room; undo snapshots the rooms an edit touches (10 deep, areas it
+    created go too). **Selection is client state per map window and selecting takes the keys** in both hosts (⌃P ▸ Edit
+    map, a cell click while editing, the canvas's right-click menu or click), so `SurfaceParityTests` compares
+    `MapDigest()`. Cell keys are `MapEditing.Keys`; the ones that need words put a `/map …` command on the command line
+    and put back what was being typed once it runs. "Next" on an exit links it to the next room walked into, never its
+    own. Deleting the room you are in is refused. **On a GMCP world the server's next report of a room overwrites a hand
+    edit to its name, area, exits and place**; locks, weights, notes and symbols survive.
 - **Sound** (`Core/Media`: `MediaCommand`, `MediaQueue`, `MediaCache`, `IAudioOutput`). MCMP's
   `Client.Media.*` is read with TNC.Gmcp's typed records into `MediaCommand`s (`WorldSession.MediaReceived`),
   and one `MediaQueue` per connection applies the specification's rules — priority halts and refuses lower,

@@ -16,8 +16,33 @@ namespace SharpMUTerm.Client.Panels;
 /// The name of another area one of its exits leads into (the first by name), or null. Both views mark the way out in
 /// that area's colour (<see cref="MapViewModel.ColourOf"/>).
 /// </param>
+/// <param name="Selected">Whether it is the room being edited (<see cref="MapViewModel.Selected"/>).</param>
+/// <param name="Symbol">The one character the player marked it with, or null.</param>
+/// <param name="Noted">Whether the player wrote a note on it.</param>
 public sealed record MapViewRoom(
-    long Id, string Name, int X, int Y, bool Current, bool Ahead, bool Locked, bool Up = false, bool Down = false, string? Elsewhere = null);
+    long Id, string Name, int X, int Y, bool Current, bool Ahead, bool Locked, bool Up = false, bool Down = false, string? Elsewhere = null,
+    bool Selected = false, string? Symbol = null, bool Noted = false);
+
+/// <summary>An exit as a view names it: the direction or command, and the room it leads to, or none for a stub.</summary>
+/// <param name="Exit">A direction's short command (<c>n</c>, <c>up</c>) or a special exit's command.</param>
+/// <param name="To">The room it leads to, or null when nobody has walked it.</param>
+/// <param name="Name">That room's name, bounded, or null.</param>
+public sealed record MapViewExitName(string Exit, long? To, string? Name);
+
+/// <summary>
+/// The room being edited, as both hosts' inspectors show it: the cell map's side column or footer line, and the window's
+/// inspector panel.
+/// </summary>
+public sealed record MapRoomDetails(
+    long Id, string Name, string? Area, int X, int Y, int Z, int Weight, bool Locked, string? Symbol, string? Note, IReadOnlyList<MapViewExitName> Exits)
+{
+    /// <summary>Value equality over the exits too, which a record's list member does not give.</summary>
+    public bool Equals(MapRoomDetails? other) =>
+        other is not null && Id == other.Id && Name == other.Name && Area == other.Area && (X, Y, Z) == (other.X, other.Y, other.Z)
+        && Weight == other.Weight && Locked == other.Locked && Symbol == other.Symbol && Note == other.Note && Exits.SequenceEqual(other.Exits);
+
+    public override int GetHashCode() => HashCode.Combine(Id, Name, Area, X, Y, Z, Weight, Exits.Count);
+}
 
 /// <summary>A drawn exit between two rooms of the view, once per pair.</summary>
 public sealed record MapViewExit(long From, long To);
@@ -60,6 +85,24 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     /// <summary>The room the character is in, or null.</summary>
     public MapViewRoom? Current => Rooms.FirstOrDefault(r => r.Current);
 
+    /// <summary>
+    /// The current room's exits with the names of the rooms they lead to, directions first in compass order: what the
+    /// cell map lists beside the grid when it has the width, so a terminal names the rooms around you as the canvas does.
+    /// </summary>
+    public IReadOnlyList<MapViewExitName> Nearby { get; init; } = [];
+
+    /// <summary>The room being edited, or null when the map is not in edit mode.</summary>
+    public MapRoomDetails? Selected { get; init; }
+
+    /// <summary>Whether the map is in edit mode: a room is selected.</summary>
+    public bool Editing => Selected is not null;
+
+    /// <summary>An exit waiting for the next room walked into, said as a sentence, or null.</summary>
+    public string? Pending { get; init; }
+
+    /// <summary>What an undo would take back, or null when nothing would.</summary>
+    public string? UndoLabel { get; init; }
+
     /// <summary>The colour of the area the view draws, or null when that area has no name.</summary>
     public string? AreaColour => Areas.FirstOrDefault(a => a.Drawn)?.Colour;
 
@@ -76,15 +119,32 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     /// <param name="ahead">The rooms a walk under way still goes through.</param>
     /// <param name="walking">What the walk says about itself, or null.</param>
     /// <param name="palette">The area colours for the theme in use (<see cref="MapAreaPalette.Dark"/> by default).</param>
-    public static MapViewModel From(WorldMap map, long? currentRoomId, IEnumerable<long> ahead, string? walking, MapAreaPalette? palette = null)
+    /// <param name="selected">
+    /// The room being edited, or null. When it is not on the current room's level and area, the view is drawn around it
+    /// instead, so the room being edited is always drawn.
+    /// </param>
+    /// <param name="pending">An exit waiting for the next room walked into (<see cref="MapRecorder.PendingLink"/>).</param>
+    /// <param name="undo">What an undo would take back (<see cref="MapRecorder.UndoLabel"/>).</param>
+    public static MapViewModel From(
+        WorldMap map, long? currentRoomId, IEnumerable<long> ahead, string? walking, MapAreaPalette? palette = null,
+        long? selected = null, (long From, string Exit)? pending = null, string? undo = null)
     {
         ArgumentNullException.ThrowIfNull(map);
         palette ??= MapAreaPalette.Dark;
         var anchor = currentRoomId is { } id ? map.Room(id) : null;
         anchor ??= map.Rooms.Values.LastOrDefault();
+        var chosen = selected is { } pick ? map.Room(pick) : null;
+        if (chosen is not null && (anchor is null || chosen.Z != anchor.Z || chosen.AreaId != anchor.AreaId))
+        {
+            anchor = chosen;
+        }
+
+        var pendingText = pending is { } link && map.Room(link.From) is { } source
+            ? $"the next room you walk into is {MapDirections.Command(link.Exit)} from {Bounded(source.Name)}"
+            : null;
         if (anchor is null)
         {
-            return new MapViewModel(null, 0, [], [], walking);
+            return new MapViewModel(null, 0, [], [], walking) { Pending = pendingText, UndoLabel = undo };
         }
 
         var path = ahead.ToHashSet();
@@ -103,7 +163,10 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
                 r.Locked,
                 Climbs(map, r, up: true),
                 Climbs(map, r, up: false),
-                Elsewhere(map, r)))
+                Elsewhere(map, r),
+                r.Id == chosen?.Id,
+                ValidSymbol(r.Symbol),
+                r.Note is not null))
             .ToList();
         var ids = rooms.Select(r => r.Id).ToHashSet();
         var exits = new List<MapViewExit>();
@@ -140,8 +203,63 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
             }
         }
 
-        return new MapViewModel(area, anchor.Z, rooms, exits, walking) { AnchorId = anchor.Id, Areas = areas };
+        var here = currentRoomId is { } at ? map.Room(at) : null;
+        return new MapViewModel(area, anchor.Z, rooms, exits, walking)
+        {
+            AnchorId = anchor.Id,
+            Areas = areas,
+            Nearby = here is null ? [] : ExitsOf(map, here),
+            Selected = chosen is null ? null : DetailsOf(map, chosen),
+            Pending = pendingText,
+            UndoLabel = undo,
+        };
     }
+
+    /// <summary>A room's exits named: directions in compass order, then special exits by command, then stubs.</summary>
+    private static List<MapViewExitName> ExitsOf(WorldMap map, MapRoom room)
+    {
+        var named = new List<MapViewExitName>();
+        foreach (var direction in MapDirections.All)
+        {
+            if (room.Exits.TryGetValue(direction, out var to))
+            {
+                named.Add(new(MapDirections.Command(direction), to, map.Room(to) is { } next ? Bounded(next.Name) : null));
+            }
+            else if (room.Stubs.Contains(direction))
+            {
+                named.Add(new(MapDirections.Command(direction), null, null));
+            }
+        }
+
+        foreach (var (command, to) in room.SpecialExits.OrderBy(e => e.Key, StringComparer.Ordinal))
+        {
+            named.Add(new(Bounded(command), to, map.Room(to) is { } next ? Bounded(next.Name) : null));
+        }
+
+        foreach (var stub in room.Stubs.Where(s => !MapDirections.All.Contains(s)).Order(StringComparer.Ordinal))
+        {
+            named.Add(new(Bounded(stub), null, null));
+        }
+
+        return named;
+    }
+
+    private static MapRoomDetails DetailsOf(WorldMap map, MapRoom room) => new(
+        room.Id,
+        Bounded(room.Name),
+        AreaName(map, room.AreaId),
+        room.X,
+        room.Y,
+        room.Z,
+        room.Weight,
+        room.Locked,
+        ValidSymbol(room.Symbol),
+        room.Note is { } note ? Bounded(note) : null,
+        ExitsOf(map, room));
+
+    /// <summary>A symbol a view may draw: its first character when that is one a cell can hold, else null.</summary>
+    private static string? ValidSymbol(string? symbol) =>
+        !string.IsNullOrEmpty(symbol) && WorldMap.IsSymbol(symbol[0]) ? symbol[..1] : null;
 
     private static string Bounded(string name) => name.Length <= MaxNameLength ? name : name[..(MaxNameLength - 1)] + "…";
 
@@ -190,7 +308,8 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     /// <summary>Value equality over the rooms, exits and areas, which a record's list members do not give.</summary>
     public bool Equals(MapViewModel? other) =>
         other is not null && Area == other.Area && Level == other.Level && Walking == other.Walking && AnchorId == other.AnchorId
-        && Rooms.SequenceEqual(other.Rooms) && Exits.SequenceEqual(other.Exits) && Areas.SequenceEqual(other.Areas);
+        && Rooms.SequenceEqual(other.Rooms) && Exits.SequenceEqual(other.Exits) && Areas.SequenceEqual(other.Areas)
+        && Nearby.SequenceEqual(other.Nearby) && Equals(Selected, other.Selected) && Pending == other.Pending && UndoLabel == other.UndoLabel;
 
     public override int GetHashCode() => HashCode.Combine(Area, Level, Walking, Rooms.Count, Exits.Count, Areas.Count);
 }

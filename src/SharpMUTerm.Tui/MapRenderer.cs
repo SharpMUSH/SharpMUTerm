@@ -47,7 +47,16 @@ internal static class MapRenderer
     /// The inks a map is drawn in. Hexes, already held to the legibility floor by the caller; <paramref name="Plane"/>
     /// is the pane plane the area colours are held to, or null to draw them as the view gives them.
     /// </summary>
-    internal readonly record struct Ink(string Title, string Current, string Path, string Locked, Rgb? Plane = null);
+    internal readonly record struct Ink(string Title, string Current, string Path, string Locked, Rgb? Plane = null, string? Selected = null);
+
+    /// <summary>The narrowest map that lists names beside its grid: the current room's exits, or the room being edited.</summary>
+    internal const int SideFromWidth = 64;
+
+    /// <summary>The side column's width in a map <paramref name="width"/> wide, or 0 for none.</summary>
+    internal static int SideWidth(int width) => width >= SideFromWidth ? Math.Clamp(width / 3, 22, 36) : 0;
+
+    /// <summary>The shortest map that lists names under its grid when it has no side column.</summary>
+    internal const int UnderFromHeight = 18;
 
     private enum Kind
     {
@@ -58,6 +67,7 @@ internal static class MapRenderer
         Current,
         Path,
         Locked,
+        Selected,
     }
 
     private readonly record struct Cell(char Glyph, Kind Kind, long? Room, string? Colour = null);
@@ -91,7 +101,14 @@ internal static class MapRenderer
     /// areas or colour them differently. Only the exits' geometry (directions, stubs, ways off the level), which the
     /// view does not carry, is read from <paramref name="map"/>. An empty map says so.
     /// </summary>
-    internal static List<string> Render(MapViewModel view, WorldMap map, int width, int height, Ink ink)
+    internal static List<string> Render(MapViewModel view, WorldMap map, int width, int height, Ink ink) =>
+        Render(view, map, width, height, ink, keysHeld: true);
+
+    /// <summary>
+    /// The map as <see cref="Render(MapViewModel, WorldMap, int, int, Ink)"/> draws it, saying in edit mode whether the
+    /// map holds the keyboard (<paramref name="keysHeld"/>) or has handed a <c>/map</c> command to the command line.
+    /// </summary>
+    internal static List<string> Render(MapViewModel view, WorldMap map, int width, int height, Ink ink, bool keysHeld)
     {
         width = Math.Max(1, width);
         height = Math.Max(1, height);
@@ -107,7 +124,9 @@ internal static class MapRenderer
 
         var current = view.Current?.Id;
         var ahead = view.Rooms.Where(r => r.Ahead).Select(r => r.Id);
-        var title = new StringBuilder("Map");
+        // The room you are in leads the title: the one name a reader wants from a map at a glance, and the one a grid
+        // of [ ] cannot say. With no current room the map is a map of somewhere else, and says so.
+        var title = new StringBuilder(view.Current is { } here ? here.Name : "Map");
         if (!string.IsNullOrWhiteSpace(view.Area))
         {
             title.Append(" · ").Append(view.Area);
@@ -125,16 +144,28 @@ internal static class MapRenderer
             return lines;
         }
 
-        var legend = height >= LegendMinHeight;
-        var rows = height - 1 - (legend ? 1 : 0);
-        var grid = new Cell[rows, width];
+        // Names go beside the grid when the map is wide, else under it: in edit mode the room and the keys that edit it,
+        // otherwise (in a tall pane) what each exit of your room leads to. Edit mode spends the legend's row on them.
+        var side = SideWidth(width);
+        var gridWidth = side > 0 ? width - side - 2 : width;
+        var legend = !view.Editing && height >= LegendMinHeight;
+        var under = side > 0 ? [] : UnderLines(view, width, height, ink, keysHeld);
+        var rows = Math.Max(0, height - 1 - (legend ? 1 : 0) - under.Count);
+        var grid = new Cell[rows, gridWidth];
         var ahead_ = ahead.ToHashSet();
         var byId = view.Rooms.ToDictionary(r => r.Id);
         var roomInk = AreaInk(view.AreaColour, ink);
 
-        // Rooms are placed so the centre room's middle cell lands in the middle of the box.
-        var originCol = width / 2 - 1;
+        // Rooms are placed so the centre room's middle cell lands in the middle of the box — unless the room being
+        // edited would then fall outside it, when that room is the centre instead.
+        var originCol = gridWidth / 2 - 1;
         var originRow = rows / 2;
+        if (view.Selected is { } picked && map.Room(picked.Id) is { } chosen
+            && (Math.Abs(chosen.X - centre.X) * CellWidth > originCol - 1 || Math.Abs(chosen.Y - centre.Y) * CellHeight > originRow))
+        {
+            centre = chosen;
+        }
+
         (int Col, int Row) At(MapRoom room) =>
             (originCol + (room.X - centre.X) * CellWidth, originRow + (room.Y - centre.Y) * CellHeight);
 
@@ -144,7 +175,7 @@ internal static class MapRenderer
 
         void Put(int col, int row, char glyph, Kind kind, long? room = null, string? colour = null)
         {
-            if (row < 0 || row >= rows || col < 0 || col >= width)
+            if (row < 0 || row >= rows || col < 0 || col >= gridWidth)
             {
                 return;
             }
@@ -188,7 +219,8 @@ internal static class MapRenderer
         foreach (var room in level)
         {
             var (col, row) = At(room);
-            var kind = room.Id == current ? Kind.Current
+            var kind = room.Id == view.Selected?.Id ? Kind.Selected
+                : room.Id == current ? Kind.Current
                 : room.Locked ? Kind.Locked
                 : ahead_.Contains(room.Id) ? Kind.Path
                 : Kind.Room;
@@ -198,14 +230,17 @@ internal static class MapRenderer
             Put(col + 2, row, ']', kind, room.Id, colour);
         }
 
+        var column = side > 0 ? SideLines(view, side, rows + (legend ? 1 : 0), ink, keysHeld) : [];
         for (var row = 0; row < rows; row++)
         {
-            lines.Add(Row(grid, row, width, ink));
+            lines.Add(WithSide(Row(grid, row, gridWidth, ink), column, row, gridWidth));
         }
+
+        lines.AddRange(under);
 
         if (legend)
         {
-            lines.Add(Legend(view, width, ink));
+            lines.Add(WithSide(Legend(view, gridWidth, ink), column, rows, gridWidth));
         }
 
         return lines;
@@ -341,9 +376,9 @@ internal static class MapRenderer
             return '@';
         }
 
-        if (!string.IsNullOrEmpty(room.Symbol) && !char.IsControl(room.Symbol[0]) && !char.IsSurrogate(room.Symbol[0]))
+        if (seen?.Symbol is { Length: > 0 } symbol)
         {
-            return room.Symbol[0];
+            return symbol[0];
         }
 
         // The stairs are the view's, so the window's marks and these arrows are one answer.
@@ -351,6 +386,205 @@ internal static class MapRenderer
         var down = seen?.Down ?? false;
         return up && down ? '↕' : up ? '↑' : down ? '↓' : ' ';
     }
+
+    /// <summary>A grid row with the side column's line for it, the column starting two cells past the grid.</summary>
+    private static string WithSide(string row, IReadOnlyList<string> column, int index, int gridWidth)
+    {
+        if (index >= column.Count || column[index].Length == 0)
+        {
+            return row;
+        }
+
+        var pad = Math.Max(0, gridWidth + 2 - MarkupText.VisibleLength(row));
+        return row + new string(' ', pad) + column[index];
+    }
+
+    /// <summary>
+    /// The side column, beside a wide grid: the room being edited and the keys that edit it, or else where you are and
+    /// what each exit leads to. Every line is cut to <paramref name="width"/> and there are at most <paramref name="rows"/>.
+    /// </summary>
+    private static List<string> SideLines(MapViewModel view, int width, int rows, Ink ink, bool keysHeld)
+    {
+        var lines = new List<string>();
+        if (view.Selected is { } room)
+        {
+            lines.AddRange(DetailLines(view, width, ink));
+            foreach (var exit in room.Exits.Take(Math.Max(0, rows - lines.Count - MapEditing.Keys.Count - 1)))
+            {
+                lines.Add(ExitLine(exit, width));
+            }
+
+            lines.Add(string.Empty);
+            if (!keysHeld)
+            {
+                lines.AddRange(KeysLines(width, ink, keysHeld, 3));
+            }
+            else
+            {
+                foreach (var (key, word) in MapEditing.Keys.Take(Math.Max(0, rows - lines.Count)))
+                {
+                    lines.Add(Fit($"[bold {ink.Current}]{MarkupText.Escape(key.PadRight(6))}[/][dim]{word}[/]", width));
+                }
+            }
+        }
+        else if (view.Current is { } here)
+        {
+            lines.Add(Fit($"[bold {ink.Current}]@[/] [bold]{MarkupText.Escape(Elide(here.Name, width - 2))}[/]", width));
+            foreach (var exit in view.Nearby.Take(Math.Max(0, rows - 1)))
+            {
+                lines.Add(ExitLine(exit, width));
+            }
+        }
+
+        return lines.Take(rows).ToList();
+    }
+
+    /// <summary>
+    /// What goes under a grid with no side column. In edit mode, the room being edited and the keys — a few lines each
+    /// in a tall pane, one each in a short one. Otherwise, in a tall pane, what each exit of your room leads to.
+    /// </summary>
+    private static List<string> UnderLines(MapViewModel view, int width, int height, Ink ink, bool keysHeld)
+    {
+        if (view.Editing)
+        {
+            return height >= UnderFromHeight
+                ? [string.Empty, .. DetailLines(view, width, ink), .. KeysLines(width, ink, keysHeld, 5)]
+                : height >= 4 ? [RoomLine(view, width, ink), .. KeysLines(width, ink, keysHeld, 1)] : [];
+        }
+
+        if (height < UnderFromHeight || view.Nearby.Count == 0)
+        {
+            return [];
+        }
+
+        return [string.Empty, .. view.Nearby.Take(Math.Max(1, height / 4)).Select(e => ExitLine(e, width))];
+    }
+
+    /// <summary>The room being edited, a fact a line: its number and name, area, place and weight, then its note and a waiting link.</summary>
+    private static List<string> DetailLines(MapViewModel view, int width, Ink ink)
+    {
+        var room = view.Selected!;
+        string Name(string text, int room) => MarkupText.Escape(Elide(text, room));
+        var lines = new List<string>
+        {
+            Fit($"[bold {ink.Title}]{Name($"#{room.Id.ToString(CultureInfo.InvariantCulture)} {room.Name}", width)}[/]", width),
+            Fit($"[dim]area  [/]{Name(room.Area ?? "—", width - 6)}", width),
+            Fit(
+                $"[dim]at    [/]{room.X.ToString(CultureInfo.InvariantCulture)}, {room.Y.ToString(CultureInfo.InvariantCulture)} [dim]level[/] {room.Z.ToString(CultureInfo.InvariantCulture)}",
+                width),
+            Fit(
+                $"[dim]weight[/] {room.Weight.ToString(CultureInfo.InvariantCulture)}"
+                + (room.Locked ? $"  [{ink.Locked}]locked[/]" : string.Empty)
+                + (room.Symbol is { } symbol ? $"  [dim]mark[/] {MarkupText.Escape(symbol)}" : string.Empty),
+                width),
+        };
+        if (room.Note is { } note)
+        {
+            lines.Add(Fit($"[dim]note  [/]{Name(note, width - 6)}", width));
+        }
+
+        if (view.Pending is { } pending)
+        {
+            lines.Add(Fit($"[{ink.Path}]{Name(pending, width)}[/]", width));
+        }
+
+        return lines;
+    }
+
+    private static string ExitLine(MapViewExitName exit, int width)
+    {
+        var where = exit.To is null
+            ? "[dim]not walked[/]"
+            : MarkupText.Escape(Elide(exit.Name ?? "#" + exit.To.Value.ToString(CultureInfo.InvariantCulture), width - 6));
+        return Fit($"[dim]{MarkupText.Escape(Elide(exit.Exit, 5).PadRight(5))}[/] {where}", width);
+    }
+
+    /// <summary>Edit mode's room line, under a short grid with no side column: the room being edited, in a line.</summary>
+    private static string RoomLine(MapViewModel view, int width, Ink ink)
+    {
+        var room = view.Selected!;
+        var parts = new List<string> { $"#{room.Id.ToString(CultureInfo.InvariantCulture)} {room.Name}" };
+        if (room.Area is { } area)
+        {
+            parts.Add(area);
+        }
+
+        parts.Add($"{room.X.ToString(CultureInfo.InvariantCulture)},{room.Y.ToString(CultureInfo.InvariantCulture)},{room.Z.ToString(CultureInfo.InvariantCulture)}");
+        if (room.Weight != 1)
+        {
+            parts.Add("weight " + room.Weight.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (room.Locked)
+        {
+            parts.Add("locked");
+        }
+
+        if (room.Symbol is { } symbol)
+        {
+            parts.Add("mark " + symbol);
+        }
+
+        if (room.Note is { } note)
+        {
+            parts.Add("note: " + note);
+        }
+
+        if (view.Pending is { } pending)
+        {
+            parts.Add(pending);
+        }
+
+        return $"[bold {ink.Title}]{MarkupText.Escape(Elide(string.Join(" · ", parts), width))}[/]";
+    }
+
+    /// <summary>
+    /// Edit mode's keys over at most <paramref name="max"/> lines, in <see cref="MapEditing.Keys"/>' order, with
+    /// <c>Esc done</c> always the last; while a <c>/map</c> command waits on the command line, how to finish it instead.
+    /// </summary>
+    internal static List<string> KeysLines(int width, Ink ink, bool keysHeld, int max)
+    {
+        if (!keysHeld)
+        {
+            return [Fit("[dim]finish the /map command on the command line · ⏎ applies it · ⌃P ▸ Edit map takes the keys back[/]", width)];
+        }
+
+        string Item((string Key, string Word) k) => $"[bold {ink.Current}]{MarkupText.Escape(k.Key)}[/] [dim]{k.Word}[/]";
+        static int Cost((string Key, string Word) k) => k.Key.Length + 1 + k.Word.Length;
+        var last = MapEditing.Keys[^1];
+        var lines = new List<List<(string Key, string Word)>> { new() };
+        var used = 0;
+        foreach (var key in MapEditing.Keys.Take(MapEditing.Keys.Count - 1))
+        {
+            var cost = (lines[^1].Count == 0 ? 0 : 3) + Cost(key);
+            var reserve = lines.Count == max ? 3 + Cost(last) : 0;
+            if (used + cost + reserve > width)
+            {
+                if (lines.Count == max)
+                {
+                    break;
+                }
+
+                lines.Add(new());
+                used = 0;
+                cost = Cost(key);
+            }
+
+            lines[^1].Add(key);
+            used += cost;
+        }
+
+        if (used + 3 + Cost(last) > width && lines.Count < max)
+        {
+            lines.Add(new());
+        }
+
+        lines[^1].Add(last);
+        return lines.Select(l => Fit(string.Join(" [dim]·[/] ", l.Select(Item)), width)).ToList();
+    }
+
+    private static string Elide(string text, int width) =>
+        width <= 0 ? string.Empty : text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
 
     private static string Title(string text, int width, Ink ink)
     {
@@ -396,6 +630,7 @@ internal static class MapRenderer
                 Kind.Current => $"[bold {ink.Current}]{escaped}[/]",
                 Kind.Path => $"[{ink.Path}]{escaped}[/]",
                 Kind.Locked => $"[{ink.Locked}]{escaped}[/]",
+                Kind.Selected => $"[{ink.Selected ?? "bold " + ink.Current}]{escaped}[/]",
                 _ => escaped,
             };
 

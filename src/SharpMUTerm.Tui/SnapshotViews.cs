@@ -25,7 +25,7 @@ internal static class SnapshotViews
         "search", "search-regex", "search-all", "search-landed", "activity-bar",
         "mxp-image", "mxp-figure", "input-selection", "selection", "trigger-builder",
         "prefix", "prefix-panel", "focus", "focus-moved", "tabs", "tabs-many",
-        "collapsed", "timestamps", "timestamps-toggled", "theme-switched", "rail-keys", "prompt", "meters", "gamedata", "map", "map-walking", "map-split",
+        "collapsed", "timestamps", "timestamps-toggled", "theme-switched", "rail-keys", "prompt", "meters", "gamedata", "map", "map-walking", "map-split", "map-edit",
         "packages", "package-review", "package-browse", "send-menu", "layouts", "layout-combat", "layout-roleplay",
         "panel-who", "panel-vitals", "panel-quickbar", "panel-composer",
         "welcome", "welcome-connect", "tour", "reconnect", "help", "help-topic", "dictionary-offer", "import-review", "join-wraps", "join-wraps-f5",

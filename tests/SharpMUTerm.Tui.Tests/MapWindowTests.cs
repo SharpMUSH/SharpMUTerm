@@ -58,7 +58,7 @@ public class MapWindowTests
         await Assert.That(app.WindowOwnerOf(MapId)).IsEqualTo(Ann);
         await Assert.That(app.ActiveWindowId()).IsEqualTo(MapId);
         var plain = app.MapMarkup(MapId).Select(MarkupText.Plain).ToList();
-        await Assert.That(plain[0]).IsEqualTo("Map · Keep · z 0");
+        await Assert.That(plain[0]).IsEqualTo("Hall · Keep · z 0");
         await Assert.That(plain.Any(l => l.Contains("[@]"))).IsTrue();
         await Assert.That(app.MapMarkup(MapId).Count(l => l.Contains("[link=mux:map:"))).IsGreaterThan(0);
     }

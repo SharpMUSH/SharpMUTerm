@@ -243,7 +243,7 @@ internal sealed partial class SharpMUTermApp
                 : _mapWalkers[windowId] = room => OnUiThread(() => WalkFromMap(windowId, room));
             return new PanelOverlay(
                 PanelIds.Map, windowId, rect, new PanelInk(_ink.Accent, _ink.Draft, _ink.Lift(new Rgb(0x6a, 0x6a, 0x72))), null, view, walker,
-                PopOut: popOut);
+                PopOut: popOut, SelectRoom: MapSelectorFor(windowId), EditMap: MapEditorFor(windowId));
         }
 
         if (!TerminalPanels.TryParseWindowId(windowId, out var panelId, out var key))
@@ -324,8 +324,7 @@ internal sealed partial class SharpMUTermApp
             return cached.Model;
         }
 
-        var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
-        var model = MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking, MapPalette());
+        var model = BuildMapView(windowId, map);
         _mapViews[windowId] = (revision, model);
         return model;
     }

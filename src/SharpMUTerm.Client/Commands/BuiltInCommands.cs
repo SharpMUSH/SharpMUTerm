@@ -150,6 +150,11 @@ public static class BuiltInCommands
         // The map. Listed unconditionally, like the game data above: a map is recorded from the first room a
         // game reports, and nothing else on screen says the client keeps one.
         Add("term:map", CommandGroup.Terminal, "Show map", detail: "this connection's map · click a room, or /walk <room>");
+
+        // Editing the map: the room you are in selected, the map holding the keys (its footer names them). Listed
+        // unconditionally beside Show map; it refuses out loud where there is no map.
+        Add("map:edit", CommandGroup.Terminal, "Edit map", detail: "rename, area, lock, weight, exits, notes · /map rename …");
+        Add("map:undo", CommandGroup.Terminal, "Undo map edit", detail: "takes back the last change to the map", when: c => c.State.MapUndo is not null);
         // The panels a layout places, openable one at a time as tabs: each draws the focused character's own data
         // and says so when there is none yet, so they are listed unconditionally, like the map.
         Add("panel:who-here", CommandGroup.Terminal, "Show who is here", detail: "players and creatures in the room · click a name to look");

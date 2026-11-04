@@ -61,6 +61,7 @@ public sealed record CharacterRef(
 /// <param name="NoDictionary">
 /// Whether the client's own dictionaries folder holds none, so <c>Get a spelling dictionary</c> is offered.
 /// </param>
+/// <param name="MapUndo">What the focused character's last map edit was, so <c>Undo map edit</c> is offered only with one.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -78,7 +79,8 @@ public sealed record CommandContext(
     int KeyClashes = 0,
     IReadOnlyList<PanelFloatRef>? Floats = null,
     IReadOnlyList<RaggedWrap>? RaggedWraps = null,
-    bool NoDictionary = false);
+    bool NoDictionary = false,
+    string? MapUndo = null);
 
 /// <summary>A world whose pane is narrower than its server's wrap column.</summary>
 /// <param name="World">The world's name.</param>

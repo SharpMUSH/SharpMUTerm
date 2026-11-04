@@ -1970,10 +1970,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
         // starts a walk to the docks through the real `/walk`, so the path ahead is marked; `map-split` puts
         // the map beside the output, the way it is meant to be read.
-        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split")
+        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split" or "map-edit")
         {
             LoadDemoMap();
-            var split = string.Equals(view, "map-split", StringComparison.OrdinalIgnoreCase);
+            var split = view.ToLowerInvariant() is "map-split" or "map-edit";
             if (split)
             {
                 // Split first, so the map opens in front in the right-hand pane, then hand the focus back to
@@ -1996,6 +1996,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 Activate(MainWindowId);
                 RefreshRail();
+            }
+
+            // `map-edit`: the real ⌃P ▸ Edit map, → to the market through the map's own keys, a note through `/map note`,
+            // and l to lock it — so the frame shows the room being edited, its inspector and the keys that edit it.
+            if (string.Equals(view, "map-edit", StringComparison.OrdinalIgnoreCase))
+            {
+                DispatchCommand("map:edit");
+                SimulateMapKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, false));
+                MapCommand(MainWindowId, "map", "note 4210 Spice traders gather here at dawn");
+                SimulateMapKey(new ConsoleKeyInfo('l', ConsoleKey.L, false, false, false));
             }
         }
 
@@ -8417,6 +8427,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             NewlineChord: Host.Keys.Newline.Glyph,
             ScriptsOn: _scriptsRoot is not null,
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
+            MapUndo: MapOf(SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey)?.Recorder.UndoLabel,
             Reconnecting: _reconnects.Values.Any(r => r.IsActive),
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
@@ -8863,6 +8874,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "term:map":
                 ShowMap();
                 return true;
+            case "map:edit":
+                ToggleMapEdit();
+                return true;
+            case "map:undo":
+                if ((SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey) is { } undoKey && MapOf(undoKey) is not null)
+                {
+                    ApplyMapEdit(MapWindowId(undoKey), SharpMUTerm.Client.Panels.MapEdit.Undo);
+                }
+                else
+                {
+                    RefuseCommand("no map here — pick a character first (⌃P ▸ Switch to …)");
+                }
+
+                return true;
             case "layout:layouts":
                 ShowLayouts();
                 return true;
@@ -9210,7 +9235,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnMapLinkClicked(string windowId, string url)
     {
-        if (MapRenderer.ParseLink(url) is { } room)
+        if (MapRenderer.ParseLink(url) is not { } room)
+        {
+            return;
+        }
+
+        // While the map is being edited a click selects the room; otherwise it walks there, as it always has.
+        if (_mapSelection.ContainsKey(windowId))
+        {
+            SelectMapRoom(windowId, room);
+        }
+        else
         {
             WalkFromMap(windowId, room);
         }
@@ -9255,11 +9290,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // One model per drawing, and the window's native map is handed this same instance (MapViewFor), so the two
         // cannot disagree about where the character is, which level is shown or whether a walk is under way.
-        var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
-        var view = Drawing(Core.Layouts.PanelIds.Map, windowId, SharpMUTerm.Client.Panels.MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking, MapPalette()));
+        var view = Drawing(Core.Layouts.PanelIds.Map, windowId, BuildMapView(windowId, map));
         _mapViews[windowId] = (_mapRevisions[windowId], view);
-        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft, WorkspacePalette.ReadingPlane(_theme));
-        var lines = MapRenderer.Render(view, map.Map, width, height, ink);
+        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft, WorkspacePalette.ReadingPlane(_theme), "bold " + RailCursorBand());
+        var lines = MapRenderer.Render(view, map.Map, width, height, ink, keysHeld: _mapKeys == windowId);
         _mapMarkup[windowId] = lines;
         control.SetContent(lines.ToList());
         NoteFloatingContent(windowId);
@@ -9335,6 +9369,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 problem = map.WalkTo(argument);
             }
+        }
+        else if ((WindowSession(windowId)?.SessionKey ?? _workspace.FindWindow(windowId)?.SessionKey) is { } owner
+            && SharpMUTerm.Client.Panels.MapEditing.CommandVerbs.Contains(argument.Split(' ', 2)[0].ToLowerInvariant()))
+        {
+            MapEditCommand(windowId, map, owner, argument);
+            return;
+        }
+        else if (argument.Trim().Equals("edit", StringComparison.OrdinalIgnoreCase))
+        {
+            ToggleMapEdit();
+            return;
         }
         else
         {
@@ -12074,6 +12119,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // ⌥C put the keys on the connection sidebar: its arrows, ⏎ and Esc come first, and anything else hands
             // the keys back and carries on down this chain (SharpMUTermApp.RailKeys.cs).
             if (TryRailKey(e))
+            {
+                return null;
+            }
+
+            // ⌃P ▸ Edit map put the keys on a map: its arrows and edit keys come first, and anything else ends editing
+            // and carries on down this chain (SharpMUTermApp.MapEdit.cs).
+            if (TryMapKey(e))
             {
                 return null;
             }
