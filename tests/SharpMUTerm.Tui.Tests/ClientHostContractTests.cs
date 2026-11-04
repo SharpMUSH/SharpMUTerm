@@ -65,6 +65,7 @@ public class ClientHostContractTests
         {
             Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
             Reserved = [],
+            ReportsChordsWhole = false,
         };
         await using var app = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(driver, Caps) with { Keys = keys });
 

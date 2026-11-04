@@ -144,7 +144,7 @@ public class ScreenHintTests
 
         var triggers = TriggersScreenRenderer.Model(sets, 0);
         var aliases = AliasesScreenRenderer.Model(sets, 0);
-        var keypad = KeypadScreenRenderer.Model(macros, sets, 0);
+        var keypad = KeypadScreenRenderer.Model(HostKeys.Terminal, macros, sets, 0);
         var timers = TimersScreenRenderer.Model(sets, 0);
         var world = WorldsScreenRenderer.Model(worlds, sets, 0, 0);
         var text = OptionsScreenRenderer.Model(textAnsi);

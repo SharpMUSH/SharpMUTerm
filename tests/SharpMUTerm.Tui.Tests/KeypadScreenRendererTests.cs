@@ -16,7 +16,7 @@ public class KeypadScreenRendererTests
     [Test]
     public async Task Render_NumpadCellShowsCommandBoundToNum5()
     {
-        var lines = KeypadScreenRenderer.Render(Scene());
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
         var middleRow = lines.Single(l => l.Contains("[5]"));
         await Assert.That(middleRow).Contains("look");
     }
@@ -37,7 +37,7 @@ public class KeypadScreenRendererTests
         };
 
         // Skip(1): the first entry is the "NUMPAD" caption, not a key row.
-        var offsets = KeypadScreenRenderer.NumpadColumn(macros).Skip(1).Select(CellOffsets).ToList();
+        var offsets = KeypadScreenRenderer.NumpadColumn(HostKeys.Terminal, macros).Skip(1).Select(CellOffsets).ToList();
 
         await Assert.That(offsets).Count().IsEqualTo(3);
         await Assert.That(offsets[1]).IsEqualTo(offsets[0]);
@@ -67,7 +67,7 @@ public class KeypadScreenRendererTests
     [Test]
     public async Task Render_UnboundNumpadCellShowsPlaceholder()
     {
-        var lines = KeypadScreenRenderer.Render(Scene());
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
         var topRow = lines.Single(l => l.Contains("[7]"));
         await Assert.That(topRow).Contains("[dim]—[/]");
     }
@@ -75,7 +75,7 @@ public class KeypadScreenRendererTests
     [Test]
     public async Task Render_HotkeyListShowsCtrlF1BindingCommandAndEnabledTick()
     {
-        var lines = KeypadScreenRenderer.Render(Scene());
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
         var row = lines.Single(l => l.Contains("Ctrl+F1"));
         await Assert.That(row).Contains("ping");
         await Assert.That(row).Contains("✓");
@@ -84,7 +84,7 @@ public class KeypadScreenRendererTests
     [Test]
     public async Task Render_DisabledHotkeyShowsDimMarker()
     {
-        var lines = KeypadScreenRenderer.Render(Scene());
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
         var row = lines.Single(l => l.Contains("Ctrl+F2"));
         await Assert.That(row).Contains("who");
         await Assert.That(row).Contains("[dim]·[/]");
@@ -93,7 +93,7 @@ public class KeypadScreenRendererTests
     [Test]
     public async Task Render_EmptyMacrosRendersGridWithNoHotkeys()
     {
-        var lines = KeypadScreenRenderer.Render(Array.Empty<Macro>());
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Array.Empty<Macro>());
         await Assert.That(lines.Any(l => l.Contains("[5]") && l.Contains("[dim]—[/]"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("no hotkeys"))).IsTrue();
     }
@@ -101,7 +101,7 @@ public class KeypadScreenRendererTests
     [Test]
     public async Task Render_HeaderContainsF4AndTitle()
     {
-        var lines = KeypadScreenRenderer.Render(Scene());
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
         await Assert.That(lines[0]).Contains("Keypad & hotkeys");
         await Assert.That(lines[0]).Contains("F4");
     }
@@ -113,7 +113,7 @@ public class KeypadScreenRendererTests
         {
             new Macro { Name = "Weird", Key = "Ctrl+F9", Enabled = true, Command = "say [hi]" },
         };
-        var lines = KeypadScreenRenderer.Render(macros);
+        var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, macros);
         var row = lines.Single(l => l.Contains("Ctrl+F9"));
         await Assert.That(row).Contains("say [[hi]]");
     }

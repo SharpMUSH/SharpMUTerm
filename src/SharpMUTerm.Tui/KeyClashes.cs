@@ -44,13 +44,13 @@ internal readonly record struct KeyClash(Macro Macro, KeyClashKind Kind, string 
 internal static class KeyClashes
 {
     /// <summary>Every clash among <paramref name="macros"/>, in list order.</summary>
-    internal static IReadOnlyList<KeyClash> Find(IReadOnlyList<Macro> macros)
+    internal static IReadOnlyList<KeyClash> Find(HostKeys keys, IReadOnlyList<Macro> macros)
     {
         ArgumentNullException.ThrowIfNull(macros);
         var clashes = new List<KeyClash>();
         foreach (var macro in macros)
         {
-            if (For(macro, macros) is { } clash)
+            if (For(keys, macro, macros) is { } clash)
             {
                 clashes.Add(clash);
             }
@@ -64,11 +64,11 @@ internal static class KeyClashes
     /// on its chord, and every binding that hides one of the client's own keys. A binding that shadows a later
     /// one is not counted again — the later one already is.
     /// </summary>
-    internal static int Count(IReadOnlyList<Macro> macros) =>
-        Find(macros).Count(c => c.Kind != KeyClashKind.Shadows);
+    internal static int Count(HostKeys keys, IReadOnlyList<Macro> macros) =>
+        Find(keys, macros).Count(c => c.Kind != KeyClashKind.Shadows);
 
     /// <summary>The clash <paramref name="macro"/> is part of, or null.</summary>
-    internal static KeyClash? For(Macro macro, IReadOnlyList<Macro> macros)
+    internal static KeyClash? For(HostKeys keys, Macro macro, IReadOnlyList<Macro> macros)
     {
         ArgumentNullException.ThrowIfNull(macro);
         ArgumentNullException.ThrowIfNull(macros);
@@ -91,7 +91,7 @@ internal static class KeyClashes
             return new KeyClash(macro, KeyClashKind.Shadowed, $"{Name(holders[0])} holds {chord} first; this never runs");
         }
 
-        if (!MacroKeys.Verdict(chord).Fires)
+        if (!MacroKeys.Verdict(keys, chord).Fires)
         {
             return null;
         }

@@ -1240,6 +1240,23 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), and which chrom
   came out as an empty frame — ⌃P and F1 blank — while the inline pass was green. The scene is now queued for
   the loop's first tick (`ClientLaunch.Demo`). That pass skips the bottom row (a live client has been through
   startup) and the two timestamp views (a loop reads the clock).
+- **Every native view is a declared surface, drawn from the model the cells drew** (`SurfaceCatalog`, Client
+  `Surfaces/`). A surface (header, sidebar, the folded rail strip, the armed ⌃B keymap, each panel, settings, the
+  Layouts menu, ⌃P) is declared once: id,
+  Client model, actions (each naming the client method it ends in), per host `Cells`/`Native`/`Both`, its cell
+  renderer and its native views. Three suites hold the hosts to it: `SurfaceCatalogTests` (Client: the
+  declaration's own rules), `SurfaceCellTests` (Tui: the renderer takes the model, every action's method exists,
+  every command resolves) and `SurfaceParityTests` (Avalonia: every `Control` in the window assembly is declared;
+  each native model equals `DrawnModel` — what the cell renderer recorded through `Drawing(...)` in the same frame;
+  each native action and its cell link leave two identical clients in the same state, and not the state before).
+  A door only the native view offers says where the cells offer it (`CellsVia`: another surface or a ⌃P command —
+  which is why the sidebar's fold button has `layout:toggle-rail` beside ⌃B b). The ⌃B keymap is one model
+  (`PrefixPanel.Model` → `HeaderPrefix`) for the cell panel and the native header, exit hint included.
+  The window never builds a command: a menu is a `MenuModel` of entries the client offered, and a choice comes
+  back through `HeaderAction.Dispatch` and is refused if it was not offered. **To add a native surface**: put its
+  model in Client, draw its cells from it through `Drawing(...)`, publish the same instance to the host, declare
+  it in `SurfaceCatalog.All`, and add its model and action probes to `SurfaceParityTests`, whose coverage guards
+  fail until you do.
 - **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
   `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
   `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer
@@ -1257,9 +1274,11 @@ turned into the window by `AppRun` itself rather than by the hand-off, because a
 program it started exits and the hand-off exits at once. The installer is Inno Setup, per-user by default, with
 an optional PATH entry so `sharpmuterm` runs from any terminal.
 
-**Not covered yet**: F4's verdicts (`MacroKeys.Verdict`) describe the terminal only. In the window ⌃digit
-does arrive (F4 says it cannot), and ⌥⏎ never reaches a macro. Making it per host means threading `HostKeys`
-through `MacroKeys`, `ScreenField` and the keypad renderer.
+**F4 and the quick bar read the host's keys** (`MacroKeys.Verdict(HostKeys, …)`, threaded through `ScreenField`,
+`KeyClashes`, the keypad renderer and `QuickBarRenderer`). `HostKeys.ReportsChordsWhole` says whether the host
+delivers a modified key as itself (the window: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O fire) or as the terminal's bytes;
+a chord in `HostKeys.Reserved` or the host's newline is *Taken* with the host's own reason (the window's ⌥⏎
+maximises). `SurfaceCellTests.F4TellsTheTerminalsTruth` and `SurfaceParityTests.F4TellsTheWindowsTruth` pin each.
 
 ## Building and testing
 

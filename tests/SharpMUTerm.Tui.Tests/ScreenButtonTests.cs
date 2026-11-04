@@ -366,7 +366,7 @@ public class ScreenButtonTests
         {
             ("F2 triggers", TriggersScreenRenderer.Model(sets, 0)),
             ("F3 aliases", AliasesScreenRenderer.Model(sets, 0)),
-            ("F4 keypad", KeypadScreenRenderer.Model(macros, sets, 0)),
+            ("F4 keypad", KeypadScreenRenderer.Model(HostKeys.Terminal, macros, sets, 0)),
             ("F5 worlds", WorldsScreenRenderer.Model(worlds, sets, 0, 0)),
             ("F6 timers", TimersScreenRenderer.Model(sets, 0)),
         };

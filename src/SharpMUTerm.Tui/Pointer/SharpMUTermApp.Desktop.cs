@@ -37,11 +37,19 @@ internal sealed partial class SharpMUTermApp
     /// <summary>The one command callback every native panel is handed.</summary>
     private Action<string>? _panelDispatch;
 
+    /// <summary>The Layouts menu the client last built, so a command handed back can be checked against it.</summary>
+    private MenuModel _layoutsMenuOffered = MenuModel.Empty;
+
     /// <summary>Tells the host which header buttons it may draw. Once, at construction.</summary>
     private void AnnounceHeaderActions() =>
         _pointer?.HeaderActions(
         [
-            new HeaderAction(HeaderAction.LayoutsId, "Layouts", "⌥M", show => OnUiThread(() => show(LayoutsMenuItems()))),
+            new HeaderAction(
+                HeaderAction.LayoutsId,
+                "Layouts",
+                "⌥M",
+                show => OnUiThread(() => show(_layoutsMenuOffered = LayoutsMenu())),
+                id => OnUiThread(() => RunLayoutsMenuEntry(id))),
         ]);
 
     /// <summary>The layout the focused character's panes show, or would get.</summary>
@@ -52,53 +60,71 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// The window's Layouts menu: the built-ins, then the player's, the one in use checked; then the list's
-    /// actions on the layout in use; then the list itself. Every entry dispatches a command id.
+    /// actions on the layout in use; then the list itself. Every entry names a command id the registry runs.
     /// Internal for tests.
     /// </summary>
-    internal IReadOnlyList<PointerMenuItem> LayoutsMenuItems()
+    internal MenuModel LayoutsMenu()
     {
-        Action Dispatch(string id) => () => OnUiThread(() => DispatchCommand(id));
-        var items = new List<PointerMenuItem>();
+        var entries = new List<MenuEntry>();
         if (LayoutsKey() is not { } key)
         {
-            items.Add(new PointerMenuItem("No character here — a layout belongs to a character", null, () => { }, Enabled: false));
-            items.Add(PointerMenuItem.Separator);
-            items.Add(new PointerMenuItem("Manage layouts…", "⌥M", Dispatch("layout:layouts")));
-            return items;
+            entries.Add(new MenuEntry("No character here — a layout belongs to a character", null, null, Enabled: false));
+            entries.Add(MenuEntry.Separator);
+            entries.Add(new MenuEntry("Manage layouts…", "⌥M", LayoutCommands.Manage));
+            return new MenuModel(entries);
         }
 
         var inUse = LayoutInUse(key);
         var all = Layouts.All;
         foreach (var layout in all.Where(l => l.IsBuiltIn))
         {
-            items.Add(new PointerMenuItem(Snippet(layout.Name), null, Dispatch(LayoutCommands.Apply(layout.Id)), Checked: layout.Id == inUse));
+            entries.Add(new MenuEntry(Snippet(layout.Name), null, LayoutCommands.Apply(layout.Id), Checked: layout.Id == inUse));
         }
 
         var own = all.Where(l => !l.IsBuiltIn).ToList();
         if (own.Count > 0)
         {
-            items.Add(PointerMenuItem.Separator);
+            entries.Add(MenuEntry.Separator);
             foreach (var layout in own)
             {
-                items.Add(new PointerMenuItem(Snippet(layout.Name), null, Dispatch(LayoutCommands.Apply(layout.Id)), Checked: layout.Id == inUse));
+                entries.Add(new MenuEntry(Snippet(layout.Name), null, LayoutCommands.Apply(layout.Id), Checked: layout.Id == inUse));
             }
         }
 
         var (world, character) = LayoutOwner(key);
-        items.Add(PointerMenuItem.Separator);
-        items.Add(new PointerMenuItem("Save changes", null, Dispatch(LayoutCommands.SaveChanges)));
-        items.Add(new PointerMenuItem("Save as new", null, Dispatch(LayoutCommands.SaveAsNew)));
-        items.Add(new PointerMenuItem(
-            world is null ? "Use for this world" : $"Use for {Snippet(world.Name)}", null, Dispatch(LayoutCommands.UseForWorld), Enabled: world is not null));
-        items.Add(new PointerMenuItem(
+        entries.Add(MenuEntry.Separator);
+        entries.Add(new MenuEntry("Save changes", null, LayoutCommands.SaveChanges));
+        entries.Add(new MenuEntry("Save as new", null, LayoutCommands.SaveAsNew));
+        entries.Add(new MenuEntry(
+            world is null ? "Use for this world" : $"Use for {Snippet(world.Name)}", null, LayoutCommands.UseForWorld, Enabled: world is not null));
+        entries.Add(new MenuEntry(
             character is null ? "Use for this character only" : $"Use for {Snippet(character.Name)} only",
             null,
-            Dispatch(LayoutCommands.UseForCharacter),
+            LayoutCommands.UseForCharacter,
             Enabled: character is not null));
-        items.Add(PointerMenuItem.Separator);
-        items.Add(new PointerMenuItem("Manage layouts…", "⌥M", Dispatch("layout:layouts")));
-        return items;
+        entries.Add(MenuEntry.Separator);
+        entries.Add(new MenuEntry("Manage layouts…", "⌥M", LayoutCommands.Manage));
+        return new MenuModel(entries);
     }
+
+    /// <summary>
+    /// An entry chosen from the window's Layouts menu, by the command id the client put in it. A command the menu last
+    /// built did not offer is refused, the chrome's rule: the host hands back a choice, never a command of its own.
+    /// Internal so a test can drive it as the window does.
+    /// </summary>
+    internal bool RunLayoutsMenuEntry(string id)
+    {
+        if (!_layoutsMenuOffered.Commands().Contains(id, StringComparer.Ordinal))
+        {
+            RefuseCommand($"the Layouts menu never offered {Snippet(id)}");
+            return false;
+        }
+
+        return DispatchCommand(id);
+    }
+
+    /// <summary>Builds the Layouts menu as the header button does, and remembers it as offered. Internal for tests.</summary>
+    internal MenuModel OfferLayoutsMenu() => _layoutsMenuOffered = LayoutsMenu();
 
     /// <summary>
     /// A layout-library command (<see cref="LayoutCommands"/>), for the focused character: the ⌥M list's own

@@ -1,3 +1,5 @@
+using SharpMUTerm.Core.Automation;
+
 namespace SharpMUTerm.Tui;
 
 /// <summary>A chord as a host spells it: the key, its exact modifiers, and the two ways a surface names it.</summary>
@@ -24,7 +26,31 @@ internal sealed record HostKeys
     /// <summary>Chords the host acts on itself; the client never receives them, so no surface may offer them.</summary>
     public required IReadOnlyList<ReservedChord> Reserved { get; init; }
 
+    /// <summary>
+    /// Whether the host reports every chord as the key and the modifiers that were pressed. A window does. A
+    /// terminal does not: it writes Ctrl+letter as a control byte (losing Shift, and spelling ⌃H/⌃I/⌃J/⌃M as
+    /// Backspace, Tab and Enter), Ctrl+digit as whatever byte the ASCII table gives it, Ctrl+Tab as a bare Tab, and
+    /// its emulator and the framework's parser spend chords of their own (kitty's ⌃⇧←/→, the parser's ⌥O). F4 and
+    /// the quick bar read this through <see cref="MacroKeys.Verdict"/>, so a binding is drawn live on the host
+    /// where it fires and dead where it never arrives.
+    /// </summary>
+    public required bool ReportsChordsWhole { get; init; }
+
     public bool Reserves(ConsoleKeyInfo key) => Reserved.Any(r => r.Chord.Matches(key));
+
+    /// <summary>The reserved chord a descriptor names, or null.</summary>
+    internal ReservedChord? ReservedFor(MacroKeyParts parts) =>
+        Reserved.FirstOrDefault(r => Same(r.Chord, parts));
+
+    /// <summary>Whether a descriptor names the newline chord.</summary>
+    internal bool IsNewline(MacroKeyParts parts) => Same(Newline, parts);
+
+    private static bool Same(HostChord chord, MacroKeyParts parts) =>
+        MacroKeys.NameOf(chord.Key) is { } name
+        && string.Equals(name, parts.Key, StringComparison.OrdinalIgnoreCase)
+        && chord.Modifiers.HasFlag(ConsoleModifiers.Control) == parts.Ctrl
+        && chord.Modifiers.HasFlag(ConsoleModifiers.Alt) == parts.Alt
+        && chord.Modifiers.HasFlag(ConsoleModifiers.Shift) == parts.Shift;
 
     /// <summary>
     /// A terminal: ⌥⏎ is the newline, reassembled from the Escape and Enter it arrives as
@@ -35,5 +61,6 @@ internal sealed record HostKeys
     {
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Alt, "Alt+⏎", "Alt+Enter"),
         Reserved = [],
+        ReportsChordsWhole = false,
     };
 }

@@ -701,7 +701,7 @@ public class PaneResizeEndToEndTests
             "Alt+Shift+Left", "Alt+Shift+Right", "Alt+Shift+Up", "Alt+Shift+Down",
         })
         {
-            await Assert.That(MacroKeys.Verdict(descriptor).Fires)
+            await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, descriptor).Fires)
                 .IsTrue()
                 .Because($"F4 says a macro on {descriptor} fires, so the resize must not pre-empt it");
         }

@@ -213,7 +213,7 @@ public class ScreenLayoutTests
             .IsGreaterThan(KeypadScreenRenderer.NumpadWidth(narrow));
 
         // Given that width, the cell draws the command whole — the asymmetry the review named.
-        var grid = KeypadScreenRenderer.NumpadColumn(wide, KeypadScreenRenderer.NumpadWidth(wide));
+        var grid = KeypadScreenRenderer.NumpadColumn(HostKeys.Terminal, wide, KeypadScreenRenderer.NumpadWidth(wide));
         await Assert.That(grid.Single(l => l.Contains("[[1]]"))).Contains("look at altar");
     }
 

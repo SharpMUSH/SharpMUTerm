@@ -17,6 +17,9 @@ internal static class QuickBarRenderer
     /// <summary>The scheme an entry's link carries, followed by its index in the list drawn.</summary>
     internal const string LinkPrefix = "mux:quick:";
 
+    /// <summary>The hint's link: a click opens the F4 screen (<see cref="QuickBarModel.EditCommand"/>), as the window's does.</summary>
+    internal const string EditLink = LinkPrefix + "edit";
+
     /// <summary>The longest a macro's name is drawn before it is cut.</summary>
     internal const int MaxNameWidth = 16;
 
@@ -27,7 +30,7 @@ internal static class QuickBarRenderer
     /// The function-key bindings to show, from the bindings that resolve: one per key, plain keys before modified
     /// ones, then by number. A binding with neither a command nor a script is left out, as the key path leaves it.
     /// </summary>
-    internal static QuickBarModel Entries(IEnumerable<Macro> macros, Func<string, Macro?> resolve)
+    internal static QuickBarModel Entries(HostKeys keys, IEnumerable<Macro> macros, Func<string, Macro?> resolve)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var entries = new List<(QuickBarItem Entry, int Modifiers, int Number)>();
@@ -56,7 +59,7 @@ internal static class QuickBarRenderer
 
             var key = (parts.Ctrl ? "⌃" : string.Empty) + (parts.Alt ? "⌥" : string.Empty) + (parts.Shift ? "⇧" : string.Empty) + parts.Key;
             var modifiers = (parts.Ctrl ? 1 : 0) + (parts.Alt ? 2 : 0) + (parts.Shift ? 4 : 0);
-            entries.Add((new QuickBarItem(key, descriptor, Single(name), MacroKeys.Verdict(descriptor).Fires), modifiers, number));
+            entries.Add((new QuickBarItem(key, descriptor, Single(name), MacroKeys.Verdict(keys, descriptor).Fires), modifiers, number));
         }
 
         return new QuickBarModel(entries.OrderBy(e => e.Modifiers).ThenBy(e => e.Number).Select(e => e.Entry).ToList());
@@ -67,7 +70,7 @@ internal static class QuickBarRenderer
     {
         var entries = model.Items;
         width = Math.Max(1, width);
-        var hint = $"[bold {accent}]{QuickBarModel.EditKey}[/][dim]{QuickBarModel.EditHint[QuickBarModel.EditKey.Length..]}[/]";
+        var hint = $"[link={EditLink}][bold {accent}]{QuickBarModel.EditKey}[/][dim]{QuickBarModel.EditHint[QuickBarModel.EditKey.Length..]}[/][/]";
         if (entries.Count == 0)
         {
             return ElideVisible($"[dim]{QuickBarModel.EmptyText} · [/]{hint}", width);

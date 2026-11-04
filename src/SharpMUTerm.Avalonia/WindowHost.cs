@@ -29,6 +29,9 @@ internal static class WindowHost
     {
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
         Reserved = [Maximise, .. Paste],
+
+        // Avalonia reports the key and its modifiers: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O arrive as themselves.
+        ReportsChordsWhole = true,
     };
 
     /// <param name="driver">The window's driver.</param>

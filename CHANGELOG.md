@@ -9,6 +9,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Ctrl+P lists *Fold or unfold the connection rail*, the same fold as Ctrl+B b and as the desktop window's
+  sidebar button.
 - Desktop window: the header and the connections sidebar now have room of their own — a full-height toolbar
   across the top and a 232-pixel sidebar down the left — instead of being squeezed into one row and one column
   of text, and the text area is the rest of the window, so every pane is as wide and tall as it really is (and
@@ -219,6 +221,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Desktop window: the Keys screen (F4) and the quick bar now describe the window's keys rather than a
+  terminal's. Ctrl+digit, Ctrl+Shift+letter, Ctrl+Tab and Alt+O are shown as working keys you can bind, and
+  Alt+Enter is marked as taken because it maximises the window.
+- Terminal: the quick bar's *F4 edits keys* can be clicked, as it already could in the desktop window. With no
+  room known, the map panel now centres on the same room in the terminal as in the window.
 - The message a client with no worlds shows no longer wraps the status row onto a second row at 80 columns.
 - A `--snapshot` frame with an MXP picture in cells a server left for it no longer sometimes leaves one of
   the picture's rows blank.

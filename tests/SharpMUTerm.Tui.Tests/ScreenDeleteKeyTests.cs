@@ -78,8 +78,7 @@ public class ScreenDeleteKeyTests
         var triggers = new SettingsSession(s => TriggersScreenRenderer.Model(sets, s.SelectionIn(0)));
         var aliases = new SettingsSession(s => AliasesScreenRenderer.Model(sets, s.SelectionIn(0)));
         var timers = new SettingsSession(s => TimersScreenRenderer.Model(sets, s.SelectionIn(0)));
-        var keypad = new SettingsSession(s => KeypadScreenRenderer.Model(
-            sets.SelectMany(x => x.Macros).ToList(), sets, s.SelectionIn(0)));
+        var keypad = new SettingsSession(s => KeypadScreenRenderer.Model(HostKeys.Terminal, sets.SelectMany(x => x.Macros).ToList(), sets, s.SelectionIn(0)));
         var f5 = new SettingsSession(s => WorldsScreenRenderer.Model(
             worlds, sets, s.SelectionIn(0), s.SelectionIn(1)));
 
@@ -236,12 +235,12 @@ public class ScreenDeleteKeyTests
 
         Add("F2", TriggersScreenRenderer.Model(sets, 0), m => TriggersScreenRenderer.HeaderLine(120, m));
         Add("F3", AliasesScreenRenderer.Model(sets, 0), m => AliasesScreenRenderer.HeaderLine(120, m));
-        Add("F4", KeypadScreenRenderer.Model(sets[0].Macros, sets, 0), m => KeypadScreenRenderer.HeaderLine(120, m));
+        Add("F4", KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0), m => KeypadScreenRenderer.HeaderLine(120, m));
         Add("F5", WorldsScreenRenderer.Model(worlds, sets, 0, 0), m => WorldsScreenRenderer.HeaderLine(120, m));
         Add("F6", TimersScreenRenderer.Model(sets, 0), m => TimersScreenRenderer.HeaderLine(120, m));
         Add("F2 empty", TriggersScreenRenderer.Model(empty, -1), m => TriggersScreenRenderer.HeaderLine(120, m));
         Add("F3 empty", AliasesScreenRenderer.Model(empty, -1), m => AliasesScreenRenderer.HeaderLine(120, m));
-        Add("F4 no sets", KeypadScreenRenderer.Model(Array.Empty<Macro>()), m => KeypadScreenRenderer.HeaderLine(120, m));
+        Add("F4 no sets", KeypadScreenRenderer.Model(HostKeys.Terminal, Array.Empty<Macro>()), m => KeypadScreenRenderer.HeaderLine(120, m));
         Add("F6 empty", TimersScreenRenderer.Model(empty, -1), m => TimersScreenRenderer.HeaderLine(120, m));
         Add(
             "F7 options",

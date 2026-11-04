@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Mapping;
 
 namespace SharpMUTerm.Tui;
@@ -55,9 +56,8 @@ internal static class MapRenderer
             : null;
 
     /// <summary>
-    /// The map as <paramref name="height"/> rows at most, each at most <paramref name="width"/> cells. The first
-    /// row is the title; the rest is the grid around <paramref name="current"/>. With no current room the map is
-    /// drawn around the lowest-numbered room, and an empty map says so.
+    /// The map as <paramref name="height"/> rows at most, each at most <paramref name="width"/> cells, around
+    /// <paramref name="current"/>; see the overload that takes a <see cref="MapViewModel"/>, which this builds.
     /// </summary>
     internal static List<string> Render(
         WorldMap map,
@@ -66,14 +66,23 @@ internal static class MapRenderer
         int width,
         int height,
         Ink ink,
-        string? walking = null)
+        string? walking = null) =>
+        Render(MapViewModel.From(map, current, ahead, walking), map, width, height, ink);
+
+    /// <summary>
+    /// The map as <paramref name="height"/> rows at most, each at most <paramref name="width"/> cells. The first
+    /// row is the title; the rest is the grid. <b>Where, which level, who is where and whether a walk is under way
+    /// are the view's</b> (the model the window's native map is drawn from), so the two cannot centre on different
+    /// rooms or title different areas. Only the exits' geometry (directions, stubs, ways off the level), which the
+    /// view does not carry, is read from <paramref name="map"/>. An empty map says so.
+    /// </summary>
+    internal static List<string> Render(MapViewModel view, WorldMap map, int width, int height, Ink ink)
     {
         width = Math.Max(1, width);
         height = Math.Max(1, height);
         var lines = new List<string>();
 
-        var centre = current is { } c ? map.Room(c) : null;
-        centre ??= map.Rooms.Values.OrderBy(r => r.Id).FirstOrDefault();
+        var centre = view.AnchorId is { } anchor ? map.Room(anchor) : null;
         if (centre is null)
         {
             lines.Add(Title("Map · nothing mapped yet", width, ink));
@@ -81,15 +90,16 @@ internal static class MapRenderer
             return lines.Take(height).ToList();
         }
 
-        var area = centre.AreaId is { } a && map.Areas.TryGetValue(a, out var found) ? found.Name : null;
+        var current = view.Current?.Id;
+        var ahead = view.Rooms.Where(r => r.Ahead).Select(r => r.Id);
         var title = new StringBuilder("Map");
-        if (!string.IsNullOrWhiteSpace(area))
+        if (!string.IsNullOrWhiteSpace(view.Area))
         {
-            title.Append(" · ").Append(area);
+            title.Append(" · ").Append(view.Area);
         }
 
-        title.Append(" · z ").Append(centre.Z.ToString(CultureInfo.InvariantCulture));
-        if (walking is not null)
+        title.Append(" · z ").Append(view.Level.ToString(CultureInfo.InvariantCulture));
+        if (view.Walking is { } walking)
         {
             title.Append(" · ").Append(walking);
         }

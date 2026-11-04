@@ -119,7 +119,7 @@ public class TerminalPanelTests
     [Test]
     public async Task TheQuickBarListsFunctionKeysPlainFirstAndByNumber()
     {
-        var entries = QuickBarRenderer.Entries(Bindings, Resolve);
+        var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Bindings, Resolve);
 
         await Assert.That(entries.Items.Select(e => e.Key)).IsEquivalentTo(new[] { "F11", "F12", "⌃F3" });
         await Assert.That(entries.Items[2].Title).IsEqualTo("cast 'cure light'");
@@ -128,7 +128,7 @@ public class TerminalPanelTests
     [Test]
     public async Task TheQuickBarElidesAndNeverWraps()
     {
-        var entries = QuickBarRenderer.Entries(Bindings, Resolve);
+        var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Bindings, Resolve);
 
         var wide = QuickBarRenderer.Render(entries, 100, "#00f5b7");
         await Assert.That(StripMarkup(wide)).Contains("F11 kick").And.EndsWith(QuickBarRenderer.Hint);

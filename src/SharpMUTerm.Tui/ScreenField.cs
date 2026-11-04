@@ -768,7 +768,7 @@ internal readonly record struct ScreenField(
     /// </summary>
     /// <param name="taken">Names the binding already holding a descriptor, or null when it is free.</param>
     internal static ScreenField Key(
-        string label, Func<string> get, Action<string> set, Func<string, string?> taken)
+        HostKeys keys, string label, Func<string> get, Action<string> set, Func<string, string?> taken)
     {
         ArgumentNullException.ThrowIfNull(get);
         ArgumentNullException.ThrowIfNull(set);
@@ -777,7 +777,7 @@ internal readonly record struct ScreenField(
         return new ScreenField(
             label,
             get,
-            value => MacroKeys.Verdict(value) is { Fires: false } verdict ? verdict.Reason : taken(value),
+            value => MacroKeys.Verdict(keys, value) is { Fires: false } verdict ? verdict.Reason : taken(value),
             value => set(MacroKey.Canonicalise(value) ?? value.Trim()),
             Capture: true);
     }

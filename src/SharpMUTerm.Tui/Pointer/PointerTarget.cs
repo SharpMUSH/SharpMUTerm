@@ -202,10 +202,18 @@ internal sealed record PanelInk(string Bar, string Low, string Track);
 /// <param name="Hint">The key that does the same, for the tooltip.</param>
 /// <param name="Menu">
 /// Builds the menu; safe to call from any thread. The client builds it on its own thread and hands it to the
-/// callback there, so a host marshals in the callback itself. Each entry's <see cref="PointerMenuItem.Run"/> is
-/// already marshalled.
+/// callback there, so a host marshals in the callback itself.
 /// </param>
-internal sealed record HeaderAction(string Id, string Label, string? Hint, Action<Action<IReadOnlyList<PointerMenuItem>>> Menu)
+/// <param name="Dispatch">
+/// Runs an entry by the command id the menu carried; safe to call from any thread. An id the last menu built did
+/// not offer is refused, so a host can choose an entry and never name a command of its own.
+/// </param>
+internal sealed record HeaderAction(
+    string Id,
+    string Label,
+    string? Hint,
+    Action<Action<SharpMUTerm.Client.Commands.MenuModel>> Menu,
+    Action<string> Dispatch)
 {
     /// <summary>The layouts button: built-in and saved layouts, save, and a default for a world or a character.</summary>
     public const string LayoutsId = "layouts";

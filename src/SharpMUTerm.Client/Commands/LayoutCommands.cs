@@ -29,6 +29,9 @@ public static class LayoutCommands
     /// <summary>Makes the layout in use the focused character's own, whatever its world uses.</summary>
     public const string UseForCharacter = Prefix + "use-character";
 
+    /// <summary>Opens the ⌥M list itself: the ⌃P entry, and the menu's last entry. Not under <see cref="Prefix"/>.</summary>
+    public const string Manage = "layout:layouts";
+
     /// <summary>The id that applies <paramref name="layoutId"/>.</summary>
     public static string Apply(string layoutId) => ApplyPrefix + layoutId;
 }

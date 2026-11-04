@@ -71,7 +71,7 @@ public class DesktopLayerTests
         await using var app = InlineWindowApp(driver);
         app.RenderSnapshot("layout-combat");
 
-        var items = app.LayoutsMenuItems();
+        var items = app.OfferLayoutsMenu().Entries;
         var labels = items.Where(i => !i.IsSeparator).Select(i => i.Label).ToArray();
         await Assert.That(labels).Contains("Roleplay");
         await Assert.That(labels).Contains("Combat");
@@ -83,9 +83,12 @@ public class DesktopLayerTests
         await Assert.That(items.Single(i => i.Checked).Label).IsEqualTo("Combat");
 
         // Choosing an entry runs the command, through the registry, that the ⌥M list's ⏎ runs.
-        items.Single(i => i.Label == "Roleplay").Run();
+        await Assert.That(app.RunLayoutsMenuEntry(items.Single(i => i.Label == "Roleplay").Command!)).IsTrue();
         await Assert.That(app.LiveLayoutId).IsEqualTo(BuiltInLayouts.RoleplayId);
-        await Assert.That(app.LayoutsMenuItems().Single(i => i.Checked).Label).IsEqualTo("Roleplay");
+        await Assert.That(app.LayoutsMenu().Entries.Single(i => i.Checked).Label).IsEqualTo("Roleplay");
+
+        // A command the menu did not offer is refused: the window chooses an entry, it never names a command.
+        await Assert.That(app.RunLayoutsMenuEntry("term:quit")).IsFalse();
     }
 
     [Test]
@@ -120,7 +123,7 @@ public class DesktopLayerTests
             Offer(driver, show =>
             {
                 asked++;
-                show([new PointerMenuItem("Combat", null, () => { }, Checked: true), PointerMenuItem.Separator, new PointerMenuItem("Manage layouts…", "⌥M", () => { })]);
+                show(new MenuModel([new MenuEntry("Combat", null, "layout:lib:apply:combat", Checked: true), MenuEntry.Separator, new MenuEntry("Manage layouts…", "⌥M", LayoutCommands.Manage)]));
             });
             var clientSaw = new List<List<MouseFlags>>();
             driver.MouseEvent += (_, flags, _) => clientSaw.Add(flags);
@@ -319,9 +322,9 @@ public class DesktopLayerTests
             RunsInline = true,
         });
 
-    private static void Offer(AvaloniaConsoleDriver driver, Action<Action<IReadOnlyList<PointerMenuItem>>> menu)
+    private static void Offer(AvaloniaConsoleDriver driver, Action<Action<MenuModel>> menu, Action<string>? dispatch = null)
     {
-        ((IPointerPresenter)driver.Pointer).HeaderActions([new HeaderAction(HeaderAction.LayoutsId, "Layouts", "⌥M", menu)]);
+        ((IPointerPresenter)driver.Pointer).HeaderActions([new HeaderAction(HeaderAction.LayoutsId, "Layouts", "⌥M", menu, dispatch ?? (_ => { }))]);
         Drain();
     }
 

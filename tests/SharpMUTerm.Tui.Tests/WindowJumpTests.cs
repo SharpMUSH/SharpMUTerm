@@ -548,7 +548,7 @@ public class WindowJumpTests
         await Assert.That(MacroKeys.WindowJumpNumber(ConsoleKey.D0)).IsNull();
         await Assert.That(MacroKeys.AppShortcuts.Any(
             s => s.Modifiers == ConsoleModifiers.Alt && s.Key == ConsoleKey.D0)).IsFalse();
-        await Assert.That(MacroKeys.Verdict("Alt+0").Fires).IsTrue();
+        await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, "Alt+0").Fires).IsTrue();
     }
 
     /// <summary>
@@ -682,7 +682,7 @@ public class WindowJumpTests
     {
         for (var n = 1; n <= 9; n++)
         {
-            var verdict = MacroKeys.Verdict($"Alt+{n}");
+            var verdict = MacroKeys.Verdict(HostKeys.Terminal, $"Alt+{n}");
 
             await Assert.That(verdict.Delivery).IsEqualTo(MacroKeyDelivery.Taken);
             await Assert.That(verdict.Reason).Contains($"window {n}");
@@ -702,7 +702,7 @@ public class WindowJumpTests
     [Arguments(9, "bare 9")]
     public async Task CtrlDigitIsReportedAsUnreachableWithTheByteTheTerminalSends(int digit, string byteName)
     {
-        var verdict = MacroKeys.Verdict($"Ctrl+{digit}");
+        var verdict = MacroKeys.Verdict(HostKeys.Terminal, $"Ctrl+{digit}");
 
         await Assert.That(verdict.Delivery).IsEqualTo(MacroKeyDelivery.NeverArrives);
         await Assert.That(verdict.Reason).Contains(byteName);

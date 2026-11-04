@@ -31,8 +31,7 @@ public class MacroKeyCaptureTests
     };
 
     private static SettingsSession Session(IReadOnlyList<TriggerSet> sets) =>
-        new(selection => KeypadScreenRenderer.Model(
-            sets.SelectMany(s => s.Macros).ToList(), sets, selection.SelectionIn(0)));
+        new(selection => KeypadScreenRenderer.Model(HostKeys.Terminal, sets.SelectMany(s => s.Macros).ToList(), sets, selection.SelectionIn(0)));
 
     private static ConsoleKeyInfo Chord(ConsoleKey key, bool ctrl = false, bool alt = false, bool shift = false) =>
         new('\0', key, shift, alt, ctrl);
@@ -96,7 +95,7 @@ public class MacroKeyCaptureTests
     [Arguments("Up", nameof(MacroKeyDelivery.Taken))]
     public async Task TheVerdictSaysWhatWillHappenToAChord(string descriptor, string expected)
     {
-        var verdict = MacroKeys.Verdict(descriptor);
+        var verdict = MacroKeys.Verdict(HostKeys.Terminal, descriptor);
 
         await Assert.That(verdict.Delivery.ToString()).IsEqualTo(expected).Because(descriptor);
         await Assert.That(verdict.Reason.Length > 0).IsEqualTo(expected != nameof(MacroKeyDelivery.Fires))
@@ -125,7 +124,7 @@ public class MacroKeyCaptureTests
             {
                 var stroke = Chord(key, modifiers.ctrl, modifiers.alt, modifiers.shift);
                 var captured = MacroKeys.Capture(stroke);
-                var dispatched = MacroKeys.Descriptor(stroke);
+                var dispatched = MacroKeys.Descriptor(HostKeys.Terminal, stroke);
 
                 if (captured is null)
                 {
@@ -134,7 +133,7 @@ public class MacroKeyCaptureTests
                 }
 
                 await Assert.That(dispatched)
-                    .IsEqualTo(MacroKeys.Verdict(captured).Fires ? captured : null)
+                    .IsEqualTo(MacroKeys.Verdict(HostKeys.Terminal, captured).Fires ? captured : null)
                     .Because(captured);
             }
         }
@@ -154,7 +153,7 @@ public class MacroKeyCaptureTests
     public async Task ABindingThatCannotFireIsMarkedOnItsRowAndExplainedInTheFooter()
     {
         var macros = Sets()[0].Macros;
-        var rows = KeypadScreenRenderer.HotkeysColumn(macros);
+        var rows = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros);
 
         var dead = rows.Single(l => l.Contains("Num5", StringComparison.Ordinal));
         await Assert.That(dead).Contains("▲");
@@ -166,9 +165,9 @@ public class MacroKeyCaptureTests
         await Assert.That(rows[0]).Contains("HOTKEYS");
         await Assert.That(rows[0]).Contains("1 of 2 cannot fire");
 
-        await Assert.That(KeypadScreenRenderer.FooterLine(macros, 120, new ScreenFocus(0, 0)))
-            .Contains(MacroKeys.Verdict("Num5").Reason);
-        await Assert.That(KeypadScreenRenderer.FooterLine(macros, 120, new ScreenFocus(0, 1)))
+        await Assert.That(KeypadScreenRenderer.FooterLine(HostKeys.Terminal, macros, 120, new ScreenFocus(0, 0)))
+            .Contains(MacroKeys.Verdict(HostKeys.Terminal, "Num5").Reason);
+        await Assert.That(KeypadScreenRenderer.FooterLine(HostKeys.Terminal, macros, 120, new ScreenFocus(0, 1)))
             .DoesNotContain("▲");
     }
 
@@ -177,7 +176,7 @@ public class MacroKeyCaptureTests
     public async Task AListOfLiveBindingsCarriesNoCaveatAtAll()
     {
         var macros = new List<Macro> { new() { Name = "Score", Key = "Ctrl+F1", Command = "score" } };
-        var rows = KeypadScreenRenderer.HotkeysColumn(macros);
+        var rows = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros);
 
         await Assert.That(rows[0]).DoesNotContain("▲");
         await Assert.That(rows.Any(l => l.Contains("▲", StringComparison.Ordinal))).IsFalse();
@@ -191,10 +190,10 @@ public class MacroKeyCaptureTests
     [Test]
     public async Task TheNumpadGridSaysThatNothingReachesIt()
     {
-        var caption = KeypadScreenRenderer.NumpadColumn(Sets()[0].Macros)[0];
+        var caption = KeypadScreenRenderer.NumpadColumn(HostKeys.Terminal, Sets()[0].Macros)[0];
 
         await Assert.That(caption).Contains("NUMPAD");
-        await Assert.That(caption).Contains(MacroKeys.Verdict("Num5").Reason);
+        await Assert.That(caption).Contains(MacroKeys.Verdict(HostKeys.Terminal, "Num5").Reason);
     }
 
     // ---- the capture mode ------------------------------------------------------------------------
@@ -209,7 +208,7 @@ public class MacroKeyCaptureTests
     public async Task TheBindingRowCarriesItsKeyAsACaptureField()
     {
         var sets = Sets();
-        var model = KeypadScreenRenderer.Model(sets.SelectMany(s => s.Macros).ToList(), sets, 0);
+        var model = KeypadScreenRenderer.Model(HostKeys.Terminal, sets.SelectMany(s => s.Macros).ToList(), sets, 0);
         var row = model.RowAt(0, 0);
 
         await Assert.That(row.FieldCount).IsEqualTo(4);
@@ -384,18 +383,18 @@ public class MacroKeyCaptureTests
         var focus = session.Focus();
 
         var header = KeypadScreenRenderer.HeaderLine(
-            120, KeypadScreenRenderer.Model(sets[0].Macros, sets, 0), focus);
+            120, KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0), focus);
         await Assert.That(header).Contains(ScreenChrome.CaptureHints);
         await Assert.That(header).DoesNotContain(ScreenChrome.EditingHints);
         await Assert.That(header).DoesNotContain(ScreenChrome.NextFieldHint);
         await Assert.That(Visible(header)).DoesNotContain("F4 close");
 
-        var footer = KeypadScreenRenderer.FooterLine(sets[0].Macros, 120, focus);
+        var footer = KeypadScreenRenderer.FooterLine(HostKeys.Terminal, sets[0].Macros, 120, focus);
         await Assert.That(footer).Contains(ScreenChrome.BindAction);
         await Assert.That(footer).DoesNotContain(ScreenChrome.CommitAction);
 
         // And the field itself is a prompt, not a caret over a buffer there is no way to type into.
-        var row = KeypadScreenRenderer.HotkeysColumn(sets[0].Macros, focus)
+        var row = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, sets[0].Macros, focus)
             .Single(l => l.Contains(ScreenChrome.CapturePrompt, StringComparison.Ordinal));
         await Assert.That(row).Contains("look");
     }

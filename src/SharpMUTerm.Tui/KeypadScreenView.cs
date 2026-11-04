@@ -22,6 +22,7 @@ namespace SharpMUTerm.Tui;
 internal static class KeypadScreenView
 {
     public static IWindowControl Build(
+        HostKeys keys,
         IReadOnlyList<Macro> macros,
         IReadOnlyList<TriggerSet> sets,
         int selected,
@@ -31,10 +32,10 @@ internal static class KeypadScreenView
         int height = 0)
     {
         var header = ScreenChrome.Band(
-            KeypadScreenRenderer.HeaderLine(width, KeypadScreenRenderer.Model(macros, sets, selected), focus),
+            KeypadScreenRenderer.HeaderLine(width, KeypadScreenRenderer.Model(keys, macros, sets, selected), focus),
             ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            KeypadScreenRenderer.FooterLine(macros, width, focus, selected), ScreenPalette.FooterBg, scheme);
+            KeypadScreenRenderer.FooterLine(keys, macros, width, focus, selected), ScreenPalette.FooterBg, scheme);
 
         // While a key capture is armed the binding row swaps its key well for a prompt twice the width,
         // so the list asks for more and the diagram gives it up for as long as the prompt is up. The
@@ -47,7 +48,7 @@ internal static class KeypadScreenView
         {
             // The diagram is a picture of the bindings the list already holds, so a narrow screen drops it
             // and keeps the list, which is where every key on this screen acts.
-            var only = KeypadScreenRenderer.HotkeysColumn(macros, focus, sets, selected, width);
+            var only = KeypadScreenRenderer.HotkeysColumn(keys, macros, focus, sets, selected, width);
             return ScreenChrome.Single(
                 header, footer, ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(only, rows))),
                 only.Count, rows);
@@ -58,9 +59,9 @@ internal static class KeypadScreenView
             KeypadScreenRenderer.NumpadWidth(macros),
             KeypadScreenRenderer.MinNumpadWidth,
             hotkeysMinimum);
-        var left = KeypadScreenRenderer.NumpadColumn(macros, numpad);
+        var left = KeypadScreenRenderer.NumpadColumn(keys, macros, numpad);
         var right = KeypadScreenRenderer.HotkeysColumn(
-            macros, focus, sets, selected, width <= 0 ? numpad : width - numpad - ScreenChrome.ColumnDivider);
+            keys, macros, focus, sets, selected, width <= 0 ? numpad : width - numpad - ScreenChrome.ColumnDivider);
 
         var numpadCol = ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(left, rows), scheme));
         var hotkeysCol = ScreenChrome.Stretch(

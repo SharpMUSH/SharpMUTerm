@@ -52,7 +52,7 @@ public class ScreenCursorTests
         await Assert.That(Barred(TriggersScreenRenderer.RulesColumn(sets, 0))).IsEqualTo(0);
         await Assert.That(Barred(AliasesScreenRenderer.ListColumn(sets, 0))).IsEqualTo(0);
         await Assert.That(Barred(TimersScreenRenderer.ListColumn(sets, 0))).IsEqualTo(0);
-        await Assert.That(Barred(KeypadScreenRenderer.HotkeysColumn(sets[0].Macros))).IsEqualTo(0);
+        await Assert.That(Barred(KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, sets[0].Macros))).IsEqualTo(0);
     }
 
     [Test]
@@ -103,7 +103,7 @@ public class ScreenCursorTests
     [Test]
     public async Task Keypad_BarsTheFocusedBinding()
     {
-        var lines = KeypadScreenRenderer.HotkeysColumn(Sets()[0].Macros, new ScreenFocus(0, 1));
+        var lines = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, Sets()[0].Macros, new ScreenFocus(0, 1));
 
         await Assert.That(Barred(lines)).IsEqualTo(1);
         await Assert.That(lines.Single(l => l.Contains(Bar, StringComparison.Ordinal))).Contains("Num1");
@@ -293,7 +293,7 @@ public class ScreenCursorTests
             Pair(TriggersScreenRenderer.Model(sets, 0), m => TriggersScreenRenderer.HeaderLine(0, m)),
             Pair(AliasesScreenRenderer.Model(sets, 0), m => AliasesScreenRenderer.HeaderLine(0, m)),
             Pair(TimersScreenRenderer.Model(sets, 0), m => TimersScreenRenderer.HeaderLine(0, m)),
-            Pair(KeypadScreenRenderer.Model(sets[0].Macros), m => KeypadScreenRenderer.HeaderLine(0, m)),
+            Pair(KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros), m => KeypadScreenRenderer.HeaderLine(0, m)),
             Pair(
                 WorldsScreenRenderer.Model(worlds, sets, 0, 0),
                 m => WorldsScreenRenderer.HeaderLine(0, m)),
@@ -332,7 +332,7 @@ public class ScreenCursorTests
             Pair(AliasesScreenRenderer.Model(empty, -1), m => AliasesScreenRenderer.HeaderLine(0, m)),
             Pair(TimersScreenRenderer.Model(empty, -1), m => TimersScreenRenderer.HeaderLine(0, m)),
             Pair(
-                KeypadScreenRenderer.Model(Array.Empty<Macro>()),
+                KeypadScreenRenderer.Model(HostKeys.Terminal, Array.Empty<Macro>()),
                 m => KeypadScreenRenderer.HeaderLine(0, m)),
             Pair(
                 WorldsScreenRenderer.Model(Array.Empty<WorldDefinition>(), empty, -1, -1),

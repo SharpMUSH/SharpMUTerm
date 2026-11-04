@@ -29,6 +29,12 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     /// <summary>The longest room name a view is given.</summary>
     public const int MaxNameLength = 80;
 
+    /// <summary>
+    /// The room the view is drawn around: the character's, or with no current room the most recently recorded one.
+    /// Null when nothing is mapped. The cell map centres on this room too, so the two views never disagree about it.
+    /// </summary>
+    public long? AnchorId { get; init; }
+
     /// <summary>The room the character is in, or null.</summary>
     public MapViewRoom? Current => Rooms.FirstOrDefault(r => r.Current);
 
@@ -82,12 +88,12 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
         }
 
         var area = anchor.AreaId is { } areaId && map.Areas.TryGetValue(areaId, out var named) ? named.Name : null;
-        return new MapViewModel(area, anchor.Z, rooms, exits, walking);
+        return new MapViewModel(area, anchor.Z, rooms, exits, walking) { AnchorId = anchor.Id };
     }
 
     /// <summary>Value equality over the rooms and exits, which a record's list members do not give.</summary>
     public bool Equals(MapViewModel? other) =>
-        other is not null && Area == other.Area && Level == other.Level && Walking == other.Walking
+        other is not null && Area == other.Area && Level == other.Level && Walking == other.Walking && AnchorId == other.AnchorId
         && Rooms.SequenceEqual(other.Rooms) && Exits.SequenceEqual(other.Exits);
 
     public override int GetHashCode() => HashCode.Combine(Area, Level, Walking, Rooms.Count, Exits.Count);

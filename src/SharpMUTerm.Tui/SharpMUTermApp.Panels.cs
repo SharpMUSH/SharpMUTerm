@@ -97,7 +97,7 @@ internal sealed partial class SharpMUTermApp
         IReadOnlyList<WhoHereRow> drawn = [];
         var view = NewPanelView(context, (width, height) =>
         {
-            var model = ReadWhoHere(context.SessionKey);
+            var model = Drawing(PanelIds.WhoHere, context.WindowId, ReadWhoHere(context.SessionKey));
             drawn = model.Rows;
             return WhoHereRenderer.Render(model, width, height, new WhoHereRenderer.Ink(_ink.Accent));
         });
@@ -178,7 +178,7 @@ internal sealed partial class SharpMUTermApp
                 return ["[dim]No vitals: this character is not connected.[/]"];
             }
 
-            var strip = VitalsStripRenderer.Render(vitals, width, VitalsInk());
+            var strip = VitalsStripRenderer.Render(Drawing(PanelIds.Vitals, context.WindowId, vitals), width, VitalsInk());
             return [strip.Length > 0 ? strip : "[dim]No vitals yet — the game has sent none of the meters F7 names.[/]"];
         });
 
@@ -222,13 +222,17 @@ internal sealed partial class SharpMUTermApp
         IReadOnlyList<QuickBarItem> drawn = [];
         var view = NewPanelView(context, (width, _) =>
         {
-            var model = QuickBarEntries(context.SessionKey);
+            var model = Drawing(PanelIds.QuickBar, context.WindowId, QuickBarEntries(context.SessionKey));
             drawn = model.Items;
             return [QuickBarRenderer.Render(model, width, _ink.Accent)];
         });
         view.Click = url =>
         {
-            if (QuickBarRenderer.ParseLink(url) is { } index && index < drawn.Count)
+            if (url == QuickBarRenderer.EditLink)
+            {
+                DispatchCommand(QuickBarModel.EditCommand);
+            }
+            else if (QuickBarRenderer.ParseLink(url) is { } index && index < drawn.Count)
             {
                 RunQuickMacro(context.SessionKey, drawn[index].Descriptor);
             }
@@ -244,7 +248,7 @@ internal sealed partial class SharpMUTermApp
     {
         if (FindSession(sessionKey) is { } session)
         {
-            return QuickBarRenderer.Entries(session.Macros.Macros, session.Macros.Resolve);
+            return QuickBarRenderer.Entries(Host.Keys, session.Macros.Macros, session.Macros.Resolve);
         }
 
         if (FindCharacter(sessionKey) is not { } found)
@@ -253,7 +257,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         var macros = _config.ResolveTriggerSets(found.Character, found.World).SelectMany(s => s.Macros).ToList();
-        return QuickBarRenderer.Entries(macros, key => macros.FirstOrDefault(
+        return QuickBarRenderer.Entries(Host.Keys, macros, key => macros.FirstOrDefault(
             m => string.Equals(MacroKey.Canonicalise(m.Key), key, StringComparison.OrdinalIgnoreCase)) is { Enabled: true } m ? m : null);
     }
 

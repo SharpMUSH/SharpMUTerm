@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Palette;
+using SharpMUTerm.Client.Surfaces;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -7508,10 +7509,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private ScreenBinding KeypadScreen()
     {
         var session = new SettingsSession(selection =>
-            KeypadScreenRenderer.Model(Macros(), _config.TriggerSets, selection.SelectionIn(0)),
+            KeypadScreenRenderer.Model(Host.Keys, Macros(), _config.TriggerSets, selection.SelectionIn(0)),
             SaveConfiguration);
 
         return new ScreenBinding(session, () => KeypadScreenView.Build(
+            Host.Keys,
             Macros(),
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
@@ -8083,7 +8085,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
             OutputSelected: HasOutputSelection,
-            KeyClashes: KeyClashes.Count(Macros()));
+            KeyClashes: KeyClashes.Count(Host.Keys, Macros()));
     }
 
     /// <summary>
@@ -8471,6 +8473,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "layout:next-tab":
                 NextWindow(); // refuses out loud on a pane with one tab, the same as the chord does
+                return true;
+            case "layout:toggle-rail":
+                ToggleRail(); // ⌃B b's fold, and the window sidebar's fold button
                 return true;
             case "term:newline":
                 // The same edit Alt+⏎ makes, through the same key table, so the surface cannot drift from
@@ -8872,10 +8877,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // One model per drawing, and the window's native map is handed this same instance (MapViewFor), so the two
+        // cannot disagree about where the character is, which level is shown or whether a walk is under way.
         var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
+        var view = Drawing(Core.Layouts.PanelIds.Map, windowId, SharpMUTerm.Client.Panels.MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking));
+        _mapViews[windowId] = (_mapRevisions[windowId], view);
         var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft);
-        var lines = MapRenderer.Render(
-            map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, width, height, ink, walking);
+        var lines = MapRenderer.Render(view, map.Map, width, height, ink);
         _mapMarkup[windowId] = lines;
         control.SetContent(lines.ToList());
     }
@@ -10619,10 +10627,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private List<string> RenderRailLines()
     {
-        var rows = BuildRail();
-        return _railCollapsed
-            ? RailRenderer.RenderCollapsed(rows, _ink)
-            : RailRenderer.Render(rows, RailMaxWidth - RailMargin, _ink);
+        return RailRenderer.Render(Drawing(SurfaceCatalog.Sidebar, string.Empty, BuildSidebar()), RailMaxWidth - RailMargin, _ink);
     }
 
     /// <summary>
@@ -11946,7 +11951,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The focused window's session, not _active: a macro key is a keystroke, and a keystroke may not
         // reach a world other than the one whose pane is focused (see SendTarget). A pane with no
         // connection fires no macro and the key falls through the rest of the chain unclaimed.
-        if (SendTarget() is not { } session || MacroKeys.Descriptor(key) is not { } descriptor)
+        if (SendTarget() is not { } session || MacroKeys.Descriptor(Host.Keys, key) is not { } descriptor)
         {
             return null;
         }
@@ -13402,17 +13407,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             HeaderLogFormat(),
             _prefixArmed)
         {
-            Prefix = _prefixArmed
-                ? new HeaderPrefix(
-                    [.. PrefixPanel.Entries(PrefixFactsNow()).Select(e => new HeaderPrefixKey(e.Keys, e.Title, e.Blocked))],
-                    "Esc cancels")
-                : null,
+            Prefix = _prefixArmed ? PrefixPanel.Model(PrefixFactsNow()) : null,
         };
     }
 
     /// <summary>The header row's markup, drawn from <paramref name="model"/> and nothing else it could disagree with.</summary>
     private string HeaderMarkup(HeaderModel model)
     {
+        Drawing(SurfaceCatalog.Header, string.Empty, model);
+
         // The menu affordance opens the command surface (caret flips to ▾ while it's open). The whole
         // identity cluster is a powerline ribbon — menu ▸ world ▸ character — flowing accent colours.
         var caret = model.MenuOpen ? "▾" : Glyphs.Menu;

@@ -157,6 +157,20 @@ internal sealed class CommandPalette
         Paint();
     }
 
+    /// <summary>Selects the listed entry with <paramref name="id"/> and commits it, as arrows and ⏎ would; for a test.</summary>
+    internal bool Choose(string id)
+    {
+        var index = _view.Entries.ToList().FindIndex(e => e.Item.Id == id);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _selected = index;
+        Commit();
+        return true;
+    }
+
     private void Commit()
     {
         if (_selected >= 0 && _selected < _view.Entries.Count)

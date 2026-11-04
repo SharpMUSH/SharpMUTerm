@@ -58,7 +58,7 @@ public class ScreenNameTests
                 AliasesScreenRenderer.Model(sets, 0).FieldAt(0, 0, AliasesScreenRenderer.NameField)!.Value,
                 () => alias.Name),
             ("F4 keypad",
-                KeypadScreenRenderer.Model(sets[0].Macros).FieldAt(0, 0, KeypadScreenRenderer.NameField)!.Value,
+                KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros).FieldAt(0, 0, KeypadScreenRenderer.NameField)!.Value,
                 () => macro.Name),
             ("F6 timers",
                 TimersScreenRenderer.Model(sets, 0).FieldAt(0, 0, TimersScreenRenderer.NameField)!.Value,
@@ -82,7 +82,7 @@ public class ScreenNameTests
         {
             TriggersScreenRenderer.Model(sets, 0).FieldAt(0, 0, 0)!.Value,
             AliasesScreenRenderer.Model(sets, 0).FieldAt(0, 0, 0)!.Value,
-            KeypadScreenRenderer.Model(sets[0].Macros).FieldAt(0, 0, 0)!.Value,
+            KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros).FieldAt(0, 0, 0)!.Value,
             TimersScreenRenderer.Model(sets, 0).FieldAt(0, 0, 0)!.Value,
             WorldsScreenRenderer.Model(worlds, sets, 0, 0).FieldAt(WorldsScreenRenderer.WorldsPane, 0, 0)!.Value,
             WorldsScreenRenderer.Model(worlds, sets, 0, 0)

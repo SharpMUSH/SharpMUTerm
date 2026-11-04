@@ -170,14 +170,14 @@ internal static class KeypadScreenRenderer
     /// panels instead.
     /// </summary>
     public static List<string> Render(
-        IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets = null, int selected = -1)
+        HostKeys keys, IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets = null, int selected = -1)
     {
         ArgumentNullException.ThrowIfNull(macros);
 
-        var left = NumpadColumn(macros);
-        var right = HotkeysColumn(macros, null, sets, selected);
+        var left = NumpadColumn(keys, macros);
+        var right = HotkeysColumn(keys, macros, null, sets, selected);
 
-        var lines = new List<string> { HeaderLine(0, Model(macros, sets, selected)), string.Empty };
+        var lines = new List<string> { HeaderLine(0, Model(keys, macros, sets, selected)), string.Empty };
 
         var rowCount = Math.Max(left.Count, right.Count);
         for (var i = 0; i < rowCount; i++)
@@ -188,7 +188,7 @@ internal static class KeypadScreenRenderer
         }
 
         lines.Add(string.Empty);
-        lines.Add(FooterLine(macros, 0, null, selected));
+        lines.Add(FooterLine(keys, macros, 0, null, selected));
 
         return lines;
     }
@@ -221,12 +221,13 @@ internal static class KeypadScreenRenderer
     /// </param>
     /// <param name="selected">Which binding the cursor has anchored, or -1 for none.</param>
     internal static ScreenModel Model(
+        HostKeys keys,
         IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets = null, int selected = -1)
     {
         ArgumentNullException.ThrowIfNull(macros);
 
-        return new ScreenModel(ScreenModel.Rows(macros, macro => BindingRow(macro, macros, sets))
-            .Concat(Buttons(sets, selected))
+        return new ScreenModel(ScreenModel.Rows(macros, macro => BindingRow(keys, macro, macros, sets))
+            .Concat(Buttons(keys, sets, selected))
             .ToArray());
     }
 
@@ -235,13 +236,13 @@ internal static class KeypadScreenRenderer
     /// the screen knows which sets the bindings came from — the set that owns it.
     /// </summary>
     private static ScreenRow BindingRow(
-        Macro macro, IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets)
+        HostKeys keys, Macro macro, IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets)
     {
         var fields = new List<ScreenField>
         {
             ScreenField.Name("name", () => macro.Name, v => macro.Name = v),
             ScreenField.Text("command", () => macro.Command, v => macro.Command = v),
-            ScreenField.Key("key", () => macro.Key, v => macro.Key = v, key => AlreadyBound(macros, macro, key)),
+            ScreenField.Key(keys, "key", () => macro.Key, v => macro.Key = v, key => AlreadyBound(macros, macro, key)),
         };
 
         if (sets is not null)
@@ -300,7 +301,7 @@ internal static class KeypadScreenRenderer
     /// contradicting the field beside it.
     /// </para>
     /// </summary>
-    private static List<ScreenRow> Buttons(IReadOnlyList<TriggerSet>? sets, int selected)
+    private static List<ScreenRow> Buttons(HostKeys keys, IReadOnlyList<TriggerSet>? sets, int selected)
     {
         var rows = new List<ScreenRow>();
         if (sets is null)
@@ -310,7 +311,7 @@ internal static class KeypadScreenRenderer
 
         var bound = sets.SelectMany(s => s.Macros).Select(m => m.Key).ToList();
         if (ScreenLists.Target(sets, s => s.Macros, selected) is { } target
-            && FreeBindableKey(bound) is { } key)
+            && FreeBindableKey(keys, bound) is { } key)
         {
             rows.Add(ScreenRow.Of(ScreenButton.Add(
                 AddBindingLabel,
@@ -338,9 +339,9 @@ internal static class KeypadScreenRenderer
     /// Null when every candidate is taken, which is what stops the button being drawn at all.
     /// Comparison is case-insensitive because <see cref="MacroEngine"/>'s lookup is.
     /// </summary>
-    private static string? FreeBindableKey(IReadOnlyList<string> bound)
+    private static string? FreeBindableKey(HostKeys keys, IReadOnlyList<string> bound)
     {
-        foreach (var key in MacroKeys.Bindable)
+        foreach (var key in MacroKeys.Bindable(keys))
         {
             if (!bound.Contains(key, StringComparer.OrdinalIgnoreCase))
             {
@@ -380,7 +381,7 @@ internal static class KeypadScreenRenderer
     /// stays on the binding the screen is showing; the footer has to report that one, not the last.
     /// </param>
     internal static string FooterLine(
-        IReadOnlyList<Macro> macros, int width, ScreenFocus? focus = null, int selected = -1)
+        HostKeys keys, IReadOnlyList<Macro> macros, int width, ScreenFocus? focus = null, int selected = -1)
     {
         ArgumentNullException.ThrowIfNull(macros);
 
@@ -392,8 +393,8 @@ internal static class KeypadScreenRenderer
 
             // The row can only spare a handful of cells for a reason; the footer has the width to give
             // the whole one, for the binding the cursor is actually on.
-            var verdict = MacroKeys.Verdict(macros[at].Key);
-            var clash = KeyClashes.For(macros[at], macros);
+            var verdict = MacroKeys.Verdict(keys, macros[at].Key);
+            var clash = KeyClashes.For(keys, macros[at], macros);
             context = ScreenChrome.Context(
                 ScreenChrome.Position("binding", at, macros.Count),
                 Escape(Identify(macros[at])),
@@ -421,7 +422,7 @@ internal static class KeypadScreenRenderer
     /// whole command and a narrow one ellipsises it — rather than every screen ellipsising at ten
     /// characters because that was the width the grid was first drawn at.
     /// </param>
-    internal static List<string> NumpadColumn(IReadOnlyList<Macro> macros, int width = 0)
+    internal static List<string> NumpadColumn(HostKeys keys, IReadOnlyList<Macro> macros, int width = 0)
     {
         ArgumentNullException.ThrowIfNull(macros);
 
@@ -429,7 +430,7 @@ internal static class KeypadScreenRenderer
             ? NumpadCommandWidth
             : Math.Clamp((width - NumpadRowChrome) / 3, MinNumpadCommandWidth, MaxNumpadCommandWidth);
 
-        var lines = new List<string> { $"[dim]NUMPAD[/]{Caveat(MacroKeys.Verdict("Num5"))}" };
+        var lines = new List<string> { $"[dim]NUMPAD[/]{Caveat(MacroKeys.Verdict(keys, "Num5"))}" };
         foreach (var row in NumpadRows)
         {
             lines.Add(NumpadRow(row, macros, command));
@@ -441,6 +442,7 @@ internal static class KeypadScreenRenderer
     /// <summary>The binding list — every macro with its enabled state, key, name, and command.</summary>
     /// <param name="width">How wide the column runs, which its cursor bars and dropdown are sized to.</param>
     internal static List<string> HotkeysColumn(
+        HostKeys keys,
         IReadOnlyList<Macro> macros,
         ScreenFocus? focus = null,
         IReadOnlyList<TriggerSet>? sets = null,
@@ -450,7 +452,7 @@ internal static class KeypadScreenRenderer
         ArgumentNullException.ThrowIfNull(macros);
 
         var cursor = focus ?? ScreenFocus.None;
-        var lines = new List<string> { $"[dim]HOTKEYS[/]{DeadCount(macros)}" };
+        var lines = new List<string> { $"[dim]HOTKEYS[/]{DeadCount(keys, macros)}" };
         if (macros.Count == 0)
         {
             lines.Add("  [dim]no hotkeys[/]");
@@ -460,6 +462,7 @@ internal static class KeypadScreenRenderer
         {
             lines.Add(ScreenChrome.Cursor(
                 Hotkey(
+                    keys,
                     macros[i],
                     macros,
                     sets is null ? null : ScreenLists.OwnerOf(sets, s => s.Macros, macros[i])?.Name,
@@ -484,7 +487,7 @@ internal static class KeypadScreenRenderer
 
         lines.Add(string.Empty);
         lines.AddRange(ScreenChrome.Buttons(
-            Buttons(sets, selected), cursor, 0, macros.Count, width));
+            Buttons(keys, sets, selected), cursor, 0, macros.Count, width));
         return ScreenChrome.Choices(lines, cursor.Edit, width);
     }
 
@@ -533,6 +536,7 @@ internal static class KeypadScreenRenderer
     /// </para>
     /// </summary>
     private static string Hotkey(
+        HostKeys keys,
         Macro macro,
         IReadOnlyList<Macro> macros,
         string? setName,
@@ -541,8 +545,8 @@ internal static class KeypadScreenRenderer
         ScreenFieldEdit? key,
         ScreenFieldEdit? set)
     {
-        var verdict = MacroKeys.Verdict(macro.Key);
-        var clash = KeyClashes.For(macro, macros);
+        var verdict = MacroKeys.Verdict(keys, macro.Key);
+        var clash = KeyClashes.For(keys, macro, macros);
         var tick = macro.Enabled ? $"[{Accent}]✓[/]" : "[dim]·[/]";
 
         // A clash is marked inside the key's own well, where the ▲ already goes, so it costs the row no
@@ -588,11 +592,11 @@ internal static class KeypadScreenRenderer
     /// count, though, is the one thing neither the rows nor the footer can say: how much of this list is
     /// scenery.
     /// </summary>
-    private static string DeadCount(IReadOnlyList<Macro> macros)
+    private static string DeadCount(HostKeys keys, IReadOnlyList<Macro> macros)
     {
         var dead = macros.Count(m =>
-            !MacroKeys.Verdict(m.Key).Fires || KeyClashes.For(m, macros) is { Kind: KeyClashKind.Shadowed });
-        var hiding = macros.Count(m => KeyClashes.For(m, macros) is { Kind: KeyClashKind.BindingWins });
+            !MacroKeys.Verdict(keys, m.Key).Fires || KeyClashes.For(keys, m, macros) is { Kind: KeyClashKind.Shadowed });
+        var hiding = macros.Count(m => KeyClashes.For(keys, m, macros) is { Kind: KeyClashKind.BindingWins });
         var caption = dead == 0 ? string.Empty : $"  [{Muted}]▲ {dead} of {macros.Count} cannot fire[/]";
         return hiding == 0 ? caption : caption + $"  [{Caution}]△ {hiding} hide a client key[/]";
     }

@@ -67,6 +67,9 @@ internal sealed class PrefixOverlay
     /// <summary>What the panel is showing — or would show if it opened now — for a headless test to read.</summary>
     internal IReadOnlyList<string> Lines => PrefixPanel.Render(Current);
 
+    /// <summary>The model the panel was last opened with, for the surface parity test.</summary>
+    internal SharpMUTerm.Client.Chrome.HeaderPrefix? Drawn { get; private set; }
+
     /// <summary>The keymap it is drawing, or would draw, availability and all.</summary>
     internal IReadOnlyList<PrefixEntry> Entries => PrefixPanel.Entries(Current);
 
@@ -79,7 +82,8 @@ internal sealed class PrefixOverlay
         }
 
         _current = _facts();
-        var lines = PrefixPanel.Render(_current);
+        Drawn = PrefixPanel.Model(_current);
+        var lines = PrefixPanel.Render(Drawn);
 
         // Hug the content, the way QuitOverlay does. Centred *after* WithSize, because the builder reads
         // the bounds set so far and falls back to 80x25 otherwise.

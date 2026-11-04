@@ -96,7 +96,7 @@ public class KeyClashesTests
     public async Task AGlobalShortcutWins_AndSaysSo()
     {
         var f2 = M("F2");
-        var clash = KeyClashes.For(f2, [f2]);
+        var clash = KeyClashes.For(HostKeys.Terminal, f2, [f2]);
         await Assert.That(clash?.Kind).IsEqualTo(KeyClashKind.ClientWins);
         await Assert.That(clash!.Value.Reason).Contains("the client wins");
         await Assert.That(clash.Value.BindingRuns).IsFalse();
@@ -106,13 +106,13 @@ public class KeyClashesTests
     public async Task AChordTheWindowTakesAfterTheMacrosIsTheBindingsAndAWarning()
     {
         var copy = M("Ctrl+C");
-        var clash = KeyClashes.For(copy, [copy]);
+        var clash = KeyClashes.For(HostKeys.Terminal, copy, [copy]);
         await Assert.That(clash?.Kind).IsEqualTo(KeyClashKind.BindingWins);
         await Assert.That(clash!.Value.BindingRuns).IsTrue();
         await Assert.That(clash.Value.Reason).Contains("no longer copies the selection");
 
         // Verdict agrees that the binding fires: the warning is not a second opinion on deliverability.
-        await Assert.That(MacroKeys.Verdict("Ctrl+C").Fires).IsTrue();
+        await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, "Ctrl+C").Fires).IsTrue();
     }
 
     [Test]
@@ -121,23 +121,23 @@ public class KeyClashesTests
         var first = M("F11", name: "north");
         first.Enabled = false;
         var second = M("F11", name: "south");
-        await Assert.That(KeyClashes.For(second, [first, second])?.Kind).IsEqualTo(KeyClashKind.Shadowed);
-        await Assert.That(KeyClashes.For(second, [first, second])!.Value.Reason).Contains("north holds F11 first");
+        await Assert.That(KeyClashes.For(HostKeys.Terminal, second, [first, second])?.Kind).IsEqualTo(KeyClashKind.Shadowed);
+        await Assert.That(KeyClashes.For(HostKeys.Terminal, second, [first, second])!.Value.Reason).Contains("north holds F11 first");
 
         // A disabled binding clashes with nothing itself.
-        await Assert.That(KeyClashes.For(first, [first, second])).IsNull();
+        await Assert.That(KeyClashes.For(HostKeys.Terminal, first, [first, second])).IsNull();
 
         first.Enabled = true;
-        await Assert.That(KeyClashes.For(first, [first, second])?.Kind).IsEqualTo(KeyClashKind.Shadows);
-        await Assert.That(KeyClashes.Count([first, second])).IsEqualTo(1);
+        await Assert.That(KeyClashes.For(HostKeys.Terminal, first, [first, second])?.Kind).IsEqualTo(KeyClashKind.Shadows);
+        await Assert.That(KeyClashes.Count(HostKeys.Terminal, [first, second])).IsEqualTo(1);
     }
 
     [Test]
     public async Task AFreeChordClashesWithNothing()
     {
         var free = M("F11");
-        await Assert.That(KeyClashes.For(free, [free])).IsNull();
-        await Assert.That(KeyClashes.For(M("Num5"), [M("Num5")])).IsNull(); // never arrives: not a clash
+        await Assert.That(KeyClashes.For(HostKeys.Terminal, free, [free])).IsNull();
+        await Assert.That(KeyClashes.For(HostKeys.Terminal, M("Num5"), [M("Num5")])).IsNull(); // never arrives: not a clash
     }
 
     [Test]
@@ -147,7 +147,7 @@ public class KeyClashesTests
         foreach (var chord in new[] { "Ctrl+C", "Ctrl+Left", "Alt+Shift+Up", "Shift+Up", "Alt+Up", "Ctrl+A", "Ctrl+X" })
         {
             await Assert.That(MacroKeys.YieldedBy(chord)).IsNotNull();
-            await Assert.That(MacroKeys.Verdict(chord).Fires).IsTrue();
+            await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, chord).Fires).IsTrue();
         }
     }
 }

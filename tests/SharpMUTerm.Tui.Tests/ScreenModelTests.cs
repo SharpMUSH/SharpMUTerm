@@ -143,7 +143,7 @@ public class ScreenModelTests
     public async Task Keypad_IsOnePaneOfMacroToggles()
     {
         var macros = Sets()[0].Macros;
-        var model = KeypadScreenRenderer.Model(macros);
+        var model = KeypadScreenRenderer.Model(HostKeys.Terminal, macros);
 
         await Assert.That(model.PaneCount).IsEqualTo(1);
 
@@ -164,7 +164,7 @@ public class ScreenModelTests
     public async Task Keypad_GrowsItsButtonsOnceItKnowsWhichSetsTheBindingsLiveIn()
     {
         var sets = Sets();
-        var model = KeypadScreenRenderer.Model(sets[0].Macros, sets, selected: 0);
+        var model = KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, selected: 0);
 
         await Assert.That(model.ListSizes[0]).IsEqualTo(1);
         await Assert.That(model.Sizes[0]).IsEqualTo(2); // was 3, with the removal reachable

@@ -240,11 +240,11 @@ public class ScreenReachabilityTests
         var keypadSets = Sets();
         List<Macro> Macros() => keypadSets.SelectMany(s => s.Macros).ToList();
         var keypad = new SettingsSession(
-            selection => KeypadScreenRenderer.Model(Macros(), keypadSets, selection.SelectionIn(0)));
+            selection => KeypadScreenRenderer.Model(HostKeys.Terminal, Macros(), keypadSets, selection.SelectionIn(0)));
         yield return (
             "F4 keypad",
             keypad,
-            () => KeypadScreenRenderer.Model(Macros(), keypadSets, keypad.Selection.SelectionIn(0)),
+            () => KeypadScreenRenderer.Model(HostKeys.Terminal, Macros(), keypadSets, keypad.Selection.SelectionIn(0)),
             KeypadScreenRenderer.AddBindingLabel,
             "New Binding");
 

@@ -201,6 +201,9 @@ public static class BuiltInCommands
         // because it is there.
         Add("layout:next-tab", CommandGroup.Layout, "Focus the next tab", "⌃N");
 
+        // The window's sidebar folds from a button on it; this is the same fold from the keyboard, beside ⌃B b.
+        Add("layout:toggle-rail", CommandGroup.Layout, "Fold or unfold the connection rail", "⌃B b");
+
         Family("layout:panes", CommandIds.PanePrefix, Panes);
 
         // Layouts: the built-in Roleplay and Combat and the player's own. The name of the one in use is shown

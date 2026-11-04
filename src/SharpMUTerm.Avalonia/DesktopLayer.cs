@@ -324,14 +324,14 @@ internal sealed class DesktopLayer : Canvas
 
     /// <summary>The client builds the menu on its thread; it is opened here, under the button.</summary>
     private void OpenMenu(HeaderAction action, HeaderButton button) =>
-        action.Menu(items => Dispatcher.UIThread.Post(() =>
+        action.Menu(model => Dispatcher.UIThread.Post(() =>
         {
-            if (items.Count == 0)
+            if (model.Entries.Count == 0)
             {
                 return;
             }
 
-            var menu = NativeMenu.Build(items, PlacementMode.BottomEdgeAlignedRight, button);
+            var menu = NativeMenu.Build(model, action.Dispatch, PlacementMode.BottomEdgeAlignedRight, button);
             menu.Closed += (_, _) => _view.Focus();
             OpenedMenu = menu;
             menu.Open(button);

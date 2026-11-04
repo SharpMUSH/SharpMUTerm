@@ -281,10 +281,9 @@ internal static class MacroKeys
     /// test rather than trusted — a list of candidates that drifted from the verdicts would hand out
     /// keys that cannot be reached, which is the exact defect it exists to prevent.
     /// </summary>
-    internal static IReadOnlyList<string> Bindable { get; } = BuildBindable();
-
-    private static List<string> BuildBindable()
+    internal static IReadOnlyList<string> Bindable(HostKeys keys)
     {
+        ArgumentNullException.ThrowIfNull(keys);
         var candidates = new List<string>();
         for (var f = 1; f <= 12; f++)
         {
@@ -296,7 +295,7 @@ internal static class MacroKeys
             candidates.Add(MacroKey.Describe($"F{f}", ctrl: true));
         }
 
-        return candidates.FindAll(c => Verdict(c).Fires);
+        return candidates.FindAll(c => Verdict(keys, c).Fires);
     }
 
     /// <summary>
@@ -305,21 +304,36 @@ internal static class MacroKeys
     /// <see cref="Capture"/> filtered by <see cref="Verdict"/> so that the rows F4 draws as live are
     /// precisely the ones this returns for.
     /// </summary>
-    internal static string? Descriptor(ConsoleKeyInfo key) =>
-        Capture(key) is { } descriptor && Verdict(descriptor).Fires ? descriptor : null;
+    internal static string? Descriptor(HostKeys keys, ConsoleKeyInfo key) =>
+        Capture(key) is { } descriptor && Verdict(keys, descriptor).Fires ? descriptor : null;
 
     /// <summary>
-    /// What a stored descriptor is worth on this host. Every answer is a fact about the parser, the app's
-    /// own shortcuts, or the prompt — never a guess — and the reason is short enough to print on the
-    /// binding's own row.
+    /// What a stored descriptor is worth on the host whose keys are <paramref name="keys"/>. Every answer is a
+    /// fact about the host's input (what its terminal writes, or what its window reports), the chords the host
+    /// keeps, the app's own shortcuts, or the prompt — never a guess — and the reason is short enough to print on
+    /// the binding's own row. The terminal and the window differ: in a window ⌃digit, ⌃⇧letter and ⌥O arrive, and
+    /// ⌥⏎ never reaches the client at all.
     /// </summary>
-    internal static MacroKeyVerdict Verdict(string? descriptor)
+    internal static MacroKeyVerdict Verdict(HostKeys keys, string? descriptor)
     {
+        ArgumentNullException.ThrowIfNull(keys);
         if (!MacroKey.TryParse(descriptor, out var parts))
         {
             return Never("not a key this client knows");
         }
 
+        // The host acts on these before the client sees the key, so nothing the client holds can outrank them.
+        if (keys.ReservedFor(parts) is { } reserved)
+        {
+            return new MacroKeyVerdict(MacroKeyDelivery.Taken, $"{reserved.Chord.Glyph} {reserved.Action}");
+        }
+
+        if (keys.IsNewline(parts))
+        {
+            return new MacroKeyVerdict(MacroKeyDelivery.Taken, $"{keys.Newline.Glyph} is the newline");
+        }
+
+        var whole = keys.ReportsChordsWhole;
         var canonical = MacroKey.Describe(parts.Key, parts.Ctrl, parts.Alt, parts.Shift);
         if (Claimed.TryGetValue(canonical, out var does))
         {
@@ -336,7 +350,8 @@ internal static class MacroKeys
 
         if (parts.Ctrl && parts.Alt)
         {
-            return Never("Ctrl+Alt arrives as two keys");
+            // A window hands Ctrl+Alt to the keyboard layout as AltGr, which types a character instead.
+            return Never(whole ? "Ctrl+Alt is AltGr here: it types a character" : "Ctrl+Alt arrives as two keys");
         }
 
         if (IsFunction(parts.Key))
@@ -346,7 +361,7 @@ internal static class MacroKeys
 
         if (IsLetter(parts.Key) || IsDigit(parts.Key))
         {
-            return Chord(parts);
+            return Chord(parts, whole);
         }
 
         if (Navigation.Contains(parts.Key))
@@ -358,7 +373,7 @@ internal static class MacroKeys
             // the pane-resize chord was on it, was reported dead, and moved to Alt+Shift because of this.
             // The vertical pair is not listed: kitty_mod+up/down is scroll_line_up/down, which returns
             // "passthrough" while the alternate screen is up, so those do arrive.
-            if (parts.Ctrl && parts.Shift && !parts.Alt && parts.Key is "Left" or "Right")
+            if (!whole && parts.Ctrl && parts.Shift && !parts.Alt && parts.Key is "Left" or "Right")
             {
                 return Never("the terminal keeps ⌃⇧←/→ for its tabs");
             }
@@ -372,7 +387,8 @@ internal static class MacroKeys
         // letter, and it is here rather than in Chord() because Chord() only sees letters and digits.
         if (parts.Ctrl && ControlBytes.TryGetValue(parts.Key, out var spentOn))
         {
-            return Never($"the terminal sends {spentOn} instead");
+            // A window reports ⌃Tab as itself.
+            return whole ? new MacroKeyVerdict(MacroKeyDelivery.Fires) : Never($"the terminal sends {spentOn} instead");
         }
 
         return Never("only F-keys and Ctrl/Alt chords arrive");
@@ -387,11 +403,17 @@ internal static class MacroKeys
     /// which is why the window-jump chords are on it — <see cref="AppShortcuts"/> then reports ⌥1–⌥9 as
     /// taken through <see cref="Claimed"/>, and ⌥0 stays free for a macro.
     /// </summary>
-    private static MacroKeyVerdict Chord(MacroKeyParts parts)
+    private static MacroKeyVerdict Chord(MacroKeyParts parts, bool whole)
     {
         if (!parts.Ctrl && !parts.Alt)
         {
             return new MacroKeyVerdict(MacroKeyDelivery.Taken, "plain keys type into the prompt");
+        }
+
+        // A window reports the key and its modifiers as pressed: no control byte, no ESC prefix, no SS3.
+        if (whole)
+        {
+            return new MacroKeyVerdict(MacroKeyDelivery.Fires);
         }
 
         if (parts.Ctrl)
@@ -497,6 +519,9 @@ internal static class MacroKeys
 
         return claims;
     }
+
+    /// <summary>The descriptor name of a <see cref="ConsoleKey"/>, or null (see <see cref="Name"/>).</summary>
+    internal static string? NameOf(ConsoleKey key) => Name(key);
 
     /// <summary>
     /// The descriptor name of a <see cref="ConsoleKey"/>, or null for one a binding cannot be written

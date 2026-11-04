@@ -1,4 +1,5 @@
 using SharpConsoleUI.Parsing;
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Workspaces;
 using static SharpMUTerm.Tui.MarkupText;
@@ -19,6 +20,16 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal static class RailRenderer
 {
+    /// <summary>
+    /// The sidebar's cells, drawn from the model the window's native sidebar is drawn from: the collapsed strip
+    /// when the model says collapsed, else the full rail fitted to <paramref name="maxWidth"/>.
+    /// </summary>
+    public static List<string> Render(SidebarModel model, int maxWidth, ChromeInk? ink)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var rows = model.Rows();
+        return model.Collapsed ? RenderCollapsed(rows, ink) : Render(rows, maxWidth, ink);
+    }
 
     /// <param name="rows">The rail's rows, as <see cref="RailModel"/> projects them.</param>
     /// <param name="maxWidth">
