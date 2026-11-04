@@ -70,6 +70,51 @@ public class ChannelsAndNamesTests
         await Assert.That(printed.Count(p => p == "(OOC) Ashlyn: hello all")).IsEqualTo(1);
     }
 
+    /// <summary>
+    /// A server that prints the channel line before its GMCP message, in the same read: the line waits for the rest of
+    /// the read, so the echo is still kept out, and the lines around it keep their order.
+    /// </summary>
+    [Test]
+    public async Task MoveCatchesAnEchoPrintedBeforeItsMessageInTheSameRead()
+    {
+        var world = World();
+        world.CaptureChannels = ChannelCaptureMode.Move;
+        var (session, telnet) = Create(world);
+        var printed = new List<string>();
+        session.LinePrinted += (_, l) => printed.Add(l.Text);
+        await session.ConnectAsync();
+        printed.Clear();
+
+        telnet.EmitLine("The fountain splashes.", endRead: false);
+        telnet.EmitLine("(OOC) Ashlyn: hello all", endRead: false);
+        await Assert.That(printed).IsEmpty().Because("held until the read is done");
+
+        telnet.EmitGmcp("Comm.Channel.Text", Ooc);
+        telnet.EmitLine("A pigeon lands.", endRead: false);
+        telnet.EndRead();
+
+        await Assert.That(string.Join(" | ", printed)).IsEqualTo("The fountain splashes. | A pigeon lands.");
+    }
+
+    /// <summary>The hold is a read long: a line whose read ended with no message is shown, in order, at once.</summary>
+    [Test]
+    public async Task MoveShowsAnUnmatchedLineWhenItsReadEnds()
+    {
+        var world = World();
+        world.CaptureChannels = ChannelCaptureMode.Move;
+        var (session, telnet) = Create(world);
+        var printed = new List<string>();
+        session.LinePrinted += (_, l) => printed.Add(l.Text);
+        await session.ConnectAsync();
+        printed.Clear();
+
+        telnet.EmitLine("(OOC) Ashlyn: hello all", endRead: false);
+        telnet.EmitPrompt("> ");
+        telnet.EmitGmcp("Comm.Channel.Text", Ooc);
+
+        await Assert.That(printed.First()).IsEqualTo("(OOC) Ashlyn: hello all").Because("a prompt lets the held line go first, and a message after its read is too late");
+    }
+
     [Test]
     public async Task AChannelNameIsMadeSafeForATitle()
     {

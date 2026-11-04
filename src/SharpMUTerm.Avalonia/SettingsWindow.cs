@@ -38,6 +38,7 @@ internal sealed class SettingsWindow : Window
     private readonly DispatcherTimer _clock;
     private readonly Dictionary<string, Control> _controls = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Button> _resets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TextBlock> _notes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextBlock> _badges = new(StringComparer.Ordinal);
     private readonly List<(StatusMeter Meter, TextBlock Now)> _meterNow = [];
     private readonly List<ThemeCardView> _themeCards = [];
@@ -369,12 +370,16 @@ internal sealed class SettingsWindow : Window
 
     // ── the page ─────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>The note line under a field on the page, by field id (shown or not), for tests.</summary>
+    internal TextBlock? NoteFor(string id) => _notes.GetValueOrDefault(id);
+
     private void BuildPage()
     {
         _page.Children.Clear();
         _refreshers.Clear();
         _controls.Clear();
         _resets.Clear();
+        _notes.Clear();
         _meterNow.Clear();
         _themeCards.Clear();
         SubjectPicker = null;
@@ -610,6 +615,21 @@ internal sealed class SettingsWindow : Window
         {
             words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
         }
+
+        // The note the cell F5 draws beside the value (join wraps' recommendation), from the same sentence, in the
+        // cells' caution amber; gone once the field has been changed.
+        var note = new TextBlock { FontSize = NativeTokens.Body, Foreground = _tokens.Brush(_tokens.Notice), TextWrapping = TextWrapping.Wrap };
+        void ShowNote()
+        {
+            var text = _form.Note(field);
+            note.Text = text is null ? null : NativeKeys.Words(Capitalise(text));
+            note.IsVisible = text is not null;
+        }
+
+        ShowNote();
+        _refreshers.Add(ShowNote);
+        _notes[field.Id] = note;
+        words.Children.Add(note);
 
         grid.Children.Add(words);
 

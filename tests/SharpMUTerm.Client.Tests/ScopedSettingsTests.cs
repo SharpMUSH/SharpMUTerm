@@ -25,6 +25,36 @@ public class ScopedSettingsTests
 
     private static SettingsField Character(string id) => BuiltInSettings.Character.Fields.Single(f => f.Id == id);
 
+    /// <summary>
+    /// The note F5 draws beside <c>join wraps</c> reaches the window through the form, for the world being edited only, in
+    /// the cells' own sentence, and goes once the setting is taken.
+    /// </summary>
+    [Test]
+    public async Task AWorldNoteIsShownForItsWorldUntilTheFieldIsChanged()
+    {
+        var config = TwoWorlds();
+        var advice = WorldFieldValues.JoinWrapsAdvice(78, 60);
+        var form = new SettingsForm(BuiltInSettings.All, config, change => change(), _ => { }, "worlds", isDark: true)
+        {
+            WorldNotes = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                [WorldFieldValues.JoinWrapsFieldId] = new Dictionary<string, string> { ["Aetherfall"] = advice },
+            },
+        };
+        var join = World(WorldFieldValues.JoinWrapsFieldId);
+
+        await Assert.That(advice).IsEqualTo("recommended · wraps at 78, pane is 60");
+        await Assert.That(form.Note(join)).IsEqualTo(advice);
+        await Assert.That(form.Note(World("emoji"))).IsNull();
+
+        form.Choose(form.Subjects(SettingScope.World)[1]);
+        await Assert.That(form.Note(join)).IsNull().Because("Brightwater's pane is not ragged");
+
+        form.Choose(form.Subjects(SettingScope.World)[0]);
+        config.Worlds[0].JoinWrappedLines = true;
+        await Assert.That(form.Note(join)).IsNull().Because("a recommendation that has been taken has nothing left to say");
+    }
+
     [Test]
     public async Task TheWorldAndCharacterSectionsAreScoped()
     {

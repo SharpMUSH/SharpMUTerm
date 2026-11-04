@@ -277,7 +277,7 @@ public static partial class BuiltInSettings
             WorldChoice("emoji", "emoji", WorldFieldValues.EmojiChoices, WorldTextGroup,
                 (_, w) => WorldFieldValues.EmojiName(w.Emoji), (_, w, v) => WorldFieldValues.SetEmoji(w.Emoji, v),
                 "which emoji substitutions run on this world's text", "emoticons shortcodes"),
-            WorldChoice("join-wraps", "join wraps", WorldFieldValues.JoinWrapChoices, WorldTextGroup,
+            WorldChoice(WorldFieldValues.JoinWrapsFieldId, "join wraps", WorldFieldValues.JoinWrapChoices, WorldTextGroup,
                 (_, w) => w.JoinWrappedLines ? WorldFieldValues.JoinWrapChoices[1] : WorldFieldValues.JoinWrapChoices[0],
                 (_, w, v) => w.JoinWrappedLines = v == WorldFieldValues.JoinWrapChoices[1],
                 "join lines the server wrapped at its own width", "reflow wrap hard"),

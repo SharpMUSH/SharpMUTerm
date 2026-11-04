@@ -70,6 +70,8 @@ internal sealed class RecordingTelnetSession : ITelnetSession
 
     public event EventHandler? MsdpEnabled;
 
+    public event EventHandler? ReceiveBatchEnded;
+
     public void ReceiveGmcp(string package, string json) =>
         GmcpReceived?.Invoke(this, new GmcpMessageEventArgs(package, json));
 
@@ -128,8 +130,11 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     /// lines. It is the only way to assert on what a <em>server's</em> markup does to this client, as
     /// opposed to what a hand-built <c>StyledLine</c> does.
     /// </summary>
-    public void Receive(string text) =>
+    public void Receive(string text)
+    {
         OutputReceived?.Invoke(this, new TelnetOutputEventArgs(text, isPrompt: false));
+        ReceiveBatchEnded?.Invoke(this, EventArgs.Empty); // one call, one read
+    }
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {

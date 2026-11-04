@@ -320,6 +320,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Light theme: background tabs and one-row panels (vitals, quick bar) sit on a lighter grey, and small text on the
+  settings screens is darker, so it is as easy to read as body text.
+- Desktop window: the composer's "no dictionary" chip is a button that offers to get one; in the terminal F1 names
+  Alt+W beside it. The world settings show the same "join wraps" recommendation the terminal's F5 does.
+
 - A character is named one way everywhere: the command line's prompt, the window title and tab titles now read
   `Corvid · Aetherfall` and `Corvid · Chat` instead of `Corvid@Aetherfall` and `Corvid - Chat`.
 - Messages from packages, the map and sound name where they came from as a label ("Sound: muted.") rather than in the
@@ -371,6 +376,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   still loading.
 
 ### Fixed
+
+- F5: editing a world field low on the screen (channels, names) now scrolls the field into view instead of leaving
+  the cursor off screen.
+- F5 ▸ channels `move`: a channel message whose echo arrives just before its GMCP in the same read is no longer left
+  in the main window as well.
 
 - Desktop window: the settings window can be resized again from any edge, and opens at the size you last left it
   for the rest of the session. Notification cards disappear as soon as it opens rather than showing beside it.

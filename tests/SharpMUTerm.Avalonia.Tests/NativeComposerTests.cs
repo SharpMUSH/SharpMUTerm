@@ -131,6 +131,30 @@ public class NativeComposerTests
         await Assert.That(margin).IsTrue().Because("over the cells, clear of the native header and sidebar");
     }
 
+    /// <summary>
+    /// With no dictionary, the header's chip is the way to one: a click opens the offer ⌥W opens, and fetches nothing.
+    /// </summary>
+    [Test]
+    public async Task TheNoDictionaryChipOpensTheOffer()
+    {
+        var (text, tip, offered) = await Run(rig =>
+        {
+            var overlay = OpenF1(rig);
+            var chip = overlay.Composer.DictionaryChip(12);
+            var label = ((TextBlock)chip.Child!).Text;
+            var tooltip = ToolTip.GetTip(chip) as string;
+            var pointer = new Pointer(0, PointerType.Mouse, true);
+            var point = new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed);
+            chip.RaiseEvent(new PointerPressedEventArgs(chip, pointer, chip, default, 0, point, KeyModifiers.None));
+            Drain();
+            return (label, tooltip, rig.App.DictionaryOfferOpen);
+        });
+
+        await Assert.That(text).IsEqualTo(ComposerView.NoDictionaryChip);
+        await Assert.That(tip).Contains("Alt+W");
+        await Assert.That(offered).IsTrue();
+    }
+
     [Test]
     [Arguments("+pose waves\nand sits", false)]
     [Arguments("+bbpost 1=Title\n\nFirst, 50% [done].\n", true)]

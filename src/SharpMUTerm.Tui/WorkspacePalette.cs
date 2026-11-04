@@ -283,8 +283,18 @@ internal static class WorkspacePalette
     /// tabs. A chip states one fact relative to its own strip: the selected tab is painted the plane its
     /// page is painted on, its siblings are recessed from it. Pane focus is not a term, because it is
     /// already in the plane.
+    /// <para>
+    /// A light plane takes a shallower step (<see cref="LightRecessScale"/>), for the backdrop's reason: the dark
+    /// themes' step off a near-white pane landed unselected chips and resting strip panels on a mid-grey (L* 75) that
+    /// read as disabled. Twice the light backdrop's step (about 9 L*), so a recessed chip or strip is still a step below
+    /// the pane and a step apart from the backdrop beside it.
+    /// </para>
     /// </summary>
-    internal static Rgb Recessed(Rgb plane) => Scale(plane, BackdropScale);
+    internal static Rgb Recessed(Rgb plane) =>
+        Scale(plane, Contrast.RelativeLuminance(plane) < LightPlaneLuminance ? BackdropScale : LightRecessScale);
+
+    /// <summary>The recess as a fraction of a light plane: about L* 87 under Light's L* 96 panes.</summary>
+    private const double LightRecessScale = 0.90;
 
     /// <summary>The one-cell hairline a split draws between two panes, and beside the rail.</summary>
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);

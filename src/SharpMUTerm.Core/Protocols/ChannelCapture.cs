@@ -172,6 +172,30 @@ public sealed class ChannelCapture
         return false;
     }
 
+    /// <summary>Whether <paramref name="printed"/> is the echo of a message still waiting, without consuming it.</summary>
+    public bool Expects(string printed)
+    {
+        var text = printed.Trim();
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        var now = _clock.GetUtcNow();
+        lock (_gate)
+        {
+            foreach (var (pending, at) in _pending)
+            {
+                if (now - at <= EchoWindow && string.Equals(pending, text, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Forgets every message waiting for an echo (a new connection).</summary>
     public void Clear()
     {

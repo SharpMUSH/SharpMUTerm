@@ -38,7 +38,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>What F5 says beside <c>join wraps</c> for <paramref name="world"/>: a recommendation while it is ragged.</summary>
     internal string? JoinWrapsAdvice(WorldDefinition world) =>
         !world.JoinWrappedLines && _raggedWraps.TryGetValue(world.Name, out var ragged)
-            ? $"recommended · wraps at {ragged.Column}, pane is {ragged.PaneWidth}"
+            ? Client.Settings.WorldFieldValues.JoinWrapsAdvice(ragged.Column, ragged.PaneWidth)
             : null;
 
     /// <summary>

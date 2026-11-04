@@ -83,6 +83,17 @@ public static class WorldFieldValues
     /// <summary>The words for <see cref="WorldDefinition.JoinWrappedLines"/>.</summary>
     public static IReadOnlyList<string> JoinWrapChoices { get; } = ["off", "join"];
 
+    /// <summary>The id of the declared <c>join wraps</c> field, which a note is attached to.</summary>
+    public const string JoinWrapsFieldId = "join-wraps";
+
+    /// <summary>
+    /// What F5 says beside <c>join wraps</c> while a world's pane is narrower than its server wraps — one sentence for the
+    /// cell screen and the window's settings alike.
+    /// </summary>
+    public static string JoinWrapsAdvice(int column, int paneWidth) =>
+        $"recommended · wraps at {column.ToString(System.Globalization.CultureInfo.InvariantCulture)}, "
+        + $"pane is {paneWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
     /// <summary>The words for <see cref="WorldDefinition.AutoReconnect"/>.</summary>
     public static IReadOnlyList<string> ReconnectChoices { get; } = ["off", "after a drop"];
 

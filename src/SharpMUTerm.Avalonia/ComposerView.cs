@@ -354,7 +354,9 @@ internal sealed class ComposerView : Border
                 model.Escaping == ComposeEscaping.Literal ? Accent : _text, ui - 1.5));
             if (_fullScreen || model.Armed)
             {
-                _chips.Children.Add(Chip(model.Dictionary ?? "no dictionary", model.Dictionary is null ? Dim : _text, ui - 1.5));
+                _chips.Children.Add(model.Dictionary is { } dictionary
+                    ? Chip(dictionary, _text, ui - 1.5)
+                    : DictionaryChip(ui - 1.5));
             }
         }
 
@@ -406,6 +408,37 @@ internal sealed class ComposerView : Border
         VerticalAlignment = VerticalAlignment.Center,
         Child = new TextBlock { Text = words, FontSize = Math.Max(9, size), Foreground = new SolidColorBrush(ink) },
     };
+
+    /// <summary>What the header's dictionary chip says while no dictionary marks the post.</summary>
+    internal const string NoDictionaryChip = "no dictionary · get one";
+
+    /// <summary>
+    /// The header's chip while no dictionary marks the post: a button for the offer ⌥W opens
+    /// (<see cref="ComposerSession.GetDictionary"/>), so the state names its own way out. Where the session cannot offer
+    /// one (the docked panel, a MOO edit) it is the plain dim chip it always was. Internal for tests.
+    /// </summary>
+    internal Border DictionaryChip(double size)
+    {
+        if (_session is not { CanGetDictionary: true })
+        {
+            return Chip("no dictionary", Dim, size);
+        }
+
+        var chip = Chip(NoDictionaryChip, Accent, size);
+        chip.Name = "GetDictionary";
+        chip.Cursor = new Cursor(StandardCursorType.Hand);
+        ToolTip.SetTip(chip, "Get a spelling dictionary (Alt+W)");
+        AutomationProperties.SetName(chip, "Get a spelling dictionary");
+        chip.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed)
+            {
+                e.Handled = true;
+                _session?.GetDictionary();
+            }
+        };
+        return chip;
+    }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {

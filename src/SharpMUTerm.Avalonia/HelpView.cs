@@ -228,7 +228,7 @@ internal sealed class HelpView : DockPanel, IModalView
         {
             _list.Children.Add(new TextBlock
             {
-                Text = NativeKeys.Words(HelpModel.NoMatches).Replace("⌫", "Backspace", StringComparison.Ordinal),
+                Text = NativeKeys.Words(HelpModel.NoMatches),
                 Foreground = _colours.Brush(_colours.Dim),
                 Margin = new Thickness(12, 10),
                 TextWrapping = TextWrapping.Wrap,

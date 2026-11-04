@@ -340,6 +340,8 @@ public sealed class WorldSession : IAsyncDisposable
             {
                 ProcessOutputLine(tail);
             }
+
+            ReleaseEchoHeld();
         }
 
         _parser = NewParser(format);
@@ -607,6 +609,9 @@ public sealed class WorldSession : IAsyncDisposable
         _reflowRelease?.Dispose();
         _wrapJoiner = new ServerWrapJoiner();
         _serverWrapColumn = 0;
+        _echoRelease?.Dispose();
+        _echoRelease = null;
+        _echoHeld.Clear();
 
         // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
         _emoji = NewEmoji(World.Emoji);
@@ -661,6 +666,13 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.MxpEnabled += OnMxpEnabled;
         _mspActive = false;
         telnet.MspChanged += (_, active) => _mspActive = active;
+        telnet.ReceiveBatchEnded += (_, _) =>
+        {
+            lock (_ingestGate)
+            {
+                ReleaseEchoHeld();
+            }
+        };
         telnet.PuebloEnabled += OnPuebloEnabled;
         McpStatus = null;
         GamePresence = null;
@@ -916,7 +928,13 @@ public sealed class WorldSession : IAsyncDisposable
 
         if (World.CaptureChannels == ChannelCaptureMode.Move)
         {
-            _channels.ExpectEcho(message.Lines);
+            // Lines held since the read began may be this message's echo, printed just before it: they are let go
+            // now, against the message, in the order they arrived.
+            lock (_ingestGate)
+            {
+                _channels.ExpectEcho(message.Lines);
+                ReleaseEchoHeld();
+            }
         }
 
         foreach (var line in message.Lines)
@@ -927,7 +945,73 @@ public sealed class WorldSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Lines waiting, under <see cref="ChannelCaptureMode.Move"/>, for the rest of the read they arrived in: a server
+    /// that prints a channel line before the GMCP message for it, in the same write, still has its echo kept out of the
+    /// main window. Released in order at the end of the read (<see cref="ITelnetSession.ReceiveBatchEnded"/>), when a
+    /// channel message arrives, before a prompt or any other line not held, on a parser swap and on a disconnect, and
+    /// after <see cref="EchoHold"/> at the latest. Touched only under <see cref="_ingestGate"/>.
+    /// </summary>
+    private readonly List<StyledLine> _echoHeld = [];
+
+    /// <summary>The pending release of <see cref="_echoHeld"/>, or null when nothing is held.</summary>
+    private IDisposable? _echoRelease;
+
+    /// <summary>
+    /// The longest a line waits for its read's GMCP under <c>move</c> when the session says nothing of where a read
+    /// ends: the cap, not the usual wait, since a real connection lets the lines go as soon as the read is done.
+    /// </summary>
+    public TimeSpan EchoHold { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// A completed line on its way to the engines and the windows. Under <c>move</c> an ordinary line that is not
+    /// already a waiting message's echo is held to the end of its read (<see cref="_echoHeld"/>); anything else lets
+    /// whatever is held go first, so nothing is ever shown out of order. Call under <see cref="_ingestGate"/>.
+    /// </summary>
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
+    {
+        if (isPrompt || World.CaptureChannels != ChannelCaptureMode.Move)
+        {
+            ReleaseEchoHeld();
+            ProcessOutputLineNow(line, isPrompt);
+            return;
+        }
+
+        if (_echoHeld.Count == 0 && _channels.Expects(line.Text))
+        {
+            ProcessOutputLineNow(line);
+            return;
+        }
+
+        _echoHeld.Add(line);
+        _echoRelease ??= Scheduler.After(EchoHold, () =>
+        {
+            lock (_ingestGate)
+            {
+                ReleaseEchoHeld();
+            }
+        }, "echo-hold");
+    }
+
+    /// <summary>Lets every held line go, in order. Call under <see cref="_ingestGate"/>.</summary>
+    private void ReleaseEchoHeld()
+    {
+        _echoRelease?.Dispose();
+        _echoRelease = null;
+        if (_echoHeld.Count == 0)
+        {
+            return;
+        }
+
+        var held = _echoHeld.ToArray();
+        _echoHeld.Clear();
+        foreach (var line in held)
+        {
+            ProcessOutputLineNow(line);
+        }
+    }
+
+    private void ProcessOutputLineNow(StyledLine line, bool isPrompt = false)
     {
         // An MSP trigger is the server asking for a sound, and is taken out before anything else sees the
         // line — but only on a connection that agreed MSP. Anywhere else it is text a player can type.
@@ -1458,6 +1542,7 @@ public sealed class WorldSession : IAsyncDisposable
         lock (_ingestGate)
         {
             ReleaseHeldLine();
+            ReleaseEchoHeld();
         }
 
         CancelGmcpLogin();

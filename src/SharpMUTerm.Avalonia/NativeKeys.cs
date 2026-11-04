@@ -14,17 +14,46 @@ namespace SharpMUTerm.Avalonia;
 /// </summary>
 internal static class NativeKeys
 {
-    /// <summary>The key glyphs the window never shows: the three modifiers and the Enter key.</summary>
-    internal static readonly char[] Glyphs = ['⌃', '⌥', '⇧', '⏎'];
+    /// <summary>
+    /// The key glyphs the window never shows: the three modifiers, and every named key the client spells with a glyph
+    /// (Enter, Tab, Backspace, Delete, Escape, Page Up/Down). The arrows stay arrows: a desktop application labels them
+    /// that way too.
+    /// </summary>
+    internal static readonly char[] Glyphs = ['⌃', '⌥', '⇧', '⏎', '⇥', '↹', '⇤', '⌫', '⌦', '⎋', '⇞', '⇟'];
+
+    /// <summary>Each named key's glyph and its word, applied after the modifiers (so <c>⇧⇥</c> reads <c>Shift+Tab</c>).</summary>
+    private static readonly (string Glyph, string Word)[] Named =
+    [
+        ("⏎", "Enter"),
+        ("⇤", "Shift+Tab"),
+        ("⇥", "Tab"),
+        ("↹", "Tab"),
+        ("⌫", "Backspace"),
+        ("⌦", "Delete"),
+        ("⎋", "Esc"),
+        ("⇞", "PgUp"),
+        ("⇟", "PgDn"),
+    ];
 
     /// <summary>
     /// <paramref name="text"/> with every key glyph spelt as a word — <c>⌃⏎</c> is <c>Ctrl+Enter</c>, as the modal footers
     /// and the window's own chords (<c>HostChord</c>'s words) say it; null is empty.
     /// </summary>
-    public static string Words(string? text) =>
-        string.IsNullOrEmpty(text) || text.IndexOfAny(Glyphs) < 0
-            ? text ?? string.Empty
-            : KeyGlyphs.Words(text).Replace("⏎", "Enter", StringComparison.Ordinal);
+    public static string Words(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOfAny(Glyphs) < 0)
+        {
+            return text ?? string.Empty;
+        }
+
+        var words = KeyGlyphs.Words(text);
+        foreach (var (glyph, word) in Named)
+        {
+            words = words.Replace(glyph, word, StringComparison.Ordinal);
+        }
+
+        return words;
+    }
 
     /// <summary>Whether <paramref name="text"/> still holds a modifier glyph.</summary>
     public static bool HasGlyph(string? text) => text is not null && text.IndexOfAny(Glyphs) >= 0;

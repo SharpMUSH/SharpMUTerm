@@ -259,6 +259,11 @@ public class NativeKeySpellingTests
         await Assert.That(NativeKeys.Words("F4 edits keys")).IsEqualTo("F4 edits keys");
         await Assert.That(NativeKeys.Words("⌃⏎ newline · ⏎ goes")).IsEqualTo("Ctrl+Enter newline · Enter goes");
         await Assert.That(NativeKeys.Words(null)).IsEqualTo(string.Empty);
+        await Assert.That(NativeKeys.Words("⇥ next field · ⇧⇥ back · ↹ · ⇤")).IsEqualTo("Tab next field · Shift+Tab back · Tab · Shift+Tab");
+        await Assert.That(NativeKeys.Words("⌫ widens · ⌦ removes · ⎋ · ⇞/⇟ pages")).IsEqualTo("Backspace widens · Delete removes · Esc · PgUp/PgDn pages");
+        await Assert.That(NativeKeys.Words("↑↓ move · ← →")).IsEqualTo("↑↓ move · ← →").Because("a desktop application labels the arrows as arrows");
+        await Assert.That(NativeKeys.HasGlyph("⌫ widens the query")).IsTrue();
+        await Assert.That(NativeKeys.HasGlyph("⇥")).IsTrue();
     }
 
     private static string RepositoryRoot()

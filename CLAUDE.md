@@ -824,7 +824,9 @@ fallbacks) for inline images/maps.
     `Func<SpellChecker?>` that is null by default, so a test and a snapshot read none and their header says
     `no dictionary`. A MOO edit is not checked (its buffer is code as often as prose). `%`-codes, a word
     before `(`, and any word with a digit or an inner capital are skipped. ⌥W appends to
-    `dictionaries/user-words.txt`. **A command token is skipped** (one starting `+ @ & /`, up to its first `=`), and so
+    `dictionaries/user-words.txt`. With no dictionary F1's header reads `no dictionary · ⌥W gets one` (the docked panel
+    says only `no dictionary`), and the window's chip is a button (`ComposerView.DictionaryChip`) that opens the same
+    offer through `ComposerSession.GetDictionary`. **A command token is skipped** (one starting `+ @ & /`, up to its first `=`), and so
     is **every name the client knows** (`SpellChecker.KnowNames`: configured worlds and characters, each session's
     `CompletionIndex.Names()`), refreshed each time F1 opens and held for the run, never written to disk.
   - **With no dictionary, ⌥W offers to download one** (`DictionaryDownload`, Core; `DictionaryOfferModel`, Client;
@@ -964,14 +966,18 @@ fallbacks) for inline images/maps.
   - **The audit that found most of this is a test** (`FrameContrastTests`): every emitted SGR pair over
     24 views × 3 themes. Reading the source found four of the offenders; the paint found nine. It exempts
     the powerline wedges and box-drawing rules (fill boundaries and dividers), the solid blocks (a swatch
-    is a colour sample shown as the *pane* will paint it), and the framework's `[dim]`. **The half blocks
+    is a colour sample shown as the *pane* will paint it), and nothing else. **The half blocks
     are not exempt** — `▌` is the trigger left-rule and the focus marker, and one of them was a real
     defect this caught.
-  - **One thing is outside the floor's reach and is named rather than hidden.** SharpConsoleUI resolves
-    `[dim]` to a fixed `#808080` through no option we hold: 4.01:1 on Dark, **2.52:1** on Solarized Dark's
-    focused pane. Reaching it means giving up `[dim]` across every renderer for an explicit floor-checked
-    grey — a sweep, for a near miss on one theme. The exemption is a named predicate with the number in
-    it, so whoever does that sweep can delete it and watch the test pass.
+  - **The framework's `[dim]` is no longer exempt.** It is faint on the inherited ink, or a fixed `#808080`
+    with none; it once measured 2.52:1 on Solarized Dark's focused pane. The panes have since deepened, the
+    status row swaps it (`StatusInk`), and a light settings screen rewrites a bare `[dim]` to a held grey
+    (`ScreenTheme.Tag`, light planes only, so Dark and Solarized frames are unchanged), so every `[dim]` cell in
+    every view clears the floor. A new one that does not fails like any other ink. The workspace's own `[dim]`s
+    (rail, popups) were not swept, because they did not need to be.
+  - **Small text on a light settings screen is held to 4.5:1** (`ScreenTheme.FloorOn`, `LightTextFloor`); 3:1
+    stays the floor on dark planes. Light's L*-mirrored greys left labels at about 3.2:1, which read as disabled.
+    `ScreenThemeTests.ALightSettingsScreensTextClearsBodyTextContrast` walks the frames.
 - **The settings screens follow the theme, and the renderers do not know it** (`ScreenTheme`, Tui; defect
   D6). `ScreenPalette`'s constants are *roles* spelt as the Dark theme's values; renderers keep writing
   `[{Label}]…` in them, and the views resolve the markup and every control colour through one immutable
@@ -1117,8 +1123,10 @@ fallbacks) for inline images/maps.
     control's own background is what its content inherits, so it cannot be set there). A tab, its `×` and the
     `│` between tabs stay the framework's, and `PaneDragSurface.IsDragHandle` keeps the run from starting a
     window drag. There is no row either side of a fixed strip panel; it sits flush, and an *unfocused* strip is
-    recessed the backdrop's step (`SurfaceToneIn`), so it is never the same plane as an unfocused pane (2.8 L*
-    on Dark, 3.7 Solarized Dark, 21 Light — the pane-over-backdrop step). Side by side, nothing changed. The
+    recessed (`SurfaceToneIn`), so it is never the same plane as an unfocused pane. `WorkspacePalette.Recessed`
+    is the backdrop's step on a dark plane and a shallower 0.90 on a light one (`LightRecessScale`, about L* 87
+    under Light's L* 96 panes, twice the light backdrop's step), so Light's background chips and strips are not
+    the deep grey a dark theme's step gives. Side by side, nothing changed. The
     freed row went to the panes, which is the point and a NAWS change; `StackedDividerTests` and the
     `split-stacked` view are the pins.
   - **The menu is the ⌃P catalog's own entries** (`AddCommands`), so it cannot offer an action the keyboard
@@ -1841,7 +1849,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     maximum path); `now` reads `SendTarget()`'s game data (never `_active`'s); Delete on a meter row is a hidden
     trailing Remove button added only while the cursor is on one; the received-data box shows only while the
     cursor is in the table; path fields offer the received paths with their values as `ChoiceNotes`.
-  - F7 and F8 are windowed to the screen height (`ScreenChrome.Window`), because F7 is taller than 24 rows.
+  - F7 and F8 are windowed to the screen height (`ScreenChrome.Window`), because F7 is taller than 24 rows. F5 too:
+    the window centres on the *caret* (an open edit or a key capture) before the cursor band, because on F5 the band
+    stays on the WORLDS row while a world field is typed in (`WorldFieldScrollTests`, 120×32 and 80×24;
+    `--view settings-edit` edits the deepest field).
   - **F5's world fields and F9's character fields are declared, with scoped bindings** (`BuiltInSettings.World`
     and `.Character`; `SettingScope`, `SettingTarget`, `SettingBinding<T>.ForWorld`/`ForCharacter`;
     `WorldFieldValues`, `TextRules`; Tui `DeclaredFields`). A binding reads a `SettingTarget` (the configuration
@@ -1933,7 +1944,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     thread). A write captures the subject at the moment it is made. `Open the F5 screen ↗` (`OpenScreen`) is the way
     to the lists, and opens the *cell* screen: `OpenSectionScreen` calls `GoToSetting(…, native: false)`, or the door
     would reopen this window. With no world there are no fields, only a sentence and the door. A text the rule
-    refuses is put back with the reason as a tooltip.
+    refuses is put back with the reason as a tooltip. A field may carry a per-world note the cell row shows
+    (`SettingsForm.WorldNotes`, by field id then world, built on the client's thread; `Note` shows it only while the
+    field is at its default): `join wraps` carries `recommended · wraps at 78, pane is 60`, one string from
+    `WorldFieldValues.JoinWrapsAdvice` for both hosts.
   - **Search is `SettingsSearch.Find` and nothing else**, so the two surfaces always find the same fields. While
     searching, the page shows only matched fields, and if the section on show has none it moves to the first that
     has some.
@@ -2115,7 +2129,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     move), the tokens' card and edge, and a scrim over the main window (`SettingsPresenter.Scrim`; a press on it
     closes). Opened from the trigger builder (`SettingsForm.BesideOutput`) it is docked to the main window's right
     half with no scrim, so the line the rule came from stays in view. Still a separate OS window, not an overlay.
-- **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus `⏎` → `Enter`):
+- **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
+  `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them
   well; whatever it hands a native view — menu keys, a toast's chip and text, palette details and chips, the
   composer's key row, modal footers and sentences, settings help, tooltips — goes through `Words` on the way to the
@@ -3058,8 +3073,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
 - **GMCP channels go to a window per channel through `SpawnLine`** (`ChannelCapture`, Core;
   `WorldDefinition.CaptureChannels`, F5 ▸ `channels`: off/copy/move, off by default). `Comm.Channel.Text`'s `channel`
   names the window (letters, digits, space, `-`, `_`, 24 at most); its `text` is parsed through `AnsiParser`. `move`
-  gags the main-window echo by exact text, only when it arrives within 3 s of the GMCP (32 pending at most), so an echo
-  that arrives *before* the GMCP is not taken out.
+  gags the main-window echo by exact text, only when it arrives within 3 s of the GMCP (32 pending at most). An echo
+  that arrives *before* its GMCP is caught when both are in one socket read: in `move` a line no pending GMCP expects
+  is held (`WorldSession.EchoHold`, ≤250 ms, under `_ingestGate`) until the read ends (`ITelnetSession.ReceiveBatchEnded`,
+  raised after each `InterpretByteArrayAsync`), a channel message, a prompt, a parser swap or a disconnect, then
+  released in order, so nothing is reordered. A GMCP in a *later* read than its echo still leaves the copy in main.
 - **Highlighted names are an ingest-time restyle** (`NameHighlights`, Core; `WorldDefinition.HighlightNames`, F5 ▸
   `names`, `TextRule.NameHighlights`). `Name=colour` from `HighlightColours`, gold by default, 64 names; one whole-word,
   case-insensitive regex with a 50 ms timeout, applied before emoji and links and to captured channel lines. Only the

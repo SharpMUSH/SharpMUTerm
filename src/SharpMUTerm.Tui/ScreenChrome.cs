@@ -279,7 +279,15 @@ internal static class ScreenChrome
             return block;
         }
 
-        var focused = block.FindIndex(l => l.Contains(CursorMark, StringComparison.Ordinal));
+        // An open edit is where the keyboard is, so its caret wins over a cursor band: on F5 the band
+        // stays on the WORLDS row while a world field is typed in the column beside it, and windowing
+        // that column by the band alone left a field below the fold being edited where nobody could see.
+        var focused = block.FindIndex(l => l.Contains(CaretMark, StringComparison.Ordinal));
+        if (focused < 0)
+        {
+            focused = block.FindIndex(l => l.Contains(CursorMark, StringComparison.Ordinal));
+        }
+
         var start = focused < 0
             ? 0
             : Math.Clamp(focused - (height / 2), 0, block.Count - height);
