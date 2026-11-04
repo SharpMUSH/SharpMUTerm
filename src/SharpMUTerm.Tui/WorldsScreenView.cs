@@ -22,6 +22,7 @@ internal static class WorldsScreenView
         int selectedWorld,
         int selectedCharacter,
         int width,
+        ScreenTheme scheme,
         ScreenFocus? focus = null,
         string fkey = WorldsScreenRenderer.FKey,
         int selectedSet = 0,
@@ -39,10 +40,10 @@ internal static class WorldsScreenView
         var model = WorldsScreenRenderer.Model(
             worlds, triggerSets, selectedWorld, selectedCharacter, selectedSet, info ? _ => { } : null);
         var header = ScreenChrome.Band(
-            WorldsScreenRenderer.HeaderLine(width, model, focus, fkey), ScreenPalette.HeaderBg);
+            WorldsScreenRenderer.HeaderLine(width, model, focus, fkey), ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
             WorldsScreenRenderer.FooterLine(worlds, selectedWorld, selectedCharacter, accent, width, focus),
-            ScreenPalette.FooterBg);
+            ScreenPalette.FooterBg, scheme);
 
         // How many rows the WORLDS/detail body has once the header, the character band, the gap under
         // it and the action bar have taken theirs. The detail column is built against that number, so a
@@ -62,17 +63,17 @@ internal static class WorldsScreenView
         var rows = height <= 0 ? 0 : Math.Max(1, height - 1 - band);
 
         // Body: WORLDS list │ detail, as two real columns.
-        var worldsCol = ScreenChrome.Stretch(new MarkupControl(
-            WorldsScreenRenderer.WorldsColumn(worlds, selectedWorld, focus, rows, info).ToList()));
-        var detailCol = ScreenChrome.Stretch(new MarkupControl(
+        var worldsCol = ScreenChrome.Stretch(ScreenChrome.Panel(
+            WorldsScreenRenderer.WorldsColumn(worlds, selectedWorld, focus, rows, info), scheme));
+        var detailCol = ScreenChrome.Stretch(ScreenChrome.Panel(
             WorldsScreenRenderer
-                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows)
-                .ToList()));
+                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows),
+            scheme));
         var body = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Width(30).Add(worldsCol))
-            .Column(c => c.Width(1).Add(ScreenChrome.VerticalRule()))
+            .Column(c => c.Width(1).Add(ScreenChrome.VerticalRule(scheme)))
             .Column(c => c.Width(1).Add(ScreenChrome.Filler()))
             .Column(c => c.Flex(1).Add(detailCol))
             .Build();
@@ -94,11 +95,10 @@ internal static class WorldsScreenView
             // block sits on the right while its checkboxes stay left-aligned (an Auto column hugs it, not
             // per-row right-justify, which would ragged the left edge). The edit grid's own background
             // gives the full-width elevated band behind both.
-            var formPanel = new MarkupControl(ScreenChrome.Indent(form))
-            {
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-            var trigPanel = new MarkupControl(triggers) { HorizontalAlignment = HorizontalAlignment.Left };
+            var formPanel = ScreenChrome.Panel(ScreenChrome.Indent(form), scheme, ScreenPalette.EditBg);
+            formPanel.HorizontalAlignment = HorizontalAlignment.Left;
+            var trigPanel = ScreenChrome.Panel(triggers, scheme, ScreenPalette.EditBg);
+            trigPanel.HorizontalAlignment = HorizontalAlignment.Left;
             var edit = Controls.HorizontalGrid()
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .WithVerticalAlignment(VerticalAlignment.Fill)
@@ -107,7 +107,7 @@ internal static class WorldsScreenView
                 .Column(c => c.Add(trigPanel))
                 .Column(c => c.Width(2).Add(ScreenChrome.Filler()))
                 .Build();
-            edit.BackgroundColor = new Color(ScreenPalette.EditBg);
+            edit.BackgroundColor = scheme.Colour(ScreenPalette.EditBg);
 
             // A one-row panel-background gap sits between the editing pane and the footer so the footer
             // reads as a separate bar, not the last row of the character setup section.

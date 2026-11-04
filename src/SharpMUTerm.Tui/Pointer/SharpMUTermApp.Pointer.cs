@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Core.Commands;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Workspaces;
 
@@ -266,6 +267,13 @@ internal sealed partial class SharpMUTermApp
             tooltip = hit.Span.Text.Trim();
         }
 
+        var owner = target.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal)
+            ? target[CommandIds.CharacterPrefix.Length..]
+            : target.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal)
+                ? _workspace.FindWindow(target[CommandIds.WindowPrefix.Length..])?.SessionKey
+                : null;
+        tooltip += TintLine(owner);
+
         return new PointerTarget(PointerKind.RailRow, row, PointerShape.Hand, tooltip, "rail:" + target);
     }
 
@@ -332,8 +340,20 @@ internal sealed partial class SharpMUTermApp
         var title = Snippet(WindowTitle(windowId));
         var unread = window is { Unread: > 0 } ? $" · {window.Unread} unread" : string.Empty;
         var actions = closable ? "click to show it · drag it onto another pane · × closes it" : "click to show it · drag it onto another pane";
-        return $"{title}{unread}\n{actions}";
+        return $"{title}{unread}\n{actions}{TintLine(window?.SessionKey)}";
     }
+
+    /// <summary>
+    /// The pane colour a character chose, <em>by name</em>, as a line for a tooltip — the cue that does not
+    /// depend on telling hues apart. Ten tints at one luminance cannot all be told apart by a reader with a
+    /// colour-vision deficiency (see <see cref="WorkspacePalette.Tint"/>), and the rail and the tab strip may
+    /// not spend a cell on saying it (the NAWS rule), so the name goes where it costs none. Empty for a
+    /// window nobody owns and for a character with no tint.
+    /// </summary>
+    private string TintLine(string? sessionKey) =>
+        TintOf(sessionKey) is var tint && tint != PaneTint.None
+            ? $"\npane colour: {tint.ToString().ToLowerInvariant()}"
+            : string.Empty;
 
     /// <summary>
     /// What clicking a pane's link does, said before it is done. For a link a server wrote, that is the

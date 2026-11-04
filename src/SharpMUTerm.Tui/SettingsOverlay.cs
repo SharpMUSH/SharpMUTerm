@@ -54,11 +54,18 @@ internal sealed class SettingsOverlay
     /// <see cref="ScreenEdits"/> writes the configuration out as it accepts one, so there is no moment on
     /// the way out at which the host would have anything left to save. See <see cref="ScreenEdits"/>.
     /// </summary>
-    public SettingsOverlay(ConsoleWindowSystem system)
+    public SettingsOverlay(ConsoleWindowSystem system, ScreenTheme? scheme = null)
     {
         _system = system;
-        _review = new EditReviewOverlay(system);
+        Scheme = scheme ?? ScreenTheme.Dark;
+        _review = new EditReviewOverlay(system, Scheme);
     }
+
+    /// <summary>
+    /// The palette the screens are painted in — the app's theme, resolved once. The window's own
+    /// backdrop is painted from it here; each screen's view paints its panels from the same instance.
+    /// </summary>
+    internal ScreenTheme Scheme { get; }
 
     /// <summary>The F-key of the currently open screen, or null when closed.</summary>
     public ConsoleKey? OpenKey => _window is null ? null : _openKey;
@@ -149,7 +156,7 @@ internal sealed class SettingsOverlay
             .AsModal()
             .Maximized()
             .Frameless()
-            .WithColors(new Color(PanelFg), new Color(PanelBg))
+            .WithColors(Scheme.Colour(PanelFg), Scheme.Colour(PanelBg))
             .AddControl(binding.Control())
             .OnClosed((_, _) => Reset())
             .Build();

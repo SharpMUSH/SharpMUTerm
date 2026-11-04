@@ -55,6 +55,12 @@ public class FrameContrastTests
         // The package surfaces are a modal of their own, with a warning ink on the review.
         "packages", "package-review", "package-browse", "send-menu",
 
+        // The settings screens follow the theme (ScreenTheme), so each kind of screen is walked on all
+        // three: a list-and-editor screen, an options card, a field mid-edit with its caret and its
+        // candidate list, a password, and the deletion review that follows a screen out.
+        "aliases", "timers", "textansi", "input", "set", "password", "deletions", "route", "triggers-edit",
+        "keypad-edit", "worlds-edit", "mssp-none", "compose-literal",
+
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band
         // instead of the reading plane. A band nothing renders in a test is a band nobody checks.
@@ -78,8 +84,8 @@ public class FrameContrastTests
         // FrameGrid's own remarks warn about ("quietly green on a frame it has misread"), and it is
         // precisely what a floor assertion cannot notice, so it is asserted separately.
         //
-        // Counted in *cells* rather than in distinct pairs: a settings screen is painted from the fixed
-        // ScreenPalette and is legitimately down to four colour pairs (F1's composer), while the
+        // Counted in *cells* rather than in distinct pairs: a settings screen is painted from the theme's
+        // ScreenTheme and is legitimately down to four colour pairs (F1's composer), while the
         // thinnest real frame here still paints 201 glyphs. A pair-count floor would be policing how
         // colourful a view is, which is not what this is for.
         var painted = pairs.Values.Sum();

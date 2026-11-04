@@ -23,17 +23,17 @@ internal static class OptionsScreenView
     private const int CardInset = 4;
 
     public static IWindowControl Build(
-        OptionsScreenRenderer.OptionsScreen screen, int width, ScreenFocus? focus = null)
+        OptionsScreenRenderer.OptionsScreen screen, int width, ScreenTheme scheme, ScreenFocus? focus = null)
     {
         var header = ScreenChrome.Band(
             OptionsScreenRenderer.HeaderLine(
                 screen.Title, screen.FKey, width, OptionsScreenRenderer.Model(screen), focus),
-            ScreenPalette.HeaderBg);
+            ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            OptionsScreenRenderer.FooterLine(screen.Rows, width, focus), ScreenPalette.FooterBg);
+            OptionsScreenRenderer.FooterLine(screen.Rows, width, focus), ScreenPalette.FooterBg, scheme);
 
         var rows = OptionsScreenRenderer.BodyColumn(screen.Rows, focus, Math.Max(0, width - CardInset));
-        var card = Card(rows);
+        var card = Card(rows, scheme);
 
         // Header on the first row, footer on the last, the card hugging its content directly beneath the
         // header and the remaining space left as backdrop — so the action bar sits at the bottom of the
@@ -57,15 +57,16 @@ internal static class OptionsScreenView
     /// cells its lines cover, so the card is a grid — a grid's background covers its whole arranged
     /// area, giving the band its full width and the padding rows their colour.
     /// </summary>
-    private static IWindowControl Card(IReadOnlyList<string> rows)
+    private static IWindowControl Card(IReadOnlyList<string> rows, ScreenTheme scheme)
     {
-        var list = new MarkupControl(Pad(rows)) { HorizontalAlignment = HorizontalAlignment.Stretch };
+        var list = ScreenChrome.Panel(Pad(rows), scheme, ScreenPalette.EditBg);
+        list.HorizontalAlignment = HorizontalAlignment.Stretch;
         var card = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Flex(1).Add(list))
             .Build();
-        card.BackgroundColor = new Color(ScreenPalette.EditBg);
+        card.BackgroundColor = scheme.Colour(ScreenPalette.EditBg);
         return card;
     }
 

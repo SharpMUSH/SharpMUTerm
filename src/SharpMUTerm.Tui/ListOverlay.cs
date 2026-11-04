@@ -19,9 +19,12 @@ internal sealed class ListOverlay
     private Func<int, List<string>>? _render;
     private Func<ConsoleKeyInfo, bool>? _key;
 
-    public ListOverlay(ConsoleWindowSystem system)
+    private readonly ScreenTheme _scheme;
+
+    public ListOverlay(ConsoleWindowSystem system, ScreenTheme? scheme = null)
     {
         _system = system;
+        _scheme = scheme ?? ScreenTheme.Dark;
     }
 
     public bool IsOpen => _window is not null;
@@ -50,7 +53,7 @@ internal sealed class ListOverlay
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
         var lines = render(outer - 4);
         var height = Math.Clamp(lines.Count + 2, 8, Math.Max(8, desktop.Height - 2));
-        _content = new MarkupControl(lines);
+        _content = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
 
         // Centered() after WithSize(), for CommandPalette's reason.
         Window? built = null;
@@ -58,7 +61,7 @@ internal sealed class ListOverlay
             .WithTitle(title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(_scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
             .WithSize(outer, height)
@@ -74,6 +77,7 @@ internal sealed class ListOverlay
             })
             .Build();
         _window = built;
+        _scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -86,7 +90,7 @@ internal sealed class ListOverlay
     {
         if (_render is not null && _content is not null)
         {
-            _content.SetContent(_render(Width()));
+            _content.SetContent(_scheme.Lines(_render(Width()), ScreenPalette.MenuBg));
             _window?.Invalidate(redrawAll: true);
         }
     }

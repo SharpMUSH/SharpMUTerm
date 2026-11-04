@@ -59,11 +59,15 @@ internal sealed class ComposeOverlay
     /// Opens the dictionary, the first time the composer is opened and never again, so a client nobody writes a
     /// post in reads no dictionary. Null, or a null answer, is a composer with no spelling, which says so.
     /// </param>
-    internal ComposeOverlay(ConsoleWindowSystem system, Func<SpellChecker?>? spelling = null)
+    /// <param name="scheme">The settings screens' palette for the app's theme; the composer is one of them.</param>
+    internal ComposeOverlay(ConsoleWindowSystem system, Func<SpellChecker?>? spelling = null, ScreenTheme? scheme = null)
     {
         _system = system;
         _openSpelling = spelling;
+        _scheme = scheme ?? ScreenTheme.Dark;
     }
+
+    private readonly ScreenTheme _scheme;
 
     /// <summary>
     /// The dictionary marking this post, or null: none was found, or this is a MOO edit, whose buffer is as often
@@ -155,12 +159,12 @@ internal sealed class ComposeOverlay
             // paints from the *focused* pair whenever it has focus, and it always has focus here, so
             // setting only the unfocused one leaves the default grey on screen for the whole session —
             // which is exactly what the first frame of this window showed.
-            BackgroundColor = new Color(ScreenPalette.EditBg),
-            FocusedBackgroundColor = new Color(ScreenPalette.EditBg),
-            ForegroundColor = new Color(ScreenPalette.Value),
-            FocusedForegroundColor = new Color(ScreenPalette.Value),
-            SelectionBackgroundColor = new Color(ScreenPalette.CursorBg),
-            SelectionForegroundColor = new Color(ScreenPalette.Value),
+            BackgroundColor = _scheme.Colour(ScreenPalette.EditBg),
+            FocusedBackgroundColor = _scheme.Colour(ScreenPalette.EditBg),
+            ForegroundColor = _scheme.Colour(ScreenPalette.Value),
+            FocusedForegroundColor = _scheme.Colour(ScreenPalette.Value),
+            SelectionBackgroundColor = _scheme.Colour(ScreenPalette.CursorBg),
+            SelectionForegroundColor = _scheme.Colour(ScreenPalette.Value),
         };
 
         if (!_spellingOpened)
@@ -171,7 +175,7 @@ internal sealed class ComposeOverlay
 
         if (Spelling is { } checker)
         {
-            _editor.SyntaxHighlighter = new SpellingHighlighter(checker);
+            _editor.SyntaxHighlighter = new SpellingHighlighter(checker, _scheme.Colour(ScreenPalette.Warn));
         }
 
         _editor.SetContent(draft);
@@ -181,7 +185,7 @@ internal sealed class ComposeOverlay
             .AsModal()
             .Maximized()
             .Frameless()
-            .WithColors(new Color(ScreenPalette.PanelFg), new Color(ScreenPalette.PanelBg))
+            .WithColors(_scheme.Colour(ScreenPalette.PanelFg), _scheme.Colour(ScreenPalette.PanelBg))
             .AddControl(HeaderBand())
             .AddControl(_editor)
             .AddControl(FooterBand())
@@ -349,14 +353,14 @@ internal sealed class ComposeOverlay
     /// </summary>
     private MarkupControl HeaderBand()
     {
-        var band = ScreenChrome.Band(Header(), ScreenPalette.HeaderBg);
+        var band = ScreenChrome.Band(Header(), ScreenPalette.HeaderBg, _scheme);
         band.StickyPosition = StickyPosition.Top;
         return band;
     }
 
     private MarkupControl FooterBand()
     {
-        var band = ScreenChrome.Band(Footer(), ScreenPalette.FooterBg);
+        var band = ScreenChrome.Band(Footer(), ScreenPalette.FooterBg, _scheme);
         band.StickyPosition = StickyPosition.Bottom;
         return band;
     }

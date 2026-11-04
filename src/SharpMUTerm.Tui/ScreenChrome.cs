@@ -701,12 +701,25 @@ internal static class ScreenChrome
         return joined.Length == 0 ? string.Empty : $"[{ScreenPalette.Label}]{joined}[/]";
     }
 
-    /// <summary>A full-width one-row band — the header or the footer.</summary>
-    internal static MarkupControl Band(string line, string bg) => new(new List<string> { line })
-    {
-        BackgroundColor = new Color(bg),
-        HorizontalAlignment = HorizontalAlignment.Stretch,
-    };
+    /// <summary>
+    /// A full-width one-row band — the header or the footer — in <paramref name="scheme"/>'s colours.
+    /// <paramref name="bg"/> is a <see cref="ScreenPalette"/> role, resolved with the line.
+    /// </summary>
+    internal static MarkupControl Band(string line, string bg, ScreenTheme scheme) =>
+        new(new List<string> { scheme.Paint(line, bg) })
+        {
+            BackgroundColor = scheme.Colour(bg),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+
+    /// <summary>
+    /// A column of a renderer's lines, resolved for <paramref name="scheme"/> and drawn on
+    /// <paramref name="plane"/> (a <see cref="ScreenPalette"/> role: the backdrop unless the column sits on
+    /// a card). The one place a screen's markup becomes a control, so it is the one place it is themed.
+    /// </summary>
+    internal static MarkupControl Panel(
+        IEnumerable<string> lines, ScreenTheme scheme, string plane = ScreenPalette.PanelBg) =>
+        new(scheme.Lines(lines, plane));
 
     /// <summary>
     /// How many rows a two-column screen's body has: everything but the header band and the action bar.
@@ -730,6 +743,7 @@ internal static class ScreenChrome
     /// <param name="leftWidth">How wide the list column runs (see <see cref="SplitWidth"/>).</param>
     /// <param name="content">How many rows the taller of the two columns holds.</param>
     /// <param name="rows">How many rows the body has to spend, or 0 when the caller has no height.</param>
+    /// <param name="scheme">The theme's palette, for the hairline.</param>
     internal static IWindowControl Split(
         MarkupControl header,
         MarkupControl footer,
@@ -737,13 +751,14 @@ internal static class ScreenChrome
         MarkupControl right,
         int leftWidth,
         int content,
-        int rows)
+        int rows,
+        ScreenTheme scheme)
     {
         var body = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Width(leftWidth).Add(left))
-            .Column(c => c.Width(1).Add(VerticalRule()))
+            .Column(c => c.Width(1).Add(VerticalRule(scheme)))
             .Column(c => c.Width(1).Add(Filler()))
             .Column(c => c.Flex(1).Add(right))
             .Build();
@@ -785,14 +800,14 @@ internal static class ScreenChrome
     /// to nothing and never paints its background, so the rule is an empty grid instead — a grid's
     /// background covers its whole arranged area, giving a full-height hairline.
     /// </summary>
-    internal static IWindowControl VerticalRule()
+    internal static IWindowControl VerticalRule(ScreenTheme scheme)
     {
         var rule = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Flex(1).Add(Filler()))
             .Build();
-        rule.BackgroundColor = new Color(ScreenPalette.Rule);
+        rule.BackgroundColor = scheme.Colour(ScreenPalette.Rule);
         return rule;
     }
 

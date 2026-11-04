@@ -26,14 +26,15 @@ internal static class KeypadScreenView
         IReadOnlyList<TriggerSet> sets,
         int selected,
         int width,
+        ScreenTheme scheme,
         ScreenFocus? focus = null,
         int height = 0)
     {
         var header = ScreenChrome.Band(
             KeypadScreenRenderer.HeaderLine(width, KeypadScreenRenderer.Model(macros, sets, selected), focus),
-            ScreenPalette.HeaderBg);
+            ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            KeypadScreenRenderer.FooterLine(macros, width, focus, selected), ScreenPalette.FooterBg);
+            KeypadScreenRenderer.FooterLine(macros, width, focus, selected), ScreenPalette.FooterBg, scheme);
 
         // While a key capture is armed the binding row swaps its key well for a prompt twice the width,
         // so the list asks for more and the diagram gives it up for as long as the prompt is up. The
@@ -50,10 +51,10 @@ internal static class KeypadScreenView
         var right = KeypadScreenRenderer.HotkeysColumn(
             macros, focus, sets, selected, width <= 0 ? numpad : width - numpad - ScreenChrome.ColumnDivider);
 
-        var numpadCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, rows)));
+        var numpadCol = ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(left, rows), scheme));
         var hotkeysCol = ScreenChrome.Stretch(
-            new MarkupControl(ScreenChrome.Indent(ScreenChrome.Window(right, rows))));
+            ScreenChrome.Panel(ScreenChrome.Indent(ScreenChrome.Window(right, rows)), scheme));
         return ScreenChrome.Split(
-            header, footer, numpadCol, hotkeysCol, numpad, Math.Max(left.Count, right.Count), rows);
+            header, footer, numpadCol, hotkeysCol, numpad, Math.Max(left.Count, right.Count), rows, scheme);
     }
 }

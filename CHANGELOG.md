@@ -106,12 +106,18 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The ten pane colours a character can be given (F5 ▸ `tint`) have been re-chosen so they stay apart for
+  players with red-green or blue-yellow colour blindness, and a little further apart for everyone else.
+  The names are unchanged, so nothing needs setting again; Ochre is now a red ochre and Ember a red. In the
+  window, pointing at a tinted character in the sidebar or at its tab names the colour.
 - An MXP picture is downloaded and decoded once per session. A room picture shown on every look used
   to be fetched again whenever the pane's width had changed, and once per look that arrived while it was
   still loading.
 
 ### Fixed
 
+- The settings screens (F1–F10), the deletion review and the package and send lists follow the Light and
+  Solarized Dark themes instead of staying dark on every theme.
 - MXP pictures draw again. Since the TelnetNegotiationCore update the client stopped answering a
   server's MXP `<SUPPORT>` and `<VERSION>` questions, so a game such as SharpMUSH decided it could not show
   `<IMAGE>` and sent the picture's address as text instead.

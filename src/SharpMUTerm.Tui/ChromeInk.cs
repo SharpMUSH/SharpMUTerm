@@ -23,9 +23,9 @@ namespace SharpMUTerm.Tui;
 /// the theme's answer, because a hex picked against one theme becomes a hole in the next.
 /// </para>
 /// <para>
-/// <see cref="ScreenPalette"/> is deliberately <em>not</em> built this way. Those colours sit on the
-/// settings screens' own fixed backdrop, which no theme moves, so measuring them against a theme plane
-/// would be measuring them against a plane they are never painted on.
+/// <see cref="ScreenPalette"/> is <em>not</em> built this way. Those colours sit on the settings screens'
+/// own backdrop, not on a pane, so they are measured against that backdrop's planes — which
+/// <see cref="ScreenTheme"/> works out per theme — rather than against a pane's.
 /// </para>
 /// </summary>
 /// <param name="Accent">
