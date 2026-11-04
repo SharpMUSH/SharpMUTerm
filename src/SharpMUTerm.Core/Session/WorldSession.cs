@@ -411,6 +411,12 @@ public sealed class WorldSession : IAsyncDisposable
     public GameDataStore GameData { get; } = new();
 
     /// <summary>
+    /// Who is in the room with this character, from GMCP <c>Room.Players</c> and its relatives (the who-here
+    /// panel). Emptied on connect, with <see cref="GameData"/>.
+    /// </summary>
+    public RoomOccupants Occupants { get; } = new();
+
+    /// <summary>
     /// This connection's map, when the client keeps one: set by the client as the session opens, read by the
     /// scripting bridge's <c>map.*</c>. Null in a session nothing maps.
     /// </summary>
@@ -599,6 +605,7 @@ public sealed class WorldSession : IAsyncDisposable
         _telnet = telnet;
         telnet.OutputReceived += OnOutputReceived;
         GameData.Clear();
+        Occupants.Clear();
         lock (_metersGate)
         {
             _mxpMeters = [];
@@ -609,6 +616,7 @@ public sealed class WorldSession : IAsyncDisposable
             // Stored before the event, so a handler reading GameData sees the message that raised it.
             GameData.SetGmcp(e.Package, e.Json);
             Completions.ObserveGmcp(e.Package, e.Json);
+            Occupants.Apply(e.Package, e.Json);
             OnGmcpLogin(e.Package, e.Json);
             if (World.DiscordPresence
                 && e.Package.StartsWith("External.Discord.", StringComparison.OrdinalIgnoreCase)

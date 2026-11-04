@@ -89,8 +89,8 @@ public class LayoutWiringTests
         await Assert.That(app.PaneIdOf(SharpMUTermApp.MapWindowId(DemoScene.ActiveSessionKey))).IsEqualTo("panel:map");
         await Assert.That(app.PaneIdOf(DemoScene.ChatWindowId)).IsEqualTo("panel:map");
         await Assert.That(app.FocusedPaneId).IsEqualTo("panel:output");
-        // Vitals and the quick bar have nothing to draw them in this build, so they take no pane.
-        await Assert.That(app.PaneIds).IsEquivalentTo(new[] { "panel:output", "panel:map" });
+        // The demo sends vitals, and the quick bar always has something to say, so both take their strips.
+        await Assert.That(app.PaneIds).IsEquivalentTo(new[] { "panel:vitals", "panel:output", "panel:map", "panel:quick-bar" });
     }
 
     [Test]
@@ -140,7 +140,7 @@ public class LayoutWiringTests
         config.Worlds[0].Layout = BuiltInLayouts.CombatId;
         app.Panels.Register(PanelIds.Vitals, _ => new MarkupControl(["vitals"]));
         var session = app.BindWorldWithoutConnecting(config.Worlds[0]);
-        await Assert.That(app.PaneIds).IsEquivalentTo(new[] { "panel:output" });
+        await Assert.That(app.PaneIds).IsEquivalentTo(new[] { "panel:output", "panel:quick-bar" });
 
         var rebuilds = app.PaneAreaRebuilds;
         for (var hp = 400; hp < 410; hp++)

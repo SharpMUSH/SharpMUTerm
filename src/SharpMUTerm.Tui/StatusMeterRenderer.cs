@@ -38,32 +38,25 @@ internal static class StatusMeterRenderer
     internal static string Render(IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, bool compact = false)
     {
         var cells = new List<string>();
-        foreach (var meter in meters)
+        foreach (var reading in Read(meters, data))
         {
-            if (StatusMeter.Read(data, meter.Value) is not { } value)
+            var label = MarkupText.Escape(reading.Label);
+            if (compact && reading.Share is { } share)
             {
-                continue;
-            }
-
-            var max = string.IsNullOrWhiteSpace(meter.Max) ? null : StatusMeter.Read(data, meter.Max);
-            var low = IsLow(value, max);
-            var label = MarkupText.Escape(meter.Label);
-            if (compact && Share(value, max) is { } share)
-            {
-                var percent = $"{Math.Clamp((int)Math.Round(share * 100), 0, 999)}%".PadLeft(ShareWidth);
-                cells.Add(low
+                var percent = Percent(share).PadLeft(ShareWidth);
+                cells.Add(reading.Low
                     ? $"[dim]{label}[/] [bold {lowInk}]{percent}[/]"
                     : $"[dim]{label}[/] [bold]{percent}[/]");
                 continue;
             }
 
-            var shown = MarkupText.Escape(StatusMeter.Fit(value, ValueWidth).PadLeft(ValueWidth));
-            var cell = low
+            var shown = MarkupText.Escape(StatusMeter.Fit(reading.Value, ValueWidth).PadLeft(ValueWidth));
+            var cell = reading.Low
                 ? $"[dim]{label}[/] [bold {lowInk}]{shown}[/]"
                 : $"[dim]{label}[/] [bold]{shown}[/]";
-            if (!string.IsNullOrWhiteSpace(meter.Max))
+            if (reading.HasMax)
             {
-                cell += $"[dim]/{MarkupText.Escape(StatusMeter.Fit(max ?? string.Empty, ValueWidth).PadRight(ValueWidth))}[/]";
+                cell += $"[dim]/{MarkupText.Escape(StatusMeter.Fit(reading.Max ?? string.Empty, ValueWidth).PadRight(ValueWidth))}[/]";
             }
 
             cells.Add(cell);
@@ -71,6 +64,41 @@ internal static class StatusMeterRenderer
 
         return string.Join("  ", cells);
     }
+
+    /// <summary>
+    /// One meter's reading, as every renderer of meters draws it: the status row and the vitals panel read the
+    /// same values through this, so the two cannot disagree about what "low" is.
+    /// </summary>
+    /// <param name="Label">The meter's label.</param>
+    /// <param name="Value">The value as the game sent it.</param>
+    /// <param name="Max">The maximum as the game sent it, or null when the game has not sent one.</param>
+    /// <param name="HasMax">Whether the meter is configured with a maximum at all, sent yet or not.</param>
+    /// <param name="Share">Value over maximum, when both are numbers and the maximum is positive.</param>
+    /// <param name="Low">Whether <see cref="Share"/> is under <see cref="LowShare"/>.</param>
+    internal readonly record struct MeterReading(string Label, string Value, string? Max, bool HasMax, double? Share, bool Low);
+
+    /// <summary>The meters that have a value, in their configured order. A meter with nothing to read is left out.</summary>
+    internal static IReadOnlyList<MeterReading> Read(IReadOnlyList<StatusMeter> meters, GameDataStore data)
+    {
+        var readings = new List<MeterReading>();
+        foreach (var meter in meters)
+        {
+            if (StatusMeter.Read(data, meter.Value) is not { } value)
+            {
+                continue;
+            }
+
+            var hasMax = !string.IsNullOrWhiteSpace(meter.Max);
+            var max = hasMax ? StatusMeter.Read(data, meter.Max) : null;
+            readings.Add(new MeterReading(meter.Label, value, max, hasMax, Share(value, max), IsLow(value, max)));
+        }
+
+        return readings;
+    }
+
+    /// <summary>A share as a whole percentage, at most four cells: <c>82%</c>, <c>100%</c>.</summary>
+    internal static string Percent(double share) =>
+        $"{Math.Clamp((int)Math.Round(share * 100), 0, 999).ToString(CultureInfo.InvariantCulture)}%";
 
     private static bool IsLow(string value, string? max) => Share(value, max) < LowShare;
 

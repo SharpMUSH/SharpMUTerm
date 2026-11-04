@@ -28,6 +28,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   name, is listed with how many matches each screen holds; ⏎ goes straight to the option on its own screen.
 - A setting you have changed from its default is marked `● changed` on Text & display (F7) and Input (F8),
   and `r` on it puts the default back.
+- Four panels a layout can place, each also on Ctrl+P: *Show who is here* (the players and creatures in your
+  room, from GMCP; click a name to put `look <name>` on the command line), *Show vitals* (your meters as bars
+  with values, a warning colour when low, and what you are fighting), *Show quick bar* (your function-key
+  macros as `F11 kick`; click one to run it) and *Dock the composer* (the F1 editor as a pane that shares F1's
+  draft: ⌃S sends, ⌥L switches escaping, F1 opens it full screen, Esc goes back to the command line).
 - Make a trigger without writing a regex: select a line of output and choose Ctrl+P ▸ *Make a trigger from
   the selection* (also on the right-click menu). Triggers (F2) opens on a new rule whose pattern is the line
   with its numbers, quoted speech and known player names turned into `*`, and shows the regex behind it.

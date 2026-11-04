@@ -121,6 +121,12 @@ public static class BuiltInCommands
         // The map. Listed unconditionally, like the game data above: a map is recorded from the first room a
         // game reports, and nothing else on screen says the client keeps one.
         Add("term:map", CommandGroup.Terminal, "Show map", detail: "this connection's map · click a room, or /walk <room>");
+        // The panels a layout places, openable one at a time as tabs: each draws the focused character's own data
+        // and says so when there is none yet, so they are listed unconditionally, like the map.
+        Add("panel:who-here", CommandGroup.Terminal, "Show who is here", detail: "players and creatures in the room · click a name to look");
+        Add("panel:vitals", CommandGroup.Terminal, "Show vitals", detail: "the F7 meters as bars, and your target");
+        Add("panel:quick-bar", CommandGroup.Terminal, "Show quick bar", detail: "this character's function-key macros · click one to run it");
+        Add("panel:composer", CommandGroup.Terminal, "Dock the composer", detail: "a pane to write posts in · ⌃S sends");
         Add("term:walk-stop", CommandGroup.Terminal, "Stop walking", detail: "ends the speedwalk", when: c => c.State.Walking);
 
         // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.

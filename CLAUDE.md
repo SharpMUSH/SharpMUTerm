@@ -954,6 +954,39 @@ fallbacks) for inline images/maps.
     now resolves differently.
   - **The suggestion is taken once per world** (`AcceptedLayoutSuggestion`), 5 s after a connect or at once when
     vitals arrive, said in one notice, and only by the live entry point.
+- **Four panels plug into that seam** (`SharpMUTermApp.Panels.cs`, `Tui/Panels/`: `WhoHereRenderer`,
+  `VitalsStripRenderer`, `QuickBarRenderer`, `DockedComposer`; Core `RoomOccupants`, `CombatTarget`; ⌃P `panel:*`;
+  the `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer` views). The first three are one `MarkupControl`
+  each, drawn from the session's stores on change and sized from `PaneOutputRects` on `PostBufferPaint`
+  (`SyncPanelSizes`), so a panel's content is a function of its own pane and moves no other cell. Decisions:
+  - **A panel's links are its own.** Each panel control has its own `LinkClicked`, the payload is an *index* into
+    what that panel last drew (`mux:who:N`, `mux:quick:N`), and the action runs on the panel's own session
+    (`context.SessionKey`), never `_active` — the map window's rule. A who-here click puts `look <name>` on the
+    command line through `PlaceGrab` and sends nothing (the name is the game's text); a quick-bar click runs
+    `WorldSession.HandleKeyAsync(descriptor)`, the path the key itself takes.
+  - **The roster is server text, bounded** (`RoomOccupants`: 200 rows, 64-character names, no whitespace or
+    control characters in a player name, so a click cannot become a second command). `Room.Players` replaces,
+    `AddPlayer`/`RemovePlayer` edit, and creatures come from `Char.Items.*` with `location: room` and an `m`
+    attribute. Cleared on connect with the game data.
+  - **The vitals strip reserves every field**, the status row's rule: value and max `StatusMeterRenderer.ValueWidth`
+    each, the low mark's cells whether shown or not, the target name padded. The level of detail (bar length,
+    word or `!` low mark, gap, target bar, then percentages) is chosen from the width alone, so it changes only
+    when the pane does. It reads F7's meters through `StatusMeterRenderer.Read`; the meter model is unchanged.
+  - **The quick bar elides, never wraps**: `+N` counts what did not fit and `F4 edits keys` goes first.
+  - **The docked composer shares F1's draft** (`_composeDrafts`, per character, in memory) and sends through
+    `ComposeMessage.Build`, so ⌃S, ⌥L and the `%r` join are F1's exactly. F1 from it opens the same buffer full
+    screen; F1's close writes the draft back into the docked copy (`SyncDockedComposers`).
+  - **Composer focus is one fact: *armed*.** Armed means the focused pane's front window is a composer and it has
+    not been released (`_composerReleased`). While armed, `PinFocusToArmedBar` pins the framework's focus to the
+    *editor* instead of the bar — so typing, paste and the caret all land there by the pin's existing rule — and
+    both command lines wear the idle band. `HandleWindowKey` hands an armed composer's keys to
+    `HandleComposerKey` (macros, resize, ⌃C/⌃X, ⌃S, ⌥L, Esc, the ⌃arrows, else the editor). **Esc releases** (the
+    bar arms and ⏎ sends from it, to the same character); the ⌃↑/⌃↓ ladder releases too; **arriving** at the
+    composer's pane (⌃O, ⌃arrows, a tab, a click in the editor — `ArmClickedComposer` on `FocusChanged`, guarded by
+    `_pinningFocus` so the pin's own focus moves never count) arms it again. `ArmBar` does **not** release: it is
+    re-asserted on every layout change, and releasing there disarmed the composer the moment its pane was built.
+    ⌥⏎ arrives as Esc then Enter, so an Enter within 50 ms of the releasing Esc re-arms and inserts a newline
+    (`TryComposerAltEnter`). `DockedComposerTests` covers each of these.
 
 ## One client, several hosts — and how they are kept the same
 
@@ -1142,7 +1175,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   tabs and half of a third and says nothing about the rest), plus the
   `layouts` (the ⌥M list over the demo, through the registered shortcut) and `layout-combat` (the Combat layout
   applied over the demo's game data and recorded streets: the map beside the output with Chat as a tab under it,
-  and no pane for the panels nothing draws yet), plus the
+  and no pane for the panels nothing draws yet), `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer`
+  (each panel in a pane of its own over the demo's game data; the composer over who-here, armed, with a draft
+  typed through its real key path), plus the
   default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
