@@ -15,6 +15,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - Desktop window: the vitals panel is drawn as smooth gauges, with each meter's name and numbers, the low ones
   in the warning colour (*Mana · low*) and what you are fighting. A tall vitals pane stacks them; a strip lays
   them side by side.
+- Desktop window: the header and the connections sidebar are drawn as native controls. The header has a
+  search box that opens the command palette (Ctrl+P) and a pill naming the character in front, its world and
+  whether the connection uses TLS. The sidebar lists worlds, characters with presence dots, unread badges and
+  "offline", the open character's windows with their Alt+number keys, and an *Add a game or connect* button.
+  Clicking a row switches exactly as clicking it in a terminal does, and a drag on empty header space still
+  moves the window.
 - Desktop window: the map is drawn as a canvas of rooms and exits. The wheel zooms, a drag pans, a
   double-click re-centres on you, and a click on a room walks there. Hovering a room shows its name.
 - Scrolling a pane back splits it: the history you are reading stays on top, a band says how far back you

@@ -1033,6 +1033,41 @@ fallbacks) for inline images/maps.
     button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
     click under a WM-less X server to take the first item (seen under Xvfb only).
 
+- **The header and the sidebar are data, and the window draws them natively over their cells** (Client
+  `Chrome/HeaderModel`, `Chrome/SidebarModel`; Tui `Pointer/SharpMUTermApp.Chrome.cs`, `ChromeOverlay`; Avalonia
+  `NativeChrome.cs`: `NativeHeader`, `NativeSidebar`). Second slice of the desktop app, on `DesktopLayer`'s model.
+  Decisions not to relitigate:
+  - **One model per surface, and the cells render from it.** `BuildHeaderModel()` feeds `HeaderMarkup(model)`;
+    `BuildSidebar()` feeds `BuildRail()` (`SidebarModel.Rows()` is Core's `RailModel.Build` over the same tree), so
+    the cell frames are byte-identical to before (checked by diffing `default`, `rail-long`, `connections`,
+    `characters`, `tint`, `tint-tabs`, `collapsed`, `prefix`, `menu`, `layout-roleplay`). `SidebarModel` wraps Core's
+    `RailWorld`/`RailCharacter`/`RailWindow` tree rather than duplicating it, adding the selected window, collapsed,
+    targets and value equality. It is not called `RailModel` because Core's `RailModel` is the row projection.
+    The header's presence dot reads `ConnectedCharacters()`, the same answer as the rail's dot and the fraction.
+  - **The channel is `IPointerPresenter.Chrome(ChromeOverlay)`**, default-implemented, published on `PostBufferPaint`
+    and on the main window's `Activated`/`Deactivated`, only on change. Rectangles are the header control's and the
+    rail's *column* (the rail control is only as tall as its rows), in desktop cells.
+  - **A click hands back a target the client put in the model**, and `ActivateChromeTarget` refuses one the last
+    overlay did not offer. Rail targets go to `DispatchRailTarget` (the rail's own `LinkClicked` handler), the search
+    box and brand to `HeaderModel.PaletteTarget` (opens ⌃P, never toggles it shut), *Add a game* to `term:welcome`.
+    Never `OnLinkClicked`, and the host spells no command.
+  - **Native chrome stands down** while another of the client's windows is in front (`_system.ActiveWindow` is not
+    the main window: ⌃P, settings, composer, quit prompt), because those are cells a native view would cover; the
+    header also while ⌃B is armed (the cells then show the which-key strip), and the sidebar while collapsed.
+  - **Input**: every press, release and wheel over the native views is the window's (`NativeChromeView`), a right
+    press is forwarded as a right click on the cell (`ForwardRightClick`), and nothing is focusable. A left press on
+    empty header space calls `TerminalView.WindowGestureFromChrome`: edge band resizes, the rest moves the window,
+    double-click maximises, whatever cell lies under it. The header leaves the header buttons' slots clear.
+  - **It draws inside one cell row.** A real 44 px header (and a 232 px sidebar wider than its cells) needs the
+    client's layout to make room, so that the cell grid starts below a header band the client does not draw: a
+    `ClientHost` member giving the host-drawn header's height in rows (the client then skips its own header row and
+    every `HeaderHeight`/`ChromeRows`/`InputLayout` count follows), the window offsetting `TerminalView` by the
+    native height and mapping pointer positions through that offset, and the parity test comparing cells below it.
+    The sidebar likewise needs a host-declared rail width in cells, so NAWS stays what the panes really are.
+  - **Not done**: no tooltips beyond the native `ToolTip`, no keyboard navigation of the native views (the keys are
+    the client's: ⌥N, ⌥J/⌥K, ⌃P), no scrolling of an overlong sidebar (rows past the foot are cut), the collapsed
+    strip stays cells.
+
 - **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
   `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
   `TerminalPanels.cs`; ⌥M / ⌃P ▸ *Layouts*; F5 `layout` rows; the `layouts`, `layout-combat` and `layout-roleplay` views). The layout's

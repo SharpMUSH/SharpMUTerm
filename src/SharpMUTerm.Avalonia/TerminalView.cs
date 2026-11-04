@@ -377,7 +377,16 @@ internal sealed class TerminalView : Control
         TopLevel.GetTopLevel(this) is Window { WindowDecorations: not WindowDecorations.Full } window ? window : null;
 
     /// <summary>A press that moves or resizes an undecorated window instead of reaching the client (<see cref="WindowChrome"/>).</summary>
-    private bool TryWindowGesture(PointerPressedEventArgs e, Point position)
+    private bool TryWindowGesture(PointerPressedEventArgs e, Point position) => TryWindowGesture(e, position, emptyChrome: false);
+
+    /// <summary>
+    /// A left press on empty space of a native view over the header (<see cref="NativeHeader"/>): the window's edge
+    /// band resizes, as anywhere, and the rest moves the window and double-click maximises — what a blank header cell
+    /// does, whatever cell happens to lie under the native view. Returns false with a title bar, where it does nothing.
+    /// </summary>
+    internal bool WindowGestureFromChrome(PointerPressedEventArgs e) => TryWindowGesture(e, e.GetPosition(this), emptyChrome: true);
+
+    private bool TryWindowGesture(PointerPressedEventArgs e, Point position, bool emptyChrome)
     {
         if (Undecorated is not { } window)
         {
@@ -390,10 +399,12 @@ internal sealed class TerminalView : Control
             return true;
         }
 
-        if (!WindowChrome.IsMoveHandle(_driver.Frame, Cell(position)))
+        if (!emptyChrome && !WindowChrome.IsMoveHandle(_driver.Frame, Cell(position)))
         {
             return false;
         }
+
+        WindowGestures++;
 
         if (e.ClickCount == 2)
         {
@@ -406,6 +417,9 @@ internal sealed class TerminalView : Control
 
         return true;
     }
+
+    /// <summary>How many presses this view has turned into a move or a maximise. Internal for tests.</summary>
+    internal int WindowGestures { get; private set; }
 
     private void ToggleMaximised()
     {

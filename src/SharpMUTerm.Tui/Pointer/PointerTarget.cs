@@ -139,6 +139,14 @@ internal interface IPointerPresenter
     void HeaderActions(IReadOnlyList<HeaderAction> actions)
     {
     }
+
+    /// <summary>
+    /// The header band and the connection sidebar, as data, whenever either moves or what it says changes. The cells
+    /// stay what they are; a host that draws no native chrome ignores this (the default).
+    /// </summary>
+    void Chrome(ChromeOverlay chrome)
+    {
+    }
 }
 
 /// <summary>

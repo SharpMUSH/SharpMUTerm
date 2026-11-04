@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Automation;
@@ -1002,6 +1003,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             PublishPanels();
+            PublishChrome();
             SyncMapSizes();
             SyncPanelSizes();
             SyncScrollSplitBars();
@@ -1013,6 +1015,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _window.Activated += (_, _) => _sixel.Invalidate();
             _window.Deactivated += (_, _) => _sixel.Invalidate();
         }
+
+        // The native chrome stands down while another window is in front, and that window repaints, not this one.
+        _window.Activated += (_, _) => PublishChrome();
+        _window.Deactivated += (_, _) => PublishChrome();
 
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level
@@ -7800,7 +7806,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// character — the workspace's windows with their unread/unsent detail and their own chords.
     /// Ranking/markup stays in the tested Core/renderer.
     /// </summary>
-    private IReadOnlyList<RailRow> BuildRail()
+    private IReadOnlyList<RailRow> BuildRail() => BuildSidebar().Rows();
+
+    /// <summary>
+    /// The sidebar as a view-model (<see cref="SidebarModel"/>): the tree <see cref="BuildRail"/>'s rows are projected
+    /// from, plus the window in front and whether the rail is collapsed. The cell rail and the window's native sidebar
+    /// are both drawn from this, so it is the one place either learns what the sidebar says.
+    /// </summary>
+    internal SidebarModel BuildSidebar()
     {
         var activeKey = ActiveCharacterKey();
 
@@ -7845,7 +7858,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             index++;
         }
 
-        return RailModel.Build(worlds);
+        return new SidebarModel(worlds, ActiveWindowId(), _railCollapsed);
     }
 
     /// <summary>
@@ -13263,11 +13276,56 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The design header row: the brand affordance on the left, the active world (with its accent)
     /// in the middle, and connection/graphics/palette hints on the right.
     /// </summary>
-    private string HeaderMarkup()
+    private string HeaderMarkup() => HeaderMarkup(BuildHeaderModel());
+
+    /// <summary>
+    /// The header as a view-model (<see cref="HeaderModel"/>): what the band says, with no presentation. The cell
+    /// header and the window's native header are both drawn from this.
+    /// </summary>
+    internal HeaderModel BuildHeaderModel()
+    {
+        HeaderWorld? world = null;
+        HeaderCharacter? character = null;
+        if (ActiveWorld() is { } active)
+        {
+            world = new HeaderWorld(active.World.Name, active.Accent);
+            if (active.Character is { } name)
+            {
+                var key = $"{active.World.Name}.{name}";
+                character = new HeaderCharacter(
+                    name,
+                    key,
+                    // The rail's dot and this one are one answer: ConnectedCharacters is what the dot and the fraction
+                    // read, and a session's own state adds only "being dialled".
+                    ConnectedCharacters().Contains(key)
+                        ? CharacterPresence.Online
+                        : PresenceOf.State(_sessions.Find(key)?.State) == CharacterPresence.Connecting
+                            ? CharacterPresence.Connecting
+                            : CharacterPresence.Offline,
+                    active.World.Host,
+                    active.World.Port,
+                    active.World.UseTls,
+                    CommandIds.Character(key));
+            }
+        }
+
+        return new HeaderModel(
+            _palette is { IsOpen: true },
+            world,
+            character,
+            ConnectedCharacters().Count,
+            ConfiguredConnections(),
+            _config.Worlds.Count > 0,
+            HeaderLogFormat(),
+            _prefixArmed);
+    }
+
+    /// <summary>The header row's markup, drawn from <paramref name="model"/> and nothing else it could disagree with.</summary>
+    private string HeaderMarkup(HeaderModel model)
     {
         // The menu affordance opens the command surface (caret flips to ▾ while it's open). The whole
         // identity cluster is a powerline ribbon — menu ▸ world ▸ character — flowing accent colours.
-        var caret = _palette is { IsOpen: true } ? "▾" : Glyphs.Menu;
+        var caret = model.MenuOpen ? "▾" : Glyphs.Menu;
         var dark = Hex(_theme.Resolve(TerminalColor.Default, isBackground: true));
         var headerBg = Hex(_theme.StatusBackground);
         // The dim chrome the character segment sits on. Derived rather than the literal #3f4859 it was:
@@ -13284,16 +13342,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // legible is the text *on* it, so each segment's ink is measured against the fill it lands on.
         var brandBg = FillHex(AccentPalette[2]); // violet
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[link={MenuScheme}toggle][bold {Ink(dark, brandBg)} on {brandBg}] {caret} muterm [/][/]");
+        sb.Append($"[link={HeaderModel.PaletteTarget}][bold {Ink(dark, brandBg)} on {brandBg}] {caret} muterm [/][/]");
 
         var tail = brandBg;
-        if (ActiveWorld() is { } active)
+        if (model.World is { } active)
         {
             var worldAccent = FillHex(active.Accent);
             sb.Append($"[{tail} on {worldAccent}]{Glyphs.PowerRight}[/]");
-            sb.Append($"[bold {Ink(dark, worldAccent)} on {worldAccent}] {Escape(active.World.Name)} [/]");
+            sb.Append($"[bold {Ink(dark, worldAccent)} on {worldAccent}] {Escape(active.Name)} [/]");
             tail = worldAccent;
-            if (active.Character is { } name)
+            if (model.Character?.Name is { } name)
             {
                 sb.Append($"[{tail} on {chip}]{Glyphs.PowerRight}[/]");
 
@@ -13314,7 +13372,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // cannot drift. It is picked to fit the room the identity ribbon leaves, because the header is one
         // row and an overlong one *wraps*, which costs a row of workspace; the widest spelling ran the
         // eighty-column layout to within four cells of the edge before anything was added to it.
-        if (_prefixArmed)
+        if (model.PrefixArmed)
         {
             var room = HeaderWidth() - MarkupWidth(leftBar) - 2;
             return $"{leftBar}  {PrefixPanel.Strip(room, _ink)}";
@@ -13329,14 +13387,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // graphics readout, which took the 80-column layout to precisely 80 cells; dropping that (see
         // below) gave the width back. InputAreaLayoutTests.TheFirstFrameFitsTheTerminalItIsOn(80) is the
         // test that says so, and anything added here has to keep it passing.
-        var connected = ConnectedCharacters().Count;
-        var conn = _config.Worlds.Count > 0
-            ? $"{connected}/{ConfiguredConnections()} characters   "
-            : string.Empty;
-        var logFormat = HeaderLogFormat();
-        var log = logFormat == LogFormat.None
-            ? $"[dim]{Glyphs.Log} LOG off[/]"
-            : $"[{_ink.Accent}]{Glyphs.Log}[/] [dim]LOG {logFormat.ToString().ToLowerInvariant()}[/]";
+        var conn = model.HasWorlds ? $"{model.ConnectedText}   " : string.Empty;
+        var log = model.Log == LogFormat.None
+            ? $"[dim]{Glyphs.Log} {model.LogText}[/]"
+            : $"[{_ink.Accent}]{Glyphs.Log}[/] [dim]{model.LogText}[/]";
         // No graphics readout here. Which protocol the probe settled on is decided once at startup and
         // never changes, so a permanent cell of chrome spends the row's scarcest resource on a fact that
         // cannot become news — and it was already said twice elsewhere: the session prints
