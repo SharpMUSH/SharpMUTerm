@@ -409,9 +409,9 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         const double size = FontSize;
         var chipHeight = plateHeight - 6;
         var chipTop = plateTop + 3;
-        var lead = Measure(HeaderPrefix.Chord, size, bold: true) + Measure(PrefixWord, size - 1) + 34;
+        var lead = Measure(KeyGlyphs.Words(HeaderPrefix.Chord), size, bold: true) + Measure(PrefixWord, size - 1) + 34;
         _prefix = new Rect(start, plateTop, Math.Min(lead, Math.Max(0, right - start)), plateHeight);
-        hits.Add((_prefix, string.Empty, $"{HeaderPrefix.Chord} is armed: the next key acts on the workspace. {prefix.Exit}."));
+        hits.Add((_prefix, string.Empty, $"{KeyGlyphs.Words(HeaderPrefix.Chord)} is armed: the next key acts on the workspace. {prefix.Exit}."));
 
         var exitWidth = Measure(prefix.Exit, size - 1) + 8;
         var x = _prefix.Right + 12;
@@ -542,7 +542,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
             var plate = Color.FromArgb(0x2A, notice.R, notice.G, notice.B);
             context.DrawRectangle(new SolidColorBrush(plate), new Pen(new SolidColorBrush(Color.FromArgb(0x90, notice.R, notice.G, notice.B)), 1), _prefix.Deflate(0.5), 7, 7);
             var x = _prefix.X + 12;
-            x += Text(context, HeaderPrefix.Chord, x, middle, size, notice, bold: true) + 8;
+            x += Text(context, KeyGlyphs.Words(HeaderPrefix.Chord), x, middle, size, notice, bold: true) + 8;
             Text(context, PrefixWord, x, middle, size - 1, Ink, maxWidth: Math.Max(1, _prefix.Right - 10 - x));
         }
 

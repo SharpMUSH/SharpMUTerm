@@ -1060,40 +1060,67 @@ fallbacks) for inline images/maps.
     button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
     click under a WM-less X server to take the first item (seen under Xvfb only).
 
-- **The header and the sidebar are data, and the window draws them natively over their cells** (Client
-  `Chrome/HeaderModel`, `Chrome/SidebarModel`; Tui `Pointer/SharpMUTermApp.Chrome.cs`, `ChromeOverlay`; Avalonia
-  `NativeChrome.cs`: `NativeHeader`, `NativeSidebar`). Second slice of the desktop app, on `DesktopLayer`'s model.
+- **The header and the sidebar are data, and the window draws them natively beside the cells** (Client
+  `Chrome/HeaderModel`, `Chrome/SidebarModel`; Tui `Hosting/ClientHost.cs` `HostChrome`, `Pointer/SharpMUTermApp.Chrome.cs`,
+  `ChromeOverlay`; Avalonia `NativeChrome.cs`: `NativeHeader`, `NativeSidebar`; `DesktopLayer`'s `NativeLayout`).
   Decisions not to relitigate:
   - **One model per surface, and the cells render from it.** `BuildHeaderModel()` feeds `HeaderMarkup(model)`;
-    `BuildSidebar()` feeds `BuildRail()` (`SidebarModel.Rows()` is Core's `RailModel.Build` over the same tree), so
-    the cell frames are byte-identical to before (checked by diffing `default`, `rail-long`, `connections`,
-    `characters`, `tint`, `tint-tabs`, `collapsed`, `prefix`, `menu`, `layout-roleplay`). `SidebarModel` wraps Core's
-    `RailWorld`/`RailCharacter`/`RailWindow` tree rather than duplicating it, adding the selected window, collapsed,
-    targets and value equality. It is not called `RailModel` because Core's `RailModel` is the row projection.
-    The header's presence dot reads `ConnectedCharacters()`, the same answer as the rail's dot and the fraction.
-  - **The channel is `IPointerPresenter.Chrome(ChromeOverlay)`**, default-implemented, published on `PostBufferPaint`
-    and on the main window's `Activated`/`Deactivated`, only on change. Rectangles are the header control's and the
-    rail's *column* (the rail control is only as tall as its rows), in desktop cells.
+    `BuildSidebar()` feeds `BuildRail()` (`SidebarModel.Rows()` is Core's `RailModel.Build` over the same tree).
+    `SidebarModel` wraps Core's `RailWorld`/`RailCharacter`/`RailWindow` tree rather than duplicating it, adding the
+    selected window, collapsed, targets and value equality. It is not called `RailModel` because Core's `RailModel`
+    is the row projection. The header's presence dot reads `ConnectedCharacters()`, the same answer as the rail's
+    dot and the fraction. While ⌃B is armed `HeaderModel.Prefix` carries `PrefixPanel.Entries` (key, title, why it
+    is blocked) and the exit, so the native header shows the keymap where the cell header shows its strip.
+  - **`ClientHost.Chrome` (`HostChrome(Header, Rail)`, required) says which chrome the host draws, and the client
+    leaves no cell for it.** `HostChrome.None` for the terminal, the snapshot, `--plain` and the tests;
+    `HeaderAndRail` for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
+    `--render-png` say None). It is a flag per part, not a size: the space is the host's own business (42 px, 232 px,
+    `NativeLayout`), and the client is only told the part is not its to draw. With `Header` the header control is
+    `Visible = false` — a hidden sticky band takes no row — and `ChromeRows()` counts no header row, so the
+    input-height veto (`SyncInputHeights`) and the layout agree. With `Rail` `BuildWorkspaceRow` builds the pane area
+    alone (no rail column, divider or spacer; `_railColumn` is null, so `ApplyRailWidth` does nothing). Everything
+    else follows from arranged bounds: `PaneOutputRects` and so per-pane NAWS are the panes the cells really hold.
+    `HostChromeLayoutTests` pins rows, rectangles, NAWS and the veto at 80×6.
+  - **The window moves the cells out of the way; nothing native sits over a cell.** `DesktopLayer` spans the window
+    and sets `TerminalView.Margin` to `NativeLayout.Insets` (header height on top, sidebar width plus an 8 px gutter of
+    the sidebar's plane on the left; the slim width while `Sidebar.Collapsed`), so the view, the grid it hands the
+    driver and every pane are what is left. `MainWindow` sizes the window as the `--size` grid plus the insets.
+    Panels and the cell-mode header buttons are placed from `DesktopLayer.CellOrigin`; scrollbars, hovers, tooltips
+    and pointer-to-cell mapping are the view's own coordinates and needed no offset. The window's resize band is
+    measured against the *window* (`TerminalView.EdgeAt` translates), so it works over the header and sidebar too
+    (`ResizeFromChrome`, `EdgeCursorFromChrome`); a blank cell on row 0 moves the window only while
+    `CellsHoldHeader` (row 0 is a tab strip otherwise). The native palette (`PaletteOverlay`) is the root panel's last
+    child and centres over the whole window, its card starting under the header (`ThePaletteCentresOverTheWhole…`).
+  - **The channel is `IPointerPresenter.Chrome(ChromeOverlay)`**, published only to a host whose `Chrome.Any`, on
+    `PostBufferPaint`, the main window's `Activated`/`Deactivated`, and every `RefreshHeader`/`RefreshRail`/`ToggleRail`
+    (`PublishHostChrome`): with no cell of either a change may paint no frame. Only on change. It carries no
+    rectangles; `ChromePalette` carries the planes (`HeaderPlane`, `RailPlane`, `Ink`) and the notice voice, because
+    there is no cell to read them off.
   - **A click hands back a target the client put in the model**, and `ActivateChromeTarget` refuses one the last
-    overlay did not offer. Rail targets go to `DispatchRailTarget` (the rail's own `LinkClicked` handler), the search
-    box and brand to `HeaderModel.PaletteTarget` (opens ⌃P, never toggles it shut), *Add a game* to `term:welcome`.
-    Never `OnLinkClicked`, and the host spells no command.
-  - **Native chrome stands down** while another of the client's windows is in front (`_system.ActiveWindow` is not
-    the main window: ⌃P, settings, composer, quit prompt), because those are cells a native view would cover; the
-    header also while ⌃B is armed (the cells then show the which-key strip), and the sidebar while collapsed.
-  - **Input**: every press, release and wheel over the native views is the window's (`NativeChromeView`), a right
-    press is forwarded as a right click on the cell (`ForwardRightClick`), and nothing is focusable. A left press on
-    empty header space calls `TerminalView.WindowGestureFromChrome`: edge band resizes, the rest moves the window,
-    double-click maximises, whatever cell lies under it. The header leaves the header buttons' slots clear.
-  - **It draws inside one cell row.** A real 44 px header (and a 232 px sidebar wider than its cells) needs the
-    client's layout to make room, so that the cell grid starts below a header band the client does not draw: a
-    `ClientHost` member giving the host-drawn header's height in rows (the client then skips its own header row and
-    every `HeaderHeight`/`ChromeRows`/`InputLayout` count follows), the window offsetting `TerminalView` by the
-    native height and mapping pointer positions through that offset, and the parity test comparing cells below it.
-    The sidebar likewise needs a host-declared rail width in cells, so NAWS stays what the panes really are.
-  - **Not done**: no tooltips beyond the native `ToolTip`, no keyboard navigation of the native views (the keys are
-    the client's: ⌥N, ⌥J/⌥K, ⌃P), no scrolling of an overlong sidebar (rows past the foot are cut), the collapsed
-    strip stays cells.
+    overlay did not offer (a rail target is offered only when `Drawn.Rail`). Rail targets go to `DispatchRailTarget`,
+    the search box and brand to `HeaderModel.PaletteTarget` (opens ⌃P, never toggles it shut), *Add a game* to
+    `term:welcome`, the sidebar's chevron to `SidebarModel.CollapseTarget` (`ToggleRail`, what ⌃B b runs). Never
+    `OnLinkClicked`, and the host spells no command.
+  - **A modal does not hide the chrome.** ⌃P, a settings screen, the composer and the quit prompt are drawn in the
+    cells, which no longer reach under the header or sidebar, so the chrome stays where a desktop app's stays, under
+    a veil, and takes no click (`ChromeOverlay.Interactive`, `MainWindowInFront`; refused client-side too). The
+    settings screens and F1 size to the driver's screen, which is the cell area, so they fit and centre there.
+  - **Folded, the sidebar is a 48 px strip**: the unfold chevron, an accent mark per world, a disc with the initial
+    per character (filled while connected, an unread dot), "+" at the foot; names in tooltips.
+  - **Input**: every press, release and wheel over the native views is the window's (`NativeChromeView`); a right
+    press does nothing (there is no cell under it to forward to), and nothing is focusable. A left press on empty
+    header space calls `TerminalView.WindowGestureFromChrome`: edge band resizes, the rest moves the window,
+    double-click maximises. The header leaves the header buttons' slots clear; with a native header the buttons sit
+    in it, 30 px, right-aligned.
+  - **Parity is cells against cells under the same `HostChrome`.** `HostParityTests` draws every view twice inline —
+    both hosts told `None`, and both told `HeaderAndRail` — and the looping pass with `HeaderAndRail`, comparing every
+    cell. Telling both hosts the same arrangement keeps the comparison a comparison of drivers (the guarantee it
+    exists for), and covering both arrangements means the layout a person actually runs in the window is held to
+    the terminal's cell for cell, rather than compared below an offset or skipped. What the native header and
+    sidebar *say* is held to the cells by the shared models (`NativeChromeModelTests`), not by pixels.
+  - **Not done**: no keyboard navigation of the native views (the keys are the client's: ⌥N, ⌥J/⌥K, ⌃P), no
+    scrolling of an overlong sidebar (rows past the foot are cut), no right-click menu on a sidebar row, no
+    animation when the sidebar folds.
 
 - **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
   `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
@@ -1189,7 +1216,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1204,7 +1231,8 @@ draws ⌃P natively (`INativePalette`, null for the cell popup). Built by `Clien
   `ClientHost`. Don't use `WarningsAsErrors` for it: that ignores the folder's `severity = none`.
 - **Every snapshot view is drawn through both drivers and compared cell for cell**, glyph and background
   (`HostParityTests.EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal`, Avalonia suite), with the same
-  capabilities and keys, so a difference can only be the driver. The list is `SnapshotViews.All`, and
+  capabilities, keys and `HostChrome` — once with the chrome in cells and once with the header and rail drawn by
+  the host, as the window runs — so a difference can only be the driver. The list is `SnapshotViews.All`, and
   `EveryViewTheSnapshotKnowsIsInTheParityList` reads `RenderSnapshot`'s source and fails when it learns a
   view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both. A second
   pass (`EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning`) draws each view with the window's loop

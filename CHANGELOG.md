@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: the header and the connections sidebar now have room of their own — a full-height toolbar
+  across the top and a 232-pixel sidebar down the left — instead of being squeezed into one row and one column
+  of text, and the text area is the rest of the window, so every pane is as wide and tall as it really is (and
+  that is the size your games are told). While Ctrl+B is armed the header lists the keys it answers, dimming the
+  ones that cannot run, with each key's meaning in its tooltip. The sidebar folds to a slim strip of characters
+  with the chevron at its top or Ctrl+B b, and stays in place, inactive, while a dialog or settings screen is
+  open. `--cell-chrome` draws them as text, the way the terminal does.
 - Desktop window: Ctrl+P opens a native command palette, a rounded popup near the top of the window with a
   search box, grouped results, the matched letters highlighted and each command's key on the right. It lists
   the same commands in the same order as the terminal's palette, recent and suggested first. Arrow keys and the

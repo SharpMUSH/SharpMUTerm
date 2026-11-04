@@ -106,19 +106,30 @@ internal sealed partial class SharpMUTermApp
             return false;
         }
 
+        if (target == HeaderModel.PaletteTarget)
+        {
+            // Opens, rather than the ☰'s toggle: a search box is clicked to start typing in it, never to close it. A
+            // second click while the palette is up is that same answer, not a refusal.
+            if (_palette.IsOpen || NativePaletteIsOpen)
+            {
+                return true;
+            }
+
+            if (!MainWindowInFront())
+            {
+                return false;
+            }
+
+            OpenMenu();
+
+            return true;
+        }
+
         // A modal in front (⌃P, a settings screen, the composer, the quit prompt) owns the keys and the screen; the
         // chrome stays drawn beside it, inert, as a desktop app's does under its own dialog.
         if (!MainWindowInFront())
         {
             return false;
-        }
-
-        if (target == HeaderModel.PaletteTarget)
-        {
-            // Opens, rather than the ☰'s toggle: a search box is clicked to start typing in it, never to close it.
-            OpenMenu();
-
-            return true;
         }
 
         if (target == SidebarModel.CollapseTarget)

@@ -34,6 +34,8 @@ public class NativePaletteRoutingTests
         var host = ClientHost.Headless(new HeadlessConsoleDriver(120, 34), Caps) with
         {
             NativePalette = native ? presenter : null,
+            // The header's search box is the host's own header: only a host that draws it is offered its target.
+            Chrome = HostChrome.HeaderAndRail,
         };
         return (new SharpMUTermApp(DemoScene.Build(), host), presenter);
     }
