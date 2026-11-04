@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Layouts. Alt+M (or Ctrl+P ▸ *Layouts*) lists the built-in Roleplay and Combat layouts and the ones you save:
+  ⏎ applies one to the panes, `s` saves the panes as they are into the selected layout, `n` saves them as a
+  new one, `w` makes it the world's default and `c` this character's. Worlds & Characters (F5) has a `layout`
+  row on each world and each character. A panel appears only once the game sends what it shows, so a MUSH
+  never gets an empty map pane, and the first time you connect to a world the client picks Combat or Roleplay
+  from what the game sends and says which in a notice. A workspace you arranged yourself is still what comes
+  back after a restart.
 - Make a trigger without writing a regex: select a line of output and choose Ctrl+P ▸ *Make a trigger from
   the selection* (also on the right-click menu). Triggers (F2) opens on a new rule whose pattern is the line
   with its numbers, quoted speech and known player names turned into `*`, and shows the regex behind it.

@@ -187,6 +187,10 @@ public static class BuiltInCommands
 
         Family("layout:panes", CommandIds.PanePrefix, Panes);
 
+        // Layouts: the built-in Roleplay and Combat and the player's own. The name of the one in use is shown
+        // nowhere on the main screen, so this entry and its chord are how a reader finds that layouts exist.
+        Add("layout:layouts", CommandGroup.Layout, "Layouts", "⌥M", "built in and yours · apply, save, set a default");
+
         // Pane size, in the plain words the request used ("increase/decrease a pane's horizontal or
         // vertical character size") rather than in the chord's terms. Listed for the same reason the
         // directional entries and the newline chord are: ⌥⇧+arrow is not a chord anybody guesses, and a

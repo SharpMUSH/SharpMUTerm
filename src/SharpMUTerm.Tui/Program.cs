@@ -210,7 +210,8 @@ internal static class Program
             media: new MediaCache(MediaCache.DefaultRoot),
             packages: new PackageStore(PackageStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Packages") },
             scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"),
-            spelling: () => OpenDictionary(loadLogger));
+            spelling: () => OpenDictionary(loadLogger),
+            autoLayout: true);
         ready?.Invoke(liveApp);
         int exitCode;
         try
