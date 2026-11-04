@@ -164,14 +164,19 @@ internal sealed class ScreenTheme
     /// <summary>
     /// Colours a bordered modal's frame, title and unstyled text. The framework's defaults (a cyan title
     /// and border, <c>#eeeeee</c> text) were chosen for a dark backdrop and fall to 1.4:1 on a light one,
-    /// so a theme that is not the constants' own draws them in its label and value inks; the Dark theme
-    /// keeps the framework's, unchanged.
+    /// so a theme that is not the constants' own draws them in its label and value inks. The Dark theme keeps the
+    /// framework's text but takes the same quiet border and title (the terminal mockups' grey frame): a cyan box around
+    /// every modal was the loudest thing on the screen and said nothing the modal's own heading does not.
     /// </summary>
     internal void Frame(Window window)
     {
         ArgumentNullException.ThrowIfNull(window);
         if (IsIdentity)
         {
+            window.ActiveTitleForegroundColor = Colour(ScreenPalette.Value);
+            window.InactiveTitleForegroundColor = Colour(ScreenPalette.Label);
+            window.ActiveBorderForegroundColor = Colour(ScreenPalette.Label);
+            window.InactiveBorderForegroundColor = Colour(ScreenPalette.Label);
             return;
         }
 

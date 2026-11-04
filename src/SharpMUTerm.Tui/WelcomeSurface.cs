@@ -395,7 +395,7 @@ internal sealed class WelcomeSurface
 
         lines.Add(model.Problem is null ? string.Empty : $"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
         lines.Add(Label(WelcomeModel.ExampleLead));
-        lines.Add("  " + Value(ExampleCommand));
+        lines.Add($"  [{ScreenPalette.Accent}]{Escape(ExampleCommand)}[/]");
         lines.Add(string.Empty);
         lines.Add(Label(model.LayoutHeading));
         var chips = string.Join("  ", Enum.GetValues<WelcomeLayout>().Select(layout =>

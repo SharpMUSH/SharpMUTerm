@@ -14502,12 +14502,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // identity cluster is a powerline ribbon — menu ▸ world ▸ character — flowing accent colours.
         var caret = model.MenuOpen ? "▾" : Glyphs.Menu;
         var headerBg = Hex(_theme.StatusBackground);
-        // The dim chrome the character segment sits on. Derived rather than the literal #3f4859 it was:
-        // the header is painted on the theme's own chrome band, and a fixed dark chip under a *light*
-        // theme is a plane nothing else on the row is measured against — which is how the world accent
-        // came to be drawn on it at 1.53:1.
-        var chipRgb = WorkspacePalette.HeaderChip(_theme);
-        var chip = chipRgb.ToHex();
 
         // Build the ribbon by hand so only the brand "button" is a link (wrapping the whole bar makes
         // the driver's link highlight repaint every segment and flatten the flowing colours).
@@ -14518,7 +14512,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var sb = new System.Text.StringBuilder();
         sb.Append($"[link={HeaderModel.PaletteTarget}][bold {SegmentInk(brandBg)} on {brandBg}] {caret} {BrandWord} [/][/]");
 
-        var tail = brandBg;
+        string? tail = brandBg;
         if (model.World is { } active)
         {
             var worldAccent = FillHex(active.Accent);
@@ -14527,17 +14521,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             tail = worldAccent;
             if (model.Character?.Name is { } name)
             {
-                sb.Append($"[{tail} on {chip}]{Glyphs.PowerRight}[/]");
-
-                // The ● wears the world's colour and is *text* here rather than a fill, so it is the one
-                // place on this row the accent has to clear the floor — against the chip, which is the
-                // plane it actually lands on.
-                sb.Append($"[{Contrast.Legible(ParseHex(worldAccent), chipRgb, WorkspacePalette.HeaderTextFloor).ToHex()} on {chip}] ● {Escape(name)} [/]");
-                tail = chip;
+                // The character is the ribbon's last word and sits on the band itself, as the terminal mockups draw
+                // it (` ● Corvid ` in the world's colour, no chip): the ribbon ends at the world, and the ● and name
+                // wear the world's colour as *text*, so they are the one place on this row the accent has to clear
+                // the floor — against the band, which is the plane they actually land on.
+                sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
+                sb.Append($"[bold {Contrast.Legible(ParseHex(worldAccent), ParseHex(headerBg), WorkspacePalette.HeaderTextFloor).ToHex()} on {headerBg}] ● {Escape(name)} [/]");
+                tail = null;
             }
         }
 
-        sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
+        if (tail is not null)
+        {
+            sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
+        }
         var leftBar = sb.ToString();
         var right = HeaderRight(model);
 

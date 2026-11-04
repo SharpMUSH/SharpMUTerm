@@ -23,8 +23,8 @@ internal static class VitalsStripRenderer
     /// <summary>The meter's mark when it is below <see cref="StatusMeterRenderer.LowShare"/>.</summary>
     internal const string LowMark = "low";
 
-    /// <summary>The panel's colours: the bars, the warning, and the empty part of a bar.</summary>
-    internal readonly record struct Ink(string Bar, string Low, string Empty);
+    /// <summary>The panel's colours: the bars, the warning, the empty part of a bar, and the card heading's band.</summary>
+    internal readonly record struct Ink(string Bar, string Low, string Empty, HeadingBand.Ink? Heading = null);
 
     /// <summary>The one-cell low mark the tighter levels use in place of <see cref="LowMark"/>.</summary>
     internal const string ShortLowMark = "!";
@@ -100,8 +100,10 @@ internal static class VitalsStripRenderer
         // window's heading says it — when there is a row for it beside the blocks.
         if (height >= (2 * blocks) + 5)
         {
-            var source = vitals.Source is { } from ? "  [dim]" + Escape(Fit(from, Math.Max(1, width - 8))) + "[/]" : string.Empty;
-            lines.Add($"[bold {ink.Bar}]VITALS[/]{source}");
+            var from = vitals.Source is { } named ? Escape(Fit(named, Math.Max(1, width - 8))) : null;
+            lines.Add(ink.Heading is { } band
+                ? HeadingBand.Row("VITALS", from is null ? string.Empty : "  " + from, string.Empty, width, band)
+                : $"[bold {ink.Bar}]VITALS[/]" + (from is null ? string.Empty : $"  [dim]{from}[/]"));
             lines.Add(string.Empty);
         }
 
@@ -115,9 +117,10 @@ internal static class VitalsStripRenderer
                 lines.Add(Bar(meter.HasMax ? meter.Share ?? 0 : 1, width, colour, ink));
             }
 
-            lines.Add($"[{ink.Empty}]{new string('─', width)}[/]");
+            // The rule parts the meters from the target; with no target there is nothing to part them from.
             if (vitals.Target is { } target)
             {
+                lines.Add($"[{ink.Empty}]{new string('─', width)}[/]");
                 var percent = target.Share is { } share ? StatusMeterRenderer.Percent(share) : string.Empty;
                 var name = Escape(Fit(target.Name, Math.Max(1, width - 8 - percent.Length)));
                 lines.Add(Spread("[dim]Target[/] " + (target.Low ? $"[{ink.Low}]{name}[/]" : name), percent, width));

@@ -28,8 +28,11 @@ internal static class WhoHereRenderer
     /// <summary>What the panel says in an empty room.</summary>
     internal const string EmptyText = WhoHereModel.EmptyText;
 
-    /// <summary>The panel's colours: the dot of an active player, and the plane they are measured on.</summary>
-    internal readonly record struct Ink(string Accent);
+    /// <summary>
+    /// The panel's colours: the dot of an active player, and the heading's band (<see cref="HeadingBand"/>); with no
+    /// band the heading is the bare accent label it was before the band.
+    /// </summary>
+    internal readonly record struct Ink(string Accent, HeadingBand.Ink? Heading = null);
 
     /// <summary>
     /// The panel's rows for a box <paramref name="width"/> by <paramref name="height"/> cells. Never wider than the
@@ -54,7 +57,9 @@ internal static class WhoHereRenderer
 
         var count = $" · {rowsIn.Count.ToString(CultureInfo.InvariantCulture)}";
         var title = model.Room is { } room ? "  " + Escape(room) : string.Empty;
-        lines.Add(ElideVisible($"[bold {ink.Accent}]HERE[/]{title}[dim]{count}[/]", width));
+        lines.Add(ink.Heading is { } band
+            ? HeadingBand.Row("HERE", title + count, string.Empty, width, band)
+            : ElideVisible($"[bold {ink.Accent}]HERE[/]{title}[dim]{count}[/]", width));
         if (height == 1)
         {
             return lines;

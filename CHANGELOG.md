@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the terminal, the who-is-here, composer and vitals panels head themselves with a filled band, the scrolled-back
+  divider is a filled band too, modal pop-ups have a quiet grey frame instead of a cyan one, the header shows your
+  character in the world's colour without a grey chip, the vitals card no longer draws a stray rule when nothing is
+  targeted, and the welcome's `/connect` example is highlighted — closer to the terminal mockups.
+
 - In the desktop window, the map is drawn the way the mockups draw it: dark rooms outlined in a rule, exits as thin lines,
   your room ringed in the accent with an `@`, Up/Down/Areas as proper buttons, and the legend in a strip at the foot with
   "Click a room to walk there" under it, so it never covers a room.
