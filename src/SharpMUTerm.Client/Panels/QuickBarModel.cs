@@ -30,6 +30,12 @@ public sealed record QuickBarModel(IReadOnlyList<QuickBarItem> Items)
     /// <summary>What every view says when there are no bindings to show.</summary>
     public const string EmptyText = "No function keys bound";
 
+    /// <summary>
+    /// The window's button for <see cref="EditCommand"/>, where it has the room for a button rather than the cells' link:
+    /// the same door, with <see cref="EditKey"/> in its tooltip.
+    /// </summary>
+    public const string BindLabel = "+ Bind a key";
+
     /// <summary>No bindings.</summary>
     public static QuickBarModel Empty { get; } = new([]);
 

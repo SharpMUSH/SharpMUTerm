@@ -98,12 +98,16 @@ internal sealed class WhoHereList : Control
         InvalidateVisual();
     }
 
-    private double FontSize => Math.Clamp(_cellHeight * 0.7, 10, 15);
+    private double FontSize => Math.Min(PanelText.Size, Math.Max(10, _cellHeight * 0.72));
 
-    private double HeaderHeight => Math.Max(22, _cellHeight * 1.5);
+    private double HeaderHeight => PanelText.HeadingHeight(_cellHeight);
 
-    private double RowHeight => Math.Max(22, _cellHeight * 1.4);
+    private double RowHeight => Math.Max(24, _cellHeight * 1.6);
 
+    /// <summary>The footnote's line, under the rows when there is room left for it.</summary>
+    private double NoteHeight => Math.Max(20, _cellHeight * 1.3);
+
+    /// <summary>How far the rows' hover plates are set in from the edges; the text inside sits on the heading's padding.</summary>
     private const double Pad = 8;
 
     /// <summary>Which rows fit, and where, for a size. Every row is the same height, so it is arithmetic.</summary>
@@ -124,12 +128,12 @@ internal sealed class WhoHereList : Control
             return;
         }
 
-        var top = HeaderHeight + 2;
+        var top = HeaderHeight + 4;
         var room = Math.Max(0, (int)((size.Height - top - 4) / RowHeight));
         var fits = count <= room ? count : Math.Max(0, room - 1);
         for (var i = 0; i < fits; i++)
         {
-            _rows.Add((i, new Rect(Pad / 2, top + (i * RowHeight), Math.Max(0, size.Width - Pad), RowHeight)));
+            _rows.Add((i, new Rect(Pad, top + (i * RowHeight), Math.Max(0, size.Width - (Pad * 2)), RowHeight)));
         }
 
         if (fits < count)
@@ -249,76 +253,64 @@ internal sealed class WhoHereList : Control
 
         Layout(bounds.Size);
         var size = FontSize;
-        var dim = PanelText.Alpha(_text, 0xA0);
+        var dim = PanelText.Dim(_text, _plane);
         var accent = PanelText.Parse(_ink.Bar);
-        var left = Pad + 4;
-        var right = bounds.Width - Pad - 4;
+        var left = PanelText.Pad;
+        var right = bounds.Width - PanelText.Pad;
 
+        // Here  The Grand Plaza · 4, kept clear of the pop-out button in the corner.
+        var top = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: 20);
         if (!_model.Known)
         {
-            PanelText.Draw(context, WhoHereModel.UnknownText, left, HeaderHeight / 2, size, dim, false, right - left);
+            PanelText.Draw(context, WhoHereModel.UnknownText, left, top + (RowHeight / 2), size, dim, false, right - left);
             return;
         }
-
-        // HERE  The Grand Plaza · 4
-        var middle = HeaderHeight / 2;
-        var x = left;
-        x += PanelText.Draw(context, "HERE", x, middle, size * 0.82, accent, true, right - x) + 10;
-        var count = $"· {_model.Rows.Count.ToString(CultureInfo.InvariantCulture)}";
-        var countWidth = PanelText.Measure(count, size, false);
-        if (_model.Room is { } room)
-        {
-            x += PanelText.Draw(context, room, x, middle, size, _text, true, right - x - countWidth - 6) + 6;
-        }
-
-        PanelText.Draw(context, count, x, middle, size, dim, false, right - x);
-        context.DrawLine(
-            new Pen(new SolidColorBrush(PanelText.Alpha(_text, 0x22)), 1),
-            new Point(Pad / 2, HeaderHeight + 0.5),
-            new Point(bounds.Width - (Pad / 2), HeaderHeight + 0.5));
 
         if (_model.Rows.Count == 0)
         {
-            PanelText.Draw(context, WhoHereModel.EmptyText, left, HeaderHeight + 2 + (RowHeight / 2), size, dim, false, right - left);
+            PanelText.Draw(context, WhoHereModel.EmptyText, left, top + 4 + (RowHeight / 2), size, dim, false, right - left);
             return;
         }
 
-        var idleWidth = _model.ShowsIdle ? PanelText.Measure("idle 59m", size * 0.9, false) + 8 : 0;
+        var states = _model.Rows.Select(WhoHereModel.StateText).OfType<string>().ToList();
+        var stateWidth = states.Count == 0 ? 0 : states.Max(t => PanelText.Measure(t, size - 1, false)) + 12;
         foreach (var (index, rect) in _rows)
         {
             var row = _model.Rows[index];
             if (index == _hovered || index == _pressed)
             {
-                var plate = (byte)(index == _pressed ? 0x38 : 0x1E);
-                context.DrawRectangle(new SolidColorBrush(PanelText.Alpha(_text, plate)), null, rect, 4, 4);
+                var plate = PanelText.Mix(_plane, _text, index == _pressed ? 0.16 : 0.08);
+                context.DrawRectangle(new SolidColorBrush(plate), null, rect, NativeTokens.RadiusS + 2, NativeTokens.RadiusS + 2);
             }
 
+            // The dot says what the game says: a creature grey, an idle player in the warning ink, an active one in the
+            // accent; a player the game sends no idle time for gets a plain dot rather than a claim either way.
             var centre = rect.Center.Y;
-            var dot = new Point(left + 4, centre);
-            if (row.IsNpc)
-            {
-                context.DrawEllipse(null, new Pen(new SolidColorBrush(PanelText.Alpha(_text, 0x70)), 1.2), dot, 3, 3);
-            }
-            else
-            {
-                var colour = row.State == WhoPresence.Idle ? PanelText.Alpha(_text, 0x60) : accent;
-                context.DrawEllipse(new SolidColorBrush(colour), null, dot, 4, 4);
-            }
+            var dot = row.IsNpc ? PanelText.Mix(_text, _plane, 0.55)
+                : row.Idle is null ? dim
+                : row.State == WhoPresence.Idle ? PanelText.Parse(_ink.Low)
+                : accent;
+            context.DrawEllipse(new SolidColorBrush(dot), null, new Point(left + 4, centre), 4, 4);
 
-            var nameLeft = left + 16;
-            var nameRoom = right - nameLeft - idleWidth;
-            PanelText.Draw(context, row.Display, nameLeft, centre, size, row.IsNpc ? PanelText.Alpha(_text, 0x88) : _text, false, nameRoom);
-            if (row.Idle is { } idle && idleWidth > 0)
+            var nameLeft = left + 18;
+            PanelText.Draw(context, row.Display, nameLeft, centre, size, row.IsNpc ? dim : _text, false, right - nameLeft - stateWidth);
+            if (WhoHereModel.StateText(row) is { } state)
             {
-                var active = row.State == WhoPresence.Active;
-                PanelText.Draw(context, idle, right, centre, size * 0.9, active ? PanelText.Alpha(accent, 0xD0) : dim, false, idleWidth, alignRight: true);
+                PanelText.Draw(context, state, right, centre, size - 1, dim, false, stateWidth, alignRight: true);
             }
         }
 
+        var y = HeaderHeight + 4 + (_rows.Count * RowHeight);
         if (_overflow is { } more)
         {
-            var y = HeaderHeight + 2 + (_rows.Count * RowHeight) + (RowHeight / 2);
-            PanelText.Draw(context, more, left, y, size * 0.9, dim, false, right - left);
+            PanelText.Draw(context, more, left, y + (RowHeight / 2), size - 1, dim, false, right - left);
+            return;
+        }
+
+        // Where the names come from and what a click does, under the list while there is room for it.
+        if (y + 6 + NoteHeight <= bounds.Height)
+        {
+            PanelText.Draw(context, WhoHereModel.Footnote, left, y + 6 + (NoteHeight / 2), size - 1, dim, false, right - left);
         }
     }
 }

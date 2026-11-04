@@ -1481,6 +1481,14 @@ fallbacks) for inline images/maps.
     always-on-top choice; the composer does not float; positions on a mixed-DPI desktop are assumed to be in the main
     window's scaling.
 
+- **Wave 19 panels and welcome (window only; the cells are unchanged).** Each docked native panel draws a heading from
+  its model (`PanelHeading.For`, Client; `PanelText.Heading`); `VitalsModel.Source` names where the meters came from
+  (`SourceOf`, set in `ReadVitals`), a mixture names nothing. The docked composer's footer (summary, Preview, Send) ends
+  in `ComposerSession`: Preview is `PreviewDocked` → F1 with `_composer.Preview` on (surface action `preview`). The quick
+  bar and the vitals row leave 22–30 px at the right for the pop-out button. The native welcome is a page
+  (`WelcomeView`): its Find card attaches a `WorldBrowseSession` to the welcome (`WelcomeSession.FindWorlds` →
+  `FindWorldsInWelcome`, actions `find`/`add`), fetched only on Show worlds, forgotten when the welcome closes; Add is the
+  browse pick, which reopens the welcome with the form filled.
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

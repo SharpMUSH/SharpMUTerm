@@ -111,6 +111,38 @@ public sealed record ComposerModel(
     public static string CharactersLabel(int count) => count == 1 ? "1 char" : $"{count:N0} chars";
 
     /// <summary>
+    /// The docked panel's footer for a draft: <c>2 paragraphs · 31 words</c>. A paragraph is a run of non-blank lines, as
+    /// <see cref="ComposeMessage.Build"/> joins them with <c>%r%r</c> between; a word is a run of non-space characters.
+    /// Empty for an empty draft.
+    /// </summary>
+    public static string Summary(string body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        var lines = body.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var paragraphs = 0;
+        var inParagraph = false;
+        foreach (var line in lines)
+        {
+            var blank = string.IsNullOrWhiteSpace(line);
+            if (!blank && !inParagraph)
+            {
+                paragraphs++;
+            }
+
+            inParagraph = !blank;
+        }
+
+        var words = body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        if (words == 0)
+        {
+            return string.Empty;
+        }
+
+        static string Count(int n, string one) => n == 1 ? $"1 {one}" : $"{n:N0} {one}s";
+        return $"{Count(paragraphs, "paragraph")} · {Count(words, "word")}";
+    }
+
+    /// <summary>
     /// The verb the post starts with — <c>+pose</c>, <c>say</c> — for the docked header, so a reader can see what the
     /// buffer will be sent as without reading it. Empty for an empty buffer.
     /// </summary>

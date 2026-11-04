@@ -43,7 +43,10 @@ internal sealed class QuickBarButtons : Control
     /// <summary>The widest a binding's name is drawn before it is trimmed.</summary>
     internal const double MaxTitleWidth = 150;
 
-    private const double Gap = 6, PadX = 8;
+    private const double Gap = 8, PadX = 12;
+
+    /// <summary>The pane's top-right corner, where the pop-out button sits: the bar ends short of it.</summary>
+    private const double EndRoom = 22;
 
     private readonly TerminalView _view;
 
@@ -117,7 +120,10 @@ internal sealed class QuickBarButtons : Control
         InvalidateVisual();
     }
 
-    private double FontSize => Math.Clamp(_cellHeight * 0.62, 9, 13);
+    private double FontSize => Math.Min(PanelText.Size, Math.Max(9, _cellHeight * 0.66));
+
+    /// <summary>The key chip's size: a step under the label, as a caption.</summary>
+    private double KeySize => Math.Max(8, FontSize - 2);
 
     private static string Trim(QuickBarItem item) => item.Title;
 
@@ -125,12 +131,12 @@ internal sealed class QuickBarButtons : Control
     {
         var size = FontSize;
         var title = Math.Min(MaxTitleWidth, PanelText.Measure(Trim(item), size, false));
-        return PadX + PanelText.Measure(NativeKeys.Words(item.Key), size, true) + 5 + title + PadX;
+        return PadX + PanelText.Measure(NativeKeys.Words(item.Key), KeySize, false) + 7 + title + PadX;
     }
 
     private double MoreWidth(int hidden) => PadX + PanelText.Measure($"+{hidden.ToString(CultureInfo.InvariantCulture)}", FontSize, true) + PadX;
 
-    private double EditWidth => PanelText.Measure(QuickBarModel.EditHint, FontSize, false) + (PadX * 2);
+    private double EditWidth => PanelText.Measure(QuickBarModel.BindLabel, FontSize, false) + (PadX * 2);
 
     /// <summary>
     /// The cells' rule, in pixels: the link first, then as many bindings as fit in order, with <c>+N</c> for the
@@ -157,7 +163,7 @@ internal sealed class QuickBarButtons : Control
         var widths = items.Select(ItemWidth).ToList();
         foreach (var withEdit in new[] { true, false })
         {
-            var room = size.Width - (Gap * 2) - (withEdit ? EditWidth + Gap : 0);
+            var room = size.Width - EndRoom - (Gap * 2) - (withEdit ? EditWidth + Gap : 0);
             for (var take = items.Count; take >= 0 && room >= 0; take--)
             {
                 var hidden = items.Count - take;
@@ -182,7 +188,7 @@ internal sealed class QuickBarButtons : Control
 
                 if (withEdit)
                 {
-                    _slots.Add(new Slot(SlotKind.Edit, -1, new Rect(size.Width - Gap - EditWidth, top, EditWidth, height)));
+                    _slots.Add(new Slot(SlotKind.Edit, -1, new Rect(size.Width - EndRoom - Gap - EditWidth, top, EditWidth, height)));
                 }
 
                 return;
@@ -346,49 +352,43 @@ internal sealed class QuickBarButtons : Control
             {
                 case SlotKind.Item:
                 {
+                    // The key as a caption, then the binding's name: a button per binding, as the mockups draw the bar.
                     var item = _model.Items[slot.Index];
-                    Plate(context, rect, hot, down);
-                    var keyInk = item.Fires ? accent : dim;
+                    Plate(context, rect, hot, down, dashed: false);
+                    var keyInk = item.Fires ? dim : PanelText.Mix(dim, _plane, 0.35);
                     var titleInk = item.Fires ? _text : dim;
                     var x = rect.Left + PadX;
-                    x += PanelText.Draw(context, NativeKeys.Words(item.Key), x, middle, size, keyInk, true, rect.Width) + 5;
+                    x += PanelText.Draw(context, NativeKeys.Words(item.Key), x, middle, KeySize, keyInk, false, rect.Width) + 7;
                     PanelText.Draw(context, Trim(item), x, middle, size, titleInk, false, rect.Right - PadX - x + 0.5);
                     break;
                 }
 
                 case SlotKind.More:
-                    Plate(context, rect, hot, down);
+                    Plate(context, rect, hot, down, dashed: false);
                     PanelText.Draw(context, $"+{slot.Index.ToString(CultureInfo.InvariantCulture)}", rect.Left + PadX, middle, size, _text, true, rect.Width);
                     break;
 
                 case SlotKind.Edit:
-                {
-                    // A link, not a button: the accent key, the words in the dim ink, underlined under the pointer.
-                    var x = rect.Left + PadX;
-                    var keyWidth = PanelText.Draw(context, QuickBarModel.EditKey, x, middle, size, accent, true, rect.Width);
-                    var rest = QuickBarModel.EditHint[QuickBarModel.EditKey.Length..];
-                    var restWidth = PanelText.Draw(context, rest, x + keyWidth, middle, size, hot ? _text : dim, false, rect.Right - x - keyWidth);
-                    if (hot)
-                    {
-                        var y = Math.Round(middle + (size * 0.62)) + 0.5;
-                        context.DrawLine(new Pen(new SolidColorBrush(PanelText.Alpha(_text, 0xC0)), 1), new Point(x, y), new Point(x + keyWidth + restWidth, y));
-                    }
-
+                    // F4's door as a button with a dashed edge: an empty slot to put a binding in.
+                    Plate(context, rect, hot, down, dashed: true);
+                    PanelText.Draw(context, QuickBarModel.BindLabel, rect.Left + PadX, middle, size, hot ? _text : dim, false, rect.Width - (PadX * 2) + 1);
                     break;
-                }
             }
         }
     }
 
-    /// <summary>A button's plate: the text colour at a low alpha, stronger under the pointer and while pressed.</summary>
-    private void Plate(DrawingContext context, Rect rect, bool hot, bool down)
+    /// <summary>
+    /// A button's plate: a step off the plane with a rule-coloured edge, stronger under the pointer and while pressed; the
+    /// bind button's edge is dashed and its plate empty until the pointer is on it.
+    /// </summary>
+    private void Plate(DrawingContext context, Rect rect, bool hot, bool down, bool dashed)
     {
-        var alpha = (byte)(down ? 0x48 : hot ? 0x30 : 0x18);
-        context.DrawRectangle(
-            new SolidColorBrush(PanelText.Alpha(_text, alpha)),
-            new Pen(new SolidColorBrush(PanelText.Alpha(_text, 0x26)), 1),
-            rect.Deflate(0.5),
-            4,
-            4);
+        var fill = dashed && !hot && !down ? _plane : PanelText.Mix(_plane, _text, down ? 0.2 : hot ? 0.13 : 0.07);
+        var edge = new Pen(
+            new SolidColorBrush(PanelText.Mix(_plane, _text, dashed ? 0.3 : 0.18)),
+            1,
+            dashed ? new DashStyle([4, 3], 0) : null);
+        var radius = Math.Min(NativeTokens.RadiusM, rect.Height / 2);
+        context.DrawRectangle(new SolidColorBrush(fill), edge, rect.Deflate(0.5), radius, radius);
     }
 }

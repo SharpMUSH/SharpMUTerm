@@ -49,6 +49,12 @@ internal sealed class ComposerView : Border
     private readonly Border _footer;
     private readonly WrapPanel _keys;
     private readonly Border _rule;
+
+    // The docked panel's own parts: the editor's framed well, and the footer's summary, Preview and Send.
+    private readonly Border? _well;
+    private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly Border _previewButton;
+    private readonly Border _sendButton;
     private ComposerSession? _session;
     private ComposerModel? _model;
     private long _applied = -1;
@@ -70,7 +76,7 @@ internal sealed class ComposerView : Border
         _editor = new ComposerEditor
         {
             Background = Brushes.Transparent,
-            Padding = fullScreen ? new Thickness(22, 14) : new Thickness(12, 6),
+            Padding = fullScreen ? new Thickness(22, 14) : new Thickness(10, 8),
         };
         AutomationProperties.SetName(_editor, fullScreen ? "Compose a post" : "Docked composer");
         _editor.TextChanged += (_, _) => OnTextChanged();
@@ -81,7 +87,7 @@ internal sealed class ComposerView : Border
         _marks = new MarkLayer(_editor);
         _gutter = new LineGutter(_editor) { IsVisible = false };
 
-        _title = new TextBlock { FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        _title = new TextBlock { FontWeight = fullScreen ? FontWeight.Bold : FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, fullScreen ? 10 : 8, 0) };
         _target = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         _chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         _count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
@@ -93,10 +99,29 @@ internal sealed class ComposerView : Border
         headerRow.Children.Add(_count);
         headerRow.Children.Add(_chips);
         headerRow.Children.Add(_target);
-        _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(22, 10) : new Thickness(12, 3, 8, 3) };
+        // The docked panel's heading is every panel's (PanelText.Heading): 16 px in, a rule under it, the pop-out button
+        // clear at the right.
+        _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(22, 10) : new Thickness(PanelText.Pad, 10, 30, 10) };
 
         _keys = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        _footer = new Border { Child = _keys, Padding = fullScreen ? new Thickness(22, 8) : new Thickness(12, 2, 8, 3) };
+
+        // The docked footer: how long the post is, then Preview (F1 with its as-sent band) and Send, each the session's.
+        _previewButton = ActionButton("Preview", "The post as it will be sent, in F1", () => _session?.TogglePreview());
+        _previewButton.Name = "Preview";
+        _sendButton = ActionButton("Send  Ctrl+S", "Send the post (Ctrl+S)", () => _session?.Send(_editor.Text ?? string.Empty));
+        _sendButton.Name = "Send";
+        var dockedFooter = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(_sendButton, Dock.Right);
+        DockPanel.SetDock(_previewButton, Dock.Right);
+        _previewButton.Margin = new Thickness(8, 0, 8, 0);
+        dockedFooter.Children.Add(_sendButton);
+        dockedFooter.Children.Add(_previewButton);
+        dockedFooter.Children.Add(_summary);
+        _footer = new Border
+        {
+            Child = fullScreen ? _keys : dockedFooter,
+            Padding = fullScreen ? new Thickness(22, 8) : new Thickness(PanelText.Pad, 10, PanelText.Pad, 12),
+        };
 
         // F1's as-sent preview (⌥P): the one command ⌃S sends, in the editor's face, under the editor.
         _previewHeading = new TextBlock { Text = "AS SENT", FontWeight = FontWeight.Bold, Margin = new Thickness(0, 0, 0, 4) };
@@ -119,10 +144,25 @@ internal sealed class ComposerView : Border
 
         // A script's lines are numbered in a gutter beside the editor, the cells' line numbers; the error line is marked there.
         var body = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        Control page = text;
+        if (!fullScreen)
+        {
+            // Docked, the editor is a framed well inside the panel, as the mockup's Text field is.
+            _well = new Border
+            {
+                Child = text,
+                Margin = new Thickness(PanelText.Pad, 12, PanelText.Pad, 0),
+                CornerRadius = new CornerRadius(NativeTokens.RadiusS + 2),
+                BorderThickness = new Thickness(1),
+                ClipToBounds = true,
+            };
+            page = _well;
+        }
+
         Grid.SetColumn(_gutter, 0);
-        Grid.SetColumn(text, 1);
+        Grid.SetColumn(page, 1);
         body.Children.Add(_gutter);
-        body.Children.Add(text);
+        body.Children.Add(page);
 
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto") };
         Grid.SetRow(_header, 0);
@@ -165,8 +205,10 @@ internal sealed class ComposerView : Border
         .Concat(_chips.Children.OfType<Border>().Select(b => (b.Child as TextBlock)?.Text)).Where(t => !string.IsNullOrEmpty(t)));
 
     /// <summary>The key row's words, joined, for a test.</summary>
-    internal string FooterText => string.Join(" · ", _keys.Children.OfType<StackPanel>()
-        .Select(p => string.Join(" ", p.Children.OfType<Control>().Select(Words).Where(t => t.Length > 0))));
+    internal string FooterText => !_fullScreen
+        ? string.Join(" · ", new[] { _summary.Text, Words(_previewButton.Child!), Words(_sendButton.Child!) }.Where(t => !string.IsNullOrEmpty(t)))
+        : string.Join(" · ", _keys.Children.OfType<StackPanel>()
+            .Select(p => string.Join(" ", p.Children.OfType<Control>().Select(Words).Where(t => t.Length > 0))));
 
     /// <summary>The menu the editor last opened. Internal for tests.</summary>
     internal ContextMenu? OpenedMenu { get; private set; }
@@ -303,15 +345,29 @@ internal sealed class ComposerView : Border
     /// <summary>The bands' plane: the pane's, one step toward the text, so the editor reads as the page between them.</summary>
     private Color Band => Mix(_plane, _text, _fullScreen ? 0.06 : 0.045);
 
+    /// <summary>The docked editor's well: a step deeper than the panel on a dark plane, lighter on a light one.</summary>
+    private Color Well => Luma(_plane) < 0.5 ? Mix(_plane, Colors.Black, 0.25) : Mix(_plane, Colors.White, 0.7);
+
+    private static double Luma(Color c) => ((0.2126 * c.R) + (0.7152 * c.G) + (0.0722 * c.B)) / 255;
+
     private void Paint()
     {
         Background = new SolidColorBrush(_plane);
-        _header.Background = new SolidColorBrush(Band);
-        _footer.Background = new SolidColorBrush(Band);
-        _header.BorderBrush = new SolidColorBrush(Mix(_plane, _text, 0.12));
+        _header.Background = new SolidColorBrush(_fullScreen ? Band : _plane);
+        _footer.Background = new SolidColorBrush(_fullScreen ? Band : _plane);
+        _header.BorderBrush = new SolidColorBrush(_fullScreen ? Mix(_plane, _text, 0.12) : PanelText.Rule(_text, _plane));
         _header.BorderThickness = new Thickness(0, 0, 0, 1);
         _footer.BorderBrush = _header.BorderBrush;
-        _footer.BorderThickness = new Thickness(0, 1, 0, 0);
+        _footer.BorderThickness = _fullScreen ? new Thickness(0, 1, 0, 0) : default;
+        if (_well is not null)
+        {
+            _well.Background = new SolidColorBrush(Well);
+            _well.BorderBrush = new SolidColorBrush(Mix(_plane, _text, 0.2));
+        }
+
+        _summary.Foreground = new SolidColorBrush(Dim);
+        PaintButton(_previewButton, accent: false);
+        PaintButton(_sendButton, accent: true);
         _rule.Background = new SolidColorBrush(Accent);
         _editor.Foreground = new SolidColorBrush(_text);
         _editor.CaretBrush = new SolidColorBrush(Accent);
@@ -323,8 +379,8 @@ internal sealed class ComposerView : Border
         _gutter.Warn = Warn;
         _gutter.Background = new SolidColorBrush(Band);
         _gutter.InvalidateVisual();
-        _title.Foreground = new SolidColorBrush(Accent);
-        _target.Foreground = new SolidColorBrush(_text);
+        _title.Foreground = new SolidColorBrush(_fullScreen ? Accent : _text);
+        _target.Foreground = new SolidColorBrush(_fullScreen ? _text : Dim);
         _count.Foreground = new SolidColorBrush(Dim);
         _preview.Background = new SolidColorBrush(Band);
         _preview.BorderBrush = _header.BorderBrush;
@@ -338,9 +394,17 @@ internal sealed class ComposerView : Border
     {
         var cell = _view.CellExtent.Height > 0 ? _view.CellExtent.Height : 17;
         var ui = Math.Clamp(cell * 0.72, 11, 15);
-        _title.FontSize = ui;
-        _target.FontSize = ui;
+        _title.FontSize = _fullScreen ? ui : PanelText.Size;
+        _target.FontSize = _fullScreen ? ui : PanelText.Size;
         _count.FontSize = ui - 1;
+        _summary.FontSize = PanelText.Size - 1;
+        foreach (var button in new[] { _previewButton, _sendButton })
+        {
+            if (button.Child is TextBlock words)
+            {
+                words.FontSize = PanelText.Size - 1;
+            }
+        }
         _previewHeading.FontSize = ui - 1.5;
         _previewText.FontSize = Math.Clamp(cell * 0.72, 11, 16);
         _previewText.FontFamily = new FontFamily($"{_view.Renderer.Fonts.FamilyName}, {CellFonts.BundledFamily}, DejaVu Sans Mono, Liberation Mono, Consolas, Menlo, monospace");
@@ -389,18 +453,49 @@ internal sealed class ComposerView : Border
             _title.Text = "EDIT";
             _target.Text = $"{edit.Name}   {edit.Type} · from {(model.Target.Length == 0 ? "no connection" : model.Target)}";
         }
+        else if (!_fullScreen)
+        {
+            // The panel heading: Compose for Corvid.
+            var heading = SharpMUTerm.Client.Panels.PanelHeading.For(model);
+            _title.Text = heading.Title;
+            _target.Text = heading.Context ?? string.Empty;
+        }
         else
         {
             _title.Text = "COMPOSE";
-            var verb = !_fullScreen && model.Verb.Length > 0 ? $"{model.Verb}   " : string.Empty;
-            _target.Text = model.Target.Length == 0 ? $"{verb}no connection" : $"{verb}to {model.Target}";
+            _target.Text = model.Target.Length == 0 ? "no connection" : $"to {model.Target}";
         }
 
         _target.Foreground = new SolidColorBrush(
-            model.Target.Length == 0 || model.Edit?.Status?.StartsWith('!') == true ? Warn : _text);
+            model.Target.Length == 0 || model.Edit?.Status?.StartsWith('!') == true ? Warn : _fullScreen ? _text : Dim);
 
         _chips.Children.Clear();
-        if (model.Edit is null)
+        if (model.Edit is null && !_fullScreen)
+        {
+            // The escaping, as a chip that switches it (⌥L): Literal or As typed.
+            var literal = model.Escaping == ComposeEscaping.Literal;
+            var escaping = Chip(literal ? "Literal" : "As typed", literal ? Accent : Dim, ui - 1.5);
+            escaping.Name = "Escaping";
+            escaping.Cursor = new Cursor(StandardCursorType.Hand);
+            ToolTip.SetTip(escaping, literal ? "Sent as typed, % [ ] escaped (Alt+L switches)" : "Sent exactly as typed (Alt+L switches)");
+            escaping.PointerPressed += (_, e) =>
+            {
+                if (e.GetCurrentPoint(escaping).Properties.IsLeftButtonPressed)
+                {
+                    e.Handled = true;
+                    _session?.ToggleEscaping();
+                }
+            };
+            _chips.Children.Add(escaping);
+            if (model.Armed && model.Dictionary is { } named)
+            {
+                _chips.Children.Add(Chip(named, Dim, ui - 1.5));
+            }
+
+            _count.IsVisible = false;
+            _sendButton.Opacity = model.CanSend ? 1 : 0.55;
+        }
+        else if (model.Edit is null)
         {
             _chips.Children.Add(Chip(model.Escaping == ComposeEscaping.Literal ? "literal" : "as typed",
                 model.Escaping == ComposeEscaping.Literal ? Accent : _text, ui - 1.5));
@@ -416,7 +511,15 @@ internal sealed class ComposerView : Border
         SyncLength();
 
         _keys.Children.Clear();
-        var narrow = !_fullScreen && Bounds.Width is > 0 and < 560;
+        if (!_fullScreen)
+        {
+            // A docked composer too short for its footer keeps the editor and drops the footer.
+            _footer.IsVisible = Bounds.Height is 0 or >= 96;
+            _editor.PlaceholderText = !model.Armed ? ComposerModel.ClickToWrite : null;
+            _editor.PlaceholderForeground = new SolidColorBrush(Dim);
+            return;
+        }
+
         // The idle editor's placeholder says "Click to write a post"; the row's keyless hint saying it again was the
         // panel saying one thing twice.
         var placeholder = !model.Armed && !_fullScreen;
@@ -436,7 +539,7 @@ internal sealed class ComposerView : Border
 
             item.Children.Add(new TextBlock
             {
-                Text = NativeKeys.Words(narrow && key.Short is { } brief ? brief : key.Label),
+                Text = NativeKeys.Words(key.Label),
                 FontSize = ui - 1,
                 Foreground = new SolidColorBrush(Dim),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -516,6 +619,14 @@ internal sealed class ComposerView : Border
 
         var text = _editor.Text ?? string.Empty;
         _count.Text = ComposerModel.CharactersLabel(ComposerModel.SentLength(text, model.Escaping, model.Edit is not null));
+        if (!_fullScreen)
+        {
+            // 2 paragraphs · 31 words · 240 chars; before anything is written, the keys that move in and out of it.
+            var summary = ComposerModel.Summary(text);
+            _summary.Text = summary.Length > 0
+                ? $"{summary} · {_count.Text}"
+                : NativeKeys.Words(model.Armed ? "Esc command line · F1 full screen" : "F1 full screen");
+        }
         if (_preview.IsVisible)
         {
             var command = ComposeMessage.Build(text.Replace("\r\n", "\n", StringComparison.Ordinal), model.Escaping);
@@ -782,6 +893,58 @@ internal sealed class ComposerView : Border
     }
 
     // ── colours ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A footer button drawn as a plate, as the panels' are: a click runs <paramref name="click"/>.</summary>
+    private static Border ActionButton(string words, string tip, Action click)
+    {
+        var button = new Border
+        {
+            Child = new TextBlock { Text = words, VerticalAlignment = VerticalAlignment.Center },
+            Padding = new Thickness(10, 5),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusS + 2),
+            BorderThickness = new Thickness(1),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(button, tip);
+        AutomationProperties.SetName(button, words);
+        button.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(button).Properties.IsLeftButtonPressed)
+            {
+                e.Handled = true;
+                click();
+            }
+        };
+        return button;
+    }
+
+    private void PaintButton(Border button, bool accent)
+    {
+        button.Background = new SolidColorBrush(accent ? Accent : Mix(_plane, _text, 0.07));
+        button.BorderBrush = new SolidColorBrush(accent ? Accent : Mix(_plane, _text, 0.18));
+        if (button.Child is TextBlock words)
+        {
+            words.Foreground = new SolidColorBrush(accent ? (Luma(Accent) > 0.5 ? Mix(Accent, Colors.Black, 0.85) : Colors.White) : _text);
+            words.FontWeight = accent ? FontWeight.SemiBold : FontWeight.Normal;
+        }
+    }
+
+    /// <summary>Presses the docked footer's Preview or Send button, as a click on it does. Internal for tests.</summary>
+    internal void PressFooter(string name)
+    {
+        if (name == "Send")
+        {
+            _session?.Send(_editor.Text ?? string.Empty);
+        }
+        else
+        {
+            _session?.TogglePreview();
+        }
+    }
+
+    /// <summary>The docked footer's summary as drawn. Internal for tests.</summary>
+    internal string SummaryText => _summary.Text ?? string.Empty;
 
     internal static Color Mix(Color a, Color b, double t) => Color.FromRgb(
         (byte)Math.Round(a.R + ((b.R - a.R) * t)),

@@ -56,6 +56,9 @@ internal sealed record NativeTokens(
     /// <summary>The type ramp: a surface's or a page's heading.</summary>
     public const double Heading = 18;
 
+    /// <summary>The type ramp: a whole page's title, of which there is one (the first-run welcome).</summary>
+    public const double Display = 26;
+
     /// <summary>
     /// Not on the ramp: the theme cards' miniature of the cells (F7), which is a picture of a terminal at a quarter of
     /// its size rather than text to read.

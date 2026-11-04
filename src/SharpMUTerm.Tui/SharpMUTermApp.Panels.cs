@@ -202,10 +202,19 @@ internal sealed partial class SharpMUTermApp
             return null;
         }
 
-        var meters = StatusMeterRenderer.Read(PanelMeters(sessionKey), data)
+        var configured = PanelMeters(sessionKey);
+        var meters = StatusMeterRenderer.Read(configured, data)
             .Select(m => new VitalsMeter(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low))
             .ToList();
-        return new VitalsModel(meters, VitalsModel.TargetFrom(CombatTarget.Read(data)));
+
+        // Where each value was found: the first of a meter's alternatives the game has sent, as the reading took it.
+        var answered = configured
+            .Select(m => StatusMeter.Alternatives(m.Value).FirstOrDefault(path => data.GetText(path) is not null))
+            .OfType<string>();
+        return new VitalsModel(meters, VitalsModel.TargetFrom(CombatTarget.Read(data)))
+        {
+            Source = VitalsModel.SourceOf(answered),
+        };
     }
 
     /// <summary>

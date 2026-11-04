@@ -249,11 +249,23 @@ internal sealed partial class SharpMUTermApp
                 welcome.Back();
                 Republish();
             }),
-            () => OnUiThread(() => NativeModalClosed(session!)))
+            () => OnUiThread(() =>
+            {
+                ForgetWelcomeWorlds(session!);
+                NativeModalClosed(session!);
+            }))
         {
             Theme = _theme.Clone(),
+            FindWorldsWith = query => OnUiThread(() => FindWorldsInWelcome(session!, query)),
         };
         ShowNativeModal(native, session);
+
+        // A welcome reopened by a pick keeps the list the player was choosing from: its rows are in hand, so nothing is asked.
+        if (_worldModel.State == WorldBrowseState.Ready && _welcomeWorldsShown)
+        {
+            AttachWelcomeWorlds(session);
+        }
+
         return true;
     }
 

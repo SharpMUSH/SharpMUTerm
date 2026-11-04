@@ -9,6 +9,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window, every docked panel has a heading saying what it shows (Compose for Corvid, Here The Grand
+  Plaza · 6, Vitals GMCP Char.Vitals, Map Aetherfall · level 0). Who is here marks each person active, idle or NPC; a
+  tall vitals pane draws a card with the target under a rule; the quick bar's buttons show their key and end in a
+  "+ Bind a key" button that opens F4.
+- The docked composer in the window has its escaping on a chip you can click, a paragraph and word count, and Preview
+  and Send buttons; Preview opens the full-screen composer with the as-sent band.
+- The window's welcome is one page: find a world from mu*index and add it, connect directly (with the `/connect` line
+  it stands for), and pick a starting layout from two cards. Nothing is fetched until you ask for the list.
 - A script error in the script console that names a file and line is now a link: click it to open that script with the
   caret on the line and the line marked. Closing the editor goes back to the console.
 - The script editor numbers its lines in the desktop window too, and after a save whose reload fails, the line the

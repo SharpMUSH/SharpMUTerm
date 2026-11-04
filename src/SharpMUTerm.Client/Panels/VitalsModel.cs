@@ -49,14 +49,57 @@ public sealed record VitalsModel(IReadOnlyList<VitalsMeter> Meters, VitalsTarget
     /// <summary>The model for a Core target, or null.</summary>
     public static VitalsTarget? TargetFrom(CombatTarget? target) => target is null ? null : new VitalsTarget(target.Name, target.Share);
 
+    /// <summary>
+    /// Where the numbers come from, as a heading says it (<c>GMCP Char.Vitals</c>, <c>MSDP</c>, <c>MXP</c>): the game data
+    /// paths the meters were read from (<see cref="SourceOf"/>). Null when they came from more than one protocol, or none.
+    /// </summary>
+    public string? Source { get; init; }
+
+    /// <summary>
+    /// The source of a set of game data paths: <c>MSDP</c> or <c>MXP</c> for theirs, <c>GMCP</c> and the package they share
+    /// for GMCP's (<c>GMCP Char.Vitals</c>, or <c>GMCP</c> alone across packages), null for a mixture or none.
+    /// </summary>
+    public static string? SourceOf(IEnumerable<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var list = paths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList();
+        if (list.Count == 0)
+        {
+            return null;
+        }
+
+        static string Protocol(string path) =>
+            path.StartsWith("MSDP.", StringComparison.Ordinal) ? "MSDP"
+            : path.StartsWith("MXP.", StringComparison.Ordinal) ? "MXP"
+            : "GMCP";
+
+        var protocols = list.Select(Protocol).Distinct(StringComparer.Ordinal).ToList();
+        if (protocols.Count != 1)
+        {
+            return null;
+        }
+
+        if (protocols[0] != "GMCP")
+        {
+            return protocols[0];
+        }
+
+        var packages = list
+            .Select(p => p.LastIndexOf('.') is > 0 and var dot ? p[..dot] : string.Empty)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return packages.Count == 1 && packages[0].Length > 0 ? $"GMCP {packages[0]}" : "GMCP";
+    }
+
     /// <summary>Value equality over the meters, which a record's list member does not give.</summary>
     public bool Equals(VitalsModel? other) =>
-        other is not null && Equals(Target, other.Target) && Meters.SequenceEqual(other.Meters);
+        other is not null && Equals(Target, other.Target) && Source == other.Source && Meters.SequenceEqual(other.Meters);
 
     public override int GetHashCode()
     {
         var hash = new HashCode();
         hash.Add(Target);
+        hash.Add(Source);
         foreach (var meter in Meters)
         {
             hash.Add(meter);
