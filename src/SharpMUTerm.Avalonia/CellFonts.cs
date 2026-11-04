@@ -24,8 +24,26 @@ internal sealed class CellFonts : IDisposable
         "CaskaydiaMono Nerd Font", "CaskaydiaCove Nerd Font Mono", "CaskaydiaCove Nerd Font",
         "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "FiraCode Nerd Font Mono",
         "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Consolas", "SF Mono", "Menlo",
+    ];
+
+    /// <summary>
+    /// Installed faces tried after the bundled JetBrains Mono: they are on most machines, so they used to be
+    /// what a window without a preferred face drew in, and none of them is a face anybody picked.
+    /// </summary>
+    private static readonly string[] LastResortFamilies =
+    [
         "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Courier New",
     ];
+
+    /// <summary>The bundled faces (<c>Fonts/</c>), loaded once and never disposed: every grid shares them.</summary>
+    private static readonly Lazy<SKTypeface?> BundledRegular = new(() => Bundled("JetBrainsMono-Regular.ttf"));
+    private static readonly Lazy<SKTypeface?> BundledBold = new(() => Bundled("JetBrainsMono-Bold.ttf"));
+    private static readonly Lazy<SKTypeface?> BundledItalic = new(() => Bundled("JetBrainsMono-Italic.ttf"));
+    private static readonly Lazy<SKTypeface?> BundledBoldItalic = new(() => Bundled("JetBrainsMono-BoldItalic.ttf"));
+    private static readonly Lazy<SKTypeface?> BundledSymbols = new(() => Bundled("SymbolsNerdFontMono-Regular.ttf"));
+
+    /// <summary>The family name the bundled text face reports.</summary>
+    internal const string BundledFamily = "JetBrains Mono";
 
     private readonly ConcurrentDictionary<(int CodePoint, bool Bold, bool Italic), SKFont> _fonts = new();
     private readonly SKTypeface _regular;
@@ -141,8 +159,31 @@ internal sealed class CellFonts : IDisposable
             }
         }
 
-        return null;
+        return BundledSymbols.Value is { } bundled && bundled.ContainsGlyph(codePoint) ? bundled : null;
     }
+
+    /// <summary>Whether the bundled faces are in this build, for a test to hold the packaging to.</summary>
+    internal static bool HasBundledFaces => BundledRegular.Value is not null && BundledSymbols.Value is not null;
+
+    private static SKTypeface? Bundled(string file)
+    {
+        using var stream = typeof(CellFonts).Assembly.GetManifestResourceStream($"Fonts.{file}");
+        if (stream is null)
+        {
+            return null;
+        }
+
+        using var data = SKData.Create(stream);
+        return data is null ? null : SKTypeface.FromData(data);
+    }
+
+    private static SKTypeface? BundledText(SKFontStyle style) => (style.Weight >= (int)SKFontStyleWeight.SemiBold, style.Slant != SKFontStyleSlant.Upright) switch
+    {
+        (true, true) => BundledBoldItalic.Value,
+        (true, false) => BundledBold.Value,
+        (false, true) => BundledItalic.Value,
+        _ => BundledRegular.Value,
+    };
 
     private static readonly string[] SymbolFamilies =
     [
@@ -152,6 +193,24 @@ internal sealed class CellFonts : IDisposable
     private static SKTypeface? Match(string? family, SKFontStyle style)
     {
         foreach (var name in family is null ? PreferredFamilies : [family, .. PreferredFamilies])
+        {
+            var face = SKFontManager.Default.MatchFamily(name, style);
+            if (face is not null && string.Equals(face.FamilyName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return face;
+            }
+
+            face?.Dispose();
+        }
+
+        // The bundled face is asked for by its own name, so a family that resolves to it (the regular face's,
+        // when bold is matched after it) gets the bundled weights rather than a system fallback.
+        if (BundledText(style) is { } bundled)
+        {
+            return bundled;
+        }
+
+        foreach (var name in LastResortFamilies)
         {
             var face = SKFontManager.Default.MatchFamily(name, style);
             if (face is not null && string.Equals(face.FamilyName, name, StringComparison.OrdinalIgnoreCase))

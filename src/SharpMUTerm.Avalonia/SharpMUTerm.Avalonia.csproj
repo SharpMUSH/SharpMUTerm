@@ -24,6 +24,16 @@
     <PackageReference Include="SharpConsoleUI" />
   </ItemGroup>
 
+  <!--
+    Bundled faces (Fonts/README.md): JetBrains Mono for text when no preferred monospace face is installed,
+    and Symbols Nerd Font Mono for the chrome's icons. Embedded so a single-file publish carries them; the
+    licences are copied beside the executable so every package ships them.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\*.ttf" LogicalName="Fonts.%(Filename)%(Extension)" />
+    <None Include="Fonts\*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="licenses\%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="SharpMUTerm.Avalonia.Tests" />
   </ItemGroup>
