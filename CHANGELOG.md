@@ -9,6 +9,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: notices also appear as toasts in the bottom-right corner. They stay while you hover over them,
+  fade after a few seconds, and never take the keyboard. Some carry a button, such as *Change layout* or
+  *Reconnect*. The status row still shows each notice, as it does in the terminal.
+- Maps colour each area, mark rooms with stairs up or down, and show a legend: a one-line legend under the map in
+  the terminal, and a legend in the corner in the desktop window. In the window, room names appear when you zoom
+  in, and hovering over a room shows its name.
 - Ctrl+P lists *Fold or unfold the connection rail*, the same fold as Ctrl+B b and as the desktop window's
   sidebar button.
 - Desktop window: the header and the connections sidebar now have room of their own — a full-height toolbar

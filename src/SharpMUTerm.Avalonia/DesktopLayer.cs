@@ -46,6 +46,8 @@ internal sealed class DesktopLayer : Canvas
     private readonly NativeSidebar _sidebar;
     private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
+    private readonly NoticeToasts _toasts;
+    private int _noticeAboveRow;
 
     /// <param name="view">The cells.</param>
     /// <param name="chrome">
@@ -68,6 +70,16 @@ internal sealed class DesktopLayer : Canvas
         _sidebar = new NativeSidebar(view) { IsVisible = false };
         Children.Add(_header);
         Children.Add(_sidebar);
+
+        // The toasts last, over everything: a notice is the one thing the window says over a panel.
+        _toasts = new NoticeToasts();
+        Children.Add(_toasts);
+        _pointer.NoticeSaid += notice => Dispatcher.UIThread.Post(() =>
+        {
+            _noticeAboveRow = notice.AboveRow;
+            Sync();
+            _toasts.Show(notice);
+        });
         _view.Repainted += Sync;
         SyncInsets(collapsed: false);
         Sync();
@@ -133,7 +145,23 @@ internal sealed class DesktopLayer : Canvas
         SyncChrome();
         SyncButtons(frame, cell);
         SyncPanels(frame, cell);
+        SyncToasts(frame, cell);
     }
+
+    /// <summary>The toasts over the cell area, their stack sitting on the row the client said the pane area ends at.</summary>
+    private void SyncToasts(ScreenFrame frame, Size cell)
+    {
+        var origin = CellOrigin;
+        SetLeft(_toasts, origin.X);
+        SetTop(_toasts, origin.Y);
+        _toasts.Width = Math.Max(0, frame.Width * cell.Width);
+        _toasts.Height = Math.Max(0, frame.Height * cell.Height);
+        var above = _noticeAboveRow > 0 && _noticeAboveRow < frame.Height ? _noticeAboveRow : Math.Max(0, frame.Height - 2);
+        _toasts.Bottom = above * cell.Height;
+    }
+
+    /// <summary>The notice toasts. Internal for tests.</summary>
+    internal NoticeToasts Toasts => _toasts;
 
     /// <summary>
     /// The native header across the top and the sidebar down the left, when the window draws them — always, a modal in

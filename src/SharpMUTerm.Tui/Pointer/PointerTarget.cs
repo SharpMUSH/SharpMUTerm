@@ -147,6 +147,15 @@ internal interface IPointerPresenter
     void Chrome(ChromeOverlay chrome)
     {
     }
+
+    /// <summary>
+    /// A notice was said, as it is drawn on the status row. The status row's cells carry it in every host; a host that
+    /// draws notices natively (the window's toasts) shows this over the cells and ignores nothing else. It must never
+    /// take focus. A host that draws none ignores this (the default).
+    /// </summary>
+    void Notice(NoticeOverlay notice)
+    {
+    }
 }
 
 /// <summary>

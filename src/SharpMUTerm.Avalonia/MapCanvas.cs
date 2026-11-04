@@ -150,7 +150,8 @@ internal sealed class MapCanvas : Control
         {
             _hovered = room?.Id;
             Cursor = new Cursor(room is null ? StandardCursorType.Arrow : StandardCursorType.Hand);
-            ToolTip.SetTip(this, room is null ? null : room.Current ? $"{room.Name} — you are here" : $"{room.Name} — click to walk here");
+            // The name is drawn on the canvas beside the room; the tip says only what a click does.
+            ToolTip.SetTip(this, room is null || room.Current ? null : "Click to walk here");
             InvalidateVisual();
         }
     }
@@ -202,6 +203,41 @@ internal sealed class MapCanvas : Control
 
     // ── Drawing ───────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>The zoom from which every room's name is written under it, not only the hovered one's.</summary>
+    internal const double NamesFromZoom = 1.6;
+
+    /// <summary>
+    /// The colour a room is drawn in: its area's, as the view gives it (<see cref="MapViewModel.AreaColour"/>), or the
+    /// text colour faded when the area has no name. Internal for tests, which hold it to the model's hex.
+    /// </summary>
+    internal Color AreaColourOf(MapViewRoom room) =>
+        _model.AreaColour is { } hex ? Parse(hex) : Faded(0.55);
+
+    /// <summary>The colour of the area a room's way out leads into, or null. Internal for tests.</summary>
+    internal Color? ElsewhereColourOf(MapViewRoom room) =>
+        _model.ColourOf(room.Elsewhere) is { } hex ? Parse(hex) : null;
+
+    /// <summary>
+    /// The legend's entries, in the order drawn: you, the stairs marks when a room has them, a walk under way, then
+    /// every area the view names in its colour. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<(string Label, Color Swatch)> LegendEntries()
+    {
+        var entries = new List<(string, Color)> { ("you", Parse(_ink.Bar)) };
+        if (_model.Rooms.Any(r => r.Up || r.Down))
+        {
+            entries.Add(("stairs up / down", Faded(0.85)));
+        }
+
+        if (_model.Rooms.Any(r => r.Ahead))
+        {
+            entries.Add(("walk", Parse(_ink.Low)));
+        }
+
+        entries.AddRange(_model.Areas.Select(a => (a.Name, Parse(a.Colour))));
+        return entries;
+    }
+
     public override void Render(DrawingContext context)
     {
         var bounds = new Rect(Bounds.Size);
@@ -225,39 +261,62 @@ internal sealed class MapCanvas : Control
         var size = RoomSize;
         var accent = Parse(_ink.Bar);
         var path = Parse(_ink.Low);
-        var plainFill = new SolidColorBrush(Mix(_plane, _text, 0.16));
-        var plainEdge = new Pen(new SolidColorBrush(Faded(0.55)), 1.2);
         var radius = size * 0.22;
+        var names = Zoom >= NamesFromZoom;
         foreach (var room in _model.Rooms)
         {
             var c = CentreOf(room);
             var rect = new Rect(c.X - (size / 2), c.Y - (size / 2), size, size);
-            if (!rect.Intersects(bounds))
+            if (!rect.Inflate(size).Intersects(bounds))
             {
                 continue;
             }
 
+            // A way into another area: a short spur off the room's corner, in that area's colour.
+            if (ElsewhereColourOf(room) is { } elsewhere)
+            {
+                var spur = new Pen(new SolidColorBrush(elsewhere), Math.Clamp(2 * Zoom, 1.5, 3), lineCap: PenLineCap.Round);
+                context.DrawLine(spur, rect.BottomRight - new Vector(size * 0.1, size * 0.1), rect.BottomRight + new Vector(size * 0.32, size * 0.32));
+                context.DrawEllipse(new SolidColorBrush(elsewhere), null, rect.BottomRight + new Vector(size * 0.36, size * 0.36), size * 0.12, size * 0.12);
+            }
+
+            var area = AreaColourOf(room);
             if (room.Current)
             {
-                // A soft halo, then the room in the accent: the one thing the eye should find first.
-                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x40, accent.R, accent.G, accent.B)), null, rect.Inflate(size * 0.22), radius * 1.6, radius * 1.6);
+                // A soft halo and a ring, then the room in the accent: the one thing the eye should find first.
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x38, accent.R, accent.G, accent.B)), null, rect.Inflate(size * 0.34), radius * 2, radius * 2);
+                context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(0xB0, accent.R, accent.G, accent.B)), 1.5), rect.Inflate(size * 0.2), radius * 1.6, radius * 1.6);
                 context.DrawRectangle(new SolidColorBrush(accent), new Pen(new SolidColorBrush(Mix(accent, Colors.White, 0.35)), 1.5), rect, radius, radius);
-                continue;
+            }
+            else
+            {
+                var fill = new SolidColorBrush(Mix(_plane, area, room.Id == _hovered ? 0.55 : 0.3));
+                var edge = room.Ahead ? new Pen(new SolidColorBrush(path), 2.2) : new Pen(new SolidColorBrush(area), 1.4);
+                context.DrawRectangle(fill, edge, rect, radius, radius);
+                if (room.Locked)
+                {
+                    var lockPen = new Pen(new SolidColorBrush(Faded(0.7)), 1.2);
+                    context.DrawLine(lockPen, rect.TopLeft + new Vector(size * 0.25, size * 0.25), rect.BottomRight - new Vector(size * 0.25, size * 0.25));
+                }
             }
 
-            var fill = room.Id == _hovered ? new SolidColorBrush(Mix(_plane, _text, 0.3)) : plainFill;
-            var edge = room.Ahead ? new Pen(new SolidColorBrush(path), 2) : plainEdge;
-            context.DrawRectangle(fill, edge, rect, radius, radius);
-            if (room.Locked)
+            DrawStairs(context, room, rect, room.Current ? Contrasting(accent) : _text);
+
+            if ((names || room.Id == _hovered) && room.Id != _hovered)
             {
-                var lockPen = new Pen(new SolidColorBrush(Faded(0.6)), 1.2);
-                context.DrawLine(lockPen, rect.TopLeft + new Vector(size * 0.25, size * 0.25), rect.BottomRight - new Vector(size * 0.25, size * 0.25));
+                DrawName(context, room.Name, c, size, plate: false);
             }
         }
 
+        // The hovered room's name last, on a plate, so it reads over its neighbours.
+        if (_hovered is { } hoveredId && byId.TryGetValue(hoveredId, out var hovered))
+        {
+            DrawName(context, hovered.Current ? $"{hovered.Name} — you are here" : hovered.Name, CentreOf(hovered), size, plate: true);
+        }
+
         // What and where, in the corner: the area and level, and a walk under way.
-        var label = _model.Area is { Length: > 0 } area ? $"{area} · level {_model.Level}" : $"level {_model.Level}";
-        DrawText(context, label, new Point(10, 8), 12, Faded(0.75));
+        var label = _model.Area is { Length: > 0 } areaName ? $"{areaName} · level {_model.Level}" : $"level {_model.Level}";
+        DrawText(context, label, new Point(10, 8), 12, _model.AreaColour is { } areaHex ? Parse(areaHex) : Faded(0.75));
         if (_model.Walking is { } walking)
         {
             DrawText(context, walking, new Point(10, 26), 12, path);
@@ -266,7 +325,107 @@ internal sealed class MapCanvas : Control
         {
             DrawText(context, here.Name, new Point(10, 26), 12, accent);
         }
+
+        DrawLegend(context, bounds);
     }
+
+    /// <summary>Up and down marks: a small triangle at the top of the room for a way up, at the bottom for a way down.</summary>
+    private void DrawStairs(DrawingContext context, MapViewRoom room, Rect rect, Color ink)
+    {
+        if (!room.Up && !room.Down)
+        {
+            return;
+        }
+
+        var brush = new SolidColorBrush(Color.FromArgb(0xE0, ink.R, ink.G, ink.B));
+        var w = rect.Width * 0.26;
+        var h = rect.Height * 0.2;
+        var mid = rect.Center.X;
+        if (room.Up)
+        {
+            var top = rect.Y + (rect.Height * 0.16);
+            context.DrawGeometry(brush, null, Triangle(new Point(mid, top), new Point(mid - w, top + h), new Point(mid + w, top + h)));
+        }
+
+        if (room.Down)
+        {
+            var bottom = rect.Bottom - (rect.Height * 0.16);
+            context.DrawGeometry(brush, null, Triangle(new Point(mid, bottom), new Point(mid - w, bottom - h), new Point(mid + w, bottom - h)));
+        }
+    }
+
+    private static StreamGeometry Triangle(Point a, Point b, Point c)
+    {
+        var geometry = new StreamGeometry();
+        using var g = geometry.Open();
+        g.BeginFigure(a, isFilled: true);
+        g.LineTo(b);
+        g.LineTo(c);
+        g.EndFigure(isClosed: true);
+        return geometry;
+    }
+
+    /// <summary>A room's name centred under it; on a plate of the pane's own colour when <paramref name="plate"/>.</summary>
+    private void DrawName(DrawingContext context, string name, Point centre, double size, bool plate)
+    {
+        var maxWidth = plate ? 280 : Math.Max(30, (Spacing * Zoom) - 4);
+        var text = PanelText.Format(name, 11, plate ? _text : Faded(0.8), bold: plate, maxWidth);
+        var at = new Point(centre.X - (text.Width / 2), centre.Y + (size / 2) + 3);
+        if (plate)
+        {
+            var back = new Rect(at.X - 6, at.Y - 2, text.Width + 12, text.Height + 4);
+            context.DrawRectangle(new SolidColorBrush(Mix(_plane, _text, 0.12)), new Pen(new SolidColorBrush(Faded(0.35)), 1), back, 4, 4);
+        }
+        else
+        {
+            // The pane's own plane behind the words, so an exit line passing under a room does not strike them out.
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xD0, _plane.R, _plane.G, _plane.B)), null, new Rect(at.X - 2, at.Y, text.Width + 4, text.Height), 2, 2);
+        }
+
+        context.DrawText(text, at);
+    }
+
+    /// <summary>
+    /// The legend, in the bottom-left corner on a plate: you, the stairs, a walk, and each area in its colour. Drawn only
+    /// where it fits, and it never takes the pointer from a room under it (the canvas hit-tests rooms only).
+    /// </summary>
+    private void DrawLegend(DrawingContext context, Rect bounds)
+    {
+        var entries = LegendEntries();
+        const double size = 11, row = 16, pad = 8, swatch = 9;
+        var widest = entries.Max(e => PanelText.Measure(e.Label, size, bold: false));
+        var width = pad + swatch + 6 + widest + pad;
+        var height = (pad * 2) + (entries.Count * row) - (row - size - 3);
+        if (width > bounds.Width * 0.6 || height > bounds.Height * 0.6)
+        {
+            return;
+        }
+
+        var plate = new Rect(10, bounds.Height - height - 10, width, height);
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE6, _plane.R, _plane.G, _plane.B)), new Pen(new SolidColorBrush(Faded(0.25)), 1), plate, 5, 5);
+        var y = plate.Y + pad;
+        foreach (var (label, colour) in entries)
+        {
+            var mark = new Rect(plate.X + pad, y + 2, swatch, swatch);
+            if (label == "stairs up / down")
+            {
+                var brush = new SolidColorBrush(colour);
+                context.DrawGeometry(brush, null, Triangle(new Point(mark.Center.X, mark.Y), new Point(mark.X, mark.Center.Y - 0.5), new Point(mark.Right, mark.Center.Y - 0.5)));
+                context.DrawGeometry(brush, null, Triangle(new Point(mark.Center.X, mark.Bottom), new Point(mark.X, mark.Center.Y + 0.5), new Point(mark.Right, mark.Center.Y + 0.5)));
+            }
+            else
+            {
+                context.DrawRectangle(new SolidColorBrush(colour), null, mark, 2, 2);
+            }
+
+            context.DrawText(PanelText.Format(label, size, Faded(0.85), bold: false, widest + 1), new Point(mark.Right + 6, y));
+            y += row;
+        }
+    }
+
+    /// <summary>Black or white, whichever reads on <paramref name="fill"/>: the stairs marks on the accent room.</summary>
+    private static Color Contrasting(Color fill) =>
+        (0.299 * fill.R) + (0.587 * fill.G) + (0.114 * fill.B) > 140 ? Color.FromRgb(0x10, 0x10, 0x14) : Colors.White;
 
     private static void DrawText(DrawingContext context, string text, Point at, double size, Color colour) =>
         context.DrawText(

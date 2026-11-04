@@ -186,6 +186,20 @@ public class SurfaceParityTests
             covered.Add(SurfaceCatalog.RailStrip);
         }
 
+        // Notices: each toast the window was handed is the model the status row was drawn from, and the last is the
+        // one the row carries now.
+        {
+            using var driver = new AvaloniaConsoleDriver(140, 36);
+            await using var app = App(driver, DemoScene.Build());
+            app.RenderSnapshot("notices");
+            var said = driver.Pointer.Notices;
+            await Assert.That(said.Count).IsEqualTo(3);
+            await Assert.That((object)said[^1].Notice).IsEqualTo(app.DrawnModel(SurfaceCatalog.Notice)).Because("notice");
+            await Assert.That(app.NoticeMarkup(said[^1].Notice)).IsEqualTo(app.LastNotice);
+            await Assert.That(said[0].Notice.Action).IsNotNull().Because("the first offers its action");
+            covered.Add(SurfaceCatalog.Notice);
+        }
+
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
         await Assert.That(covered).IsEquivalentTo(drawnNatively).Because("every surface the window draws natively has its model compared here");
     }
@@ -292,6 +306,22 @@ public class SurfaceParityTests
             await Assert.That(Outcome(native)).IsEqualTo(Outcome(cells)).Because("palette: run");
             probed.Add(SurfaceCatalog.Palette);
         }
+
+        // Notice: a click on a toast runs its action; in cells the same command is the ⌃P entry, run by the registry.
+        var openF5 = new SharpMUTerm.Client.Chrome.NoticeAction("screen:worlds", "Open F5");
+        await Same("notice: action", "layout-combat",
+            (app, d) =>
+            {
+                app.SimulateNotice("a set is missing", SharpMUTerm.Core.Diagnostics.MessageSeverity.Warning, "⌃P", openF5);
+                var toast = d.Pointer.Notices[^1];
+                toast.Run(toast.Notice.Action!.Command);
+            },
+            (app, _) =>
+            {
+                app.SimulateNotice("a set is missing", SharpMUTerm.Core.Diagnostics.MessageSeverity.Warning, "⌃P", openF5);
+                app.DispatchCommand(openF5.Command);
+            });
+        probed.Add(SurfaceCatalog.Notice);
 
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         await Assert.That(probed).IsEquivalentTo(acting).Because("every native surface with actions has a probe here");

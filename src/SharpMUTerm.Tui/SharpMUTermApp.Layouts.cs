@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
@@ -429,7 +430,11 @@ internal sealed partial class SharpMUTermApp
                 : "it is a roleplay server",
             _ => "nothing it sends points elsewhere",
         };
-        Notice($"Using the {name} layout for {Snippet(session.World.Name)}: {why}. ⌥M changes it.", MessageSeverity.Info, "⌥M");
+        Notice(
+            $"Using the {name} layout for {Snippet(session.World.Name)}: {why}. ⌥M changes it.",
+            MessageSeverity.Info,
+            "⌥M",
+            new NoticeAction(LayoutCommands.Manage, "Change layout"));
 
         if (_liveLayout is { } live
             && string.Equals(live.SessionKey, session.SessionKey, StringComparison.Ordinal)

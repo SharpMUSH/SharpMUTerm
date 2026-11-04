@@ -81,4 +81,22 @@ internal sealed class WindowPointer : IPointerPresenter
         Volatile.Write(ref _chrome, chrome);
         ChromeChanged?.Invoke();
     }
+
+    private IReadOnlyList<NoticeOverlay> _notices = [];
+
+    /// <summary>The notices the client has said, newest last, the most recent <see cref="NoticesKept"/>.</summary>
+    public IReadOnlyList<NoticeOverlay> Notices => Volatile.Read(ref _notices);
+
+    /// <summary>How many notices are kept for the toasts; the message log is the history.</summary>
+    public const int NoticesKept = 8;
+
+    /// <summary>Raised on the client's thread with each notice the client says.</summary>
+    public event Action<NoticeOverlay>? NoticeSaid;
+
+    void IPointerPresenter.Notice(NoticeOverlay notice)
+    {
+        var next = Notices.Append(notice).TakeLast(NoticesKept).ToList();
+        Volatile.Write(ref _notices, next);
+        NoticeSaid?.Invoke(notice);
+    }
 }

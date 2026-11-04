@@ -135,6 +135,16 @@ fallbacks) for inline images/maps.
     changes (`SyncMapSizes` on `PostBufferPaint`), never fed from a line buffer, so its control lives in
     `_mapControls` and not `_panes`. Its `LinkClicked` is its own and answers only `mux:map:<id>` —
     the output panes' handler never sees a map link, and the map's never sees a send.
+  - **Both hosts draw the map from one `MapViewModel`, which carries the colours** (`MapAreaPalette`, Client;
+    `MapRenderer` cells, `MapCanvas` native). Each area's colour is picked by a stable hash of its name (FNV-1a,
+    so the same area is the same colour every run and in both hosts) from one of two eight-hue sets, dark-pane
+    and light-pane (`WorkspacePalette.DarkPanes`), because no fixed hex clears 3:1 on both kinds of theme; every
+    entry clears the floor on its themes' reading planes (`MapAreaPaletteTests`), and the cells still pass each
+    colour through `Contrast.Legible`. `Areas` lists the drawn area first, then areas reached by an exit. A room
+    carries `Up`/`Down` (an up/down exit or stub, or an exit to a room on another level) and `Elsewhere` (the
+    other area an exit leads to). The cells draw a one-line legend on the last row from 6 rows up — words go
+    first, then names shorten, then areas are counted (`+2`); it never wraps. The window adds names from zoom
+    1.6, the hovered name on a plate, stairs triangles, a halo on the current room and a legend plate.
   - **A speedwalk sends one step and waits for the map to say it arrived** (`Speedwalk`); it goes through
     `SendCommandAsync`, so the recorder sees the step. It stops off the path, on the world's
     `WalkFailurePattern`, after `StepTimeout` with no room, and on disconnect.
@@ -1056,8 +1066,8 @@ fallbacks) for inline images/maps.
     `mp! 23/120`, then `mp 23`) before a bar goes under 24 px. The UI font, not the cell font: this is the window's
     presentation. `hp`/`mp`/`mv` read as Health/Mana/Movement (`VitalsMeter.Title`).
   - **Not done**: the docked composer is still cells in the window; no animation on a
-    gauge change; the map draws one level and area, no exits between levels and no room colours/symbols; the
-    button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
+    gauge change; the map draws one level and area (other levels show only as stairs marks, other areas only as
+    a coloured spur), with no room symbols beyond the game's own; the button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
     click under a WM-less X server to take the first item (seen under Xvfb only).
 
 - **The header and the sidebar are data, and the window draws them natively beside the cells** (Client
@@ -1257,6 +1267,27 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), and which chrom
   model in Client, draw its cells from it through `Drawing(...)`, publish the same instance to the host, declare
   it in `SurfaceCatalog.All`, and add its model and action probes to `SurfaceParityTests`, whose coverage guards
   fail until you do.
+- **A notice is a model, drawn as the status row's text in both hosts and as a toast in the window**
+  (`NoticeModel`/`NoticeSeverity`/`NoticeAction`, Client `Chrome/`; `SharpMUTermApp.Notices.cs`; `NoticeToasts`,
+  Avalonia; surface `notice`, `CellsUnderNative`; the `notices` view). `Notice(...)` builds one model per call
+  (`Drawing`), draws the row from it with the same markup as before (`NoticeMarkup`; terminal frames are
+  byte-identical) and publishes it through `IPointerPresenter.Notice`. Decisions not to relitigate:
+  - **The window keeps the status-row copy in cells.** The toast is an overlay above the cells, never a
+    replacement: `HostParityTests` compares cells, the row is what a screen reader and a keyboard user read
+    (the announcer speaks the same notice), and the row has rules of its own (reserved fields, drop order) a
+    toast must not fork. The cost is one notice said in two places in the window, for six seconds.
+  - **A toast never takes focus and nothing on it reaches the client**: not focusable, every press on a card is
+    the window's, a press beside the stack goes to the cells. The stack is bottom-right inside the cell area,
+    ending above the row the pane area ends at (`NoticeOverlay.AboveRow`), newest at the bottom, four at most.
+    It fades after `NoticeModel.Duration`, held while hovered (plus a 2 s grace). Right click dismisses.
+  - **An action is a registry command the client offered**: a click runs `NoticeOverlay.Run` →
+    `RunNoticeAction`, which refuses a command no recent notice carried, then `DispatchCommand`. The cells' way to
+    the same door is ⌃P (`CellsVia: term:messages`). Three notices carry one so far: the layout suggestion
+    (*Change layout*), "switched to … · offline" (*Reconnect*) and the orphan trigger-set notice (*Open F5*).
+  - **Severity is mapped from `MessageSeverity`**: Info → info, Error → warning (a failure), Warning → refusal
+    (the default voice of `Notice`). Edge colours are the accent, `ScreenPalette.Warn` and the notice ink, held to
+    4.5:1 on the status plane because they also ink the key chip and the action line.
+  - The message log (⌃P ▸ *Show client messages*) stays the history; a toast keeps nothing.
 - **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
   `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
   `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer
@@ -1344,7 +1375,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `menu-fuzzy` (`trig sel` typed into ⌃P after a real drag, so the trigger builder's entry is offered — the
   frame showing a two-word fuzzy match highlighted), `menu-recent` (⌃P opened empty after two commands ran
   through the palette's own path, `RunFromPalette` — RECENT at the top, newest first, listed once),
-  `messages`, `quit`, `connections` (**two connections on one world** — the one view where the header's
+  `messages`, `notices` (two notices with a refusal between them, the first carrying an action — the window shows them as toasts over the same cells), `quit`, `connections` (**two connections on one world** — the one view where the header's
   fraction, the rail's dots and the quit prompt's count are all visible together and all have to agree;
   every other view has at most one character connected per world, which is what hid a header dividing
   connections by *worlds* and a quit prompt reducing them to distinct world names), `characters` (**two

@@ -72,7 +72,7 @@ public class SurfaceCatalogTests
     {
         var panels = SurfaceCatalog.All.Where(s => s.Id is not (SurfaceCatalog.Header or SurfaceCatalog.Sidebar
             or SurfaceCatalog.Settings or SurfaceCatalog.LayoutsMenu or SurfaceCatalog.Palette
-            or SurfaceCatalog.Prefix or SurfaceCatalog.RailStrip));
+            or SurfaceCatalog.Prefix or SurfaceCatalog.RailStrip or SurfaceCatalog.Notice));
         foreach (var surface in panels)
         {
             await Assert.That(PanelIds.Known).Contains(surface.Id);

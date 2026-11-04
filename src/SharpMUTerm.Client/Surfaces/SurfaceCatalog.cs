@@ -139,6 +139,9 @@ public static class SurfaceCatalog
     /// <summary>The folded sidebar: a strip of dots in cells, the window's narrow native strip.</summary>
     public const string RailStrip = "rail-strip";
 
+    /// <summary>A notice: the status row's message in cells, and in the window a toast over them as well.</summary>
+    public const string Notice = "notice";
+
     /// <summary>
     /// The header and the rail: cells in a terminal; in the window (<c>HostChrome.HeaderAndRail</c>) native views
     /// beside the cells, which then leave them out.
@@ -269,6 +272,18 @@ public static class SurfaceCatalog
             },
             "SharpMUTerm.Tui.CommandSurfaceRenderer.Render",
             ["SharpMUTerm.Avalonia.PaletteOverlay"]),
+        new(
+            Notice,
+            typeof(NoticeModel),
+            [
+                // The toast's click runs the action the client put in the notice. The status row is not a button; the
+                // action is a registry command, so the cells reach it as a ⌃P entry, and the message log is where a
+                // notice that has gone is found again.
+                new(SurfaceActionKind.Target, "action", "RunNoticeAction", CellsVia: "term:messages"),
+            ],
+            CellsUnderNative,
+            "SharpMUTerm.Tui.SharpMUTermApp.NoticeMarkup",
+            ["SharpMUTerm.Avalonia.NoticeToasts"]),
     ];
 
     /// <summary>The surface with <paramref name="id"/>, or null.</summary>

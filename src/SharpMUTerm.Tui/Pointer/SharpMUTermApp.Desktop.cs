@@ -298,10 +298,13 @@ internal sealed partial class SharpMUTermApp
         }
 
         var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
-        var model = MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking);
+        var model = MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking, MapPalette());
         _mapViews[windowId] = (revision, model);
         return model;
     }
+
+    /// <summary>The map's area colours for the theme in use: the set that clears the floor on its panes.</summary>
+    private MapAreaPalette MapPalette() => MapAreaPalette.For(WorkspacePalette.DarkPanes(_theme));
 
     /// <summary>What the host was last told about panels. Internal for tests.</summary>
     internal IReadOnlyList<PanelOverlay> PanelOverlays => _panelOverlays;

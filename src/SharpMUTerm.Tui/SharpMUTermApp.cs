@@ -1816,9 +1816,27 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             RefusePrefix(PrefixPanel.NoSplitRefusal);
             RefuseCommand("nothing to reconnect — pick a character first (⌃P ▸ Switch to …)");
-            Notice("switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it", MessageSeverity.Info, "⌃P");
+            Notice(
+                "switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it",
+                MessageSeverity.Info,
+                "⌃P",
+                new NoticeAction("world:reconnect", "Reconnect"));
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
             _messageLog.Toggle();
+        }
+
+        // Three notices over the demo workspace and no modal: in a terminal the status row carries the last of them,
+        // as it always has; in the window each is a toast as well, stacked over the cells, the first offering its
+        // action as a click. One of each severity, in the order a session might say them.
+        if (string.Equals(view, "notices", StringComparison.OrdinalIgnoreCase))
+        {
+            Notice(
+                "Using the Combat layout for Aetherfall: the game sends vitals. ⌥M changes it.",
+                MessageSeverity.Info,
+                "⌥M",
+                new NoticeAction(Client.Commands.LayoutCommands.Manage, "Change layout"));
+            RefusePrefix(PrefixPanel.NoSplitRefusal);
+            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
         }
 
         // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
@@ -3101,7 +3119,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice(
                 $"{who} is assigned a trigger set called {orphan}, and no such set exists — F2 defines sets, F5 assigns them",
                 MessageSeverity.Warning,
-                "⌃P");
+                "⌃P",
+                new NoticeAction("screen:worlds", "Open F5"));
         }
     }
 
@@ -3208,7 +3227,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var state = session.IsConnected
             ? "connected"
             : "offline — Alt+R (⌃P ▸ Reconnect) connects it";
-        Notice($"switched to {SessionTitle(session)} · {state}", MessageSeverity.Info, "⌃P");
+        Notice(
+            $"switched to {SessionTitle(session)} · {state}",
+            MessageSeverity.Info,
+            "⌃P",
+            session.IsConnected ? null : new NoticeAction("world:reconnect", "Reconnect"));
     }
 
     /// <summary>
@@ -8880,9 +8903,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // One model per drawing, and the window's native map is handed this same instance (MapViewFor), so the two
         // cannot disagree about where the character is, which level is shown or whether a walk is under way.
         var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
-        var view = Drawing(Core.Layouts.PanelIds.Map, windowId, SharpMUTerm.Client.Panels.MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking));
+        var view = Drawing(Core.Layouts.PanelIds.Map, windowId, SharpMUTerm.Client.Panels.MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking, MapPalette()));
         _mapViews[windowId] = (_mapRevisions[windowId], view);
-        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft);
+        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft, WorkspacePalette.ReadingPlane(_theme));
         var lines = MapRenderer.Render(view, map.Map, width, height, ink);
         _mapMarkup[windowId] = lines;
         control.SetContent(lines.ToList());
@@ -9102,24 +9125,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             [4203] = ("Temple of the Tide", [("south", 4202)]),
             [4210] = ("Market Row", [("west", 4201), ("east", 4211), ("southeast", 4212)]),
             [4211] = ("Spice Stall", [("west", 4210)]),
-            [4212] = ("Docks Gate", [("northwest", 4210), ("south", null)]),
+            [4212] = ("Docks Gate", [("northwest", 4210), ("south", 4300)]),
             [4199] = ("Lantern Street", [("north", 4201), ("south", null), ("southwest", 4198)]),
             [4198] = ("Old Well", [("northeast", 4199)]),
             [4220] = ("Guildhall", [("east", 4201), ("west", null)]),
+
+            // A floor up and an area next door, so the map has stairs and a second area colour to show.
+            [4250] = ("Bell Tower", [("down", 4202)]),
+            [4300] = ("The Quay", [("north", 4212), ("east", null)]),
         };
         void Arrive(long id) => recorder.Apply(new RoomObservation(
             id,
             rooms[id].Name,
             rooms[id].Exits.Select(e => new ObservedExit(e.Item1, e.Item2)).ToList())
         {
-            Area = "Aetherfall",
+            Area = id >= 4300 ? "Saltmarsh Docks" : "Aetherfall",
         });
 
         Arrive(4201);
         foreach (var (command, to) in new (string, long)[]
         {
-            ("n", 4202), ("n", 4203), ("s", 4202), ("s", 4201), ("e", 4210), ("e", 4211), ("w", 4210),
-            ("se", 4212), ("nw", 4210), ("w", 4201), ("s", 4199), ("sw", 4198), ("ne", 4199), ("n", 4201),
+            ("n", 4202), ("n", 4203), ("s", 4202), ("u", 4250), ("d", 4202), ("s", 4201), ("e", 4210), ("e", 4211), ("w", 4210),
+            ("se", 4212), ("s", 4300), ("n", 4212), ("nw", 4210), ("w", 4201), ("s", 4199), ("sw", 4198), ("ne", 4199), ("n", 4201),
             ("w", 4220), ("e", 4201),
         })
         {
@@ -13228,7 +13255,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// five seconds of unhurried reading. Six gives that a margin without a refusal outstaying the thing
     /// it refused. Nothing is lost to it either way: every notice is echoed into the output window.
     /// </summary>
-    internal static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(6);
+    internal static readonly TimeSpan NoticeDuration = NoticeModel.Duration;
 
     /// <summary>The transient message currently laid over the resting row, or null when there is none.</summary>
     private string? _notice;
@@ -13262,7 +13289,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <param name="text">The message, as plain text — the log keeps this, and the row's markup is built from it.</param>
     /// <param name="severity">How loud it is; the viewer colours and labels rows by this.</param>
     /// <param name="key">An optional leading chip naming the surface that refused (<c>⌃B</c>, <c>⌃P</c>).</param>
-    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null)
+    /// <param name="action">
+    /// A command the notice offers. The status row never draws it (a terminal cell is not a button, and the text
+    /// already names the key); a host that draws notices natively offers it as a click (<see cref="NoticeModel"/>).
+    /// </param>
+    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null)
     {
         // Through the logger, not straight into the buffer: the client's own messages and the telnet
         // stack's diagnostics then share one ordered history (and one rolling file), which is the point
@@ -13278,13 +13309,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             key is null ? text : $"{key} {text}");
 
         AnnounceNotice(text);
-        var body = severity == MessageSeverity.Error
-            ? $"[{ScreenPalette.Warn}]{Escape(text)}[/]"
-            : $"[dim]{Escape(text)}[/]";
-        var markup = key is null ? body : $"[{_ink.Notice}]{Escape(key)}[/] {body}";
+        var model = Drawing(
+            SurfaceCatalog.Notice,
+            string.Empty,
+            new NoticeModel(text, NoticeSeverityOf(severity), key, action, _time.GetUtcNow(), ++_noticeSequence));
+        var markup = NoticeMarkup(model);
 
         _notice = markup;
         PaintStatus(markup);
+        PublishNotice(model);
         _noticeTimer ??= _time.CreateTimer(
             _ => OnUiThread(ClearNotice), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _noticeTimer.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
