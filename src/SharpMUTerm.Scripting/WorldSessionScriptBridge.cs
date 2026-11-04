@@ -48,7 +48,14 @@ public sealed class WorldSessionScriptBridge : IScriptWorld, IDisposable
     public string? SendTo(string character, string command) =>
         _sendTo is null ? "this client cannot send to another character" : _sendTo(character, command);
 
-    public void Print(string text) => _session.PrintSystem(text);
+    public void Print(string text)
+    {
+        _session.PrintSystem(text);
+        Printed?.Invoke(text);
+    }
+
+    /// <summary>Told each line a script prints, after it reaches the session, on the script's thread (the console's copy).</summary>
+    public Action<string>? Printed { get; init; }
 
     public void AddTrigger(string pattern, string callbackId) =>
         _session.Triggers.Add(new Trigger

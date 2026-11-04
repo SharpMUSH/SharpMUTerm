@@ -1,5 +1,7 @@
 using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Logging;
 
 namespace SharpMUTerm.Client.Settings;
 
@@ -46,6 +48,9 @@ public static partial class BuiltInSettings
 
     /// <summary>Game sound; drawn only where a host passes the sound settings.</summary>
     public const string SoundGroup = "Sound";
+
+    /// <summary>How a scene log is written.</summary>
+    public const string SceneLogGroup = "Scene log";
 
     /// <summary>The id of the meters field, which a host draws as a table rather than one value.</summary>
     public const string MetersField = "meters";
@@ -140,6 +145,23 @@ public static partial class BuiltInSettings
             Flag("captions", "sound captions", SoundGroup,
                 c => c.Sound.Captions, (c, v) => c.Sound.Captions = v,
                 "print a line of text for each sound", "audio subtitles accessibility"),
+
+            new ChoiceField("scene-format", "scene log format", WorldFieldValues.SceneFormats, "HTML keeps the game's colours")
+            {
+                Group = SceneLogGroup,
+                Keywords = "roleplay rp scene log html plain transcript",
+                Binding = new SettingBinding<string>(
+                    c => c.SceneLog.Html ? WorldFieldValues.SceneFormats[0] : WorldFieldValues.SceneFormats[1],
+                    (c, v) => c.SceneLog.Html = v != WorldFieldValues.SceneFormats[1]),
+            },
+            new ChoiceField("scene-content", "scene log keeps", WorldFieldValues.SceneContents, "poses start with the name of someone present")
+            {
+                Group = SceneLogGroup,
+                Keywords = "roleplay rp scene log poses",
+                Binding = new SettingBinding<string>(
+                    c => c.SceneLog.Content == SceneLogContent.Everything ? WorldFieldValues.SceneContents[1] : WorldFieldValues.SceneContents[0],
+                    (c, v) => c.SceneLog.Content = v == WorldFieldValues.SceneContents[1] ? SceneLogContent.Everything : SceneLogContent.Poses),
+            },
         ],
     };
 
@@ -267,6 +289,16 @@ public static partial class BuiltInSettings
                 (_, w) => w.AlertOnName ? WorldFieldValues.AlertChoices[1] : WorldFieldValues.AlertChoices[0],
                 (_, w, v) => w.AlertOnName = v == WorldFieldValues.AlertChoices[1],
                 "tell the desktop when a line names your character or pages you", "notify mention page tell"),
+            WorldChoice("capture-channels", "capture channels", WorldFieldValues.ChannelCaptureChoices, WorldTextGroup,
+                (_, w) => WorldFieldValues.ChannelCaptureName(w.CaptureChannels),
+                (_, w, v) => w.CaptureChannels = WorldFieldValues.ChannelCaptureOf(v),
+                "put each GMCP channel in a window of its own, as a copy or moved out of the main window",
+                "comm.channel chat ooc gossip spawn window"),
+            WorldText("highlight-names", "highlight names", TextRule.NameHighlights, WorldTextGroup,
+                (_, w) => NameHighlights.Format(w.HighlightNames),
+                (_, w, v) => w.HighlightNames = [.. NameHighlights.Parse(v).Names],
+                "names drawn in a colour wherever they appear: Ashlyn=gold, Merrow=red",
+                "friends enemies highlight name colour"),
             WorldText("edit-grab", "edit grab", TextRule.Optional, WorldTextGroup,
                 (_, w) => w.GrabPrefix, (_, w, v) => w.GrabPrefix = v,
                 "a line starting with this goes on the command line instead of the output", "fugueedit mush edit prefix"),

@@ -620,6 +620,7 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.OutputReceived += OnOutputReceived;
         GameData.Clear();
         Occupants.Clear();
+        _channels.Clear();
         lock (_metersGate)
         {
             _mxpMeters = [];
@@ -641,6 +642,7 @@ public sealed class WorldSession : IAsyncDisposable
                 GamePresenceChanged?.Invoke(this, EventArgs.Empty);
             }
             GmcpReceived?.Invoke(this, e);
+            CaptureChannel(e.Package, e.Json);
             if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
                 && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
             {
@@ -877,6 +879,54 @@ public sealed class WorldSession : IAsyncDisposable
         return true;
     }
 
+    /// <summary>Messages whose printed echo a world that moves channels keeps out of the main window.</summary>
+    private readonly ChannelCapture _channels = new();
+
+    /// <summary>The highlight-names list last compiled, and what it compiled to.</summary>
+    private (List<NameHighlight>? Source, int Count, NameHighlights.Matcher? Matcher) _nameMatcher;
+
+    /// <summary>The world's highlight names, compiled once per list (F5 replaces the list whole, so its identity is the key).</summary>
+    private NameHighlights.Matcher? NameMatcher()
+    {
+        var names = World.HighlightNames;
+        var cached = _nameMatcher;
+        if (ReferenceEquals(cached.Source, names) && cached.Count == (names?.Count ?? 0))
+        {
+            return cached.Matcher;
+        }
+
+        var matcher = NameHighlights.Compile(names);
+        _nameMatcher = (names, names?.Count ?? 0, matcher);
+        return matcher;
+    }
+
+    /// <summary>
+    /// GMCP <c>Comm.Channel.Text</c> into a window per channel, when the world captures channels: raised as
+    /// <see cref="SpawnLine"/>, the event a capture rule raises, so the restore log, search and the unread badge see a
+    /// captured line. Runs on the read loop, in arrival order with the output it belongs beside.
+    /// </summary>
+    internal void CaptureChannel(string package, string json)
+    {
+        if (World.CaptureChannels == ChannelCaptureMode.Off
+            || !string.Equals(package, "Comm.Channel.Text", StringComparison.OrdinalIgnoreCase)
+            || ChannelCapture.Read(json) is not { } message)
+        {
+            return;
+        }
+
+        if (World.CaptureChannels == ChannelCaptureMode.Move)
+        {
+            _channels.ExpectEcho(message.Lines);
+        }
+
+        foreach (var line in message.Lines)
+        {
+            var shown = ApplyLinks(ApplyEmoji(NameHighlights.Apply(line, NameMatcher())));
+            Completions.ObserveLine(shown.Text);
+            SpawnLine?.Invoke(this, new SpawnLineEventArgs(message.Window, shown));
+        }
+    }
+
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
     {
         // An MSP trigger is the server asking for a sound, and is taken out before anything else sees the
@@ -918,8 +968,14 @@ public sealed class WorldSession : IAsyncDisposable
         // rather than before it, so a link's target is exactly the text under it — a span whose visible
         // text and destination disagree is the shape of a phishing link, and this client should not be
         // in the business of manufacturing one.
-        var shown = ApplyLinks(ApplyEmoji(result.Line)).WithPrompt(isPrompt);
-        if (result.RouteMain || !result.Suppress || result.SpawnTargets.Count > 0)
+        var shown = ApplyLinks(ApplyEmoji(NameHighlights.Apply(result.Line, NameMatcher()))).WithPrompt(isPrompt);
+
+        // A channel line whose GMCP copy has already gone to its own window is kept out of this one when the world
+        // moves channels (F5 ▸ capture channels). It is a gag in every other respect: a destination a rule asked for,
+        // `main` included, still gets it.
+        var suppress = result.Suppress
+            || (!isPrompt && World.CaptureChannels == ChannelCaptureMode.Move && _channels.TakeEcho(line.Text));
+        if (result.RouteMain || !suppress || result.SpawnTargets.Count > 0)
         {
             Completions.ObserveLine(shown.Text); // only what is shown somewhere: a gagged word was never read
         }
@@ -940,14 +996,14 @@ public sealed class WorldSession : IAsyncDisposable
         // true of the main window too. So `route: main` plus `gag` keeps the line here and nowhere else,
         // where before it deleted the line — because `main` was the F2 screen's label for the *absence*
         // of a route rather than a route.
-        if (result.RouteMain || !result.Suppress)
+        if (result.RouteMain || !suppress)
         {
             Print(shown);
         }
 
         // Asked for by a rule (shown or not: the rule said so), or by the world for a line that mentions the
         // character or pages them — only a line someone will see, and never a prompt.
-        var shownSomewhere = result.RouteMain || !result.Suppress || result.SpawnTargets.Count > 0;
+        var shownSomewhere = result.RouteMain || !suppress || result.SpawnTargets.Count > 0;
         var reason = result.Matched.Any(t => t.Actions.Alert)
             ? AttentionReason.Trigger
             : World.AlertOnName && shownSomewhere && !isPrompt ? AttentionMatcher.Classify(shown.Text, Character?.Name) : null;

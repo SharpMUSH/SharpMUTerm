@@ -36,6 +36,7 @@ internal sealed partial class SharpMUTermApp
         : surface == SurfaceCatalog.Help ? CellHelp?.Model
         : surface == SurfaceCatalog.Dictionary ? (_helpView.IsOpen && _helpView.Mode == "dictionary" ? _dictionaryOffer : null)
         : surface == SurfaceCatalog.Import ? (_helpView.IsOpen && _helpView.Mode == "import" ? _pendingImport?.Model : null)
+        : surface == SurfaceCatalog.ScriptConsole ? CellConsole?.Model
         : _drawnModels.TryGetValue((surface, key), out var model) ? model : null;
 
     /// <summary>A click on a header link, as the header's own handler receives it.</summary>

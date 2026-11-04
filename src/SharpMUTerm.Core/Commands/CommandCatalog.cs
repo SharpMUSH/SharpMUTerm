@@ -58,6 +58,7 @@ public sealed record CharacterRef(
 /// The worlds whose connected pane is narrower than the column their server wraps at, and which do not join wraps — so
 /// <c>Join server wraps for …</c> is offered (and suggested) only while it would change what the pane shows.
 /// </param>
+/// <param name="SceneLogging">Whether the focused window is being recorded as a scene, so ⌃P offers to stop it.</param>
 /// <param name="NoDictionary">
 /// Whether the client's own dictionaries folder holds none, so <c>Get a spelling dictionary</c> is offered.
 /// </param>
@@ -80,7 +81,8 @@ public sealed record CommandContext(
     IReadOnlyList<PanelFloatRef>? Floats = null,
     IReadOnlyList<RaggedWrap>? RaggedWraps = null,
     bool NoDictionary = false,
-    string? MapUndo = null);
+    string? MapUndo = null,
+    bool SceneLogging = false);
 
 /// <summary>A world whose pane is narrower than its server's wrap column.</summary>
 /// <param name="World">The world's name.</param>

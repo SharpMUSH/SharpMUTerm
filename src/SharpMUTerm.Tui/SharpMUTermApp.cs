@@ -1888,6 +1888,32 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ShowHelp(topic: "reading");
         }
 
+        // The script console, through its ⌃P entry, over the demo's own sandbox: a value, a print, a store read and a loop
+        // the limit stopped, run through the console's one path before it opens.
+        if (string.Equals(view, "script-console", StringComparison.OrdinalIgnoreCase))
+        {
+            RunConsoleLine("store.get('kills') + 1");
+            RunConsoleLine("print('hello from ' .. world.name)");
+            RunConsoleLine("map.current().name");
+            RunConsoleLine("while true do end");
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptConsoleCommand);
+            if (CellConsole is { } console)
+            {
+                foreach (var c in "store.keys()")
+                {
+                    console.Key(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+                }
+
+                _helpView.Repaint();
+            }
+        }
+
+        // GMCP channel capture, the highlight-names list and a scene log, over the demo (scripting wave).
+        if (RenderScriptingWaveScene(view) is { } scriptingFrame)
+        {
+            return scriptingFrame;
+        }
+
         // The spelling dictionary offer, through its ⌃P entry. The demo keeps no dictionaries folder, so the offer says
         // nothing can be saved in this run — the text a live client shows names the folder instead.
         if (string.Equals(view, "dictionary-offer", StringComparison.OrdinalIgnoreCase))
@@ -5064,6 +5090,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(windowId, line, stamp);
         RecordForRestore(session, windowId, WindowTitle(windowId), line, stamp);
+        RecordForScene(windowId, line);
         AnnounceLine(windowId, line.Text);
         NoteUnseenLine();
 
@@ -5125,6 +5152,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(window.Id, line, stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
+        RecordForScene(window.Id, line);
         AnnounceLine(window.Id, line.Text);
         NoteUnseenLine();
 
@@ -5776,7 +5804,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
         : _welcomeView.IsOpen ? "the welcome"
-        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", _ => "help" })
+        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", "script-console" => "the script console", _ => "help" })
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -8435,7 +8463,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             KeyClashes: KeyClashes.Count(Host.Keys, Macros()),
             Floats: FloatRefs(),
             RaggedWraps: RaggedWraps(),
-            NoDictionary: NoOwnDictionary);
+            NoDictionary: NoOwnDictionary,
+            SceneLogging: _sceneLogs.ContainsKey(ActiveWindowId()));
     }
 
     /// <summary>
@@ -8979,6 +9008,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "world:reload-scripts":
                 ReloadScripts();
                 break;
+            case Client.Commands.BuiltInCommands.ScriptConsoleCommand:
+                ShowScriptConsole();
+                break;
+            case Client.Commands.BuiltInCommands.SceneStartCommand:
+                StartSceneLog();
+                break;
+            case Client.Commands.BuiltInCommands.SceneStopCommand:
+                StopSceneLog();
+                break;
             default:
                 // On the status line, never through _active: an unwired command is exactly what you hit
                 // while nothing is connected, and a message that needs a session to be seen cannot
@@ -9052,6 +9090,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript, _scriptStoreRoot, ScriptSendTo);
+        scripts.Printed += text => NoteConsole(session, Client.Modals.ScriptConsoleKind.Output, text);
         _scripts[session] = scripts;
         scripts.Reload();
     }
@@ -9412,6 +9451,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void ReportScript(WorldSession session, string text)
     {
         session.PrintSystem($"*** {text}");
+        NoteConsole(session, Client.Modals.ScriptConsoleKind.Error, text);
         OnUi(() => Notice($"{SessionTitle(session)}: {text}"));
     }
 
@@ -14434,6 +14474,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _reconnects.Clear();
+        CloseSceneLogs();           // a scene being recorded is closed with its ending written
         _webImageCts?.Cancel();
         _webImageCts?.Dispose();
         _inlineImages.Dispose();

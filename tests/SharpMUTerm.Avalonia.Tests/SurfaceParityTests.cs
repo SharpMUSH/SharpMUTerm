@@ -259,6 +259,7 @@ public class SurfaceParityTests
             (SurfaceCatalog.Help, "help"),
             (SurfaceCatalog.Dictionary, "dictionary-offer"),
             (SurfaceCatalog.Import, "import-review"),
+            (SurfaceCatalog.ScriptConsole, "script-console"),
         })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
@@ -774,6 +775,23 @@ public class SurfaceParityTests
                 app.SimulateImportKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
             });
         probed.Add(SurfaceCatalog.Import);
+        // The script console: a line run at the prompt, a store key deleted, and the scripts reloaded — each through the
+        // session in the window and through the cell console's keys, ending in RunConsoleLine, DeleteStoreKey and
+        // ReloadConsoleScripts. The scene leaves "store.keys()" typed at the cell prompt.
+        await SameModal("script console: run", "script-console",
+            (app, m) => ((ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!).Run("store.keys()"),
+            app => app.SimulateConsoleKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+        await SameModal("script console: delete key", "script-console",
+            (app, m) => ((ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!).Delete("kills"),
+            app =>
+            {
+                app.SimulateConsoleKey(new ConsoleKeyInfo('\t', ConsoleKey.Tab, false, false, false));
+                app.SimulateConsoleKey(new ConsoleKeyInfo('\0', ConsoleKey.Delete, false, false, false));
+            });
+        await SameModal("script console: reload", "script-console",
+            (app, m) => ((ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!).Reload(),
+            app => app.SimulateConsoleKey(new ConsoleKeyInfo('\f', ConsoleKey.L, false, false, true)));
+        probed.Add(SurfaceCatalog.ScriptConsole);
 
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         // The tab overflow chip: an entry chosen from the window's menu and the same digit in the cell list bring the same
@@ -1025,6 +1043,7 @@ public class SurfaceParityTests
         HelpSession help => help.Model,
         DictionaryOfferSession offer => offer.Model,
         ImportReviewSession import => import.Model,
+        ScriptConsoleSession console => console.Model,
         _ => throw new ArgumentException(session.GetType().Name),
     };
 
@@ -1048,6 +1067,7 @@ public class SurfaceParityTests
         "help=" + app.HelpIsOpen + "/" + app.DictionaryOfferOpen,
         "import=" + app.ImportReviewOpen + " " + string.Join(",", app.Configuration.TriggerSets.Select(s => s.Name + ":" + s.Triggers.Count))
             + " " + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters).Select(c => c.Name + (c.Password is null ? string.Empty : "*"))),
+        "console=" + app.ScriptConsoleIsOpen + " " + ConsoleState(app),
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
         "map=" + app.MapDigest(),
@@ -1055,6 +1075,12 @@ public class SurfaceParityTests
         "floating=" + string.Join(",", app.FloatingPublished.Select(f => f.Model.WindowId)),
         "notice=" + app.LastNotice,
         "recent=" + string.Join(",", app.RecentCommandIds));
+
+    private static string ConsoleState(SharpMUTermApp app)
+    {
+        var model = app.ScriptConsoleModelNow();
+        return $"[{string.Join(";", model.Lines.Select(l => l.Kind + ":" + l.Text))}] [{string.Join(",", model.Store.Select(e => e.Key))}]";
+    }
 
     private static string Layouts(SharpMUTermApp app)
     {

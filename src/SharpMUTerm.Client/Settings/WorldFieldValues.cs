@@ -188,4 +188,20 @@ public static class WorldFieldValues
 
         world.GmcpModules = modules;
     }
+
+    /// <summary>The words for <see cref="WorldDefinition.CaptureChannels"/>.</summary>
+    public static IReadOnlyList<string> ChannelCaptureChoices { get; } = ["off", "copy", "move"];
+
+    /// <summary>A capture mode as its word.</summary>
+    public static string ChannelCaptureName(SharpMUTerm.Core.Protocols.ChannelCaptureMode mode) => ChannelCaptureChoices[(int)mode];
+
+    /// <summary>A word as a capture mode; anything else is off.</summary>
+    public static SharpMUTerm.Core.Protocols.ChannelCaptureMode ChannelCaptureOf(string? word) =>
+        (SharpMUTerm.Core.Protocols.ChannelCaptureMode)Math.Max(0, ChannelCaptureChoices.ToList().IndexOf(word ?? string.Empty));
+
+    /// <summary>F7's words for a scene log's format.</summary>
+    public static IReadOnlyList<string> SceneFormats { get; } = ["html", "plain text"];
+
+    /// <summary>F7's words for what a scene log keeps.</summary>
+    public static IReadOnlyList<string> SceneContents { get; } = ["poses", "every line"];
 }

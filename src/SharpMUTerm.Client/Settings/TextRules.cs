@@ -45,6 +45,9 @@ public enum TextRule
 
     /// <summary>The name of a window: not blank, no control characters; trimmed (a route).</summary>
     Window,
+
+    /// <summary>A highlight-names list: <c>Name=colour, …</c>, each colour one of <see cref="HighlightColours.Palette"/>.</summary>
+    NameHighlights,
 }
 
 /// <summary>
@@ -78,6 +81,8 @@ public static class TextRules
             TextRule.Name or TextRule.Secret or TextRule.Defaulted when text.Any(char.IsControl) =>
                 $"{field.Label} cannot contain control characters",
             TextRule.Pattern when !string.IsNullOrWhiteSpace(text) => PatternError(text),
+            TextRule.NameHighlights => Core.Automation.NameHighlights.Parse(
+                text, colour => HighlightColours.Palette.Contains(colour) && colour != HighlightColours.None).Error,
             _ => null,
         };
     }
