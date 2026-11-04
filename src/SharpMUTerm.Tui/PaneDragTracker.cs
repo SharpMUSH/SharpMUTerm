@@ -203,8 +203,9 @@ internal sealed class PaneDragTracker
             return wasDragging ? Cancelled() : Idle();
         }
 
-        // Only the tab strip is a drag handle; a press in the body belongs to the pane's content.
-        if (!surface.IsTabStrip(paneId, y) || surface.ActiveWindow(paneId) is not { } windowId)
+        // Only the tab strip is a drag handle; a press in the body belongs to the pane's content, and one on the strip's
+        // empty run, where that run is the divider above the pane, belongs to the divider.
+        if (!surface.IsDragHandle(paneId, x, y) || surface.ActiveWindow(paneId) is not { } windowId)
         {
             return wasDragging ? Cancelled() : Idle();
         }

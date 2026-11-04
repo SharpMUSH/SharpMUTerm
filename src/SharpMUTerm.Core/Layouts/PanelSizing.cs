@@ -51,6 +51,7 @@ public static class PanelSizing
         ArgumentNullException.ThrowIfNull(panelOf);
         var panels = pane.Tabs.Select(panelOf).ToList();
         var chrome = ShowsTabStrip(panels) ? Math.Max(0, tabStripRows) : 0;
+        pane.DrawsHeader = chrome > 0;
 
         if (IsStrip(panels))
         {

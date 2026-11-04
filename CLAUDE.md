@@ -245,8 +245,9 @@ fallbacks) for inline images/maps.
   command line (wrapping, auto-growing, per-window drafts, plus an optional per-window second bar),
   status line, `Ctrl+Q` quit, per-pane NAWS (every connected session is told its own pane's output
   rectangle, on every resize and layout change, rate-limited to four writes a second with a trailing
-  flush). The tab/pane set is driven by the tested `Core.Workspaces` model, with **splits** (thin
-  single-line dividers) and the **connection rail** now rendered as well — and **clickable**: a world,
+  flush). The tab/pane set is driven by the tested `Core.Workspaces` model, with **splits** (a thin
+  single-cell divider column side by side; stacked, a divider row only where nothing else marks the
+  boundary — see *No divider row where a tab strip or a strip panel already marks it* below) and the **connection rail** now rendered as well — and **clickable**: a world,
   character or window row switches to it, dispatched through the rail control's *own* `LinkClicked`
   (never the output panes' handler, so a world cannot drive the client's UI from the wire).
 - **Panes come back after a restart, and the log that does it is keyed by *window*** (`RestoreLog`,
@@ -950,6 +951,19 @@ fallbacks) for inline images/maps.
     (`PaneResize.DragBorder`, which changes only the two children either side), a double-click evens the
     split (`PaneResize.Even`). A recolour costs no cell and moves no pane rectangle — the NAWS rule. While a
     drag is held the 100 ms bare-press repeat is read as "the pointer is here".
+  - **No divider row where a tab strip or a strip panel already marks it** (`PaneExtent.DividerRows`, read by
+    `LayoutSolver`, `PaneExtent`, `PaneResize.Minimum` and `BuildLayoutNode` alike). Stacked, there is no row
+    above a pane that draws its own tab strip (`PaneNode.DrawsHeader`, host-derived by `PanelSizing.Apply`
+    like `FixedRows`, false until then): that strip is the boundary, and its empty run past the last tab is
+    registered as the divider (`DividerSlot.HeaderPaneId`, `HeaderFill`) — the same hover, `DragBorder` drag,
+    double-click and tooltip, lit by recolouring those cells after the paint (`PaintHeaderDividers`; the
+    control's own background is what its content inherits, so it cannot be set there). A tab, its `×` and the
+    `│` between tabs stay the framework's, and `PaneDragSurface.IsDragHandle` keeps the run from starting a
+    window drag. There is no row either side of a fixed strip panel; it sits flush, and an *unfocused* strip is
+    recessed the backdrop's step (`SurfaceToneIn`), so it is never the same plane as an unfocused pane (2.8 L*
+    on Dark, 3.7 Solarized Dark, 21 Light — the pane-over-backdrop step). Side by side, nothing changed. The
+    freed row went to the panes, which is the point and a NAWS change; `StackedDividerTests` and the
+    `split-stacked` view are the pins.
   - **The menu is the ⌃P catalog's own entries** (`AddCommands`), so it cannot offer an action the keyboard
     lacks, and each says its key (`ShortHint`). A right-click on a link or output focuses that pane first,
     and on a tab activates it, so the entries act on what was clicked.
@@ -1029,8 +1043,8 @@ fallbacks) for inline images/maps.
     gives a fixed child `GridLength.Cells` and a floored one `Star(min:)`, and `LayoutSolver` shares rows the same
     way (`PaneExtent.DistributeRows`; if every child is fixed the last shares, in both). A one-tab strip draws **no
     tab strip** (`TabControl.ShowTabHeader`, which `PaneOutputRects` already reads) and offers no drag handle. Only
-    rows: a strip's width is a share. The divider beside a fixed pane is not registered with the pointer, a drag
-    on it returns `PaneResizeOutcome.FixedSize`, and ⌥⇧↑/↓ take rows from a sharing pane beyond the strip or
+    rows: a strip's width is a share. No divider row is drawn beside a fixed pane (it sits flush, on a recessed
+    plane), and a drag of that border returns `PaneResizeOutcome.FixedSize`, and ⌥⇧↑/↓ take rows from a sharing pane beyond the strip or
     pass to the next split up, refusing out loud when only a strip could pay.
   - **The status row leaves its meters out while the vitals strip shows them** (`VitalsStripShowing`: the status
     row's character's vitals window is the front tab of a drawn pane, zoom included). `SyncStatusMeters` repaints
@@ -1203,7 +1217,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   list and match counts), `settings-meters`/`settings-meters-pick` (the meter table over the demo's game
   data, the cursor on a meter with the received-data box under it, and the same meter's value path open with
   its dropdown of received paths), `settings-changed` (F7 after two real edits: the `● changed` marks and
-  `r reset`), `logging`, `password`, `startup`, `freeze`, `spawn`, `split`, `move`, `drag`,
+  `r reset`), `logging`, `password`, `startup`, `freeze`, `spawn`, `split`,
+  `split-stacked` (the same split stacked through the real ⌃B -, where the lower pane's tab strip is the
+  boundary and no divider row is drawn), `move`, `drag`,
   `history`, `history-search`, `history-search-filter`, `draft`, `draft2`, `menu`, `menu-split`,
   `menu-fuzzy` (`trig sel` typed into ⌃P after a real drag, so the trigger builder's entry is offered — the
   frame showing a two-word fuzzy match highlighted), `menu-recent` (⌃P opened empty after two commands ran

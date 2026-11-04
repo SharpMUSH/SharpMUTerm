@@ -38,7 +38,7 @@ public static class PaneExtent
 
         return split.Direction == SplitDirection.Row
             ? rows.Max()
-            : rows.Sum() + (LayoutSolver.DividerThickness * (rows.Count - 1));
+            : rows.Sum() + Dividers(split);
     }
 
     /// <summary>The fewest rows <paramref name="node"/> is given: its fixed height, else its declared floor, else 0.</summary>
@@ -53,7 +53,88 @@ public static class PaneExtent
         var split = (SplitNode)node;
         return split.Direction == SplitDirection.Row
             ? split.Children.Max(MinRows)
-            : split.Children.Sum(MinRows) + (LayoutSolver.DividerThickness * (split.Children.Count - 1));
+            : split.Children.Sum(MinRows) + Dividers(split);
+    }
+
+    /// <summary>
+    /// The cells between child <paramref name="index"/> and child <paramref name="index"/> + 1 of
+    /// <paramref name="split"/>. Side by side it is always a divider column. Stacked, a divider row is drawn only
+    /// where nothing else already marks the boundary:
+    /// <list type="bullet">
+    /// <item>none beside a fixed-height strip, which sits flush and is told apart by its own plane — it cannot be
+    /// resized, so a row there would be a rule with nothing to drag;</item>
+    /// <item>none above a child whose top row is all tab strip (<see cref="HeaderPanes"/>): that strip is the
+    /// boundary, and the host makes its empty run the divider's handle.</item>
+    /// </list>
+    /// </summary>
+    public static int DividerRows(SplitNode split, int index)
+    {
+        ArgumentNullException.ThrowIfNull(split);
+        if (index < 0 || index + 1 >= split.Children.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        if (split.Direction == SplitDirection.Row)
+        {
+            return LayoutSolver.DividerThickness;
+        }
+
+        var above = split.Children[index];
+        var below = split.Children[index + 1];
+        if (FixedRows(above) is not null || FixedRows(below) is not null || HeaderPanes(below).Count > 0)
+        {
+            return 0;
+        }
+
+        return LayoutSolver.DividerThickness;
+    }
+
+    /// <summary>Every divider cell along <paramref name="split"/>'s axis: the sum of <see cref="DividerRows"/>.</summary>
+    public static int Dividers(SplitNode split)
+    {
+        ArgumentNullException.ThrowIfNull(split);
+        var total = 0;
+        for (var i = 0; i + 1 < split.Children.Count; i++)
+        {
+            total += DividerRows(split, i);
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// The panes whose tab strips run along <paramref name="node"/>'s whole top edge, or an empty list when any part
+    /// of that edge is not a tab strip. A pane is its own answer; a stack is its first child's; a side-by-side row is
+    /// every child's, and only when each of them has one.
+    /// </summary>
+    public static IReadOnlyList<PaneNode> HeaderPanes(LayoutNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        if (node is PaneNode pane)
+        {
+            return pane.DrawsHeader ? [pane] : [];
+        }
+
+        var split = (SplitNode)node;
+        if (split.Direction == SplitDirection.Column)
+        {
+            return HeaderPanes(split.Children[0]);
+        }
+
+        var panes = new List<PaneNode>();
+        foreach (var child in split.Children)
+        {
+            var below = HeaderPanes(child);
+            if (below.Count == 0)
+            {
+                return [];
+            }
+
+            panes.AddRange(below);
+        }
+
+        return panes;
     }
 
     /// <summary>

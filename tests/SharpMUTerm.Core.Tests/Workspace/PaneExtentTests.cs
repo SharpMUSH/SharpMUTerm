@@ -23,8 +23,9 @@ public class PaneExtentTests
 
         var rects = LayoutSolver.Solve(root, Screen);
 
+        // Flush: a strip sits against its neighbour with no divider row, so the output has the row a rule took.
         await Assert.That(rects["vitals"]).IsEqualTo(new PaneRect(0, 0, 100, 1));
-        await Assert.That(rects["output"]).IsEqualTo(new PaneRect(0, 2, 100, 28));
+        await Assert.That(rects["output"]).IsEqualTo(new PaneRect(0, 1, 100, 29));
     }
 
     [Test]
@@ -35,7 +36,7 @@ public class PaneExtentTests
 
         await Assert.That(LayoutSolver.Solve(narrow, Screen)["quick"].Height).IsEqualTo(1);
         await Assert.That(LayoutSolver.Solve(wide, Screen)["quick"].Height).IsEqualTo(1);
-        await Assert.That(LayoutSolver.Solve(wide, Screen)["output"].Height).IsEqualTo(28);
+        await Assert.That(LayoutSolver.Solve(wide, Screen)["output"].Height).IsEqualTo(29);
     }
 
     [Test]
@@ -48,10 +49,98 @@ public class PaneExtentTests
 
         var rects = LayoutSolver.Solve(root, Screen);
 
-        // 30 − 2 dividers = 28; the strip takes 2, and a and b split the 26 left evenly.
+        // 30 − 1 divider (between a and b; none beside the strip) = 29; the strip takes 2, a and b split 27.
         await Assert.That(rects["strip"].Height).IsEqualTo(2);
-        await Assert.That(rects["a"].Height).IsEqualTo(13);
-        await Assert.That(rects["b"].Height).IsEqualTo(13);
+        await Assert.That(rects["a"].Height + rects["b"].Height).IsEqualTo(27);
+        await Assert.That(Math.Abs(rects["a"].Height - rects["b"].Height)).IsLessThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task NoDividerRowIsDrawnAboveAPaneThatDrawsItsOwnTabStrip()
+    {
+        var top = Pane("top");
+        var below = Pane("below");
+        below.DrawsHeader = true;
+        var root = new SplitNode(SplitDirection.Column, [top, below]);
+
+        var rects = LayoutSolver.Solve(root, Screen);
+
+        await Assert.That(PaneExtent.DividerRows(root, 0)).IsEqualTo(0);
+        await Assert.That(rects["top"]).IsEqualTo(new PaneRect(0, 0, 100, 15));
+        await Assert.That(rects["below"]).IsEqualTo(new PaneRect(0, 15, 100, 15));
+    }
+
+    [Test]
+    public async Task APaneWithNoTabStripStillGetsItsDividerRow()
+    {
+        var top = Pane("top");
+        top.DrawsHeader = true; // the strip above a boundary is not the boundary
+        var root = new SplitNode(SplitDirection.Column, [top, Pane("below")]);
+
+        var rects = LayoutSolver.Solve(root, Screen);
+
+        await Assert.That(PaneExtent.DividerRows(root, 0)).IsEqualTo(1);
+        await Assert.That(rects["below"].Y).IsEqualTo(rects["top"].Height + 1);
+    }
+
+    [Test]
+    public async Task SideBySideKeepsItsDividerColumnWhateverThePanesDraw()
+    {
+        var left = Pane("left");
+        var right = Pane("right");
+        left.DrawsHeader = right.DrawsHeader = true;
+        var root = new SplitNode(SplitDirection.Row, [left, right]);
+
+        var rects = LayoutSolver.Solve(root, Screen);
+
+        await Assert.That(PaneExtent.DividerRows(root, 0)).IsEqualTo(1);
+        await Assert.That(rects["right"].X).IsEqualTo(rects["left"].Width + 1);
+    }
+
+    [Test]
+    public async Task ARowOfPanesIsTheBoundaryOnlyWhenEveryOneOfThemDrawsATabStrip()
+    {
+        var a = Pane("a");
+        var b = Pane("b");
+        a.DrawsHeader = true;
+        var row = new SplitNode(SplitDirection.Row, [a, b]);
+        var root = new SplitNode(SplitDirection.Column, [Pane("top"), row]);
+
+        await Assert.That(PaneExtent.HeaderPanes(row)).IsEmpty();
+        await Assert.That(PaneExtent.DividerRows(root, 0)).IsEqualTo(1);
+
+        b.DrawsHeader = true;
+        await Assert.That(PaneExtent.HeaderPanes(row).Select(p => p.Id)).IsEquivalentTo(["a", "b"]);
+        await Assert.That(PaneExtent.DividerRows(root, 0)).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task DraggingATabStripBoundaryPutsTheLowerPanesStripAtTheRowAskedFor()
+    {
+        var below = Pane("below");
+        below.DrawsHeader = true;
+        var root = new SplitNode(SplitDirection.Column, [Pane("top"), below]);
+        var rects = LayoutSolver.Solve(root, Screen);
+
+        var result = PaneResize.DragBorder(root, 0, 10, rects);
+        var after = LayoutSolver.Solve(root, Screen);
+
+        await Assert.That(result.Outcome).IsEqualTo(PaneResizeOutcome.Resized);
+        await Assert.That(after["below"].Y).IsEqualTo(10);
+        await Assert.That(after["top"].Height + after["below"].Height).IsEqualTo(30);
+    }
+
+    [Test]
+    public async Task ApplyingPanelSizingSaysWhetherThePaneDrawsATabStrip()
+    {
+        var strip = new PaneNode("s", ["panel:vitals:W.C"]);
+        var output = new PaneNode("o", ["main"]);
+
+        PanelSizing.Apply(strip, PanelOf, tabStripRows: 1);
+        PanelSizing.Apply(output, PanelOf, tabStripRows: 1);
+
+        await Assert.That(strip.DrawsHeader).IsFalse();
+        await Assert.That(output.DrawsHeader).IsTrue();
     }
 
     [Test]
@@ -85,7 +174,7 @@ public class PaneExtentTests
         var rects = LayoutSolver.Solve(root, Screen);
 
         await Assert.That(rects["a"].Height).IsEqualTo(1);
-        await Assert.That(rects["b"].Height).IsEqualTo(28);
+        await Assert.That(rects["b"].Height).IsEqualTo(29);
     }
 
     [Test]
@@ -96,7 +185,7 @@ public class PaneExtentTests
         var mixed = new SplitNode(SplitDirection.Row, [Pane("vitals3", fixedRows: 1), Pane("output")]);
 
         await Assert.That(PaneExtent.FixedRows(strips)).IsEqualTo(2);
-        await Assert.That(PaneExtent.FixedRows(stack)).IsEqualTo(3); // two rows and the divider between them
+        await Assert.That(PaneExtent.FixedRows(stack)).IsEqualTo(2); // two rows, flush: strips need no divider
         await Assert.That(PaneExtent.FixedRows(mixed)).IsNull();
     }
 

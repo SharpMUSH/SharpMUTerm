@@ -162,6 +162,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Panes stacked one above the other no longer have an empty row between them when the lower pane shows its
+  tabs: the tab row is the boundary, and the panes get the row back. Drag the empty part of that tab row to
+  resize, or double-click it to even the panes out. The vitals and quick-bar strips sit flush against their
+  neighbours, on a slightly darker background. Side-by-side panes are unchanged.
 - The status row's meters are edited in a table on Text & display (F7): one row per meter with its label,
   value path and maximum path, what it reads now, `[+ meter]`, and Delete to remove one. While you are in
   the table it lists the game data this connection has received, and a path field offers those paths, with

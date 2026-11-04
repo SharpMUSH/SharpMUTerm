@@ -110,6 +110,14 @@ public sealed class PaneNode : LayoutNode
     /// </summary>
     public int? MinRows { get; set; }
 
+    /// <summary>
+    /// Whether the host draws a tab strip along this pane's top row. In a stacked split such a pane needs no divider
+    /// row above it: its own tab strip is the boundary, and the host makes the strip's empty run the handle a divider
+    /// would have been (<see cref="PaneExtent.DividerRows"/>). Like <see cref="FixedRows"/>, derived by the host every
+    /// time it lays the panes out and not persisted; false until then, which keeps the divider.
+    /// </summary>
+    public bool DrawsHeader { get; set; }
+
     public override IEnumerable<PaneNode> Panes()
     {
         yield return this;
