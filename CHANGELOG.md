@@ -28,6 +28,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   moves the window.
 - Desktop window: the map is drawn as a canvas of rooms and exits. The wheel zooms, a drag pans, a
   double-click re-centres on you, and a click on a room walks there. Hovering a room shows its name.
+- Desktop window: who is here is a native list, with a coloured dot for each player (dim when idle), how long
+  they have been idle, and creatures dimmed below. Hovering a name lights the row and shows the full name; a click
+  puts `look` and the name on that character's command line, as in the terminal. The quick bar is a row of
+  buttons, with the bindings that do not fit under a `+N` menu and *F4 edits keys* as a link. Neither takes the
+  keyboard away from the command line, and native panels no longer sit on top of a settings screen or ⌃P.
 - Scrolling a pane back splits it: the history you are reading stays on top, a band says how far back you
   are (`scrolled back 120 rows · End returns · ⌥F freezes`), and the newest lines keep arriving underneath.
   End (with the cursor at the end of the command line), Ctrl+End, or scrolling the history back down to its end

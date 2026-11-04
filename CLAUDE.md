@@ -1007,9 +1007,10 @@ fallbacks) for inline images/maps.
   - Screenshots of the window's cues come from a real window under Xvfb, driven with XTest; `--render-png`
     has no pointer and cannot show them.
 - **The window draws native views over the cells, and the cells stay** (`DesktopLayer`, `HeaderButton`,
-  `VitalsGauges`, `MapCanvas`, `NativeMenu` in Avalonia; `SharpMUTermApp.Desktop.cs`; Client `VitalsModel`,
-  `MapViewModel`, `LayoutCommands`). First slice of the desktop app: a Layouts button in the header, native vitals
-  gauges and a native map. Decisions not to relitigate:
+  `VitalsGauges`, `MapCanvas`, `WhoHereList`, `QuickBarButtons`, `NativeMenu` in Avalonia; `SharpMUTermApp.Desktop.cs`;
+  Client `VitalsModel`, `MapViewModel`, `WhoHereModel`, `QuickBarModel`, `LayoutCommands`). A Layouts button in the
+  header, native vitals gauges, a native map, a native who-here list and native quick-bar buttons. Decisions not
+  to relitigate:
   - **An overlay, never a cell.** The layer is a `Canvas` above `TerminalView` in the window's root panel; the
     client paints every cell exactly as in a terminal underneath, so no pane rectangle moves (NAWS), the parity
     test (which compares cells) does not see it, and a host that draws nothing native loses nothing. A native
@@ -1018,18 +1019,26 @@ fallbacks) for inline images/maps.
   - **The channel is `IPointerPresenter`**, the one the scrollbars ride, with two default-implemented members
     (`Panels`, `HeaderActions`) so the terminal and the test presenters need no change. `PublishPanels` runs on
     `PostBufferPaint` and publishes only on change; a panel is on screen when its window is a realised pane's
-    front tab. The map's model is rebuilt only when `RenderMap` has run since (`_mapRevisions`), and its walk
+    front tab **and no modal is open**. A settings screen, ⌃P or F1 is drawn in cells over the panes and a native
+    view would sit on top of it; a modal covering the whole window leaves the main window unpainted, so
+    `ModalStateService.StateChanged` publishes too (`TheEditLinkDispatchesTheF4ScreenAndNoNativePanelCoversIt`). The map's model is rebuilt only when `RenderMap` has run since (`_mapRevisions`), and its walk
     callback is one instance per window so an overlay compares equal frame to frame.
   - **Data is a view-model both hosts draw.** `ReadVitals` builds the `VitalsModel` that `VitalsStripRenderer`
     draws as cells and the gauges draw natively; `VitalsModel.LowShare` is the one low threshold
     (`StatusMeterRenderer.LowShare` reads it). `MapViewModel.From` is the current room's area and level, nearest
-    first, at most 1,500 rooms, names bounded.
+    first, at most 1,500 rooms, names bounded. `ReadWhoHere` builds the `WhoHereModel` and `QuickBarEntries` the
+    `QuickBarModel` that `WhoHereRenderer`/`QuickBarRenderer` draw as cells; row or item N is the same person or
+    binding in both, and the empty/unknown sentences and the `F4 edits keys` hint live on the models.
   - **The window never builds a command.** The Layouts menu is `LayoutsMenuItems()`, built on the client's thread
     (`HeaderAction.Menu`), each entry a registry dispatch: `layout:lib:apply:<id>`, `…save`, `…save-new`,
     `…use-world`, `…use-character` (a `CommandFamily` that lists nothing on ⌃P — ⌥M is the keyboard's list), plus
     `layout:layouts` for *Manage layouts…*. Those ids run the ⌥M list's own methods, which now return a
     `LayoutActionResult` the list shows as its status and a command shows as a notice. A map click is
-    `PanelOverlay.WalkTo` → `WalkFromMap`, the method a cell map's `mux:map:` link ends in.
+    `PanelOverlay.WalkTo` → `WalkFromMap`, the method a cell map's `mux:map:` link ends in. A who-here or quick-bar
+    click is `PanelOverlay.Pick(index)`: the client reads row N back from the overlay it *published* for that
+    window (out of range is nothing) and runs `OfferLook` / `RunQuickMacro`, the cell links' own methods, on the
+    window's own character. `F4 edits keys` is `PanelOverlay.Dispatch(QuickBarModel.EditCommand)`
+    (`screen:keypad`). One pick callback per window (`_panelPickers`), for the map walker's reason.
   - **Input, by view.** The header button is the window's alone: press, release, wheel and movement stop at it,
     a right press included, and nothing reaches the client (`ThePressOnTheLayoutsButtonNeverReachesTheClient…`).
     It never takes focus. It sits over the header's last three cells, which the header always leaves blank
@@ -1037,12 +1046,16 @@ fallbacks) for inline images/maps.
     The vitals gauges are `IsHitTestVisible = false`: every pointer event goes to the cells, so focus, the
     pane's menu and selection are the terminal's. The map takes the pointer (wheel zooms about the pointer,
     drag pans from the character's room, double-click re-centres, click walks) and hands a right click on to
-    the client as a right click on the cell (`TerminalView.ForwardRightClick`).
+    the client as a right click on the cell (`TerminalView.ForwardRightClick`). The who-here list and the quick bar
+    take the pointer the same way (hover plate, tooltip, left click is a pick, right click forwarded, wheel
+    swallowed) and are `Focusable = false`, as the map is: the keyboard stays on the client's command line. The
+    quick bar lays out the cells' rule in pixels — the link first, then bindings in order, `+N` for the rest, whose
+    `NativeMenu` entries pick by the same index. Every binding is drawn alike; only a key that does not fire is dim.
   - **Gauges choose their arrangement from the pane's height alone**: stacked blocks when every meter and the
     target fit as name-over-bar, else side by side, where the words shrink (`Mana · low 23 / 120`, then
     `mp! 23/120`, then `mp 23`) before a bar goes under 24 px. The UI font, not the cell font: this is the window's
     presentation. `hp`/`mp`/`mv` read as Health/Mana/Movement (`VitalsMeter.Title`).
-  - **Not done**: who-here, the quick bar and the composer are still cells in the window; no animation on a
+  - **Not done**: the docked composer is still cells in the window; no animation on a
     gauge change; the map draws one level and area, no exits between levels and no room colours/symbols; the
     button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
     click under a WM-less X server to take the first item (seen under Xvfb only).

@@ -164,6 +164,19 @@ internal interface IPointerPresenter
 /// For the map, walks the panel's own character to a room by id, through the speedwalk a click on a cell map uses.
 /// Safe to call from any thread. The same instance for as long as the window lives, so an overlay compares equal.
 /// </param>
+/// <param name="WhoHere">For the who-here panel, its content: the same model its cell rows are drawn from.</param>
+/// <param name="QuickBar">For the quick bar, its content: the same model its cell row is drawn from.</param>
+/// <param name="Pick">
+/// For who-here and the quick bar, does what a click on row or item N of the cells does, on the panel's own
+/// character: who-here puts <c>look</c> and the name on that character's command line, the quick bar runs the
+/// binding through the key's own path. The index is into the model this overlay carries; the client reads the row
+/// back from what it published, so the host never names a person or a command. Safe to call from any thread, and
+/// the same instance for as long as the window lives.
+/// </param>
+/// <param name="Dispatch">
+/// Runs a command id through the client's registry (the quick bar's <c>F4 edits keys</c> is
+/// <see cref="SharpMUTerm.Client.Panels.QuickBarModel.EditCommand"/>). Safe to call from any thread; one instance.
+/// </param>
 internal sealed record PanelOverlay(
     string PanelId,
     string WindowId,
@@ -171,7 +184,11 @@ internal sealed record PanelOverlay(
     PanelInk Ink,
     SharpMUTerm.Client.Panels.VitalsModel? Vitals,
     SharpMUTerm.Client.Panels.MapViewModel? Map = null,
-    Action<long>? WalkTo = null);
+    Action<long>? WalkTo = null,
+    SharpMUTerm.Client.Panels.WhoHereModel? WhoHere = null,
+    SharpMUTerm.Client.Panels.QuickBarModel? QuickBar = null,
+    Action<int>? Pick = null,
+    Action<string>? Dispatch = null);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);

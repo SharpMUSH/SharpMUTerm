@@ -24,8 +24,10 @@ namespace SharpMUTerm.Avalonia;
 /// movement and wheel stop at it and never reach the client, which is what lets it sit over cells the client
 /// would otherwise read as a press on the header. The vitals gauges are a picture of their pane and take no input:
 /// a press, a drag, a right-click or the wheel over them reaches the client as a press on the pane's cells, so
-/// focus, the pane's menu and selection behave as they do in a terminal. The map is used with the pointer, so it
-/// takes it (<see cref="MapCanvas"/>: zoom, pan, click to walk) and hands only a right click on to the client.
+/// focus, the pane's menu and selection behave as they do in a terminal. The map, the who-here list and the quick
+/// bar are used with the pointer, so they take it (<see cref="MapCanvas"/>: zoom, pan, click to walk;
+/// <see cref="WhoHereList"/>: click a name; <see cref="QuickBarButtons"/>: click a binding) and hand only a right
+/// click on to the client. None of them takes keyboard focus.
 /// </para>
 /// </summary>
 internal sealed class DesktopLayer : Canvas
@@ -40,6 +42,8 @@ internal sealed class DesktopLayer : Canvas
     private readonly Dictionary<string, MapCanvas> _maps = new(StringComparer.Ordinal);
     private readonly NativeHeader _header;
     private readonly NativeSidebar _sidebar;
+    private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
 
     public DesktopLayer(TerminalView view)
     {
@@ -79,6 +83,12 @@ internal sealed class DesktopLayer : Canvas
 
     /// <summary>The native sidebar. Internal for tests.</summary>
     internal NativeSidebar Sidebar => _sidebar;
+
+    /// <summary>The native who-here lists by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, WhoHereList> WhoHere => _whoHere;
+
+    /// <summary>The native quick bars by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, QuickBarButtons> QuickBars => _quickBars;
 
     /// <summary>The last header menu opened. Internal for tests.</summary>
     internal ContextMenu? OpenedMenu { get; private set; }
@@ -202,6 +212,20 @@ internal sealed class DesktopLayer : Canvas
             frame,
             cell,
             (map, panel, plane) => map.Show(panel.Map!, panel.Ink, plane, text, panel.WalkTo));
+        Place(
+            _whoHere,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.WhoHere && p.WhoHere is not null),
+            () => new WhoHereList(_view),
+            frame,
+            cell,
+            (list, panel, plane) => list.Show(panel.WhoHere!, panel.Ink, plane, text, cell.Height, panel.Pick));
+        Place(
+            _quickBars,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.QuickBar && p.QuickBar is not null),
+            () => new QuickBarButtons(_view),
+            frame,
+            cell,
+            (bar, panel, plane) => bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch));
     }
 
     /// <summary>

@@ -121,8 +121,8 @@ public class TerminalPanelTests
     {
         var entries = QuickBarRenderer.Entries(Bindings, Resolve);
 
-        await Assert.That(entries.Select(e => e.Key)).IsEquivalentTo(new[] { "F11", "F12", "⌃F3" });
-        await Assert.That(entries[2].Name).IsEqualTo("cast 'cure light'");
+        await Assert.That(entries.Items.Select(e => e.Key)).IsEquivalentTo(new[] { "F11", "F12", "⌃F3" });
+        await Assert.That(entries.Items[2].Title).IsEqualTo("cast 'cure light'");
     }
 
     [Test]
