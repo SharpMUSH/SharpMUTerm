@@ -28,6 +28,6 @@ internal static class SnapshotViews
         "collapsed", "timestamps", "timestamps-toggled", "theme-switched", "rail-keys", "prompt", "meters", "gamedata", "map", "map-walking", "map-split",
         "packages", "package-review", "package-browse", "send-menu", "layouts", "layout-combat", "layout-roleplay",
         "panel-who", "panel-vitals", "panel-quickbar", "panel-composer",
-        "welcome", "welcome-connect", "tour", "reconnect",
+        "welcome", "welcome-connect", "tour", "reconnect", "help", "help-topic", "dictionary-offer", "join-wraps", "join-wraps-f5",
     ];
 }

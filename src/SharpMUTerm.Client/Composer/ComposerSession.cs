@@ -24,6 +24,9 @@ public sealed record ComposerCallbacks
     /// <summary>⌥W, or the menu's <em>Add to dictionary</em>, with the word.</summary>
     public Action<string>? AddWord { get; init; }
 
+    /// <summary>⌥W in F1 with no dictionary: the client offers to download one.</summary>
+    public Action? GetDictionary { get; init; }
+
     /// <summary>Esc in a docked composer: the keyboard goes back to the command line.</summary>
     public Action? Release { get; init; }
 
@@ -144,6 +147,18 @@ public sealed class ComposerSession
         if (CanAddWords && !string.IsNullOrWhiteSpace(word))
         {
             Pass(_callbacks.AddWord, word.Trim());
+        }
+    }
+
+    /// <summary>Whether ⌥W here offers a dictionary: F1 writing a post, with none marking it.</summary>
+    public bool CanGetDictionary => Model is { Edit: null, Dictionary: null, Place: ComposerPlace.FullScreen };
+
+    /// <summary>The host's: ⌥W with no dictionary.</summary>
+    public void GetDictionary()
+    {
+        if (CanGetDictionary && !IsEnded)
+        {
+            _callbacks.GetDictionary?.Invoke();
         }
     }
 

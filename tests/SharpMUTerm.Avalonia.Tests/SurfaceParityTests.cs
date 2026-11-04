@@ -256,6 +256,8 @@ public class SurfaceParityTests
             (SurfaceCatalog.Layouts, "layouts"),
             (SurfaceCatalog.Welcome, "welcome"),
             (SurfaceCatalog.Welcome, "welcome-connect"),
+            (SurfaceCatalog.Help, "help"),
+            (SurfaceCatalog.Dictionary, "dictionary-offer"),
         })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
@@ -687,6 +689,30 @@ public class SurfaceParityTests
             });
         probed.Add(SurfaceCatalog.Welcome);
 
+        // Help: a slash command placed on the command line (sent nowhere), and a key's command run — each the entry the
+        // other host's ⏎ picks, through RunHelpEntry.
+        await SameModal("help: place a slash command", "help",
+            (app, m) =>
+            {
+                var help = (HelpSession)m.Open(SurfaceCatalog.Help)!;
+                help.Choose(HelpEntryIndex(help.Model, e => e.Kind == HelpKind.Command && e.Title.StartsWith("/connect", StringComparison.Ordinal)));
+            },
+            app => HelpKeysTo(app, e => e.Kind == HelpKind.Command && e.Title.StartsWith("/connect", StringComparison.Ordinal)));
+        await SameModal("help: run a key", "help",
+            (app, m) =>
+            {
+                var help = (HelpSession)m.Open(SurfaceCatalog.Help)!;
+                help.Choose(HelpEntryIndex(help.Model, e => e.Kind == HelpKind.Key && e.Target == "layout:toggle-rail"));
+            },
+            app => HelpKeysTo(app, e => e.Kind == HelpKind.Key && e.Target == "layout:toggle-rail"));
+        probed.Add(SurfaceCatalog.Help);
+
+        // The dictionary offer: Download in a client that keeps no dictionaries folder refuses out loud in both.
+        await SameModal("dictionary: download", "dictionary-offer",
+            (app, m) => ((DictionaryOfferSession)m.Open(SurfaceCatalog.Dictionary)!).Accept(),
+            app => app.SimulateHelpKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+        probed.Add(SurfaceCatalog.Dictionary);
+
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         // The tab overflow chip: an entry chosen from the window's menu and the same digit in the cell list bring the same
         // hidden tab forward.
@@ -902,6 +928,31 @@ public class SurfaceParityTests
         app.SimulateLayoutsKey(key);
     }
 
+    private static int HelpEntryIndex(HelpModel model, Func<HelpEntry, bool> match)
+    {
+        for (var i = 0; i < model.Entries.Count; i++)
+        {
+            if (match(model.Entries[i]))
+            {
+                return i;
+            }
+        }
+
+        throw new InvalidOperationException("no such help entry");
+    }
+
+    /// <summary>Moves the cell help's pointer down to the entry <paramref name="match"/> picks, then presses ⏎.</summary>
+    private static void HelpKeysTo(SharpMUTermApp app, Func<HelpEntry, bool> match)
+    {
+        var target = HelpEntryIndex(app.CellHelp!.Model, match);
+        for (var i = 0; i < 500 && app.CellHelp!.SelectedEntry != target; i++)
+        {
+            app.SimulateHelpKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        }
+
+        app.SimulateHelpKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+    }
+
     private static object ModelOf(ModalSession session) => session switch
     {
         QuitSession quit => quit.Model,
@@ -909,6 +960,8 @@ public class SurfaceParityTests
         HistorySession history => history.Model,
         LayoutsSession layouts => layouts.Model,
         WelcomeSession welcome => welcome.Model,
+        HelpSession help => help.Model,
+        DictionaryOfferSession offer => offer.Model,
         _ => throw new ArgumentException(session.GetType().Name),
     };
 
@@ -929,6 +982,7 @@ public class SurfaceParityTests
         "screen=" + app.OpenSettingsKey,
         "layout=" + app.LiveLayoutId,
         "welcome=" + app.WelcomeIsOpen,
+        "help=" + app.HelpIsOpen + "/" + app.DictionaryOfferOpen,
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
         "rail=" + (app.BuildChromeOverlay().Sidebar.Collapsed ? "folded" : "open"),

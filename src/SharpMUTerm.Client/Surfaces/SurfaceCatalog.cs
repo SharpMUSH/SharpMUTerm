@@ -180,6 +180,12 @@ public static class SurfaceCatalog
     /// <summary>The first-run welcome and its connect form.</summary>
     public const string Welcome = "welcome";
 
+    /// <summary>Help: keys, slash commands and how-to pages (⌃P ▸ Help, <c>/help</c>).</summary>
+    public const string Help = "help";
+
+    /// <summary>The spelling dictionary offer: the consent step before anything is downloaded.</summary>
+    public const string Dictionary = "dictionary";
+
     /// <summary>
     /// The <c>+3 ▾</c> chip a tab strip carries when its tabs do not fit even at their floors, and the list of the tabs
     /// past its edges it opens: a cell list in a terminal, a native menu in the window (the chip itself is cells in both).
@@ -203,7 +209,7 @@ public static class SurfaceCatalog
     private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
 
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
-    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome];
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary];
 
     /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
     private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
@@ -372,6 +378,9 @@ public static class SurfaceCatalog
                 // Esc: the window closes and the buffer is kept as the character's draft.
                 new(SurfaceActionKind.Compose, "close", "CloseComposer"),
                 new(SurfaceActionKind.Compose, "add word", "AddComposerWord"),
+
+                // ⌥W with no dictionary: F1 closes keeping the draft, and the dictionary offer opens.
+                new(SurfaceActionKind.Compose, "get dictionary", "OfferDictionary"),
             ],
             new Dictionary<string, SurfaceDrawing>
             {
@@ -455,6 +464,25 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.WelcomeSurface.Render",
             ModalViews("WelcomeView")),
+        new(
+            Help,
+            typeof(HelpModel),
+            [
+                // A slash command is put on the command line, never sent; a key runs its registry command. A page is the
+                // view's own to show and hands nothing back.
+                new(SurfaceActionKind.Modal, "place", "RunHelpEntry"),
+                new(SurfaceActionKind.Modal, "run", "RunHelpEntry"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.HelpSurface.Render",
+            ModalViews("HelpView")),
+        new(
+            Dictionary,
+            typeof(DictionaryOfferModel),
+            [new(SurfaceActionKind.Modal, "accept", "InstallDictionary")],
+            NativeModal,
+            "SharpMUTerm.Tui.DictionaryOffer.Render",
+            ModalViews("DictionaryOfferView")),
         new(
             TabOverflow,
             typeof(MenuModel),

@@ -84,16 +84,17 @@ public class ComposeSpellingTests
     }
 
     [Test]
-    public async Task WithNoDictionaryTheHeaderSaysSoAndAltWIsNotOffered()
+    public async Task WithNoDictionaryTheHeaderSaysSoAndAltWOffersToGetOne()
     {
         var app = App(() => null);
         app.SimulateKey(Key(ConsoleKey.F1));
         app.Composer.SimulateTyping("wrold");
 
         await Assert.That(app.Composer.HeaderMarkup).Contains("no dictionary");
-        await Assert.That(app.Composer.SimulateKey(Key(ConsoleKey.W, ConsoleModifiers.Alt))).IsFalse();
         var rows = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
-        await Assert.That(rows.Any(r => r.Contains("⌥W", StringComparison.Ordinal))).IsFalse();
+        await Assert.That(rows.Any(r => r.Contains("⌥W", StringComparison.Ordinal) && r.Contains("get a dictionary", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(app.Composer.SimulateKey(Key(ConsoleKey.W, ConsoleModifiers.Alt))).IsTrue();
+        await Assert.That(app.DictionaryOfferOpen).IsTrue().Because("⌥W with no dictionary offers one, and fetches nothing");
     }
 
     [Test]

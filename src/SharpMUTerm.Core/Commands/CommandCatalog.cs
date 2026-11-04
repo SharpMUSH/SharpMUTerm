@@ -54,6 +54,13 @@ public sealed record CharacterRef(
 /// Null where the host cannot float a panel in a window of its own (the terminal), so nothing is offered; otherwise
 /// every panel that can pop out, docked or floating, so <c>Pop out …</c> and <c>Dock … back</c> name real windows.
 /// </param>
+/// <param name="RaggedWraps">
+/// The worlds whose connected pane is narrower than the column their server wraps at, and which do not join wraps — so
+/// <c>Join server wraps for …</c> is offered (and suggested) only while it would change what the pane shows.
+/// </param>
+/// <param name="NoDictionary">
+/// Whether the client's own dictionaries folder holds none, so <c>Get a spelling dictionary</c> is offered.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -69,7 +76,15 @@ public sealed record CommandContext(
     bool? Announced = null,
     bool OutputSelected = false,
     int KeyClashes = 0,
-    IReadOnlyList<PanelFloatRef>? Floats = null);
+    IReadOnlyList<PanelFloatRef>? Floats = null,
+    IReadOnlyList<RaggedWrap>? RaggedWraps = null,
+    bool NoDictionary = false);
+
+/// <summary>A world whose pane is narrower than its server's wrap column.</summary>
+/// <param name="World">The world's name.</param>
+/// <param name="Column">The column its server wraps at.</param>
+/// <param name="PaneWidth">How wide its pane is.</param>
+public sealed record RaggedWrap(string World, int Column, int PaneWidth);
 
 /// <summary>A panel window that can pop out into a window of its own, for the command surface's entries.</summary>
 /// <param name="WindowId">The panel's window (<c>map:World.Char</c>, <c>panel:vitals:World.Char</c>).</param>

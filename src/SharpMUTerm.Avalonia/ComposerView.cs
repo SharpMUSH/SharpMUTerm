@@ -508,6 +508,10 @@ internal sealed class ComposerView : Border
                 {
                     session.AddWord(word);
                 }
+                else if (session.CanGetDictionary)
+                {
+                    session.GetDictionary();
+                }
 
                 return;
 

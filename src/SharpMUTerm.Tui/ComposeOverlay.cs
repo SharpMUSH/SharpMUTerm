@@ -81,6 +81,16 @@ internal sealed class ComposeOverlay
     /// </summary>
     internal SpellChecker? Spelling => _edit is null ? _spelling : null;
 
+    /// <summary>⌥W in a post with no dictionary: the host offers to download one.</summary>
+    internal event EventHandler? DictionaryWanted;
+
+    /// <summary>Forgets the dictionary (or that there was none), so the next opening looks again — after a download.</summary>
+    internal void ForgetSpelling()
+    {
+        _spellingOpened = false;
+        _spelling = null;
+    }
+
     /// <summary>Raised when ⌃S sends. The host decides where it goes and what it does about failure.</summary>
     internal event EventHandler<ComposeResult>? Send;
 
@@ -328,6 +338,14 @@ internal sealed class ComposeOverlay
         {
             e.Handled = true;
             AddWordAtCaret();
+            return;
+        }
+
+        // ⌥W with no dictionary is the way to one: the host closes this window (keeping the draft) and asks first.
+        if (alt && key.Key == ConsoleKey.W && _edit is null)
+        {
+            e.Handled = true;
+            DictionaryWanted?.Invoke(this, EventArgs.Empty);
             return;
         }
 

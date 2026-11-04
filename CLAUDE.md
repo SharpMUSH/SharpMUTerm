@@ -603,6 +603,11 @@ fallbacks) for inline images/maps.
     shown out of order and only the last full row of a burst is ever late (a paragraph's last row is short and
     never held). The read loop and that timer share `_ingestGate`; nothing on the UI thread or in a script takes
     it, so it cannot close a cycle with the script host's lock. Rebuilt per connection, like the parser.
+  - **Suggested, never switched on** (`SharpMUTermApp.JoinWraps.cs`). While a pane reported to a server is more than
+    two columns narrower than its wrap column (`NoteRaggedWraps`, on each NAWS report; `RaggedWrap`, Core), ⌃P lists
+    *Join server wraps for <world>* under SUGGESTED (`CommandContext.RaggedWraps`) and F5's `join wraps` row reads
+    `off · recommended · wraps at 78, pane is 60` (the `join-wraps`/`join-wraps-f5` views); the once-per-world notice
+    stays. Joining, or the pane catching up, clears it.
 - **Every server's MSSP report is kept, and the INFO screen reads it** (`MsspCache`, Core; `mssp.json`
   beside `config.json`, keyed by `host:port`; F5 ▸ `i`). Fourth of the `save:`/`logRoot:`/`restore:`
   family with **one deliberate difference**: the constructor parameter is null by default like the
@@ -770,6 +775,14 @@ fallbacks) for inline images/maps.
     `dictionaries/user-words.txt`. **A command token is skipped** (one starting `+ @ & /`, up to its first `=`), and so
     is **every name the client knows** (`SpellChecker.KnowNames`: configured worlds and characters, each session's
     `CompletionIndex.Names()`), refreshed each time F1 opens and held for the run, never written to disk.
+  - **With no dictionary, ⌥W offers to download one** (`DictionaryDownload`, Core; `DictionaryOfferModel`, Client;
+    `DictionaryOffer`/`SharpMUTermApp.Help.cs`, Tui; `DictionaryOfferView`, Avalonia; ⌃P *Get a spelling dictionary…*;
+    the `dictionary-offer` view). F1 closes (keeping the draft), the offer says what is fetched from where and saved
+    where, and F1 comes back when it closes. **Only on ⏎**, https only, each file capped at 8 MB while streaming, and
+    both checked against a **pinned SHA-256** before anything is written (LibreOffice's `en_US`/`en_GB` at tag
+    `libreoffice-24.8.4.2`; `For(locale)` picks GB for en_GB/IE/AU/NZ/ZA/IN). Written as `.new` and renamed, `.aff`
+    first. `dictionaries:` is a constructor root of the `save:`/`logRoot:` family, null by default, so a test and a
+    snapshot fetch nothing and the offer says nothing can be saved.
 - **An MXP `<IMAGE>` is drawn in the output pane as rows of markup under the line that named it**
   (`MxpParser.HandleImage` + `MxpImageSource`, Core; `InlineImageHost`/`InlineImageRows`/`InlineImageLayout`,
   Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
@@ -1342,7 +1355,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M, the welcome, help and the dictionary offer itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1620,8 +1633,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   (each panel in a pane of its own over the demo's game data; the composer over who-here, armed, with a draft
   typed through its real key path), `welcome`/`welcome-connect` (the first-run welcome over an **emptied**
   configuration and a main window alone — `--demo-config` has worlds, and the welcome never opens over them — and
-  its connect form filled in by real keys) `tour` (the key tour row at the end of the demo's main window) and `reconnect` (Corvid dropped, the second try
-  counting down on the status row), plus
+  its connect form filled in by real keys), `tour` (the key tour row at the end of the demo's main window), `reconnect` (Corvid dropped, the second try
+  counting down on the status row),
+  `help`/`help-topic` (in-app help's list, and its *Reading output* page), `dictionary-offer` (the spelling dictionary
+  offer, in a run that keeps no folder) and `join-wraps`/`join-wraps-f5` (a ragged world suggested on ⌃P, and
+  recommended on F5 — the row is under `14 more` below about 50 rows), plus
   the default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
@@ -1987,6 +2003,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave7/composer-*.png`). `--demo-config` in the
     window opens the installed dictionary read-only. Not done: no find bar, and
     the window's ⌥W adds to the run's dictionary in the demo only (a live client writes `user-words.txt` as F1 does).
+- **Help is one Client model drawn by both hosts** (`HelpModel`/`HelpSession`, `SlashCommands`, `HelpTopics`, Client;
+  `HelpSurface`, Tui; `HelpView`, Avalonia; `/help [words]`, ⌃P ▸ *Help*; surface `help`). Rows: how-to pages, then
+  the slash commands from **`SlashCommands.All`, the one table `--help` prints too** (`ClientUsage`), then every
+  registry command with a key for this host (`KeyGlyphs.Normalize`) and the host's own chords (`HostKeys`). The search
+  is `HelpModel.View` in both hosts (every word, in a row or in a page's text). ⏎ on a slash command **places** it on
+  the command line (`PlaceGrab`) and sends nothing; on a key it runs the registry command; on a how-to it opens the
+  page (Esc back). `--plain` says the matching rows instead. Native as an `INativeModals` session like ⌃F. Pages are
+  `HelpTopic.Lines` joined into `Paragraphs` and wrapped by each host. `HelpTests.EverySlashCommand…` ties the table
+  to the command line's handlers.
 - **In the window, the quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals** (`ClientHost.NativeModals` →
   `INativeModals`; Client `Modals/`: `ModalSession`, `QuitModel`/`QuitSession`, `SearchModel`/`SearchSession`,
   `HistoryModel`/`HistorySession`, `LayoutsModel`/`LayoutsSession`, `WelcomeModel`/`WelcomeSession`; Avalonia

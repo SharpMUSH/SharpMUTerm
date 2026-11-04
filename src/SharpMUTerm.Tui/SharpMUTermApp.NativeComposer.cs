@@ -151,6 +151,7 @@ internal sealed partial class SharpMUTermApp
                     }
                 }),
                 AddWord = word => OnUiThread(() => AddComposerWord(word)),
+                GetDictionary = () => OnUiThread(OfferDictionary),
                 Proportional = ComposerFaceOf(ComposeDraftKey(ActiveWindowId())),
                 ChooseFace = ChooseComposerFace(ComposeDraftKey(ActiveWindowId())),
                 Closed = body => OnUiThread(() =>

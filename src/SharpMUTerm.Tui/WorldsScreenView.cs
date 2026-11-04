@@ -29,7 +29,8 @@ internal static class WorldsScreenView
         int selectedSet = 0,
         int height = 0,
         bool info = false,
-        IReadOnlyList<LayoutDefinition>? layouts = null)
+        IReadOnlyList<LayoutDefinition>? layouts = null,
+        Func<WorldDefinition, string?>? joinWrapsAdvice = null)
     {
         // Both panes end in button rows, so a raw cursor can point past its list; resolving once here
         // keeps every block of the screen agreeing on which world and character are selected.
@@ -69,7 +70,7 @@ internal static class WorldsScreenView
             WorldsScreenRenderer.WorldsColumn(worlds, selectedWorld, focus, rows, info), scheme));
         var detailCol = ScreenChrome.Stretch(ScreenChrome.Panel(
             WorldsScreenRenderer
-                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts),
+                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts, joinWrapsAdvice),
             scheme));
         var body = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
