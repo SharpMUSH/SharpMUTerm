@@ -1,8 +1,10 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Core.Text;
@@ -571,6 +573,13 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 /// desktop app's size: an unfold button, an accent mark per world, and a dot with an initial per character (filled
 /// while connected, with an unread mark), each still a click on its target, with the name in its tooltip.
 /// </para>
+/// <para>
+/// <b>More rows than fit scroll</b> under the title and above the foot button, with the wheel or by dragging an overlay
+/// scrollbar drawn like the panes' (thin, widening under the pointer). A right click on a row opens a native menu of the
+/// client's entries for that row (<see cref="ChromeOverlay.RowMenu"/>, the registry's commands with their keys); and
+/// while the keyboard is on the sidebar (⌥C, <see cref="SidebarModel.Cursor"/>) its row wears a focus ring and is
+/// scrolled into view. The keys themselves are the client's: nothing here is focusable.
+/// </para>
 /// </summary>
 internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 {
@@ -586,6 +595,22 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
     private readonly List<Row> _rows = [];
     private Rect _add;
     private Rect _fold;
+
+    /// <summary>How far the rows are scrolled, in pixels, and the list area they scroll in.</summary>
+    private double _scroll;
+    private double _content;
+    private Rect _list;
+    private bool _barHovered;
+    private double? _barGrab;
+
+    /// <summary>How far the rows are scrolled, in pixels. Internal for tests.</summary>
+    internal double ScrollOffset => _scroll;
+
+    /// <summary>The most the rows can be scrolled: zero when they all fit. Internal for tests.</summary>
+    internal double ScrollRange => Math.Max(0, _content - _list.Height);
+
+    /// <summary>The row menu last opened, for a test.</summary>
+    internal ContextMenu? OpenedMenu { get; private set; }
 
     /// <summary>The rows as last laid out. Internal for tests.</summary>
     internal IReadOnlyList<Row> Rows => _rows;
@@ -608,17 +633,13 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
         var row = folded ? 32 : RowHeight;
         _add = folded ? new Rect((width - 32) / 2, Height - 32 - 10, 32, 32) : new Rect(10, Height - row - 12, Math.Max(0, width - 20), row + 2);
         var bottom = _add.Top - 6;
+        _list = new Rect(0, TitleHeight, width, Math.Max(0, bottom - TitleHeight));
         var y = TitleHeight;
-        void Add(Row r, string target, string tip)
-        {
-            if (r.Area.Bottom > bottom)
-            {
-                return;
-            }
 
-            _rows.Add(r);
-            hits.Add((r.Area, target, tip));
-        }
+        // Laid out unscrolled first: the scroll is clamped to what the rows need, and moved to keep the keyboard's row
+        // in view, before anything is placed.
+        var laid = new List<(Row Row, string Target, string Tip)>();
+        void Add(Row r, string target, string tip) => laid.Add((r, target, tip));
 
         foreach (var world in overlay.Sidebar.Worlds)
         {
@@ -667,6 +688,32 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             }
         }
 
+        _content = y + 4 - TitleHeight;
+        if (overlay.Sidebar.Cursor is { } cursor && laid.FirstOrDefault(l => KeyOf(l.Row) == cursor) is { Row: { } focused })
+        {
+            if (focused.Area.Top - _scroll < _list.Top)
+            {
+                _scroll = focused.Area.Top - _list.Top - 4;
+            }
+            else if (focused.Area.Bottom - _scroll > _list.Bottom)
+            {
+                _scroll = focused.Area.Bottom - _list.Bottom + 4;
+            }
+        }
+
+        _scroll = Math.Clamp(_scroll, 0, ScrollRange);
+        foreach (var (r, target, tip) in laid)
+        {
+            var area = r.Area.Translate(new Vector(0, -_scroll));
+            if (area.Bottom <= _list.Top || area.Top >= _list.Bottom)
+            {
+                continue;
+            }
+
+            _rows.Add(r with { Area = area });
+            hits.Add((area.Intersect(_list), target, tip));
+        }
+
         if (_add.Width > 20 && _add.Top > TitleHeight)
         {
             hits.Add((_add, SidebarModel.AddGameTarget, "Connect to a game, or add one"));
@@ -675,6 +722,178 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
         {
             _add = default;
         }
+    }
+
+    /// <summary>A drawn row's identity, as the client keys it (<see cref="SidebarModel.KeyOf(RailRowKind, string?)"/>).</summary>
+    internal static string KeyOf(Row row) => SidebarModel.KeyOf(row.Kind, TargetOf(row));
+
+    /// <summary>The target the cell rail gives the same row.</summary>
+    internal static string TargetOf(Row row) => row.Kind switch
+    {
+        RailRowKind.Window => SidebarModel.TargetOf(row.Window!),
+        RailRowKind.Character => SidebarModel.TargetOf(row.Character!),
+        RailRowKind.Empty => RailModel.NoCharactersTarget(row.World.Name),
+        _ => SidebarModel.TargetOf(row.World),
+    };
+
+    /// <summary>The row under <paramref name="point"/>, inside the list area, or null.</summary>
+    private Row? RowAt(Point point) =>
+        _list.Contains(point) ? _rows.FirstOrDefault(r => r.Area.Contains(point)) : null;
+
+    /// <summary>Scrolls the rows by <paramref name="pixels"/> (positive is down the list) and lays them out again.</summary>
+    internal void ScrollBy(double pixels)
+    {
+        var before = _scroll;
+        _scroll = Math.Clamp(_scroll + pixels, 0, ScrollRange);
+        if (_scroll != before)
+        {
+            Show(Overlay, Plane, Ink);
+        }
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        ScrollBy(-e.Delta.Y * RowHeight * 3);
+    }
+
+    /// <summary>
+    /// Asks the client for <paramref name="rowKey"/>'s menu and opens it at the pointer. The client builds it on its own
+    /// thread and answers there; the menu is opened on this one. Internal for tests.
+    /// </summary>
+    internal void OpenRowMenu(string rowKey)
+    {
+        if (Overlay is not { } overlay || Inert)
+        {
+            return;
+        }
+
+        overlay.RowMenu(rowKey, model => Dispatcher.UIThread.Post(() =>
+        {
+            if (model.Entries.Count == 0)
+            {
+                return;
+            }
+
+            var menu = NativeMenu.Build(model, overlay.RunRowMenu, PlacementMode.Pointer, this);
+            OpenedMenu = menu;
+            menu.Open(this);
+        }));
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (!Inert && point.Properties.IsRightButtonPressed && RowAt(point.Position) is { } row)
+        {
+            e.Handled = true;
+            OpenRowMenu(KeyOf(row));
+            return;
+        }
+
+        if (!Inert && point.Properties.IsLeftButtonPressed && Bar() is { } bar && bar.Zone.Contains(point.Position))
+        {
+            e.Handled = true;
+            _barGrab = bar.Thumb.Contains(point.Position) ? point.Position.Y - bar.Thumb.Top : bar.Thumb.Height / 2;
+            e.Pointer.Capture(this);
+            DragBar(point.Position.Y);
+            return;
+        }
+
+        base.OnPointerPressed(e);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        var position = e.GetPosition(this);
+        if (_barGrab is not null)
+        {
+            DragBar(position.Y);
+            e.Handled = true;
+            return;
+        }
+
+        var hovered = Bar() is { } bar && bar.Zone.Contains(position);
+        if (hovered != _barHovered)
+        {
+            _barHovered = hovered;
+            InvalidateVisual();
+        }
+
+        base.OnPointerMoved(e);
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        if (_barGrab is not null)
+        {
+            _barGrab = null;
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
+        base.OnPointerReleased(e);
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        _barHovered = false;
+        base.OnPointerExited(e);
+    }
+
+    /// <summary>The panes' bar, at the panes' sizes: over the list's right edge, never in a column of it.</summary>
+    private const double BarWidth = 4, BarWidthHovered = 8, BarZone = 12, MinimumThumb = 18;
+
+    /// <summary>The scrollbar's zone and thumb, or null when every row fits. Internal for tests.</summary>
+    internal (Rect Zone, Rect Thumb, double Travel)? Bar()
+    {
+        if (ScrollRange <= 0 || _list.Height <= 0)
+        {
+            return null;
+        }
+
+        var thumb = Math.Min(_list.Height, Math.Max(MinimumThumb, _list.Height * _list.Height / _content));
+        var travel = _list.Height - thumb;
+        var y = _list.Top + (travel * _scroll / ScrollRange);
+        var width = _barHovered || _barGrab is not null ? BarWidthHovered : BarWidth;
+        return (new Rect(_list.Right - BarZone, _list.Top, BarZone, _list.Height), new Rect(_list.Right - width - 2, y, width, thumb), travel);
+    }
+
+    private void DragBar(double y)
+    {
+        if (Bar() is not { } bar || bar.Travel <= 0 || _barGrab is not { } grab)
+        {
+            return;
+        }
+
+        var fraction = Math.Clamp((y - grab - bar.Zone.Top) / bar.Travel, 0, 1);
+        ScrollBy((fraction * ScrollRange) - _scroll);
+    }
+
+    private void DrawBar(DrawingContext context)
+    {
+        if (Bar() is not { } bar)
+        {
+            return;
+        }
+
+        var active = _barHovered || _barGrab is not null;
+        if (active)
+        {
+            var track = new Rect(bar.Thumb.X, bar.Zone.Y, bar.Thumb.Width, bar.Zone.Height);
+            context.DrawRectangle(new SolidColorBrush(Faint(0x22)), null, track, bar.Thumb.Width / 2, bar.Thumb.Width / 2);
+        }
+
+        context.DrawRectangle(new SolidColorBrush(Faint(active ? (byte)0xB0 : (byte)0x60)), null, bar.Thumb, bar.Thumb.Width / 2, bar.Thumb.Width / 2);
+    }
+
+    /// <summary>The keyboard's row: a ring in the client's accent, over a lifted plate, so it reads apart from a hover.</summary>
+    private void DrawCursor(DrawingContext context, Row row)
+    {
+        var accent = Legible(Parse(Overlay?.Palette.Accent));
+        context.DrawRectangle(null, new Pen(new SolidColorBrush(accent), 1.6), row.Area.Deflate(1), 6, 6);
     }
 
     public override void Render(DrawingContext context)
@@ -699,18 +918,40 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             Text(context, "CONNECTIONS", 16, _fold.Center.Y, size - 2.5, Dim, bold: true);
         }
 
-        foreach (var r in _rows)
+        using (context.PushClip(_list))
         {
+            foreach (var r in _rows)
+            {
+                var focused = overlay.Sidebar.Cursor is { } cursor && KeyOf(r) == cursor;
+                DrawRow(context, r, overlay, focused, size);
+                if (focused)
+                {
+                    DrawCursor(context, r);
+                }
+            }
+        }
+
+        DrawBar(context);
+        DrawFoot(context, size);
+        DrawVeil(context);
+    }
+
+    private void DrawRow(DrawingContext context, Row r, ChromeOverlay overlay, bool focused, double size)
+    {
             if (Folded)
             {
                 DrawFolded(context, r, overlay);
-                continue;
+                return;
             }
 
             var middle = r.Area.Center.Y;
-            var hovered = Hovered(r.Area);
+            var hovered = Hovered(r.Area.Intersect(_list));
             var selected = r.Window is { } w && overlay.Sidebar.IsSelected(w) || r.Kind == RailRowKind.Character && r.Character!.Active;
-            if (selected || hovered)
+            if (focused)
+            {
+                context.DrawRectangle(new SolidColorBrush(Raised(0.14)), null, r.Area, 6, 6);
+            }
+            else if (selected || hovered)
             {
                 context.DrawRectangle(new SolidColorBrush(Raised(selected && hovered ? 0.16 : selected ? 0.11 : 0.07)), null, r.Area, 6, 6);
             }
@@ -736,8 +977,10 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
                     DrawWindow(context, r, r.Window!, accent, overlay.Sidebar.IsSelected(r.Window!), middle, right, size);
                     break;
             }
-        }
+    }
 
+    private void DrawFoot(DrawingContext context, double size)
+    {
         if (_add.Width > 0)
         {
             var fill = Hovered(_add) ? Raised(0.12) : Raised(0.05);
@@ -754,8 +997,6 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
                 Text(context, AddGameText, _add.Center.X - (Math.Min(Measure(AddGameText, size), _add.Width - 12) / 2), _add.Center.Y, size, Ink, maxWidth: _add.Width - 12);
             }
         }
-
-        DrawVeil(context);
     }
 
     private void DrawFolded(DrawingContext context, Row r, ChromeOverlay overlay)

@@ -18,18 +18,60 @@ namespace SharpMUTerm.Tui;
 /// rail lands on nothing.
 /// </para>
 /// </summary>
-internal static class RailRenderer
+internal static partial class RailRenderer
 {
     /// <summary>
     /// The sidebar's cells, drawn from the model the window's native sidebar is drawn from: the collapsed strip
     /// when the model says collapsed, else the full rail fitted to <paramref name="maxWidth"/>.
     /// </summary>
-    public static List<string> Render(SidebarModel model, int maxWidth, ChromeInk? ink)
+    /// <param name="cursorBand">
+    /// The band the keyboard cursor's row is drawn on while the sidebar holds the keys (<see cref="SidebarModel.Cursor"/>,
+    /// ⌥C): a background, or <c>#ink on #band</c> for the row's unstyled text. The row is padded to the widest row so the band runs the width of the rail and costs no column.
+    /// </param>
+    public static List<string> Render(SidebarModel model, int maxWidth, ChromeInk? ink, string? cursorBand = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         var rows = model.Rows();
-        return model.Collapsed ? RenderCollapsed(rows, ink) : Render(rows, maxWidth, ink);
+        var lines = model.Collapsed ? RenderCollapsed(rows, ink) : Render(rows, maxWidth, ink);
+        if (model.Cursor is not { } cursor || cursorBand is null)
+        {
+            return lines;
+        }
+
+        // Which line each row became: one per row expanded, worlds and characters only when folded.
+        var drawn = model.Collapsed ? rows.Where(r => r.Kind is RailRowKind.World or RailRowKind.Character).ToList() : rows.ToList();
+        var at = drawn.FindIndex(r => r.Target is not null && SidebarModel.KeyOf(r) == cursor);
+        if (at >= 0 && at < lines.Count)
+        {
+            var widest = lines.Max(SharpMUTermApp.MarkupWidth);
+            var pad = new string(' ', Math.Max(0, widest - SharpMUTermApp.MarkupWidth(lines[at])));
+            var on = cursorBand.IndexOf(" on ", StringComparison.Ordinal);
+            var band = on < 0 ? cursorBand : cursorBand[(on + 4)..];
+            lines[at] = $"[{(on < 0 ? "on " + cursorBand : cursorBand)}]{OnBand(lines[at], band)}{pad}[/]";
+        }
+
+        return lines;
     }
+
+    /// <summary>
+    /// The row's inks held to the floor on the band it is drawn on: they were resolved against the rail's plane, and a
+    /// quiet one (`offline`, a chord) can fall under 3:1 on the brighter band. A span with a background of its own
+    /// keeps its pair; escaped text (<c>[[</c>) is never a tag.
+    /// </summary>
+    private static string OnBand(string line, string band)
+    {
+        var plane = Hex(band);
+        return Tag().Replace(line, tag => Ink().Replace(tag.Value, ink => Contrast.Legible(Hex(ink.Value), plane).ToHex()));
+
+        static Rgb Hex(string hex) => new(
+            Convert.ToByte(hex.Substring(1, 2), 16), Convert.ToByte(hex.Substring(3, 2), 16), Convert.ToByte(hex.Substring(5, 2), 16));
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<!\[)\[(?!\[)[^\[\]]*\]")]
+    private static partial System.Text.RegularExpressions.Regex Tag();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<!on )#[0-9a-fA-F]{6}\b")]
+    private static partial System.Text.RegularExpressions.Regex Ink();
 
     /// <param name="rows">The rail's rows, as <see cref="RailModel"/> projects them.</param>
     /// <param name="maxWidth">

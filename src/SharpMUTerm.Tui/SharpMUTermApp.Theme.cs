@@ -8,9 +8,8 @@ namespace SharpMUTerm.Tui;
 /// The theme, changed while the client runs. F7's theme picker and the desktop's theme cards both commit through
 /// <see cref="SaveConfiguration"/>, and that is where a new theme is noticed and put into force: every colour the client
 /// derives from it — the workspace planes, the bars, the header, the settings screens and the popups — is re-derived and
-/// repainted. What it cannot recolour is output already in a pane: a line's colours were resolved against the theme it
-/// arrived under and held there as markup (<see cref="PaneLine"/>), so the notice says so rather than leaving a reader to
-/// wonder why the old lines look different.
+/// repainted — output already in a pane included: every world line is kept beside its markup
+/// (<see cref="PaneLine.Source"/>) and formatted again against the new theme (<see cref="RestylePaneLines"/>).
 /// </summary>
 internal sealed partial class SharpMUTermApp
 {
@@ -80,12 +79,59 @@ internal sealed partial class SharpMUTermApp
             control.SelectionForegroundColor = ToColor(WorkspacePalette.SelectionInk(theme));
         }
 
+        RestylePaneLines();
         RebuildPaneArea();
         RefreshPanels();
-        Notice(
-            $"Theme {theme.Name}. Output already on screen keeps the colours it arrived in.",
-            Core.Diagnostics.MessageSeverity.Info,
-            "theme");
+        Notice($"Painting in {theme.Name}, output on screen included.", Core.Diagnostics.MessageSeverity.Info, "theme");
+    }
+
+    /// <summary>
+    /// Formats every buffered world line again against the theme in force, redraws every bar in its accent, and
+    /// re-feeds the panes. A line's colours were resolved against the reading plane of the theme it arrived under
+    /// (<see cref="Contrast"/>, <see cref="MarkupFormatter"/>), so without this a switch from Dark to Light left the
+    /// history in greys lifted for a dark plane — faint on a light one until it scrolled away.
+    /// <para>
+    /// <b>Nothing moves.</b> Each row is replaced in place, so the count and the order of every buffer are what they
+    /// were, and every index into one — the freeze point, the away and activity marks, the <c>NEW</c> boundary, the
+    /// search bar, a picture's anchor — still names the row it named. The plain text is not touched (it is the same
+    /// text), so ⌃F finds what it found. A row with no <see cref="PaneLine.Source"/> (a picture's rows, a client
+    /// reply, the demo's numbered lines) keeps its markup: a picture's pixels are not the theme's, and a reply is
+    /// <c>[dim]</c>, which the framework resolves to one grey whatever the theme. The re-feed keeps the selection,
+    /// because only colours changed.
+    /// </para>
+    /// <para>
+    /// This is the whole-buffer path the timestamp toggle uses (<see cref="RepaintPanes"/>), bounded by the same kind
+    /// of event: one deliberate commit of a new theme.
+    /// </para>
+    /// </summary>
+    internal void RestylePaneLines()
+    {
+        var accent = FrozenAccentHex();
+        foreach (var buffer in _lines.Values)
+        {
+            for (var i = 0; i < buffer.Count; i++)
+            {
+                var line = buffer[i];
+                if (line.Bar is { } bar)
+                {
+                    buffer[i] = line with { Markup = bar(accent) };
+                }
+                else if (line.Source is { } source)
+                {
+                    if (line.Pictures is { } pictures)
+                    {
+                        pictures.Restyle(_formatter.ToMarkupPieces(source, pictures.Cuts));
+                        buffer[i] = line with { Markup = pictures.Compose() };
+                    }
+                    else
+                    {
+                        buffer[i] = line with { Markup = _formatter.ToMarkup(source) };
+                    }
+                }
+            }
+        }
+
+        RepaintPanes(keepSelection: true);
     }
 
     /// <summary>A theme's name and colours as one string, so two resolutions of one theme compare equal.</summary>
