@@ -29,15 +29,18 @@ public enum WorldPlayerCount
 }
 
 /// <summary>One world as the directory lists it, every text already bounded and stripped of control characters.</summary>
-/// <param name="Id">The directory's durable key, for asking where the world is.</param>
+/// <param name="Id">The directory's durable key, for asking where the world is; <see cref="Guid.Empty"/> when the row gave none it could read.</param>
 /// <param name="Name">Its name.</param>
 /// <param name="Tagline">Its one-line description, or empty.</param>
 /// <param name="Codebase">The server software family (<c>PennMUSH</c>), or empty when unknown.</param>
-/// <param name="Players">Players counted now, or null.</param>
-/// <param name="Count">How <paramref name="Players"/> was obtained.</param>
+/// <param name="Players">Players now, as the directory says, or null.</param>
+/// <param name="Count">How <paramref name="Players"/> was obtained, as the directory labels it.</param>
 public sealed record WorldListing(Guid Id, string Name, string Tagline, string Codebase, int? Players, WorldPlayerCount Count);
 
-/// <summary>A page of the directory: the rows read, how many the directory holds for the question, and how many rows it sent that were not read.</summary>
+/// <summary>
+/// A page of the directory: the rows read, in the directory's order, how many it holds for the question, and how many rows
+/// it sent that were not read — past <see cref="WorldDirectory.MaxRows"/>, or not a JSON object.
+/// </summary>
 public sealed record WorldListPage(IReadOnlyList<WorldListing> Rows, int Total, int Dropped)
 {
     public bool Equals(WorldListPage? other) =>
@@ -47,15 +50,83 @@ public sealed record WorldListPage(IReadOnlyList<WorldListing> Rows, int Total, 
 }
 
 /// <summary>Where a world is: one telnet address the directory has seen it answer at, checked as <c>/connect</c> checks one.</summary>
-public sealed record WorldAddress(string Name, string Host, int Port, bool Tls);
+/// <param name="Name">The world's name.</param>
+/// <param name="Host">The host.</param>
+/// <param name="Port">The port.</param>
+/// <param name="Tls">Whether the address is a TLS one.</param>
+/// <param name="Encoding">
+/// The encoding a world added from here is set to (one of F5's names), or null to leave it <c>auto</c>: set only when the
+/// directory names a charset that is not UTF-8 and not ASCII (<see cref="WorldDirectory.EncodingFor"/>).
+/// </param>
+public sealed record WorldAddress(string Name, string Host, int Port, bool Tls, string? Encoding = null);
+
+/// <summary>
+/// One address a game answers at, as the directory lists it: a <c>telnet</c> or <c>tls</c> endpoint it does not call gone.
+/// </summary>
+/// <param name="Host">The host: as <see cref="ConnectEndpoint.Parse"/> read it, or the directory's text, cleaned and bounded, when it could not.</param>
+/// <param name="Port">The port, or 0 when the directory gave none.</param>
+/// <param name="Tls">Whether it is a TLS address (the directory's <c>tls</c> kind, or TLS it measured there).</param>
+/// <param name="Stale">Whether the directory calls it <c>stale</c>: listed, not reached lately.</param>
+/// <param name="Connectable">
+/// Whether <see cref="ConnectEndpoint.Parse"/> — the reader <c>/connect</c> uses — takes it. One it refuses is still listed,
+/// marked not connectable, and is never put in the connect form.
+/// </param>
+public sealed record WorldEndpoint(string Host, int Port, bool Tls, bool Stale, bool Connectable = true)
+{
+    /// <summary><c>host:port</c>, an IPv6 host in brackets.</summary>
+    public string Address => $"{(Host.Contains(':') ? $"[{Host}]" : Host)}:{Port.ToString(CultureInfo.InvariantCulture)}";
+}
+
+/// <summary>
+/// A game's page read down to what a connect needs: its telnet and TLS addresses in the order the directory lists them,
+/// and the charset it names for the whole game, if any.
+/// </summary>
+/// <param name="Name">The game's name.</param>
+/// <param name="Endpoints">At least one address, at most <see cref="WorldDirectory.MaxEndpoints"/>, in the directory's order.</param>
+/// <param name="Charset">The game's charset as the directory names it (bounded, cleaned), or null when it names none.</param>
+public sealed record WorldGame(string Name, IReadOnlyList<WorldEndpoint> Endpoints, string? Charset)
+{
+    /// <summary>The first address that can be dialled — the default — or -1 when none can.</summary>
+    public int FirstConnectable
+    {
+        get
+        {
+            for (var i = 0; i < Endpoints.Count; i++)
+            {
+                if (Endpoints[i].Connectable)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+    }
+
+    /// <summary>The encoding a world added from this game is set to, or null to leave it <c>auto</c>.</summary>
+    public string? Encoding => WorldDirectory.EncodingFor(Charset);
+
+    /// <summary>Endpoint <paramref name="index"/> as the address the connect form is filled in with.</summary>
+    public WorldAddress Address(int index)
+    {
+        var endpoint = Endpoints[index];
+        return new WorldAddress(Name, endpoint.Host, endpoint.Port, endpoint.Tls, Encoding);
+    }
+
+    public bool Equals(WorldGame? other) =>
+        other is not null && Name == other.Name && Charset == other.Charset && Endpoints.SequenceEqual(other.Endpoints);
+
+    public override int GetHashCode() => HashCode.Combine(Name, Charset, Endpoints.Count);
+}
 
 /// <summary>
 /// The client side of mu*index (https://mu-index.com), the MU* directory Browse worlds lists: what to ask, how much of
 /// an answer to read, and how to read it. <b>Everything that comes back is server text</b>: a name or a tagline is
-/// bounded and stripped of control characters before anything draws it, an address is read by
-/// <see cref="ConnectEndpoint.Parse"/> (the reader <c>/connect</c> uses) or not at all, and a row that breaks a rule is
-/// dropped and counted rather than failing the list. The listing carries no address, so it is asked for one game at a
-/// time, when the player picks it (<see cref="ParseGame"/>).
+/// bounded and stripped of control characters before anything draws it, and an address goes into the connect form only
+/// if <see cref="ConnectEndpoint.Parse"/> (the reader <c>/connect</c> uses) takes it. Otherwise what the directory says
+/// is shown as it says it — its rows, their order, its counts and their labels, its addresses in its order — because the
+/// directory is the authority on its own data; the client caps how much it reads and asks for nothing at start. The
+/// listing carries no address, so it is asked for one game at a time, when the player picks it (<see cref="ParseGame"/>).
 /// </summary>
 public static class WorldDirectory
 {
@@ -77,6 +148,15 @@ public static class WorldDirectory
     /// <summary>The longest a codebase is kept.</summary>
     public const int MaxCodebase = 32;
 
+    /// <summary>The longest host shown for an address the client could not read as one.</summary>
+    public const int MaxHostShown = 64;
+
+    /// <summary>The longest charset name kept.</summary>
+    public const int MaxCharset = 32;
+
+    /// <summary>The most addresses one game offers.</summary>
+    public const int MaxEndpoints = 8;
+
     /// <summary>The longest query sent.</summary>
     public const int MaxQuery = 64;
 
@@ -97,7 +177,8 @@ public static class WorldDirectory
             return null;
         }
 
-        var text = new StringBuilder(root).Append("/games?limit=").Append(MaxRows).Append("&sort=players");
+        // unnamed=!yes: the directory leaves out games it lists only by host:port (MUIndex's `unnamed` facet).
+        var text = new StringBuilder(root).Append("/games?limit=").Append(MaxRows).Append("&sort=players&unnamed=!yes");
         var q = Clean(query, MaxQuery);
         if (q.Length > 0)
         {
@@ -144,17 +225,16 @@ public static class WorldDirectory
             }
 
             var rows = new List<WorldListing>();
-            var seen = new HashSet<Guid>();
             var dropped = 0;
             foreach (var game in games.EnumerateArray())
             {
-                if (rows.Count >= MaxRows || ReadListing(game) is not { } row || !seen.Add(row.Id))
+                if (rows.Count >= MaxRows || game.ValueKind != JsonValueKind.Object)
                 {
                     dropped++;
                     continue;
                 }
 
-                rows.Add(row);
+                rows.Add(ReadListing(game));
             }
 
             var total = root.TryGetProperty("total", out var t) && t.ValueKind == JsonValueKind.Number && t.TryGetInt32(out var n) && n >= 0
@@ -168,46 +248,32 @@ public static class WorldDirectory
         }
     }
 
-    private static WorldListing? ReadListing(JsonElement game)
+    private static WorldListing ReadListing(JsonElement game)
     {
-        if (game.ValueKind != JsonValueKind.Object
-            || Text(game, "id") is not { } idText || !Guid.TryParse(idText, out var id) || id == Guid.Empty)
-        {
-            return null;
-        }
-
-        var name = Clean(Text(game, "name"), MaxName);
-        if (name.Length == 0 || (game.TryGetProperty("archived", out var archived) && archived.ValueKind == JsonValueKind.True))
-        {
-            return null;
-        }
-
+        var id = Text(game, "id") is { } idText && Guid.TryParse(idText, out var parsed) ? parsed : Guid.Empty;
         int? players = game.TryGetProperty("playersNow", out var p) && p.ValueKind == JsonValueKind.Number
             && p.TryGetInt32(out var count) && count is >= 0 and < 1_000_000
                 ? count
                 : null;
-        var how = players is null ? WorldPlayerCount.Unknown : Text(game, "playersNowState") switch
+        var how = Text(game, "playersNowState") switch
         {
             "measured" => WorldPlayerCount.Measured,
             "declared" => WorldPlayerCount.Declared,
             _ => WorldPlayerCount.Unknown,
         };
 
-        // A number the directory will not say it measured is not shown as one.
-        if (how == WorldPlayerCount.Unknown)
-        {
-            players = null;
-        }
-
-        return new WorldListing(id, name, Clean(Text(game, "tagline"), MaxTagline), Clean(Text(game, "codebase"), MaxCodebase), players, how);
+        return new WorldListing(
+            id, Clean(Text(game, "name"), MaxName), Clean(Text(game, "tagline"), MaxTagline), Clean(Text(game, "codebase"), MaxCodebase), players, how);
     }
 
     /// <summary>
-    /// Reads a <c>GET /games/{id}</c> answer (<c>GameView</c>) down to the one address to offer: a <c>telnet</c> or
-    /// <c>tls</c> endpoint, never one the directory calls <c>gone</c>; <c>active</c> before <c>stale</c>, then the one
-    /// seen most recently. An address <see cref="ConnectEndpoint.Parse"/> refuses is skipped.
+    /// Reads a <c>GET /games/{id}</c> answer (<c>GameView</c>) down to its addresses, in the order the directory lists
+    /// them: <c>telnet</c> and <c>tls</c> endpoints (a websocket or http one is not a telnet address) that it does not call
+    /// <c>gone</c>, at most <see cref="MaxEndpoints"/>. An address <see cref="ConnectEndpoint.Parse"/> refuses is listed and
+    /// marked not connectable. The charset is the game's <c>fields.CHARSET</c> value — the directory's one charset field,
+    /// which names no address.
     /// </summary>
-    public static (WorldAddress? Address, string? Problem) ParseGame(ReadOnlySpan<byte> json)
+    public static (WorldGame? Game, string? Problem) ParseGame(ReadOnlySpan<byte> json)
     {
         if (json.Length > MaxResponseBytes)
         {
@@ -229,51 +295,78 @@ public static class WorldDirectory
                 return (null, "the directory lists no address for it");
             }
 
-            var candidates = new List<(WorldAddress Address, int Rank, DateTimeOffset Seen)>();
+            var listed = new List<WorldEndpoint>();
             foreach (var endpoint in endpoints.EnumerateArray().Take(64))
             {
-                if (endpoint.ValueKind != JsonValueKind.Object)
+                if (listed.Count >= MaxEndpoints)
                 {
-                    continue;
+                    break;
                 }
 
                 var kind = Text(endpoint, "kind");
-                var rank = Text(endpoint, "state") switch
-                {
-                    "active" => 0,
-                    "stale" => 1,
-                    _ => -1,
-                };
-                if (kind is not ("telnet" or "tls") || rank < 0
-                    || Text(endpoint, "host") is not { Length: > 0 and <= 253 } host
-                    || host.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))
-                    || !endpoint.TryGetProperty("port", out var portValue) || portValue.ValueKind != JsonValueKind.Number
-                    || !portValue.TryGetInt32(out var port)
-                    || ConnectEndpoint.Parse([host, port.ToString(CultureInfo.InvariantCulture)]) is not { } parsed)
+                var state = Text(endpoint, "state");
+                if (endpoint.ValueKind != JsonValueKind.Object || kind is not ("telnet" or "tls") || state == "gone")
                 {
                     continue;
                 }
 
+                var host = Text(endpoint, "host") ?? string.Empty;
+                var port = endpoint.TryGetProperty("port", out var portValue) && portValue.ValueKind == JsonValueKind.Number
+                    && portValue.TryGetInt32(out var number) ? number : 0;
                 var tls = kind == "tls" || (endpoint.TryGetProperty("tlsMeasured", out var measured) && measured.ValueKind == JsonValueKind.True);
-                var seen = Text(endpoint, "lastSeenAt") is { } at
-                    && DateTimeOffset.TryParse(at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var when)
-                        ? when
-                        : DateTimeOffset.MinValue;
-                candidates.Add((new WorldAddress(name.Length == 0 ? parsed.Host : name, parsed.Host, parsed.Port, tls), rank, seen));
+                var parsed = host.Length is > 0 and <= 253 && !host.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)) && port is > 0 and <= 65535
+                    ? ConnectEndpoint.Parse([host, port.ToString(CultureInfo.InvariantCulture)])
+                    : null;
+                listed.Add(parsed is { } ok
+                    ? new WorldEndpoint(ok.Host, ok.Port, tls, state == "stale")
+                    : new WorldEndpoint(Clean(host, MaxHostShown), Math.Clamp(port, 0, 65535), tls, state == "stale", Connectable: false));
             }
 
-            if (candidates.Count == 0)
+            if (listed.Count == 0)
             {
-                return (null, "the directory lists no telnet address for it that answers");
+                return (null, "the directory lists no telnet address for it");
             }
 
-            var best = candidates.OrderBy(c => c.Rank).ThenByDescending(c => c.Seen).First();
-            return (best.Address, null);
+            return (new WorldGame(name.Length == 0 ? listed[0].Host : name, listed, Charset(root)), null);
         }
         catch (JsonException)
         {
             return (null, "the answer is not JSON the client can read");
         }
+    }
+
+    /// <summary>The game's <c>fields.CHARSET</c> value, cleaned and bounded; null when there is none.</summary>
+    private static string? Charset(JsonElement root)
+    {
+        if (!root.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Object
+            || !fields.TryGetProperty("CHARSET", out var field) || field.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var value = Clean(Text(field, "value"), MaxCharset);
+        return value.Length > 0 ? value : null;
+    }
+
+    /// <summary>
+    /// The F5 encoding a world is set to for a directory's <paramref name="charset"/>, or null to leave it <c>auto</c>:
+    /// UTF-8, ASCII (which UTF-8 reads) and any name the client does not offer stay <c>auto</c>, so CHARSET still decides.
+    /// </summary>
+    public static string? EncodingFor(string? charset)
+    {
+        if (string.IsNullOrWhiteSpace(charset))
+        {
+            return null;
+        }
+
+        var key = new string(charset.Where(char.IsAsciiLetterOrDigit).ToArray()).ToUpperInvariant();
+        return key switch
+        {
+            "ISO88591" or "LATIN1" or "ISOLATIN1" or "L1" or "ISOIR100" or "CP819" or "IBM819" => "ISO-8859-1",
+            "CP1252" or "WINDOWS1252" => "CP1252",
+            "CP437" or "IBM437" or "437" => "CP437",
+            _ => null,
+        };
     }
 
     /// <summary>

@@ -9,8 +9,8 @@ namespace SharpMUTerm.Tui;
 /// <summary>
 /// Browse worlds (the welcome's Browse row, ⌃P ▸ <em>Browse worlds…</em>, <c>/browse [words]</c>): mu*index's listing,
 /// one Client model (<see cref="WorldBrowseModel"/>) drawn as a cell <see cref="ListOverlay"/> here and as a native modal
-/// in a host that has them. Every gesture in either ends in one method: <see cref="PickWorld"/> and
-/// <see cref="AskWorldDirectory"/>.
+/// in a host that has them. Every gesture in either ends in one method: <see cref="PickWorld"/>,
+/// <see cref="ChooseWorldEndpoint"/>, <see cref="LeaveWorldChoice"/> and <see cref="AskWorldDirectory"/>.
 /// <para>
 /// <b>Asked only when the player opens it, never at start</b>, through a fetch the caller supplies (<c>worldFetch:</c>,
 /// the <c>save:</c>/<c>logRoot:</c> family): null in a test and a snapshot, which then say they asked nothing. The demo
@@ -102,6 +102,8 @@ internal sealed partial class SharpMUTermApp
                 ThemeIsDark(),
                 index => OnUiThread(() => PickWorld(session!.Model, index)),
                 words => OnUiThread(() => AskWorldDirectory(words)),
+                endpoint => OnUiThread(() => ChooseWorldEndpoint(session!.Model, endpoint)),
+                () => OnUiThread(LeaveWorldChoice),
                 () => OnUiThread(() =>
                 {
                     NativeModalClosed(session!);
@@ -132,11 +134,25 @@ internal sealed partial class SharpMUTermApp
                     case WorldBrowseAction.Ask:
                         AskWorldDirectory(browse.Query);
                         break;
+                    case WorldBrowseAction.Choose:
+                        ChooseWorldEndpoint(_worldModel, browse.Endpoint);
+                        break;
                 }
 
                 return WorldBrowseOpen;
             },
             width: WorldBrowseSurface.PreferredWidth,
+            escape: () =>
+            {
+                // Esc on the address choice goes back to the list; on the list it closes.
+                if (_worldModel.Choosing is null)
+                {
+                    return false;
+                }
+
+                LeaveWorldChoice();
+                return true;
+            },
             closed: () =>
             {
                 _worldBrowse = null;
@@ -190,17 +206,25 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// The pick, from either host: row <paramref name="index"/> of <paramref name="model"/>. Asks the directory where that
-    /// world is; once it answers with an address <c>/connect</c> would take, Browse worlds closes and the welcome's connect
-    /// form opens filled in. Nothing is saved or dialled here. A refusal is said in place and the list stays.
+    /// world is; once it answers with one address <c>/connect</c> would take, Browse worlds closes and the welcome's connect
+    /// form opens filled in. With several (TLS and plain, another port, a stale one), they are published as a choice
+    /// (<see cref="WorldBrowseModel.Choosing"/>) and <see cref="ChooseWorldEndpoint"/> opens the form. Nothing is saved or
+    /// dialled here. A refusal is said in place and the list stays.
     /// </summary>
     internal void PickWorld(WorldBrowseModel model, int index)
     {
-        if (index < 0 || index >= model.Rows.Count || _worldModel.Opening is not null)
+        if (index < 0 || index >= model.Rows.Count || _worldModel.Opening is not null || _worldModel.Choosing is not null)
         {
             return;
         }
 
         var row = model.Rows[index];
+        if (row.Id == Guid.Empty)
+        {
+            PublishWorldModel(_worldModel with { Problem = $"{row.Name} not opened: mu*index gave no id to ask for it by" });
+            return;
+        }
+
         if (WorldDirectory.GameUri(_config.WorldDirectoryUrl, row.Id) is not { } uri || (WorldFetch ?? _worldFetch) is null)
         {
             PublishWorldModel(_worldModel with { Problem = $"{row.Name} not opened: {WorldDirectoryProblem() ?? "this run asks no world directory"}" });
@@ -211,16 +235,63 @@ internal sealed partial class SharpMUTermApp
         PublishWorldModel(_worldModel with { Opening = row.Name, Problem = null });
         FetchWorlds(uri, generation, (bytes, failure) =>
         {
-            var (address, unread) = bytes is null ? (null, failure) : WorldDirectory.ParseGame(bytes);
-            if (address is null)
+            var (game, unread) = bytes is null ? (null, failure) : WorldDirectory.ParseGame(bytes);
+            if (game is null)
             {
                 PublishWorldModel(_worldModel with { Opening = null, Problem = $"{row.Name} not opened: {unread}" });
                 return;
             }
 
             // The listing's name, which the player chose by; the page's own is the same world.
-            OpenWorldForm(address with { Name = row.Name });
+            game = game with { Name = row.Name };
+            if (game.Endpoints.Count == 1)
+            {
+                if (!game.Endpoints[0].Connectable)
+                {
+                    PublishWorldModel(_worldModel with { Opening = null, Problem = NotConnectable(game, 0) });
+                    return;
+                }
+
+                OpenWorldForm(game.Address(0));
+                return;
+            }
+
+            PublishWorldModel(_worldModel with { Opening = null, Choosing = game });
         });
+    }
+
+    /// <summary>
+    /// The address chosen, from either host: endpoint <paramref name="index"/> of <paramref name="model"/>'s choice. Browse
+    /// worlds closes and the connect form opens filled in with it — host, port, TLS, and the encoding when mu*index names a
+    /// charset that is not UTF-8. Nothing is saved or dialled.
+    /// </summary>
+    internal void ChooseWorldEndpoint(WorldBrowseModel model, int index)
+    {
+        if (model.Choosing is not { } game || _worldModel.Choosing is null || index < 0 || index >= game.Endpoints.Count)
+        {
+            return;
+        }
+
+        if (!game.Endpoints[index].Connectable)
+        {
+            PublishWorldModel(_worldModel with { Problem = NotConnectable(game, index) });
+            return;
+        }
+
+        OpenWorldForm(game.Address(index));
+    }
+
+    /// <summary>Why address <paramref name="index"/> of <paramref name="game"/> does not go into the connect form.</summary>
+    private static string NotConnectable(WorldGame game, int index) =>
+        $"{game.Name} not opened: mu*index lists it at {game.Endpoints[index].Address}, which /connect cannot dial";
+
+    /// <summary>Esc on the address choice, from either host: back to the list, as it was.</summary>
+    internal void LeaveWorldChoice()
+    {
+        if (_worldModel.Choosing is not null)
+        {
+            PublishWorldModel(_worldModel with { Choosing = null, Problem = null });
+        }
     }
 
     /// <summary>
@@ -242,7 +313,7 @@ internal sealed partial class SharpMUTermApp
     {
         CloseWorldBrowse();
         var welcome = new WelcomeSurface(WorldDirectoryProblem()) { Layout = _welcomeLayout };
-        welcome.Prefill(address.Name, address.Host, address.Port, address.Tls);
+        welcome.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding);
         if (WelcomeIsOpen)
         {
             CloseWelcome();
@@ -347,12 +418,14 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// <c>/browse [words]</c> opens Browse worlds (asking the directory for the words); <c>/browse N</c> picks row N of the
-    /// list <c>/browse</c> last said as lines.
+    /// list <c>/browse</c> last said as lines, and <c>/browse N M</c> address M of the ones it said for that world.
     /// </summary>
     private void BrowseCommand(string arguments)
     {
         var words = arguments.Trim();
-        if (int.TryParse(words, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && _saidWorlds.Count > 0)
+        var parts = words.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length is 1 or 2 && _saidWorlds.Count > 0
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var n))
         {
             if (n < 1 || n > _saidWorlds.Count)
             {
@@ -360,7 +433,19 @@ internal sealed partial class SharpMUTermApp
                 return;
             }
 
-            SayWorldAddress(_saidWorlds[n - 1]);
+            int? endpoint = null;
+            if (parts.Length == 2)
+            {
+                if (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var m) || m < 1 || m > WorldDirectory.MaxEndpoints)
+                {
+                    RefuseCommand($"/browse {n} and the number of one of its addresses, from 1");
+                    return;
+                }
+
+                endpoint = m - 1;
+            }
+
+            SayWorldAddress(_saidWorlds[n - 1], n, endpoint);
             return;
         }
 
@@ -388,15 +473,24 @@ internal sealed partial class SharpMUTermApp
             lines.AddRange(_saidWorlds.Select((r, i) => string.Join(
                 " — ",
                 new[] { $"{i + 1}. {r.Name}", $"{WorldBrowseModel.Players(r)} players", r.Codebase, r.Tagline }.Where(p => p.Length > 0))));
-            lines.Add("Type /browse and a number to see where that world is, or /browse and words to search.");
+            lines.Add("Type /browse and a number to hear where that world is (/browse 1 2 for its second address), or /browse and words to search.");
         }
 
         SayLines(lines);
     });
 
-    /// <summary>Where a world <c>/browse N</c> named is, said as the <c>/connect</c> line to type; nothing is saved or dialled.</summary>
-    private void SayWorldAddress(WorldListing row)
+    /// <summary>
+    /// Where a world <c>/browse N</c> named is, said as the <c>/connect</c> line to type; when it answers at several
+    /// addresses and none was named, they are said as numbered lines for <c>/browse N M</c>. Nothing is saved or dialled.
+    /// </summary>
+    private void SayWorldAddress(WorldListing row, int number, int? endpoint)
     {
+        if (row.Id == Guid.Empty)
+        {
+            RefuseCommand($"{row.Name} not looked up: mu*index gave no id to ask for it by");
+            return;
+        }
+
         if (WorldDirectory.GameUri(_config.WorldDirectoryUrl, row.Id) is not { } uri || (WorldFetch ?? _worldFetch) is null)
         {
             RefuseCommand($"{row.Name} not looked up: {WorldDirectoryProblem() ?? "this run asks no world directory"}");
@@ -406,26 +500,63 @@ internal sealed partial class SharpMUTermApp
         var generation = ++_worldGeneration;
         FetchWorlds(uri, generation, (bytes, failure) =>
         {
-            var (address, unread) = bytes is null ? (null, failure) : WorldDirectory.ParseGame(bytes);
-            if (address is null)
+            var (game, unread) = bytes is null ? (null, failure) : WorldDirectory.ParseGame(bytes);
+            if (game is null)
             {
                 RefuseCommand($"{row.Name} not looked up: {unread}");
                 return;
             }
 
+            game = game with { Name = row.Name };
+            if (endpoint is { } chosen && chosen >= game.Endpoints.Count)
+            {
+                RefuseCommand($"{row.Name} has {game.Endpoints.Count} addresses; say /browse {number} and a number from 1 to {game.Endpoints.Count}");
+                return;
+            }
+
+            if (endpoint is null && game.Endpoints.Count > 1 && !Host.ScreenIsSeen)
+            {
+                var model = new WorldBrowseModel(WorldBrowseState.Ready, [], 0, string.Empty, null, null, game);
+                var lines = new List<string>
+                {
+                    $"{model.ChoiceLine}:",
+                    game.Charset is { } charset
+                        ? $"mu*index names its charset {charset}, for the whole game rather than per address."
+                        : "mu*index names no charset for it.",
+                };
+                lines.AddRange(game.Endpoints.Select((e, i) => $"{i + 1}. {WorldBrowseModel.EndpointText(e)}"));
+                lines.Add($"Type /browse {number} and an address number (/browse {number} 1 is the first) to hear its /connect line.");
+                SayLines(lines);
+                return;
+            }
+
+            var index = endpoint ?? game.FirstConnectable;
+            if (index < 0 || !game.Endpoints[index].Connectable)
+            {
+                RefuseCommand(NotConnectable(game, Math.Max(0, index)));
+                return;
+            }
+
+            var address = game.Address(index);
             var host = address.Host.Contains(':') ? $"[{address.Host}]" : address.Host;
             var command = $"/connect {host} {address.Port}" + (address.Tls ? " tls" : string.Empty);
             if (Host.ScreenIsSeen)
             {
-                OpenWorldForm(address with { Name = row.Name });
+                OpenWorldForm(address);
                 return;
             }
 
-            SayLines(
-            [
+            var said = new List<string>
+            {
                 $"{row.Name} is at {address.Host} port {address.Port}{(address.Tls ? ", encrypted" : string.Empty)}, as listed on mu*index.",
                 $"To add it and connect, type: {command}",
-            ]);
+            };
+            if (address.Encoding is { } encoding)
+            {
+                said.Add($"mu*index names its charset {game.Charset}: set the world's encoding to {encoding} on F5 (/connect leaves it auto).");
+            }
+
+            SayLines(said);
         });
     }
 

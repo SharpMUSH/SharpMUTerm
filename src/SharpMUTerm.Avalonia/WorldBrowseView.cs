@@ -15,7 +15,8 @@ namespace SharpMUTerm.Avalonia;
 /// directory's licence asks for, and the keys. The rows are <see cref="WorldBrowseModel.View"/>, the function the cell
 /// surface lists, so both hosts list the same rows. Enter on a row hands the pick to the client, which asks where the
 /// world is and opens the connect form in this modal's place; Enter on a search the rows cannot answer asks the
-/// directory. Every word is the window's (<see cref="NativeKeys"/>).
+/// directory. A world that answers at several addresses lists them in the same card (<see cref="WorldBrowseModel.Choosing"/>):
+/// Enter hands the chosen one to the client, Esc goes back to the list. Every word is the window's (<see cref="NativeKeys"/>).
 /// </summary>
 internal sealed class WorldBrowseView : DockPanel, IModalView
 {
@@ -26,6 +27,8 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
     private readonly TextBlock _count;
     private readonly Button _sort;
     private readonly TextBlock _note;
+    private readonly TextBlock _footer;
+    private readonly DockPanel _bar;
     private readonly StackPanel _list;
     private readonly List<Border> _rows = [];
     private WorldBrowseModel _model;
@@ -53,7 +56,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 
-        var bar = new DockPanel { Margin = new Thickness(20, 0, 14, 4) };
+        var bar = _bar = new DockPanel { Margin = new Thickness(20, 0, 14, 4) };
         _sort = ModalParts.Button(SortLabel(), "Tab", colours, ToggleSort);
         SetDock(_sort, Dock.Right);
         bar.Children.Add(_sort);
@@ -63,7 +66,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         SetDock(bar, Dock.Top);
         Children.Add(bar);
 
-        var footer = ModalParts.Footer(string.Join(" · ", WorldBrowseModel.Keys.Select(k => $"{k.Key} {k.Label}")), colours);
+        var footer = _footer = ModalParts.Footer(KeysText(WorldBrowseModel.Keys), colours);
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
@@ -111,6 +114,9 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
     /// <summary>The order the rows are in, for a test.</summary>
     public WorldDirectorySort Order => _order;
 
+    /// <summary>Whether a picked world's addresses are listed in place of the worlds, for a test.</summary>
+    public bool ChoosingAddress => _model.Choosing is not null;
+
     /// <summary>The search box, for a test.</summary>
     public TextBox Box => _box;
 
@@ -121,9 +127,15 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
 
     public void Detach() => _session.Changed -= OnChanged;
 
-    /// <summary>Enter on listed row <paramref name="row"/>, or on a search the rows cannot answer.</summary>
+    /// <summary>Enter on listed row <paramref name="row"/>, or on a search the rows cannot answer — or, while a world's addresses are listed, on address <paramref name="row"/>.</summary>
     public void Choose(int row)
     {
+        if (_model.Choosing is not null)
+        {
+            _session.Choose(row);
+            return;
+        }
+
         if (_model.AsksDirectory(_query))
         {
             _session.Ask(_query);
@@ -162,25 +174,116 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
 
     private void OnChanged(WorldBrowseModel model) => Dispatcher.UIThread.Post(() =>
     {
-        var rowsChanged = !ReferenceEquals(model.Rows, _model.Rows);
+        var rowsChanged = !ReferenceEquals(model.Rows, _model.Rows) || !ReferenceEquals(model.Choosing, _model.Choosing);
+        var leftChoice = _model.Choosing is not null && model.Choosing is null;
         _model = model;
         if (rowsChanged)
         {
-            _selected = 0;
+            _selected = Math.Max(0, model.Choosing?.FirstConnectable ?? 0);
         }
 
         ShowList();
+        if (leftChoice)
+        {
+            _box.Focus();
+        }
     });
+
+    private static string KeysText(IReadOnlyList<(string Key, string Label)> keys) =>
+        string.Join(" · ", keys.Select(k => $"{k.Key} {k.Label}"));
+
+    /// <summary>A picked world's addresses, one row each: <c>host:port</c>, TLS or plain, and its state.</summary>
+    private void ShowChoice(WorldGame game)
+    {
+        _box.IsVisible = false;
+        _bar.IsVisible = false;
+        _footer.Text = NativeKeys.Words(KeysText(WorldBrowseModel.ChoiceKeys));
+        _note.Text = NativeKeys.Words(_model.Problem ?? WorldBrowseModel.ChoiceNote);
+        _note.Foreground = _colours.Brush(_model.Problem is null ? _colours.Dim : _colours.Warn);
+        _list.Children.Clear();
+        _rows.Clear();
+        _list.Children.Add(new TextBlock
+        {
+            Text = _model.ChoiceLine,
+            Foreground = _colours.Brush(_colours.Text),
+            FontSize = NativeTokens.Title,
+            FontWeight = FontWeight.SemiBold,
+            Margin = new Thickness(12, 8, 12, 2),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        _list.Children.Add(new TextBlock
+        {
+            Text = _model.CharsetLine,
+            Foreground = _colours.Brush(_colours.Dim),
+            FontSize = NativeTokens.Body,
+            Margin = new Thickness(12, 0, 12, 8),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        _selected = Math.Clamp(_selected, 0, game.Endpoints.Count - 1);
+        for (var i = 0; i < game.Endpoints.Count; i++)
+        {
+            var endpoint = game.Endpoints[i];
+            var (address, security, state) = WorldBrowseModel.Endpoint(endpoint);
+            var index = i;
+            var line = new DockPanel();
+            var host = new TextBlock
+            {
+                Text = address,
+                Foreground = _colours.Brush(_colours.Text),
+                FontSize = NativeTokens.Title,
+                Width = 300,
+                Margin = new Thickness(0, 0, 12, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            SetDock(host, Dock.Left);
+            line.Children.Add(host);
+            var kind = new TextBlock
+            {
+                Text = security,
+                Foreground = _colours.Brush(endpoint.Tls ? _colours.Accent : _colours.Dim),
+                FontSize = NativeTokens.Body,
+                FontWeight = endpoint.Tls ? FontWeight.SemiBold : FontWeight.Normal,
+                Width = 64,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            SetDock(kind, Dock.Left);
+            line.Children.Add(kind);
+            line.Children.Add(new TextBlock
+            {
+                Text = state,
+                Foreground = _colours.Brush(endpoint.Stale || !endpoint.Connectable ? _colours.Warn : _colours.Dim),
+                FontSize = NativeTokens.Body,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            var row = ModalParts.Row(line, address, () => Select(index), () => Choose(index));
+            ToolTip.SetTip(row, WorldBrowseModel.EndpointText(endpoint));
+            _rows.Add(row);
+            _list.Children.Add(row);
+        }
+
+        Highlight();
+    }
 
     private void ShowList()
     {
+        if (_model.Choosing is { } game)
+        {
+            ShowChoice(game);
+            return;
+        }
+
+        _box.IsVisible = true;
+        _bar.IsVisible = true;
+        _footer.Text = NativeKeys.Words(KeysText(WorldBrowseModel.Keys));
         _view = _model.View(_query, _order);
         _count.Text = _model.CountLine(_query);
         _note.Text = NativeKeys.Words(
             _model.Opening is not null ? _model.OpeningLine
             : _model.State == WorldBrowseState.Ready && _model.Problem is { } problem ? problem
             : _model.State == WorldBrowseState.Ready && _view.Count > 0
-                ? (_model.AnyDeclared ? WorldBrowseModel.DeclaredNote + " · " : string.Empty) + WorldBrowseModel.PickNote
+                ? _model.MarksNote + WorldBrowseModel.PickNote
                 : string.Empty);
         _note.Foreground = _colours.Brush(_model.State == WorldBrowseState.Ready && _model.Problem is not null && _model.Opening is null
             ? _colours.Warn
@@ -296,20 +399,30 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         {
             case Key.Escape:
                 e.Handled = true;
+                if (_model.Choosing is not null)
+                {
+                    _session.Back();
+                    return;
+                }
+
                 _session.Dismiss();
                 _done();
                 return;
             case Key.Up:
                 e.Handled = true;
-                Select(ModalParts.Step(_selected, -1, _view.Count));
+                Select(ModalParts.Step(_selected, -1, _rows.Count));
                 return;
             case Key.Down:
                 e.Handled = true;
-                Select(ModalParts.Step(_selected, 1, _view.Count));
+                Select(ModalParts.Step(_selected, 1, _rows.Count));
                 return;
             case Key.Tab:
                 e.Handled = true;
-                ToggleSort();
+                if (_model.Choosing is null)
+                {
+                    ToggleSort();
+                }
+
                 return;
             case Key.Enter:
                 e.Handled = true;

@@ -41,7 +41,8 @@ public enum WelcomeField
 /// <summary>
 /// The first-run welcome's model: the menu or the connect form, with everything either says. Drawn by the cell
 /// surface (<c>WelcomeSurface.Render</c>) and by the window's native one. <c>IndexProblem</c> is why Browse worlds cannot
-/// ask the world directory (null when it can); <c>WorldName</c> is the world Browse worlds filled the form in for.
+/// ask the world directory (null when it can); <c>WorldName</c> is the world Browse worlds filled the form in for, and
+/// <c>Encoding</c> the encoding the world will be saved with because mu*index named a non-UTF-8 charset for it (null: auto).
 /// </summary>
 public sealed record WelcomeModel(
     bool InForm,
@@ -55,7 +56,8 @@ public sealed record WelcomeModel(
     bool PasswordLater,
     string? Problem,
     string? IndexProblem,
-    string? WorldName = null)
+    string? WorldName = null,
+    string? Encoding = null)
 {
     /// <summary>The example the surface names, a host nobody owns (RFC 2606).</summary>
     public const string ExampleCommand = "/connect mud.example.org 4201 tls";
@@ -93,7 +95,9 @@ public sealed record WelcomeModel(
     /// </summary>
     public string FormIntroLine => WorldName is null
         ? FormIntro
-        : $"{WorldName}, as listed on mu*index. Check it and press ⏎ to save and connect.";
+        : Encoding is { } encoding
+            ? $"{WorldName}, as listed on mu*index, saved with encoding {encoding}. Check it and press ⏎ to save and connect."
+            : $"{WorldName}, as listed on mu*index. Check it and press ⏎ to save and connect.";
 
     /// <summary>The TLS row's words when on; the window's check box carries these words.</summary>
     public const string TlsOn = "On, encrypted";

@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Browse worlds: a world listed at several addresses (TLS and plain, another port, an old one) now lets you choose
+  which before the connect form opens; the form takes that address's TLS setting, and the world is saved with the
+  game's character set when mu*index names one other than UTF-8. `/browse N M` says address M in `--plain`.
+- Browse worlds shows mu*index's list as mu*index gives it — every row, in its order, with its player counts and their
+  labels — and asks it to leave out games listed only by an address.
 - A script error in the script console that names a file and line is now a link: click it to open that script with the
   caret on the line and the line marked. Closing the editor goes back to the console.
 - ⌃P ▸ Recent alerts lists the pages and alerts every character has had this run, newest first, with how long ago;

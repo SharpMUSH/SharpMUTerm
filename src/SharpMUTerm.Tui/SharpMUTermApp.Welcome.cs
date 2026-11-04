@@ -203,6 +203,12 @@ internal sealed partial class SharpMUTermApp
                 world.Name = UniqueWorldName(listed);
             }
 
+            // mu*index named a charset that is not UTF-8 for it: the world starts on that encoding, still F5's to change.
+            if (request.Encoding is { Length: > 0 } encoding)
+            {
+                world.Encoding = encoding;
+            }
+
             if (request.Character is { } name)
             {
                 world.Characters.Add(new CharacterDefinition { Name = name });

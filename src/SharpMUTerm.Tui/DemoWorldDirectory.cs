@@ -3,7 +3,9 @@ namespace SharpMUTerm.Tui;
 /// <summary>
 /// The demo scene's world directory: a mu*index listing and the pages it names, in mu*index's own JSON shapes
 /// (<c>GameListView</c>, <c>GameView</c>, camelCase), answered from memory. Every world here is made up and every host is
-/// under <c>.example</c> (RFC 2606), so a demo that picks one and presses ⏎ dials nothing real.
+/// under <c>.example</c> (RFC 2606), so a demo that picks one and presses ⏎ dials nothing real. Aetherfall answers at three
+/// addresses (TLS, plain, and a stale old port) and names a charset, so a pick of it shows the address choice; every other
+/// world has one usable address and goes straight to the connect form.
 /// </summary>
 internal static class DemoWorldDirectory
 {
@@ -46,12 +48,29 @@ internal static class DemoWorldDirectory
     private static string Summary(Game g) =>
         $$"""{"id":"{{g.Id}}","slug":"{{g.Name.ToLowerInvariant().Replace(' ', '-')}}","name":{{Json(g.Name)}},"tagline":{{Json(g.Tagline)}},"state":"active","archived":false,"claimed":false,"playersNow":{{(g.Players is { } p ? p.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null")}},"playersNowState":"{{g.Count}}","playersNowProvenance":null,"codebase":{{Json(g.Codebase)}},"codebaseProvenance":null,"measuredProtocols":["gmcp","mssp"],"lastReachableAt":"2026-11-04T11:40:00+00:00","url":"/g/{{g.Id}}","apiUrl":"/api/games/{{g.Id}}"}""";
 
+    private const string Seen = "\"firstSeenAt\":\"2024-01-01T00:00:00+00:00\",\"lastSeenAt\":\"2026-11-04T11:40:00+00:00\"";
+
+    private static string Endpoint(string host, int port, string kind, string state, string seen = Seen) =>
+        $$"""{"host":"{{host}}","port":{{port}},"kind":"{{kind}}","tlsMeasured":{{(kind == "tls" ? "true" : "false")}},{{seen}},"state":"{{state}}"}""";
+
     private static string Page(Game g)
     {
-        var endpoints = g.Tls
-            ? $$"""[{"host":"{{g.Host}}","port":{{g.Port + 1}},"kind":"tls","tlsMeasured":true,"firstSeenAt":"2025-02-01T00:00:00+00:00","lastSeenAt":"2026-11-04T11:40:00+00:00","state":"active"},{"host":"{{g.Host}}","port":{{g.Port}},"kind":"telnet","tlsMeasured":false,"firstSeenAt":"2024-01-01T00:00:00+00:00","lastSeenAt":"2026-11-04T11:00:00+00:00","state":"active"}]"""
-            : $$"""[{"host":"old.{{g.Host}}","port":{{g.Port}},"kind":"telnet","tlsMeasured":false,"firstSeenAt":"2019-01-01T00:00:00+00:00","lastSeenAt":"2021-06-01T00:00:00+00:00","state":"gone"},{"host":"{{g.Host}}","port":{{g.Port}},"kind":"telnet","tlsMeasured":false,"firstSeenAt":"2021-06-01T00:00:00+00:00","lastSeenAt":"2026-11-04T11:40:00+00:00","state":"active"}]""";
-        return $$"""{"id":"{{g.Id}}","slug":"x","name":{{Json(g.Name)}},"tagline":{{Json(g.Tagline)}},"description":null,"state":"active","archived":false,"claimed":false,"playersNow":null,"playersNowState":"unknown","codebase":{{Json(g.Codebase)}},"measuredProtocols":[],"endpoints":{{endpoints}},"url":"/g/x","apiUrl":"/api/games/{{g.Id}}"}""";
+        // Aetherfall, listed TLS first as the directory might: TLS and plain both active, an old port the directory has not reached lately, a gone one and a
+        // websocket (neither offered), and a charset — the address choice. Everything else: one usable address.
+        var endpoints = g.Name == "Aetherfall"
+            ? string.Join(",",
+                Endpoint(g.Host, g.Port + 1, "tls", "active"),
+                Endpoint(g.Host, g.Port, "telnet", "active"),
+                Endpoint(g.Host, 4000, "telnet", "stale", "\"firstSeenAt\":\"2019-01-01T00:00:00+00:00\",\"lastSeenAt\":\"2026-08-12T00:00:00+00:00\""),
+                Endpoint("old." + g.Host, g.Port, "telnet", "gone"),
+                Endpoint(g.Host, 4280, "websocket", "active"))
+            : g.Tls
+                ? Endpoint(g.Host, g.Port + 1, "tls", "active")
+                : string.Join(",", Endpoint("old." + g.Host, g.Port, "telnet", "gone"), Endpoint(g.Host, g.Port, "telnet", "active"));
+        var fields = g.Name == "Aetherfall"
+            ? """{"CHARSET":{"value":"ISO-8859-1","source":"handshake","measured":true,"lastConfirmedAt":"2026-11-04T11:40:00+00:00","ageSeconds":1200,"age":"20 minutes","stale":false}}"""
+            : "{}";
+        return $$"""{"id":"{{g.Id}}","slug":"x","name":{{Json(g.Name)}},"tagline":{{Json(g.Tagline)}},"description":null,"state":"active","archived":false,"claimed":false,"playersNow":null,"playersNowState":"unknown","codebase":{{Json(g.Codebase)}},"measuredProtocols":[],"endpoints":[{{endpoints}}],"fields":{{fields}},"url":"/g/x","apiUrl":"/api/games/{{g.Id}}"}""";
     }
 
     private static string Json(string? text) => text is null ? "null" : System.Text.Json.JsonSerializer.Serialize(text);
