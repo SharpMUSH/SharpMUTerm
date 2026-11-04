@@ -187,6 +187,20 @@ public sealed class WorldDefinition
     /// </summary>
     public TerminalColor Accent { get; set; } = TerminalColor.Default;
 
+    /// <summary>
+    /// The id of the layout this world's characters use when they name none of their own, or null for none.
+    /// See <see cref="Layouts.LayoutResolver"/>.
+    /// </summary>
+    public string? Layout { get; set; }
+
+    /// <summary>
+    /// The layout the player accepted when the client suggested one for this world
+    /// (<see cref="Layouts.LayoutSuggester"/>), or null when no suggestion was accepted. Below
+    /// <see cref="Layout"/> in <see cref="Layouts.LayoutResolver"/>: a choice the player made outright wins
+    /// over one they only agreed to.
+    /// </summary>
+    public string? AcceptedLayoutSuggestion { get; set; }
+
     /// <summary>The characters that can connect to this world.</summary>
     public List<CharacterDefinition> Characters { get; set; } = new();
 
@@ -219,6 +233,8 @@ public sealed class WorldDefinition
         GrabPrefix = GrabPrefix,
         GmcpLogin = GmcpLogin,
         DiscordPresence = DiscordPresence,
+        Layout = Layout,
+        AcceptedLayoutSuggestion = AcceptedLayoutSuggestion,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

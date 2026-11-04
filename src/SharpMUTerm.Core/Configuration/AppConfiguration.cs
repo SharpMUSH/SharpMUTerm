@@ -103,6 +103,13 @@ public sealed class AppConfiguration
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<Packages.InstalledPackage> Packages { get; set; } = [];
 
+    /// <summary>
+    /// The player's saved layouts. The built-in ones (<see cref="Layouts.BuiltInLayouts"/>) are never written
+    /// here; <see cref="Layouts.LayoutLibrary"/> lists them ahead of these and refuses to change them. An empty
+    /// list is the default, so a document from before layouts loads with none and needs no migration.
+    /// </summary>
+    public List<Layouts.LayoutDefinition> Layouts { get; set; } = new();
+
     /// <summary>The ids of installed packages the player has switched off; their sets apply to nobody.</summary>
     public List<string> DisabledPackages { get; set; } = new();
 
