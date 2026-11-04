@@ -73,7 +73,8 @@ public class SurfaceCatalogTests
         var panels = SurfaceCatalog.All.Where(s => s.Id is not (SurfaceCatalog.Header or SurfaceCatalog.Sidebar
             or SurfaceCatalog.Settings or SurfaceCatalog.LayoutsMenu or SurfaceCatalog.Palette
             or SurfaceCatalog.Prefix or SurfaceCatalog.RailStrip or SurfaceCatalog.Notice or SurfaceCatalog.Compose
-            or SurfaceCatalog.FloatingPanel or SurfaceCatalog.TabOverflow or SurfaceCatalog.Status or SurfaceCatalog.TabStrip or SurfaceCatalog.ScrollBand)
+            or SurfaceCatalog.FloatingPanel or SurfaceCatalog.TabOverflow or SurfaceCatalog.Status or SurfaceCatalog.TabStrip or SurfaceCatalog.ScrollBand
+            or SurfaceCatalog.CollapsedPanel)
             && !SurfaceCatalog.Modals.Contains(s.Id));
         foreach (var surface in panels)
         {

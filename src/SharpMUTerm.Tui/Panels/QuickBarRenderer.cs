@@ -59,14 +59,18 @@ internal static class QuickBarRenderer
 
             var key = (parts.Ctrl ? "⌃" : string.Empty) + (parts.Alt ? "⌥" : string.Empty) + (parts.Shift ? "⇧" : string.Empty) + parts.Key;
             var modifiers = (parts.Ctrl ? 1 : 0) + (parts.Alt ? 2 : 0) + (parts.Shift ? 4 : 0);
-            entries.Add((new QuickBarItem(key, descriptor, Single(name), MacroKeys.Verdict(keys, descriptor).Fires), modifiers, number));
+            entries.Add((new QuickBarItem(key, descriptor, Single(name), MacroKeys.Verdict(keys, descriptor).Fires, macro.Danger), modifiers, number));
         }
 
         return new QuickBarModel(entries.OrderBy(e => e.Modifiers).ThenBy(e => e.Number).Select(e => e.Entry).ToList());
     }
 
     /// <summary>The row for <paramref name="width"/> cells. Entries that do not fit are counted, never wrapped.</summary>
-    internal static string Render(QuickBarModel model, int width, string accent)
+    /// <param name="model">What to draw.</param>
+    /// <param name="width">The row's width in cells.</param>
+    /// <param name="accent">The key's ink.</param>
+    /// <param name="danger">The ink a dangerous binding's key and name take; the accent when null.</param>
+    internal static string Render(QuickBarModel model, int width, string accent, string? danger = null)
     {
         var entries = model.Items;
         width = Math.Max(1, width);
@@ -76,7 +80,7 @@ internal static class QuickBarRenderer
             return ElideVisible($"[dim]{QuickBarModel.EmptyText} · [/]{hint}", width);
         }
 
-        var cells = entries.Select((e, i) => Cell(e, i, accent)).ToList();
+        var cells = entries.Select((e, i) => Cell(e, i, accent, danger ?? accent)).ToList();
         var hintWidth = VisibleLength(hint);
         foreach (var withHint in new[] { true, false })
         {
@@ -118,11 +122,13 @@ internal static class QuickBarRenderer
         return null;
     }
 
-    private static string Cell(QuickBarItem entry, int index, string accent)
+    private static string Cell(QuickBarItem entry, int index, string accent, string danger)
     {
         var name = entry.Title.Length <= MaxNameWidth ? entry.Title : entry.Title[..(MaxNameWidth - 1)] + "…";
         var link = $"[link={LinkPrefix}{index.ToString(CultureInfo.InvariantCulture)}]";
-        return entry.Fires
+        return entry.Fires && entry.Danger
+            ? $"{link}[bold {danger}]{Escape(entry.Key)}[/] [{danger}]{Escape(name)}[/][/]"
+            : entry.Fires
             ? $"{link}[bold {accent}]{Escape(entry.Key)}[/] {Escape(name)}[/]"
             : $"{link}[dim]{Escape(entry.Key)} {Escape(name)}[/][/]";
     }

@@ -339,6 +339,17 @@ public class SurfaceParityTests
             covered.Add(SurfaceCatalog.FloatingPanel);
         }
 
+        // A collapsed panel's bar: the native bar is handed the model the cell bar drew in the same frame.
+        {
+            using var driver = new AvaloniaConsoleDriver(140, 36);
+            await using var app = App(driver, DemoScene.Build());
+            app.RenderSnapshot("layout-combat");
+            var bar = driver.Pointer.Panels.Single(p => p.Collapsed is not null);
+            var barPane = app.PaneNodes.Single(p => LayoutRealiser.CollapsedPanelOf(p.Id) == bar.PanelId).Id;
+            await Assert.That(app.DrawnModel(SurfaceCatalog.CollapsedPanel, barPane)).IsEqualTo((object)bar.Collapsed!).Because("collapsed-panel");
+            covered.Add(SurfaceCatalog.CollapsedPanel);
+        }
+
         // The tab overflow chip: the menu the window opens is the list the cells recorded for that strip in the same frame.
         {
             using var driver = new AvaloniaConsoleDriver(56, 20);
@@ -591,6 +602,12 @@ public class SurfaceParityTests
             (app, d) => Panel(d, PanelIds.QuickBar).Dispatch!(QuickBarModel.EditCommand),
             (app, d) => app.SimulatePanelClick(Panel(d, PanelIds.QuickBar).WindowId, QuickBarRenderer.EditLink));
         probed.Add(PanelIds.QuickBar);
+
+        // A collapsed panel's bar: the native bar's click, and the cell bar's link.
+        await Same("collapsed-panel: expand", "layout-combat",
+            (app, d) => d.Pointer.Panels.Single(p => p.Collapsed is not null).Expand!(),
+            (app, d) => app.SimulateCollapsedBarClick(app.PaneNodes.Single(p => LayoutRealiser.CollapsedPanelOf(p.Id) is not null).Id, CollapsedBarRenderer.ExpandLink));
+        probed.Add(SurfaceCatalog.CollapsedPanel);
 
         // Layouts: choosing Roleplay in the menu, and running the ⌥M list's command for it.
         await Same("layouts-menu: apply", "layout-combat",

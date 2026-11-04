@@ -29,6 +29,12 @@ public static class PanelSizing
     /// </summary>
     public static int VitalsCardRows(int meters) => (2 * Math.Max(0, meters)) + 6;
 
+    /// <summary>
+    /// The rows a quick bar takes where the host draws it as a strip of buttons (<c>HostChrome.Strips</c>, the window):
+    /// three twenty-pixel rows hold the mockups' 34-pixel buttons with their padding. Everywhere else it is one row.
+    /// </summary>
+    public const int QuickBarStripRows = 3;
+
     /// <summary>The rows of content a docked composer is never squeezed below: its header, four rows of post and its key hints.</summary>
     public const int ComposerMinRows = 6;
 
@@ -77,13 +83,16 @@ public static class PanelSizing
     /// Non-null when a vitals tab here is drawn as a card of that many rows (<see cref="ApplyAll"/> decides); null for
     /// the one-row strip.
     /// </param>
-    public static void Apply(PaneNode pane, Func<string, string?> panelOf, int tabStripRows, int? vitalsCardRows = null)
+    /// <param name="quickBarRows">The rows a quick bar takes: 1, or <see cref="QuickBarStripRows"/> where the host draws buttons.</param>
+    public static void Apply(PaneNode pane, Func<string, string?> panelOf, int tabStripRows, int? vitalsCardRows = null, int quickBarRows = 1)
     {
         ArgumentNullException.ThrowIfNull(pane);
         ArgumentNullException.ThrowIfNull(panelOf);
         var panels = pane.Tabs.Select(panelOf).ToList();
         int? Rows(string? panel) =>
-            vitalsCardRows is { } card && string.Equals(panel, PanelIds.Vitals, StringComparison.Ordinal) ? card : FixedRows(panel);
+            vitalsCardRows is { } card && string.Equals(panel, PanelIds.Vitals, StringComparison.Ordinal) ? card
+            : string.Equals(panel, PanelIds.QuickBar, StringComparison.Ordinal) ? Math.Max(1, quickBarRows)
+            : FixedRows(panel);
 
         var strip = panels.Count > 0 && panels.All(p => Rows(p) is not null);
         var chrome = ShowsTabStrip(panels) ? Math.Max(0, tabStripRows) : 0;
@@ -106,7 +115,8 @@ public static class PanelSizing
     /// share of the window's width (<see cref="CardBelowWidthShare"/>). <paramref name="vitalsMetersOf"/> is how many
     /// meters the character behind a vitals window has, by window id.
     /// </summary>
-    public static void ApplyAll(LayoutNode root, Func<string, string?> panelOf, int tabStripRows, Func<string, int> vitalsMetersOf)
+    /// <param name="quickBarRows">The rows a quick bar takes (see <see cref="Apply"/>).</param>
+    public static void ApplyAll(LayoutNode root, Func<string, string?> panelOf, int tabStripRows, Func<string, int> vitalsMetersOf, int quickBarRows = 1)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(vitalsMetersOf);
@@ -119,7 +129,7 @@ public static class PanelSizing
                 card = VitalsCardRows(vitalsMetersOf(vitals));
             }
 
-            Apply(pane, panelOf, tabStripRows, card);
+            Apply(pane, panelOf, tabStripRows, card, quickBarRows);
         }
     }
 

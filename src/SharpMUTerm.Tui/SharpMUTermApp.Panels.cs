@@ -235,6 +235,12 @@ internal sealed partial class SharpMUTermApp
     /// <summary>The low cue's ink on <paramref name="plane"/> (<see cref="WorkspacePalette.Low"/>), as markup.</summary>
     private string LowInk(Rgb plane) => WorkspacePalette.Low(_theme, ParseHex(_ink.Notice), plane).ToHex();
 
+    /// <summary>
+    /// The ink a dangerous binding (<see cref="Macro.Danger"/>) is drawn in: the settings screens' warning red, held to the
+    /// floor on the panes' reading plane.
+    /// </summary>
+    private string DangerInk() => Contrast.Legible(ParseHex(ScreenPalette.Warn), _ink.Plane).ToHex();
+
     // --- Quick bar --------------------------------------------------------------------------------------------
 
     private IWindowControl NewQuickBarPanel(TerminalPanelContext context)
@@ -244,7 +250,7 @@ internal sealed partial class SharpMUTermApp
         {
             var model = Drawing(PanelIds.QuickBar, context.WindowId, QuickBarEntries(context.SessionKey));
             drawn = model.Items;
-            return [QuickBarRenderer.Render(model, width, _ink.Accent)];
+            return [QuickBarRenderer.Render(model, width, _ink.Accent, DangerInk())];
         });
         view.Click = url =>
         {
@@ -765,6 +771,7 @@ internal sealed partial class SharpMUTermApp
                 new Macro { Name = "bash", Key = "F12", Command = "bash" },
                 new Macro { Name = "cure light", Key = "Ctrl+F3", Command = "cast 'cure light'" },
                 new Macro { Name = "quaff mana", Key = "Ctrl+F4", Command = "quaff mana" },
+                new Macro { Name = "flee", Key = "Ctrl+F12", Command = "flee", Danger = true },
             },
         });
         FindCharacter(DemoScene.ActiveSessionKey)?.Character.TriggerSets.Add("Quick");

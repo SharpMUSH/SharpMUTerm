@@ -12,13 +12,13 @@ namespace SharpMUTerm.Avalonia;
 internal static class PanelText
 {
     /// <summary>One line of text, trimmed to <paramref name="maxWidth"/> with an ellipsis.</summary>
-    public static FormattedText Format(string text, double size, Color colour, bool bold, double maxWidth = double.PositiveInfinity)
+    public static FormattedText Format(string text, double size, Color colour, bool bold, double maxWidth = double.PositiveInfinity, FontFamily? face = null)
     {
         var formatted = new FormattedText(
             text,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface(NativeTokens.UiFont, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
+            new Typeface(face ?? NativeTokens.UiFont, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
             size,
             new SolidColorBrush(colour))
         {
@@ -34,20 +34,22 @@ internal static class PanelText
     }
 
     /// <summary>How wide a line is drawn, untrimmed.</summary>
-    public static double Measure(string text, double size, bool bold) => Format(text, size, Colors.White, bold).Width;
+    public static double Measure(string text, double size, bool bold, FontFamily? face = null) => Format(text, size, Colors.White, bold, face: face).Width;
 
     /// <summary>
     /// Draws a line with its left edge at <paramref name="x"/> (its right edge there when <paramref name="alignRight"/>),
     /// centred on <paramref name="middle"/>, and returns the width it took.
     /// </summary>
-    public static double Draw(DrawingContext context, string text, double x, double middle, double size, Color colour, bool bold, double maxWidth, bool alignRight = false)
+    public static double Draw(
+        DrawingContext context, string text, double x, double middle, double size, Color colour, bool bold, double maxWidth, bool alignRight = false,
+        FontFamily? face = null)
     {
         if (maxWidth < 2 || text.Length == 0)
         {
             return 0;
         }
 
-        var formatted = Format(text, size, colour, bold, maxWidth);
+        var formatted = Format(text, size, colour, bold, maxWidth, face);
         var width = Math.Min(formatted.Width, maxWidth);
         context.DrawText(formatted, new Point(alignRight ? x - width : x, middle - (formatted.Height / 2)));
         return width;

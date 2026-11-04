@@ -292,7 +292,9 @@ internal sealed record PanelOverlay(
     Action? PopOut = null,
     Action<long?>? SelectRoom = null,
     Action<SharpMUTerm.Client.Panels.MapEdit>? EditMap = null,
-    Action<SharpMUTerm.Client.Panels.MapLook>? LookMap = null);
+    Action<SharpMUTerm.Client.Panels.MapLook>? LookMap = null,
+    SharpMUTerm.Client.Panels.CollapsedPanelModel? Collapsed = null,
+    Action? Expand = null);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);

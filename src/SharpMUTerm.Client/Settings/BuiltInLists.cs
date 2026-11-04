@@ -277,6 +277,15 @@ public static partial class BuiltInSettings
         },
     };
 
+    /// <summary>A binding's ordinary look, on F4's <c>style</c>.</summary>
+    public const string NormalStyle = "normal";
+
+    /// <summary>A binding drawn in the warning colour (<see cref="Macro.Danger"/>).</summary>
+    public const string DangerStyle = "danger";
+
+    /// <summary>F4's <c>style</c> choices.</summary>
+    public static IReadOnlyList<string> MacroStyles { get; } = [NormalStyle, DangerStyle];
+
     /// <summary>F4: the key bindings of every set.</summary>
     public static SettingsSectionContribution Keypad { get; } = new()
     {
@@ -296,7 +305,7 @@ public static partial class BuiltInSettings
                 is { } key
                 ? new Macro { Name = NewBindingName, Key = key, Command = NewBindingCommand }
                 : null,
-            Copy = m => new Macro { Name = m.Name, Key = m.Key, Enabled = m.Enabled, Command = m.Command, ScriptCallback = m.ScriptCallback },
+            Copy = m => new Macro { Name = m.Name, Key = m.Key, Enabled = m.Enabled, Command = m.Command, Danger = m.Danger, ScriptCallback = m.ScriptCallback },
             Name = m => m.Name,
             Rename = (m, v) => m.Name = v,
             Title = m => m.Key,
@@ -316,6 +325,15 @@ public static partial class BuiltInSettings
                     Binding = SettingBinding<string>.ForItem<Macro>((_, m) => m.Key, (_, m, v) => m.Key = v, NewMacro),
                 },
                 OwnerField<Macro>(s => s.Macros, NewMacro, () => Keypad!),
+                new ChoiceField("style", "style", MacroStyles, "how the quick bar draws it: danger is the warning colour")
+                {
+                    Group = BehaviourGroup,
+                    Keywords = "danger warning red colour quick bar",
+                    Binding = SettingBinding<string>.ForItem<Macro>(
+                        (_, m) => m.Danger ? DangerStyle : NormalStyle,
+                        (_, m, v) => m.Danger = string.Equals(v, DangerStyle, StringComparison.Ordinal),
+                        NewMacro),
+                },
             ],
         },
     };

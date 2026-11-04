@@ -1568,6 +1568,15 @@ fallbacks) for inline images/maps.
   In the window a pop-out button shows only while the pointer is over its panel (`DesktopLayer.SyncPopOutHover`), and a
   one-row strip gives the button its right end (`ReservesPopOut`: the native control is narrowed, the corner painted the
   pane's plane), so the button never sits on a strip's text.
+- **Wave 22 combat strips (`HostChrome.Strips`, the window's `Desktop`; terminal frames unchanged).** The quick bar is
+  `PanelSizing.QuickBarStripRows` (3) rows there (`ApplyAll(…, quickBarRows)`), drawn as 34 px buttons (`QuickBarButtons.ButtonHeight`,
+  key cap in `KeyFace`, a rule on top). `Macro.Danger` (F4 `style`: normal/danger, presentation only; the engine never reads it) is
+  `QuickBarItem.Danger`, drawn in `ScreenPalette.Warn` held legible (`DangerInk`) in both hosts. A collapsed panel gets a pane of
+  its own (`LayoutRealiser.Realise(collapsedAsBars:)`, `collapsed:<panel>`, below its region's first pane) drawn as a bar
+  (`SharpMUTermApp.CollapsedBars.cs`, `CollapsedPanelModel`, `CollapsedBarRenderer`, `CollapsedBarView`; surface `collapsed-panel`):
+  `CollapsedBarRows` (1 under `Input`, else 2), no tab strip, its windows marked scrolled back so the unread reads `N new`. A click,
+  or `Activate` of a window in it, is `ExpandCollapsedBar` (for the run; an explicit apply clears it). `DesktopLayer.BelowGrid`
+  stretches a native view at the foot of a column over the field reserve where the band does not reach.
 - **Wave 19 panels and welcome (window only; the cells are unchanged).** Each docked native panel draws a heading from
   its model (`PanelHeading.For`, Client; `PanelText.Heading`); `VitalsModel.Source` names where the meters came from
   (`SourceOf`, set in `ReadVitals`), a mixture names nothing. The docked composer's footer (summary, Preview, Send) ends

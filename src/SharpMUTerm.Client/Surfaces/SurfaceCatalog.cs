@@ -235,6 +235,12 @@ public static class SurfaceCatalog
     public const string FloatingPanel = "floating-panel";
 
     /// <summary>
+    /// A panel the layout collapsed, as a one-line bar at the foot of its column where the host draws strips
+    /// (<c>HostChrome.Strips</c>): a row of cells, and in the window a native bar over it. A click expands it.
+    /// </summary>
+    public const string CollapsedPanel = "collapsed-panel";
+
+    /// <summary>
     /// Pop the panel out into a window of its own: the window's alone, offered by a button on the panel's native view,
     /// the pane's right-click menu and ⌃P (<c>panel:popout:&lt;window&gt;</c>), all ending in one client method.
     /// </summary>
@@ -639,6 +645,16 @@ public static class SurfaceCatalog
             NativeChrome,
             "SharpMUTerm.Tui.TabTitles.Strip",
             ["SharpMUTerm.Avalonia.NativeTabStrip"]),
+        new(
+            CollapsedPanel,
+            typeof(CollapsedPanelModel),
+            [
+                // Expand: the cell row is one link to the same method, so the cells need no other door.
+                new(SurfaceActionKind.Target, "expand", "ExpandCollapsedBar"),
+            ],
+            CellsUnderNative,
+            "SharpMUTerm.Tui.Panels.CollapsedBarRenderer.Render",
+            ["SharpMUTerm.Avalonia.CollapsedBarView"]),
         new(
             ScrollBand,
             typeof(ScrollBandModel),

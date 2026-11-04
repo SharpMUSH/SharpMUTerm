@@ -281,9 +281,15 @@ internal sealed partial class SharpMUTermApp
             .SelectMany(p => p.Tabs.Select(t => (t, (string?)p.Id)))
             .Where(k => !FloatsHere(k.t))
             .ToList();
-        if (LayoutRealiser.Realise(layout, fold, panel => DockedWindows(key, panel), output, keep) is not { } realised)
+        if (LayoutRealiser.Realise(layout, fold, panel => DockedWindows(key, panel), output, keep, collapsedAsBars: Host.Chrome.Strips)
+            is not { } realised)
         {
             return false;
+        }
+
+        if (adoptFloating)
+        {
+            _expandedBars.Clear(); // an explicit apply folds the collapsed panels away again
         }
 
         _workspace.Layout.ReplaceTree(realised.Root, realised.FocusedPaneId);

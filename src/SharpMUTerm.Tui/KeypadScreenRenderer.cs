@@ -94,6 +94,13 @@ internal static class KeypadScreenRenderer
     /// </summary>
     internal const int SetField = 3;
 
+    /// <summary>
+    /// The binding's style (<see cref="Macro.Danger"/>: <c>normal</c> or <c>danger</c>), appended after the set for the
+    /// same reason, and like it present only when the screen knows the sets. It is drawn after the command only while
+    /// it says <c>danger</c> or is being edited, so an ordinary row is drawn as it always was.
+    /// </summary>
+    internal const int StyleField = 4;
+
     /// <summary>The label the binding list's add button carries; it names the key it will claim.</summary>
     internal const string AddBindingLabel = "+ binding";
 
@@ -227,7 +234,7 @@ internal static class KeypadScreenRenderer
     internal static SettingsCollection Declared => BuiltInSettings.Keypad.Collection!;
 
     /// <summary>The binding row's fields by declared id, in ⇥ order; <c>set</c> only when the screen knows the sets.</summary>
-    internal static IReadOnlyList<string> RowFieldOrder { get; } = ["name", "command", "key", "set"];
+    internal static IReadOnlyList<string> RowFieldOrder { get; } = ["name", "command", "key", "set", "style"];
 
     internal static ScreenModel Model(
         HostKeys keys,
@@ -249,7 +256,7 @@ internal static class KeypadScreenRenderer
     {
         var target = new SettingTarget(DeclaredFields.Over(sets ?? Array.Empty<TriggerSet>()), Item: macro);
         var fields = RowFieldOrder
-            .Where(id => sets is not null || id != "set")
+            .Where(id => sets is not null || (id != "set" && id != "style"))
             .Select(id => DeclaredFields.Item(
                 Declared.Field(id),
                 target,
@@ -486,7 +493,8 @@ internal static class KeypadScreenRenderer
                     cursor.EditOn(0, i, NameField),
                     cursor.EditOn(0, i, CommandField),
                     cursor.EditOn(0, i, KeyField),
-                    cursor.EditOn(0, i, SetField)),
+                    cursor.EditOn(0, i, SetField),
+                    cursor.EditOn(0, i, StyleField)),
                 cursor.IsOn(0, i),
                 width));
         }
@@ -560,7 +568,8 @@ internal static class KeypadScreenRenderer
         ScreenFieldEdit? name,
         ScreenFieldEdit? command,
         ScreenFieldEdit? key,
-        ScreenFieldEdit? set)
+        ScreenFieldEdit? set,
+        ScreenFieldEdit? style = null)
     {
         var verdict = MacroKeys.Verdict(keys, macro.Key);
         var clash = KeyClashes.For(keys, macro, macros);
@@ -592,7 +601,12 @@ internal static class KeypadScreenRenderer
             : ScreenChrome.Field(
                 PadVisible($"[{Value}]{Escape(Truncate(setName, SetColumnWidth))}[/]", SetColumnWidth), set) + " ";
 
-        return $"{tick} {bound} {named} {owner}→ {ScreenChrome.Field(Escape(macro.Command), command)}";
+        // The style is said only when it is not the ordinary one, or while it is being changed: a danger binding reads
+        // "· danger" in the caution ink after its command, and every other row is the row it always was.
+        var styled = style is not null
+            ? "  " + ScreenChrome.Field(macro.Danger ? BuiltInSettings.DangerStyle : BuiltInSettings.NormalStyle, style)
+            : macro.Danger ? $"  [{Caution}]· {BuiltInSettings.DangerStyle}[/]" : string.Empty;
+        return $"{tick} {bound} {named} {owner}→ {ScreenChrome.Field(Escape(macro.Command), command)}{styled}";
     }
 
     /// <summary>

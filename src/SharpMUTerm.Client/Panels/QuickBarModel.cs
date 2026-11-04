@@ -8,13 +8,15 @@ namespace SharpMUTerm.Client.Panels;
 /// <param name="Title">The binding's name, on one line.</param>
 /// <param name="Fires">Whether pressing the key reaches the binding on this host; one that does not is still
 /// clickable and drawn dim.</param>
-public sealed record QuickBarItem(string Key, string Descriptor, string Title, bool Fires);
+/// <param name="Danger">Whether the binding is flagged dangerous on F4 (<c>Macro.Danger</c>): every view draws it in the
+/// warning colour.</param>
+public sealed record QuickBarItem(string Key, string Descriptor, string Title, bool Fires, bool Danger = false);
 
 /// <summary>
 /// The quick bar's content for one character: its function-key bindings in the order every view lists them, plain
 /// keys before modified ones and then by number. The terminal draws them as a row of cells (<c>QuickBarRenderer</c>);
 /// the window draws native buttons over that row from the same instance, so an item index names the same binding
-/// in both. Nothing here marks a binding as dangerous: the configuration says no such thing, so no view may.
+/// in both. A binding is dangerous only where F4 says so (<see cref="QuickBarItem.Danger"/>); no view guesses it from a name.
 /// </summary>
 public sealed record QuickBarModel(IReadOnlyList<QuickBarItem> Items)
 {

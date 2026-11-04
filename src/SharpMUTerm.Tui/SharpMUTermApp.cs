@@ -1061,6 +1061,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PublishStatus();
             SyncMapSizes();
             SyncPanelSizes();
+            SyncCollapsedBars();
             SyncScrollSplitBars();
             SyncChromeBarWidths();
             SyncStatusMode();
@@ -10973,7 +10974,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // floor. Derived here on every rebuild rather than stored, so a pane handed an ordinary window stops being a
         // strip at once.
         // A vitals pane in a side column is a card, its height from the character's meters.
-        Core.Layouts.PanelSizing.ApplyAll(_workspace.Layout.Root, PanelIdOfWindow, TabStripRows, VitalsMetersOfWindow);
+        Core.Layouts.PanelSizing.ApplyAll(
+            _workspace.Layout.Root, PanelIdOfWindow, TabStripRows, VitalsMetersOfWindow,
+            Host.Chrome.Strips ? Core.Layouts.PanelSizing.QuickBarStripRows : 1);
+        ApplyCollapsedBars();
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
@@ -11750,6 +11754,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Builds a leaf pane's tab strip from its window ids, tracking it under its pane id.</summary>
     private IWindowControl BuildPaneTabs(PaneNode pane)
     {
+        if (IsCollapsedBar(pane))
+        {
+            return BuildCollapsedBar(pane);
+        }
+
         var builder = Controls.TabControl();
         var ids = new List<string>();
 
@@ -13338,7 +13347,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         foreach (var (paneId, tabs, rect) in RealisedPanes())
         {
             var margin = tabs.Margin;
-            var top = margin.Top + tabs.TabHeaderHeight + PaneGutterRowsFor(_workspace.Layout.FindPane(paneId)?.ActiveTab);
+            var pane = _workspace.Layout.FindPane(paneId);
+            var top = margin.Top + tabs.TabHeaderHeight + (IsCollapsedBar(pane) ? 0 : PaneGutterRowsFor(pane?.ActiveTab));
             rects[paneId] = new PaneRect(
                 rect.X + margin.Left,
                 rect.Y + top,
@@ -13629,6 +13639,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             return false;
         }
+
+        ExpandBarHolding(id); // a window brought forward is never left in a collapsed panel's bar
 
         // Selecting the tab below raises the framework's own TabChanged, which lands back in
         // OnTabChanged and so back here. The model call above is idempotent, so re-entering is harmless

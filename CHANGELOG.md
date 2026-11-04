@@ -15,6 +15,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - In the desktop window, the header shows only the search box and your character, and the status bar reads
   "Corvid connected · UTF-8 · Log off" with a short hint on the right such as "2 new in Chat" (or the keys of the mode
   you are in). Notices still take the whole bar while they show.
+- In the desktop window, Combat's quick bar is a proper strip of buttons, each key a key cap beside its name, and a
+  binding marked *danger* on F4 (new `style` field) is drawn in red there and in the terminal's quick bar.
+- In the desktop window, a panel a layout collapses (Combat's chat) is a one-row bar at the foot of its column saying
+  how many new lines it holds; click it to open it as a pane. The terminal keeps it as a background tab.
 - The composer has a Command field above the text, in F1 and the docked panel, in the terminal and the desktop window:
   put the verb there (`+pose`, `say`, `+bbpost 3=`) and write the post below it. ⇥ moves between the two (⏎ in the
   command moves on to the text); the command is sent in front of the text unescaped, joined by a space (none after

@@ -336,8 +336,15 @@ internal sealed record ClientHost
 /// as wide as the column the output is in (<see cref="SharpMUTerm.Core.Workspaces.InputColumn"/>), with the panes beside
 /// it running down to the status row. Only cells move; the pane rectangles, and so NAWS, are what is arranged.
 /// </param>
+/// <param name="Strips">
+/// The host draws the strip panels as desktop strips: the quick bar gets <c>PanelSizing.QuickBarStripRows</c> rows for
+/// its buttons, and a panel a layout collapses gets a pane of its own at the foot of its column, drawn as a one-line bar
+/// (<c>CollapsedPanelModel</c>) a click expands, rather than a background tab of the pane above it. Rows only; the pane
+/// rectangles, and so NAWS, are what is arranged.
+/// </param>
 internal sealed record HostChrome(
-    bool Header, bool Rail, bool Status = false, bool Input = false, bool Tabs = false, bool PaneGutter = false, bool InputInColumn = false)
+    bool Header, bool Rail, bool Status = false, bool Input = false, bool Tabs = false, bool PaneGutter = false, bool InputInColumn = false,
+    bool Strips = false)
 {
     /// <summary>The client draws all of its chrome in cells: the terminal, the snapshot, the tests.</summary>
     public static HostChrome None { get; } = new(false, false);
@@ -349,7 +356,7 @@ internal sealed record HostChrome(
     /// The host draws the header, the rail, the status footer, the command line's field and every pane's tab strip, and
     /// the client pads every pane with a gutter and puts the command line in the output's column: the desktop window.
     /// </summary>
-    public static HostChrome Desktop { get; } = new(true, true, true, true, true, true, true);
+    public static HostChrome Desktop { get; } = new(true, true, true, true, true, true, true, true);
 
     /// <summary>The same arrangement as <see cref="Desktop"/>; the name the tab strip's tests use.</summary>
     public static HostChrome Native => Desktop;

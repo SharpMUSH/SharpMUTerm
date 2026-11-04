@@ -48,6 +48,7 @@ internal sealed class DesktopLayer : Canvas
     private readonly NativeFooter _footer;
     private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CollapsedBarView> _collapsedBars = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ComposerView> _composers = new(StringComparer.Ordinal);
     private readonly NoticeToasts _toasts;
     private readonly Dictionary<string, NativeTabStrip> _strips = new(StringComparer.Ordinal);
@@ -150,6 +151,9 @@ internal sealed class DesktopLayer : Canvas
 
     /// <summary>The native quick bars by window id. Internal for tests.</summary>
     internal IReadOnlyDictionary<string, QuickBarButtons> QuickBars => _quickBars;
+
+    /// <summary>The collapsed panels' bars, by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, CollapsedBarView> CollapsedBars => _collapsedBars;
 
     /// <summary>The native docked composers by window id. Internal for tests.</summary>
     internal IReadOnlyDictionary<string, ComposerView> Composers => _composers;
@@ -458,6 +462,15 @@ internal sealed class DesktopLayer : Canvas
             cell,
             (bar, panel, plane) => bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch));
 
+        // A collapsed panel's bar, at the foot of its column (HostChrome.Strips).
+        Place(
+            _collapsedBars,
+            _pointer.Panels.Where(p => p.Collapsed is not null),
+            () => new CollapsedBarView(_view),
+            frame,
+            cell,
+            (bar, panel, plane) => bar.Show(panel.Collapsed!, panel.Ink, plane, text, panel.Expand));
+
         // The docked composer: a native editor over its pane, the cell editor still drawn (and still the draft) under it.
         Place(
             _composers,
@@ -627,7 +640,7 @@ internal sealed class DesktopLayer : Canvas
             // A one-row strip that can pop out leaves its right end to the button (ReservesPopOut), so the button never
             // lies over its text (`88 / 100`, `F4 edits keys`); the button paints the pane's plane over the cells there.
             control.Width = Math.Max(0, (rect.Width * cell.Width) - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
-            control.Height = rect.Height * cell.Height;
+            control.Height = (rect.Height * cell.Height) + BelowGrid(frame, rect);
 
             // The pane's own plane, read off the frame, so the native view sits on whatever the pane wears — its
             // character's tint, the focus lift — without the client having to say it twice.
@@ -636,6 +649,18 @@ internal sealed class DesktopLayer : Canvas
             show(control, panel, Colour(plane));
         }
     }
+
+    /// <summary>
+    /// The pixels under the grid a panel also covers: where the window draws the command line's field in the output's
+    /// column, the grid is <see cref="NativeLayout.FieldReserve"/> shorter than the view and the columns beside the field
+    /// are filled with their last row's plane down to the footer. A panel whose pane ends on the grid's last row in such a
+    /// column (a collapsed panel's bar, the map) runs down over that filler, so it meets the footer as the mockups draw it.
+    /// </summary>
+    private double BelowGrid(ScreenFrame frame, SharpMUTerm.Core.Workspaces.PaneRect rect) =>
+        _chrome.Input && frame.Band is { } band && rect.Y + rect.Height >= frame.Height && rect.Width > 0
+        && !band.Spans(rect.X, frame.Width) && !band.Spans(rect.X + rect.Width - 1, frame.Width)
+            ? NativeLayout.FieldReserve
+            : 0;
 
     /// <summary>The client builds the menu on its thread; it is opened here, under the button.</summary>
     private void OpenMenu(HeaderAction action, HeaderButton button) =>

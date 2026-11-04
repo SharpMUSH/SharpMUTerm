@@ -10,10 +10,11 @@ using SharpMUTerm.Tui;
 namespace SharpMUTerm.Avalonia;
 
 /// <summary>
-/// The quick bar as native buttons, over the pane whose cells draw the same <see cref="QuickBarModel"/>: one button
-/// per binding (its key in the accent, then its name), a <c>+N</c> button holding the bindings that do not fit, and
-/// <c>F4 edits keys</c> as a link at the right. Every button is drawn alike — the model marks no binding as special,
-/// so neither does the window — except that a key this host cannot deliver is drawn dim, as the cells draw it.
+/// The quick bar as native buttons, over the pane whose cells draw the same <see cref="QuickBarModel"/>: the mockups'
+/// strip (a rule along its top, <see cref="ButtonHeight"/>-pixel buttons, the key as a monospace cap then the name), a
+/// <c>+N</c> button holding the bindings that do not fit, and the dashed <c>+ Bind a key</c> at the right. A binding F4
+/// flags dangerous (<see cref="QuickBarItem.Danger"/>) is drawn in the warning colour — a plate and edge leaned toward
+/// it and its words in it — as the cells draw it; a key this host cannot deliver is drawn dim.
 /// <para>
 /// <b>It takes the pointer</b>, as the map does, and never the keyboard. A click on a binding is
 /// <see cref="PanelOverlay.Pick"/> with its index: the client runs that binding on the panel's own character through
@@ -43,7 +44,10 @@ internal sealed class QuickBarButtons : Control
     /// <summary>The widest a binding's name is drawn before it is trimmed.</summary>
     internal const double MaxTitleWidth = 150;
 
-    private const double Gap = NativeTokens.Space8, PadX = NativeTokens.Space12;
+    private const double Gap = NativeTokens.Space8, PadX = NativeTokens.Space14;
+
+    /// <summary>A button's height where the strip has the room (<c>PanelSizing.QuickBarStripRows</c>): the mockups' 34 px.</summary>
+    internal const double ButtonHeight = NativeTokens.ControlHeight + NativeTokens.Space2;
 
     /// <summary>The first button's left edge: the chrome's one text inset, as every panel's heading and the output are.</summary>
     private const double Lead = NativeTokens.PanelInset;
@@ -128,13 +132,16 @@ internal sealed class QuickBarButtons : Control
     /// <summary>The key chip's size: a step under the label, as a caption.</summary>
     private double KeySize => Math.Max(8, FontSize - 2);
 
+    /// <summary>The key cap's face: the cells' mono, as every key chip in the window.</summary>
+    private static FontFamily KeyFace => NativeTokens.KeyFace;
+
     private static string Trim(QuickBarItem item) => item.Title;
 
     private double ItemWidth(QuickBarItem item)
     {
         var size = FontSize;
         var title = Math.Min(MaxTitleWidth, PanelText.Measure(Trim(item), size, false));
-        return PadX + PanelText.Measure(NativeKeys.Words(item.Key), KeySize, false) + 7 + title + PadX;
+        return PadX + PanelText.Measure(NativeKeys.Words(item.Key), KeySize, false, KeyFace) + NativeTokens.Space8 + title + PadX;
     }
 
     private double MoreWidth(int hidden) => PadX + PanelText.Measure($"+{hidden.ToString(CultureInfo.InvariantCulture)}", FontSize, true) + PadX;
@@ -160,8 +167,8 @@ internal sealed class QuickBarButtons : Control
             return;
         }
 
-        var height = Math.Max(4, size.Height - 4);
-        var top = (size.Height - height) / 2;
+        var height = Math.Max(4, Math.Min(ButtonHeight, size.Height - 4));
+        var top = Math.Round((size.Height - height) / 2);
         var items = _model.Items;
         var widths = items.Select(ItemWidth).ToList();
         foreach (var withEdit in new[] { true, false })
@@ -334,6 +341,12 @@ internal sealed class QuickBarButtons : Control
     {
         var bounds = new Rect(Bounds.Size);
         context.FillRectangle(new SolidColorBrush(_plane), bounds);
+        if (bounds.Height > ButtonHeight)
+        {
+            // A strip tall enough for the buttons is a strip: a rule along its top, as the mockups draw it over the field.
+            context.FillRectangle(new SolidColorBrush(PanelText.Rule(_text, _plane)), NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
+        }
+
         Layout(bounds.Size);
         var size = FontSize;
         var accent = PanelText.Parse(_ink.Bar);
@@ -357,11 +370,12 @@ internal sealed class QuickBarButtons : Control
                 {
                     // The key as a caption, then the binding's name: a button per binding, as the mockups draw the bar.
                     var item = _model.Items[slot.Index];
-                    Plate(context, rect, hot, down, dashed: false);
-                    var keyInk = item.Fires ? dim : PanelText.Mix(dim, _plane, 0.35);
-                    var titleInk = item.Fires ? _text : dim;
+                    var danger = item.Danger ? PanelText.Parse(_ink.Low) : (Color?)null;
+                    Plate(context, rect, hot, down, dashed: false, danger);
+                    var keyInk = item.Fires ? danger is { } d ? PanelText.Mix(d, _text, 0.3) : dim : PanelText.Mix(dim, _plane, 0.35);
+                    var titleInk = item.Fires ? danger is { } t ? PanelText.Mix(t, _text, 0.55) : _text : dim;
                     var x = rect.Left + PadX;
-                    x += PanelText.Draw(context, NativeKeys.Words(item.Key), x, middle, KeySize, keyInk, false, rect.Width) + 7;
+                    x += PanelText.Draw(context, NativeKeys.Words(item.Key), x, middle, KeySize, keyInk, false, rect.Width, face: KeyFace) + NativeTokens.Space8;
                     PanelText.Draw(context, Trim(item), x, middle, size, titleInk, false, rect.Right - PadX - x + 0.5);
                     break;
                 }
@@ -384,11 +398,13 @@ internal sealed class QuickBarButtons : Control
     /// A button's plate: a step off the plane with a rule-coloured edge, stronger under the pointer and while pressed; the
     /// bind button's edge is dashed and its plate empty until the pointer is on it.
     /// </summary>
-    private void Plate(DrawingContext context, Rect rect, bool hot, bool down, bool dashed)
+    private void Plate(DrawingContext context, Rect rect, bool hot, bool down, bool dashed, Color? danger = null)
     {
-        var fill = dashed && !hot && !down ? _plane : PanelText.Mix(_plane, _text, down ? 0.2 : hot ? 0.13 : 0.07);
+        var fill = dashed && !hot && !down ? _plane
+            : danger is { } warn ? PanelText.Mix(_plane, warn, down ? 0.3 : hot ? 0.24 : 0.17)
+            : PanelText.Mix(_plane, _text, down ? 0.2 : hot ? 0.13 : 0.07);
         var edge = new Pen(
-            new SolidColorBrush(PanelText.Mix(_plane, _text, dashed ? 0.3 : 0.18)),
+            new SolidColorBrush(danger is { } rim ? PanelText.Mix(_plane, rim, 0.42) : PanelText.Mix(_plane, _text, dashed ? 0.3 : 0.18)),
             NativeTokens.DevicePixel(this),
             dashed ? new DashStyle([4, 3], 0) : null);
         var radius = Math.Min(NativeTokens.RadiusM, rect.Height / 2);

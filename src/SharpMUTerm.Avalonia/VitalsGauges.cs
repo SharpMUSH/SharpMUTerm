@@ -66,7 +66,7 @@ internal sealed class VitalsGauges : Control
     private static double BarHeight(double cellHeight) => cellHeight >= 15 ? 10 : 8;
 
     /// <summary>Height one stacked block takes: a line of text, the bar under it, and the gap to the next.</summary>
-    private static double BlockHeight(double cellHeight) => LabelHeight(cellHeight) + 4 + BarHeight(cellHeight) + 10;
+    private static double BlockHeight(double cellHeight) => LabelHeight(cellHeight) + NativeTokens.Space4 + BarHeight(cellHeight) + NativeTokens.Space12;
 
     /// <summary>The height every stacked block takes, the target's rule included.</summary>
     private double BlocksHeight(VitalsModel model) =>

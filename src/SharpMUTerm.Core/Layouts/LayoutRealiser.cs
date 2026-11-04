@@ -30,24 +30,41 @@ public sealed record RealisedLayout(
 /// and its split collapsed.</item>
 /// <item>A collapsed panel's windows are background tabs of the first pane in its region that is not a strip, else of the output pane:
 /// a title the player can open, which is what collapsed means in a pane tree.</item>
+/// <item>Where the host draws collapsed panels as bars (<c>collapsedAsBars</c>), a collapsed panel's windows are a pane of
+/// their own instead, under that pane in its column, with the id <see cref="CollapsedPanePrefix"/> and the panel id: the
+/// host draws it as a one-line bar that a click expands.</item>
 /// <item>Every window in <c>keep</c> that no panel placed survives — in the pane it asks for when that pane still
 /// exists, else in the output pane. Applying a layout never closes a window.</item>
 /// </list>
 /// </summary>
 public static class LayoutRealiser
 {
+    /// <summary>The id prefix of a collapsed panel's own pane (<c>collapsedAsBars</c>), followed by the panel id.</summary>
+    public const string CollapsedPanePrefix = "collapsed:";
+
+    /// <summary>The share a collapsed panel's pane is given beside the pane above it, for when it is expanded.</summary>
+    public const double CollapsedPaneShare = 0.5;
+
+    /// <summary>The panel a collapsed panel's pane stands for, or null when <paramref name="paneId"/> is no such pane.</summary>
+    public static string? CollapsedPanelOf(string? paneId) =>
+        paneId is not null && paneId.StartsWith(CollapsedPanePrefix, StringComparison.Ordinal) && paneId.Length > CollapsedPanePrefix.Length
+            ? paneId[CollapsedPanePrefix.Length..]
+            : null;
+
     /// <summary>Realises <paramref name="fold"/>, or returns null when it draws nothing.</summary>
     /// <param name="layout">The layout folded, for the regions of collapsed panels.</param>
     /// <param name="fold">The fold.</param>
     /// <param name="windowsOf">The windows that draw a panel, in tab order; empty when nothing does yet.</param>
     /// <param name="outputWindowId">The session's own window: focused, and where strays go.</param>
     /// <param name="keep">Windows to keep, each with the pane id it would like to stay in (or null).</param>
+    /// <param name="collapsedAsBars">Whether a collapsed panel gets a pane of its own under its region's pane (see above).</param>
     public static RealisedLayout? Realise(
         LayoutDefinition layout,
         LayoutFoldResult fold,
         Func<string, IReadOnlyList<string>> windowsOf,
         string outputWindowId,
-        IEnumerable<(string WindowId, string? PaneId)>? keep = null)
+        IEnumerable<(string WindowId, string? PaneId)>? keep = null,
+        bool collapsedAsBars = false)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(fold);
@@ -125,6 +142,14 @@ public static class LayoutRealiser
                     && PanelSizing.FixedRows(first) is null
                     && layout.PlacementOf(first)?.Region == collapsed.Region)
                 ?? output;
+            if (collapsedAsBars)
+            {
+                var bar = new PaneNode(CollapsedPanePrefix + collapsed.PanelId, windows);
+                root = Below(root, target, bar);
+                panelPanes[collapsed.PanelId] = bar.Id;
+                continue;
+            }
+
             target.Tabs.AddRange(windows);
             panelPanes[collapsed.PanelId] = target.Id;
         }
@@ -143,6 +168,45 @@ public static class LayoutRealiser
         var at = output.Tabs.IndexOf(outputWindowId);
         output.ActiveIndex = at >= 0 ? at : 0;
         return new RealisedLayout(root, output.Id, panelPanes, FoldShape(fold));
+    }
+
+    /// <summary>
+    /// <paramref name="root"/> with <paramref name="bar"/> under <paramref name="target"/>: beside it in its column when its
+    /// parent is one, else in a new column the two share (<see cref="CollapsedPaneShare"/>).
+    /// </summary>
+    private static LayoutNode Below(LayoutNode root, PaneNode target, PaneNode bar)
+    {
+        if (ReferenceEquals(root, target))
+        {
+            return new SplitNode(SplitDirection.Column, [target, bar], [1, CollapsedPaneShare]);
+        }
+
+        if (root is not SplitNode split)
+        {
+            return root;
+        }
+
+        var children = new List<LayoutNode>();
+        var sizes = new List<double>();
+        for (var i = 0; i < split.Children.Count; i++)
+        {
+            var child = split.Children[i];
+            if (ReferenceEquals(child, target) && split.Direction == SplitDirection.Column)
+            {
+                children.Add(child);
+                sizes.Add(split.Sizes[i]);
+                children.Add(bar);
+                sizes.Add(split.Sizes[i] * CollapsedPaneShare);
+                continue;
+            }
+
+            children.Add(ReferenceEquals(child, target)
+                ? new SplitNode(SplitDirection.Column, [target, bar], [1, CollapsedPaneShare])
+                : Below(child, target, bar));
+            sizes.Add(split.Sizes[i]);
+        }
+
+        return new SplitNode(split.Direction, children, sizes);
     }
 
     /// <summary>

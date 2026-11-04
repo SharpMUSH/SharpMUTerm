@@ -211,7 +211,11 @@ internal sealed partial class SharpMUTermApp
             var over = Host.Chrome.PaneGutter
                 ? new Core.Workspaces.PaneRect(rect.X - PaneGutterColumns, rect.Y, rect.Width + (2 * PaneGutterColumns), rect.Height)
                 : rect;
-            if (_workspace.Layout.FindPane(paneId) is { ActiveTab: { } windowId } && OverlayFor(windowId, over, docked: true) is { } overlay)
+            if (CollapsedBarOverlay(paneId, over) is { } bar)
+            {
+                overlays.Add(bar);
+            }
+            else if (_workspace.Layout.FindPane(paneId) is { ActiveTab: { } windowId } && OverlayFor(windowId, over, docked: true) is { } overlay)
             {
                 overlays.Add(overlay);
             }
@@ -272,7 +276,7 @@ internal sealed partial class SharpMUTermApp
         if (panelId == PanelIds.QuickBar)
         {
             return new PanelOverlay(
-                panelId, windowId, rect, PanelListInk(), null, QuickBar: QuickBarEntries(key), Pick: PickerFor(windowId, key),
+                panelId, windowId, rect, PanelListInk() with { Low = DangerInk() }, null, QuickBar: QuickBarEntries(key), Pick: PickerFor(windowId, key),
                 Dispatch: _panelDispatch ??= id => OnUiThread(() => DispatchCommand(id)), PopOut: popOut);
         }
 
