@@ -574,6 +574,7 @@ internal sealed partial class SharpMUTermApp
                 }
 
                 AddCommands(items, "layout:next-tab", null, "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close");
+                AddPopOut(items);
                 break;
 
             case PointerKind.Link:
@@ -595,6 +596,7 @@ internal sealed partial class SharpMUTermApp
                     "term:copy", "term:trigger-from-selection", null,
                     "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close", null,
                     "term:freeze", "term:unfreeze", "term:scroll-live", "term:clear", "term:timestamps-on", "term:timestamps-off");
+                AddPopOut(items);
                 break;
 
             case PointerKind.CommandLine:
@@ -667,6 +669,19 @@ internal sealed partial class SharpMUTermApp
                     Notice($"copied {Snippet(value)}", MessageSeverity.Info);
                 }),
                 _clipboard is not null));
+        }
+    }
+
+    /// <summary>
+    /// The focused pane's front window, popped out into a window of its own — when it is a panel that can float and the
+    /// host can float it (the entry is ⌃P's, which lists it only then), after a rule.
+    /// </summary>
+    private void AddPopOut(List<PointerMenuItem> items)
+    {
+        var front = ActiveWindowId();
+        if (FloatablePanelOf(front) is not null)
+        {
+            AddCommands(items, null, SharpMUTerm.Client.Panels.PanelFloatCommands.PopOut(front));
         }
     }
 

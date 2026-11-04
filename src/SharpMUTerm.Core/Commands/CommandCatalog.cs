@@ -49,6 +49,10 @@ public sealed record CharacterRef(
 /// How many F4 bindings share a chord with the client or with each other, so <c>Key clashes (N)</c> is offered
 /// only when there is one to show.
 /// </param>
+/// <param name="Floats">
+/// Null where the host cannot float a panel in a window of its own (the terminal), so nothing is offered; otherwise
+/// every panel that can pop out, docked or floating, so <c>Pop out …</c> and <c>Dock … back</c> name real windows.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -62,7 +66,15 @@ public sealed record CommandContext(
     bool? Sound = null,
     bool? Announced = null,
     bool OutputSelected = false,
-    int KeyClashes = 0);
+    int KeyClashes = 0,
+    IReadOnlyList<PanelFloatRef>? Floats = null);
+
+/// <summary>A panel window that can pop out into a window of its own, for the command surface's entries.</summary>
+/// <param name="WindowId">The panel's window (<c>map:World.Char</c>, <c>panel:vitals:World.Char</c>).</param>
+/// <param name="Title">What the panel is called (<c>Map</c>, <c>Vitals</c>).</param>
+/// <param name="Character">Whose panel it is, as the entry's detail.</param>
+/// <param name="Floating">Whether it is popped out now: offered to dock back, else to pop out.</param>
+public sealed record PanelFloatRef(string WindowId, string Title, string Character, bool Floating);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host

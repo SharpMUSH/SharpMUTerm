@@ -29,6 +29,12 @@ public sealed record LayoutFoldResult(
 /// A tab joins its host's pane only when the host has a pane of its own (is drawn and is not itself a tab);
 /// otherwise it takes a pane in its own region. One level, so there are no chains or cycles to resolve.
 /// </para>
+/// <para>
+/// <b><see cref="PanelPlacement.Floating"/> is not read here.</b> A floating panel is folded into its region like any
+/// other, which is exactly what a host that cannot float draws. A host that can float withholds that panel's windows
+/// when it realises the fold (<see cref="LayoutRealiser"/> drops a pane left with no window), so the panes it draws
+/// are the layout without that panel, and docking it back is the same fold with the windows returned.
+/// </para>
 /// </summary>
 public static class LayoutFold
 {

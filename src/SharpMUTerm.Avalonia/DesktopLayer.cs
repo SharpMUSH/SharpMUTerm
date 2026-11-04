@@ -42,6 +42,7 @@ internal sealed class DesktopLayer : Canvas
     private readonly Dictionary<string, HeaderButton> _buttons = new(StringComparer.Ordinal);
     private readonly Dictionary<string, VitalsGauges> _gauges = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MapCanvas> _maps = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PopOutButton> _popOuts = new(StringComparer.Ordinal);
     private readonly NativeHeader _header;
     private readonly NativeSidebar _sidebar;
     private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
@@ -122,6 +123,9 @@ internal sealed class DesktopLayer : Canvas
 
     /// <summary>The native maps by window id. Internal for tests.</summary>
     internal IReadOnlyDictionary<string, MapCanvas> Maps => _maps;
+
+    /// <summary>The pop-out buttons, by the panel window each pops out. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, PopOutButton> PopOuts => _popOuts;
 
     /// <summary>The native header. Internal for tests.</summary>
     internal NativeHeader Header => _header;
@@ -330,6 +334,41 @@ internal sealed class DesktopLayer : Canvas
             frame,
             cell,
             (composer, panel, plane) => composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text));
+        SyncPopOuts(frame, cell);
+    }
+
+    /// <summary>
+    /// A pop-out button in the top right corner of every docked panel the client says can float, above the panel's
+    /// own view and below the toasts. A panel that cannot float (or a host that cannot) publishes no callback, and
+    /// gets no button.
+    /// </summary>
+    private void SyncPopOuts(ScreenFrame frame, Size cell)
+    {
+        var wanted = _pointer.Panels.Where(p => p.PopOut is not null && p.Rect.Width > 0 && p.Rect.Height > 0).ToList();
+        foreach (var stale in _popOuts.Keys.Where(id => wanted.All(p => p.WindowId != id)).ToList())
+        {
+            Children.Remove(_popOuts[stale]);
+            _popOuts.Remove(stale);
+        }
+
+        var origin = CellOrigin;
+        foreach (var panel in wanted)
+        {
+            if (!_popOuts.TryGetValue(panel.WindowId, out var button))
+            {
+                button = new PopOutButton();
+                _popOuts[panel.WindowId] = button;
+                Children.Insert(Math.Max(0, Children.IndexOf(_toasts)), button);
+            }
+
+            var size = Math.Clamp(cell.Height - 2, 12, 18);
+            var rect = panel.Rect;
+            button.Width = size;
+            button.Height = size;
+            SetLeft(button, origin.X + ((rect.X + rect.Width) * cell.Width) - size - 3);
+            SetTop(button, origin.Y + (rect.Y * cell.Height) + 2);
+            button.Show(panel, Colour(_view.Renderer.DefaultForeground));
+        }
     }
 
     /// <summary>

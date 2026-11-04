@@ -137,6 +137,17 @@ internal sealed record ClientHost
     public required IWindowTitle? Title { get; init; }
 
     /// <summary>
+    /// Draws panels popped out into windows of their own — the map on a second monitor, vitals floating beside the
+    /// game — or null for a host that cannot put a panel anywhere but its pane (the terminal, the snapshot, the tests,
+    /// <c>--plain</c>). <b>One member is both the fact and the channel</b>: a flag beside a presenter could say "can
+    /// float" with nothing to float into. Where it is null the pop-out commands are not offered (⌃P lists none, the pane
+    /// menu has no entry, no native view carries the button) and a floating panel, from a layout or a workspace another
+    /// host saved, is drawn in its region as cells. It is not part of <see cref="Chrome"/>: that says which of the
+    /// client's own rows and columns the host draws beside the cells, while a floating panel leaves the cells entirely.
+    /// </summary>
+    public required IFloatingPanels? FloatingPanels { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -179,6 +190,7 @@ internal sealed record ClientHost
         NativeComposer = null,
         NativeModals = null,
         Title = new TerminalTitle(driver),
+        FloatingPanels = null,
     };
 
     /// <summary>
@@ -207,6 +219,7 @@ internal sealed record ClientHost
         NativeComposer = null,
         NativeModals = null,
         Title = null,
+        FloatingPanels = null,
     };
 
     /// <summary>

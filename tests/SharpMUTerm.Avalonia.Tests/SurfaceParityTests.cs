@@ -290,6 +290,20 @@ public class SurfaceParityTests
             await Assert.That(rows).IsEquivalentTo(cells.HistorySearchRows, TUnit.Assertions.Enums.CollectionOrdering.Matching);
         }
 
+        // A floating panel: the window it is drawn in is handed the model the client recorded for it, and the panel
+        // inside is the model the docked strip's cells were drawn from.
+        {
+            using var driver = new AvaloniaConsoleDriver(140, 36);
+            await using var app = App(driver, DemoScene.Build());
+            app.RenderSnapshot("layout-combat");
+            var vitals = Panel(driver, PanelIds.Vitals);
+            await Assert.That(app.DispatchCommand(PanelFloatCommands.PopOut(vitals.WindowId))).IsTrue();
+            var floating = driver.Floating.Panels.Single();
+            await Assert.That(app.DrawnModel(SurfaceCatalog.FloatingPanel, vitals.WindowId)).IsEqualTo((object)floating.Model).Because("floating-panel");
+            await Assert.That(floating.Content.Vitals).IsEqualTo(app.ReadVitals(DemoScene.ActiveSessionKey)).Because("floating-panel: the panel inside");
+            covered.Add(SurfaceCatalog.FloatingPanel);
+        }
+
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
         await Assert.That(covered).IsEquivalentTo(drawnNatively).Because("every surface the window draws natively has its model compared here");
     }
@@ -351,7 +365,31 @@ public class SurfaceParityTests
         await Same("map: walk", "layout-combat",
             (app, d) => Panel(d, PanelIds.Map).WalkTo!(OtherRoom(Panel(d, PanelIds.Map).Map!)),
             (app, d) => app.SimulateMapClick(Panel(d, PanelIds.Map).WindowId, MapRenderer.LinkPrefix + OtherRoom(Panel(d, PanelIds.Map).Map!)));
+        await Same("map: pop out", "layout-combat",
+            (app, d) => Panel(d, PanelIds.Map).PopOut!(),
+            (app, d) => app.DispatchCommand(PanelFloatCommands.PopOut(Panel(d, PanelIds.Map).WindowId)));
         probed.Add(PanelIds.Map);
+
+        // Vitals: the pop-out button, and ⌃P's entry for the same window.
+        await Same("vitals: pop out", "layout-combat",
+            (app, d) => Panel(d, PanelIds.Vitals).PopOut!(),
+            (app, d) => app.DispatchCommand(PanelFloatCommands.PopOut(Panel(d, PanelIds.Vitals).WindowId)));
+        probed.Add(PanelIds.Vitals);
+
+        // A floating panel: its window's Dock (and closing it), and ⌃P's dock entry.
+        await Same("floating-panel: dock", "layout-combat",
+            (app, d) =>
+            {
+                Panel(d, PanelIds.Vitals).PopOut!();
+                d.Floating.Panels.Single().Dock();
+            },
+            (app, d) =>
+            {
+                var id = Panel(d, PanelIds.Vitals).WindowId;
+                app.DispatchCommand(PanelFloatCommands.PopOut(id));
+                app.DispatchCommand(PanelFloatCommands.Dock(id));
+            });
+        probed.Add(SurfaceCatalog.FloatingPanel);
 
         // Who is here: the first row.
         await Same("who-here: pick", "layout-roleplay",
@@ -829,6 +867,7 @@ public class SurfaceParityTests
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
         "rail=" + (app.BuildChromeOverlay().Sidebar.Collapsed ? "folded" : "open"),
+        "floating=" + string.Join(",", app.FloatingPublished.Select(f => f.Model.WindowId)),
         "notice=" + app.LastNotice,
         "recent=" + string.Join(",", app.RecentCommandIds));
 

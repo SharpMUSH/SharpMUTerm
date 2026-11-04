@@ -788,6 +788,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // otherwise start with a single main window. Real startup and the demo share this path.
         _workspace = ResumeOrNew(config);
         NoteRestoredOwners();
+        SettleRestoredFloating();
         RegisterTerminalPanels();
         AnnounceHeaderActions();
 
@@ -1013,6 +1014,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             PublishPanels();
+            PublishFloating();
             PublishChrome();
             SyncMapSizes();
             SyncPanelSizes();
@@ -8100,6 +8102,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
+            // Nor is a panel popped out into a window of its own: it is not in a pane to go to (it would read
+            // "closed"), and its own window is on screen with the way back on it.
+            if (FloatsHere(window.Id))
+            {
+                continue;
+            }
+
             windows.Add(new RailWindow(
                 RailWindowLabel(window, mine),
                 window.Id,
@@ -8276,7 +8285,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
             OutputSelected: HasOutputSelection,
-            KeyClashes: KeyClashes.Count(Host.Keys, Macros()));
+            KeyClashes: KeyClashes.Count(Host.Keys, Macros()),
+            Floats: FloatRefs());
     }
 
     /// <summary>
@@ -8545,6 +8555,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (DispatchGroupCommand(id))
         {
             return true;
+        }
+
+        // Before the panels' own prefix, which they share: panel:popout:<window> and panel:dock:<window>.
+        if (id.StartsWith(SharpMUTerm.Client.Panels.PanelFloatCommands.PopOutPrefix, StringComparison.Ordinal))
+        {
+            return PopOutPanel(id[SharpMUTerm.Client.Panels.PanelFloatCommands.PopOutPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Panels.PanelFloatCommands.DockPrefix, StringComparison.Ordinal))
+        {
+            return DockPanel(id[SharpMUTerm.Client.Panels.PanelFloatCommands.DockPrefix.Length..]);
         }
 
         if (id.StartsWith(PanelCommandPrefix, StringComparison.Ordinal))
@@ -8997,6 +9018,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _workspace.OpenWindow(windowId, "Map", WindowKind.Auxiliary, key);
             RebuildPaneArea();
         }
+        else if (IsFloating(windowId))
+        {
+            DockPanel(windowId); // asked for in a pane: a map in a window of its own docks back
+        }
 
         Activate(windowId);
         RenderMap(windowId);
@@ -9080,6 +9105,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var lines = MapRenderer.Render(view, map.Map, width, height, ink);
         _mapMarkup[windowId] = lines;
         control.SetContent(lines.ToList());
+        NoteFloatingContent(windowId);
     }
 
     /// <summary>What a map window was last drawn as, for a test to read.</summary>
@@ -12559,6 +12585,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal IReadOnlyDictionary<string, PaneRect> PaneOutputRects()
     {
         var rects = new Dictionary<string, PaneRect>(StringComparer.Ordinal);
+
+        // A resumed workspace builds its panel and map panes in the constructor, before the main window exists to
+        // measure them in: nothing is arranged yet, and each falls back to its default box until the first frame.
+        if (_window is null)
+        {
+            return rects;
+        }
+
         foreach (var (paneId, tabs, rect) in RealisedPanes())
         {
             var margin = tabs.Margin;

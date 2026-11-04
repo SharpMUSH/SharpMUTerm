@@ -85,6 +85,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// </summary>
     public ModalPresenter Modals { get; } = new();
 
+    /// <summary>The panels popped out into windows of their own (<see cref="ClientHost.FloatingPanels"/>).</summary>
+    public FloatingPanelPresenter Floating { get; } = new();
+
     /// <summary>The window's title for what is in front, which the main window shows (<see cref="WindowTitleBar"/>).</summary>
     public WindowTitleBar TitleBar { get; } = new();
 

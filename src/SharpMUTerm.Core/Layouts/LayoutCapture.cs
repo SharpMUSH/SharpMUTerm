@@ -17,6 +17,14 @@ public sealed record CapturedLayout(
 /// and not a terminal's size. Panels the previous layout placed that are not on screen now (a map on a session
 /// that has recorded no room yet) keep their old placement, so saving from a quiet session does not lose them.
 /// </para>
+/// <para>
+/// <b>Floating panels.</b> A host that can float panels passes where each popped-out panel's window is
+/// (<c>floating</c>): each is captured with <see cref="PanelPlacement.Floating"/> set and the region, order and size it
+/// had before (the side column for a panel the previous layout did not place), which is where it docks back to; every
+/// panel in a pane is captured docked. A host that cannot float passes null, and a panel it shows in a pane keeps the
+/// <see cref="PanelPlacement.Floating"/> the previous layout gave it — the terminal draws a floating panel in its
+/// region, and saving there must not undo the window's choice.
+/// </para>
 /// </summary>
 public static class LayoutCapture
 {
@@ -27,7 +35,11 @@ public static class LayoutCapture
     /// window that belongs to no panel of this session (another character's, the web view). Null when no pane holds
     /// the output, since a layout is arranged around it.
     /// </summary>
-    public static CapturedLayout? Capture(LayoutNode root, Func<string, string?> panelOf, LayoutDefinition? previous = null)
+    public static CapturedLayout? Capture(
+        LayoutNode root,
+        Func<string, string?> panelOf,
+        LayoutDefinition? previous = null,
+        IReadOnlyDictionary<string, FloatingBounds>? floating = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(panelOf);
@@ -57,6 +69,9 @@ public static class LayoutCapture
             : r.Y >= m.Y + m.Height ? LayoutRegion.Bottom
             : LayoutRegion.Main;
 
+        // Shown in a pane: docked, where the host floats; whatever the previous layout said, where it cannot.
+        FloatingBounds? KeptFloating(string panel) => floating is null ? previous?.PlacementOf(panel)?.Floating : null;
+
         var placements = new List<PanelPlacement>();
         foreach (var group in panes.GroupBy(p => RegionOf(p.Rect)))
         {
@@ -74,6 +89,7 @@ public static class LayoutCapture
                     Region = group.Key,
                     Order = order,
                     Size = Math.Round(Math.Max(1, size) / 100.0, 2),
+                    Floating = KeptFloating(host),
                 });
                 placements.AddRange(panels.Skip(1).Select(tab => new PanelPlacement
                 {
@@ -81,14 +97,36 @@ public static class LayoutCapture
                     Region = group.Key,
                     Order = order,
                     TabOf = host,
+                    Floating = KeptFloating(tab),
                 }));
                 order++;
             }
         }
 
+        // Floating: where it docks back to is where it was, or the side column for a panel the layout never placed.
+        foreach (var (panel, bounds) in (floating ?? new Dictionary<string, FloatingBounds>()).Where(f => PanelIds.IsKnown(f.Key)))
+        {
+            if (!seen.Add(panel))
+            {
+                continue; // in a pane as well: the pane wins, the host is mid-way through docking it
+            }
+
+            var before = previous?.PlacementOf(panel);
+            placements.Add(new PanelPlacement
+            {
+                PanelId = panel,
+                Region = before?.Region ?? LayoutRegion.Side,
+                Order = before?.Order ?? placements.Count,
+                Size = before?.Size ?? 1,
+                Floating = bounds,
+            });
+        }
+
         if (previous is not null)
         {
-            placements.AddRange(previous.KnownPlacements.Where(p => !seen.Contains(p.PanelId)));
+            // Not on screen and not floating: where the host floats, it is docked now (the host passed every float).
+            placements.AddRange(previous.KnownPlacements.Where(p => !seen.Contains(p.PanelId))
+                .Select(p => floating is null ? p : p with { Floating = null }));
         }
 
         return new CapturedLayout(placements, Shares(panes.Select(p => (p.Rect, RegionOf(p.Rect))).ToList(), m));

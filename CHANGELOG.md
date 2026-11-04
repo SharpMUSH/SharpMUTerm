@@ -9,6 +9,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: the map, vitals, who is here and the quick bar can be popped out into windows of their own — from
+  the button in the panel's corner, the pane's right-click menu, or Ctrl+P ▸ Pop out. The output takes the room back,
+  the floating window works exactly like the panel did, typing in it still goes to the command line, and closing it
+  (or Dock) puts the panel back in its place. Where each one floats is remembered with your layout and brought back on
+  screen if a monitor has gone. The terminal keeps every panel in its pane.
+
 - Desktop window: the quit prompt, search (Ctrl+F), history search (Ctrl+R), the layouts list (Alt+M) and the
   first-run welcome are native dialogs in the window's light or dark look, worked from the keyboard exactly as in the
   terminal. The quit prompt always comes up in front of whatever is open — closing the window while writing a post
@@ -281,6 +287,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Starting the client with a saved workspace whose panes held a panel (vitals, who is here, the quick bar, the
+  composer) or the map no longer fails before the first frame.
 - Desktop window: the Keys screen (F4) and the quick bar now describe the window's keys rather than a
   terminal's. Ctrl+digit, Ctrl+Shift+letter, Ctrl+Tab and Alt+O are shown as working keys you can bind, and
   Alt+Enter is marked as taken because it maximises the window.

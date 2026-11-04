@@ -208,6 +208,15 @@ internal sealed class TerminalView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        HandleKeyDown(e);
+    }
+
+    /// <summary>
+    /// A key, as the cells take it: the window's own chords first, then the client. Also how a key pressed in another of
+    /// the window's windows (a floating panel) reaches the command line, so the player keeps typing.
+    /// </summary>
+    internal void HandleKeyDown(KeyEventArgs e)
+    {
         _swallowText = null;
         var mapped = KeyMapper.FromKeyDown(e.Key, e.KeyModifiers);
 
@@ -241,6 +250,12 @@ internal sealed class TerminalView : Control
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
+        HandleTextInput(e);
+    }
+
+    /// <summary>Typed text, as the cells take it; also what a floating panel's window forwards.</summary>
+    internal void HandleTextInput(TextInputEventArgs e)
+    {
         foreach (var key in KeyMapper.FromText(e.Text))
         {
             if (_swallowText is { } swallowed && char.ToLowerInvariant(swallowed) == char.ToLowerInvariant(key.KeyChar))

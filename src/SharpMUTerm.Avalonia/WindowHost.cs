@@ -83,5 +83,8 @@ internal static class WindowHost
         NativeModals = driver.Modals,
         // The title bar and the taskbar entry say who is in front: Character@World — SharpMUTerm.
         Title = driver.TitleBar,
+
+        // A panel popped out is a window of its own, owned by the main one, for a second monitor.
+        FloatingPanels = driver.Floating,
     };
 }

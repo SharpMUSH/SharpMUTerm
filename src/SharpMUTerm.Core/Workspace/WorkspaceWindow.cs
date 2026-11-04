@@ -99,4 +99,12 @@ public sealed class WorkspaceWindow
     /// pane stays visibly tied to its character. Null for a character's own main window.
     /// </summary>
     public string? OwnerLabel { get; set; }
+
+    /// <summary>
+    /// Non-null while this window is a panel popped out into a window of its own, with where that window sits
+    /// (<see cref="FloatingBounds.Unplaced"/> before a host has placed it). Host-neutral: a host that floats panels
+    /// keeps such a window out of the pane tree and draws it apart; a host that cannot keeps it in a pane like any
+    /// other and leaves this alone, so a workspace saved by either host means the same thing to the other.
+    /// </summary>
+    public FloatingBounds? Floating { get; set; }
 }

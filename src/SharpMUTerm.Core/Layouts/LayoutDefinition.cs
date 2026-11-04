@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SharpMUTerm.Core.Workspaces;
 
 namespace SharpMUTerm.Core.Layouts;
 
@@ -47,6 +48,16 @@ public sealed record PanelPlacement
     /// (unknown, collapsed, or without data yet), this one takes a pane of its own in its own region.
     /// </summary>
     public string? TabOf { get; init; }
+
+    /// <summary>
+    /// Non-null when the panel is popped out into a window of its own, with where that window sits
+    /// (<see cref="FloatingBounds.Unplaced"/> when no place was remembered). <b>Host-neutral, and read only by a host
+    /// that can float a panel.</b> <see cref="LayoutFold"/> ignores it and places the panel in its
+    /// <see cref="Region"/> as always, so a host that cannot float (the terminal) draws a floating panel in its region;
+    /// a host that can withholds the panel's windows from that pane and draws them in a window of their own instead.
+    /// The region, order and size are therefore kept for a floating panel too: they are where it docks back to.
+    /// </summary>
+    public FloatingBounds? Floating { get; init; }
 }
 
 /// <summary>

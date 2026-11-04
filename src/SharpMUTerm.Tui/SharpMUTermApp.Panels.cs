@@ -596,6 +596,9 @@ internal sealed partial class SharpMUTermApp
 
         internal Action<string>? Click { get; set; }
 
+        /// <summary>Told after every redraw, so a panel floating in a window of its own is republished with it.</summary>
+        internal Action<string>? Refreshed { get; init; }
+
         internal List<string> Markup { get; private set; } = [];
 
         internal void Refresh()
@@ -603,6 +606,7 @@ internal sealed partial class SharpMUTermApp
             Size = box(WindowId);
             Markup = render(Size.Width, Size.Height);
             Control.SetContent(Markup.ToList());
+            Refreshed?.Invoke(WindowId);
         }
     }
 
@@ -613,7 +617,7 @@ internal sealed partial class SharpMUTermApp
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Fill,
         };
-        var view = new PanelView(context.WindowId, control, render, PanelBox);
+        var view = new PanelView(context.WindowId, control, render, PanelBox) { Refreshed = NoteFloatingContent };
         control.LinkClicked += (_, e) => view.Click?.Invoke(e.Url);
         _panelViews[context.WindowId] = view;
         view.Refresh();

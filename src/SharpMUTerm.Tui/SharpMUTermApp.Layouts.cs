@@ -157,6 +157,12 @@ internal sealed partial class SharpMUTermApp
             return null;
         }
 
+        // Asked for in a pane: a panel floating in a window of its own docks back first.
+        if (IsFloating(TerminalPanels.WindowId(panelId, sessionKey)))
+        {
+            DockPanel(TerminalPanels.WindowId(panelId, sessionKey));
+        }
+
         var id = EnsurePanelWindow(panelId, sessionKey);
         RebuildPaneArea();
         return id;
@@ -250,18 +256,30 @@ internal sealed partial class SharpMUTermApp
     /// other window kept, the session's own window focused — or <paramref name="focusWindow"/>, when a re-fold must
     /// not move the reader. False when the session has no window to arrange around.
     /// </summary>
-    internal bool ApplyLayout(string key, LayoutDefinition layout, string? focusWindow = null)
+    /// <param name="adoptFloating">
+    /// Whether the layout's floating panels are taken as saved (<see cref="AdoptFloating"/>): true for an explicit apply,
+    /// false for a re-fold, a pop-out or a dock, which keep the panels floating as they are now.
+    /// </param>
+    internal bool ApplyLayout(string key, LayoutDefinition layout, string? focusWindow = null, bool adoptFloating = true)
     {
         if (OutputWindowOf(key) is not { } output)
         {
             return false;
         }
 
+        if (CanFloatPanels && adoptFloating)
+        {
+            AdoptFloating(key, layout);
+        }
+
+        // A floating panel is folded into its region like any other; its windows are withheld here (DockedWindows) and
+        // never kept, so the pane it would have had is dropped and the panes are the layout without it.
         var fold = LayoutFold.Fold(layout, LayoutAvailability(key));
         var keep = _workspace.Layout.Root.Panes()
             .SelectMany(p => p.Tabs.Select(t => (t, (string?)p.Id)))
+            .Where(k => !FloatsHere(k.t))
             .ToList();
-        if (LayoutRealiser.Realise(layout, fold, panel => PanelWindows(key, panel), output, keep) is not { } realised)
+        if (LayoutRealiser.Realise(layout, fold, panel => DockedWindows(key, panel), output, keep) is not { } realised)
         {
             return false;
         }
@@ -273,6 +291,7 @@ internal sealed partial class SharpMUTermApp
         var focus = focusWindow is not null && _workspace.Layout.FindWindow(focusWindow) is not null ? focusWindow : output;
         Activate(focus);
         RefreshRail();
+        PublishFloating();
         return true;
     }
 
@@ -338,7 +357,7 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        ApplyLayout(live.SessionKey, layout, ActiveWindowId());
+        ApplyLayout(live.SessionKey, layout, ActiveWindowId(), adoptFloating: false);
     }
 
     /// <summary>
@@ -756,7 +775,8 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>The current arrangement, read back as <paramref name="key"/>'s placements.</summary>
     private CapturedLayout? CaptureArrangement(string key, LayoutDefinition? previous) =>
-        LayoutCapture.Capture(_workspace.Layout.Root, window => PanelOf(key, window), previous);
+        LayoutCapture.Capture(
+            _workspace.Layout.Root, window => PanelOf(key, window), previous, CanFloatPanels ? FloatingPanelsOf(key) : null);
 
     /// <summary>What one of the list's actions did: whether it did it, and the line that says so.</summary>
     private readonly record struct LayoutActionResult(bool Done, string Status);

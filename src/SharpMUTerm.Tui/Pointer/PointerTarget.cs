@@ -202,6 +202,11 @@ internal interface IPointerPresenter
 /// For the docked composer, the way a native editor's text and keys go back to the client: one instance for as long as
 /// the panel lives, so an overlay compares equal from frame to frame.
 /// </param>
+/// <param name="PopOut">
+/// Pops the panel out into a window of its own (<c>PopOutPanel</c>, what ⌃P's <c>panel:popout:</c> entry runs), for a
+/// host that can float a panel (<see cref="ClientHost.FloatingPanels"/>); null elsewhere, and for a panel that cannot
+/// float. Safe to call from any thread; one instance per window.
+/// </param>
 internal sealed record PanelOverlay(
     string PanelId,
     string WindowId,
@@ -215,7 +220,8 @@ internal sealed record PanelOverlay(
     Action<int>? Pick = null,
     Action<string>? Dispatch = null,
     SharpMUTerm.Client.Composer.ComposerModel? Composer = null,
-    SharpMUTerm.Client.Composer.ComposerSession? ComposerSession = null);
+    SharpMUTerm.Client.Composer.ComposerSession? ComposerSession = null,
+    Action? PopOut = null);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);

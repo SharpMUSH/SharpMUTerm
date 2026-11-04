@@ -72,7 +72,8 @@ public class SurfaceCatalogTests
     {
         var panels = SurfaceCatalog.All.Where(s => s.Id is not (SurfaceCatalog.Header or SurfaceCatalog.Sidebar
             or SurfaceCatalog.Settings or SurfaceCatalog.LayoutsMenu or SurfaceCatalog.Palette
-            or SurfaceCatalog.Prefix or SurfaceCatalog.RailStrip or SurfaceCatalog.Notice or SurfaceCatalog.Compose)
+            or SurfaceCatalog.Prefix or SurfaceCatalog.RailStrip or SurfaceCatalog.Notice or SurfaceCatalog.Compose
+            or SurfaceCatalog.FloatingPanel)
             && !SurfaceCatalog.Modals.Contains(s.Id));
         foreach (var surface in panels)
         {
@@ -98,5 +99,38 @@ public class SurfaceCatalogTests
                 await Assert.That(ok).IsTrue().Because($"{surface.Id}: {action.Name} → {action.CellsVia}");
             }
         }
+    }
+
+    /// <summary>
+    /// An action only one host can do (a panel popped out into a window of its own) is declared for that host, which
+    /// draws the surface natively, and names the command that reaches it from the cells there.
+    /// </summary>
+    [Test]
+    public async Task AHostOnlyActionNamesItsHostAndItsCellRoute()
+    {
+        var hostOnly = SurfaceCatalog.All.SelectMany(s => s.Actions.Where(a => a.OnlyOn is not null).Select(a => (Surface: s, Action: a))).ToList();
+        await Assert.That(hostOnly).IsNotEmpty();
+        foreach (var (surface, action) in hostOnly)
+        {
+            await Assert.That(SurfaceHosts.All).Contains(action.OnlyOn!).Because($"{surface.Id}: {action.Name}");
+            await Assert.That(surface.On(action.OnlyOn!).HasFlag(SurfaceDrawing.Native)).IsTrue().Because($"{surface.Id}: {action.Name}");
+            await Assert.That(action.CellsVia).IsNotNull().Because($"{surface.Id}: {action.Name}");
+            await Assert.That(action.CellsVia!).Contains(":").Because("the cell route is a command, a ⌃P entry");
+        }
+    }
+
+    /// <summary>Every panel the window draws natively from a model can pop out, and only the window offers it.</summary>
+    [Test]
+    public async Task EveryFloatablePanelDeclaresPopOutForTheWindowOnly()
+    {
+        foreach (var panel in SharpMUTerm.Client.Panels.PanelFloatCommands.Floatable)
+        {
+            var surface = SurfaceCatalog.Find(panel)!;
+            var popOut = surface.Actions.SingleOrDefault(a => a.Name == SharpMUTerm.Client.Panels.PanelFloatCommands.PopOutPrefix);
+            await Assert.That(popOut).IsNotNull().Because(panel);
+            await Assert.That(popOut!.OnlyOn).IsEqualTo(SurfaceHosts.Window).Because(panel);
+        }
+
+        await Assert.That(SurfaceCatalog.Find(SurfaceCatalog.FloatingPanel)!.On(SurfaceHosts.Terminal)).IsEqualTo(SurfaceDrawing.None);
     }
 }

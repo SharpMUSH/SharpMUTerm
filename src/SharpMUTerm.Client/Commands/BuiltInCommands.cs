@@ -130,6 +130,12 @@ public static class BuiltInCommands
         Add("panel:vitals", CommandGroup.Terminal, "Show vitals", detail: "the F7 meters as bars, and your target");
         Add("panel:quick-bar", CommandGroup.Terminal, "Show quick bar", detail: "this character's function-key macros · click one to run it");
         Add("panel:composer", CommandGroup.Terminal, "Dock the composer", detail: "a pane to write posts in · ⌃S sends");
+
+        // A panel in a window of its own, for a second monitor — only where the host can draw one (the desktop window;
+        // Floats is null in a terminal, which keeps every panel in its region). One entry per panel window, by id, so the
+        // action runs on that panel's own character whichever window is focused.
+        Family("panel:popout", Client.Panels.PanelFloatCommands.PopOutPrefix, PopOuts);
+        Family("panel:dock", Client.Panels.PanelFloatCommands.DockPrefix, Docks);
         Add("term:walk-stop", CommandGroup.Terminal, "Stop walking", detail: "ends the speedwalk", when: c => c.State.Walking);
 
         // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.
@@ -414,6 +420,28 @@ public static class BuiltInCommands
             };
         }
     }
+
+    private static IEnumerable<CommandItem> PopOuts(ICommandContext context) =>
+        (context.State.Floats ?? []).Where(f => !f.Floating).Select(f =>
+            new CommandItem(
+                CommandGroup.Layout,
+                $"Pop out {f.Title}",
+                Client.Panels.PanelFloatCommands.PopOut(f.WindowId),
+                $"{f.Character} · in a window of its own")
+            {
+                Detail = $"{f.Character} · in a window of its own",
+            });
+
+    private static IEnumerable<CommandItem> Docks(ICommandContext context) =>
+        (context.State.Floats ?? []).Where(f => f.Floating).Select(f =>
+            new CommandItem(
+                CommandGroup.Layout,
+                $"Dock {f.Title} back",
+                Client.Panels.PanelFloatCommands.Dock(f.WindowId),
+                $"{f.Character} · into its place in the layout")
+            {
+                Detail = $"{f.Character} · into its place in the layout",
+            });
 
     private static IEnumerable<CommandItem> Screens(ICommandContext context) =>
         context.Settings.Select(screen =>

@@ -206,52 +206,9 @@ internal sealed partial class SharpMUTermApp
         var covered = _system.ModalStateService.HasModals || _nativeCompose is not null;
         foreach (var (paneId, rect) in !covered ? PaneOutputRects() : new Dictionary<string, Core.Workspaces.PaneRect>())
         {
-            if (_workspace.Layout.FindPane(paneId) is not { ActiveTab: { } windowId })
+            if (_workspace.Layout.FindPane(paneId) is { ActiveTab: { } windowId } && OverlayFor(windowId, rect, docked: true) is { } overlay)
             {
-                continue;
-            }
-
-            if (IsMapWindow(windowId))
-            {
-                if (MapViewFor(windowId) is { } view)
-                {
-                    var walker = _mapWalkers.TryGetValue(windowId, out var known)
-                        ? known
-                        : _mapWalkers[windowId] = room => OnUiThread(() => WalkFromMap(windowId, room));
-                    overlays.Add(new PanelOverlay(
-                        PanelIds.Map, windowId, rect, new PanelInk(_ink.Accent, _ink.Draft, _ink.Lift(new Rgb(0x6a, 0x6a, 0x72))), null, view, walker));
-                }
-
-                continue;
-            }
-
-            if (!TerminalPanels.TryParseWindowId(windowId, out var panelId, out var key))
-            {
-                continue;
-            }
-
-            if (panelId == PanelIds.Vitals)
-            {
-                var ink = VitalsInk();
-                overlays.Add(new PanelOverlay(panelId, windowId, rect, new PanelInk(ink.Bar, ink.Low, ink.Empty), ReadVitals(key)));
-            }
-            else if (panelId == PanelIds.WhoHere)
-            {
-                overlays.Add(new PanelOverlay(
-                    panelId, windowId, rect, PanelListInk(), null, WhoHere: ReadWhoHere(key), Pick: PickerFor(windowId, key)));
-            }
-            else if (panelId == PanelIds.QuickBar)
-            {
-                overlays.Add(new PanelOverlay(
-                    panelId, windowId, rect, PanelListInk(), null, QuickBar: QuickBarEntries(key), Pick: PickerFor(windowId, key),
-                    Dispatch: _panelDispatch ??= id => OnUiThread(() => DispatchCommand(id))));
-            }
-            else if (panelId == PanelIds.Composer && NativeComposerHost is not null
-                && _dockedComposers.TryGetValue(windowId, out var docked) && docked.Model is { } composer)
-            {
-                // Only to a host with its own editor: the cells stay underneath it, and the editor is kept to them.
-                overlays.Add(new PanelOverlay(
-                    panelId, windowId, rect, ComposerInk(), null, Composer: composer, ComposerSession: DockedSessionFor(docked)));
+                overlays.Add(overlay);
             }
         }
 
@@ -262,6 +219,66 @@ internal sealed partial class SharpMUTermApp
 
         _panelOverlays = overlays;
         _pointer.Panels(overlays);
+    }
+
+    /// <summary>
+    /// What a host is told about the panel drawn in <paramref name="windowId"/>: its model, its colours and its actions,
+    /// over <paramref name="rect"/> (a pane's output rectangle, or empty for a panel floating in a window of its own).
+    /// Null for a window that is no native panel, or one with nothing to draw yet. One function for a docked panel and a
+    /// floating one, so the two are handed the same model and the same callbacks. A docked panel that can float also
+    /// carries its pop-out callback, where the host can float one.
+    /// </summary>
+    private PanelOverlay? OverlayFor(string windowId, Core.Workspaces.PaneRect rect, bool docked)
+    {
+        var popOut = docked ? PopOuterFor(windowId) : null;
+        if (IsMapWindow(windowId))
+        {
+            if (MapViewFor(windowId) is not { } view)
+            {
+                return null;
+            }
+
+            var walker = _mapWalkers.TryGetValue(windowId, out var known)
+                ? known
+                : _mapWalkers[windowId] = room => OnUiThread(() => WalkFromMap(windowId, room));
+            return new PanelOverlay(
+                PanelIds.Map, windowId, rect, new PanelInk(_ink.Accent, _ink.Draft, _ink.Lift(new Rgb(0x6a, 0x6a, 0x72))), null, view, walker,
+                PopOut: popOut);
+        }
+
+        if (!TerminalPanels.TryParseWindowId(windowId, out var panelId, out var key))
+        {
+            return null;
+        }
+
+        if (panelId == PanelIds.Vitals)
+        {
+            var ink = VitalsInk();
+            return new PanelOverlay(panelId, windowId, rect, new PanelInk(ink.Bar, ink.Low, ink.Empty), ReadVitals(key), PopOut: popOut);
+        }
+
+        if (panelId == PanelIds.WhoHere)
+        {
+            return new PanelOverlay(
+                panelId, windowId, rect, PanelListInk(), null, WhoHere: ReadWhoHere(key), Pick: PickerFor(windowId, key), PopOut: popOut);
+        }
+
+        if (panelId == PanelIds.QuickBar)
+        {
+            return new PanelOverlay(
+                panelId, windowId, rect, PanelListInk(), null, QuickBar: QuickBarEntries(key), Pick: PickerFor(windowId, key),
+                Dispatch: _panelDispatch ??= id => OnUiThread(() => DispatchCommand(id)), PopOut: popOut);
+        }
+
+        if (docked && panelId == PanelIds.Composer && NativeComposerHost is not null
+            && _dockedComposers.TryGetValue(windowId, out var docked2) && docked2.Model is { } composer)
+        {
+            // Only to a host with its own editor: the cells stay underneath it, and the editor is kept to them.
+            return new PanelOverlay(
+                panelId, windowId, rect, ComposerInk(), null, Composer: composer, ComposerSession: DockedSessionFor(docked2));
+        }
+
+        return null;
     }
 
     /// <summary>The list panels' colours: the accent their cells draw an active dot and a key in, and the warning.</summary>
@@ -278,7 +295,8 @@ internal sealed partial class SharpMUTermApp
 
     private void PickFromPanel(string windowId, string sessionKey, int index)
     {
-        var published = _panelOverlays.FirstOrDefault(p => p.WindowId == windowId);
+        var published = _panelOverlays.FirstOrDefault(p => p.WindowId == windowId)
+            ?? _floatingPublished.FirstOrDefault(f => f.Content.WindowId == windowId)?.Content;
         if (published?.WhoHere is { } who && index >= 0 && index < who.Rows.Count)
         {
             OfferLook(windowId, sessionKey, who.Rows[index].Name);

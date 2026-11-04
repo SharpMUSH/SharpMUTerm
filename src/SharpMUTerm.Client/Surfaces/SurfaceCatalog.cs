@@ -68,7 +68,13 @@ public enum SurfaceActionKind
 /// this names where the cells offer the same thing: another surface's id, or a command id (a key, a ⌃P entry). A
 /// native view may add a door; it may not add a room.
 /// </param>
-public sealed record SurfaceAction(SurfaceActionKind Kind, string Name, string Reaches, string? CellsVia = null);
+/// <param name="OnlyOn">
+/// Null when every host that draws the surface offers the action. Otherwise the one host (<see cref="SurfaceHosts"/>)
+/// that can do it at all — popping a panel out into a window of its own is the window's, since a terminal has nowhere
+/// to put a second window — and <paramref name="CellsVia"/> must then name the command that reaches it from the cells
+/// on that host.
+/// </param>
+public sealed record SurfaceAction(SurfaceActionKind Kind, string Name, string Reaches, string? CellsVia = null, string? OnlyOn = null);
 
 /// <summary>The hosts a surface is declared for, by <c>ClientHost.Name</c>.</summary>
 public static class SurfaceHosts
@@ -174,6 +180,22 @@ public static class SurfaceCatalog
     /// <summary>The first-run welcome and its connect form.</summary>
     public const string Welcome = "welcome";
 
+    /// <summary>
+    /// A panel popped out into a window of its own (the desktop window only; a terminal keeps every panel in its
+    /// region). The frame around the panel's own native view: its title, whose it is, and the way back.
+    /// </summary>
+    public const string FloatingPanel = "floating-panel";
+
+    /// <summary>
+    /// Pop the panel out into a window of its own: the window's alone, offered by a button on the panel's native view,
+    /// the pane's right-click menu and ⌃P (<c>panel:popout:&lt;window&gt;</c>), all ending in one client method.
+    /// </summary>
+    private static readonly SurfaceAction PopOut = new(
+        SurfaceActionKind.Command, PanelFloatCommands.PopOutPrefix, "PopOutPanel", CellsVia: PanelFloatCommands.PopOutPrefix, OnlyOn: SurfaceHosts.Window);
+
+    /// <summary>The window's views of a panel: its own view, and the pop-out button over it.</summary>
+    private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
+
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
     public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome];
 
@@ -247,34 +269,35 @@ public static class SurfaceCatalog
         new(
             PanelIds.Vitals,
             typeof(VitalsModel),
-            [],
+            [PopOut],
             CellsUnderNative,
             "SharpMUTerm.Tui.Panels.VitalsStripRenderer.Render",
-            ["SharpMUTerm.Avalonia.VitalsGauges"]),
+            PanelViews("VitalsGauges")),
         new(
             PanelIds.Map,
             typeof(MapViewModel),
-            [new(SurfaceActionKind.Walk, "room", "WalkFromMap")],
+            [new(SurfaceActionKind.Walk, "room", "WalkFromMap"), PopOut],
             CellsUnderNative,
             "SharpMUTerm.Tui.MapRenderer.Render",
-            ["SharpMUTerm.Avalonia.MapCanvas"]),
+            PanelViews("MapCanvas")),
         new(
             PanelIds.WhoHere,
             typeof(WhoHereModel),
-            [new(SurfaceActionKind.Pick, "row", "OfferLook")],
+            [new(SurfaceActionKind.Pick, "row", "OfferLook"), PopOut],
             CellsUnderNative,
             "SharpMUTerm.Tui.Panels.WhoHereRenderer.Render",
-            ["SharpMUTerm.Avalonia.WhoHereList"]),
+            PanelViews("WhoHereList")),
         new(
             PanelIds.QuickBar,
             typeof(QuickBarModel),
             [
                 new(SurfaceActionKind.Pick, "item", "RunQuickMacro"),
                 new(SurfaceActionKind.Command, QuickBarModel.EditCommand, "DispatchCommand"),
+                PopOut,
             ],
             CellsUnderNative,
             "SharpMUTerm.Tui.Panels.QuickBarRenderer.Render",
-            ["SharpMUTerm.Avalonia.QuickBarButtons"]),
+            PanelViews("QuickBarButtons")),
         new(
             Settings,
             typeof(SettingsSectionContribution),
@@ -426,6 +449,23 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.WelcomeSurface.Render",
             ModalViews("WelcomeView")),
+        new(
+            FloatingPanel,
+            typeof(FloatingPanelModel),
+            [
+                // Its Dock button and closing the window both dock it back; the cells' way is the ⌃P entry, offered
+                // only where the host can float a panel at all.
+                new(SurfaceActionKind.Command, PanelFloatCommands.DockPrefix, "DockPanel", CellsVia: PanelFloatCommands.DockPrefix, OnlyOn: SurfaceHosts.Window),
+            ],
+            new Dictionary<string, SurfaceDrawing>
+            {
+                // A terminal has nowhere to put a second window: a floating panel is drawn in its region there, as cells.
+                [SurfaceHosts.Terminal] = SurfaceDrawing.None,
+                [SurfaceHosts.Window] = SurfaceDrawing.Native,
+            },
+            null,
+            ["SharpMUTerm.Avalonia.FloatingPanelWindow"],
+            KeyboardPath: PanelFloatCommands.DockPrefix),
     ];
 
     /// <summary>The surface with <paramref name="id"/>, or null.</summary>

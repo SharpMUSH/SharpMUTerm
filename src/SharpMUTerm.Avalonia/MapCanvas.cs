@@ -28,6 +28,12 @@ internal sealed class MapCanvas : Control
     private const double MinZoom = 0.35, MaxZoom = 3, DragThreshold = 4;
 
     private readonly TerminalView _view;
+
+    /// <summary>
+    /// What a right click does instead of reaching the cell under it: set in a floating panel's window, which has no
+    /// cell under it, to open that window's own menu. Null over a pane, where the client's menu for the pane opens.
+    /// </summary>
+    internal Action<Point>? RightClick { get; set; }
     private MapViewModel _model = new(null, 0, [], [], null);
     private PanelInk _ink = new("#5fafff", "#ffaf5f", "#6a6a72");
     private Color _plane = Colors.Black;
@@ -104,6 +110,12 @@ internal sealed class MapCanvas : Control
         e.Handled = true;
         if (point.Properties.IsRightButtonPressed)
         {
+            if (RightClick is { } own)
+            {
+                own(e.GetPosition(this));
+                return;
+            }
+
             _view.ForwardRightClick(e.GetPosition(_view), e.KeyModifiers);
             return;
         }

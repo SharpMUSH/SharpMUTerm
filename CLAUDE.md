@@ -1262,6 +1262,45 @@ fallbacks) for inline images/maps.
     re-asserted on every layout change, and releasing there disarmed the composer the moment its pane was built.
     ⌥⏎ arrives as Esc then Enter, so an Enter within 50 ms of the releasing Esc re-arms and inserts a newline
     (`TryComposerAltEnter`). `DockedComposerTests` covers each of these.
+- **The window can pop a native panel out into a window of its own** (map, vitals, who-here, quick bar;
+  `SharpMUTermApp.Floating.cs`, Avalonia `FloatingPanels.cs`: `FloatingPanelPresenter`, `FloatingPanelWindow`,
+  `PopOutButton`; Core `FloatingBounds`; Client `PanelFloatCommands`, `FloatingPanelModel`; ⌃P `panel:popout:<window>`
+  and `panel:dock:<window>`; the `floating-panel` surface). Three ways out — the button in the docked view's top-right
+  corner, the pane's right-click menu, ⌃P — and three ways back: the floating window's Dock, closing it, ⌃P. Decisions:
+  - **Floating is a fact about the panel's *window*** (`WorkspaceWindow.Floating`, screen pixels; `Unplaced` = the host
+    picks), so it is saved with the workspace, and a layout says the same per panel (`PanelPlacement.Floating`,
+    captured by `LayoutCapture` from `FloatingPanelsOf`). **The fold never reads it**: region, order and size stay the
+    place it docks back to, and a host that cannot float folds the layout exactly as if it said nothing.
+  - **The host fact is `ClientHost.FloatingPanels` (`IFloatingPanels?`, required, null in the terminal and headless)**,
+    not `HostChrome`. `HostChrome` says which chrome a host draws *instead of cells*; floating is a channel the client
+    publishes to (models out, moves and docks back), the `IPointerPresenter`/`INativeModals` shape, and a null member
+    is the one "this host cannot" every other optional channel already uses. `CanFloatPanels` reads it; ⌃P's families
+    list nothing without it (`CommandContext.Floats` null), the pane menu adds no entry, a docked overlay carries no
+    `PopOut`, and `PopOutPanel` refuses out loud. The catalog's actions say `OnlyOn: Window` with `CellsVia` the ⌃P id.
+  - **The pane goes through the workspace's own operations, and no cell is spent.** While the live layout owns the
+    panes, a pop out or a dock re-applies it (`RearrangeLiveLayout` → `ApplyLayout(adoptFloating: false)`) with the
+    floating window withheld (`DockedWindows`), so the panes are exactly the layout without that panel — the rectangles,
+    and so NAWS, are equal (`APoppedOutPanelLeavesThePanesALayoutWithoutItWouldHave`). Otherwise `RemoveWindow`/`AddWindow`
+    (back into the pane it left). An explicit apply takes the layout's floating state (`AdoptFloating`); a re-fold keeps
+    what is floating now. `OpenPanel`/`ShowMap` dock a floating panel: asking for it in a pane means the pane.
+  - **A floating panel is published like a docked one, from the same function** (`OverlayFor(…, docked: false)`): the
+    same model and the same callbacks, so a walk, a look or a quick key from the floating window runs the same method
+    on the panel's own character. Its control is made if it never had a pane (`EnsureFloatingControl`), and a redraw of
+    it republishes (`PanelView.Refreshed`, `RenderMap` → `NoteFloatingContent`), since no frame paints for it.
+  - **Resumed by either host**: `SettleRestoredFloating` takes a floating window out of its pane where the host floats,
+    and puts one back in a pane where it cannot, keeping the flag for the next host that can. A floating window has no
+    rail row (it would read `closed`).
+  - **The window**: owned by the main window, `ShowActivated = false`, not in the taskbar; first placed beside the main
+    window (left when the right has no room), later where the player left it, **clamped to the screens there are now**
+    (`FloatingBounds.ClampTo`: unchanged when wholly on a screen, else the screen holding most of it or the nearest, shrunk
+    to fit). Moves are reported after 300 ms of quiet. Every key and every typed character goes to `TerminalView`'s
+    handlers, so typing lands on the command line. Its plane is the character's pane tint on the theme, its ink the
+    theme's text. Closing it docks; the client closing it (a dock, the main window going) docks nothing.
+  - **Fixed on the way**: `PaneOutputRects` called before the main window existed threw, so a resumed workspace holding
+    any panel or map pane threw in the constructor; it now answers "nothing arranged yet".
+  - **Not done**: one floating window per panel window, not per panel kind across characters; no snapping or
+    always-on-top choice; the composer does not float; positions on a mixed-DPI desktop are assumed to be in the main
+    window's scaling.
 
 ## One client, several hosts — and how they are kept the same
 
@@ -1270,7 +1309,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
