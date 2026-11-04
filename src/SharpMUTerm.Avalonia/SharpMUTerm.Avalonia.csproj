@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <!--
-    Bundled faces (Fonts/README.md): Inter for the native views, JetBrains Mono for the cells unless --font names another,
+    Bundled faces (Fonts/README.md): Inter for the native views, JetBrains Mono for the cells unless the font option names another,
     and Symbols Nerd Font Mono for the chrome's icons. Embedded so a single-file publish carries them; the
     licences are copied beside the executable so every package ships them.
   -->

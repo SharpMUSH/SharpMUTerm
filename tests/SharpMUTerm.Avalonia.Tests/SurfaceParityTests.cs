@@ -352,6 +352,27 @@ public class SurfaceParityTests
             covered.Add(SurfaceCatalog.TabOverflow);
         }
 
+        // The panes' tab strips and the scrolled-back band: each is handed the model the cells were titled or drawn from.
+        foreach (var view in new[] { "tabs", "scrollback-split" })
+        {
+            using var driver = new AvaloniaConsoleDriver(140, 36);
+            await using var app = App(driver, DemoScene.Build());
+            app.RenderSnapshot(view);
+            var panes = driver.Pointer.PaneChrome;
+            await Assert.That(panes).IsNotNull().Because($"{view}: the pane chrome was published");
+            foreach (var strip in panes!.Strips)
+            {
+                await Assert.That(app.DrawnModel(SurfaceCatalog.TabStrip, strip.Model.PaneId)).IsEqualTo((object)strip.Model).Because($"{view}: tab-strip {strip.Model.PaneId}");
+                covered.Add(SurfaceCatalog.TabStrip);
+            }
+
+            foreach (var band in panes.Bands)
+            {
+                await Assert.That(app.DrawnModel(SurfaceCatalog.ScrollBand, band.Model.WindowId)).IsEqualTo((object)band.Model).Because($"{view}: scroll-band");
+                covered.Add(SurfaceCatalog.ScrollBand);
+            }
+        }
+
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
         await Assert.That(covered).IsEquivalentTo(drawnNatively).Because("every surface the window draws natively has its model compared here");
     }
@@ -1015,6 +1036,27 @@ public class SurfaceParityTests
 
         probed.Add(SurfaceCatalog.TabOverflow);
 
+        // A tab: the native click and the cell click on the same tab bring the same window forward in the same pane.
+        await Same("tab-strip: tab", "tabs",
+            (app, _) =>
+            {
+                var strip = app.PaneChromePublished!.Strips.First(s => !s.Model.Focused && s.Model.Tabs.Count > 1);
+                app.ActivateOfferedStripTab(strip.Model.PaneId, strip.Model.Tabs.First(t => !t.Selected).WindowId);
+            },
+            (app, _) =>
+            {
+                var strip = app.BuildPaneChrome().Strips.First(s => !s.Model.Focused && s.Model.Tabs.Count > 1);
+                var window = strip.Model.Tabs.First(t => !t.Selected).WindowId;
+                app.SimulateTabStripClick(strip.Model.PaneId, app.CellTabColumn(strip.Model.PaneId, window), 0);
+            });
+        probed.Add(SurfaceCatalog.TabStrip);
+
+        // The band's Jump to latest ends where End does: the split closes and the pane follows its live tail again.
+        await Same("scroll-band: jump to latest", "scrollback-split",
+            (app, _) => app.ReturnFromOfferedBand(app.PaneChromePublished!.Bands.Single().Model.WindowId),
+            (app, _) => app.DispatchCommand(ScrollBandModel.LiveCommand));
+        probed.Add(SurfaceCatalog.ScrollBand);
+
         await Assert.That(probed).IsEquivalentTo(acting).Because("every native surface with actions has a probe here");
     }
 
@@ -1301,6 +1343,7 @@ public class SurfaceParityTests
         "map=" + app.MapDigest(),
         "rail=" + (app.BuildChromeOverlay().Sidebar.Collapsed ? "folded" : "open"),
         "floating=" + string.Join(",", app.FloatingPublished.Select(f => f.Model.WindowId)),
+        "split=" + string.Join(",", app.PaneWindows().Values.Where(app.IsScrollSplit)),
         "notice=" + app.LastNotice,
         "recent=" + string.Join(",", app.RecentCommandIds));
 

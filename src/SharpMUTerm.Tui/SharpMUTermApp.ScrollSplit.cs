@@ -1,4 +1,6 @@
 using SharpConsoleUI;
+using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Surfaces;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Builders;
@@ -217,7 +219,8 @@ internal sealed partial class SharpMUTermApp
         var bar = ScrollSplitBarFor(windowId);
         var width = panel.ViewportWidth > 0 ? panel.ViewportWidth : 80;
         var below = panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset;
-        var markup = ScrollSplitBarRenderer.Bar(below, width, _ink.Notice);
+        var band = Drawing(SurfaceCatalog.ScrollBand, windowId, new ScrollBandModel(windowId, below));
+        var markup = ScrollSplitBarRenderer.Bar(band, width, _ink.Notice);
         if (!string.Equals(_scrollSplitBarText.GetValueOrDefault(windowId), markup, StringComparison.Ordinal))
         {
             _scrollSplitBarText[windowId] = markup;
@@ -267,6 +270,22 @@ internal sealed partial class SharpMUTermApp
         }
 
         e.Handled = true;
+        ReturnToLiveTail(windowId);
+        return true;
+    }
+
+    /// <summary>
+    /// Takes a split window back to its live tail: End's work, and what the window's native band's <c>Jump to latest</c>
+    /// ends in (<see cref="SurfaceCatalog.ScrollBand"/>). Internal so a test can drive it as the window does; returns
+    /// whether the window was split and is now following its tail.
+    /// </summary>
+    internal bool ReturnToLiveTail(string windowId)
+    {
+        if (!_scrollSplits.ContainsKey(windowId) || _paneScrolls.GetValueOrDefault(windowId) is not { } panel)
+        {
+            return false;
+        }
+
         BackToLive(panel);
         SyncScrollbackState();
         return true;

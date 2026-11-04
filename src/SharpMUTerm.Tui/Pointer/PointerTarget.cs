@@ -161,6 +161,15 @@ internal interface IPointerPresenter
     }
 
     /// <summary>
+    /// The panes' tab strips (when the host draws them, <see cref="HostChrome.Tabs"/>) and the bands of panes split by
+    /// scrolling back, as data, whenever one moves or what it says changes. A host that draws neither ignores this (the
+    /// default).
+    /// </summary>
+    void PaneChrome(PaneChromeOverlay chrome)
+    {
+    }
+
+    /// <summary>
     /// How many columns a terminal the size of the host's whole window would have: its cells plus the chrome it draws
     /// beside them, in cells. Null when the cells are the whole window (the terminal, and the default). The client's
     /// narrow layout measures this rather than the cells (<c>SharpMUTermApp.LayoutColumns</c>), because folding a

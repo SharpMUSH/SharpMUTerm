@@ -319,17 +319,25 @@ internal sealed record ClientHost
 /// each frame (<see cref="IPointerPresenter.InputBand"/>), so the host can draw the field's frame and padding in its own
 /// units around those rows. No keystroke path changes.
 /// </param>
-internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, bool Input = false)
+/// <param name="Tabs">
+/// The host draws each pane's tab strip. A strip's row cannot be taken out of one pane of a uniform cell grid, so this
+/// one part keeps its row: the client paints it blank and publishes the strip as data (<c>TabStripModel</c>), and the
+/// host draws over exactly that row. The pane rectangles, and so NAWS, are the terminal's.
+/// </param>
+internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, bool Input = false, bool Tabs = false)
 {
     /// <summary>The client draws all of its chrome in cells: the terminal, the snapshot, the tests.</summary>
     public static HostChrome None { get; } = new(false, false);
 
-    /// <summary>The host draws the header and the rail natively: the desktop window.</summary>
+    /// <summary>The host draws the header and the rail natively.</summary>
     public static HostChrome HeaderAndRail { get; } = new(true, true);
 
-    /// <summary>The host draws the header, the rail, the status footer and the command line's field: the desktop window.</summary>
-    public static HostChrome Desktop { get; } = new(true, true, true, true);
+    /// <summary>The host draws the header, the rail, the status footer, the command line's field and every pane's tab strip: the desktop window.</summary>
+    public static HostChrome Desktop { get; } = new(true, true, true, true, true);
+
+    /// <summary>The same arrangement as <see cref="Desktop"/>; the name the tab strip's tests use.</summary>
+    public static HostChrome Native => Desktop;
 
     /// <summary>Whether the host draws anything at all.</summary>
-    public bool Any => Header || Rail || Status || Input;
+    public bool Any => Header || Rail || Status || Input || Tabs;
 }

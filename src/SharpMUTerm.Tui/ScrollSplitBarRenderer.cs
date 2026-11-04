@@ -13,11 +13,21 @@ internal static class ScrollSplitBarRenderer
     /// (<see cref="UnreadBadge"/>), so the label does not move as output arrives; the hints are dropped, last
     /// first, when the pane is too narrow for them, and the rule takes whatever is left.
     /// </summary>
+    public static string Bar(SharpMUTerm.Client.Chrome.ScrollBandModel band, int width, string accentHex)
+    {
+        ArgumentNullException.ThrowIfNull(band);
+        return Bar(band.RowsBack, width, accentHex);
+    }
+
+    /// <summary>The count a band shows for <paramref name="rowsBack"/>: capped, as the status row caps it.</summary>
+    public static string Count(int rowsBack) => UnreadBadge.Format(Math.Max(1, rowsBack));
+
+    /// <summary>The bar for a count, as <see cref="Bar(SharpMUTerm.Client.Chrome.ScrollBandModel, int, string)"/> draws it.</summary>
     public static string Bar(int rowsBack, int width, string accentHex)
     {
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
-        var count = UnreadBadge.Format(Math.Max(1, rowsBack)).PadLeft(UnreadBadge.FieldWidth);
+        var count = Count(rowsBack).PadLeft(UnreadBadge.FieldWidth);
         var label = $"{Glyphs.Scrollback} scrolled back {count} rows";
         string[] hints = ["End returns", "⌥F freezes"];
 

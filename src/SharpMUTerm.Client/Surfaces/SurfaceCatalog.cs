@@ -217,6 +217,18 @@ public static class SurfaceCatalog
     public const string TabOverflow = "tab-overflow";
 
     /// <summary>
+    /// A pane's tab strip: the framework's strip of cells in a terminal, written from the model; in the window
+    /// (<c>HostChrome.Tabs</c>) a native strip over the strip's row, which the client then paints blank.
+    /// </summary>
+    public const string TabStrip = "tab-strip";
+
+    /// <summary>
+    /// The band across a pane split by scrolling back: a rule of cells in a terminal; in the window a native band over
+    /// that row as well, whose button ends where End does.
+    /// </summary>
+    public const string ScrollBand = "scroll-band";
+
+    /// <summary>
     /// A panel popped out into a window of its own (the desktop window only; a terminal keeps every panel in its
     /// region). The frame around the panel's own native view: its title, whose it is, and the way back.
     /// </summary>
@@ -608,6 +620,30 @@ public static class SurfaceCatalog
             CellsUnderNative,
             "SharpMUTerm.Tui.SharpMUTermApp.TabOverflowLines",
             ["SharpMUTerm.Avalonia.NativeMenu"]),
+        new(
+            TabStrip,
+            typeof(TabStripModel),
+            [
+                // A tab click brings its window forward and focuses its pane; the × closes the front tab; a right click
+                // opens the tab's menu; +N ▾ opens the overflow list. Each is the method the cell strip's click ends in.
+                new(SurfaceActionKind.Pick, "tab", "ActivateStripTab"),
+                new(SurfaceActionKind.Pick, "close", "CloseStripTab"),
+                new(SurfaceActionKind.Pick, "tab menu", "OpenTabMenu"),
+                new(SurfaceActionKind.Target, "overflow", "OpenTabOverflow"),
+            ],
+            NativeChrome,
+            "SharpMUTerm.Tui.TabTitles.Strip",
+            ["SharpMUTerm.Avalonia.NativeTabStrip"]),
+        new(
+            ScrollBand,
+            typeof(ScrollBandModel),
+            [
+                // Jump to latest: End's method. The cells' band is a rule, not a button: End, ⌃End or the ⌃P entry.
+                new(SurfaceActionKind.Target, "jump to latest", "ReturnToLiveTail", CellsVia: ScrollBandModel.LiveCommand),
+            ],
+            CellsUnderNative,
+            "SharpMUTerm.Tui.ScrollSplitBarRenderer.Bar",
+            ["SharpMUTerm.Avalonia.ScrollBandView"]),
         new(
             FloatingPanel,
             typeof(FloatingPanelModel),

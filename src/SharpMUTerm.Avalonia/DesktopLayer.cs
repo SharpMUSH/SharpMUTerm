@@ -50,6 +50,9 @@ internal sealed class DesktopLayer : Canvas
     private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ComposerView> _composers = new(StringComparer.Ordinal);
     private readonly NoticeToasts _toasts;
+    private readonly Dictionary<string, NativeTabStrip> _strips = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ScrollBandView> _bands = new(StringComparer.Ordinal);
+    private (SharpMUTerm.Core.Theming.Theme Theme, NativeTokens Tokens)? _paneTokens;
     private int _noticeAboveRow;
 
     /// <param name="view">The cells.</param>
@@ -68,6 +71,7 @@ internal sealed class DesktopLayer : Canvas
         _pointer.ActionsChanged += () => Dispatcher.UIThread.Post(Sync);
         _pointer.PanelsChanged += () => Dispatcher.UIThread.Post(Sync);
         _pointer.ChromeChanged += () => Dispatcher.UIThread.Post(Sync);
+        _pointer.PaneChromeChanged += () => Dispatcher.UIThread.Post(Sync);
 
         // The chrome first, so every panel and button is drawn over it.
         _header = new NativeHeader(view) { IsVisible = false };
@@ -176,7 +180,74 @@ internal sealed class DesktopLayer : Canvas
         SyncChrome();
         SyncButtons(frame, cell);
         SyncPanels(frame, cell);
+        SyncPaneChrome(cell);
         SyncToasts(frame, cell);
+    }
+
+    /// <summary>The native tab strips by pane id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, NativeTabStrip> Strips => _strips;
+
+    /// <summary>The native scrolled-back bands by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, ScrollBandView> Bands => _bands;
+
+    /// <summary>
+    /// Each pane's tab strip over the row the client left blank for it, and each scrolled-back band over its row: placed
+    /// from the cells, so a strip is exactly its pane's width and one row deep, and never over another cell.
+    /// </summary>
+    private void SyncPaneChrome(Size cell)
+    {
+        var said = _pointer.PaneChrome;
+        var strips = said?.Strips ?? [];
+        var bands = said?.Bands ?? [];
+        NativeTokens tokens = NativeTokens.Dark;
+        if (said is not null)
+        {
+            if (_paneTokens is not { } cached || !ReferenceEquals(cached.Theme, said.Theme))
+            {
+                _paneTokens = (said.Theme, NativeTokens.For(said.Theme));
+            }
+
+            tokens = _paneTokens.Value.Tokens;
+        }
+
+        var origin = CellOrigin;
+        Sync(_strips, strips.Select(s => (s.Model.PaneId, s.Row)), () => new NativeTabStrip(), origin, cell);
+        foreach (var strip in strips)
+        {
+            _strips[strip.Model.PaneId].Show(strip, tokens, said!.Interactive);
+        }
+
+        Sync(_bands, bands.Select(b => (b.Model.WindowId, b.Row)), () => new ScrollBandView(), origin, cell);
+        foreach (var band in bands)
+        {
+            _bands[band.Model.WindowId].Show(band, tokens, said!.Interactive);
+        }
+    }
+
+    private void Sync<T>(Dictionary<string, T> controls, IEnumerable<(string Key, PaneRect Row)> wanted, Func<T> create, Point origin, Size cell)
+        where T : Control
+    {
+        var rows = wanted.ToList();
+        foreach (var stale in controls.Keys.Where(k => rows.All(r => r.Key != k)).ToList())
+        {
+            Children.Remove(controls[stale]);
+            controls.Remove(stale);
+        }
+
+        foreach (var (key, row) in rows)
+        {
+            if (!controls.TryGetValue(key, out var control))
+            {
+                control = create();
+                controls[key] = control;
+                Children.Insert(0, control);
+            }
+
+            SetLeft(control, origin.X + (row.X * cell.Width));
+            SetTop(control, origin.Y + (row.Y * cell.Height));
+            control.Width = row.Width * cell.Width;
+            control.Height = row.Height * cell.Height;
+        }
     }
 
     /// <summary>The toasts over the cell area, their stack sitting on the row the client said the pane area ends at.</summary>

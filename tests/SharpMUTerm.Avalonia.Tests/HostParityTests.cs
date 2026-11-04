@@ -29,7 +29,7 @@ public partial class HostParityTests
     /// <summary>
     /// Every view under each chrome arrangement: the client's chrome in cells (the terminal's, and the window's with
     /// <c>--cell-chrome</c>), the header and rail drawn by the host, and the window as a person runs it — header, rail,
-    /// status footer and the command line's field drawn by the host (<see cref="HostChrome.Desktop"/>). Both hosts are
+    /// status footer, the command line's field and every pane's tab strip drawn by the host (<see cref="HostChrome.Desktop"/>). Both hosts are
     /// told the same arrangement each time, so the comparison is still of drivers and nothing else, over every cell
     /// either one draws.
     /// </summary>
