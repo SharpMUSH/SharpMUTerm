@@ -27,8 +27,17 @@ public readonly record struct SpellRange(int Start, int Length);
 /// <param name="Short">A shorter label for a narrow pane; null when <paramref name="Label"/> is already short.</param>
 public sealed record ComposerKey(string Key, string Label, string? Short = null);
 
-/// <summary>A MOO buffer being edited (MCP simpleedit): what it is called and its type.</summary>
-public sealed record ComposerEdit(string Name, string Type);
+/// <summary>
+/// A buffer being edited rather than a post: a MOO's (MCP simpleedit) or a script file's. Saved as its lines — no
+/// <c>%r</c> join, no escaping, no spelling.
+/// </summary>
+/// <param name="Name">What it is called: the MOO's name for it, or the script's name under the scripts folder.</param>
+/// <param name="Type">The MOO's type (<c>moo-code</c>), or <c>lua</c> for a script.</param>
+/// <param name="Script">Whether this is a script file (⌃S saves it to disk and reloads the character's scripts).</param>
+/// <param name="ReadOnly">Whether it can only be read: a package's script.</param>
+/// <param name="Status">What the last save said (<c>saved · 2 files loaded</c>, or the first load error), or null.</param>
+/// <param name="Line">The line the caret opens on, from 1; 0 for the end.</param>
+public sealed record ComposerEdit(string Name, string Type, bool Script = false, bool ReadOnly = false, string? Status = null, int Line = 0);
 
 /// <summary>
 /// <b>A composer, as both hosts draw it.</b> The terminal draws F1 and the docked panel in cells; the window draws them
@@ -135,7 +144,7 @@ public sealed record ComposerModel(
             armed,
             revision,
             ComposerMarks.For(body, checker),
-            KeysFor(place, edit is not null, checker is not null, canSend, armed, preview))
+            KeysFor(place, edit is not null, checker is not null, canSend, armed, preview, edit))
         {
             Preview = preview && place == ComposerPlace.FullScreen && edit is null,
         };
@@ -151,12 +160,16 @@ public sealed record ComposerModel(
     /// <summary>The docked key row's keyless hint while the editor does not hold the keyboard.</summary>
     public const string ClickHint = "click here to write";
 
+    /// <summary>The key row's keyless hint over a package's script, which can be read and never saved.</summary>
+    public const string ReadOnlyHint = "read only — a package's script";
+
     /// <summary>What F1's key row calls ⌥W while no dictionary marks the post.</summary>
     public const string GetDictionary = "get a dictionary";
 
     /// <summary>The key row for a composer in this state.</summary>
     /// <param name="preview">Whether F1's as-sent preview is showing, which names what ⌥P does next.</param>
-    public static IReadOnlyList<ComposerKey> KeysFor(ComposerPlace place, bool edit, bool dictionary, bool canSend, bool armed, bool preview = false)
+    /// <param name="editing">The edit it is, when <paramref name="edit"/>: a script saves to disk, a package's script only reads.</param>
+    public static IReadOnlyList<ComposerKey> KeysFor(ComposerPlace place, bool edit, bool dictionary, bool canSend, bool armed, bool preview = false, ComposerEdit? editing = null)
     {
         if (place == ComposerPlace.Docked)
         {
@@ -174,6 +187,16 @@ public sealed record ComposerModel(
             docked.Add(new("F1", "full screen", "full"));
             docked.Add(new("Esc", "command line", "back"));
             return docked;
+        }
+
+        if (editing is { Script: true, ReadOnly: true })
+        {
+            return [new(string.Empty, ReadOnlyHint, "read only"), new("Esc", "close")];
+        }
+
+        if (editing is { Script: true })
+        {
+            return [new("⌃S", "save and reload", "save"), new("Esc", "close (keeps unsaved text)", "close")];
         }
 
         if (edit)

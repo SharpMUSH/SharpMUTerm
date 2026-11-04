@@ -49,6 +49,7 @@ internal sealed class ModalOverlay : Panel
             DictionaryOfferSession offer => new DictionaryOfferView(offer, Colours, Done),
             ImportReviewSession import => new ImportReviewView(import, Colours, Done),
             ScriptConsoleSession console => new ScriptConsoleView(console, Colours, Done),
+            ScrollbackViewSession history => new ScrollbackView(history, Colours, Done),
             _ => throw new ArgumentException($"no native view for {session.GetType().Name}", nameof(session)),
         };
         AutomationProperties.SetName(this, _view.Title);

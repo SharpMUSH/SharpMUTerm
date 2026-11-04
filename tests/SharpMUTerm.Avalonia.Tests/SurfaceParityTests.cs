@@ -206,7 +206,7 @@ public class SurfaceParityTests
 
         // F1: the window's editor is handed the model the cell window draws for the same draft, in each mode and for a
         // MOO edit. Two clients, one with the window's editor and one without, opened on the same scene.
-        foreach (var view in new[] { "compose", "compose-literal", "compose-preview", "moo-edit" })
+        foreach (var view in new[] { "compose", "compose-literal", "compose-preview", "moo-edit", "script-edit" })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
             var composer = new FakeComposer();
@@ -260,6 +260,8 @@ public class SurfaceParityTests
             (SurfaceCatalog.Dictionary, "dictionary-offer"),
             (SurfaceCatalog.Import, "import-review"),
             (SurfaceCatalog.ScriptConsole, "script-console"),
+            (SurfaceCatalog.Search, "search-older"),
+            (SurfaceCatalog.HistoryView, "search-history"),
         })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
@@ -842,7 +844,34 @@ public class SurfaceParityTests
         await SameModal("script console: reload", "script-console",
             (app, m) => ((ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!).Reload(),
             app => app.SimulateConsoleKey(new ConsoleKeyInfo('\f', ConsoleKey.L, false, false, true)));
+        await SameModal("script console: edit a script", "script-console",
+            (app, m) => ((ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!).EditScript(),
+            app => app.SimulateConsoleKey(new ConsoleKeyInfo('\u0005', ConsoleKey.E, false, false, true)));
         probed.Add(SurfaceCatalog.ScriptConsole);
+
+        // ⌃F's older history: ⌥H then ⏎ on the first older hit opens the history view on the same page in both; and the
+        // history view's one move, a page down, reads the same page in both.
+        await SameModal("search: older history", "search",
+            (app, m) =>
+            {
+                var search = (SearchSession)m.Open(SurfaceCatalog.Search)!;
+                search.Search(search.Model.Query, false, false, true);
+                search.Go(search.Model.HeldRows);
+            },
+            app =>
+            {
+                app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.H, false, true, false));
+                for (var i = 0; i < app.SearchModelFor("goblin", false, false, true).HeldRows; i++)
+                {
+                    app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                }
+
+                app.SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        await SameModal("history view: scroll", "search-history",
+            (app, m) => ((ScrollbackViewSession)m.Open(SurfaceCatalog.HistoryView)!).Key(ConsoleKey.PageDown),
+            app => app.SimulateHelpKey(new ConsoleKeyInfo('\0', ConsoleKey.PageDown, false, false, false)));
+        probed.Add(SurfaceCatalog.HistoryView);
 
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         // The tab overflow chip: an entry chosen from the window's menu and the same digit in the cell list bring the same
@@ -1095,6 +1124,7 @@ public class SurfaceParityTests
         DictionaryOfferSession offer => offer.Model,
         ImportReviewSession import => import.Model,
         ScriptConsoleSession console => console.Model,
+        ScrollbackViewSession history => history.Model,
         _ => throw new ArgumentException(session.GetType().Name),
     };
 
@@ -1119,6 +1149,7 @@ public class SurfaceParityTests
         "import=" + app.ImportReviewOpen + " " + string.Join(",", app.Configuration.TriggerSets.Select(s => s.Name + ":" + s.Triggers.Count))
             + " " + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters).Select(c => c.Name + (c.Password is null ? string.Empty : "*"))),
         "console=" + app.ScriptConsoleIsOpen + " " + ConsoleState(app),
+        "older=" + (app.HistoryViewModel is { } page ? $"{page.Window}:{page.Top}:{page.Marked}" : "shut"),
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
         "map=" + app.MapDigest(),

@@ -31,6 +31,8 @@ public static class SlashCommands
         new("/map", "/map rename|area|note|symbol|weight <room> …", "Change a room on the map, by its number", "/map rename "),
         new("/map", "/map exit <room> <dir> <room|next> · unexit <room> <dir>", "Add or remove an exit by hand", "/map exit "),
         new("/map", "/map move <room> <dx> <dy> [dz] · delete <room> · undo", "Move or delete a room, or undo the last edit", "/map undo"),
+        new("/script", "/script edit [name]", "Open a script from the scripts folder in the editor; ⌃S saves and reloads (no name lists them)", "/script edit "),
+        new("/script", "/script new <name>", "Start a new script in the scripts folder from a template", "/script new "),
         new("/web", "/web <url>", "Open a page in the built-in web view", "/web "),
         new("/graphics", "/graphics", "Say how pictures are drawn in this terminal, and why", "/graphics"),
         new("/triggers", "/triggers", "Say which trigger rules this window's character runs, and why a window did not open", "/triggers"),

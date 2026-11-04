@@ -55,6 +55,11 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(14, 8, 14, 0), HorizontalAlignment = HorizontalAlignment.Right };
         _delete = ModalParts.Button("Delete key", "Del", colours, DeleteSelected);
         buttons.Children.Add(_delete);
+        if (_session.CanEdit)
+        {
+            buttons.Children.Add(ModalParts.Button("Edit a script…", "Ctrl+E", colours, EditScript));
+        }
+
         buttons.Children.Add(ModalParts.Button("Reload scripts", "Ctrl+L", colours, Reload));
         SetDock(buttons, Dock.Bottom);
         Children.Add(buttons);
@@ -164,6 +169,16 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
     /// <summary>Reload scripts.</summary>
     public void Reload() => _session.Reload();
 
+    /// <summary>Edit a script: the console closes and the client lists the character's scripts (⌃P), the cells' ⌃E.</summary>
+    public void EditScript()
+    {
+        if (_session.CanEdit)
+        {
+            _session.EditScript();
+            _done();
+        }
+    }
+
     private void OnChanged(ScriptConsoleModel model) => Dispatcher.UIThread.Post(() =>
     {
         _model = model;
@@ -261,6 +276,10 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
             case Key.L when e.KeyModifiers == KeyModifiers.Control:
                 e.Handled = true;
                 Reload();
+                return;
+            case Key.E when e.KeyModifiers == KeyModifiers.Control && _session.CanEdit:
+                e.Handled = true;
+                EditScript();
                 return;
             case Key.Enter when _prompt.IsFocused:
                 e.Handled = true;

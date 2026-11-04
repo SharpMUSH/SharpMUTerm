@@ -196,6 +196,12 @@ public static class SurfaceCatalog
     public const string ScriptConsole = "script-console";
 
     /// <summary>
+    /// The read-only history view: a page of a session's scrollback (its ring or its spill) around a line ⌃F's older-history
+    /// search found, opened by ⏎ on that hit.
+    /// </summary>
+    public const string HistoryView = "history-view";
+
+    /// <summary>
     /// The <c>+3 ▾</c> chip a tab strip carries when its tabs do not fit even at their floors, and the list of the tabs
     /// past its edges it opens: a cell list in a terminal, a native menu in the window (the chip itself is cells in both).
     /// </summary>
@@ -218,7 +224,7 @@ public static class SurfaceCatalog
     private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
 
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
-    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, Import, ScriptConsole];
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, Import, ScriptConsole, HistoryView];
 
     /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
     private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
@@ -442,7 +448,8 @@ public static class SurfaceCatalog
             Search,
             typeof(SearchModel),
             [
-                // Typing, ⌥E and ⌥A re-run the search over the pane buffers; ⏎ goes to the row through the one path to a hit.
+                // Typing, ⌥E, ⌥A and ⌥H re-run the search over the pane buffers (and, with ⌥H, the sessions' scrollback off
+                // the UI thread); ⏎ goes to the row through the one path to a hit, or opens an older one in the history view.
                 new(SurfaceActionKind.Modal, "query", "SearchModelFor"),
                 new(SurfaceActionKind.Modal, "go", "GoToSearchHit"),
             ],
@@ -523,10 +530,23 @@ public static class SurfaceCatalog
                 new(SurfaceActionKind.Modal, "run", "RunConsoleLine"),
                 new(SurfaceActionKind.Modal, "delete key", "DeleteStoreKey"),
                 new(SurfaceActionKind.Modal, "reload", "ReloadConsoleScripts"),
+
+                // ⌃E (the window's Edit a script… button): the console closes and the palette lists the script files.
+                new(SurfaceActionKind.Modal, "edit a script", "EditScriptFromConsole"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.ScriptConsoleSurface.Render",
             ModalViews("ScriptConsoleView")),
+        new(
+            HistoryView,
+            typeof(ScrollbackViewModel),
+            [
+                // ↑↓ PgUp PgDn Home End read another page of the scrollback, through the client's one ranged read.
+                new(SurfaceActionKind.Modal, "scroll", "ScrollHistoryView"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.ScrollbackViewSurface.Render",
+            ModalViews("ScrollbackView")),
         new(
             TabOverflow,
             typeof(MenuModel),

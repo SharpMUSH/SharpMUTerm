@@ -201,7 +201,8 @@ internal sealed partial class SharpMUTermApp
                 {
                     NativeModalClosed(session!);
                     _consoleKey = null;
-                }))
+                }),
+                () => OnUiThread(() => ListScriptsToEdit(fromConsole: true)))
             {
                 Theme = _theme.Clone(),
             };
@@ -250,6 +251,9 @@ internal sealed partial class SharpMUTermApp
             case ScriptConsoleSurface.Ask.Reload:
                 ReloadConsoleScripts();
                 break;
+            case ScriptConsoleSurface.Ask.Edit:
+                EditScriptFromConsole();
+                return true;
         }
 
         return true;

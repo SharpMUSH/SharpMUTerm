@@ -22,7 +22,7 @@ internal enum SearchAction
 
 /// <summary>The answer to one keystroke: what to do, and the state it leaves behind.</summary>
 internal readonly record struct SearchDecision(
-    SearchAction Action, string Query, int Selected, bool Regex, bool AllWindows);
+    SearchAction Action, string Query, int Selected, bool Regex, bool AllWindows, bool Older = false);
 
 /// <summary>
 /// The search surface (⌃F), minus the window: what a keystroke means to it, and what it says. Pure, for
@@ -55,7 +55,7 @@ internal static class SearchPrompt
     /// be widened.
     /// </summary>
     internal const string Hints =
-        "type to search · ↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · Esc cancel · ⌃F closes";
+        "type to search · ↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · ⌥H older history · Esc cancel · ⌃F closes";
 
     /// <summary>
     /// The footer's drop-order ladder, longest first: the status row's rule (<c>FocusHints</c>). <see cref="Hints"/>
@@ -66,9 +66,9 @@ internal static class SearchPrompt
     internal static readonly string[] HintLadder =
     [
         Hints,
-        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · Esc cancel · ⌃F closes",
-        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all · Esc cancel · ⌃F closes",
-        "↑↓ · ⏎ go · ⌥E regex · ⌥A all · Esc · ⌃F",
+        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · ⌥H older history · Esc cancel · ⌃F closes",
+        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all · ⌥H older · Esc cancel · ⌃F closes",
+        "↑↓ · ⏎ go · ⌥E regex · ⌥A all · ⌥H older · Esc · ⌃F",
     ];
 
     /// <summary>The longest rung of <see cref="HintLadder"/> that fits <paramref name="width"/> (all of it when unknown).</summary>
@@ -96,9 +96,9 @@ internal static class SearchPrompt
     /// </para>
     /// </summary>
     internal static SearchDecision Interpret(
-        ConsoleKeyInfo key, string query, int selected, int count, bool regex, bool all)
+        ConsoleKeyInfo key, string query, int selected, int count, bool regex, bool all, bool older = false)
     {
-        var state = new SearchDecision(SearchAction.None, query, selected, regex, all);
+        var state = new SearchDecision(SearchAction.None, query, selected, regex, all, older);
 
         if (key.Modifiers.HasFlag(ConsoleModifiers.Control))
         {
@@ -118,6 +118,10 @@ internal static class SearchPrompt
             {
                 ConsoleKey.E => state with { Action = SearchAction.Redraw, Regex = !regex, Selected = 0 },
                 ConsoleKey.A => state with { Action = SearchAction.Redraw, AllWindows = !all, Selected = 0 },
+
+                // ⌥H: older history too — the sessions' scrollback and its spill, searched off the UI thread and listed
+                // after the pane's rows as they are found. H for history; nothing in the app's shortcuts takes it.
+                ConsoleKey.H => state with { Action = SearchAction.Redraw, Older = !older },
                 _ => state,
             };
         }
@@ -212,15 +216,18 @@ internal static class SearchPrompt
         var query = model.Query;
         var all = model.AllWindows;
 
-        var labelWidth = all
-            ? Math.Min(MaxLabelWidth, rows.Select(r => r.WindowLabel.Length).DefaultIfEmpty(0).Max())
+        var labelWidth = all || rows.Any(r => r.IsOlder)
+            ? Math.Min(MaxLabelWidth, rows.Select(r => RowLabel(r, all).Length).DefaultIfEmpty(0).Max())
             : 0;
         var entryWidth = (width > 0 ? width : DefaultEntryWidth) - 4 - (labelWidth > 0 ? labelWidth + 2 : 0);
 
         var lines = new List<string>
         {
             SpreadLR($"[{Label}]search[/] {QueryMarkup(query)}", $"[{Label}]{Escape(model.StateText)}[/]", width),
-            SpreadLR(string.Empty, $"[{Label}]{Escape(model.CountText)}[/]", width),
+            SpreadLR(
+                model.HistoryNote is { } note ? $"[{(model.HistoryRunning ? Accent : Muted)}]{Escape(note)}[/]" : string.Empty,
+                $"[{Label}]{Escape(model.CountText)}[/]",
+                width),
         };
 
         var body = new List<string>();
@@ -233,7 +240,7 @@ internal static class SearchPrompt
         var last = listRows > 0 ? Math.Min(rows.Count, top + listRows - body.Count) : rows.Count;
         for (var i = top; i < last; i++)
         {
-            body.Add(Row(rows[i], i == selected, entryWidth, labelWidth, width));
+            body.Add(Row(rows[i], i == selected, entryWidth, labelWidth, width, all));
         }
 
         while (body.Count < listRows)
@@ -271,10 +278,17 @@ internal static class SearchPrompt
             ? $"[{Ink} on {Accent}] [/]"
             : $"[{Value}]{Escape(query)}[/][{Ink} on {Accent}] [/]";
 
-    private static string Row(SearchRow row, bool selected, int entryWidth, int labelWidth, int width)
+    /// <summary>
+    /// What a row's window column says: the window's name in ⌥A scope, and <c>older</c> on a row from older history — the
+    /// only place a reader can tell a line the pane holds from one ⏎ will open in the history view.
+    /// </summary>
+    private static string RowLabel(SearchRow row, bool all) =>
+        row.IsOlder ? (all ? $"{row.WindowLabel} · older" : "older") : all ? row.WindowLabel : string.Empty;
+
+    private static string Row(SearchRow row, bool selected, int entryWidth, int labelWidth, int width, bool all)
     {
         var (text, matchStart, matchLength) = Elide(row, entryWidth);
-        var label = labelWidth > 0 ? LabelCell(row.WindowLabel, labelWidth) : string.Empty;
+        var label = labelWidth > 0 ? LabelCell(RowLabel(row, all), labelWidth) : string.Empty;
 
         if (selected)
         {

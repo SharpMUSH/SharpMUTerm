@@ -67,7 +67,7 @@ public sealed record ScriptConsoleModel(
     public const int MaxInput = 500;
 
     /// <summary>The keys, in glyphs, as the cells' footer says them (a native view spells them in words).</summary>
-    public const string Keys = "⏎ runs · ↑↓ history · ⇥ store keys · Del deletes a key · ⌃L reloads scripts · Esc closes";
+    public const string Keys = "⏎ runs · ↑↓ history · ⇥ store keys · Del deletes a key · ⌃E edits a script · ⌃L reloads scripts · Esc closes";
 
     /// <summary>What the console says when its scripts printed nothing yet.</summary>
     public const string Empty = "nothing printed yet — try  1 + 1  or  print(world.name)";
@@ -165,6 +165,18 @@ public sealed class ScriptConsoleLog
         }
     }
 
+    /// <summary>How many lines are held now.</summary>
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _lines.Count;
+            }
+        }
+    }
+
     /// <summary>The lines, oldest first.</summary>
     public IReadOnlyList<ScriptConsoleLine> Lines
     {
@@ -199,6 +211,7 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
     private readonly Action<string> _run;
     private readonly Action<string> _delete;
     private readonly Action _reload;
+    private readonly Action? _edit;
 
     /// <param name="model">What the console shows.</param>
     /// <param name="isDark">Whether the client's theme is a dark one.</param>
@@ -206,13 +219,15 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
     /// <param name="delete">Deletes a store key (<c>DeleteStoreKey</c>).</param>
     /// <param name="reload">Reloads the character's scripts (<c>ReloadConsoleScripts</c>).</param>
     /// <param name="closed">Told the console closed.</param>
+    /// <param name="edit">Opens the list of the character's script files to edit (<c>EditScriptFromConsole</c>); null for none.</param>
     public ScriptConsoleSession(
         ScriptConsoleModel model,
         bool isDark,
         Action<string> run,
         Action<string> delete,
         Action reload,
-        Action closed)
+        Action closed,
+        Action? edit = null)
         : base(model, isDark, closed)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -221,7 +236,14 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
         _run = run;
         _delete = delete;
         _reload = reload;
+        _edit = edit;
     }
+
+    /// <summary>Whether the console can open a script to edit.</summary>
+    public bool CanEdit => _edit is not null && Model.CanRun;
+
+    /// <summary>The host's: Edit a script (⌃E). Closes the console first; the client lists the files.</summary>
+    public bool EditScript() => CanEdit && !IsEnded && CloseThen(_edit!);
 
     public override string Surface => "script-console";
 

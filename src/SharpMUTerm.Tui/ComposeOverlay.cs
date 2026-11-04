@@ -14,7 +14,23 @@ namespace SharpMUTerm.Tui;
 /// <param name="Body">The editor's buffer, exactly as typed.</param>
 /// <param name="Escaping">The window's escaping mode when it happened.</param>
 /// <param name="Edit">The MOO buffer this is an edit of, or null for a post.</param>
-internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping, MooEdit? Edit = null);
+/// <param name="Script">The script file this is an edit of, or null.</param>
+internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping, MooEdit? Edit = null, ScriptEdit? Script = null);
+
+/// <summary>
+/// A script file open in the composer: its name under the scripts folder (or <c>package:&lt;id&gt;/&lt;file&gt;</c>), whose
+/// scripts a save reloads, whether it can only be read, what the last save said and the line the caret opens on.
+/// </summary>
+/// <param name="Name">The script's name.</param>
+/// <param name="Owner">The session key of the character whose scripts a save reloads; null for none.</param>
+/// <param name="ReadOnly">A package's script: shown, never saved.</param>
+/// <param name="Status">What the last save said, or null.</param>
+/// <param name="Line">The line the caret opens on, from 1; 0 for the top.</param>
+internal sealed record ScriptEdit(string Name, string? Owner, bool ReadOnly, string? Status = null, int Line = 0)
+{
+    /// <summary>What the editor says this is: the MOO edit's shape, read by both hosts.</summary>
+    internal ComposerEdit Describe() => new(Name, "lua", Script: true, ReadOnly, Status, Line);
+}
 
 /// <summary>
 /// The composer: a full-screen editor for writing a post before sending it, over the workspace.
@@ -51,6 +67,7 @@ internal sealed class ComposeOverlay
     private string _target = string.Empty;
     private bool _canSend;
     private MooEdit? _edit;
+    private ScriptEdit? _script;
     private readonly Func<SpellChecker?>? _openSpelling;
     private SpellChecker? _spelling;
     private bool _spellingOpened;
@@ -80,7 +97,7 @@ internal sealed class ComposeOverlay
     /// The dictionary marking this post, or null: none was found, or this is a MOO edit, whose buffer is as often
     /// code as prose.
     /// </summary>
-    internal SpellChecker? Spelling => _edit is null ? _spelling : null;
+    internal SpellChecker? Spelling => _edit is null && _script is null ? _spelling : null;
 
     /// <summary>⌥W in a post with no dictionary: the host offers to download one.</summary>
     internal event EventHandler? DictionaryWanted;
@@ -120,6 +137,21 @@ internal sealed class ComposeOverlay
     /// </summary>
     internal MooEdit? Edit => _edit;
 
+    /// <summary>The script file being edited, or null. Saved as its lines, like a MOO edit.</summary>
+    internal ScriptEdit? Script => _script;
+
+    /// <summary>Says what the last save of the open script did, in the header, without touching the editor.</summary>
+    internal void SetScriptStatus(string status)
+    {
+        if (_script is null)
+        {
+            return;
+        }
+
+        _script = _script with { Status = status };
+        RefreshBands();
+    }
+
     /// <summary>The header row's markup, so a test can read who the window says it will send to.</summary>
     internal string HeaderMarkup => Render(Model).Header;
 
@@ -127,7 +159,7 @@ internal sealed class ComposeOverlay
     /// What the window draws, as the shared model a native composer draws: the target, the buffer as it stands, the
     /// mode, the edit, the dictionary and its marks, and the key row.
     /// </summary>
-    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend, Preview);
+    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend, Preview, _script);
 
     /// <summary>
     /// Whether F1 shows the post as it will be sent (⌥P), under the editor. One fact for the run in both hosts — the
@@ -143,13 +175,13 @@ internal sealed class ComposeOverlay
     /// it, so the two say the same thing for the same draft. Revision 1: F1 opens on a draft and nothing replaces it
     /// while it is open.
     /// </summary>
-    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend, bool preview = false) =>
+    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend, bool preview = false, ScriptEdit? script = null) =>
         ComposerModel.Create(
             ComposerPlace.FullScreen,
             target,
             body,
             escaping,
-            edit is null ? null : new ComposerEdit(edit.Name, edit.Type),
+            script is not null ? script.Describe() : edit is null ? null : new ComposerEdit(edit.Name, edit.Type),
             spelling,
             canSend,
             armed: true,
@@ -169,7 +201,8 @@ internal sealed class ComposeOverlay
     /// which is the same rule ⏎ follows on the command line.
     /// </param>
     /// <param name="edit">The MOO buffer this opens on, or null for a post.</param>
-    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null)
+    /// <param name="script">The script file this opens on, or null.</param>
+    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null, ScriptEdit? script = null)
     {
         if (_window is not null)
         {
@@ -180,12 +213,17 @@ internal sealed class ComposeOverlay
         _target = target;
         _escaping = escaping;
         _canSend = canSend;
-        _edit = edit;
+        _edit = script is null ? edit : null;
+        _script = script;
 
         _editor = new MultilineEditControl
         {
             WrapMode = WrapMode.WrapWords,
-            ShowLineNumbers = false,
+
+            // A script is code: its lines are numbered, so a load error's file:line can be found, and a package's script is
+            // shown read-only.
+            ShowLineNumbers = script is not null,
+            ReadOnly = script?.ReadOnly == true,
             IsEditing = true,
 
             // Fill, so the editor is the window rather than the control's ten-row default sitting in the
@@ -200,7 +238,9 @@ internal sealed class ComposeOverlay
             // into browse mode — which would make the key mean two different things depending on a
             // state the writer has no reason to be tracking.
             EscapeExitsEditMode = false,
-            PlaceholderText = edit is null
+            PlaceholderText = script is not null
+                ? "An empty script. ⌃S saves it and reloads this character's scripts."
+                : edit is null
                 ? "Write your post. ⏎ starts a new line; the game gets one command with %r breaks."
                 : "Empty. ⌃S saves it empty.",
 
@@ -229,6 +269,11 @@ internal sealed class ComposeOverlay
         }
 
         _editor.SetContent(draft);
+        if (script is { Line: > 0 } at)
+        {
+            _editor.GoToLine(at.Line);
+        }
+
         _editor.ContentChanged += (_, _) => RefreshBands();
         FitEditor();
 
@@ -327,7 +372,7 @@ internal sealed class ComposeOverlay
 
         // ⌥L flips the escaping. Alt rather than Ctrl by this codebase's rule — ESC + a printable byte
         // arrives intact, while half the Ctrl alphabet collapses onto bytes a terminal already spends.
-        if (alt && key.Key == ConsoleKey.L && _edit is null)
+        if (alt && key.Key == ConsoleKey.L && _edit is null && _script is null)
         {
             e.Handled = true;
             _escaping = _escaping == ComposeEscaping.Literal ? ComposeEscaping.AsTyped : ComposeEscaping.Literal;
@@ -345,7 +390,7 @@ internal sealed class ComposeOverlay
         }
 
         // ⌥W with no dictionary is the way to one: the host closes this window (keeping the draft) and asks first.
-        if (alt && key.Key == ConsoleKey.W && _edit is null)
+        if (alt && key.Key == ConsoleKey.W && _edit is null && _script is null)
         {
             e.Handled = true;
             DictionaryWanted?.Invoke(this, EventArgs.Empty);
@@ -355,7 +400,7 @@ internal sealed class ComposeOverlay
         // ⌥P shows the post as it will be sent, and hides it again. Alt by the same rule; P for preview, and nothing in
         // MacroKeys.AppShortcuts, the bar's table or a host's reserved chords takes it. A MOO edit is sent as its lines,
         // which the editor already shows, so it has no preview.
-        if (alt && key.Key == ConsoleKey.P && _edit is null)
+        if (alt && key.Key == ConsoleKey.P && _edit is null && _script is null)
         {
             e.Handled = true;
             Preview = !Preview;
@@ -407,7 +452,7 @@ internal sealed class ComposeOverlay
         // the close so the handler sees the buffer rather than an empty window — and Closed still
         // follows, so a send the host refuses (no connection) keeps the post rather than dropping it on
         // the floor.
-        Send?.Invoke(this, new ComposeResult(_editor.GetContent(), _escaping, _edit));
+        Send?.Invoke(this, new ComposeResult(Body, _escaping, _edit, _script));
     }
 
     /// <summary>Shuts the window, handing the buffer back for the host to keep.</summary>
@@ -418,7 +463,7 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        var result = new ComposeResult(Body, _escaping, _edit);
+        var result = new ComposeResult(Body, _escaping, _edit, _script);
         _system.CloseModalWindow(window);
         Closed?.Invoke(this, result);
     }
@@ -573,7 +618,17 @@ internal sealed class ComposeOverlay
 
         var footerKeys = KeyLadder.Choose(FooterKeys(model), width);
         string header;
-        if (model.Edit is { } edit)
+        if (model.Edit is { Script: true } script)
+        {
+            var status = script.Status is { } said
+                ? $"[{ScreenPalette.Label}]  ·  [/][{(said.StartsWith('!') ? ScreenPalette.Warn : ScreenPalette.Value)}]{Escape(said)}[/]"
+                : string.Empty;
+            header = $"[{ScreenPalette.Accent}]{(script.ReadOnly ? "READ ONLY" : "SCRIPT")}[/] [{ScreenPalette.Value}]{Escape(script.Name)}[/]"
+                + $"[{ScreenPalette.Label}]  lua  ·  {(model.Target.Length == 0 ? "reloads nobody" : "reloads ")}[/]"
+                + (model.Target.Length == 0 ? string.Empty : $"[{ScreenPalette.Value}]{Escape(model.Target)}[/]")
+                + status;
+        }
+        else if (model.Edit is { } edit)
         {
             header = $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
                 + $"[{ScreenPalette.Label}]  {Escape(edit.Type)}  ·  from [/]{target}";
@@ -662,6 +717,7 @@ internal sealed class ComposeOverlay
         _window = null;
         _editor = null;
         _edit = null;
+        _script = null;
         _headerBand = null;
         _footerBand = null;
         _previewBand = null;

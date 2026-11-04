@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Scripts can be edited without leaving the client. ⌃P ▸ Edit script… (or ⌃E in the script console, or `/script edit`)
+  lists your character's script files; one opens in the composer with line numbers, exactly as written. ⌃S saves it,
+  reloads that character's scripts and shows the first error with its file and line. ⌃P ▸ New script… (or
+  `/script new <name>`) starts one. Scripts from a package open read only.
+- ⌃F can search older history. Press ⌥H to search the whole of a character's scrollback, including what has been
+  moved to disk, as well as what the pane still shows. Results stream in below the pane's own, marked "older"; ⏎ on
+  one opens a read-only page of history around it. Capture windows keep no older history, and the search says so.
 - Alerts reach more of the desktop. On Linux (X11, and XWayland) the window is marked as wanting attention, so the
   taskbar or window list highlights it until you come back. On Windows, an installed copy shows a toast as well as
   flashing the taskbar, and the window groups with its Start menu shortcut.

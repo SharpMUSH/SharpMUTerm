@@ -29,6 +29,6 @@ internal static class SnapshotViews
         "packages", "package-review", "package-browse", "send-menu", "layouts", "layout-combat", "layout-roleplay",
         "panel-who", "panel-vitals", "panel-quickbar", "panel-composer",
         "welcome", "welcome-connect", "tour", "reconnect", "help", "help-topic", "dictionary-offer", "import-review", "join-wraps", "join-wraps-f5",
-        "script-console", "channel-capture", "highlight-names", "channels-f5", "scene-log",
+        "script-console", "script-list", "script-edit", "search-older", "search-history", "channel-capture", "highlight-names", "channels-f5", "scene-log",
     ];
 }

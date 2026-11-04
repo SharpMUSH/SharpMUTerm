@@ -121,13 +121,6 @@ internal sealed partial class SharpMUTermApp
 
     // ── ⌃F, ⌃R, ⌥M and the welcome ──────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// The search for <paramref name="query"/> over the windows ⌃F looks in now — the one function both the cell
-    /// surface and the native one ask, so the two list the same rows.
-    /// </summary>
-    internal SearchModel SearchModelFor(string query, bool regex, bool all) =>
-        SearchSurface.Compute(SearchableWindows(all), query, regex, all);
-
     /// <summary>Opens ⌃F in the host's controls; false when the host has none.</summary>
     private bool TryOpenNativeSearch()
     {
@@ -140,15 +133,19 @@ internal sealed partial class SharpMUTermApp
         session = new SearchSession(
             SearchModelFor(string.Empty, false, false),
             ThemeIsDark(),
-            (query, regex, all) => OnUiThread(() =>
+            (query, regex, all, older) => OnUiThread(() =>
             {
                 if (ReferenceEquals(_nativeModal, session))
                 {
-                    session!.Publish(SearchModelFor(query, regex, all));
+                    session!.Publish(SearchModelFor(query, regex, all, older));
                 }
             }),
             (model, index) => OnUiThread(() => GoToSearchHit(model, index)),
-            () => OnUiThread(() => NativeModalClosed(session!)))
+            () => OnUiThread(() =>
+            {
+                CancelDeepSearch();
+                NativeModalClosed(session!);
+            }))
         {
             Theme = _theme.Clone(),
         };
