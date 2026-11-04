@@ -136,6 +136,13 @@ public sealed class CharacterDefinition
     /// </summary>
     public PaneTint Tint { get; set; }
 
+    /// <summary>
+    /// The id of the layout this character's windows use (<see cref="Layouts.LayoutDefinition.Id"/>), or null to
+    /// follow the world's. An id that names no layout any more falls through to the next step of
+    /// <see cref="Layouts.LayoutResolver"/> rather than failing; no migration marks anybody.
+    /// </summary>
+    public string? Layout { get; set; }
+
     /// <summary>Logging is configured per character.</summary>
     public LoggingSettings Logging { get; set; } = new();
 
@@ -179,6 +186,7 @@ public sealed class CharacterDefinition
         OnDisconnect = OnDisconnect,
         TriggerSets = new List<string>(TriggerSets),
         Tint = Tint,
+        Layout = Layout,
         Logging = new LoggingSettings
         {
             Format = Logging.Format,
