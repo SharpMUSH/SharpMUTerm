@@ -141,6 +141,46 @@ public class NoticeToastTests
     }
 
     /// <summary>
+    /// A native quick bar across the bottom of the pane area: a toast is lifted above its keys, as above a legend. And
+    /// while something modal is in front the toasts are hidden rather than left under it.
+    /// </summary>
+    [Test]
+    public async Task AToastStaysOffTheQuickBarAndHidesWhileAModalIsInFront()
+    {
+        var (bar, rects, hiddenUnderModal, backAfter) = await Run((window, view, layer, driver) =>
+        {
+            var model = new QuickBarModel([new QuickBarItem("F1", "F1", "look", Fires: true)]);
+            var notices = (IPointerPresenter)driver.Pointer;
+            notices.Panels(
+                [new PanelOverlay(PanelIds.QuickBar, "panel:quick-bar:demo", new PaneRect(0, 16, 80, 2), new PanelInk("#33ccff", "#ffaa33", "#555555"), null, QuickBar: model, Pick: _ => { })]);
+            notices.Notice(Overlay(1, "Using the Combat layout: the game sends vitals.", null, _ => { }, aboveRow: 18));
+            Drain();
+            window.UpdateLayout();
+            driver.Flush();
+            Drain();
+            var buttons = layer.QuickBars.Values.Single();
+            var topLeft = buttons.TranslatePoint(new Point(0, 0), layer.Toasts)!.Value;
+            var bar = new Rect(topLeft, buttons.Bounds.Size);
+            var rects = layer.Toasts.Rects();
+
+            var modal = true;
+            layer.ToastsHidden = () => modal;
+            driver.Flush();
+            Drain();
+            var hidden = !layer.Toasts.IsVisible;
+            modal = false;
+            driver.Flush();
+            Drain();
+            return (bar, rects, hidden, layer.Toasts.IsVisible);
+        }, columns: 80, rows: 20);
+
+        await Assert.That(rects).IsNotEmpty();
+        await Assert.That(rects.Any(r => r.Intersects(bar))).IsFalse().Because("no toast covers a quick bar key");
+        await Assert.That(hiddenUnderModal).IsTrue().Because("a toast is never left under a settings window, ⌃P or a modal");
+        await Assert.That(backAfter).IsTrue();
+    }
+
+    /// <summary>
     /// In the combat layout the map sits right of the output, down to the command line, and its legend is in its bottom-left
     /// corner — under the toasts' column. A toast is stacked above the legend rather than over it.
     /// </summary>

@@ -192,8 +192,26 @@ internal sealed class DesktopLayer : Canvas
             }
         }
 
+        // The native quick bars and docked composers too: a quick bar's keys and the post being typed are what a toast must
+        // never sit on, so a toast is lifted above them as it is above a legend.
+        foreach (var view in _quickBars.Values.Cast<Control>().Concat(_composers.Values))
+        {
+            if (view.IsVisible && view.Width > 0 && view.Height > 0)
+            {
+                avoid.Add(new Rect(GetLeft(view) - origin.X, GetTop(view) - origin.Y, view.Width, view.Height));
+            }
+        }
+
         _toasts.Avoid = avoid;
+
+        // Hidden, not stacked under it, while something modal is in front: a settings window is a window of its own and a
+        // toast under it showed as a clipped fragment past its edge, and ⌃P and the modals have a scrim the toast would sit
+        // on. The status row still says the notice, and the toast keeps its clock, so it is gone when its time is.
+        _toasts.IsVisible = !(ToastsHidden?.Invoke() ?? false) && _pointer.Chrome is not { Interactive: false };
     }
+
+    /// <summary>Whether something modal the window draws is in front, which hides the toasts. Set by the main window.</summary>
+    internal Func<bool>? ToastsHidden { get; set; }
 
     /// <summary>The notice toasts. Internal for tests.</summary>
     internal NoticeToasts Toasts => _toasts;

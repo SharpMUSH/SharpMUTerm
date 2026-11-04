@@ -488,7 +488,7 @@ public class ScreenModelTests
 
         await Assert.That(edits.Apply(height, "0")).IsNotNull();
         await Assert.That(edits.Apply(height, "21")).IsNotNull();
-        await Assert.That(input.Rows).IsEqualTo(3);
+        await Assert.That(input.Rows).IsEqualTo(1);
     }
 
     /// <summary>

@@ -217,10 +217,11 @@ public sealed class InputSettings
     public bool ExcludeCredentials { get; set; } = true;
 
     /// <summary>
-    /// How many lines tall the command line is before anything is typed into it. Three by default, so
-    /// a wrapped line has somewhere to wrap to without the input resizing on the first keystroke.
+    /// How many lines tall the command line is before anything is typed into it. One by default: the bar
+    /// grows a row at a time as a line wraps (up to <see cref="MaxRows"/>), so the rows it would hold empty at
+    /// rest go to the output instead. A configuration that saved another value keeps it.
     /// </summary>
-    public int Rows { get; set; } = 3;
+    public int Rows { get; set; } = 1;
 
     /// <summary>
     /// The most lines the command line grows to as it wraps. Past this it scrolls inside itself rather

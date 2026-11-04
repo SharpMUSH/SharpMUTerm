@@ -167,7 +167,7 @@ public class NativeComposerRoutingTests
         await Assert.That(model.Place).IsEqualTo(ComposerPlace.FullScreen);
         await Assert.That(model.Target).IsEqualTo("Ann");
         await Assert.That(model.CanSend).IsTrue();
-        await Assert.That(model.Keys.Select(k => k.Key)).IsEquivalentTo(new[] { "⌃S", "⌥L", "Esc" });
+        await Assert.That(model.Keys.Select(k => k.Key)).IsEquivalentTo(new[] { "⌃S", "⌥L", "⌥P", "Esc" });
     }
 
     [Test]

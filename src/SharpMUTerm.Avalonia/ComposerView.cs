@@ -41,6 +41,10 @@ internal sealed class ComposerView : Border
     private readonly TextBlock _title;
     private readonly TextBlock _target;
     private readonly StackPanel _chips;
+    private readonly TextBlock _count;
+    private readonly Border _preview;
+    private readonly TextBlock _previewHeading;
+    private readonly TextBlock _previewText;
     private readonly Border _footer;
     private readonly WrapPanel _keys;
     private readonly Border _rule;
@@ -78,16 +82,30 @@ internal sealed class ComposerView : Border
         _title = new TextBlock { FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         _target = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         _chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        _count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
         var headerRow = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_title, Dock.Left);
+        DockPanel.SetDock(_count, Dock.Right);
         DockPanel.SetDock(_chips, Dock.Right);
         headerRow.Children.Add(_title);
+        headerRow.Children.Add(_count);
         headerRow.Children.Add(_chips);
         headerRow.Children.Add(_target);
         _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(22, 10) : new Thickness(12, 3, 8, 3) };
 
         _keys = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         _footer = new Border { Child = _keys, Padding = fullScreen ? new Thickness(22, 8) : new Thickness(12, 2, 8, 3) };
+
+        // F1's as-sent preview (⌥P): the one command ⌃S sends, in the editor's face, under the editor.
+        _previewHeading = new TextBlock { Text = "AS SENT", FontWeight = FontWeight.Bold, Margin = new Thickness(0, 0, 0, 4) };
+        _previewText = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxLines = 4, TextTrimming = TextTrimming.CharacterEllipsis };
+        _preview = new Border
+        {
+            Child = new StackPanel { Children = { _previewHeading, _previewText } },
+            Padding = new Thickness(22, 8),
+            IsVisible = false,
+        };
+        AutomationProperties.SetName(_preview, "As sent");
 
         // The armed rule down the docked editor's left edge: the cell composer's ▌ marker, in the accent.
         _rule = new Border { Width = 3, HorizontalAlignment = HorizontalAlignment.Left };
@@ -97,12 +115,14 @@ internal sealed class ComposerView : Border
         body.Children.Add(_marks);
         body.Children.Add(_rule);
 
-        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto") };
         Grid.SetRow(_header, 0);
         Grid.SetRow(body, 1);
-        Grid.SetRow(_footer, 2);
+        Grid.SetRow(_preview, 2);
+        Grid.SetRow(_footer, 3);
         grid.Children.Add(_header);
         grid.Children.Add(body);
+        grid.Children.Add(_preview);
         grid.Children.Add(_footer);
         Child = grid;
         ApplyFont();
@@ -132,7 +152,7 @@ internal sealed class ComposerView : Border
     internal ComposerSession? Session => _session;
 
     /// <summary>The header's words, joined, for a test.</summary>
-    internal string HeaderText => string.Join("  ", new[] { _title.Text, _target.Text }
+    internal string HeaderText => string.Join("  ", new[] { _title.Text, _target.Text, _count.Text }
         .Concat(_chips.Children.OfType<Border>().Select(b => (b.Child as TextBlock)?.Text)).Where(t => !string.IsNullOrEmpty(t)));
 
     /// <summary>The key row's words, joined, for a test.</summary>
@@ -242,8 +262,14 @@ internal sealed class ComposerView : Border
         }
     }
 
+    /// <summary>The header's length cell as drawn. Internal for tests.</summary>
+    internal string CountText => _count.Text ?? string.Empty;
+
+    /// <summary>The as-sent preview's command, or null while it is hidden. Internal for tests.</summary>
+    internal string? PreviewText => _preview.IsVisible ? _previewText.Text : null;
+
     private static bool SameChrome(ComposerModel a, ComposerModel b) =>
-        a.Target == b.Target && a.Escaping == b.Escaping && a.Edit == b.Edit && a.Dictionary == b.Dictionary
+        a.Preview == b.Preview && a.Target == b.Target && a.Escaping == b.Escaping && a.Edit == b.Edit && a.Dictionary == b.Dictionary
         && a.CanSend == b.CanSend && a.Armed == b.Armed && a.Keys.SequenceEqual(b.Keys) && a.Verb == b.Verb;
 
     // ── drawing ──────────────────────────────────────────────────────────────────────────────
@@ -274,6 +300,12 @@ internal sealed class ComposerView : Border
         _editor.MarkColour = Warn;
         _title.Foreground = new SolidColorBrush(Accent);
         _target.Foreground = new SolidColorBrush(_text);
+        _count.Foreground = new SolidColorBrush(Dim);
+        _preview.Background = new SolidColorBrush(Band);
+        _preview.BorderBrush = _header.BorderBrush;
+        _preview.BorderThickness = new Thickness(0, 1, 0, 0);
+        _previewHeading.Foreground = new SolidColorBrush(Accent);
+        _previewText.Foreground = new SolidColorBrush(_text);
         _marks.InvalidateVisual();
     }
 
@@ -283,6 +315,10 @@ internal sealed class ComposerView : Border
         var ui = Math.Clamp(cell * 0.72, 11, 15);
         _title.FontSize = ui;
         _target.FontSize = ui;
+        _count.FontSize = ui - 1;
+        _previewHeading.FontSize = ui - 1.5;
+        _previewText.FontSize = Math.Clamp(cell * 0.72, 11, 16);
+        _previewText.FontFamily = new FontFamily($"{_view.Renderer.Fonts.FamilyName}, {CellFonts.BundledFamily}, DejaVu Sans Mono, Liberation Mono, Consolas, Menlo, monospace");
         _editor.FontSize = Proportional ? Math.Clamp(cell * 0.86, 12, 19) : Math.Clamp(cell * 0.8, 11, 18);
         _editor.FontFamily = Proportional
             ? FontFamily.Default
@@ -321,6 +357,9 @@ internal sealed class ComposerView : Border
                 _chips.Children.Add(Chip(model.Dictionary ?? "no dictionary", model.Dictionary is null ? Dim : _text, ui - 1.5));
             }
         }
+
+        _preview.IsVisible = _fullScreen && model.Preview && model.Edit is null;
+        SyncLength();
 
         _keys.Children.Clear();
         var narrow = !_fullScreen && Bounds.Width is > 0 and < 560;
@@ -370,8 +409,29 @@ internal sealed class ComposerView : Border
 
     // ── text ─────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The length cell and the preview, from the editor's own text: the model catches up with typing a moment later, and
+    /// a count that lagged a keystroke would read as wrong. Counted by <see cref="ComposerModel.SentLength"/>, the cells' rule.
+    /// </summary>
+    private void SyncLength()
+    {
+        if (_model is not { } model)
+        {
+            return;
+        }
+
+        var text = _editor.Text ?? string.Empty;
+        _count.Text = ComposerModel.CharactersLabel(ComposerModel.SentLength(text, model.Escaping, model.Edit is not null));
+        if (_preview.IsVisible)
+        {
+            var command = ComposeMessage.Build(text.Replace("\r\n", "\n", StringComparison.Ordinal), model.Escaping);
+            _previewText.Text = command ?? "nothing yet";
+        }
+    }
+
     private void OnTextChanged()
     {
+        SyncLength();
         var text = _editor.Text ?? string.Empty;
         if (_session is { } session)
         {
@@ -422,6 +482,15 @@ internal sealed class ComposerView : Border
             case (Key.L, KeyModifiers.Alt):
                 e.Handled = true;
                 session.ToggleEscaping();
+                return;
+
+            case (Key.P, KeyModifiers.Alt):
+                e.Handled = true;
+                if (_fullScreen)
+                {
+                    session.TogglePreview();
+                }
+
                 return;
 
             case (Key.W, KeyModifiers.Alt):

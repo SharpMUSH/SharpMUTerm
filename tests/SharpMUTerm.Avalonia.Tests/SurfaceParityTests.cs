@@ -205,7 +205,7 @@ public class SurfaceParityTests
 
         // F1: the window's editor is handed the model the cell window draws for the same draft, in each mode and for a
         // MOO edit. Two clients, one with the window's editor and one without, opened on the same scene.
-        foreach (var view in new[] { "compose", "compose-literal", "moo-edit" })
+        foreach (var view in new[] { "compose", "compose-literal", "compose-preview", "moo-edit" })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
             var composer = new FakeComposer();
@@ -304,6 +304,19 @@ public class SurfaceParityTests
             await Assert.That(app.DrawnModel(SurfaceCatalog.FloatingPanel, vitals.WindowId)).IsEqualTo((object)floating.Model).Because("floating-panel");
             await Assert.That(floating.Content.Vitals).IsEqualTo(app.ReadVitals(DemoScene.ActiveSessionKey)).Because("floating-panel: the panel inside");
             covered.Add(SurfaceCatalog.FloatingPanel);
+        }
+
+        // The tab overflow chip: the menu the window opens is the list the cells recorded for that strip in the same frame.
+        {
+            using var driver = new AvaloniaConsoleDriver(56, 20);
+            await using var app = App(driver, DemoScene.Build());
+            app.RenderSnapshot("tabs-many");
+            var (paneId, recorded) = app.TabOverflowMenus.Single();
+            await Assert.That(app.OpenTabOverflow(paneId)).IsTrue();
+            await Assert.That(driver.Pointer.LastModelMenu).IsNotNull().Because("tab-overflow: the window opens a native menu");
+            await Assert.That((object)driver.Pointer.LastModelMenu!.Value.Menu).IsEqualTo(app.DrawnModel(SurfaceCatalog.TabOverflow, paneId)).Because("tab-overflow");
+            await Assert.That(recorded.Entries).IsNotEmpty();
+            covered.Add(SurfaceCatalog.TabOverflow);
         }
 
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
@@ -674,6 +687,31 @@ public class SurfaceParityTests
         probed.Add(SurfaceCatalog.Welcome);
 
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
+        // The tab overflow chip: an entry chosen from the window's menu and the same digit in the cell list bring the same
+        // hidden tab forward.
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(56, 20);
+            await using var a = App(nativeDriver, DemoScene.Build());
+            a.RenderSnapshot("tabs-many");
+            var before = Outcome(a);
+            var (pane, _) = a.TabOverflowMenus.Single();
+            a.OpenTabOverflow(pane);
+            var (menu, dispatch) = nativeDriver.Pointer.LastModelMenu!.Value;
+            dispatch(menu.Entries[0].Command!);
+
+            using var cellDriver = new AvaloniaConsoleDriver(56, 20);
+            await using var b = App(cellDriver, DemoScene.Build());
+            b.RenderSnapshot("tabs-many");
+            b.OpenTabOverflow(b.TabOverflowMenus.Single().Key, cells: true);
+            b.SendMenu.SimulateKey(new ConsoleKeyInfo('1', ConsoleKey.D1, false, false, false));
+
+            await Assert.That(Outcome(a)).IsNotEqualTo(before).Because("tab-overflow: the native choice did something");
+            await Assert.That(Outcome(a)).IsEqualTo(Outcome(b)).Because("tab-overflow");
+            await Assert.That(a.ActiveWindowId()).IsEqualTo(b.ActiveWindowId());
+        }
+
+        probed.Add(SurfaceCatalog.TabOverflow);
+
         await Assert.That(probed).IsEquivalentTo(acting).Because("every native surface with actions has a probe here");
     }
 

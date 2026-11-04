@@ -91,6 +91,7 @@ internal sealed class TerminalView : Control
             InvalidateVisual();
         });
         pointer.MenuRequested += (_, items) => Dispatcher.UIThread.Post(() => OpenMenu(items));
+        pointer.ModelMenuRequested += (_, menu, dispatch) => Dispatcher.UIThread.Post(() => OpenMenu(NativeMenu.Build(menu, dispatch, PlacementMode.Pointer, this)));
     }
 
     /// <summary>
@@ -581,10 +582,11 @@ internal sealed class TerminalView : Control
     }
 
     /// <summary>The client's right-click menu, as a native one. Each entry runs on the client's thread by itself.</summary>
-    private void OpenMenu(IReadOnlyList<PointerMenuItem> items)
+    private void OpenMenu(IReadOnlyList<PointerMenuItem> items) => OpenMenu(NativeMenu.Build(items, PlacementMode.Pointer, this));
+
+    private void OpenMenu(ContextMenu menu)
     {
         CloseTip();
-        var menu = NativeMenu.Build(items, PlacementMode.Pointer, this);
         menu.Closed += (_, _) => Focus();
         OpenedMenu = menu;
         menu.Open(this);

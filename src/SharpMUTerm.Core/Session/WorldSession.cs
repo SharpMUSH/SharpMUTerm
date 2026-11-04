@@ -603,6 +603,7 @@ public sealed class WorldSession : IAsyncDisposable
         // timer still pending checks it is releasing for this joiner before it does anything.
         _reflowRelease?.Dispose();
         _wrapJoiner = new ServerWrapJoiner();
+        _serverWrapColumn = 0;
 
         // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
         _emoji = NewEmoji(World.Emoji);
@@ -697,6 +698,14 @@ public sealed class WorldSession : IAsyncDisposable
     private ServerWrapJoiner _wrapJoiner = new();
 
     /// <summary>
+    /// The column this connection's server wraps its text at, as <see cref="ServerWrapJoiner.WrapColumn"/> has learnt it
+    /// (whether or not this world joins), or null while it is unknown. Written on the read loop, read on any thread.
+    /// </summary>
+    public int? ServerWrapColumn => Volatile.Read(ref _serverWrapColumn) is > 0 and var column ? column : null;
+
+    private int _serverWrapColumn;
+
+    /// <summary>
     /// Serialises the read loop (output, a parser swap, the disconnect) against the timer that releases a held
     /// line (<see cref="ReflowHold"/>). Nothing on the UI thread or in a script takes it, so it cannot close a
     /// cycle with the script host's lock, which a trigger script takes from inside it.
@@ -723,6 +732,8 @@ public sealed class WorldSession : IAsyncDisposable
         if (!World.JoinWrappedLines)
         {
             ReleaseHeldLine();
+            _wrapJoiner.Observe(line);
+            _serverWrapColumn = _wrapJoiner.WrapColumn ?? 0;
             ProcessOutputLine(line);
             return;
         }
@@ -731,6 +742,8 @@ public sealed class WorldSession : IAsyncDisposable
         {
             ProcessOutputLine(ready);
         }
+
+        _serverWrapColumn = _wrapJoiner.WrapColumn ?? 0;
 
         if (_wrapJoiner.Holding)
         {

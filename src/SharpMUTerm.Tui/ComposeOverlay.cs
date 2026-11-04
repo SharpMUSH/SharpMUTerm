@@ -54,6 +54,8 @@ internal sealed class ComposeOverlay
     private readonly Func<SpellChecker?>? _openSpelling;
     private SpellChecker? _spelling;
     private bool _spellingOpened;
+    private MarkupControl? _headerBand;
+    private MarkupControl? _previewBand;
 
     /// <param name="system">The window system the composer opens in.</param>
     /// <param name="spelling">
@@ -114,14 +116,23 @@ internal sealed class ComposeOverlay
     /// What the window draws, as the shared model a native composer draws: the target, the buffer as it stands, the
     /// mode, the edit, the dictionary and its marks, and the key row.
     /// </summary>
-    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend);
+    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend, Preview);
+
+    /// <summary>
+    /// Whether F1 shows the post as it will be sent (⌥P), under the editor. One fact for the run in both hosts — the
+    /// native F1 reads and flips this same property — and never saved: it is a way of looking, not a setting.
+    /// </summary>
+    internal bool Preview { get; set; }
+
+    /// <summary>How many rows the as-sent preview takes when it is showing: a heading row and the command under it.</summary>
+    internal const int PreviewRows = 4;
 
     /// <summary>
     /// F1's model for a draft, in either host: the cell window builds its own from this, and a native F1 is opened on
     /// it, so the two say the same thing for the same draft. Revision 1: F1 opens on a draft and nothing replaces it
     /// while it is open.
     /// </summary>
-    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend) =>
+    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend, bool preview = false) =>
         ComposerModel.Create(
             ComposerPlace.FullScreen,
             target,
@@ -131,7 +142,8 @@ internal sealed class ComposeOverlay
             spelling,
             canSend,
             armed: true,
-            revision: 1);
+            revision: 1,
+            preview: preview);
 
     /// <summary>
     /// Opens the composer on <paramref name="draft"/>, or closes it when it is already open — the same
@@ -206,15 +218,22 @@ internal sealed class ComposeOverlay
         }
 
         _editor.SetContent(draft);
+        _editor.ContentChanged += (_, _) => RefreshBands();
         FitEditor();
 
-        _window = new WindowBuilder(_system)
+        var builder = new WindowBuilder(_system)
             .AsModal()
             .Maximized()
             .Frameless()
             .WithColors(_scheme.Colour(ScreenPalette.PanelFg), _scheme.Colour(ScreenPalette.PanelBg))
             .AddControl(HeaderBand())
-            .AddControl(_editor)
+            .AddControl(_editor);
+        if (Model.Preview)
+        {
+            builder.AddControl(PreviewBand());
+        }
+
+        _window = builder
             .AddControl(FooterBand())
             .OnClosed((_, _) => Reset())
             .Build();
@@ -249,7 +268,27 @@ internal sealed class ComposeOverlay
         }
 
         _editor.SetContent(_editor.GetContent() + text);
+        RefreshBands();
     }
+
+    /// <summary>
+    /// Re-says what changes as the post is typed — the header's length cell and the as-sent preview — without touching
+    /// the editor, so the caret and the undo stack stay where they were.
+    /// </summary>
+    private void RefreshBands()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        var model = Model;
+        _headerBand?.SetContent(new List<string> { _scheme.Paint(Render(model, Width).Header, ScreenPalette.HeaderBg) });
+        _previewBand?.SetContent(_scheme.Lines(PreviewLines(model, Width), ScreenPalette.FooterBg));
+    }
+
+    /// <summary>The screen's width in cells, which the header and the preview are laid out to.</summary>
+    private int Width => _system.ConsoleDriver.ScreenSize.Width;
 
     private void OnKey(object? sender, KeyPressedEventArgs e)
     {
@@ -289,6 +328,17 @@ internal sealed class ComposeOverlay
         {
             e.Handled = true;
             AddWordAtCaret();
+            return;
+        }
+
+        // ⌥P shows the post as it will be sent, and hides it again. Alt by the same rule; P for preview, and nothing in
+        // MacroKeys.AppShortcuts, the bar's table or a host's reserved chords takes it. A MOO edit is sent as its lines,
+        // which the editor already shows, so it has no preview.
+        if (alt && key.Key == ConsoleKey.P && _edit is null)
+        {
+            e.Handled = true;
+            Preview = !Preview;
+            Redraw();
             return;
         }
 
@@ -367,7 +417,17 @@ internal sealed class ComposeOverlay
         window.ClearControls();
         window.AddControl(HeaderBand());
         window.AddControl(_editor);
+        if (Model.Preview)
+        {
+            window.AddControl(PreviewBand());
+        }
+        else
+        {
+            _previewBand = null;
+        }
+
         window.AddControl(FooterBand());
+        FitEditor();
         window.Invalidate(redrawAll: true);
         window.FocusManager.SetFocus(_editor, FocusReason.Programmatic);
     }
@@ -380,9 +440,57 @@ internal sealed class ComposeOverlay
     /// </summary>
     private MarkupControl HeaderBand()
     {
-        var band = ScreenChrome.Band(Render(Model).Header, ScreenPalette.HeaderBg, _scheme);
+        var band = ScreenChrome.Band(Render(Model, Width).Header, ScreenPalette.HeaderBg, _scheme);
         band.StickyPosition = StickyPosition.Top;
+        _headerBand = band;
         return band;
+    }
+
+    /// <summary>The as-sent preview, pinned above the footer: <see cref="PreviewRows"/> rows on the footer's plane.</summary>
+    private MarkupControl PreviewBand()
+    {
+        var band = ScreenChrome.Panel(PreviewLines(Model, Width), _scheme, ScreenPalette.FooterBg);
+        band.BackgroundColor = _scheme.Colour(ScreenPalette.FooterBg);
+        band.HorizontalAlignment = HorizontalAlignment.Stretch;
+        band.StickyPosition = StickyPosition.Bottom;
+        _previewBand = band;
+        return band;
+    }
+
+    /// <summary>
+    /// The preview's rows for <paramref name="model"/>: a heading, then the command ⌃S would send, cut into rows of
+    /// <paramref name="width"/> characters — hard, not at words, because this shows the exact characters the game gets
+    /// and a wrap at a space would hide one — ending in <c>…</c> when it runs past the rows there are. Always
+    /// <see cref="PreviewRows"/> rows, so typing never moves the editor.
+    /// </summary>
+    internal static IReadOnlyList<string> PreviewLines(ComposerModel model, int width)
+    {
+        width = Math.Max(10, width);
+        var command = model.Command ?? string.Empty;
+        var lines = new List<string>
+        {
+            $"[{ScreenPalette.Accent}]AS SENT[/][{ScreenPalette.Label}]  the one command ⌃S sends · ⌥P hides this[/]",
+        };
+        var rows = PreviewRows - 1;
+        for (var row = 0; row < rows; row++)
+        {
+            var start = row * width;
+            if (start >= command.Length)
+            {
+                lines.Add(row == 0 && command.Length == 0 ? $"[{ScreenPalette.Muted}]nothing yet[/]" : string.Empty);
+                continue;
+            }
+
+            var piece = command.Substring(start, Math.Min(width, command.Length - start));
+            if (row == rows - 1 && start + width < command.Length)
+            {
+                piece = piece[..^1] + "…";
+            }
+
+            lines.Add($"[{ScreenPalette.Value}]{Escape(piece)}[/]");
+        }
+
+        return lines;
     }
 
     private MarkupControl FooterBand()
@@ -399,7 +507,12 @@ internal sealed class ComposeOverlay
     /// rule as the settings screens: every key printed here works, and none that works is hidden. There is
     /// deliberately no <c>⌃F find</c> — the control has a find API but no chord bound to it.
     /// </summary>
-    internal static (string Header, string Footer) Render(ComposerModel model)
+    /// <param name="model">What to draw.</param>
+    /// <param name="width">
+    /// The row's width in cells: the length cell is set at its right edge and the rest gives way before it. Zero puts the
+    /// length cell on the end, for a caller with no screen.
+    /// </param>
+    internal static (string Header, string Footer) Render(ComposerModel model, int width = 0)
     {
         var target = model.Target.Length == 0
             ? $"[{ScreenPalette.Warn}]no connection[/]"
@@ -426,6 +539,9 @@ internal sealed class ComposeOverlay
                 + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}";
         }
 
+        var length = $"[{ScreenPalette.Value}]{ComposerModel.CharactersLabel(model.Characters)}[/] ";
+        header = width > 0 ? SpreadLR(header, length, width) : $"{header}[{ScreenPalette.Label}]  ·  [/]{length}";
+
         var footer = string.Join(
             $"[{ScreenPalette.Label}] · [/]",
             model.Keys.Select(k => $"[{ScreenPalette.Accent}]{Escape(k.Key)}[/][{ScreenPalette.Label}] {Escape(k.Label)}[/]"));
@@ -450,7 +566,7 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        _editor.ViewportHeight = Math.Max(1, _system.ConsoleDriver.ScreenSize.Height - ChromeRows);
+        _editor.ViewportHeight = Math.Max(1, _system.ConsoleDriver.ScreenSize.Height - ChromeRows - (Model.Preview ? PreviewRows : 0));
     }
 
     /// <summary>The header and footer bands, which the editor's height is whatever is left over from.</summary>
@@ -476,5 +592,7 @@ internal sealed class ComposeOverlay
         _window = null;
         _editor = null;
         _edit = null;
+        _headerBand = null;
+        _previewBand = null;
     }
 }

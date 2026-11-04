@@ -262,9 +262,16 @@ internal sealed class DockedComposer
         var verb = model.Verb;
         var mode = model.Escaping == ComposeEscaping.Literal ? $"[{_accent}]literal[/]" : "[dim]as typed[/]";
         var marker = model.Armed ? $"[{_accent}]▌[/]" : " ";
+        var title = $"{marker}[bold {_accent}]COMPOSE[/]" + (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {mode}";
+
+        // The length cell at the right edge, as F1 has it; the title gives way first, and a pane too narrow for both
+        // keeps the title.
+        var length = $"[dim]{ComposerModel.CharactersLabel(model.Characters)}[/] ";
         _header.SetContent(new List<string>
         {
-            $"{marker}[bold {_accent}]COMPOSE[/]" + (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {mode}",
+            _width <= 0 ? $"{title}  {length}"
+                : _width >= VisibleLength(title) + VisibleLength(length) + 2 ? SpreadLR(title, length, _width)
+                : ElideVisible(title, _width),
         });
 
         var footer = KeyRow(model.Keys, shortForm: false);

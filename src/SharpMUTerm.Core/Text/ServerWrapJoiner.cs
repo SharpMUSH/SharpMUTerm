@@ -211,8 +211,11 @@ public sealed class ServerWrapJoiner
         return new StyledLine(spans, previous.RuleColor, previous.IsPrompt);
     }
 
-    /// <summary>Records a line's length towards the wrap column. Blank lines say nothing about it.</summary>
-    private void Observe(StyledLine line)
+    /// <summary>
+    /// Records a line's length towards the wrap column. Blank lines say nothing about it. <see cref="Push"/> does this
+    /// itself; a session that is not joining calls it alone, so the wrap column is known before the player turns joining on.
+    /// </summary>
+    public void Observe(StyledLine line)
     {
         var length = line.Text.TrimEnd().Length;
         if (length == 0 || line.IsPrompt)

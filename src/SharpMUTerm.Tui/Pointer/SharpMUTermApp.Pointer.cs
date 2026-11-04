@@ -224,6 +224,13 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
+        // The tab strip's +N ▾ chip lists the tabs past its edges; it is painted over the strip's last cells.
+        if (pressed && !dragged && TabOverflowAt(point) is { } overflowing)
+        {
+            OpenTabOverflow(overflowing, point);
+            return;
+        }
+
         if (flags.Contains(MouseFlags.Button1DoubleClicked) && DividerAt(point) is { } evened)
         {
             if (PaneResize.Even(evened.Split))

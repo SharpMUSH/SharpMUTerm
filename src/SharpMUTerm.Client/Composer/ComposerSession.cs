@@ -18,6 +18,9 @@ public sealed record ComposerCallbacks
     /// <summary>⌥L.</summary>
     public Action? ToggleEscaping { get; init; }
 
+    /// <summary>⌥P: F1's as-sent preview on or off. Null for a composer with none (the docked panel).</summary>
+    public Action? TogglePreview { get; init; }
+
     /// <summary>⌥W, or the menu's <em>Add to dictionary</em>, with the word.</summary>
     public Action<string>? AddWord { get; init; }
 
@@ -127,6 +130,15 @@ public sealed class ComposerSession
     }
 
     /// <summary>The host's: ⌥W on <paramref name="word"/>.</summary>
+    /// <summary>⌥P: shows or hides the post as it will be sent. Nothing for a MOO edit, or a session the client ended.</summary>
+    public void TogglePreview()
+    {
+        if (Model.Edit is null && !IsEnded)
+        {
+            _callbacks.TogglePreview?.Invoke();
+        }
+    }
+
     public void AddWord(string word)
     {
         if (CanAddWords && !string.IsNullOrWhiteSpace(word))

@@ -20,7 +20,7 @@ internal static class SnapshotViews
         "history", "history-search", "history-search-filter", "draft", "draft2",
         "menu", "menu-split", "menu-fuzzy", "menu-recent", "messages", "notices", "quit", "connections", "characters",
         "tint", "tint-input", "tint-input-moved", "tint-tabs",
-        "compose", "compose-literal", "moo-edit", "mssp", "mssp-none", "mssp-never", "web",
+        "compose", "compose-literal", "compose-preview", "moo-edit", "mssp", "mssp-none", "mssp-never", "web",
         "rail-long", "scrollback", "scrollback-up", "scrollback-split", "reflow", "links", "away", "away-scrollback",
         "search", "search-regex", "search-all", "search-landed", "activity-bar",
         "mxp-image", "mxp-figure", "input-selection", "selection", "trigger-builder",
