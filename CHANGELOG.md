@@ -15,6 +15,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   be sent (both in the terminal and in the desktop window).
 - When a pane is narrower than the line width a game wraps at, the client says so once and offers to turn on
   "join wraps" for that world.
+- Help is built in: `/help` (or Ctrl+P ▸ Help) lists the slash commands, every key this client answers to, and short
+  how-to pages on getting started, reading output, layouts, triggers and the composer. Type to search; Enter on a
+  slash command puts it on the command line without sending it.
+- No spelling dictionary? Alt+W in the composer (or Ctrl+P ▸ Get a spelling dictionary) offers to download an English
+  one into your settings folder. Nothing is fetched until you say yes, and the file is checked before it is saved —
+  so spelling now works on Windows too.
+- While a pane is narrower than the width a game wraps at, Ctrl+P suggests "Join server wraps for" that world and F5
+  marks its "join wraps" setting as recommended. It stays off until you turn it on.
 
 - Desktop window: the map, vitals, who is here and the quick bar can be popped out into windows of their own — from
   the button in the panel's corner, the pane's right-click menu, or Ctrl+P ▸ Pop out. The output takes the room back,

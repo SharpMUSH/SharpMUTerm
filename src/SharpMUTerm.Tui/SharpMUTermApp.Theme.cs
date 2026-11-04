@@ -86,6 +86,7 @@ internal sealed partial class SharpMUTermApp
         _sendMenu.Scheme = _screens;
         _layoutsView.Scheme = _screens;
         _welcomeView.Scheme = _screens;
+        _helpView.Scheme = _screens;
         SchemePopups();
 
         _header.BackgroundColor = ToColor(theme.StatusBackground);

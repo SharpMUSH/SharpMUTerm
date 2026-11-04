@@ -159,6 +159,14 @@ internal static class ClientUsage
         usage.WriteLine("and the client opens with no connection. A host given here connects instead of them.");
         usage.WriteLine("'at start' only opens the connection. What is typed once one is open follows from the");
         usage.WriteLine("character's saved password and connect line — F5's 'login' row says which.");
+        // The slash commands, from the one table /help lists too (SlashCommands.All).
+        usage.WriteLine();
+        usage.WriteLine("Slash commands (typed on the command line; /help lists them, the keys and how-tos in the app):");
+        foreach (var command in SharpMUTerm.Client.Help.SlashCommands.All)
+        {
+            usage.WriteLine($"  {command.Usage,-38}{command.Summary}");
+        }
+
         usage.WriteLine();
         usage.WriteLine("In-app: Up/Down history · Ctrl+N next tab · Ctrl+W close · Ctrl+P palette · Ctrl+Q quit.");
         usage.WriteLine("Selection: drag across a pane's output to select it, Ctrl+C to copy.");

@@ -942,7 +942,8 @@ internal static class WorldsScreenRenderer
         string accent,
         ScreenFocus? focus = null,
         int height = 0,
-        IReadOnlyList<LayoutDefinition>? layouts = null)
+        IReadOnlyList<LayoutDefinition>? layouts = null,
+        Func<WorldDefinition, string?>? joinWrapsAdvice = null)
     {
         var all = layouts ?? BuiltInLayouts.All;
         var cursor = focus ?? ScreenFocus.None;
@@ -1043,7 +1044,9 @@ internal static class WorldsScreenRenderer
             WorldField("join wraps", Field(
                 world.JoinWrappedLines
                     ? $"[{Value}]{JoinWrapChoices[1]} lines the server wrapped[/]"
-                    : $"[{Label}]{JoinWrapChoices[0]} · rows as the server sent them[/]",
+                    : joinWrapsAdvice?.Invoke(world) is { } advice
+                        ? $"[{Label}]{JoinWrapChoices[0]} · [/][{ScreenPalette.Caution}]{Escape(advice)}[/]"
+                        : $"[{Label}]{JoinWrapChoices[0]} · rows as the server sent them[/]",
                 cursor,
                 selectedWorld,
                 JoinWrapsField)),

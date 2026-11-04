@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Core.Commands;
 
 namespace SharpMUTerm.Client.Palette;
@@ -136,6 +137,13 @@ public static class CommandPaletteModel
         if (state.KeyClashes > 0)
         {
             ids.Add("settings:key-clashes");
+        }
+
+        // A pane narrower than its game wraps: every hard-wrapped row leaves a stray word. Suggested while it holds,
+        // rather than said once, because ragged lines are the look of every room until it is fixed.
+        foreach (var ragged in state.RaggedWraps ?? [])
+        {
+            ids.Add(BuiltInCommands.JoinWraps(ragged.World));
         }
 
         return ids;

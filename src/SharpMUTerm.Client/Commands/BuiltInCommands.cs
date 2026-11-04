@@ -17,12 +17,21 @@ namespace SharpMUTerm.Client.Commands;
 /// </summary>
 public static class BuiltInCommands
 {
+    /// <summary>Help: keys, slash commands and how-tos (<c>/help</c>).</summary>
+    public const string HelpCommand = "term:help";
+
+    /// <summary>The spelling dictionary offer.</summary>
+    public const string DictionaryCommand = "term:get-dictionary";
+
+    /// <summary>The ⌃P id that joins <paramref name="world"/>'s server wraps.</summary>
+    public static string JoinWraps(string world) => JoinWrapsPrefix + world;
+
     /// <summary>The command that moves the keyboard into the connection sidebar (⌥C).</summary>
     public const string RailKeysCommand = "layout:rail-keys";
 
     /// <summary>
     /// Turns F5's <c>join wraps</c> on for the world named after the prefix: the action of the notice that says a pane is
-    /// narrower than the server's wrap column. Lists nothing on ⌃P (F5 is the setting's home).
+    /// narrower than the server's wrap column, and a ⌃P entry (listed under SUGGESTED) for as long as that is so.
     /// </summary>
     public const string JoinWrapsPrefix = "world:join-wraps:";
 
@@ -77,7 +86,7 @@ public static class BuiltInCommands
         Add("world:reconnect", CommandGroup.World, "Reconnect", "⌥R");
         Add("world:disconnect", CommandGroup.World, "Disconnect", "⌥D");
         Family("world:send-group", CommandIds.GroupPrefix, SendGroup);
-        Family("world:join-wraps", JoinWrapsPrefix, _ => []);
+        Family("world:join-wraps", JoinWrapsPrefix, JoinWrapsEntries);
         Add("world:reload-scripts", CommandGroup.World, "Reload scripts",
             detail: "re-reads this character's Lua files", when: c => c.State.ScriptsOn);
 
@@ -176,6 +185,14 @@ public static class BuiltInCommands
         // toggle, so it can always be offered and always says what it will do: show it, or hide it.
         Add("term:welcome", CommandGroup.Terminal, "Welcome", detail: "connect to a world, browse worlds, pick a layout");
         Add("term:tour", CommandGroup.Terminal, "Key tour", detail: "the keys worth knowing · again to hide it");
+
+        // Help: the slash commands, every key named here, and short how-to pages, searchable. F1 is the composer, so
+        // help has no F-key; /help is its other door, and this entry is where a reader looking for help looks first.
+        Add(HelpCommand, CommandGroup.Terminal, "Help", detail: "keys, slash commands and how-tos · /help");
+
+        // A spelling dictionary, downloaded only when asked — the offer says what, from where and where to, first.
+        Add(DictionaryCommand, CommandGroup.Terminal, "Get a spelling dictionary…", detail: "English, for the composer · asks first",
+            when: c => c.State.NoDictionary);
         Add("term:timestamps-off", CommandGroup.Terminal, "Hide timestamps", when: c => c.State.TimestampsOn);
         Add("term:timestamps-on", CommandGroup.Terminal, "Show timestamps", when: c => !c.State.TimestampsOn);
         Add("term:input2-off", CommandGroup.Terminal, "Hide second input", "⌃B i", "this window",
@@ -365,6 +382,17 @@ public static class BuiltInCommands
 
     // The send group: one line to several characters. Offered once two characters are open, since a
     // group of one is the command line.
+    /// <summary>One <c>Join server wraps for …</c> entry per world whose pane is narrower than its server wraps.</summary>
+    private static IEnumerable<CommandItem> JoinWrapsEntries(ICommandContext context) =>
+        (context.State.RaggedWraps ?? []).Select(r => new CommandItem(
+            CommandGroup.World,
+            $"Join server wraps for {r.World}",
+            JoinWraps(r.World),
+            $"it wraps at {r.Column}, the pane is {r.PaneWidth} wide · F5 ▸ join wraps")
+        {
+            Detail = $"it wraps at {r.Column}, the pane is {r.PaneWidth} wide · F5 ▸ join wraps",
+        });
+
     private static IEnumerable<CommandItem> SendGroup(ICommandContext context)
     {
         var characters = context.Characters;

@@ -20,6 +20,7 @@ internal sealed class ListOverlay
     private Func<int, List<string>>? _render;
     private Func<ConsoleKeyInfo, bool>? _key;
     private Func<bool>? _escape;
+    private Action? _closed;
 
     private ScreenTheme _scheme;
 
@@ -49,13 +50,15 @@ internal sealed class ListOverlay
     /// Asked first when Esc is pressed: true when the surface took it (to leave a sub-mode of its own — a name being
     /// typed, a delete awaiting its answer) and stays open; with none, or false, Esc closes.
     /// </param>
+    /// <param name="closed">Told once when this surface closes, however it does (not when a later one replaces it).</param>
     public void Open(
         string mode,
         string title,
         Func<int, List<string>> render,
         Func<ConsoleKeyInfo, bool> key,
         int? width = null,
-        Func<bool>? escape = null)
+        Func<bool>? escape = null,
+        Action? closed = null)
     {
         if (_window is not null)
         {
@@ -65,6 +68,7 @@ internal sealed class ListOverlay
         _render = render;
         _key = key;
         _escape = escape;
+        _closed = closed;
         var desktop = _system.DesktopDimensions;
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
@@ -89,7 +93,9 @@ internal sealed class ListOverlay
                 // A window closed because the next surface replaced it must not clear the next one's state.
                 if (_window == built)
                 {
+                    var closed = _closed;
                     Reset();
+                    closed?.Invoke();
                 }
             })
             .Build();
@@ -184,6 +190,7 @@ internal sealed class ListOverlay
         _render = null;
         _key = null;
         _escape = null;
+        _closed = null;
         Mode = null;
     }
 }

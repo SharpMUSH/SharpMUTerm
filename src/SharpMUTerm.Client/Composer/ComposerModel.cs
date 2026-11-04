@@ -141,6 +141,9 @@ public sealed record ComposerModel(
         };
     }
 
+    /// <summary>What F1's key row calls ⌥W while no dictionary marks the post.</summary>
+    public const string GetDictionary = "get a dictionary";
+
     /// <summary>The key row for a composer in this state.</summary>
     /// <param name="preview">Whether F1's as-sent preview is showing, which names what ⌥P does next.</param>
     public static IReadOnlyList<ComposerKey> KeysFor(ComposerPlace place, bool edit, bool dictionary, bool canSend, bool armed, bool preview = false)
@@ -177,10 +180,8 @@ public sealed record ComposerModel(
             new("⌃S", canSend ? "send" : "send (nothing connected)"),
             new("⌥L", "escaping"),
         };
-        if (dictionary)
-        {
-            keys.Add(new("⌥W", "add word"));
-        }
+        // With no dictionary, ⌥W is the way to one: the offer, never a download on its own.
+        keys.Add(dictionary ? new("⌥W", "add word") : new("⌥W", GetDictionary));
 
         keys.Add(new("⌥P", preview ? "hide as sent" : "as sent"));
         keys.Add(new("Esc", "close (keeps the draft)"));

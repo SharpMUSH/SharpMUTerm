@@ -689,7 +689,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MediaCache? media = null,
         PackageStore? packages = null,
         string? scriptStoreRoot = null,
-        Func<SpellChecker?>? spelling = null)
+        Func<SpellChecker?>? spelling = null,
+        string? dictionaries = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -704,7 +705,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             media,
             packages,
             scriptStoreRoot,
-            spelling)
+            spelling,
+            dictionaries: dictionaries)
     {
     }
 
@@ -727,9 +729,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         PackageStore? packages = null,
         string? scriptStoreRoot = null,
         Func<SpellChecker?>? spelling = null,
-        bool autoLayout = false)
+        bool autoLayout = false,
+        string? dictionaries = null)
     {
         _spelling = spelling;
+        _dictionariesRoot = string.IsNullOrWhiteSpace(dictionaries) ? null : dictionaries;
         _autoLayout = autoLayout;
         var capabilities = host.Capabilities;
         Host = host;
@@ -934,6 +938,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sendMenu = new ListOverlay(_system, _screens);
         _layoutsView = new ListOverlay(_system, _screens);
         _welcomeView = new ListOverlay(_system, _screens);
+        _helpView = new ListOverlay(_system, _screens);
+        _composer.DictionaryWanted += (_, _) => OnUiThread(OfferDictionary);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit, QuitPromptClosed);
@@ -1862,6 +1868,46 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RunFromPalette("layout:split-right");
             RunFromPalette("layout:cycle");
             OpenMenu();
+        }
+
+        // Help, opened by the ⌃P entry itself: the list, and a how-to page (the one that names join wraps).
+        if (string.Equals(view, "help", StringComparison.OrdinalIgnoreCase))
+        {
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.HelpCommand);
+        }
+
+        if (string.Equals(view, "help-topic", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowHelp(topic: "reading");
+        }
+
+        // The spelling dictionary offer, through its ⌃P entry. The demo keeps no dictionaries folder, so the offer says
+        // nothing can be saved in this run — the text a live client shows names the folder instead.
+        if (string.Equals(view, "dictionary-offer", StringComparison.OrdinalIgnoreCase))
+        {
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.DictionaryCommand);
+        }
+
+        // A pane narrower than its game wraps, recorded through the writer the live size report uses: ⌃P suggests
+        // joining the world's wraps; `join-wraps-f5` is F5 recommending it beside the setting.
+        if (string.Equals(view, "join-wraps", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "join-wraps-f5", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_config.Worlds.Count > 0)
+            {
+                NoteRaggedWraps(_config.Worlds[0].Name, 78, 60);
+            }
+
+            if (string.Equals(view, "join-wraps", StringComparison.OrdinalIgnoreCase))
+            {
+                OpenMenu();
+            }
+            else
+            {
+                _settings.OpenForSnapshot(ConsoleKey.F5, WorldsScreen());
+                SyncInputWidth();
+                return RenderFrame();
+            }
         }
 
         // The ⌃B which-key panel over the demo workspace: what the arming timer opens when no key has
@@ -5070,6 +5116,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _workspace.SetUnsentInput(windowId, AnyBarHasText());
         RefreshTabTitles();
 
+        // `/help [words]` opens help, searched for the words.
+        if (command.StartsWith("/help", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 5 || command[5] == ' '))
+        {
+            HelpCommand(command[5..]);
+            return;
+        }
+
         // `/web <url>` opens the in-TUI web view; everything else goes to the world.
         if (command.StartsWith("/web ", StringComparison.OrdinalIgnoreCase))
         {
@@ -5540,7 +5594,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private bool AnyOverlayOpen =>
         PaletteIsOpen || _settings.IsOpen || _quit.IsOpen || NativeModalOpen || _messageLog.IsOpen || _historySearch.IsOpen
         || _prefixPanel.IsOpen || ComposerOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
-        || _layoutsView.IsOpen || _welcomeView.IsOpen;
+        || _layoutsView.IsOpen || _welcomeView.IsOpen || _helpView.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -5670,6 +5724,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
         : _welcomeView.IsOpen ? "the welcome"
+        : _helpView.IsOpen ? (_helpView.Mode == "dictionary" ? "the dictionary offer" : "help")
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -7660,7 +7715,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             session.Selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
             _system.DesktopDimensions.Height,
             info: true,
-            layouts: Layouts.All));
+            layouts: Layouts.All,
+            joinWrapsAdvice: JoinWrapsAdvice));
     }
 
     /// <summary>
@@ -8323,7 +8379,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
             OutputSelected: HasOutputSelection,
             KeyClashes: KeyClashes.Count(Host.Keys, Macros()),
-            Floats: FloatRefs());
+            Floats: FloatRefs(),
+            RaggedWraps: RaggedWraps(),
+            NoDictionary: NoOwnDictionary);
     }
 
     /// <summary>
@@ -8803,6 +8861,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:tour":
                 ToggleKeyTour();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.HelpCommand:
+                ShowHelp();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.DictionaryCommand:
+                OfferDictionary();
                 return true;
             case "term:package-install":
                 ActiveBar().SetAndNotify("/package install ");
@@ -13274,6 +13338,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (!session.IsConnected)
             {
                 _sizeReports.Remove(session);
+                _raggedWraps.Remove(session.World.Name);
                 continue;
             }
 

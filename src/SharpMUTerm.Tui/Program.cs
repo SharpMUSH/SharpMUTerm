@@ -226,7 +226,8 @@ internal static class Program
             packages: new PackageStore(PackageStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Packages") },
             scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"),
             spelling: () => OpenDictionary(loadLogger),
-            autoLayout: true);
+            autoLayout: true,
+            dictionaries: DictionariesFolder);
         ready?.Invoke(liveApp);
 
         // A telnet:// link on the command line is followed once the loop runs, the way /connect host port would be;
@@ -392,9 +393,12 @@ internal static class Program
     /// The composer's dictionary: <c>dictionaries/</c> beside config.json first, then the system's, in the
     /// locale's language. Words added with ⌥W go to <c>dictionaries/user-words.txt</c>.
     /// </summary>
+    /// <summary>The client's own dictionaries folder, beside config.json: where the composer looks first and a download goes.</summary>
+    private static string DictionariesFolder => Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "dictionaries");
+
     private static SpellChecker? OpenDictionary(ILogger logger)
     {
-        var own = Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "dictionaries");
+        var own = DictionariesFolder;
         var checker = SpellChecker.Find(SpellChecker.SearchFolders(own), SpellChecker.PreferredLanguage(), Path.Combine(own, "user-words.txt"));
         if (checker is null)
         {

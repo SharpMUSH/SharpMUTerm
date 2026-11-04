@@ -62,6 +62,8 @@ internal sealed partial class SharpMUTermApp
         SurfaceCatalog.History => "the history search",
         SurfaceCatalog.Layouts => "the layouts",
         SurfaceCatalog.Welcome => "the welcome",
+        SurfaceCatalog.Help => "help",
+        SurfaceCatalog.Dictionary => "the dictionary offer",
         null => null,
         _ => "what is open",
     };

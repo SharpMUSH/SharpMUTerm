@@ -14,7 +14,7 @@ namespace SharpMUTerm.Avalonia;
 /// <summary>
 /// One native modal over the window: a faint scrim over everything, and a rounded card holding the modal's view
 /// (<see cref="QuitView"/>, <see cref="SearchView"/>, <see cref="HistoryView"/>, <see cref="LayoutsView"/>,
-/// <see cref="WelcomeView"/>). Fluent is applied to the card alone, in the client's variant, with the client's accent;
+/// <see cref="WelcomeView"/>, <see cref="HelpView"/>, <see cref="DictionaryOfferView"/>). Fluent is applied to the card alone, in the client's variant, with the client's accent;
 /// the rest of the window keeps the Simple theme its menus and tooltips were built against — the palette's rule.
 /// <para>
 /// A press on the scrim closes the modal (the quit prompt answers it as Stay). ⌃Q in any modal but the prompt goes to
@@ -45,6 +45,8 @@ internal sealed class ModalOverlay : Panel
             HistorySession history => new HistoryView(history, Colours, Done),
             LayoutsSession layouts => new LayoutsView(layouts, Colours, Done),
             WelcomeSession welcome => new WelcomeView(welcome, Colours, Done),
+            HelpSession help => new HelpView(help, Colours, Done),
+            DictionaryOfferSession offer => new DictionaryOfferView(offer, Colours, Done),
             _ => throw new ArgumentException($"no native view for {session.GetType().Name}", nameof(session)),
         };
         AutomationProperties.SetName(this, _view.Title);
