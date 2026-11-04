@@ -76,6 +76,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's native ⌃P, drawn over everything in the main window (<see cref="PalettePresenter"/>).</summary>
     public PalettePresenter Palette { get; } = new();
 
+    /// <summary>The window's native F1, drawn over the cells in the main window (<see cref="ComposerPresenter"/>).</summary>
+    public ComposerPresenter Composer { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

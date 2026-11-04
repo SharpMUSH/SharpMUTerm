@@ -462,7 +462,7 @@ internal sealed class TerminalView : Control
     /// <summary>How many presses this view has turned into a move or a maximise. Internal for tests.</summary>
     internal int WindowGestures { get; private set; }
 
-    private void ToggleMaximised()
+    internal void ToggleMaximised()
     {
         if (TopLevel.GetTopLevel(this) is Window window)
         {

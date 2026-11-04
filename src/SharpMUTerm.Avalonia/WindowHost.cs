@@ -74,5 +74,9 @@ internal static class WindowHost
         Chrome = chrome ?? HostChrome.HeaderAndRail,
         // ⌃P is a native palette over the window, listing the same rows as the cell one.
         NativePalette = driver.Palette,
+
+        // F1 and the docked composer are a native editor: a proportional or monospace face, IME, native selection and
+        // a real underline under a misspelling. The draft, the send and the keys stay the client's.
+        NativeComposer = driver.Composer,
     };
 }

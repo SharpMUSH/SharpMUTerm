@@ -48,7 +48,7 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void SaveMooEdit(WorldSession session, MooEdit edit, string body)
     {
-        _composer.Close();
+        CloseComposer();
         var key = session.SessionKey;
         var lines = MooEditing.LinesOf(body);
         _ = SaveAsync();

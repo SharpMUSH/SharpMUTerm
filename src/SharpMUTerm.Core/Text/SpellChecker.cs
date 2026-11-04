@@ -33,6 +33,14 @@ public sealed class SpellChecker
     private readonly Dictionary<string, bool> _cache = new(StringComparer.Ordinal);
     private readonly string? _userWordsPath;
 
+    /// <summary>
+    /// Held around every read and write of the word list, the added words and the cache. The terminal asks from the
+    /// client's thread only; the window's native composer marks and suggests from its own thread while the client
+    /// adds a word from the other, and a <see cref="Dictionary{TKey,TValue}"/> written on one thread and read on
+    /// another throws.
+    /// </summary>
+    private readonly Lock _gate = new();
+
     /// <summary>Most cached answers kept; past this the cache is dropped and refilled.</summary>
     private const int CacheLimit = 20_000;
 
@@ -174,6 +182,14 @@ public sealed class SpellChecker
     /// <summary>Whether a word is spelt right, or was added.</summary>
     public bool Check(string word)
     {
+        lock (_gate)
+        {
+            return CheckLocked(word);
+        }
+    }
+
+    private bool CheckLocked(string word)
+    {
         if (_added.Contains(word))
         {
             return true;
@@ -221,9 +237,12 @@ public sealed class SpellChecker
             return false;
         }
 
-        if (!_added.Add(word))
+        lock (_gate)
         {
-            return true;
+            if (!_added.Add(word))
+            {
+                return true;
+            }
         }
 
         if (_userWordsPath is { } path)
@@ -240,6 +259,31 @@ public sealed class SpellChecker
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The dictionary's suggestions for <paramref name="word"/>, best first, at most <paramref name="max"/>; empty for a
+    /// word it knows, or one this checker would never mark. Hunspell's suggester is slow beside a check (a few
+    /// milliseconds a word), so this is for a menu opened on one word, never for a whole buffer.
+    /// </summary>
+    public IReadOnlyList<string> Suggest(string word, int max = 6)
+    {
+        ArgumentNullException.ThrowIfNull(word);
+        word = word.Trim();
+        if (word.Length == 0 || max <= 0)
+        {
+            return [];
+        }
+
+        lock (_gate)
+        {
+            if (CheckLocked(word))
+            {
+                return [];
+            }
+
+            return _words.Suggest(word).Take(max).ToArray();
+        }
     }
 
     /// <summary>The word at <paramref name="column"/> on <paramref name="line"/> (or just before it), or null.</summary>

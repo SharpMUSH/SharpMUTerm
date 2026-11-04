@@ -202,7 +202,9 @@ internal sealed partial class SharpMUTermApp
         // A modal over the main window (a settings screen, ⌃P, F1) is drawn in cells over the panes; a native view
         // would sit on top of it, so while one is up no panel is on screen as far as the host is concerned.
         var overlays = new List<PanelOverlay>();
-        foreach (var (paneId, rect) in !_system.ModalStateService.HasModals ? PaneOutputRects() : new Dictionary<string, Core.Workspaces.PaneRect>())
+        // F1 drawn by the host covers the panes the same way, though it is no framework modal.
+        var covered = _system.ModalStateService.HasModals || _nativeCompose is not null;
+        foreach (var (paneId, rect) in !covered ? PaneOutputRects() : new Dictionary<string, Core.Workspaces.PaneRect>())
         {
             if (_workspace.Layout.FindPane(paneId) is not { ActiveTab: { } windowId })
             {
@@ -243,6 +245,13 @@ internal sealed partial class SharpMUTermApp
                 overlays.Add(new PanelOverlay(
                     panelId, windowId, rect, PanelListInk(), null, QuickBar: QuickBarEntries(key), Pick: PickerFor(windowId, key),
                     Dispatch: _panelDispatch ??= id => OnUiThread(() => DispatchCommand(id))));
+            }
+            else if (panelId == PanelIds.Composer && NativeComposerHost is not null
+                && _dockedComposers.TryGetValue(windowId, out var docked) && docked.Model is { } composer)
+            {
+                // Only to a host with its own editor: the cells stay underneath it, and the editor is kept to them.
+                overlays.Add(new PanelOverlay(
+                    panelId, windowId, rect, ComposerInk(), null, Composer: composer, ComposerSession: DockedSessionFor(docked)));
             }
         }
 

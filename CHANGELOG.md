@@ -15,6 +15,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   read-only with *Copy to edit*. *Make a trigger from the selection* opens there on the new rule. In the terminal,
   Alt+Up and Alt+Down move the item under the cursor within its set, and the settings search finds every one of
   their fields.
+- Desktop window: the composer is a native text editor. F1 opens full screen over the panes and the docked composer
+  is an editor in its pane, with the platform's selection, undo, input methods and paste, a monospace or proportional
+  face (right-click), and a wavy red line under a misspelt word whose right-click menu offers suggestions and Add to
+  dictionary. The draft, Ctrl+S, Alt+L, Alt+W and Esc work exactly as in the terminal, and the same text sends the same
+  command.
 - Alt+C moves the keyboard into the connection sidebar, in the terminal and the desktop window: the arrow keys,
   Home and End walk its rows, Enter goes to the one you are on, and Esc (or Alt+C, or just typing) returns to the
   command line.

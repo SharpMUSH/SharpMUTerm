@@ -27,6 +27,7 @@ internal sealed partial class SharpMUTermApp
     internal object? DrawnModel(string surface, string key = "") =>
         surface == SurfaceCatalog.Palette ? (_palette.IsOpen ? _palette.View : null)
         : surface == SurfaceCatalog.Prefix ? (_prefixPanel.IsOpen ? _prefixPanel.Drawn : null)
+        : surface == SurfaceCatalog.Compose ? (_composer.IsOpen ? _composer.Model : null)
         : _drawnModels.TryGetValue((surface, key), out var model) ? model : null;
 
     /// <summary>A click on a header link, as the header's own handler receives it.</summary>

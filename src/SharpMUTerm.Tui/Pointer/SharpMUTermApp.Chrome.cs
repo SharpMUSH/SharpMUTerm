@@ -101,7 +101,7 @@ internal sealed partial class SharpMUTermApp
     /// frame) reports false with nothing over it.
     /// </summary>
     private bool MainWindowInFront() =>
-        _system.ActiveWindow is not { } front || ReferenceEquals(front, _window);
+        _nativeCompose is null && (_system.ActiveWindow is not { } front || ReferenceEquals(front, _window));
 
     /// <summary>
     /// A click on a native header or sidebar, by the target the client put in the model. Internal so a test can drive

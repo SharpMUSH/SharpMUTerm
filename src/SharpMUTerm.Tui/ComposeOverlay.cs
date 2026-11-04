@@ -2,6 +2,7 @@ using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
+using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Telnet;
 using SharpMUTerm.Core.Text;
@@ -107,7 +108,30 @@ internal sealed class ComposeOverlay
     internal MooEdit? Edit => _edit;
 
     /// <summary>The header row's markup, so a test can read who the window says it will send to.</summary>
-    internal string HeaderMarkup => Header();
+    internal string HeaderMarkup => Render(Model).Header;
+
+    /// <summary>
+    /// What the window draws, as the shared model a native composer draws: the target, the buffer as it stands, the
+    /// mode, the edit, the dictionary and its marks, and the key row.
+    /// </summary>
+    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend);
+
+    /// <summary>
+    /// F1's model for a draft, in either host: the cell window builds its own from this, and a native F1 is opened on
+    /// it, so the two say the same thing for the same draft. Revision 1: F1 opens on a draft and nothing replaces it
+    /// while it is open.
+    /// </summary>
+    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend) =>
+        ComposerModel.Create(
+            ComposerPlace.FullScreen,
+            target,
+            body,
+            escaping,
+            edit is null ? null : new ComposerEdit(edit.Name, edit.Type),
+            spelling,
+            canSend,
+            armed: true,
+            revision: 1);
 
     /// <summary>
     /// Opens the composer on <paramref name="draft"/>, or closes it when it is already open — the same
@@ -356,71 +380,56 @@ internal sealed class ComposeOverlay
     /// </summary>
     private MarkupControl HeaderBand()
     {
-        var band = ScreenChrome.Band(Header(), ScreenPalette.HeaderBg, _scheme);
+        var band = ScreenChrome.Band(Render(Model).Header, ScreenPalette.HeaderBg, _scheme);
         band.StickyPosition = StickyPosition.Top;
         return band;
     }
 
     private MarkupControl FooterBand()
     {
-        var band = ScreenChrome.Band(Footer(), ScreenPalette.FooterBg, _scheme);
+        var band = ScreenChrome.Band(Render(Model).Footer, ScreenPalette.FooterBg, _scheme);
         band.StickyPosition = StickyPosition.Bottom;
         return band;
     }
 
     /// <summary>
-    /// The title row: what this is, who it sends to, and which mode it is in. The target is escaped
-    /// because a character's name is configuration and a world's name can be anything.
+    /// The two chrome rows for <paramref name="model"/>. The title row says what this is, who it sends to, and which
+    /// mode it is in; the target is escaped because a character's name is configuration and a world's name can be
+    /// anything. The key row is the model's keys and nothing else, because this screen is held to the same honesty
+    /// rule as the settings screens: every key printed here works, and none that works is hidden. There is
+    /// deliberately no <c>⌃F find</c> — the control has a find API but no chord bound to it.
     /// </summary>
-    private string Header()
+    internal static (string Header, string Footer) Render(ComposerModel model)
     {
-        var target = _target.Length == 0
+        var target = model.Target.Length == 0
             ? $"[{ScreenPalette.Warn}]no connection[/]"
-            : $"[{ScreenPalette.Value}]{Escape(_target)}[/]";
+            : $"[{ScreenPalette.Value}]{Escape(model.Target)}[/]";
 
-        if (_edit is { } edit)
+        string header;
+        if (model.Edit is { } edit)
         {
-            return $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
+            header = $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
                 + $"[{ScreenPalette.Label}]  {Escape(edit.Type)}  ·  from [/]{target}";
         }
-
-        var mode = _escaping == ComposeEscaping.Literal
-            ? $"[{ScreenPalette.Accent}]literal[/]"
-            : $"[{ScreenPalette.Value}]as typed[/]";
-
-        var spelling = _spelling is { } checker
-            ? $"[{ScreenPalette.Value}]{Escape(checker.Name)}[/]"
-            : $"[{ScreenPalette.Muted}]no dictionary[/]";
-
-        return $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
-            + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"
-            + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}";
-    }
-
-    /// <summary>
-    /// The key row. It names ⌃S, ⌥L, ⌥W (while there is a dictionary) and Esc and nothing else, because this screen is held to the same
-    /// honesty rule as the settings screens: every key printed here works, and none that works is
-    /// hidden. There is deliberately no <c>⌃F find</c> — the control has a find API but no chord bound
-    /// to it, and advertising one would send a reader to press a key that does nothing.
-    /// </summary>
-    private string Footer()
-    {
-        if (_edit is not null)
+        else
         {
-            return (_canSend
-                    ? $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] save[/]"
-                    : $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] save (nothing connected)[/]")
-                + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close (keeps the edit)[/]";
+            var mode = model.Escaping == ComposeEscaping.Literal
+                ? $"[{ScreenPalette.Accent}]literal[/]"
+                : $"[{ScreenPalette.Value}]as typed[/]";
+
+            var spelling = model.Dictionary is { } name
+                ? $"[{ScreenPalette.Value}]{Escape(name)}[/]"
+                : $"[{ScreenPalette.Muted}]no dictionary[/]";
+
+            header = $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
+                + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"
+                + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}";
         }
 
-        var send = _canSend
-            ? $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] send[/]"
-            : $"[{ScreenPalette.Accent}]⌃S[/][{ScreenPalette.Label}] send (nothing connected)[/]";
-
-        return send
-            + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥L[/][{ScreenPalette.Label}] escaping[/]"
-            + (Spelling is null ? string.Empty : $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥W[/][{ScreenPalette.Label}] add word[/]")
-            + $"[{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close (keeps the draft)[/]";
+        var footer = string.Join(
+            $"[{ScreenPalette.Label}] · [/]",
+            model.Keys.Select(k => $"[{ScreenPalette.Accent}]{Escape(k.Key)}[/][{ScreenPalette.Label}] {Escape(k.Label)}[/]"));
+        return (header, footer);
     }
 
     /// <summary>

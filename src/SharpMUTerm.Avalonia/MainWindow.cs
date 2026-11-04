@@ -66,10 +66,15 @@ internal sealed class MainWindow : Window
 
         // The window's native views: the header band and the connections sidebar beside the cells (the layer moves the
         // view out of their way, so no cell lies under either), the Layouts button, and native panels over their panes.
-        root.Children.Add(new DesktopLayer(_view, options.Chrome));
+        var layer = new DesktopLayer(_view, options.Chrome);
+        root.Children.Add(layer);
+
+        // F1, over the cells and under the layer, so a toast is still seen over it. Closing it gives the keyboard to an
+        // armed docked composer if there is one, else to the cells.
+        _driver.Composer.Attach(root, layer, _view, () => layer.FocusArmedComposer());
 
         // ⌃P, over everything above; it is added last when it opens, and gives the keyboard back to the cells.
-        _driver.Palette.Attach(root, () => _view.Focus());
+        _driver.Palette.Attach(root, () => layer.FocusArmedComposer());
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
 

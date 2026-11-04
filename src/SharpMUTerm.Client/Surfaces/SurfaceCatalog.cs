@@ -1,5 +1,6 @@
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Commands;
+using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Client.Contributions;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Panels;
@@ -41,6 +42,12 @@ public enum SurfaceActionKind
 
     /// <summary>A change to a declared setting, committed through the client's save funnel.</summary>
     Edit,
+
+    /// <summary>
+    /// A composer's gesture — its text sent, the escaping flipped, a word added, the keyboard released or taken —
+    /// handed back through the composer's session (<c>ComposerSession</c>).
+    /// </summary>
+    Compose,
 }
 
 /// <summary>
@@ -141,6 +148,9 @@ public static class SurfaceCatalog
 
     /// <summary>A notice: the status row's message in cells, and in the window a toast over them as well.</summary>
     public const string Notice = "notice";
+
+    /// <summary>F1, the full-screen composer: a cell modal in a terminal, the window's native editor in its place.</summary>
+    public const string Compose = "compose";
 
     /// <summary>
     /// The header and the rail: cells in a terminal; in the window (<c>HostChrome.HeaderAndRail</c>) native views
@@ -288,6 +298,41 @@ public static class SurfaceCatalog
             CellsUnderNative,
             "SharpMUTerm.Tui.SharpMUTermApp.NoticeMarkup",
             ["SharpMUTerm.Avalonia.NoticeToasts"]),
+        new(
+            Compose,
+            typeof(ComposerModel),
+            [
+                // ⌃S: the buffer through ComposeMessage.Build to the window's character (a MOO edit saves as lines).
+                new(SurfaceActionKind.Compose, "send", "SendComposed"),
+
+                // Esc: the window closes and the buffer is kept as the character's draft.
+                new(SurfaceActionKind.Compose, "close", "CloseComposer"),
+                new(SurfaceActionKind.Compose, "add word", "AddComposerWord"),
+            ],
+            new Dictionary<string, SurfaceDrawing>
+            {
+                [SurfaceHosts.Terminal] = SurfaceDrawing.Cells,
+
+                // A window with a native composer opens F1 there instead of the cell modal (ClientHost.NativeComposer).
+                [SurfaceHosts.Window] = SurfaceDrawing.Native,
+            },
+            "SharpMUTerm.Tui.ComposeOverlay.Render",
+            ["SharpMUTerm.Avalonia.ComposerOverlay", "SharpMUTerm.Avalonia.ComposerView", "SharpMUTerm.Avalonia.ComposerEditor"]),
+        new(
+            PanelIds.Composer,
+            typeof(ComposerModel),
+            [
+                new(SurfaceActionKind.Compose, "send", "SendDocked"),
+                new(SurfaceActionKind.Compose, "release", "ReleaseComposer"),
+
+                // A click on the cell editor arms it through the framework's focus (ArmClickedComposer); the native
+                // editor asks for the same thing by name.
+                new(SurfaceActionKind.Compose, "arm", "ArmComposer"),
+                new(SurfaceActionKind.Compose, "add word", "AddComposerWord"),
+            ],
+            CellsUnderNative,
+            "SharpMUTerm.Tui.Panels.DockedComposer.Render",
+            ["SharpMUTerm.Avalonia.ComposerView", "SharpMUTerm.Avalonia.ComposerEditor"]),
     ];
 
     /// <summary>The surface with <paramref name="id"/>, or null.</summary>

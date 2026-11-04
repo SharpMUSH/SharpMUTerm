@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Commands;
+using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Client.Settings;
@@ -201,6 +202,45 @@ public class SurfaceParityTests
             covered.Add(SurfaceCatalog.Notice);
         }
 
+        // F1: the window's editor is handed the model the cell window draws for the same draft, in each mode and for a
+        // MOO edit. Two clients, one with the window's editor and one without, opened on the same scene.
+        foreach (var view in new[] { "compose", "compose-literal", "moo-edit" })
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            var composer = new FakeComposer();
+            await using var native = App(nativeDriver, DemoScene.Build(), composer: composer);
+            native.RenderSnapshot(view);
+
+            using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var cells = App(cellDriver, DemoScene.Build());
+            cells.RenderSnapshot(view);
+
+            await Assert.That(composer.Session).IsNotNull().Because($"{view}: F1 opened in the window's editor");
+            await Assert.That(native.Composer.IsOpen).IsFalse().Because($"{view}: and not in cells under it");
+            await Assert.That(cells.DrawnModel(SurfaceCatalog.Compose)).IsEqualTo((object)composer.Session!.Model).Because(view);
+        }
+
+        covered.Add(SurfaceCatalog.Compose);
+
+        // The docked composer: the panel's model is the one its cells drew in that frame, and the one a client with no
+        // native editor draws for the same scene.
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var native = App(nativeDriver, DemoScene.Build(), composer: new FakeComposer());
+            native.RenderSnapshot("panel-composer");
+            var panel = nativeDriver.Pointer.Panels.Single(p => p.PanelId == PanelIds.Composer);
+
+            using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var cells = App(cellDriver, DemoScene.Build());
+            cells.RenderSnapshot("panel-composer");
+
+            await Assert.That(panel.Composer).IsNotNull();
+            await Assert.That(panel.Composer!.Body).IsNotEmpty().Because("the scene types a draft");
+            await Assert.That(native.DrawnModel(PanelIds.Composer, panel.WindowId)).IsEqualTo((object)panel.Composer).Because("panel-composer");
+            await Assert.That(cells.DrawnModel(PanelIds.Composer, panel.WindowId)).IsEqualTo((object)panel.Composer).Because("panel-composer: the cell client");
+            covered.Add(PanelIds.Composer);
+        }
+
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
         await Assert.That(covered).IsEquivalentTo(drawnNatively).Because("every surface the window draws natively has its model compared here");
     }
@@ -338,8 +378,142 @@ public class SurfaceParityTests
             });
         probed.Add(SurfaceCatalog.Notice);
 
+        // F1: ⌃S in the window's editor and ⌃S in the cell window send the same command for the same draft — as typed and
+        // literal, one line and several paragraphs. Esc keeps the draft, and its mode, in both.
+        foreach (var (draft, literal) in new[]
+        {
+            ("+pose waves\nand sits", false),
+            ("say 100% [sure]; {x}", true),
+            ("+bbpost 1=Title\n\nFirst paragraph.\n\nSecond, 50% [done].\n", false),
+            ("+bbpost 1=Title\n\nFirst paragraph.\n\nSecond, 50% [done].\n", true),
+        })
+        {
+            var native = await ComposeOnTheWire(native: true, draft, literal, send: true);
+            var cells = await ComposeOnTheWire(native: false, draft, literal, send: true);
+            await Assert.That(native.Sent).IsNotEmpty();
+            await Assert.That(native.Sent).IsEquivalentTo(cells.Sent).Because($"compose: send '{draft}' literal={literal}");
+            await Assert.That(native.Outcome).IsEqualTo(cells.Outcome);
+        }
+
+        {
+            var native = await ComposeOnTheWire(native: true, "half a post", literal: true, send: false);
+            var cells = await ComposeOnTheWire(native: false, "half a post", literal: true, send: false);
+            await Assert.That(native.Sent).IsEmpty();
+            await Assert.That(native.Outcome).IsEqualTo(cells.Outcome).Because("compose: close keeps the draft");
+            await Assert.That(native.Outcome).Contains("draft=half a post literal");
+        }
+
+        probed.Add(SurfaceCatalog.Compose);
+
+        // The docked composer: ⌃S from the window's editor and from the cells send one command to its character, and
+        // Esc releases it to the command line in both.
+        {
+            var native = await DockedOnTheWire(native: true);
+            var cells = await DockedOnTheWire(native: false);
+            await Assert.That(native.Sent).IsEquivalentTo(new[] { "+pose waves%rand sits" });
+            await Assert.That(native.Sent).IsEquivalentTo(cells.Sent).Because("composer: send");
+            await Assert.That(native.Outcome).IsEqualTo(cells.Outcome).Because("composer: release");
+            probed.Add(PanelIds.Composer);
+        }
+
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         await Assert.That(probed).IsEquivalentTo(acting).Because("every native surface with actions has a probe here");
+    }
+
+    /// <summary>
+    /// A connected client writes <paramref name="draft"/> in F1 — the window's editor through its session, or the cell
+    /// window through its keys — and sends it with ⌃S or closes it with Esc. What reached the wire, and the state left.
+    /// </summary>
+    private static async Task<(IReadOnlyList<string> Sent, string Outcome)> ComposeOnTheWire(bool native, string draft, bool literal, bool send)
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        var composer = native ? new FakeComposer() : null;
+        var (app, telnet) = await Connected(driver, composer);
+        await using var _ = app;
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+        if (composer is not null)
+        {
+            var session = composer.Session!;
+            session.Edited(draft);
+            if (literal)
+            {
+                session.ToggleEscaping();
+            }
+
+            if (send)
+            {
+                session.Send(draft);
+            }
+            else
+            {
+                session.Close(draft);
+            }
+        }
+        else
+        {
+            app.Composer.SimulateTyping(draft);
+            if (literal)
+            {
+                app.Composer.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.L, false, true, false));
+            }
+
+            app.Composer.SimulateKey(send
+                ? new ConsoleKeyInfo('\x13', ConsoleKey.S, false, false, true)
+                : new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
+        }
+
+        // Where the draft went: reopened, F1 says what it holds and in which mode.
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+        var held = composer is not null
+            ? $"{composer.Session!.Model.Body} {(composer.Session.Model.Escaping == ComposeEscaping.Literal ? "literal" : "as typed")}"
+            : $"{app.Composer.Body} {(app.Composer.HeaderMarkup.Contains("literal", StringComparison.Ordinal) ? "literal" : "as typed")}";
+        return (telnet.Lines.ToList(), Outcome(app) + " | draft=" + held);
+    }
+
+    /// <summary>
+    /// A connected client docks its composer, types into it — the window's editor through its session, or the cells
+    /// through the composer's keys — sends with ⌃S, types again and releases with Esc.
+    /// </summary>
+    private static async Task<(IReadOnlyList<string> Sent, string Outcome)> DockedOnTheWire(bool native)
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        var (app, telnet) = await Connected(driver, native ? new FakeComposer() : null);
+        await using var _ = app;
+        app.DispatchCommand("panel:composer");
+        app.RenderNextFrame();
+        var windowId = TerminalPanels.WindowId(PanelIds.Composer, "Quiet.Ann");
+        var session = native ? driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.Composer).ComposerSession! : null;
+        if (session is not null)
+        {
+            session.Edited("+pose waves\nand sits");
+            session.Send("+pose waves\nand sits");
+            session.Edited("next");
+            session.Release();
+        }
+        else
+        {
+            app.SimulateComposerTyping("+pose waves\nand sits");
+            app.SimulateKey(new ConsoleKeyInfo('\x13', ConsoleKey.S, false, false, true));
+            app.SimulateComposerTyping("next");
+            app.SimulateKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
+        }
+
+        return (telnet.Lines.ToList(), $"{Outcome(app)} | armed={app.ComposerArmed} | docked={app.DockedComposerIn(windowId)!.Body}");
+    }
+
+    private static async Task<(SharpMUTermApp App, SharpMUTerm.Tui.Tests.RecordingTelnetSession Telnet)> Connected(
+        AvaloniaConsoleDriver driver, INativeComposer? composer)
+    {
+        var config = new AppConfiguration();
+        var world = new WorldDefinition { Name = "Quiet", Host = "quiet.example.org", Port = 4000 };
+        world.Characters.Add(new CharacterDefinition { Name = "Ann", Logging = new LoggingSettings() });
+        config.Worlds.Add(world);
+        var app = App(driver, config, composer: composer);
+        var telnet = new SharpMUTerm.Tui.Tests.RecordingTelnetSession();
+        app.TelnetFactory = _ => telnet;
+        await app.BindWorldWithoutConnecting(world).ConnectAsync();
+        app.RenderNextFrame();
+        return (app, telnet);
     }
 
     private static (bool Echo, int Saves) SettingsReset(bool native)
@@ -479,7 +653,8 @@ public class SurfaceParityTests
         INativeSettings? settings = null,
         INativePalette? palette = null,
         Action<AppConfiguration>? save = null,
-        HostKeys? keys = null) =>
+        HostKeys? keys = null,
+        INativeComposer? composer = null) =>
         new(config, WindowHost.Create(driver, clipboard: null) with
         {
             Capabilities = WindowOptions.Capabilities,
@@ -490,7 +665,20 @@ public class SurfaceParityTests
             NativeSettings = settings,
             NativePalette = palette,
             Keys = keys ?? WindowHost.Keys,
+            NativeComposer = composer,
         }, save: save);
+
+    /// <summary>A window editor that only records the session it was handed, so the client's side can be driven.</summary>
+    private sealed class FakeComposer : INativeComposer
+    {
+        public ComposerSession? Session { get; private set; }
+
+        public bool Available => true;
+
+        public void Open(ComposerSession session, PanelInk ink) => Session = session;
+
+        public void Close() => Session = null;
+    }
 
     private sealed class FakeSettings : INativeSettings
     {
