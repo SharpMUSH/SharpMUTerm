@@ -645,16 +645,21 @@ internal static class OptionsScreenRenderer
     }
 
     /// <summary>The <c>now</c> column: <c>412/500</c>, <c>412</c> with no maximum, or <see cref="Waiting"/>.</summary>
-    internal static string Now(StatusMeter meter, GameDataStore? data)
+    internal static string Now(StatusMeter meter, GameDataStore? data) =>
+        NowText(meter, data) is { } text
+            ? $"[bold {ScreenPalette.Value}]{Escape(text)}[/]"
+            : $"[{Muted}]{Waiting}[/]";
+
+    /// <summary>The <c>now</c> column as plain text, or null while the meter's value has not arrived.</summary>
+    internal static string? NowText(StatusMeter meter, GameDataStore? data)
     {
         if (data is null || StatusMeter.Read(data, meter.Value) is not { } value)
         {
-            return $"[{Muted}]{Waiting}[/]";
+            return null;
         }
 
         var max = string.IsNullOrWhiteSpace(meter.Max) ? null : StatusMeter.Read(data, meter.Max);
-        var text = StatusMeter.Fit(value, 5) + (max is null ? string.Empty : "/" + StatusMeter.Fit(max, 5));
-        return $"[bold {ScreenPalette.Value}]{Escape(text)}[/]";
+        return StatusMeter.Fit(value, 5) + (max is null ? string.Empty : "/" + StatusMeter.Fit(max, 5));
     }
 
     /// <summary>

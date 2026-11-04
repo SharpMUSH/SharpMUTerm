@@ -70,6 +70,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's screen-reader regions; the window adds them beside the view.</summary>
     public WindowAnnouncer Announcer { get; } = new();
 
+    /// <summary>The window's native settings window, which the main window owns (<see cref="SettingsPresenter"/>).</summary>
+    public SettingsPresenter Settings { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

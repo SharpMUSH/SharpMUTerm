@@ -56,5 +56,8 @@ internal static class WindowHost
         // A live region a screen reader watches; the terminal has none, and --plain is its answer.
         Announcer = driver.Announcer,
         ScreenIsSeen = true,
+
+        // F7 and F8 open a native settings window generated from their declarations; the rest stay cell screens.
+        NativeSettings = driver.Settings,
     };
 }
