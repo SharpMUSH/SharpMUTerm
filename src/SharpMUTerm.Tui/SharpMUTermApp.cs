@@ -743,7 +743,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sessions.SessionRemoved += OnSessionRemoved;
         _inlineImages = new InlineImageHost(
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
-            OnUi);
+            OnImageUi);
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
         _media = media ?? new MediaCache();
@@ -2096,7 +2096,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// hung/OOM'd.) A frame also arranges the layout, so control bounds are only real after one has
     /// been rendered.
     /// </summary>
-    private string RenderFrame() => HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
+    private string RenderFrame()
+    {
+        DrainHeadlessImageWork();
+        return HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
+    }
 
     /// <summary>
     /// Renders one more frame, the way a test drives the client on past a change it has just made —
@@ -2703,7 +2707,59 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal Func<string, CancellationToken, Task<byte[]?>>? ImageFetch { get; set; }
 
     /// <summary>Completes when every MXP picture asked for so far has been delivered or given up on.</summary>
-    internal Task InlineImagesSettled => _inlineImages.Pending;
+    internal Task InlineImagesSettled => _headless ? SettleHeadlessImagesAsync() : _inlineImages.Pending;
+
+    /// <summary>
+    /// UI work the picture host hands back, held until whoever drives a headless app collects it.
+    /// <para>
+    /// The host fetches and decodes on the thread pool and hands its results to <see cref="OnImageUi"/>.
+    /// A headless app has no UI thread, and <see cref="OnUiThread"/> there runs the action inline — which
+    /// for these callers means <em>on the pool thread</em>, at the same moment the test or snapshot is
+    /// appending the next line on its own. <see cref="DrawReservedPicture"/> and the append that reads
+    /// <see cref="ReservedPicture.Drawn"/> then raced over the same buffer: the picture set
+    /// <c>Drawn</c> and scanned the lines a moment before the next line landed, that line read
+    /// <c>Drawn</c> a moment before it was set, and the row was left blank for ever. That was the
+    /// intermittent <c>APictureStopsAtTheFirstLineWithoutItsCells</c>. So a headless app queues the work
+    /// and runs it on the driving thread: at the next frame, or while <see cref="InlineImagesSettled"/>
+    /// is awaited — which is also what lets a Kitty transmit, itself UI work the load waits on, finish.
+    /// A real run marshals onto the loop exactly as before.
+    /// </para>
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _headlessImageWork = new();
+
+    private void OnImageUi(Action action)
+    {
+        if (_headless)
+        {
+            _headlessImageWork.Enqueue(action);
+            return;
+        }
+
+        OnUiThread(action);
+    }
+
+    private void DrainHeadlessImageWork()
+    {
+        while (_headlessImageWork.TryDequeue(out var action))
+        {
+            action();
+        }
+    }
+
+    private async Task SettleHeadlessImagesAsync()
+    {
+        while (true)
+        {
+            DrainHeadlessImageWork();
+            var pending = _inlineImages.Pending;
+            if (pending.IsCompleted && _headlessImageWork.IsEmpty)
+            {
+                return;
+            }
+
+            await Task.WhenAny(pending, Task.Delay(5)).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Waits for a snapshot scene's pictures — headless only. A Kitty picture is transmitted on the UI thread,
@@ -2715,7 +2771,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (_headless)
         {
-            _inlineImages.Pending.GetAwaiter().GetResult();
+            SettleHeadlessImagesAsync().GetAwaiter().GetResult();
         }
     }
 

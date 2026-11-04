@@ -156,6 +156,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- A `--snapshot` frame with an MXP picture in cells a server left for it no longer sometimes leaves one of
+  the picture's rows blank.
 - At 80 columns the status row no longer wraps onto a second row: the encoding and the Ctrl+P hint are
   dropped first.
 - Health, mana and movement meters stay on the status row on a narrow terminal, shown as percentages when
