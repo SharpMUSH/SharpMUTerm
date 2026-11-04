@@ -974,7 +974,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // line, and this puts it back the instant anything takes it, which is what makes "which bar ⏎
         // sends from", "which control the framework will paste into" and "where the caret is drawn" one
         // fact rather than three that agree until they don't.
-        _window.FocusManager.FocusChanged += (_, _) => PinFocusToArmedBar();
+        _window.FocusManager.FocusChanged += (_, _) =>
+        {
+            // A click in a docked composer's editor is a request to write there, not focus drifting: arm it.
+            ArmClickedComposer();
+            PinFocusToArmedBar();
+        };
         _window.PreviewKeyPressed += OnWindowKey;
 
         // NAWS rides the frame. Pane rectangles exist only while an arranged layout does, and every
@@ -993,6 +998,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             SyncMapSizes();
+            SyncPanelSizes();
         };
         if (_sixel is not null)
         {
@@ -1783,6 +1789,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (view?.ToLowerInvariant() is "packages" or "package-review" or "package-browse")
         {
             LoadDemoPackages(view.ToLowerInvariant());
+        }
+
+        // The panels a layout places, each opened through its real ⌃P entry over the demo's game data, which is
+        // written through the calls the wire makes. See LoadDemoPanels for what each frame is for.
+        if (string.Equals(view, "panel-who", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "panel-vitals", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "panel-quickbar", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "panel-composer", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoPanels(view!.ToLowerInvariant());
         }
 
         // The status row's meters and the game data inspector, over the demo's game data — written through
@@ -4893,6 +4909,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // was opened, already sent.
         _composer.Close();
         _composeDrafts.Remove(session.SessionKey);
+        SyncDockedComposers(session.SessionKey);
         HistoryFor(BarKind(ActiveBar())).Add(line);
         _ = session.SendUserInputAsync(line);
     }
@@ -4918,10 +4935,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (result.Body.Trim().Length == 0)
         {
             _composeDrafts.Remove(key);
-            return;
+        }
+        else
+        {
+            _composeDrafts[key] = result;
         }
 
-        _composeDrafts[key] = result;
+        SyncDockedComposers(key);
     }
 
     /// <summary>The composer, for the tests and the snapshot views.</summary>
@@ -5291,8 +5311,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void ArmBar(InputBarControl bar)
     {
         _armed = bar.Visible ? bar : _input;
-        _input.Armed = ReferenceEquals(_armed, _input);
-        _second.Armed = ReferenceEquals(_armed, _second);
+        // A docked composer holding the keyboard keeps it: this is re-asserted on every layout change, and only
+        // the explicit gestures (the ⌃↑/⌃↓ ladder, ⇥ between bars, Esc) hand it back — see ReleaseComposer.
+        SyncComposerBands();
         _window.FocusControl(_armed);
         UpdateInputChrome();
     }
@@ -5314,7 +5335,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        var bar = ActiveBar();
+        // The armed composer, when one holds the keyboard, is what typing, paste and the caret follow instead.
+        IInteractiveControl bar = ArmedComposer()?.Editor ?? (IInteractiveControl)ActiveBar();
         if (ReferenceEquals(_window.FocusManager.FocusedControl, bar))
         {
             return;
@@ -5707,6 +5729,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Up out of the second command line before anything else — it is the station above it.
         if (move == PaneDirection.Up && ReferenceEquals(_armed, _second) && _second.Visible)
         {
+            _composerReleased = true;
             ArmBar(_input);
             return true;
         }
@@ -5720,6 +5743,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Down off the last pane lands on the command lines, which are drawn below them.
         if (move == PaneDirection.Down && _second.Visible && ReferenceEquals(_armed, _input))
         {
+            _composerReleased = true;
             ArmBar(_second);
             return true;
         }
@@ -6926,6 +6950,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // line rather than the next reconnect. See ReloadAutomation.
         ReloadAutomation();
 
+        // The quick bar lists the macros just committed, and the vitals the meters.
+        RefreshPanels();
+
         // F5 also adds and removes worlds and characters, which are what the header's fraction and the
         // rail are drawn from. Neither is repainted by anything else here, so a world added on F5 used to
         // leave both reading the configuration as it was before.
@@ -8077,6 +8104,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (DispatchGroupCommand(id))
         {
+            return true;
+        }
+
+        if (id.StartsWith(PanelCommandPrefix, StringComparison.Ordinal))
+        {
+            ShowPanel(id[PanelCommandPrefix.Length..]);
             return true;
         }
 
@@ -11280,6 +11313,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return null;
             }
 
+            // A docked composer holding the keyboard takes the keys an editor takes; see HandleComposerKey.
+            if (ArmedComposer() is { } composer)
+            {
+                return HandleComposerKey(composer, e);
+            }
+
+            if (TryComposerAltEnter(e))
+            {
+                return null;
+            }
+
             // Alt+⏎ → newline, reassembled from the Escape and Enter the parser splits it into. First in
             // the chain because it is the only entry that has to see *every* key: it remembers a lone
             // Escape and must forget it again the moment anything else arrives, whoever ends up claiming
@@ -12362,6 +12406,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         SyncScrollbackState();
         RefreshPromptRow();
         ReportPaneSizes();
+        SyncComposerArm();
     }
 
     /// <summary>
