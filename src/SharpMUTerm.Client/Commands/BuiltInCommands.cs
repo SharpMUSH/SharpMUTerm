@@ -308,7 +308,9 @@ public static class BuiltInCommands
 
         foreach (var window in workspace.Windows)
         {
-            if (window.Id == activeWindow)
+            // A layout panel is furniture, not a destination: each has its own ⌃P entry (Show vitals, Dock the
+            // composer…) that goes to it, so a "Go to Vitals" row would be a second spelling of one action.
+            if (window.Id == activeWindow || window.Kind == WindowKind.Panel)
             {
                 continue;
             }

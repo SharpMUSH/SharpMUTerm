@@ -677,12 +677,7 @@ internal sealed partial class SharpMUTermApp
     private void LoadDemoPanels(string view)
     {
         LoadDemoGameData();
-        _demoOccupants.Apply(
-            "Room.Players",
-            """[{"name":"Ashlyn","fullname":"Ashlyn the Wanderer","idle":12},{"name":"Brannoc","idle":260},{"name":"Merrow","fullname":"Merrow of the Tide","idle":5},{"name":"Corvid","idle":0}]""");
-        _demoOccupants.Apply(
-            "Char.Items.List",
-            """{"location":"room","items":[{"id":"9101","name":"a town crier","attrib":"m"},{"id":"9102","name":"a stray cat","attrib":"m"},{"id":"9103","name":"a lantern","attrib":"t"}]}""");
+        LoadDemoOccupants();
 
         switch (view)
         {
@@ -719,7 +714,7 @@ internal sealed partial class SharpMUTermApp
                     && _workspace.Layout.FindWindow(composer) is { } column)
                 {
                     var who = TerminalPanels.WindowId(PanelIds.WhoHere, DemoScene.ActiveSessionKey);
-                    _workspace.OpenWindow(who, PanelTitle(PanelIds.WhoHere), WindowKind.Auxiliary, DemoScene.ActiveSessionKey, column.Id);
+                    _workspace.OpenWindow(who, PanelTitle(PanelIds.WhoHere), WindowKind.Panel, DemoScene.ActiveSessionKey, column.Id);
                     _workspace.Layout.SplitWithWindow(who, column.Id, Edge.Bottom);
                     RebuildPaneArea();
                     Activate(MainWindowId);
@@ -731,6 +726,21 @@ internal sealed partial class SharpMUTermApp
         }
 
         RefreshRail();
+    }
+
+    /// <summary>The demo room's roster, written through <see cref="RoomOccupants.Apply"/> as the wire would.</summary>
+    private void LoadDemoOccupants()
+    {
+        const string players =
+            """[{"name":"Ashlyn","fullname":"Ashlyn the Wanderer","idle":12},{"name":"Brannoc","idle":260},{"name":"Merrow","fullname":"Merrow of the Tide","idle":5},{"name":"Corvid","idle":0}]""";
+
+        // Into the game data too, as a session stores every GMCP package: that is where a layout reads "who is here
+        // is known" from (PanelAvailability), so the Roleplay layout draws the panel.
+        _demoGameData.SetGmcp("Room.Players", players);
+        _demoOccupants.Apply("Room.Players", players);
+        _demoOccupants.Apply(
+            "Char.Items.List",
+            """{"location":"room","items":[{"id":"9101","name":"a town crier","attrib":"m"},{"id":"9102","name":"a stray cat","attrib":"m"},{"id":"9103","name":"a lantern","attrib":"t"}]}""");
     }
 
     /// <summary>Opens a demo panel in a new pane to the right of the main window's, <paramref name="columns"/> wide.</summary>
@@ -749,7 +759,7 @@ internal sealed partial class SharpMUTermApp
         return windowId;
     }
 
-    /// <summary>Opens a demo panel in a pane along one edge of the main window's, as short as a pane may be.</summary>
+    /// <summary>Opens a demo strip panel in a pane along one edge of the main window's; it is as tall as its content.</summary>
     private void OpenDemoPanelStrip(string panelId, Edge edge)
     {
         var mainPane = _workspace.Layout.FindWindow(MainWindowId)?.Id;
@@ -761,7 +771,6 @@ internal sealed partial class SharpMUTermApp
         _workspace.Layout.SplitWithWindow(windowId, mainPane, edge);
         RebuildPaneArea();
         Activate(windowId);
-        SizeDemoPane(windowId, PaneResize.MinimumPaneRows);
     }
 
     /// <summary>

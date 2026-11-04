@@ -61,7 +61,17 @@ internal sealed partial class SharpMUTermApp
     {
         var key = new DividerKey(split, index);
         var rule = Divider(_litDivider is { } lit && lit.Equals(key));
-        _dividers.Add(new DividerSlot(rule, split, index));
+
+        // The rule beside a fixed-height strip is drawn but not registered: it cannot move, so it offers no
+        // resize cue to hover, no drag and no double-click to even.
+        var held = split.Direction == SplitDirection.Column
+            && (PaneExtent.FixedRows(split.Children[index]) is not null
+                || PaneExtent.FixedRows(split.Children[index + 1]) is not null);
+        if (!held)
+        {
+            _dividers.Add(new DividerSlot(rule, split, index));
+        }
+
         return rule;
     }
 

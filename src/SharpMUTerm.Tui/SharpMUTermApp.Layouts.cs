@@ -72,6 +72,15 @@ internal sealed partial class SharpMUTermApp
     private int _layoutsSelected;
     private string? _layoutsStatus;
 
+    /// <summary>The name being typed over the selected layout's (r), or null when no rename is under way.</summary>
+    private string? _layoutsRenaming;
+
+    /// <summary>Whether the selected layout's delete (d) is waiting for its y.</summary>
+    private bool _layoutsConfirmingDelete;
+
+    /// <summary>The longest name a rename takes; the list elides past its column anyway.</summary>
+    private const int LayoutNameMaxLength = 40;
+
     /// <summary>The id of the layout realised in the panes, while it still owns them; for tests.</summary>
     internal string? LiveLayoutId => _liveLayout?.LayoutId;
 
@@ -124,7 +133,7 @@ internal sealed partial class SharpMUTermApp
         var id = TerminalPanels.WindowId(panelId, key);
         if (_workspace.FindWindow(id) is null)
         {
-            _workspace.OpenWindow(id, PanelTitle(panelId), WindowKind.Auxiliary, key);
+            _workspace.OpenWindow(id, PanelTitle(panelId), WindowKind.Panel, key);
         }
         else if (_workspace.Layout.FindWindow(id) is null)
         {
@@ -473,12 +482,108 @@ internal sealed partial class SharpMUTermApp
             : ResolveLayout(key).Layout.Id;
         _layoutsSelected = Math.Max(0, all.ToList().FindIndex(l => l.Id == inUse));
         _layoutsStatus = null;
+        _layoutsRenaming = null;
+        _layoutsConfirmingDelete = false;
         _layoutsView.Open(
             "layouts",
             $"Layouts · {Snippet(key)}",
             width => LayoutsListLines(key, width),
             k => LayoutsKeyPressed(key, k),
-            width: 64);
+            width: 64,
+            escape: LayoutsEscape);
+    }
+
+    /// <summary>Esc in the ⌥M list: leaves a rename or a pending delete first, and closes the list only from rest.</summary>
+    private bool LayoutsEscape()
+    {
+        if (_layoutsRenaming is not null)
+        {
+            _layoutsRenaming = null;
+            _layoutsStatus = "rename cancelled";
+            return true;
+        }
+
+        if (_layoutsConfirmingDelete)
+        {
+            _layoutsConfirmingDelete = false;
+            _layoutsStatus = "kept";
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>A key while a name is being typed: letters build it, ⏎ keeps it, ⌫ takes a letter back.</summary>
+    private bool LayoutsRenameKey(LayoutDefinition selected, ConsoleKeyInfo k)
+    {
+        var typed = _layoutsRenaming ?? string.Empty;
+        switch (k.Key)
+        {
+            case ConsoleKey.Enter:
+                var name = typed.Trim();
+                if (name.Length == 0)
+                {
+                    _layoutsStatus = "a layout needs a name — type one, or Esc keeps the old";
+                    return true;
+                }
+
+                if (!Layouts.Rename(selected.Id, name))
+                {
+                    _layoutsStatus = Layouts.IsNameTaken(name, selected.Id)
+                        ? $"a layout is already called {name}"
+                        : $"{selected.Name} cannot be renamed";
+                    return true;
+                }
+
+                PersistConfiguration();
+                _layoutsRenaming = null;
+                _layoutsStatus = $"renamed to {name}";
+                return true;
+            case ConsoleKey.Backspace:
+                _layoutsRenaming = typed.Length == 0 ? typed : typed[..^1];
+                return true;
+            default:
+                if (k.KeyChar >= ' ' && !char.IsControl(k.KeyChar)
+                    && (k.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0
+                    && typed.Length < LayoutNameMaxLength)
+                {
+                    _layoutsRenaming = typed + k.KeyChar;
+                }
+
+                return true;
+        }
+    }
+
+    /// <summary>The answer to "delete …?": y deletes, anything else keeps it.</summary>
+    private bool LayoutsDeleteAnswer(string key, LayoutDefinition selected, ConsoleKeyInfo k)
+    {
+        _layoutsConfirmingDelete = false;
+        if (k.Key != ConsoleKey.Y || (k.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) != 0)
+        {
+            _layoutsStatus = "kept";
+            return true;
+        }
+
+        if (!Layouts.Delete(selected.Id))
+        {
+            _layoutsStatus = $"{selected.Name} cannot be deleted";
+            return true;
+        }
+
+        // The panes stay as they are; with the layout they were drawn from gone, they are the player's own now.
+        if (_liveLayout is { } live && live.LayoutId == selected.Id)
+        {
+            _liveLayout = null;
+        }
+
+        PersistConfiguration();
+        _layoutsSelected = Math.Clamp(_layoutsSelected, 0, Layouts.All.Count - 1);
+        var (world, character) = LayoutOwner(key);
+        var named = character?.Layout == selected.Id || world?.Layout == selected.Id;
+        _layoutsStatus = named
+            ? $"deleted {selected.Name} — this character falls back to the next layout"
+            : $"deleted {selected.Name}";
+        return true;
     }
 
     private bool LayoutsKeyPressed(string key, ConsoleKeyInfo k)
@@ -487,6 +592,17 @@ internal sealed partial class SharpMUTermApp
         _layoutsSelected = Math.Clamp(_layoutsSelected, 0, all.Count - 1);
         var selected = all[_layoutsSelected];
         var (world, character) = LayoutOwner(key);
+        if (_layoutsRenaming is not null)
+        {
+            return LayoutsRenameKey(selected, k);
+        }
+
+        if (_layoutsConfirmingDelete)
+        {
+            return LayoutsDeleteAnswer(key, selected, k);
+        }
+
+        _layoutsStatus = null;
         switch (k.Key)
         {
             case ConsoleKey.UpArrow:
@@ -509,6 +625,24 @@ internal sealed partial class SharpMUTermApp
                 return true;
             case ConsoleKey.N when k.Modifiers == 0:
                 _layoutsStatus = SaveLayoutAsNew(key, selected).Status;
+                return true;
+            case ConsoleKey.R when k.Modifiers == 0:
+                if (selected.IsBuiltIn)
+                {
+                    _layoutsStatus = $"{selected.Name} is built in — n saves a copy you can rename";
+                    return true;
+                }
+
+                _layoutsRenaming = selected.Name;
+                return true;
+            case ConsoleKey.D when k.Modifiers == 0:
+                if (selected.IsBuiltIn)
+                {
+                    _layoutsStatus = $"{selected.Name} is built in and cannot be deleted";
+                    return true;
+                }
+
+                _layoutsConfirmingDelete = true;
                 return true;
             case ConsoleKey.W when k.Modifiers == 0:
                 _layoutsStatus = UseLayoutForWorld(key, selected, world).Status;
@@ -657,8 +791,11 @@ internal sealed partial class SharpMUTermApp
         {
             var selected = index == _layoutsSelected;
             var mark = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
-            var name = Snippet(layout.Name);
-            name = name.Length > nameColumn - 1 ? name[..(nameColumn - 2)] + "…" : name;
+            var renaming = selected && _layoutsRenaming is not null;
+            var name = renaming ? _layoutsRenaming! + "▏" : Snippet(layout.Name);
+            name = renaming
+                ? (name.Length > nameColumn - 1 ? "…" + name[^(nameColumn - 2)..] : name)
+                : (name.Length > nameColumn - 1 ? name[..(nameColumn - 2)] + "…" : name);
             var tags = new List<string>();
             if (layout.Id == inUse)
             {
@@ -703,18 +840,41 @@ internal sealed partial class SharpMUTermApp
             lines.Add($"  [{ScreenPalette.Label}]none yet — n saves the panes as they are now[/]");
         }
 
+        string Key(string chord, string what) => $"[{ScreenPalette.Accent}]{chord}[/] [{ScreenPalette.Label}]{what}[/]";
+        var current = all[Math.Clamp(_layoutsSelected, 0, all.Count - 1)];
+        var statusLine = _layoutsStatus is { } status ? $"[{ScreenPalette.Value}]{Escape(status)}[/]" : string.Empty;
+
+        // Every row below is always present, blank when it has nothing to say, so the modal (sized once, when it
+        // opens) never has a line pushed off its bottom by a status or a question.
         lines.Add(string.Empty);
-        lines.Add(
-            $"[{ScreenPalette.Accent}]s[/] [{ScreenPalette.Label}]save changes[/]     "
-            + $"[{ScreenPalette.Accent}]n[/] [{ScreenPalette.Label}]save as new[/]");
-        lines.Add(
-            $"[{ScreenPalette.Accent}]w[/] [{ScreenPalette.Label}]use for world[/]    "
-            + $"[{ScreenPalette.Accent}]c[/] [{ScreenPalette.Label}]use for this character[/]");
-        if (_layoutsStatus is { } status)
+        if (_layoutsRenaming is not null)
         {
-            lines.Add($"[{ScreenPalette.Value}]{Escape(status)}[/]");
+            lines.Add($"[{ScreenPalette.Label}]type a new name for[/] [{ScreenPalette.Value}]{Escape(Snippet(current.Name))}[/]");
+            lines.Add(string.Empty);
+            lines.Add(string.Empty);
+            lines.Add(statusLine);
+            lines.Add(string.Empty);
+            lines.Add($"[{ScreenPalette.Label}][[⏎]] Keep name  [[⌫]] Erase  [[Esc]] Cancel[/]");
+            return lines;
         }
 
+        if (_layoutsConfirmingDelete)
+        {
+            lines.Add($"[{ScreenPalette.Value}]delete {Escape(Snippet(current.Name))}?[/] [{ScreenPalette.Label}]it cannot be brought back[/]");
+            lines.Add(string.Empty);
+            lines.Add(string.Empty);
+            lines.Add(string.Empty);
+            lines.Add(string.Empty);
+            lines.Add($"[{ScreenPalette.Label}][[y]] Delete  [[Esc]] or any other key keeps it[/]");
+            return lines;
+        }
+
+        lines.Add($"{Key("s", "save changes")}     {Key("n", "save as new")}");
+        lines.Add($"{Key("w", "use for world")}    {Key("c", "use for this character")}");
+
+        // r and d are named only over a layout of the player's own: on a built-in neither does anything but say so.
+        lines.Add(current.IsBuiltIn ? string.Empty : $"{Key("r", "rename")}           {Key("d", "delete")}");
+        lines.Add(statusLine);
         lines.Add(string.Empty);
         lines.Add($"[{ScreenPalette.Label}]↑↓ pick  [[Esc]] Close  [[⏎]] Apply[/]");
         return lines;

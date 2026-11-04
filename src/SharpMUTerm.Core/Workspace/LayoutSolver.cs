@@ -55,7 +55,8 @@ public static class LayoutSolver
 
         var span = isRow ? rect.Width : rect.Height;
         var forChildren = Math.Max(0, span - (DividerThickness * (count - 1)));
-        var sizes = Distribute(forChildren, split.Sizes);
+        // Rows honour a pane's declared height (a strip is as tall as its content); columns are always shares.
+        var sizes = isRow ? Distribute(forChildren, split.Sizes) : PaneExtent.DistributeRows(forChildren, split);
 
         var cursor = isRow ? rect.X : rect.Y;
         for (var i = 0; i < count; i++)

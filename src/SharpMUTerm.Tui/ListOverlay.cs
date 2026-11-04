@@ -18,6 +18,7 @@ internal sealed class ListOverlay
     private MarkupControl? _content;
     private Func<int, List<string>>? _render;
     private Func<ConsoleKeyInfo, bool>? _key;
+    private Func<bool>? _escape;
 
     private readonly ScreenTheme _scheme;
 
@@ -39,7 +40,17 @@ internal sealed class ListOverlay
     /// Opens a surface. <paramref name="render"/> draws it at a width; <paramref name="key"/> answers a key
     /// and returns whether the surface stays open.
     /// </summary>
-    public void Open(string mode, string title, Func<int, List<string>> render, Func<ConsoleKeyInfo, bool> key, int? width = null)
+    /// <param name="escape">
+    /// Asked first when Esc is pressed: true when the surface took it (to leave a sub-mode of its own — a name being
+    /// typed, a delete awaiting its answer) and stays open; with none, or false, Esc closes.
+    /// </param>
+    public void Open(
+        string mode,
+        string title,
+        Func<int, List<string>> render,
+        Func<ConsoleKeyInfo, bool> key,
+        int? width = null,
+        Func<bool>? escape = null)
     {
         if (_window is not null)
         {
@@ -48,6 +59,7 @@ internal sealed class ListOverlay
 
         _render = render;
         _key = key;
+        _escape = escape;
         var desktop = _system.DesktopDimensions;
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
@@ -119,6 +131,12 @@ internal sealed class ListOverlay
         // A key can start a fetch whose answer opens the next surface (browse, then a review). Only the
         // surface the key was pressed on is closed, so that answer is never closed with it.
         var window = _window;
+        if (e.KeyInfo.Key == ConsoleKey.Escape && _escape?.Invoke() == true)
+        {
+            Repaint();
+            return;
+        }
+
         if (e.KeyInfo.Key == ConsoleKey.Escape || !_key(e.KeyInfo))
         {
             if (_window == window)
@@ -138,6 +156,7 @@ internal sealed class ListOverlay
         _content = null;
         _render = null;
         _key = null;
+        _escape = null;
         Mode = null;
     }
 }

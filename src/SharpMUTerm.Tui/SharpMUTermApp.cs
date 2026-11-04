@@ -1859,6 +1859,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Combat);
         }
 
+        // `layout-roleplay` is the same for the Roleplay layout: who is here beside the output (the room's roster,
+        // so it has data) with Chat as a tab behind it, and the docked composer under the output at its floor.
+        if (string.Equals(view, "layout-roleplay", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            LoadDemoOccupants();
+            ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Roleplay);
+        }
+
         // The ⌃Q confirmation, over a workspace that has something to lose: a second world marked
         // connected (the demo scene's own way of saying so, and what the header's "n/m characters" reads),
         // a line typed into the command line through the bar's real change notification, and then the
@@ -7762,8 +7771,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var windows = new List<RailWindow>();
         foreach (var window in _workspace.Windows)
         {
+            // A layout panel is not listed: it is furniture of the layout, not a window you go to, and it carries
+            // no ⌥N (Workspace.WindowsFor) — so the rail and the numbering stay one list.
             var mine = string.Equals(window.SessionKey, owner, StringComparison.Ordinal);
-            if (window.SessionKey is not null && !mine)
+            if (window.Kind == WindowKind.Panel || window.SessionKey is not null && !mine)
             {
                 continue;
             }
@@ -9985,6 +9996,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _dividers.Clear();
 
 
+        // Each pane's height claim, from what it holds: a strip panel is as tall as its content and an editor has a
+        // floor. Derived here on every rebuild rather than stored, so a pane handed an ordinary window stops being a
+        // strip at once.
+        foreach (var pane in _workspace.Layout.Root.Panes())
+        {
+            Core.Layouts.PanelSizing.Apply(pane, PanelIdOfWindow, TabStripRows);
+        }
+
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
         var paneArea = zoomed is not null
@@ -10522,10 +10541,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Interleave a thin 1-cell divider between children (a solid border-colour bar) instead of the
         // framework's double-line splitter, so splits read as a single calm line.
+        // A stacked split gives a strip pane exactly its rows (Cells) and an editor its floor (Star's min); the rest
+        // share by weight. PaneExtent.DistributeRows is the same rule, for the panes nothing has arranged yet.
+        var stacked = split.Direction == SplitDirection.Column;
+        var fixedRows = stacked ? PaneExtent.FixedChildren(split) : new int?[children.Count];
         var tracks = new List<GridLength>();
         for (var i = 0; i < children.Count; i++)
         {
-            tracks.Add(GridLength.Star(Math.Max(0.01, split.Sizes[i])));
+            var floor = stacked ? PaneExtent.MinRows(split.Children[i]) : 0;
+            tracks.Add(fixedRows[i] is { } rows
+                ? GridLength.Cells(rows)
+                : GridLength.Star(Math.Max(0.01, split.Sizes[i]), min: floor > 0 ? floor : null));
             if (i < children.Count - 1)
             {
                 tracks.Add(GridLength.Cells(1));
@@ -10562,6 +10588,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         return grid.Build();
     }
+
+    /// <summary>The rows the framework's tab strip takes over a pane (the classic header style).</summary>
+    private const int TabStripRows = 1;
+
+    /// <summary>The layout panel a window draws, or null for an ordinary window.</summary>
+    private static string? PanelIdOfWindow(string windowId) =>
+        TerminalPanels.TryParseWindowId(windowId, out var panelId, out _) ? panelId : null;
 
     /// <summary>Whether a pane is the one every workspace keystroke is aimed at.</summary>
     private bool IsFocusedPane(string paneId) =>
@@ -10641,6 +10674,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         PaintTabChips(tabs, PaneSurfaceTone(pane.Id));
+
+        // A one-tab strip (the vitals meters, the quick bar) draws no tab strip: its row already says what it is,
+        // and a strip the height of its content has no row to spare. PaneOutputRects reads TabHeaderHeight, so the
+        // rectangle it reports follows.
+        tabs.ShowTabHeader = Core.Layouts.PanelSizing.ShowsTabStrip(pane.Tabs.Select(PanelIdOfWindow).ToList());
 
         var paneId = pane.Id;
         tabs.TabChanged += (_, e) => OnTabChanged(paneId, e.NewTab);
@@ -10787,6 +10825,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _window.InsertControl(WorkspaceRowIndex, row);
         _workspaceRow = row;
         RefreshTabTitles();
+        SyncStatusMeters();
     }
 
     /// <summary>How many times the pane area has been torn down and rebuilt; a test counts the reflows a change cost.</summary>
@@ -12035,11 +12074,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var rects = new Dictionary<string, PaneRect>(StringComparer.Ordinal);
         var windows = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var (paneId, _, rect) in RealisedPanes())
+        foreach (var (paneId, tabs, rect) in RealisedPanes())
         {
             rects[paneId] = rect;
 
-            if (_workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId)
+            // A pane that draws no tab strip (a one-row strip panel) has no drag handle: its one row is its
+            // content, and a press there belongs to that content's links.
+            if (tabs.ShowTabHeader && _workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId)
             {
                 windows[paneId] = windowId;
             }
@@ -12536,6 +12577,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         RefreshPromptRow();
         ReportPaneSizes();
         SyncComposerArm();
+        SyncStatusMeters();
     }
 
     /// <summary>
@@ -13348,6 +13390,40 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return $"[dim]⌂ {Escape(text.PadRight(room))}[/]";
     }
 
+    /// <summary>Whether the status row last left its meters out because the vitals strip was showing them.</summary>
+    private bool _statusMetersHidden;
+
+    /// <summary>
+    /// Whether the status row's character (the one its meters read) has its vitals strip on screen: the strip's
+    /// window is the front tab of a pane that is drawn, so the same meters are already in front of the reader.
+    /// </summary>
+    internal bool VitalsStripShowing()
+    {
+        var key = _active?.SessionKey
+            ?? (_sessions.Sessions.Count == 0 ? _demoActiveKey ?? DemoScene.ActiveSessionKey : null);
+        if (key is null)
+        {
+            return false;
+        }
+
+        var windowId = TerminalPanels.WindowId(Core.Layouts.PanelIds.Vitals, key);
+        return _workspace.Layout.FindWindow(windowId) is { } pane
+            && pane.ActiveTab == windowId
+            && (_workspace.Layout.ZoomedPaneId is not { } zoomed || zoomed == pane.Id);
+    }
+
+    /// <summary>
+    /// Repaints the status row when the vitals strip has come onto the screen or left it since the row was drawn,
+    /// so the meters move between the two. Only on a change: a repaint for nothing would displace a notice.
+    /// </summary>
+    private void SyncStatusMeters()
+    {
+        if (VitalsStripShowing() != _statusMetersHidden)
+        {
+            RefreshStatusBar();
+        }
+    }
+
     /// <summary>The cells the meters leave free for the typed-character count to grow into.</summary>
     private const int MeterSlack = 4;
 
@@ -13355,7 +13431,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
-        var meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}");
+        // The vitals strip already draws these meters for this character, larger; the row says them only while it
+        // is not on screen. Nothing else on the row moves with it: every other cell is reserved or dropped by width.
+        _statusMetersHidden = VitalsStripShowing();
+        var meters = _statusMetersHidden
+            ? string.Empty
+            : StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}");
 
         var right = new List<string>();
 
