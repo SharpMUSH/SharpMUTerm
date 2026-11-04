@@ -75,7 +75,7 @@ public sealed class AppConfiguration
     /// </summary>
     public List<string> CharsetOrder { get; set; } = new() { "utf-8", "iso-8859-1" };
 
-    /// <summary>How inbound text is drawn — the F7 "Text &amp; ANSI" screen's settings.</summary>
+    /// <summary>How inbound text is drawn — the F7 "Text &amp; display" screen's settings.</summary>
     public TextSettings Text { get; set; } = new();
 
     /// <summary>Game sound: on or off, the player's levels, captions (F7 ▸ SOUND).</summary>

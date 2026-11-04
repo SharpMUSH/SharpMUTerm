@@ -364,16 +364,14 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 21 display rows: 6 section headers + 5 spacers + 10 options. It was 7/4 before WHITESPACE and
-        // its "tab width (spaces)" row, which brought a header and a spacer with it, 10/5 before
-        // "detect links in output" joined the COLOUR section, 11/6 before ACTIVITY and its
-        // "activity bar holds for (seconds)" row brought a header and a spacer of their own, and 14/7
-        // before "keep text legible" joined COLOUR beneath the row it is the other half of, and 15/8
-        // before BACKGROUND and its "background transparency (%)" row, and 18/9 before STATUS ROW and its
-        // "meters" row.
-        await Assert.That(screen.Rows.Count).IsEqualTo(21);
+        // 23 display rows: 5 group headings + 4 spacers + the meter table's column headings (drawn, never a
+        // stop) + 13 stops — eight settings in four groups, the three default meters, [+ meter], and the
+        // activity bar's hold. SOUND is left out because this caller passes no sound settings. Since F7 was
+        // drawn from its declared section the groups are COLOUR & LEGIBILITY, TEXT, LINKS & PICTURES,
+        // STATUS ROW & METERS and ACTIVITY; it was 21/10 with one row for the meters as a typed line.
+        await Assert.That(screen.Rows.Count).IsEqualTo(23);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(10);
+        await Assert.That(model.Sizes[0]).IsEqualTo(13);
     }
 
     /// <summary>
@@ -397,23 +395,24 @@ public class ScreenModelTests
         model.ToggleAt(0, 1)!.Value.Flip();
         await Assert.That(text.KeepTextLegible).IsFalse();
 
-        model.ToggleAt(0, 3)!.Value.Flip();
+        model.ToggleAt(0, 6)!.Value.Flip();
         await Assert.That(text.UnderlineHyperlinks).IsFalse();
 
-        model.ToggleAt(0, 4)!.Value.Flip();
+        model.ToggleAt(0, 7)!.Value.Flip();
         await Assert.That(text.DetectLinks).IsFalse();
 
-        model.ToggleAt(0, 6)!.Value.Flip();
+        model.ToggleAt(0, 5)!.Value.Flip();
         await Assert.That(text.EmojiSubstitution).IsFalse();
 
-        // Row 5 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
+        // Row 4 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
         // this screen carry an editable row at all.
-        await Assert.That(model.ToggleAt(0, 5)).IsNull();
+        await Assert.That(model.ToggleAt(0, 4)).IsNull();
         await Assert.That(model.HasEditableRow).IsTrue();
 
-        // Row 7 is the background transparency, a percentage rather than the checkbox it started as.
-        await Assert.That(model.ToggleAt(0, 7)).IsNull();
-        var transparency = model.FieldAt(0, 7, 0)!.Value;
+        // Row 3 is the background transparency, a percentage rather than the checkbox it started as, at the
+        // foot of COLOUR & LEGIBILITY.
+        await Assert.That(model.ToggleAt(0, 3)).IsNull();
+        var transparency = model.FieldAt(0, 3, 0)!.Value;
         await Assert.That(transparency.Validate("101")).IsNotNull();
         transparency.Set("60");
         await Assert.That(text.BackgroundTransparency).IsEqualTo(60);

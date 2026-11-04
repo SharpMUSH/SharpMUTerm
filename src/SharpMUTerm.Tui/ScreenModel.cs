@@ -211,10 +211,15 @@ internal enum ScreenButtonKind
 /// <param name="Toggle">The checkbox Space flips, or null when the row has none.</param>
 /// <param name="Fields">The values ⏎ opens for editing, in the order the screen draws them.</param>
 /// <param name="Button">The command ⏎ runs, or null when the row is not a button.</param>
+/// <param name="Reset">
+/// Puts the row's value back to its default, or null when the row is at its default or has none to go back
+/// to — so <c>r reset</c> is offered exactly where it would do something. Only declared settings carry one.
+/// </param>
 internal readonly record struct ScreenRow(
     ScreenToggle? Toggle = null,
     IReadOnlyList<ScreenField>? Fields = null,
-    ScreenButton? Button = null)
+    ScreenButton? Button = null,
+    Action? Reset = null)
 {
     /// <summary>A selectable row with nothing to press and nothing to type into.</summary>
     internal static ScreenRow Stop => default;
@@ -522,6 +527,9 @@ internal sealed class ScreenModel
 
     /// <summary>The checkbox at a cursor position, or null when that row isn't pressable.</summary>
     internal ScreenToggle? ToggleAt(int pane, int index) => RowAt(pane, index).Toggle;
+
+    /// <summary>What <c>r</c> runs on a row: its reset, or null where the row is at its default.</summary>
+    internal Action? ResetAt(int pane, int index) => RowAt(pane, index).Reset;
 
     /// <summary>The button at a cursor position, or null when that row isn't one.</summary>
     internal ScreenButton? ButtonAt(int pane, int index) => RowAt(pane, index).Button;

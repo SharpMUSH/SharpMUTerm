@@ -24,6 +24,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   never gets an empty map pane, and the first time you connect to a world the client picks Combat or Roleplay
   from what the game sends and says which in a notice. A workspace you arranged yourself is still what comes
   back after a restart.
+- Search the settings: press `/` on any settings screen and type. Every option, and every settings screen by
+  name, is listed with how many matches each screen holds; ⏎ goes straight to the option on its own screen.
+- A setting you have changed from its default is marked `● changed` on Text & display (F7) and Input (F8),
+  and `r` on it puts the default back.
 - Make a trigger without writing a regex: select a line of output and choose Ctrl+P ▸ *Make a trigger from
   the selection* (also on the right-click menu). Triggers (F2) opens on a new rule whose pattern is the line
   with its numbers, quoted speech and known player names turned into `*`, and shows the regex behind it.
@@ -130,6 +134,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The status row's meters are edited in a table on Text & display (F7): one row per meter with its label,
+  value path and maximum path, what it reads now, `[+ meter]`, and Delete to remove one. While you are in
+  the table it lists the game data this connection has received, and a path field offers those paths, with
+  their values, to pick from.
+- F7 is now called Text & display and its options are grouped under Colour & legibility, Text, Links &
+  pictures, Status row & meters, Activity and Sound. A list taller than the terminal scrolls with the cursor
+  instead of running off the bottom.
 - The ten pane colours a character can be given (F5 ▸ `tint`) have been re-chosen so they stay apart for
   players with red-green or blue-yellow colour blindness, and a little further apart for everyone else.
   The names are unchanged, so nothing needs setting again; Ochre is now a red ochre and Ember a red. In the

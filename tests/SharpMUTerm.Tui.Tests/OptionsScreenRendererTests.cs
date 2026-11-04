@@ -86,7 +86,8 @@ public class OptionsScreenRendererTests
     {
         var lines = OptionsScreenRenderer.TextAnsi();
         await Assert.That(lines.Any(l => l.Contains("COLOUR"))).IsTrue();
-        await Assert.That(lines.Any(l => l.Contains("UNICODE"))).IsTrue();
+        await Assert.That(lines.Any(l => l.Contains("LINKS & PICTURES"))).IsTrue();
+        await Assert.That(lines.Any(l => l.Contains("STATUS ROW & METERS"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("strip incoming ANSI colour"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("allow blink"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("underline hyperlinks"))).IsTrue();

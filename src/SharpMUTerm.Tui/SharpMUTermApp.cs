@@ -905,6 +905,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _window.IsScrollable = false;
 
         RegisterBuiltInContributions();
+        RegisterBuiltInSettings();
         _palette = new CommandPalette(
             _system,
             BuildCatalog,
@@ -915,7 +916,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
         _screens = ScreenTheme.For(_theme);
-        _settings = new SettingsOverlay(_system, _screens);
+        _settings = new SettingsOverlay(_system, _screens) { SearchHost = SettingsSearchHost() };
         _composer = new ComposeOverlay(_system, _spelling, _screens);
         _packageView = new ListOverlay(_system, _screens);
         _sendMenu = new ListOverlay(_system, _screens);
@@ -1994,6 +1995,56 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
             _settings.OpenForSnapshot(ConsoleKey.F5, WorldsScreen());
             _settings.SimulateKey(Stroke('i', ConsoleKey.I));
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
+        // The settings search and F7's meter editor, reached by the keys a reader would press: F7, `/`,
+        // `meter`. `settings-meters` then takes ⏎ to the field and ↓ onto the second meter, where the
+        // received-data box is drawn; `-pick` opens that meter's value path, so its dropdown lists what the
+        // demo's game data holds. The game data is written through SetGmcp, the call the wire makes.
+        // `settings-changed` is F7 after two real edits — Space on `emoji substitution`, and `8` typed into
+        // the tab width — so the frame carries the `● changed` marks and the header's `r reset`.
+        if (string.Equals(view, "settings-changed", StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
+            for (var down = 0; down < 5; down++)
+            {
+                _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
+            }
+
+            _settings.SimulateKey(Stroke(' ', ConsoleKey.Spacebar));
+            _settings.SimulateKey(Stroke('\0', ConsoleKey.UpArrow));
+            _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            _settings.SimulateKey(Stroke('\b', ConsoleKey.Backspace));
+            _settings.SimulateKey(Stroke('8', ConsoleKey.D8));
+            _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
+        if (string.Equals(view, "settings-search", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "settings-meters", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "settings-meters-pick", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
+            foreach (var c in "/meter")
+            {
+                _settings.SimulateKey(Stroke(c, c == '/' ? ConsoleKey.Oem2 : ConsoleKey.NoName));
+            }
+
+            if (!string.Equals(view, "settings-search", StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+                _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
+                if (view!.EndsWith("-pick", StringComparison.OrdinalIgnoreCase))
+                {
+                    _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+                    _settings.SimulateKey(Stroke('\t', ConsoleKey.Tab));
+                }
+            }
+
             SyncInputWidth();
             return RenderFrame();
         }
@@ -6520,18 +6571,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private IReadOnlyList<SettingsScreen> SettingsScreens() => new SettingsScreen[]
     {
-        new(ConsoleKey.F2, "Triggers & spawn routing", new[] { "triggers", "route", "highlight", "set" }, TriggersScreen),
-        new(ConsoleKey.F3, "Aliases", new[] { "aliases" }, AliasesScreen),
-        new(ConsoleKey.F4, "Keypad & hotkeys", new[] { "keypad" }, KeypadScreen),
-        new(ConsoleKey.F5, "Worlds & Characters", new[] { "worlds", "settings" }, WorldsScreen),
-        new(ConsoleKey.F6, "Timers", new[] { "timers" }, TimersScreen),
-        new(ConsoleKey.F7, "Text & ANSI", new[] { "textansi" }, TextAnsiScreen),
-        new(ConsoleKey.F8, "Input", new[] { "input" }, InputScreen),
+        new(ConsoleKey.F2, SectionTitle("triggers"), new[] { "triggers", "route", "highlight", "set" }, TriggersScreen),
+        new(ConsoleKey.F3, SectionTitle("aliases"), new[] { "aliases" }, AliasesScreen),
+        new(ConsoleKey.F4, SectionTitle("keypad"), new[] { "keypad" }, KeypadScreen),
+        new(ConsoleKey.F5, SectionTitle("worlds"), new[] { "worlds", "settings" }, WorldsScreen),
+        new(ConsoleKey.F6, SectionTitle("timers"), new[] { "timers" }, TimersScreen),
+        new(ConsoleKey.F7, SectionTitle("text"), new[] { "textansi" }, TextAnsiScreen),
+        new(ConsoleKey.F8, SectionTitle("input"), new[] { "input" }, InputScreen),
         // "password" and "startup" are further --view names for the same character-pane screen, the way
         // F2 carries four: the screen is identical, only the -edit script differs, and each names a
         // state a still frame is the only way to look at — a masked buffer mid-edit, and the two-entry
         // dropdown over `at start`, which is drawn *downward* over the rows beneath it.
-        new(ConsoleKey.F9, "Character logging", new[] { "logging", "password", "startup" }, CharacterLoggingScreen),
+        new(ConsoleKey.F9, SectionTitle("logging"), new[] { "logging", "password", "startup" }, CharacterLoggingScreen),
     };
 
     /// <summary>
@@ -7286,24 +7337,32 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _system.DesktopDimensions.Height));
     }
 
-    /// <summary>Opens the F7 Text &amp; ANSI screen, bound to the app's text preferences.</summary>
-    private ScreenBinding TextAnsiScreen() =>
-        OptionsScreen(() => OptionsScreenRenderer.TextAnsiScreen(_config.Text, _config.Sound));
+    /// <summary>Opens the F7 Text &amp; display screen, drawn from its declared section.</summary>
+    private ScreenBinding TextAnsiScreen() => OptionsScreen(TextProjection);
 
-    /// <summary>Opens the F8 Input screen, bound to the app's input preferences.</summary>
-    private ScreenBinding InputScreen() =>
-        OptionsScreen(() => OptionsScreenRenderer.InputScreen(_config.Input));
+    /// <summary>Opens the F8 Input screen, drawn from its declared section.</summary>
+    private ScreenBinding InputScreen() => OptionsScreen(_ => InputProjection());
 
     /// <summary>
     /// The shared open path for the single-list option screens (F7/F8). <paramref name="screen"/> is
-    /// re-projected from config on every key, so a flipped checkbox shows up in both the row it lives
-    /// on and the model the next keystroke navigates.
+    /// re-projected from config on every key, and handed the cursor, so a flipped checkbox shows up in both
+    /// the row it lives on and the model the next keystroke navigates — and F7's received-data box follows the
+    /// cursor into and out of the meter table.
     /// </summary>
-    private ScreenBinding OptionsScreen(Func<OptionsScreenRenderer.OptionsScreen> screen)
+    private ScreenBinding OptionsScreen(Func<int, OptionsScreenRenderer.OptionsScreen> screen)
     {
-        var session = new SettingsSession(_ => OptionsScreenRenderer.Model(screen()), SaveConfiguration);
-        return new ScreenBinding(session, () => OptionsScreenView.Build(
-            screen(), _system.DesktopDimensions.Width, _screens, session.Focus()));
+        var session = new SettingsSession(
+            selection => OptionsScreenRenderer.Model(screen(selection.CursorIn(0))), SaveConfiguration);
+        return new ScreenBinding(session, () =>
+        {
+            var focus = session.Focus();
+            return OptionsScreenView.Build(
+                screen(session.Selection.CursorIn(0)),
+                _system.DesktopDimensions.Width,
+                _screens,
+                focus,
+                _system.DesktopDimensions.Height);
+        });
     }
 
     /// <summary>The <c>--view</c> suffix that opens a settings screen with a field being typed into.</summary>

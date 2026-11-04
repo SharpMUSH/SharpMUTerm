@@ -1058,7 +1058,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   holds the two sides together; when you add state the demo fakes, pin it against the live writer the
   same way.
 - **Views:** `worlds`/`settings`, `triggers`, `route`, `highlight`, `aliases`, `timers`, `keypad`,
-  `set`, `textansi`, `input`, `logging`, `password`, `startup`, `freeze`, `spawn`, `split`, `move`, `drag`,
+  `set`, `textansi`, `input`, `settings-search` (F7, `/`, `meter` typed: the search with its section
+  list and match counts), `settings-meters`/`settings-meters-pick` (the meter table over the demo's game
+  data, the cursor on a meter with the received-data box under it, and the same meter's value path open with
+  its dropdown of received paths), `settings-changed` (F7 after two real edits: the `● changed` marks and
+  `r reset`), `logging`, `password`, `startup`, `freeze`, `spawn`, `split`, `move`, `drag`,
   `history`, `history-search`, `history-search-filter`, `draft`, `draft2`, `menu`, `menu-split`,
   `menu-fuzzy` (`trig sel` typed into ⌃P after a real drag, so the trigger builder's entry is offered — the
   frame showing a two-word fuzzy match highlighted), `menu-recent` (⌃P opened empty after two commands ran
@@ -1267,6 +1271,31 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
 - **`PromptControl` is not the command line** — `InputBarControl` is, built on `MultilineEditControl`.
   2.7 gave `PromptControl` an opt-in multiline mode (`Multiline`, `MinRows`/`MaxRows`, `EnterBehavior`),
   but it has no undo and no gutter for the prompt.
+- **Settings are declared in Client, and F7 and F8 are drawn from the declarations**
+  (`SharpMUTerm.Client/Settings/BuiltInSettings.cs`; `SettingBinding`, `SettingsSearch`; Tui
+  `OptionsScreenRenderer.FromSection`, `SettingsSearchSurface`, `SharpMUTermApp.Settings.cs`). A section is a
+  settings screen (id, title, key, order) registered in `ContributionRegistry.SettingsSections`; every screen
+  F2–F10 is one, and the screen table (`SettingsScreens`) reads its titles from them, so ⌃P, the header and the
+  search say one name. **To add a field**: add a descriptor to its section with a `Group` (a heading, never a
+  screen) and a `SettingBinding<T>` over the configuration property. The screen draws it, `/` finds it, and
+  `● changed` and `r reset` work on it with nothing else written. Things not to relitigate:
+  - **A default is never written in a declaration.** It is what the binding reads off a fresh
+    `AppConfiguration`, so the configuration types stay the one place a default is decided; a list default is
+    re-read per reset, so two configurations never share one.
+  - **`r` resets, and only where it would do something.** A row carries a reset only while it differs from
+    its default (`ScreenRow.Reset`), so the header names `r reset` exactly there. It goes through
+    `ScreenEdits.Apply`, the save funnel. On the meter table `r` resets the whole list (the field is the list).
+  - **`/` is the overlay's, not a screen's**, and only while the screen is navigating — inside a field it is a
+    character. The search is drawn in the same window in place of the screen (content-swapping, the
+    `_behind` reason); Esc puts the screen back untouched, ⏎ goes through `SettingsOverlay.Show`, which swaps
+    the screen in place. It matches label, group, help and keywords, and a section's title only when none of
+    its fields matched, so an undeclared screen is still found by name.
+  - **The meter table is F7's one non-row field.** A meter is a row of three fields (label, value path,
+    maximum path); `now` reads `SendTarget()`'s game data (never `_active`'s); Delete on a meter row is a hidden
+    trailing Remove button added only while the cursor is on one; the received-data box shows only while the
+    cursor is in the table; path fields offer the received paths with their values as `ChoiceNotes`.
+  - F7 and F8 are windowed to the screen height (`ScreenChrome.Window`), because F7 is taller than 24 rows.
+  - Not declared yet: F2–F6, F9 (F5's character form) and F10 are listed by title only.
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on
