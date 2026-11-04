@@ -1006,6 +1006,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncPanelSizes();
             SyncScrollSplitBars();
         };
+
+        // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
+        // panels are now under it; the modal stack changing says it instead.
+        _system.ModalStateService.StateChanged += (_, _) => PublishPanels();
         if (_sixel is not null)
         {
             // Another window over this one rewrites the cells a picture sits on, and the frame that puts
@@ -1862,7 +1866,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Layouts. `layouts` is the ⌥M list over the demo, opened through the registered shortcut itself;
         // `layout-combat` is the demo with the Combat layout realised through the same ApplyLayout ⌥M ⏎ runs, over
-        // the demo's game data (vitals, so the meters have values) and its recorded streets (so the map has rooms).
+        // the demo's game data (vitals, so the meters have values), its recorded streets (so the map has rooms) and
+        // a few function-key bindings (so the quick bar has buttons).
         // Panels nothing draws yet stay out, which is the data gating the frame is there to show.
         if (string.Equals(view, "layouts", StringComparison.OrdinalIgnoreCase))
         {
@@ -1873,6 +1878,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             LoadDemoGameData();
             LoadDemoMap();
+            LoadDemoBindings();
             ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Combat);
         }
 

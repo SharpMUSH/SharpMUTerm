@@ -94,26 +94,18 @@ internal sealed partial class SharpMUTermApp
 
     private IWindowControl NewWhoHerePanel(TerminalPanelContext context)
     {
-        IReadOnlyList<RoomOccupant> drawn = [];
+        IReadOnlyList<WhoHereRow> drawn = [];
         var view = NewPanelView(context, (width, height) =>
         {
-            var roster = PanelOccupants(context.SessionKey);
-            if (roster is not { Known: true })
-            {
-                drawn = [];
-                return ["[dim]The game has not said who is here.[/]"];
-            }
-
-            drawn = roster.Snapshot;
-            var data = PanelGameData(context.SessionKey);
-            var room = data is null ? null : StatusMeter.Read(data, "Room.Info.name|MSDP.ROOM_NAME");
-            return WhoHereRenderer.Render(room, drawn, width, height, new WhoHereRenderer.Ink(_ink.Accent));
+            var model = ReadWhoHere(context.SessionKey);
+            drawn = model.Rows;
+            return WhoHereRenderer.Render(model, width, height, new WhoHereRenderer.Ink(_ink.Accent));
         });
         view.Click = url =>
         {
             if (WhoHereRenderer.ParseLink(url) is { } index && index < drawn.Count)
             {
-                OfferLook(context, drawn[index]);
+                OfferLook(context.WindowId, context.SessionKey, drawn[index].Name);
             }
         };
 
@@ -138,16 +130,32 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>
+    /// A character's who-here panel as the one model every view draws (<see cref="WhoHereModel"/>): the cell rows
+    /// here, and the window's native list through <see cref="PublishPanels"/>.
+    /// </summary>
+    internal WhoHereModel ReadWhoHere(string sessionKey)
+    {
+        if (PanelOccupants(sessionKey) is not { Known: true } roster)
+        {
+            return WhoHereModel.Unknown;
+        }
+
+        var data = PanelGameData(sessionKey);
+        var room = data is null ? null : StatusMeter.Read(data, "Room.Info.name|MSDP.ROOM_NAME");
+        return WhoHereModel.From(room, roster.Snapshot);
+    }
+
+    /// <summary>
     /// A click on a name puts <c>look Name</c> on the character's command line and sends nothing: the name is the
     /// game's text, and the player sees the line before ⏎. It lands on the bar of the panel's own character — the
     /// panel's window is brought forward when the one in front belongs to someone else.
     /// </summary>
-    private void OfferLook(TerminalPanelContext context, RoomOccupant who)
+    private void OfferLook(string windowId, string sessionKey, string name)
     {
         var owner = WindowSession(ActiveWindowId())?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey;
-        if (!string.Equals(owner, context.SessionKey, StringComparison.Ordinal))
+        if (!string.Equals(owner, sessionKey, StringComparison.Ordinal))
         {
-            Activate(context.WindowId);
+            Activate(windowId);
         }
 
         if (ArmedComposer() is not null)
@@ -155,8 +163,8 @@ internal sealed partial class SharpMUTermApp
             ReleaseComposer();
         }
 
-        PlaceGrab(ActiveBar(), $"look {who.Name}", context.SessionKey);
-        Notice($"look {Snippet(who.Name)} is on the command line — ⏎ sends it", MessageSeverity.Info);
+        PlaceGrab(ActiveBar(), $"look {name}", sessionKey);
+        Notice($"look {Snippet(name)} is on the command line — ⏎ sends it", MessageSeverity.Info);
     }
 
     // --- Vitals -----------------------------------------------------------------------------------------------
@@ -211,17 +219,18 @@ internal sealed partial class SharpMUTermApp
 
     private IWindowControl NewQuickBarPanel(TerminalPanelContext context)
     {
-        IReadOnlyList<QuickBarRenderer.Entry> drawn = [];
+        IReadOnlyList<QuickBarItem> drawn = [];
         var view = NewPanelView(context, (width, _) =>
         {
-            drawn = QuickBarEntries(context.SessionKey);
-            return [QuickBarRenderer.Render(drawn, width, _ink.Accent)];
+            var model = QuickBarEntries(context.SessionKey);
+            drawn = model.Items;
+            return [QuickBarRenderer.Render(model, width, _ink.Accent)];
         });
         view.Click = url =>
         {
             if (QuickBarRenderer.ParseLink(url) is { } index && index < drawn.Count)
             {
-                RunQuickMacro(context, drawn[index]);
+                RunQuickMacro(context.SessionKey, drawn[index].Descriptor);
             }
         };
         return view.Control;
@@ -231,7 +240,7 @@ internal sealed partial class SharpMUTermApp
     /// The function-key bindings a character's quick bar lists: its session's engine when it has one (so a script's
     /// runtime binding shows), else the bindings its trigger sets configure.
     /// </summary>
-    private IReadOnlyList<QuickBarRenderer.Entry> QuickBarEntries(string sessionKey)
+    internal QuickBarModel QuickBarEntries(string sessionKey)
     {
         if (FindSession(sessionKey) is { } session)
         {
@@ -240,7 +249,7 @@ internal sealed partial class SharpMUTermApp
 
         if (FindCharacter(sessionKey) is not { } found)
         {
-            return [];
+            return QuickBarModel.Empty;
         }
 
         var macros = _config.ResolveTriggerSets(found.Character, found.World).SelectMany(s => s.Macros).ToList();
@@ -252,16 +261,16 @@ internal sealed partial class SharpMUTermApp
     /// A click on an entry runs that binding through <see cref="WorldSession.HandleKeyAsync"/> — the path the key
     /// itself takes — on the panel's own character, never the one in front.
     /// </summary>
-    private void RunQuickMacro(TerminalPanelContext context, QuickBarRenderer.Entry entry)
+    private void RunQuickMacro(string sessionKey, string descriptor)
     {
-        if (FindSession(context.SessionKey) is not { } session)
+        if (FindSession(sessionKey) is not { } session)
         {
-            RefuseCommand($"{Snippet(context.SessionKey)} has no open session — ⌃P ▸ Switch to it opens one");
+            RefuseCommand($"{Snippet(sessionKey)} has no open session — ⌃P ▸ Switch to it opens one");
             return;
         }
 
-        _ = session.HandleKeyAsync(entry.Descriptor);
-        LastQuickMacro = entry.Descriptor;
+        _ = session.HandleKeyAsync(descriptor);
+        LastQuickMacro = descriptor;
     }
 
     /// <summary>The descriptor the quick bar last ran, for the tests.</summary>
@@ -667,6 +676,31 @@ internal sealed partial class SharpMUTermApp
     // --- The snapshot views -----------------------------------------------------------------------------------
 
     /// <summary>
+    /// Function-key bindings for the demo character, which the demo configuration does not carry: a trigger set
+    /// named <c>Quick</c>, added and listed the way F2 and F5 would. For the quick-bar views.
+    /// </summary>
+    private void LoadDemoBindings()
+    {
+        if (_config.TriggerSets.Any(s => s.Name == "Quick"))
+        {
+            return;
+        }
+
+        _config.TriggerSets.Add(new TriggerSet
+        {
+            Name = "Quick",
+            Macros =
+            {
+                new Macro { Name = "kick", Key = "F11", Command = "kick" },
+                new Macro { Name = "bash", Key = "F12", Command = "bash" },
+                new Macro { Name = "cure light", Key = "Ctrl+F3", Command = "cast 'cure light'" },
+                new Macro { Name = "quaff mana", Key = "Ctrl+F4", Command = "quaff mana" },
+            },
+        });
+        FindCharacter(DemoScene.ActiveSessionKey)?.Character.TriggerSets.Add("Quick");
+    }
+
+    /// <summary>
     /// The four panel views, each opened through its real ⌃P entry and placed the way its layout places it:
     /// <c>panel-who</c> a narrow column beside the output; <c>panel-vitals</c> a strip over it, with a target;
     /// <c>panel-quickbar</c> a strip under it, with function-key bindings the demo does not otherwise carry;
@@ -693,18 +727,7 @@ internal sealed partial class SharpMUTermApp
                 break;
 
             case "panel-quickbar":
-                _config.TriggerSets.Add(new TriggerSet
-                {
-                    Name = "Quick",
-                    Macros =
-                    {
-                        new Macro { Name = "kick", Key = "F11", Command = "kick" },
-                        new Macro { Name = "bash", Key = "F12", Command = "bash" },
-                        new Macro { Name = "cure light", Key = "Ctrl+F3", Command = "cast 'cure light'" },
-                        new Macro { Name = "quaff mana", Key = "Ctrl+F4", Command = "quaff mana" },
-                    },
-                });
-                FindCharacter(DemoScene.ActiveSessionKey)?.Character.TriggerSets.Add("Quick");
+                LoadDemoBindings();
                 OpenDemoPanelStrip(PanelIds.QuickBar, Edge.Bottom);
                 Activate(MainWindowId);
                 break;

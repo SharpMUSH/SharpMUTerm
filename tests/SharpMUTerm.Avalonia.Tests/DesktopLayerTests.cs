@@ -309,7 +309,7 @@ public class DesktopLayerTests
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private static SharpMUTermApp InlineWindowApp(AvaloniaConsoleDriver driver) =>
+    internal static SharpMUTermApp InlineWindowApp(AvaloniaConsoleDriver driver) =>
         new(DemoScene.Build(), WindowHost.Create(driver, clipboard: null) with
         {
             Capabilities = WindowOptions.Capabilities,
@@ -329,9 +329,9 @@ public class DesktopLayerTests
         ((IPointerPresenter)driver.Pointer).Panels(
             [new PanelOverlay(PanelIds.Vitals, "panel:vitals:demo", rect, new PanelInk("#3ccf6a", "#ff5555", "#333338"), Vitals)]);
 
-    private static void Drain() => global::Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+    internal static void Drain() => global::Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
-    private static Task<T> Run<T>(
+    internal static Task<T> Run<T>(
         Func<Window, TerminalView, DesktopLayer, AvaloniaConsoleDriver, T> body, int columns = 40, int rows = 10) =>
         Session.Dispatch(() =>
         {

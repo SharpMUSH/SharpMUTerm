@@ -31,6 +31,12 @@ internal sealed partial class SharpMUTermApp
     /// <summary>One walk callback per map window, kept so an overlay compares equal from frame to frame.</summary>
     private readonly Dictionary<string, Action<long>> _mapWalkers = new(StringComparer.Ordinal);
 
+    /// <summary>One pick callback per who-here or quick-bar window, for the same reason.</summary>
+    private readonly Dictionary<string, Action<int>> _panelPickers = new(StringComparer.Ordinal);
+
+    /// <summary>The one command callback every native panel is handed.</summary>
+    private Action<string>? _panelDispatch;
+
     /// <summary>Tells the host which header buttons it may draw. Once, at construction.</summary>
     private void AnnounceHeaderActions() =>
         _pointer?.HeaderActions(
@@ -158,7 +164,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>
     /// Tells the host which panels are on screen, where, and what they show, when any of that changed. Rides the
     /// frame, for <see cref="PublishScrollbars"/>' reason. A panel is on screen when its window is the front tab of
-    /// a realised pane.
+    /// a realised pane and no modal window covers the main one.
     /// </summary>
     private void PublishPanels()
     {
@@ -167,8 +173,10 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
+        // A modal over the main window (a settings screen, ⌃P, F1) is drawn in cells over the panes; a native view
+        // would sit on top of it, so while one is up no panel is on screen as far as the host is concerned.
         var overlays = new List<PanelOverlay>();
-        foreach (var (paneId, rect) in PaneOutputRects())
+        foreach (var (paneId, rect) in !_system.ModalStateService.HasModals ? PaneOutputRects() : new Dictionary<string, Core.Workspaces.PaneRect>())
         {
             if (_workspace.Layout.FindPane(paneId) is not { ActiveTab: { } windowId })
             {
@@ -199,6 +207,17 @@ internal sealed partial class SharpMUTermApp
                 var ink = VitalsInk();
                 overlays.Add(new PanelOverlay(panelId, windowId, rect, new PanelInk(ink.Bar, ink.Low, ink.Empty), ReadVitals(key)));
             }
+            else if (panelId == PanelIds.WhoHere)
+            {
+                overlays.Add(new PanelOverlay(
+                    panelId, windowId, rect, PanelListInk(), null, WhoHere: ReadWhoHere(key), Pick: PickerFor(windowId, key)));
+            }
+            else if (panelId == PanelIds.QuickBar)
+            {
+                overlays.Add(new PanelOverlay(
+                    panelId, windowId, rect, PanelListInk(), null, QuickBar: QuickBarEntries(key), Pick: PickerFor(windowId, key),
+                    Dispatch: _panelDispatch ??= id => OnUiThread(() => DispatchCommand(id))));
+            }
         }
 
         if (overlays.SequenceEqual(_panelOverlays))
@@ -208,6 +227,31 @@ internal sealed partial class SharpMUTermApp
 
         _panelOverlays = overlays;
         _pointer.Panels(overlays);
+    }
+
+    /// <summary>The list panels' colours: the accent their cells draw an active dot and a key in, and the warning.</summary>
+    private PanelInk PanelListInk() => new(_ink.Accent, _ink.Notice, _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)));
+
+    /// <summary>
+    /// A who-here or quick-bar window's pick callback: the row or item at an index of the model last published for
+    /// that window, acted on exactly as a click on its cells is, on the window's own character.
+    /// </summary>
+    private Action<int> PickerFor(string windowId, string sessionKey) =>
+        _panelPickers.TryGetValue(windowId, out var known)
+            ? known
+            : _panelPickers[windowId] = index => OnUiThread(() => PickFromPanel(windowId, sessionKey, index));
+
+    private void PickFromPanel(string windowId, string sessionKey, int index)
+    {
+        var published = _panelOverlays.FirstOrDefault(p => p.WindowId == windowId);
+        if (published?.WhoHere is { } who && index >= 0 && index < who.Rows.Count)
+        {
+            OfferLook(windowId, sessionKey, who.Rows[index].Name);
+        }
+        else if (published?.QuickBar is { } bar && index >= 0 && index < bar.Items.Count)
+        {
+            RunQuickMacro(sessionKey, bar.Items[index].Descriptor);
+        }
     }
 
     /// <summary>

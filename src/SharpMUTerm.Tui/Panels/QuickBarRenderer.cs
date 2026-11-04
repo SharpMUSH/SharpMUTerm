@@ -1,4 +1,5 @@
 using System.Globalization;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Automation;
 using static SharpMUTerm.Tui.MarkupText;
 
@@ -7,7 +8,9 @@ namespace SharpMUTerm.Tui.Panels;
 /// <summary>
 /// The quick bar: one row of the character's function-key macros — <c>F1 kick  F2 bash  F3 cure light</c> — with
 /// <c>F4 edits keys</c> at the right. Each entry is a link (<see cref="LinkPrefix"/> and its index) that the
-/// panel's own handler runs through the macro path the key itself takes. Elided to the width, never wrapped.
+/// panel's own handler runs through the macro path the key itself takes. Elided to the width, never wrapped. Drawn
+/// from a <see cref="QuickBarModel"/>, the one the window's native buttons are drawn from, so entry N is the same
+/// binding in both.
 /// </summary>
 internal static class QuickBarRenderer
 {
@@ -18,21 +21,16 @@ internal static class QuickBarRenderer
     internal const int MaxNameWidth = 16;
 
     /// <summary>The right-hand hint naming where the keys are edited.</summary>
-    internal const string Hint = "F4 edits keys";
-
-    /// <summary>One entry: the key as printed (<c>F1</c>, <c>⌃F2</c>), the descriptor it fires, its name.</summary>
-    /// <param name="Fires">Whether pressing the key reaches the macro on this host (<see cref="MacroKeys.Verdict"/>);
-    /// one that does not is still clickable and drawn dim.</param>
-    internal readonly record struct Entry(string Key, string Descriptor, string Name, bool Fires);
+    internal const string Hint = QuickBarModel.EditHint;
 
     /// <summary>
     /// The function-key bindings to show, from the bindings that resolve: one per key, plain keys before modified
     /// ones, then by number. A binding with neither a command nor a script is left out, as the key path leaves it.
     /// </summary>
-    internal static IReadOnlyList<Entry> Entries(IEnumerable<Macro> macros, Func<string, Macro?> resolve)
+    internal static QuickBarModel Entries(IEnumerable<Macro> macros, Func<string, Macro?> resolve)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var entries = new List<(Entry Entry, int Modifiers, int Number)>();
+        var entries = new List<(QuickBarItem Entry, int Modifiers, int Number)>();
         foreach (var candidate in macros)
         {
             if (!MacroKey.TryParse(candidate.Key, out var parts)
@@ -58,20 +56,21 @@ internal static class QuickBarRenderer
 
             var key = (parts.Ctrl ? "⌃" : string.Empty) + (parts.Alt ? "⌥" : string.Empty) + (parts.Shift ? "⇧" : string.Empty) + parts.Key;
             var modifiers = (parts.Ctrl ? 1 : 0) + (parts.Alt ? 2 : 0) + (parts.Shift ? 4 : 0);
-            entries.Add((new Entry(key, descriptor, Single(name), MacroKeys.Verdict(descriptor).Fires), modifiers, number));
+            entries.Add((new QuickBarItem(key, descriptor, Single(name), MacroKeys.Verdict(descriptor).Fires), modifiers, number));
         }
 
-        return entries.OrderBy(e => e.Modifiers).ThenBy(e => e.Number).Select(e => e.Entry).ToList();
+        return new QuickBarModel(entries.OrderBy(e => e.Modifiers).ThenBy(e => e.Number).Select(e => e.Entry).ToList());
     }
 
     /// <summary>The row for <paramref name="width"/> cells. Entries that do not fit are counted, never wrapped.</summary>
-    internal static string Render(IReadOnlyList<Entry> entries, int width, string accent)
+    internal static string Render(QuickBarModel model, int width, string accent)
     {
+        var entries = model.Items;
         width = Math.Max(1, width);
-        var hint = $"[bold {accent}]F4[/][dim] edits keys[/]";
+        var hint = $"[bold {accent}]{QuickBarModel.EditKey}[/][dim]{QuickBarModel.EditHint[QuickBarModel.EditKey.Length..]}[/]";
         if (entries.Count == 0)
         {
-            return ElideVisible($"[dim]No function keys bound · [/]{hint}", width);
+            return ElideVisible($"[dim]{QuickBarModel.EmptyText} · [/]{hint}", width);
         }
 
         var cells = entries.Select((e, i) => Cell(e, i, accent)).ToList();
@@ -116,9 +115,9 @@ internal static class QuickBarRenderer
         return null;
     }
 
-    private static string Cell(Entry entry, int index, string accent)
+    private static string Cell(QuickBarItem entry, int index, string accent)
     {
-        var name = entry.Name.Length <= MaxNameWidth ? entry.Name : entry.Name[..(MaxNameWidth - 1)] + "…";
+        var name = entry.Title.Length <= MaxNameWidth ? entry.Title : entry.Title[..(MaxNameWidth - 1)] + "…";
         var link = $"[link={LinkPrefix}{index.ToString(CultureInfo.InvariantCulture)}]";
         return entry.Fires
             ? $"{link}[bold {accent}]{Escape(entry.Key)}[/] {Escape(name)}[/]"
