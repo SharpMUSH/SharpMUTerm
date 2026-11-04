@@ -61,7 +61,7 @@ internal sealed partial class SharpMUTermApp
         switch (step)
         {
             case ReconnectStep.Scheduled when auto.SecondsLeft is { } seconds:
-                session.PrintSystem(ReconnectLine(seconds, auto.Try));
+                SayInSessionWindow(session, ReconnectLabel, ReconnectLine(seconds, auto.Try));
                 Notice(
                     $"{title} dropped — reconnecting in {seconds} s · ⌥R now",
                     MessageSeverity.Info,
@@ -70,7 +70,7 @@ internal sealed partial class SharpMUTermApp
                 break;
 
             case ReconnectStep.GaveUp:
-                session.PrintSystem($"*** Stopped reconnecting after {AutoReconnect.Delays.Count} tries — ⌥R dials again.");
+                SayInSessionWindow(session, ReconnectLabel, $"stopped after {AutoReconnect.Delays.Count} tries · ⌥R dials again");
                 Notice($"{title} did not come back after {AutoReconnect.Delays.Count} tries — ⌥R dials again", MessageSeverity.Error, "⌥R");
                 break;
         }
@@ -120,7 +120,40 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>The line a session's window gets when a try is scheduled; one writer for the live session and the demo's.</summary>
     internal static string ReconnectLine(int seconds, int attempt) =>
-        $"*** Reconnecting in {seconds} s (try {attempt} of {AutoReconnect.Delays.Count}) — ⌥R dials now, ⌃P ▸ Stop reconnecting.";
+        $"in {seconds} s · try {attempt} of {AutoReconnect.Delays.Count} · ⌥R dials now · ⌃P ▸ Stop reconnecting";
+
+    /// <summary>The label of every row a reconnect writes into its session's window.</summary>
+    internal const string ReconnectLabel = "RECONNECT";
+
+    /// <summary>
+    /// Writes a client row into <paramref name="session"/>'s own window (<see cref="AppendClientRow"/>): chrome, not a
+    /// session line, so the client's own bookkeeping never lands in the character's transcript or restore log.
+    /// </summary>
+    private void SayInSessionWindow(WorldSession session, string label, string text)
+    {
+        if (_sessionWindows.TryGetValue(session, out var windowId))
+        {
+            AppendClientRow(windowId, label, text);
+        }
+    }
+
+    /// <summary>
+    /// Appends one client row (<see cref="ClientRowRenderer"/>) to a window: drawn as the bars are, held as chrome (a bar
+    /// function and no plain text), with no stamp, because it did not arrive. Fed to nothing a session line is fed to.
+    /// </summary>
+    private void AppendClientRow(string windowId, string label, string text)
+    {
+        if (BarWidth(windowId) <= 0)
+        {
+            // Not arranged yet: drawn at the fallback width, so the next frame must redraw it at the pane's.
+            _chromeBarWidths.Remove(windowId);
+        }
+
+        AppendWindowLine(
+            windowId,
+            ClientRowRenderer.Bar(label, text, FrozenAccentHex(), BarWidth(windowId)),
+            bar: accent => ClientRowRenderer.Bar(label, text, accent, BarWidth(windowId)));
+    }
 
     /// <summary>The demo scene's waiting reconnect, in seconds: the `reconnect` view's, which has no live session to drop.</summary>
     private int? _demoReconnect;
@@ -135,7 +168,7 @@ internal sealed partial class SharpMUTermApp
         AppendWindowLine(MainWindowId, StyledLine.FromText("*** Connection lost: Connection reset by peer", WorldSession.SystemLineStyle), StampNow());
         AppendWindowLine(MainWindowId, StyledLine.FromText("*** Connecting to aetherfall.mux:4201...", WorldSession.SystemLineStyle), StampNow());
         AppendWindowLine(MainWindowId, StyledLine.FromText("*** Connection failed: Connection refused", WorldSession.SystemLineStyle), StampNow());
-        AppendWindowLine(MainWindowId, StyledLine.FromText(ReconnectLine(12, 2), WorldSession.SystemLineStyle), StampNow());
+        AppendClientRow(MainWindowId, ReconnectLabel, ReconnectLine(12, 2));
         _statusIdentity = ("Corvid", "aetherfall.mux", 4201, "faulted");
         RefreshStatusBar();
         SettleScroll();
@@ -158,7 +191,7 @@ internal sealed partial class SharpMUTermApp
     {
         if (SendTarget() is { } session && CancelReconnect(session))
         {
-            session.PrintSystem("*** Stopped reconnecting.");
+            SayInSessionWindow(session, ReconnectLabel, "stopped · ⌥R dials again");
             Notice($"stopped reconnecting {SessionTitle(session)} — ⌥R dials it", MessageSeverity.Info, "⌥R");
             return;
         }
@@ -166,7 +199,7 @@ internal sealed partial class SharpMUTermApp
         // The notice's action can arrive after focus moved: any one waiting is the one the notice was about.
         if (_reconnects.FirstOrDefault(r => r.Value.IsActive) is { Key: { } other } && CancelReconnect(other))
         {
-            other.PrintSystem("*** Stopped reconnecting.");
+            SayInSessionWindow(other, ReconnectLabel, "stopped · ⌥R dials again");
             Notice($"stopped reconnecting {SessionTitle(other)}", MessageSeverity.Info);
             return;
         }

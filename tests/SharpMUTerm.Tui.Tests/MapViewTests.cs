@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Commands;
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Commands;
@@ -140,9 +141,35 @@ public class MapViewTests
         await Assert.That(app.MapLookOf(MapId)).IsNull().Because("level 0 of the keep is where Ann is");
 
         Type(app, "/map find loft");
-        var lines = app.WindowIds().SelectMany(w => app.PaneLines(w)).Select(MarkupText.Plain).ToList();
-        await Assert.That(string.Join("\n", lines)).Contains("4  Loft");
         await Assert.That(app.MapLookOf(MapId)!.Level).IsEqualTo(1).Because("the map shows the room found");
+    }
+
+    /// <summary>
+    /// A find is a picker, not lines in the output: ⌃P opens listing a <c>Walk to …</c> entry per room found, the client's
+    /// own commands, and ⏎ on one walks there. Nothing lands in a pane, where a link would be the server text handler's.
+    /// </summary>
+    [Test]
+    public async Task AFindOpensThePaletteOnTheRoomsFoundAndAnEntryWalksThere()
+    {
+        var (app, wire) = await Open();
+        await using var _app = app;
+        var before = app.WindowIds().Sum(w => app.PaneLines(w).Count);
+
+        Type(app, "/map find loft");
+
+        await Assert.That(app.MenuIsOpen).IsTrue();
+        var listed = app.Palette.View.Entries.Select(e => e.Item.Id).ToList();
+        await Assert.That(listed).IsEquivalentTo(new[] { BuiltInCommands.MapWalk(4) });
+        await Assert.That(app.Palette.View.Entries[0].Item.Title).IsEqualTo("Walk to Loft");
+        await Assert.That(app.WindowIds().Sum(w => app.PaneLines(w).Count)).IsEqualTo(before).Because("no *** lines in the output");
+
+        var sent = wire.Lines.Count;
+        await Assert.That(app.DispatchCommand(BuiltInCommands.MapWalk(4))).IsTrue();
+        await Assert.That(wire.Lines.Skip(sent)).IsEquivalentTo(new[] { "u" }).Because("the walk's first step went out");
+
+        // An id the last find did not list is refused, not walked.
+        await Assert.That(app.DispatchCommand(BuiltInCommands.MapWalk(1))).IsTrue();
+        await Assert.That(app.StatusMarkup).Contains("not in the last /map find");
     }
 
     [Test]

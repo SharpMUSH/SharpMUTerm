@@ -66,6 +66,10 @@ public sealed record CharacterRef(
 /// <param name="MapLevels">How many levels the area the focused character's map shows has (0 with no map).</param>
 /// <param name="MapAreas">How many named areas that map has.</param>
 /// <param name="MapViewing">Whether that map shows somewhere other than where the character is.</param>
+/// <param name="NewConfiguration">
+/// Whether the configuration is new — no world yet, or the key tour still owed — so Help, Welcome and Import are suggested.
+/// </param>
+/// <param name="MapFound">The rooms the last <c>/map find</c> listed, newest search only, so ⌃P offers to walk to each.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -88,7 +92,16 @@ public sealed record CommandContext(
     bool SceneLogging = false,
     int MapLevels = 0,
     int MapAreas = 0,
-    bool MapViewing = false);
+    bool MapViewing = false,
+    bool NewConfiguration = false,
+    IReadOnlyList<FoundRoom>? MapFound = null);
+
+/// <summary>A room the last <c>/map find</c> listed, for the command surface's <c>Walk to …</c> entries.</summary>
+/// <param name="Id">The room's id on the map.</param>
+/// <param name="Name">Its name.</param>
+/// <param name="Area">Its area's name, or null.</param>
+/// <param name="Level">Its level (z).</param>
+public sealed record FoundRoom(long Id, string Name, string? Area, int Level);
 
 /// <summary>A world whose pane is narrower than its server's wrap column.</summary>
 /// <param name="World">The world's name.</param>

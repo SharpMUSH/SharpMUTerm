@@ -133,6 +133,24 @@ public class AlertsAndReconnectTests
         await Assert.That(rig.App.BuildCatalog().Select(i => i.Title)).DoesNotContain("Stop reconnecting");
     }
 
+    /// <summary>
+    /// What a reconnect says in the session's window is a client row drawn like the bars, not a <c>***</c> session line:
+    /// it is never in the session's scrollback (so never in a transcript, restore or scene log) and ⌃F does not find it.
+    /// </summary>
+    [Test]
+    public async Task AReconnectSaysSoInAClientRowAndNotInTheSessionsLines()
+    {
+        var rig = await Open();
+        await using var _ = rig.App;
+        rig.Wire.Drop(new IOException("Connection reset by peer"));
+
+        var window = rig.App.ActiveWindowId();
+        var row = rig.App.PaneLines(window).Last(l => MarkupText.Plain(l).Contains(SharpMUTermApp.ReconnectLabel, StringComparison.Ordinal));
+        await Assert.That(MarkupText.Plain(row)).Contains("in 5 s · try 1 of");
+        await Assert.That(rig.Session.Scrollback.Snapshot().Any(l => l.Text.Contains("econnect", StringComparison.Ordinal))).IsFalse();
+        await Assert.That(rig.App.SearchModelFor("try 1 of", regex: false, all: true).Rows).IsEmpty();
+    }
+
     [Test]
     public async Task StopReconnectingCancelsTheWait()
     {

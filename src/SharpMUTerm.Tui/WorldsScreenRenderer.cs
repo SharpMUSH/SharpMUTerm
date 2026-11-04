@@ -20,7 +20,7 @@ namespace SharpMUTerm.Tui;
 internal static class WorldsScreenRenderer
 {
     private const int LeftColumnWidth = 28;
-    private const int WorldLabelWidth = 9;
+    private const int WorldLabelWidth = 16;
     private const int CharLabelWidth = 10;
     private const int CharDetailColumnWidth = 40;
 
@@ -69,55 +69,55 @@ internal static class WorldsScreenRenderer
     /// <see cref="WorldDefinition.GmcpModules"/>: the GMCP modules asked for beyond the client's own, as a
     /// comma-separated list of <c>Name Version</c>.
     /// </summary>
-    internal const int GmcpModulesField = 5;
+    internal const int GmcpModulesField = 7;
 
     /// <summary><see cref="WorldDefinition.ContentFormat"/>, as <see cref="ContentChoices"/>.</summary>
     internal const int ContentField = 6;
 
     /// <summary><see cref="WorldDefinition.Emoji"/>'s three switches, as one of <see cref="EmojiChoices"/>.</summary>
-    internal const int EmojiField = 7;
+    internal const int EmojiField = 10;
 
     /// <summary><see cref="MapSettings.RoomNamePattern"/>: the line naming a room, for a game that sends no GMCP room.</summary>
-    internal const int MapRoomField = 8;
+    internal const int MapRoomField = 17;
 
     /// <summary><see cref="MapSettings.ExitsPattern"/>: the line listing a room's exits.</summary>
-    internal const int MapExitsField = 9;
+    internal const int MapExitsField = 18;
 
     /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
-    internal const int WalkFailField = 10;
+    internal const int WalkFailField = 19;
 
     /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
-    internal const int SoundsField = 11;
+    internal const int SoundsField = 20;
 
     /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
-    internal const int GrabField = 12;
+    internal const int GrabField = 13;
 
     /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
-    internal const int GmcpLoginField = 13;
+    internal const int GmcpLoginField = 8;
 
     /// <summary><see cref="WorldDefinition.DiscordPresence"/>, as one of <see cref="DiscordChoices"/>.</summary>
-    internal const int DiscordField = 14;
+    internal const int DiscordField = 9;
 
     /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
-    internal const int WorldLayoutField = 15;
+    internal const int WorldLayoutField = 21;
 
     /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
-    internal const int JoinWrapsField = 16;
+    internal const int JoinWrapsField = 11;
 
     /// <summary><see cref="WorldDefinition.AutoReconnect"/>, as one of <see cref="ReconnectChoices"/>.</summary>
-    internal const int ReconnectField = 17;
+    internal const int ReconnectField = 5;
 
     /// <summary><see cref="WorldDefinition.CommandSeparator"/>, as one of <see cref="SeparatorChoices"/>.</summary>
-    internal const int StackingField = 18;
+    internal const int StackingField = 12;
 
     /// <summary><see cref="WorldDefinition.AlertOnPage"/> and <see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
-    internal const int AlertOnField = 19;
+    internal const int AlertOnField = 14;
 
     /// <summary><see cref="WorldDefinition.CaptureChannels"/>, as one of <see cref="ChannelCaptureChoices"/>.</summary>
-    internal const int CaptureChannelsField = 20;
+    internal const int CaptureChannelsField = 15;
 
     /// <summary><see cref="WorldDefinition.HighlightNames"/>: <c>Name=colour, …</c>.</summary>
-    internal const int HighlightNamesField = 21;
+    internal const int HighlightNamesField = 16;
 
     /// <summary>F5's words for <see cref="WorldDefinition.CaptureChannels"/>.</summary>
     internal static readonly IReadOnlyList<string> ChannelCaptureChoices = WorldFieldValues.ChannelCaptureChoices;
@@ -778,9 +778,12 @@ internal static class WorldsScreenRenderer
     /// </summary>
     internal static readonly IReadOnlyList<string> WorldFieldOrder =
     [
-        "name", "host", "port", "encoding", "keepalive", "gmcp-modules", "content", "emoji", "map-room", "map-exits",
-        "walk-fail", "sounds", "edit-grab", "gmcp-login", "discord", "layout", "join-wraps", "reconnect", "stacking",
+        "name", "host", "port", "encoding", "keepalive", "reconnect",
+        "content", "gmcp-modules", "gmcp-login", "discord",
+        "emoji", "join-wraps", "stacking", "edit-grab",
         "alert-on", "capture-channels", "highlight-names",
+        "map-room", "map-exits", "walk-fail",
+        "sounds", "layout",
     ];
 
     /// <summary>The world's two security checkboxes, drawn in the WORLD block (<see cref="SecurityPane"/>), by declared id.</summary>
@@ -930,7 +933,7 @@ internal static class WorldsScreenRenderer
             left.Add(ScreenChrome.Cursor(
                 $"{marker} [{accentHex}]▚[/] {name}", cursor.IsOn(WorldsPane, i), LeftColumnWidth));
             left.Add($"    [{Label}]{Escape(world.Host)}:{world.Port.ToString(CultureInfo.InvariantCulture)}[/]");
-            left.Add($"    [{Label}]{world.Characters.Count.ToString(CultureInfo.InvariantCulture)} chars[/]");
+            left.Add($"    [{Label}]{world.Characters.Count.ToString(CultureInfo.InvariantCulture)} character{Plural(world.Characters.Count)}[/]");
         }
 
         if (worlds.Count == 0)
@@ -987,89 +990,68 @@ internal static class WorldsScreenRenderer
         // where they are displayed, so it is where an open edit draws its caret. No title strip above
         // them: every token of one would be repeated in the rows underneath and in the WORLDS list beside
         // it, and the rows it cost are rows the CHARACTERS list needs at 100x24.
-        var right = new List<string>
+        // Each world field's cell, by declared id. They are drawn in the declaration's order under its group headings
+        // (BuiltInSettings.World), with the declared labels, so this column and the desktop's settings window read the
+        // same; WorldFieldOrder is that order too, so ⇥ walks down the column rather than jumping about it.
+        var cells = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            $"[{accent}]├ WORLD[/]",
-            WorldField("name", Field(
-                $"[{Value}]{Escape(world.Name)}[/]", cursor, selectedWorld, WorldNameField)),
-            WorldField("host", Field(
-                $"[{Value}]{Escape(world.Host)}[/]", cursor, selectedWorld, HostField)),
-            WorldField("port", Field(
+            ["name"] = Field(
+                $"[{Value}]{Escape(world.Name)}[/]", cursor, selectedWorld, WorldNameField),
+            ["host"] = Field(
+                $"[{Value}]{Escape(world.Host)}[/]", cursor, selectedWorld, HostField),
+            ["port"] = Field(
                 $"[{Value}]{world.Port.ToString(CultureInfo.InvariantCulture)}[/]",
                 cursor,
                 selectedWorld,
-                PortField)),
-        };
-
-        right.AddRange(SecurityColumn(world, cursor));
-        right.AddRange(new[]
-        {
-            WorldField("encoding", Field(
-                EncodingDetail(world.Encoding), cursor, selectedWorld, EncodingField)),
-            WorldField("keepalive", Field(
+                PortField),
+            ["encoding"] = Field(
+                EncodingDetail(world.Encoding), cursor, selectedWorld, EncodingField),
+            ["keepalive"] = Field(
                 world.KeepaliveSeconds > 0
                     ? $"[{Value}]{world.KeepaliveSeconds.ToString(CultureInfo.InvariantCulture)}s[/]"
                     : $"[{Label}]off[/]",
                 cursor,
                 selectedWorld,
-                KeepaliveField)),
-            WorldField("gmcp", Field(
-                JoinModules(world) is { } modules
-                    ? $"[{Value}]{Escape(modules)}[/]"
-                    : $"[{Label}]defaults[/]",
+                KeepaliveField),
+            ["reconnect"] = Field(
+                world.AutoReconnect
+                    ? $"[{Value}]{ReconnectChoices[1]} · 5 s to 60 s, five tries[/]"
+                    : $"[{Label}]{ReconnectChoices[0]} · ⌥R dials again[/]",
                 cursor,
                 selectedWorld,
-                GmcpModulesField)),
-            WorldField("content", Field(
+                ReconnectField),
+            ["content"] = Field(
                 world.ContentFormat == ContentFormat.Ansi
                     ? $"[{Label}]{ContentName(world.ContentFormat)}[/]"
                     : $"[{Value}]{ContentName(world.ContentFormat)}[/]",
                 cursor,
                 selectedWorld,
-                ContentField)),
-            WorldField("emoji", Field(
+                ContentField),
+            ["gmcp-modules"] = Field(
+                JoinModules(world) is { } modules
+                    ? $"[{Value}]{Escape(modules)}[/]"
+                    : $"[{Label}]defaults[/]",
+                cursor,
+                selectedWorld,
+                GmcpModulesField),
+            ["gmcp-login"] = Field(
+                world.GmcpLogin ? $"[{Value}]{LoginChoices[1]}[/]" : $"[{Label}]{LoginChoices[0]} · connect line[/]",
+                cursor,
+                selectedWorld,
+                GmcpLoginField),
+            ["discord"] = Field(
+                world.DiscordPresence ? $"[{Value}]{DiscordChoices[1]}[/]" : $"[{Label}]{DiscordChoices[0]}[/]",
+                cursor,
+                selectedWorld,
+                DiscordField),
+            ["emoji"] = Field(
                 world.Emoji.Enabled
                     ? $"[{Value}]{EmojiName(world.Emoji)}[/]"
                     : $"[{Label}]{EmojiOff}[/]",
                 cursor,
                 selectedWorld,
-                EmojiField)),
-            WorldField("map room", Field(
-                PatternDetail(world.Map.RoomNamePattern, "from GMCP"), cursor, selectedWorld, MapRoomField)),
-            WorldField("map exits", Field(
-                PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField)),
-            WorldField("walk fail", Field(
-                PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField)),
-            WorldField("sounds", Field(
-                world.DownloadMedia ? $"[{Label}]{SoundChoices[0]}[/]" : $"[{Value}]{SoundChoices[1]}[/]",
-                cursor,
-                selectedWorld,
-                SoundsField)),
-            WorldField("edit grab", Field(
-                world.GrabPrefix is { } grab
-                    ? $"[{Value}]{Escape(grab)}[/]"
-                    : $"[{Label}]off · e.g. {Escape(SuggestedGrabPrefix)}[/]",
-                cursor,
-                selectedWorld,
-                GrabField)),
-            WorldField("gmcp login", Field(
-                world.GmcpLogin ? $"[{Value}]{LoginChoices[1]}[/]" : $"[{Label}]{LoginChoices[0]} · connect line[/]",
-                cursor,
-                selectedWorld,
-                GmcpLoginField)),
-            WorldField("discord", Field(
-                world.DiscordPresence ? $"[{Value}]{DiscordChoices[1]}[/]" : $"[{Label}]{DiscordChoices[0]}[/]",
-                cursor,
-                selectedWorld,
-                DiscordField)),
-            WorldField("layout", Field(
-                LayoutName(all, world.Layout) is { } worldLayout
-                    ? $"[{Value}]{Escape(worldLayout)}[/]"
-                    : $"[{Label}]{WorldLayoutDefault} · {Escape(LayoutName(all, world.AcceptedLayoutSuggestion) ?? BuiltInLayouts.Roleplay.Name)}[/]",
-                cursor,
-                selectedWorld,
-                WorldLayoutField)),
-            WorldField("join wraps", Field(
+                EmojiField),
+            ["join-wraps"] = Field(
                 world.JoinWrappedLines
                     ? $"[{Value}]{JoinWrapChoices[1]} lines the server wrapped[/]"
                     : joinWrapsAdvice?.Invoke(world) is { } advice
@@ -1077,29 +1059,29 @@ internal static class WorldsScreenRenderer
                         : $"[{Label}]{JoinWrapChoices[0]} · rows as the server sent them[/]",
                 cursor,
                 selectedWorld,
-                JoinWrapsField)),
-            WorldField("reconnect", Field(
-                world.AutoReconnect
-                    ? $"[{Value}]{ReconnectChoices[1]} · 5 s to 60 s, five tries[/]"
-                    : $"[{Label}]{ReconnectChoices[0]} · ⌥R dials again[/]",
-                cursor,
-                selectedWorld,
-                ReconnectField)),
-            WorldField("stacking", Field(
+                JoinWrapsField),
+            ["stacking"] = Field(
                 world.CommandSeparator is { } separator
                     ? $"[{Value}]{Escape(separator)} splits · #3 repeats[/]"
                     : $"[{Label}]{SeparatorChoices[0]} · lines go as typed[/]",
                 cursor,
                 selectedWorld,
-                StackingField)),
-            WorldField("alert on", Field(
+                StackingField),
+            ["edit-grab"] = Field(
+                world.GrabPrefix is { } grab
+                    ? $"[{Value}]{Escape(grab)}[/]"
+                    : $"[{Label}]off · e.g. {Escape(SuggestedGrabPrefix)}[/]",
+                cursor,
+                selectedWorld,
+                GrabField),
+            ["alert-on"] = Field(
                 world.AlertOnName || world.AlertOnPage
                     ? $"[{Value}]{WorldFieldValues.AlertName(world)}[/]"
                     : $"[{Label}]{AlertChoices[0]} · alert triggers only[/]",
                 cursor,
                 selectedWorld,
-                AlertOnField)),
-            WorldField("channels", Field(
+                AlertOnField),
+            ["capture-channels"] = Field(
                 world.CaptureChannels switch
                 {
                     SharpMUTerm.Core.Protocols.ChannelCaptureMode.Copy => $"[{Value}]{ChannelCaptureChoices[1]} · a window per GMCP channel[/]",
@@ -1108,14 +1090,56 @@ internal static class WorldsScreenRenderer
                 },
                 cursor,
                 selectedWorld,
-                CaptureChannelsField)),
-            WorldField("names", Field(
+                CaptureChannelsField),
+            ["highlight-names"] = Field(
                 SharpMUTerm.Core.Automation.NameHighlights.Format(world.HighlightNames) is { } names
                     ? $"[{Value}]{Escape(names)}[/]"
                     : $"[{Label}]none · e.g. Ashlyn=gold, Merrow=red[/]",
                 cursor,
                 selectedWorld,
-                HighlightNamesField)),
+                HighlightNamesField),
+            ["map-room"] = Field(
+                PatternDetail(world.Map.RoomNamePattern, "from GMCP"), cursor, selectedWorld, MapRoomField),
+            ["map-exits"] = Field(
+                PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField),
+            ["walk-fail"] = Field(
+                PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField),
+            ["sounds"] = Field(
+                world.DownloadMedia ? $"[{Label}]{SoundChoices[0]}[/]" : $"[{Value}]{SoundChoices[1]}[/]",
+                cursor,
+                selectedWorld,
+                SoundsField),
+            ["layout"] = Field(
+                LayoutName(all, world.Layout) is { } worldLayout
+                    ? $"[{Value}]{Escape(worldLayout)}[/]"
+                    : $"[{Label}]{WorldLayoutDefault} · {Escape(LayoutName(all, world.AcceptedLayoutSuggestion) ?? BuiltInLayouts.Roleplay.Name)}[/]",
+                cursor,
+                selectedWorld,
+                WorldLayoutField),
+        };
+
+        var right = new List<string> { $"[{accent}]├ WORLD[/]" };
+        string? group = null;
+        foreach (var field in BuiltInSettings.World.Fields)
+        {
+            if (field.Group is { } heading && !string.Equals(heading, group, StringComparison.Ordinal))
+            {
+                group = heading;
+                right.Add(GroupHeading(heading));
+            }
+
+            if (string.Equals(field.Id, SecurityFieldOrder[0], StringComparison.Ordinal))
+            {
+                right.AddRange(SecurityColumn(world, cursor));
+            }
+            else if (cells.TryGetValue(field.Id, out var cell))
+            {
+                right.Add(WorldField(field.Label, cell));
+            }
+        }
+
+        right.AddRange(new[]
+        {
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });
@@ -1536,7 +1560,10 @@ internal static class WorldsScreenRenderer
     }
 
     private static string WorldField(string label, string value) =>
-        $"  [{Label}]{label.PadLeft(WorldLabelWidth)}[/]  {value}";
+        $"  [{Label}]{Escape(label).PadLeft(WorldLabelWidth)}[/]  {value}";
+
+    /// <summary>A heading over one of the world's declared groups (<c>CONNECTION</c>, <c>MAP</c>), in the label column.</summary>
+    private static string GroupHeading(string group) => $"  [bold {Label}]{Escape(group.ToUpperInvariant())}[/]";
 
     /// <summary>
     /// The encoding cell: <c>auto</c> reads as the unremarkable default it is (dimmed, like keepalive's

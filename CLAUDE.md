@@ -1424,11 +1424,31 @@ fallbacks) for inline images/maps.
     always-on-top choice; the composer does not float; positions on a mixed-DPI desktop are assumed to be in the main
     window's scaling.
 
+- **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
+  - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
+    walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the
+    ordinals tests navigate by) follows it, security checkboxes excepted. Labels are the declared ones, not shortenings.
+  - **⌃P's groups are `CommandGroup`'s nine** (Go to, Connection, Output, Writing, Map, Panels, Windows & panes, Help & setup,
+    Settings); `PaletteGroupsTests` keeps OUTPUT at 16 or fewer. `CommandContext.NewConfiguration` (no worlds, or a tour
+    owed) puts Help, Welcome and Import first in SUGGESTED.
+  - **`/map find` is a ⌃P family, not links in a pane** (`map:walk-to:<id>`, `CommandContext.MapFound`; the palette opens on
+    `walk to `). A link in a pane is answered by the panes' handler, which is scheme-tagged server text; a palette entry is
+    the client's own list, in both hosts, with no new trust path. `--plain` gets client rows instead.
+  - **What the client says in a session window is a client row** (`ClientRowRenderer`, `AppendClientRow`: a bar function
+    and no `Plain`), never a `***` session line: reconnect countdowns and stops reach no transcript, restore, scene log or ⌃F.
+    Core's own `*** Connecting/Connection lost` lines are still session lines.
+  - **A scene recording is marked** (`● REC` status cell, `HeaderModel.Recording`), and the saved notice carries two actions
+    (`NoticeModel.Second`): `scene:open:N` and `scene:copy:N`, by index into this run's saved scenes, never a path. Open goes
+    through `ClientHost.OpenFile` (required; null headless), which takes only an existing absolute `.html/.htm/.txt/.log`
+    (`ExternalBrowser.TryParseOpenableFile`), and only under the log root.
+  - **`Notice(..., toast: false)`** draws the status row without a toast: map edits that worked and map hints use it.
+  - The parity harness's window host has `FloatingPanels = null`, like the terminal, or ⌃P's catalog differs by the pop-out entries.
+
 ## One client, several hosts — and how they are kept the same
 
 The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the headless snapshot all run the
 one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
-(`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
+(`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, file opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
 draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M, the welcome, help and the dictionary offer itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), whether it has a native file picker (`IFilePicker`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and

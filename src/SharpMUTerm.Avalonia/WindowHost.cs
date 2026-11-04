@@ -50,6 +50,7 @@ internal static class WindowHost
         Capabilities = WindowOptions.Capabilities,
         Clipboard = clipboard,
         OpenUrl = ExternalBrowser.Open,
+        OpenFile = ExternalBrowser.OpenFile,
 
         // Focus reporting is a terminal escape, and its focus-in arrives disguised as a Tab: in a window it
         // would only ever turn a real Tab after a pause into a "you were away" bar.

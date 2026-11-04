@@ -71,8 +71,13 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        if (notice.Action is { } action)
+        foreach (var action in new[] { notice.Action, notice.Second })
         {
+            if (action is null)
+            {
+                continue;
+            }
+
             _noticeActionsOffered.Add(action.Command);
             if (_noticeActionsOffered.Count > NoticeActionsKept)
             {

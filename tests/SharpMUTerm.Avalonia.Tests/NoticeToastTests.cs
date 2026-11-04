@@ -87,6 +87,34 @@ public class NoticeToastTests
         await Assert.That(passedThrough).IsTrue().Because("only a toast is hit; the rest of the layer is the cells'");
     }
 
+    /// <summary>A notice with two actions (a saved scene: Open and Copy path) draws both, and a click on the second runs it.</summary>
+    [Test]
+    public async Task AToastsSecondActionIsDrawnAndAClickOnItRunsIt()
+    {
+        var (words, ran) = await Run((window, view, layer, driver) =>
+        {
+            var ran = new List<string>();
+            var model = new NoticeModel("scene saved", NoticeSeverity.Info, null, new NoticeAction("scene:open:0", "Open"), DateTimeOffset.UnixEpoch, 1, NoticeModel.Sources.Scene)
+            {
+                Second = new NoticeAction("scene:copy:0", "Copy path"),
+            };
+            ((IPointerPresenter)driver.Pointer).Notice(new NoticeOverlay(model, 8, Palette, ran.Add));
+            Drain();
+            window.UpdateLayout();
+
+            var toasts = layer.Toasts;
+            var words = toasts.DrawnText();
+            var on = toasts.TranslatePoint(toasts.SecondAreas()[0].Center, window)!.Value;
+            window.MouseDown(on, MouseButton.Left);
+            window.MouseUp(on, MouseButton.Left);
+            return (words, ran);
+        }, columns: 80, rows: 12);
+
+        await Assert.That(words.Any(w => w.Contains("Open", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(words.Any(w => w.Contains("Copy path", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(ran).IsEquivalentTo(new[] { "scene:copy:0" });
+    }
+
     [Test]
     public async Task AToastFadesAfterItsTimeButStaysWhileHovered()
     {

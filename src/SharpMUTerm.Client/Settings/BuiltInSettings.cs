@@ -205,11 +205,14 @@ public static partial class BuiltInSettings
     /// <summary>F5's world groups.</summary>
     public const string ConnectionGroup = "Connection";
 
-    /// <summary>What the world speaks and how it logs in.</summary>
-    public const string ProtocolGroup = "Protocols & login";
+    /// <summary>How the world logs in and what it speaks.</summary>
+    public const string ProtocolGroup = "Login & protocols";
 
-    /// <summary>How the world's text is taken in.</summary>
-    public const string WorldTextGroup = "Text";
+    /// <summary>How the world's text is taken in, and what a typed line becomes.</summary>
+    public const string WorldTextGroup = "Text & input";
+
+    /// <summary>What the world's text tells the player about: alerts, channels, names.</summary>
+    public const string WorldAlertsGroup = "Alerts & channels";
 
     /// <summary>What the mapper reads.</summary>
     public const string MapGroup = "Map";
@@ -254,6 +257,10 @@ public static partial class BuiltInSettings
                 Keywords = "idle timeout ping",
                 Binding = SettingBinding<int>.ForWorld((_, w) => w.KeepaliveSeconds, (_, w, v) => w.KeepaliveSeconds = v),
             },
+            WorldChoice("reconnect", "reconnect", WorldFieldValues.ReconnectChoices, ConnectionGroup,
+                (_, w) => w.AutoReconnect ? WorldFieldValues.ReconnectChoices[1] : WorldFieldValues.ReconnectChoices[0],
+                (_, w, v) => w.AutoReconnect = v == WorldFieldValues.ReconnectChoices[1],
+                "dial again after a dropped connection, 5 s to 60 s apart, five tries", "auto reconnect drop retry"),
 
             WorldChoice("content", "content", WorldFieldValues.ContentChoices, ProtocolGroup,
                 (_, w) => WorldFieldValues.ContentName(w.ContentFormat), (_, w, v) => w.ContentFormat = WorldFieldValues.ContentOf(v),
@@ -265,10 +272,6 @@ public static partial class BuiltInSettings
                 (_, w) => w.GmcpLogin ? WorldFieldValues.LoginChoices[1] : WorldFieldValues.LoginChoices[0],
                 (_, w, v) => w.GmcpLogin = v == WorldFieldValues.LoginChoices[1],
                 "log in over GMCP when the server offers it", "char.login password credentials"),
-            WorldChoice("reconnect", "reconnect", WorldFieldValues.ReconnectChoices, ConnectionGroup,
-                (_, w) => w.AutoReconnect ? WorldFieldValues.ReconnectChoices[1] : WorldFieldValues.ReconnectChoices[0],
-                (_, w, v) => w.AutoReconnect = v == WorldFieldValues.ReconnectChoices[1],
-                "dial again after a dropped connection, 5 s to 60 s apart, five tries", "auto reconnect drop retry"),
             WorldChoice("discord", "discord", WorldFieldValues.DiscordChoices, ProtocolGroup,
                 (_, w) => w.DiscordPresence ? WorldFieldValues.DiscordChoices[1] : WorldFieldValues.DiscordChoices[0],
                 (_, w, v) => w.DiscordPresence = v == WorldFieldValues.DiscordChoices[1],
@@ -285,23 +288,24 @@ public static partial class BuiltInSettings
                 (_, w) => WorldFieldValues.SeparatorName(w.CommandSeparator),
                 (_, w, v) => w.CommandSeparator = WorldFieldValues.SeparatorOf(v),
                 "split a typed line on this, and #3 cmd repeats one; off for a MUSH", "separator semicolon repeat speedwalk"),
-            WorldChoice("alert-on", "alert on", WorldFieldValues.AlertChoices, WorldTextGroup,
+            WorldText("edit-grab", "edit grab", TextRule.Optional, WorldTextGroup,
+                (_, w) => w.GrabPrefix, (_, w, v) => w.GrabPrefix = v,
+                "a line starting with this goes on the command line instead of the output", "fugueedit mush edit prefix"),
+
+            WorldChoice("alert-on", "alert on", WorldFieldValues.AlertChoices, WorldAlertsGroup,
                 (_, w) => WorldFieldValues.AlertName(w),
                 (_, w, v) => WorldFieldValues.SetAlert(w, v),
                 "tell the desktop when you are paged, or your character is named too", "notify mention page tell"),
-            WorldChoice("capture-channels", "capture channels", WorldFieldValues.ChannelCaptureChoices, WorldTextGroup,
+            WorldChoice("capture-channels", "capture channels", WorldFieldValues.ChannelCaptureChoices, WorldAlertsGroup,
                 (_, w) => WorldFieldValues.ChannelCaptureName(w.CaptureChannels),
                 (_, w, v) => w.CaptureChannels = WorldFieldValues.ChannelCaptureOf(v),
                 "put each GMCP channel in a window of its own, as a copy or moved out of the main window",
                 "comm.channel chat ooc gossip spawn window"),
-            WorldText("highlight-names", "highlight names", TextRule.NameHighlights, WorldTextGroup,
+            WorldText("highlight-names", "highlight names", TextRule.NameHighlights, WorldAlertsGroup,
                 (_, w) => NameHighlights.Format(w.HighlightNames),
                 (_, w, v) => w.HighlightNames = [.. NameHighlights.Parse(v).Names],
                 "names drawn in a colour wherever they appear: Ashlyn=gold, Merrow=red",
                 "friends enemies highlight name colour"),
-            WorldText("edit-grab", "edit grab", TextRule.Optional, WorldTextGroup,
-                (_, w) => w.GrabPrefix, (_, w, v) => w.GrabPrefix = v,
-                "a line starting with this goes on the command line instead of the output", "fugueedit mush edit prefix"),
 
             WorldText("map-room", "map room", TextRule.Pattern, MapGroup,
                 (_, w) => w.Map.RoomNamePattern, (_, w, v) => w.Map.RoomNamePattern = v,

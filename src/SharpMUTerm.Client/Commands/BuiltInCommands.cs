@@ -20,6 +20,9 @@ public static class BuiltInCommands
     /// <summary>Help: keys, slash commands and how-tos (<c>/help</c>).</summary>
     public const string HelpCommand = "term:help";
 
+    /// <summary>The first-run welcome: connect to a world, browse worlds, pick a layout.</summary>
+    public const string WelcomeCommand = "term:welcome";
+
     /// <summary>Import from another client: a file picker in a host that has one, else <c>/import </c> on the command line.</summary>
     public const string ImportCommand = "term:import";
 
@@ -32,8 +35,29 @@ public static class BuiltInCommands
     /// <summary>⌃P ▸ Stop scene log.</summary>
     public const string SceneStopCommand = "term:scene-off";
 
+    /// <summary>
+    /// The prefix of a saved scene's notice actions, which ⌃P lists nothing under: <c>scene:open:N</c> and
+    /// <c>scene:copy:N</c>, where N indexes the scenes saved this run (the client's own list, never a path).
+    /// </summary>
+    public const string ScenePrefix = "scene:";
+
+    /// <summary>Opens saved scene N in the desktop's viewer for it.</summary>
+    public const string SceneOpenPrefix = "scene:open:";
+
+    /// <summary>Copies saved scene N's path.</summary>
+    public const string SceneCopyPrefix = "scene:copy:";
+
     /// <summary>The spelling dictionary offer.</summary>
     public const string DictionaryCommand = "term:get-dictionary";
+
+    /// <summary>The prefix of the <c>Walk to …</c> entries the last <c>/map find</c> listed: <c>map:walk-to:&lt;room id&gt;</c>.</summary>
+    public const string MapWalkPrefix = "map:walk-to:";
+
+    /// <summary>What the palette opens with typed in after a <c>/map find</c>, so it lists the rooms found and nothing else.</summary>
+    public const string MapWalkQuery = "walk to ";
+
+    /// <summary>The ⌃P id that walks to room <paramref name="room"/>, one the last <c>/map find</c> listed.</summary>
+    public static string MapWalk(long room) => MapWalkPrefix + room.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>The ⌃P id that joins <paramref name="world"/>'s server wraps.</summary>
     public static string JoinWraps(string world) => JoinWrapsPrefix + world;
@@ -119,6 +143,7 @@ public static class BuiltInCommands
         // OUTPUT (CommandGroup.Terminal) — stateful labels.
         Add("term:log-off", CommandGroup.Terminal, "Pause logging", when: c => c.State.LoggingOn);
         Add("term:log-on", CommandGroup.Terminal, "Start logging", when: c => !c.State.LoggingOn);
+        Family("term:scene-saved", ScenePrefix, _ => []);
         Add(SceneStopCommand, CommandGroup.Terminal, "Stop scene log", detail: "closes the file", when: c => c.State.SceneLogging);
         Add(SceneStartCommand, CommandGroup.Terminal, "Start scene log",
             detail: "record this window's poses to a file of their own", when: c => !c.State.SceneLogging);
@@ -163,32 +188,36 @@ public static class BuiltInCommands
 
         // The map. Listed unconditionally, like the game data above: a map is recorded from the first room a
         // game reports, and nothing else on screen says the client keeps one.
-        Add("term:map", CommandGroup.Terminal, "Show map", detail: "this connection's map · click a room, or /walk <room>");
+        Add("term:map", CommandGroup.Map, "Show map", detail: "this connection's map · click a room, or /walk <room>");
 
         // Editing the map: the room you are in selected, the map holding the keys (its footer names them). Listed
         // unconditionally beside Show map; it refuses out loud where there is no map.
-        Add("map:edit", CommandGroup.Terminal, "Edit map", detail: "rename, area, lock, weight, exits, notes · ? lists the keys · /map rename …");
-        Add("map:undo", CommandGroup.Terminal, "Undo map edit", detail: "takes back the last change to the map", when: c => c.State.MapUndo is not null);
+        Add("map:edit", CommandGroup.Map, "Edit map", detail: "rename, area, lock, weight, exits, notes · ? lists the keys · /map rename …");
+        Add("map:undo", CommandGroup.Map, "Undo map edit", detail: "takes back the last change to the map", when: c => c.State.MapUndo is not null);
 
         // Looking at another level or area of the map, and back; offered only where the map has one to look at.
-        Add("map:level-up", CommandGroup.Terminal, "Map: level up", detail: "shows the next level up · /map level up", when: c => c.State.MapLevels > 1);
-        Add("map:level-down", CommandGroup.Terminal, "Map: level down", detail: "shows the next level down · /map level down", when: c => c.State.MapLevels > 1);
-        Add("map:next-area", CommandGroup.Terminal, "Map: next area", detail: "shows another area · /map view <area>", when: c => c.State.MapAreas > 1);
-        Add("map:here", CommandGroup.Terminal, "Map: back to where I am", detail: "the map follows you again · /map here", when: c => c.State.MapViewing);
-        Add("map:find", CommandGroup.Terminal, "Find room…", detail: "rooms by name or area · /map find <text>", when: c => c.State.MapLevels > 0);
+        Add("map:level-up", CommandGroup.Map, "Map: level up", detail: "shows the next level up · /map level up", when: c => c.State.MapLevels > 1);
+        Add("map:level-down", CommandGroup.Map, "Map: level down", detail: "shows the next level down · /map level down", when: c => c.State.MapLevels > 1);
+        Add("map:next-area", CommandGroup.Map, "Map: next area", detail: "shows another area · /map view <area>", when: c => c.State.MapAreas > 1);
+        Add("map:here", CommandGroup.Map, "Map: back to where I am", detail: "the map follows you again · /map here", when: c => c.State.MapViewing);
+        Add("map:find", CommandGroup.Map, "Find room…", detail: "rooms by name or area · /map find <text>", when: c => c.State.MapLevels > 0);
+
+        // The rooms the last /map find listed: one Walk to entry each, which the find opens the palette on. A picker of the
+        // client's own, never a link in a pane: the panes' link handler is server text's, and this is the client's action.
+        Family("map:walk-to", MapWalkPrefix, MapFoundEntries);
         // The panels a layout places, openable one at a time as tabs: each draws the focused character's own data
         // and says so when there is none yet, so they are listed unconditionally, like the map.
-        Add("panel:who-here", CommandGroup.Terminal, "Show who is here", detail: "players and creatures in the room · click a name to look");
-        Add("panel:vitals", CommandGroup.Terminal, "Show vitals", detail: "the F7 meters as bars, and your target");
-        Add("panel:quick-bar", CommandGroup.Terminal, "Show quick bar", detail: "this character's function-key macros · click one to run it");
-        Add("panel:composer", CommandGroup.Terminal, "Dock the composer", detail: "a pane to write posts in · ⌃S sends");
+        Add("panel:who-here", CommandGroup.Panels, "Show who is here", detail: "players and creatures in the room · click a name to look");
+        Add("panel:vitals", CommandGroup.Panels, "Show vitals", detail: "the F7 meters as bars, and your target");
+        Add("panel:quick-bar", CommandGroup.Panels, "Show quick bar", detail: "this character's function-key macros · click one to run it");
+        Add("panel:composer", CommandGroup.Panels, "Dock the composer", detail: "a pane to write posts in · ⌃S sends");
 
         // A panel in a window of its own, for a second monitor — only where the host can draw one (the desktop window;
         // Floats is null in a terminal, which keeps every panel in its region). One entry per panel window, by id, so the
         // action runs on that panel's own character whichever window is focused.
         Family("panel:popout", Client.Panels.PanelFloatCommands.PopOutPrefix, PopOuts);
         Family("panel:dock", Client.Panels.PanelFloatCommands.DockPrefix, Docks);
-        Add("term:walk-stop", CommandGroup.Terminal, "Stop walking", detail: "ends the speedwalk", when: c => c.State.Walking);
+        Add("term:walk-stop", CommandGroup.Map, "Stop walking", detail: "ends the speedwalk", when: c => c.State.Walking);
 
         // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.
         Add("term:mute", CommandGroup.Terminal, "Mute sound", detail: "until unmuted or restarted",
@@ -199,7 +228,7 @@ public static class BuiltInCommands
         // The command line's own history, browsable and searchable. Named here as well as bound to ⌃R
         // because a chord nothing mentions is a chord nobody finds — the same reason every settings screen
         // has a row even though each has an F-key.
-        Add("term:history", CommandGroup.Terminal, "Search command history", "⌃R");
+        Add("term:history", CommandGroup.Compose, "Search command history", "⌃R");
 
         // A macro on a chord the client also takes, or two macros on one chord: only when there is one.
         Add("settings:key-clashes", CommandGroup.Settings, "Key clashes", "F4", "which binding wins, on the keypad screen",
@@ -208,40 +237,42 @@ public static class BuiltInCommands
         // The composer. Named here as well as bound to F1 for the reason the row above it is: a surface
         // nobody can find is a surface nobody uses, and this one is not something a reader would guess
         // at from the command line in front of them.
-        Add("term:compose", CommandGroup.Terminal, "Compose a post", "F1", "a full editor, sent as one line");
+        Add("term:compose", CommandGroup.Compose, "Compose a post", "F1", "a full editor, sent as one line");
 
-        // Packages: the list, and the install that starts at the review. F10 can be taken by a terminal's
-        // own menu key (GNOME Terminal), so this surface is the way in that always works.
-        Add("term:packages", CommandGroup.Terminal, "Packages", "F10", "installed packages, on/off, remove");
-        Add("term:package-install", CommandGroup.Terminal, "Install package…", detail: "from a file or an https link");
-        Add("term:package-browse", CommandGroup.Terminal, "Browse packages", detail: "the package index, this game's first");
+        // Help: the slash commands, every key named here, and short how-to pages, searchable. F1 is the composer, so
+        // help has no F-key; /help is its other door, and this entry is where a reader looking for help looks first.
+        Add(HelpCommand, CommandGroup.Help, "Help", detail: "keys, slash commands and how-tos · /help");
 
         // The first run's two surfaces, both reachable again: the welcome a client with no worlds opens on, and
         // the one-line tour of the keys worth knowing that follows the first connect. The tour entry is one
         // toggle, so it can always be offered and always says what it will do: show it, or hide it.
-        Add("term:welcome", CommandGroup.Terminal, "Welcome", detail: "connect to a world, browse worlds, pick a layout");
-        Add(ImportCommand, CommandGroup.Terminal, "Import from another client…", detail: "MUSHclient, Mudlet, TinTin++ · reviewed before anything is written");
-        Add("term:tour", CommandGroup.Terminal, "Key tour", detail: "the keys worth knowing · again to hide it");
+        Add(WelcomeCommand, CommandGroup.Help, "Welcome", detail: "connect to a world, browse worlds, pick a layout");
+        Add(ImportCommand, CommandGroup.Help, "Import from another client…", detail: "MUSHclient, Mudlet, TinTin++ · reviewed before anything is written");
+        Add("term:tour", CommandGroup.Help, "Key tour", detail: "the keys worth knowing · again to hide it");
 
-        // Help: the slash commands, every key named here, and short how-to pages, searchable. F1 is the composer, so
-        // help has no F-key; /help is its other door, and this entry is where a reader looking for help looks first.
-        Add(HelpCommand, CommandGroup.Terminal, "Help", detail: "keys, slash commands and how-tos · /help");
+
+        // Packages: the list, and the install that starts at the review. F10 can be taken by a terminal's
+        // own menu key (GNOME Terminal), so this surface is the way in that always works.
+        Add("term:packages", CommandGroup.Help, "Packages", "F10", "installed packages, on/off, remove");
+        Add("term:package-install", CommandGroup.Help, "Install package…", detail: "from a file or an https link");
+        Add("term:package-browse", CommandGroup.Help, "Browse packages", detail: "the package index, this game's first");
+
 
         // A spelling dictionary, downloaded only when asked — the offer says what, from where and where to, first.
-        Add(DictionaryCommand, CommandGroup.Terminal, "Get a spelling dictionary…", detail: "English, for the composer · asks first",
+        Add(DictionaryCommand, CommandGroup.Compose, "Get a spelling dictionary…", detail: "English, for the composer · asks first",
             when: c => c.State.NoDictionary);
         Add("term:timestamps-off", CommandGroup.Terminal, "Hide timestamps", when: c => c.State.TimestampsOn);
         Add("term:timestamps-on", CommandGroup.Terminal, "Show timestamps", when: c => !c.State.TimestampsOn);
-        Add("term:input2-off", CommandGroup.Terminal, "Hide second input", "⌃B i", "this window",
+        Add("term:input2-off", CommandGroup.Compose, "Hide second input", "⌃B i", "this window",
             when: c => c.State.SecondInputOn, detailFirst: true);
-        Add("term:input2-on", CommandGroup.Terminal, "Show second input", "⌃B i", "this window",
+        Add("term:input2-on", CommandGroup.Compose, "Show second input", "⌃B i", "this window",
             when: c => !c.State.SecondInputOn, detailFirst: true);
 
         // The newline chord. Here for the same reason the scrollback keys are: a chord that works and is
         // named nowhere is a chord nobody finds, which is precisely how this one was reported as missing.
         // The host says which chord it is: a terminal reports Shift+⏎ and Ctrl+⏎ as a bare ⏎, so there it is
         // Alt+⏎, and a window keeps Alt+⏎ for itself, so there it is Ctrl+⏎.
-        Add("term:newline", CommandGroup.Terminal, "Insert a newline in the command line", KeyHint.ForHost(HostKey.Newline));
+        Add("term:newline", CommandGroup.Compose, "Insert a newline in the command line", KeyHint.ForHost(HostKey.Newline));
 
         // LAYOUT — every entry carries the chord that runs it, because this surface is where the client
         // is discovered from and the ⌃B keymap is otherwise visible only while the prefix is armed.
@@ -430,6 +461,15 @@ public static class BuiltInCommands
             Detail = $"it wraps at {r.Column}, the pane is {r.PaneWidth} wide · F5 ▸ join wraps",
         });
 
+    private static IEnumerable<CommandItem> MapFoundEntries(ICommandContext context) =>
+        (context.State.MapFound ?? []).Select(r =>
+        {
+            var detail = (r.Area is { } area ? area + " · " : string.Empty)
+                + "level " + r.Level.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " · #" + r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return new CommandItem(CommandGroup.Map, $"Walk to {r.Name}", MapWalk(r.Id), detail) { Detail = detail };
+        });
+
     private static IEnumerable<CommandItem> SendGroup(ICommandContext context)
     {
         var characters = context.Characters;
@@ -496,7 +536,7 @@ public static class BuiltInCommands
     private static IEnumerable<CommandItem> PopOuts(ICommandContext context) =>
         (context.State.Floats ?? []).Where(f => !f.Floating).Select(f =>
             new CommandItem(
-                CommandGroup.Layout,
+                CommandGroup.Panels,
                 $"Pop out {f.Title}",
                 Client.Panels.PanelFloatCommands.PopOut(f.WindowId),
                 $"{f.Character} · in a window of its own")
@@ -507,7 +547,7 @@ public static class BuiltInCommands
     private static IEnumerable<CommandItem> Docks(ICommandContext context) =>
         (context.State.Floats ?? []).Where(f => f.Floating).Select(f =>
             new CommandItem(
-                CommandGroup.Layout,
+                CommandGroup.Panels,
                 $"Dock {f.Title} back",
                 Client.Panels.PanelFloatCommands.Dock(f.WindowId),
                 $"{f.Character} · into its place in the layout")

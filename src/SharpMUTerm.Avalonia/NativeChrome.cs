@@ -459,7 +459,8 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
     }
 
     private static string CountsText(HeaderModel model) =>
-        model.HasWorlds ? $"{model.ConnectedText}  ·  {model.LogText}" : model.LogText;
+        (model.Recording ? $"{HeaderModel.RecordingText}  ·  " : string.Empty)
+        + (model.HasWorlds ? $"{model.ConnectedText}  ·  {model.LogText}" : model.LogText);
 
     protected override void PressedEmpty(PointerPressedEventArgs e) => View.WindowGestureFromChrome(e);
 

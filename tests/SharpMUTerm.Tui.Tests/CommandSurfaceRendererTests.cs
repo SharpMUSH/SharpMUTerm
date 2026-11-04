@@ -32,7 +32,7 @@ public class CommandSurfaceRendererTests
 
         await Assert.That(lines[0]).Contains("acting on Corvid");
         await Assert.That(lines.Any(l => l.Contains("├ GO TO"))).IsTrue();
-        await Assert.That(lines.Any(l => l.Contains("├ LAYOUT"))).IsTrue();
+        await Assert.That(lines.Any(l => l.Contains("├ WINDOWS & PANES"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("on #00f5b7") && l.Contains("Switch to Rookery"))).IsTrue();
     }
 

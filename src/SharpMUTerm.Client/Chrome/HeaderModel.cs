@@ -51,6 +51,12 @@ public sealed record HeaderModel(
     /// panel lists in full; null otherwise. A host drawing its own header shows this in place of the search box.
     /// </summary>
     public HeaderPrefix? Prefix { get; init; }
+
+    /// <summary>Whether a scene log is recording (⌃P ▸ Start scene log), in any window.</summary>
+    public bool Recording { get; init; }
+
+    /// <summary>The recording mark as every surface words it.</summary>
+    public const string RecordingText = "● REC";
 }
 
 /// <summary>The ⌃B keymap as the header shows it while the prefix is armed.</summary>

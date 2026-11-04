@@ -6,17 +6,29 @@ public enum CommandGroup
     /// <summary>Navigation: switch character, jump to a window.</summary>
     GoTo,
 
-    /// <summary>World/connection actions: connect, disconnect, reconnect.</summary>
+    /// <summary>Connection actions: reconnect, disconnect, the send group, scripts.</summary>
     World,
 
-    /// <summary>Terminal/session actions: logging, freeze/scrollback, clear.</summary>
+    /// <summary>Output actions: logging and scene logs, freeze/scrollback, clear, copy, timestamps, sound.</summary>
     Terminal,
 
-    /// <summary>Layout actions: split, zoom, close pane, move.</summary>
+    /// <summary>Windows and panes: split, zoom, close pane, focus, tabs, the rail, layouts, resize.</summary>
     Layout,
 
     /// <summary>The configuration screens — one entry per screen the host offers, F-key and all.</summary>
     Settings,
+
+    /// <summary>The map: show it, edit it, look at another level or area, find a room, stop a walk.</summary>
+    Map,
+
+    /// <summary>The panels a layout places (who is here, vitals, quick bar, the docked composer), and popping them out.</summary>
+    Panels,
+
+    /// <summary>Writing: the composer, command history, the second command line, the newline, the dictionary.</summary>
+    Compose,
+
+    /// <summary>Help and setting up: help, the welcome, the key tour, import, packages.</summary>
+    Help,
 }
 
 /// <summary>
