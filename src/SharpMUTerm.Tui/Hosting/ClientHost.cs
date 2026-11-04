@@ -112,6 +112,14 @@ internal sealed record ClientHost
     public required INativePalette? NativePalette { get; init; }
 
     /// <summary>
+    /// Draws the composer — F1 and the docked panel — with the host's own editor, or null for a host whose composer is
+    /// cells. F1 opens there instead of the cell modal; a docked composer keeps its cells and the host's editor lies
+    /// over them, kept to the same draft. Null in the terminal, the snapshot, the tests and the parity harness, so every
+    /// cell frame is unchanged.
+    /// </summary>
+    public required INativeComposer? NativeComposer { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -151,6 +159,7 @@ internal sealed record ClientHost
         NativeSettings = null,
         Chrome = HostChrome.None,
         NativePalette = null,
+        NativeComposer = null,
     };
 
     /// <summary>
@@ -176,6 +185,7 @@ internal sealed record ClientHost
         NativeSettings = null,
         Chrome = HostChrome.None,
         NativePalette = null,
+        NativeComposer = null,
     };
 
     /// <summary>

@@ -2,7 +2,9 @@ using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
+using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Core.Commands;
+using SharpMUTerm.Core.Text;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui.Panels;
@@ -23,6 +25,12 @@ namespace SharpMUTerm.Tui.Panels;
 /// line follows, and it is what keeps one fact behind "which control gets a keystroke".
 /// </para>
 /// <para>
+/// <b>It draws from a <see cref="ComposerModel"/></b>, the one the window's native editor draws: the host describes the
+/// composer (<c>describe</c>) and <see cref="Render(ComposerModel)"/> turns the model into the header and key rows, so
+/// the two hosts offer the same keys and say the same mode. <see cref="Revision"/> moves whenever the buffer changes by
+/// any hand but a native editor's (<see cref="SetFromHost"/>), which is how that editor knows to take the text.
+/// </para>
+/// <para>
 /// The grid is kept and re-parented across pane rebuilds. A disposed <c>GridControl</c> disposes its children and
 /// nothing else, and none of these three keeps state that a dispose clears, so the same instance serves for the
 /// life of the panel (pinned by <c>DockedComposerTests</c>).
@@ -33,14 +41,20 @@ internal sealed class DockedComposer
     private readonly MarkupControl _header;
     private readonly MarkupControl _footer;
     private readonly string _accent;
+    private readonly Func<DockedComposer, ComposerModel> _describe;
     private bool _armed;
     private bool _quiet;
+    private bool _fromHost;
 
-    internal DockedComposer(string windowId, string sessionKey, ScreenTheme scheme, string accent)
+    /// <param name="describe">
+    /// The model for this composer's state, which the host also records as drawn and hands a native editor.
+    /// </param>
+    internal DockedComposer(string windowId, string sessionKey, ScreenTheme scheme, string accent, Func<DockedComposer, ComposerModel> describe)
     {
         WindowId = windowId;
         SessionKey = sessionKey;
         _accent = accent;
+        _describe = describe;
         Editor = new MultilineEditControl
         {
             WrapMode = WrapMode.WrapWords,
@@ -65,6 +79,11 @@ internal sealed class DockedComposer
         };
         Editor.ContentChanged += (_, _) =>
         {
+            if (!_fromHost)
+            {
+                Revision++;
+            }
+
             if (!_quiet)
             {
                 Redraw();
@@ -118,6 +137,50 @@ internal sealed class DockedComposer
         }
     }
 
+    /// <summary>
+    /// Moves whenever the buffer is replaced or edited by anything but <see cref="SetFromHost"/>: a key the cells took,
+    /// F1 closing over this copy, a send clearing it. A native editor takes the text only when this has moved.
+    /// </summary>
+    internal long Revision { get; private set; }
+
+    /// <summary>The model last drawn.</summary>
+    internal ComposerModel? Model { get; private set; }
+
+    /// <summary>The dictionary marking this buffer, once one is opened for it.</summary>
+    internal SpellChecker? Spelling { get; private set; }
+
+    /// <summary>Marks the words <paramref name="checker"/> does not know, in <paramref name="marked"/>, as F1 does.</summary>
+    internal void UseSpelling(SpellChecker checker, Color marked)
+    {
+        Spelling = checker;
+        Editor.SyntaxHighlighter = new SpellingHighlighter(checker, marked);
+        Redraw();
+    }
+
+    /// <summary>
+    /// The text a native editor over this composer now holds: written into the buffer without moving
+    /// <see cref="Revision"/>, so the editor that sent it keeps its own caret and undo, and raising
+    /// <see cref="Changed"/> like a keystroke, so the draft store follows.
+    /// </summary>
+    internal void SetFromHost(string body)
+    {
+        body = body.Replace("\r\n", "\n", StringComparison.Ordinal);
+        if (string.Equals(Body, body, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _fromHost = true;
+        try
+        {
+            Editor.SetContent(body);
+        }
+        finally
+        {
+            _fromHost = false;
+        }
+    }
+
     /// <summary>Raised after the buffer or the mode changed by the writer's hand (never by <see cref="Load"/>).</summary>
     internal event EventHandler? Changed;
 
@@ -131,6 +194,7 @@ internal sealed class DockedComposer
     internal void Load(string body, ComposeEscaping escaping)
     {
         Escaping = escaping;
+        Revision++;
         if (!string.Equals(Body, body, StringComparison.Ordinal))
         {
             _quiet = true;
@@ -178,37 +242,53 @@ internal sealed class DockedComposer
     /// The verb the post starts with — <c>+pose</c>, <c>say</c> — for the header, so a reader can see what the
     /// buffer will be sent as without reading it. Empty for an empty buffer.
     /// </summary>
-    internal static string Verb(string body)
+    internal static string Verb(string body) => ComposerModel.VerbOf(body);
+
+    /// <summary>Re-describes the composer and draws the model.</summary>
+    internal void Redraw()
     {
-        var first = body.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? string.Empty;
-        var space = first.IndexOfAny([' ', '\t']);
-        var verb = space < 0 ? first : first[..space];
-        return verb.Length <= 16 ? verb : verb[..15] + "…";
+        var model = _describe(this);
+        Model = model;
+        Render(model);
     }
 
-    private void Redraw()
+    /// <summary>
+    /// The cell header and key row for <paramref name="model"/>: <c>▌COMPOSE  +pose  literal</c>, and the model's keys
+    /// in the long form, or the short one when the pane is too narrow for it. Both forms list the same keys, so a
+    /// narrow pane hides no gesture.
+    /// </summary>
+    internal void Render(ComposerModel model)
     {
-        var verb = Verb(Body);
-        var mode = Escaping == ComposeEscaping.Literal ? $"[{_accent}]literal[/]" : "[dim]as typed[/]";
-        var marker = _armed ? $"[{_accent}]▌[/]" : " ";
+        var verb = model.Verb;
+        var mode = model.Escaping == ComposeEscaping.Literal ? $"[{_accent}]literal[/]" : "[dim]as typed[/]";
+        var marker = model.Armed ? $"[{_accent}]▌[/]" : " ";
         _header.SetContent(new List<string>
         {
             $"{marker}[bold {_accent}]COMPOSE[/]" + (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {mode}",
         });
 
-        // The long form names what each key does; the short one, for a narrow column, keeps every key and the
-        // two words that matter. Both list the same keys, so a narrow pane hides no gesture.
-        var footer = _armed
-            ? $" {Key("⌃S")}[dim] send · [/]{Key("⌥L")}[dim] literal · [/]{Key("F1")}[dim] full screen · [/]{Key("Esc")}[dim] command line[/]"
-            : $" [dim]click here to write · [/]{Key("F1")}[dim] full screen[/]";
+        var footer = KeyRow(model.Keys, shortForm: false);
         if (_width > 0 && VisibleLength(footer) > _width)
         {
-            footer = _armed
-                ? $" {Key("⌃S")}[dim] send · [/]{Key("⌥L")}[dim] literal · [/]{Key("F1")}[dim] full · [/]{Key("Esc")}[dim] back[/]"
-                : $" [dim]click to write · [/]{Key("F1")}[dim] full[/]";
+            footer = KeyRow(model.Keys, shortForm: true);
         }
 
         _footer.SetContent(new List<string> { _width > 0 ? ElideVisible(footer, _width) : footer });
+    }
+
+    /// <summary>The key row: <c> ⌃S send · ⌥L literal · …</c>, a key in the accent and its word dimmed.</summary>
+    private string KeyRow(IReadOnlyList<ComposerKey> keys, bool shortForm)
+    {
+        var row = new System.Text.StringBuilder(" ");
+        for (var i = 0; i < keys.Count; i++)
+        {
+            var key = keys[i];
+            var label = Escape(shortForm ? key.Short ?? key.Label : key.Label);
+            row.Append(key.Key.Length > 0 ? $"{Key(key.Key)}[dim] {label}" : $"[dim]{label}");
+            row.Append(i < keys.Count - 1 ? " · [/]" : "[/]");
+        }
+
+        return row.ToString();
     }
 
     private string Key(string key) => $"[{_accent}]{key}[/]";

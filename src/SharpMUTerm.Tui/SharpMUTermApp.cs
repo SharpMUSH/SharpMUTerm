@@ -927,7 +927,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _gameData = new GameDataOverlay(_system, _time);
         _screens = ScreenTheme.For(_theme);
         _settings = new SettingsOverlay(_system, _screens) { SearchHost = SettingsSearchHost() };
-        _composer = new ComposeOverlay(_system, _spelling, _screens);
+        _composer = new ComposeOverlay(_system, ComposerSpelling, _screens);
         _packageView = new ListOverlay(_system, _screens);
         _sendMenu = new ListOverlay(_system, _screens);
         _layoutsView = new ListOverlay(_system, _screens);
@@ -1193,7 +1193,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase))
         {
-            _composer.Toggle(
+            OpenComposer(
                 DemoScene.MainCharacterName,
                 "+bbpost 12=The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
                 + "short two horses. [Nobody] said what everyone was thinking.\n\n"
@@ -1208,7 +1208,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // save and no escaping. The demo has no MCP session, so the edit is handed in as the composer takes it.
         if (string.Equals(view, "moo-edit", StringComparison.OrdinalIgnoreCase))
         {
-            _composer.Toggle(
+            OpenComposer(
                 DemoScene.MainCharacterName,
                 "\"Usage: look [object]\";\nif (!args)\n  player:tell(this.location:description());\n  return 1;\nendif\n"
                 + "thing = player:my_match_object(argstr);\nthing:look_self();",
@@ -5085,15 +5085,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Any surface, not just a settings screen. The settings screens are the case with teeth — see the
         // paste reasoning above — but the rule this app already states is that a modal surface owns the
         // screen, and the composer is one, so it may not be stacked on top of another.
-        if (!_composer.IsOpen && AnyOverlayOpen)
+        if (!ComposerOpen && AnyOverlayOpen)
         {
             RefuseCommand($"close {OpenOverlayName()} first — the composer cannot open over it");
             return;
         }
 
-        if (_composer.IsOpen)
+        if (ComposerOpen)
         {
-            _composer.Close();
+            CloseComposer();
             return;
         }
 
@@ -5106,7 +5106,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 ? kept
                 : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
 
-        _composer.Toggle(
+        OpenComposer(
             session is null ? string.Empty : SessionTitle(session),
             draft.Body,
             draft.Escaping,
@@ -5172,7 +5172,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Close first, then forget: closing raises Closed, which is what keeps a draft, so a removal
         // before it is undone by the very act of shutting the window — the post came back next time it
         // was opened, already sent.
-        _composer.Close();
+        CloseComposer();
         _composeDrafts.Remove(session.SessionKey);
         SyncDockedComposers(session.SessionKey);
         HistoryFor(BarKind(ActiveBar())).Add(line);
@@ -5409,7 +5409,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         PaletteIsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
+        || _prefixPanel.IsOpen || ComposerOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
         || _layoutsView.IsOpen || _welcomeView.IsOpen;
 
     /// <summary>
@@ -5429,7 +5429,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (_composer.IsOpen)
+        if (ComposerOpen)
         {
             RefuseCommand("close the composer first — search cannot open over it");
             return;
@@ -5504,7 +5504,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool ComposerIsInTheWay(string surface)
     {
-        if (!_composer.IsOpen)
+        if (!ComposerOpen)
         {
             return false;
         }
@@ -7095,9 +7095,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The open composer's *own* character is then excluded from the stored count, because after Esc
         // and F1 that post is in both places at once: the dictionary kept it on the way out and the
         // window is holding it again. Counting both said "2 unsent drafts" for one post.
-        var openKey = _composer.IsOpen ? ComposeDraftKey(activeId) : null;
+        var openKey = ComposerOpen ? ComposeDraftKey(activeId) : null;
         var posts = _composeDrafts.Count(d => d.Key != openKey)
-            + (_composer.IsOpen && _composer.Body.Trim().Length > 0 ? 1 : 0);
+            + (ComposerOpen && ComposerBody.Trim().Length > 0 ? 1 : 0);
         var drafts = holding.Count(w => w.Id != activeId) + bars + posts;
 
         // An open settings screen is deliberately not among the facts. It used to contribute "F5 is open

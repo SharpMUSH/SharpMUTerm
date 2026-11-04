@@ -17,6 +17,9 @@
   <!-- The terminal suite's frame decoder, so a headless frame and a window frame are read the same way. -->
   <ItemGroup>
     <Compile Include="..\SharpMUTerm.Tui.Tests\FrameGrid.cs" Link="Shared\FrameGrid.cs" />
+
+    <!-- A transport that connects to nothing and keeps what was sent, so a composer's send is read off the wire. -->
+    <Compile Include="..\SharpMUTerm.Tui.Tests\RecordingTelnetSession.cs" Link="Shared\RecordingTelnetSession.cs" />
   </ItemGroup>
 
   <ItemGroup>

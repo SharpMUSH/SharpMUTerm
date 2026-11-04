@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: the composer is a native text editor. F1 opens full screen over the panes and the docked composer
+  is an editor in its pane, with the platform's selection, undo, input methods and paste, a monospace or proportional
+  face (right-click), and a wavy red line under a misspelt word whose right-click menu offers suggestions and Add to
+  dictionary. The draft, Ctrl+S, Alt+L, Alt+W and Esc work exactly as in the terminal, and the same text sends the same
+  command.
 - A narrow terminal gives its room to the game: below 100 columns the connection rail folds to its slim strip
   on its own (in the desktop window, the sidebar does), and below 100 columns or 30 rows an empty command line
   is one row tall and grows as you type. At 80×24 a pane is now 72 columns wide instead of 60, two rows taller,

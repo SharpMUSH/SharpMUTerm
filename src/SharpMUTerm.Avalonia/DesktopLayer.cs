@@ -46,6 +46,7 @@ internal sealed class DesktopLayer : Canvas
     private readonly NativeSidebar _sidebar;
     private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ComposerView> _composers = new(StringComparer.Ordinal);
     private readonly NoticeToasts _toasts;
     private int _noticeAboveRow;
 
@@ -133,6 +134,24 @@ internal sealed class DesktopLayer : Canvas
 
     /// <summary>The native quick bars by window id. Internal for tests.</summary>
     internal IReadOnlyDictionary<string, QuickBarButtons> QuickBars => _quickBars;
+
+    /// <summary>The native docked composers by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, ComposerView> Composers => _composers;
+
+    /// <summary>
+    /// Gives the keyboard to the docked composer the client says is armed, or else to the cells: where it goes back to
+    /// when ⌃P or F1 closes.
+    /// </summary>
+    internal void FocusArmedComposer()
+    {
+        if (_composers.Values.FirstOrDefault(c => c.Model is { Armed: true }) is { } armed)
+        {
+            armed.Editor.Focus();
+            return;
+        }
+
+        _view.Focus();
+    }
 
     /// <summary>The last header menu opened. Internal for tests.</summary>
     internal ContextMenu? OpenedMenu { get; private set; }
@@ -302,6 +321,15 @@ internal sealed class DesktopLayer : Canvas
             frame,
             cell,
             (bar, panel, plane) => bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch));
+
+        // The docked composer: a native editor over its pane, the cell editor still drawn (and still the draft) under it.
+        Place(
+            _composers,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.Composer && p.Composer is not null && p.ComposerSession is not null),
+            () => new ComposerView(_view, fullScreen: false),
+            frame,
+            cell,
+            (composer, panel, plane) => composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text));
     }
 
     /// <summary>

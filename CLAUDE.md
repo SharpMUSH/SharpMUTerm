@@ -737,7 +737,7 @@ fallbacks) for inline images/maps.
     named only while a dictionary is open.
   - **Spelling is a colour, not an underline** (`SpellChecker`, Core; `SpellingHighlighter`, Tui). The marks
     go through `MultilineEditControl.SyntaxHighlighter`, whose tokens carry a foreground and nothing else;
-    an underline needs a styling hook upstream. Hunspell via WeCantSpell.Hunspell, **no dictionary
+    an underline needs a styling hook upstream (the window's native editor draws a real one, see below). Hunspell via WeCantSpell.Hunspell, **no dictionary
     bundled**: `dictionaries/` beside `config.json`, then the system folders, chosen by the POSIX locale
     variables — not `CultureInfo`, because the build is `InvariantGlobalization` and every culture is the
     invariant one. The dictionary is opened the first time F1 opens, never at startup, and the app takes a
@@ -1092,7 +1092,7 @@ fallbacks) for inline images/maps.
     target fit as name-over-bar, else side by side, where the words shrink (`Mana · low 23 / 120`, then
     `mp! 23/120`, then `mp 23`) before a bar goes under 24 px. The UI font, not the cell font: this is the window's
     presentation. `hp`/`mp`/`mv` read as Health/Mana/Movement (`VitalsMeter.Title`).
-  - **Not done**: the docked composer is still cells in the window; no animation on a
+  - **Not done**: no animation on a
     gauge change; the map draws one level and area (other levels show only as stairs marks, other areas only as
     a coloured spur), with no room symbols beyond the game's own; the button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
     click under a WM-less X server to take the first item (seen under Xvfb only).
@@ -1253,7 +1253,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1730,6 +1730,52 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **Hover selects on movement only** (`PointerMoved`, not `PointerEntered`), so the row that opens under a resting
     pointer is not chosen. ↑↓ wrap as in the cells; PgUp/PgDn stop at the ends.
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave5/native-palette-*.png`).
+- **In the window, the composer is a native editor: F1 over the cells, and the docked panel over its pane**
+  (`ClientHost.NativeComposer` → `INativeComposer`; Client `ComposerModel`, `ComposerMarks`, `ComposerSession`;
+  Avalonia `ComposerView`, `ComposerEditor`, `ComposerOverlay`, `ComposerPresenter` on the driver;
+  `SharpMUTermApp.NativeComposer.cs`). A `TextBox`: wrapping, undo and redo, selection, IME, paste and the platform's
+  caret, with a monospace face by default and a proportional one from its right-click menu (for the run). Decisions
+  not to relitigate:
+  - **One model, both hosts.** `ComposerModel` (target, draft, escaping, MOO edit, dictionary, marks as ranges, the
+    key row) is what the cell F1 (`ComposeOverlay.Render(model)`), the cell panel (`DockedComposer.Render(model)`) and
+    the native views draw. `ComposeOverlay.ModelFor` is the F1 model in both hosts; `DescribeDocked` is the panel's,
+    recorded as drawn (`SurfaceCatalog.Compose`, `PanelIds.Composer`). The marks are `SpellChecker.Misspellings` per
+    line, the call the cell highlighter makes, so both hosts mark the same words.
+  - **F1 goes through one funnel** (`OpenComposer`/`CloseComposer`): the key, ⌃P, a MOO edit arriving and the demo
+    views. With an available host editor it opens there and the cell modal is never built; `ComposerOpen` (either)
+    feeds every refusal the cell modal fed (`AnyOverlayOpen`, the quit facts, `MainWindowInFront`, the panes being
+    covered). Closing keeps the draft through `KeepComposeDraft`, exactly as the cell window's `Closed` does, so a send
+    still closes first and forgets after. `Available` is false until the main window attaches the presenter, so
+    `--render-png`, the parity harness and any test without a window get the cells.
+  - **Every gesture goes back through the session**, on the client's thread (`OnUiThread`): ⌃S to `SendComposed` /
+    `SendDocked` (a MOO edit saves its lines), ⌥L, ⌥W (the word at the caret, `ComposerMarks.WordAt`), Esc (F1 closes
+    keeping the draft; the panel releases to the command line), a click (the panel arms, `ArmComposer`). A session the
+    client has ended passes nothing on. The window never builds a command.
+  - **The draft is the client's; the editor keeps its own caret.** The host hands its text back as it changes; the
+    client's text replaces the editor's only when `ComposerModel.Revision` moved — a send clearing it, F1 closing over
+    the panel, a key the cells took. `DockedComposer.SetFromHost` writes without moving it.
+  - **The docked editor lies over its cells, which stay the draft** (`CellsUnderNative`): it rides the panel channel
+    (`PanelOverlay.Composer`/`ComposerSession`) and `DesktopLayer` places it like any panel. It takes the keyboard when
+    the model says armed and gives it to `TerminalView` when it says not. It hands the client the chords it has no
+    use for (`ComposerView.ReachesTheClient`: F-keys, ⌃P, ⌃O, ⌃↑/↓, ⌃←/→, ⌥J/K, ⌥digits) through the driver, as its
+    cells would receive them; ⌃A/C/X/V/Z/Y, word movement and typing stay the editor's. While F1 is open natively the
+    panels are not published, so F1 is never under a docked editor.
+  - **F1 is an overlay over the cell area, under the desktop layer**, so the native header and sidebar stay (inert, as
+    under a modal) and a toast is still seen over it. ⌥⏎ is the window's (it maximises); ⏎, ⌃⏎ and ⇧⏎ are newlines.
+    ⌃Q in F1 closes it first and then asks to quit, so the cell quit prompt is never hidden under it.
+  - **The misspelling is a real wavy line**, drawn by a layer over the editor (`ComposerView.MarkLayer`) from the
+    editor's own text layout (`TextLayout.HitTestTextRange`), so it follows wrapping and scrolling. The right-click menu
+    offers WeCantSpell's suggestions (`SpellChecker.Suggest`, six at most), Add to dictionary, the editor's edits and the
+    face. Its colour is the settings screens' warning, which the cell editor marks in (`ComposerInk`).
+  - **Parity**: `HostParityTests` builds both drivers with no attached presenter, so the cells it compares are the cell
+    composer's in both. The native side is held by `SurfaceParityTests` instead — F1's model equals the cell window's
+    for `compose`, `compose-literal` and `moo-edit`, the panel's equals the cells' in `panel-composer`, and ⌃S from the
+    native session puts the same command on a `RecordingTelnetSession` as the cell keys do, as typed and literal, one
+    line and several paragraphs. `NativeComposerRoutingTests` (Tui) and `NativeComposerTests` (Avalonia, headless)
+    drive the routing and the editor.
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave7/composer-*.png`). `--demo-config` in the
+    window opens the installed dictionary read-only. Not done: no per-character face choice saved, no find bar, and
+    the window's ⌥W adds to the run's dictionary in the demo only (a live client writes `user-words.txt` as F1 does).
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on

@@ -284,7 +284,7 @@ internal sealed partial class SharpMUTermApp
 
     private IWindowControl NewDockedComposer(TerminalPanelContext context)
     {
-        var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent);
+        var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent, DescribeDocked);
         if (_composeDrafts.TryGetValue(context.SessionKey, out var draft))
         {
             composer.Load(draft.Body, draft.Escaping);
@@ -362,6 +362,14 @@ internal sealed partial class SharpMUTermApp
     private void SyncComposerBands()
     {
         var armed = ArmedComposer();
+
+        // The dictionary is opened the first time a docked composer takes the keyboard, as F1 opens it on its first
+        // opening: a client that never writes a post reads none.
+        if (armed is { Spelling: null } && ComposerSpelling() is { } checker)
+        {
+            armed.UseSpelling(checker, _screens.Colour(ScreenPalette.Warn));
+        }
+
         foreach (var composer in _dockedComposers.Values)
         {
             composer.Armed = ReferenceEquals(composer, armed);
@@ -471,6 +479,13 @@ internal sealed partial class SharpMUTermApp
         {
             e.Handled = true;
             composer.ToggleEscaping();
+            return null;
+        }
+
+        if (alt && key.Key == ConsoleKey.W && composer.Spelling is not null)
+        {
+            e.Handled = true;
+            AddDockedWordAtCaret(composer);
             return null;
         }
 

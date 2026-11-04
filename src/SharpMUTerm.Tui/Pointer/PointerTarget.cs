@@ -194,6 +194,14 @@ internal interface IPointerPresenter
 /// Runs a command id through the client's registry (the quick bar's <c>F4 edits keys</c> is
 /// <see cref="SharpMUTerm.Client.Panels.QuickBarModel.EditCommand"/>). Safe to call from any thread; one instance.
 /// </param>
+/// <param name="Composer">
+/// For the docked composer, its content: the model its cell header, editor and key row are drawn from. Only for a
+/// host with a native composer (<see cref="ClientHost.NativeComposer"/>).
+/// </param>
+/// <param name="ComposerSession">
+/// For the docked composer, the way a native editor's text and keys go back to the client: one instance for as long as
+/// the panel lives, so an overlay compares equal from frame to frame.
+/// </param>
 internal sealed record PanelOverlay(
     string PanelId,
     string WindowId,
@@ -205,7 +213,9 @@ internal sealed record PanelOverlay(
     SharpMUTerm.Client.Panels.WhoHereModel? WhoHere = null,
     SharpMUTerm.Client.Panels.QuickBarModel? QuickBar = null,
     Action<int>? Pick = null,
-    Action<string>? Dispatch = null);
+    Action<string>? Dispatch = null,
+    SharpMUTerm.Client.Composer.ComposerModel? Composer = null,
+    SharpMUTerm.Client.Composer.ComposerSession? ComposerSession = null);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);
