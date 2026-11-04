@@ -289,7 +289,7 @@ internal sealed class FloatingPanelWindow : Window
         switch (_content)
         {
             case MapCanvas map when content.Map is { } model:
-                map.Show(model, content.Ink, plane, text, content.WalkTo);
+                map.Show(model, content.Ink, plane, text, content.WalkTo, content.SelectRoom, content.EditMap);
                 break;
             case VitalsGauges gauges when content.Vitals is { } vitals:
                 gauges.Show(vitals, content.Ink, plane, text, cellHeight);

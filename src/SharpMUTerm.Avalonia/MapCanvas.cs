@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Tui;
 
@@ -18,6 +19,12 @@ namespace SharpMUTerm.Avalonia;
 /// command. A right click is handed on to the client as a right click on the cell under it
 /// (<see cref="TerminalView.ForwardRightClick"/>), so the pane's menu is the same here as over cells. The view is
 /// centred on the character and follows them; a pan is an offset from there, and a double-click puts it back.
+/// </para>
+/// <para>
+/// <b>Editing.</b> A right click on a room selects it for editing (<see cref="PanelOverlay.SelectRoom"/>) and opens the
+/// client's room menu (<see cref="MapEditing.Menu"/>); while a room is selected a click selects instead of walking, and the
+/// <see cref="MapInspector"/> card in the top right corner edits it. Every edit is a <see cref="MapEdit"/> handed to the
+/// client (<see cref="PanelOverlay.EditMap"/>), the funnel the cell map's keys end in.
 /// </para>
 /// </summary>
 internal sealed class MapCanvas : Control
@@ -39,6 +46,9 @@ internal sealed class MapCanvas : Control
     private Color _plane = Colors.Black;
     private Color _text = Colors.White;
     private Action<long>? _walkTo;
+    private Action<long?>? _select;
+    private Action<MapEdit>? _edit;
+    private readonly MapInspector _inspector = new();
     private Vector _pan;
     private Point? _pressAt;
     private Vector _panAtPress;
@@ -51,7 +61,28 @@ internal sealed class MapCanvas : Control
         ClipToBounds = true;
         Focusable = false;
         Cursor = new Cursor(StandardCursorType.Arrow);
+        VisualChildren.Add(_inspector);
+        LogicalChildren.Add(_inspector);
     }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        _inspector.Measure(availableSize);
+        return default;
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        // The card arranges itself in the top right corner by its own alignment and margin.
+        _inspector.Arrange(new Rect(finalSize));
+        return finalSize;
+    }
+
+    /// <summary>The room inspector card. Internal for tests.</summary>
+    internal MapInspector Inspector => _inspector;
+
+    /// <summary>The last room menu the canvas opened. Internal for tests.</summary>
+    internal MenuModel? OpenedRoomMenu { get; private set; }
 
     /// <summary>The zoom, 1 at <see cref="Spacing"/> pixels between rooms. Internal for tests.</summary>
     internal double Zoom { get; private set; } = 1;
@@ -62,9 +93,12 @@ internal sealed class MapCanvas : Control
     /// <summary>What it is showing. Internal for tests.</summary>
     internal MapViewModel Model => _model;
 
-    public void Show(MapViewModel model, PanelInk ink, Color plane, Color text, Action<long>? walkTo)
+    public void Show(MapViewModel model, PanelInk ink, Color plane, Color text, Action<long>? walkTo, Action<long?>? select = null, Action<MapEdit>? edit = null)
     {
         _walkTo = walkTo;
+        _select = select;
+        _edit = edit;
+        _inspector.Show(model, plane, text, edit, select);
         if (model.Equals(_model) && ink == _ink && plane == _plane && text == _text)
         {
             return;
@@ -82,10 +116,22 @@ internal sealed class MapCanvas : Control
     {
         var anchor = _model.Current ?? _model.Rooms.FirstOrDefault();
         var step = Spacing * Zoom;
-        var middle = new Point(Bounds.Width / 2, Bounds.Height / 2) + _pan;
+        var middle = Middle + _pan;
         return anchor is null
             ? middle
             : new Point(middle.X + ((room.X - anchor.X) * step), middle.Y + ((room.Y - anchor.Y) * step));
+    }
+
+    /// <summary>The middle of the map's open part: left of the inspector while it is up and the pane is wide enough to spare it.</summary>
+    private Point Middle
+    {
+        get
+        {
+            var open = _inspector.IsVisible && Bounds.Width > MapInspector.CardWidth * 2
+                ? Bounds.Width - MapInspector.CardWidth - 16
+                : Bounds.Width;
+            return new Point(open / 2, Bounds.Height / 2);
+        }
     }
 
     private double RoomSize => Math.Max(5, Spacing * Zoom * 0.56);
@@ -103,13 +149,27 @@ internal sealed class MapCanvas : Control
 
     // ── Input: the canvas's own, never routed on to the cells (bar the right click) ──────────────
 
+    /// <summary>Whether a point is on the inspector card, which takes its own input.</summary>
+    private bool OnInspector(Point point) => _inspector.IsVisible && _inspector.Bounds.Contains(point);
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         var point = e.GetCurrentPoint(this);
+        if (OnInspector(point.Position))
+        {
+            return;
+        }
+
         e.Handled = true;
         if (point.Properties.IsRightButtonPressed)
         {
+            if (_select is not null && RoomAt(point.Position) is { } room)
+            {
+                OpenRoomMenu(room);
+                return;
+            }
+
             if (RightClick is { } own)
             {
                 own(e.GetPosition(this));
@@ -141,8 +201,13 @@ internal sealed class MapCanvas : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        e.Handled = true;
         var position = e.GetPosition(this);
+        if (_pressAt is null && OnInspector(position))
+        {
+            return;
+        }
+
+        e.Handled = true;
         if (_pressAt is { } from)
         {
             var moved = position - from;
@@ -163,7 +228,9 @@ internal sealed class MapCanvas : Control
             _hovered = room?.Id;
             Cursor = new Cursor(room is null ? StandardCursorType.Arrow : StandardCursorType.Hand);
             // The name is drawn on the canvas beside the room; the tip says only what a click does.
-            ToolTip.SetTip(this, room is null || room.Current ? null : "Click to walk here");
+            ToolTip.SetTip(this, room is null ? null
+                : _model.Editing && _select is not null ? "Click to edit this room"
+                : room.Current ? "Right-click to edit this room" : "Click to walk here · right-click to edit");
             InvalidateVisual();
         }
     }
@@ -182,7 +249,17 @@ internal sealed class MapCanvas : Control
         _dragging = false;
         e.Pointer.Capture(null);
         Cursor = new Cursor(StandardCursorType.Arrow);
-        if (!wasDrag && e.InitialPressMouseButton == MouseButton.Left && RoomAt(e.GetPosition(this)) is { Current: false } room)
+        if (wasDrag || e.InitialPressMouseButton != MouseButton.Left || RoomAt(e.GetPosition(this)) is not { } room)
+        {
+            return;
+        }
+
+        // While a room is being edited a click picks the room to edit; otherwise it walks, as it always has.
+        if (_model.Editing && _select is not null)
+        {
+            _select(room.Id);
+        }
+        else if (!room.Current)
         {
             _walkTo?.Invoke(room.Id);
         }
@@ -191,8 +268,44 @@ internal sealed class MapCanvas : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+        if (OnInspector(e.GetPosition(this)))
+        {
+            return;
+        }
+
         e.Handled = true;
         ZoomAbout(e.GetPosition(this), e.Delta.Y);
+    }
+
+    /// <summary>
+    /// Selects <paramref name="room"/> and opens the client's menu for it: walk there, each edit, undo. An edit that needs
+    /// words opens the inspector at its field; the rest are handed to the client as they are.
+    /// </summary>
+    internal void OpenRoomMenu(MapViewRoom room)
+    {
+        _select?.Invoke(room.Id);
+        var model = MapEditing.Menu(room, _model.UndoLabel);
+        OpenedRoomMenu = model;
+        var menu = NativeMenu.Build(model, verb => RunMenuVerb(room.Id, verb), global::Avalonia.Controls.PlacementMode.Pointer, this);
+        menu.Open(this);
+    }
+
+    /// <summary>What a room menu entry does. Internal for tests, which choose an entry the way a click on it would.</summary>
+    internal void RunMenuVerb(long room, string verb)
+    {
+        if (verb == MapEditing.WalkVerb)
+        {
+            _walkTo?.Invoke(room);
+        }
+        else if (MapEditing.TextVerbs.Contains(verb))
+        {
+            // The inspector shows the room once the client has published it selected; the field takes the keyboard then.
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() => _inspector.FocusField(verb), global::Avalonia.Threading.DispatcherPriority.Background);
+        }
+        else if (MapEditing.EditFor(verb, room) is { } edit)
+        {
+            _edit?.Invoke(edit);
+        }
     }
 
     /// <summary>Zooms by <paramref name="notches"/> about <paramref name="point"/>, keeping what is under it there.</summary>
@@ -205,7 +318,7 @@ internal sealed class MapCanvas : Control
         }
 
         // The centre is middle + pan; a point at offset d from it moves to d·ratio, so the pan takes up the difference.
-        var middle = new Point(Bounds.Width / 2, Bounds.Height / 2);
+        var middle = Middle;
         var ratio = next / Zoom;
         var fromCentre = point - (middle + _pan);
         _pan = point - middle - (fromCentre * ratio);
@@ -313,6 +426,23 @@ internal sealed class MapCanvas : Control
             }
 
             DrawStairs(context, room, rect, room.Current ? Contrasting(accent) : _text);
+            if (room.Symbol is { } symbol && !room.Up && !room.Down)
+            {
+                var mark = PanelText.Format(symbol, Math.Max(8, size * 0.5), room.Current ? Contrasting(accent) : _text, bold: true, size);
+                context.DrawText(mark, new Point(c.X - (mark.Width / 2), c.Y - (mark.Height / 2)));
+            }
+
+            if (room.Noted)
+            {
+                context.DrawEllipse(new SolidColorBrush(path), null, rect.TopRight + new Vector(-size * 0.12, size * 0.12), size * 0.1, size * 0.1);
+            }
+
+            if (room.Selected)
+            {
+                // The room being edited: a ring in the draft colour, outside any halo, so it reads on the current room too.
+                var ring = new Pen(new SolidColorBrush(path), 2, new DashStyle([2, 1.5], 0));
+                context.DrawRectangle(null, ring, rect.Inflate(size * 0.42), radius * 2.2, radius * 2.2);
+            }
 
             if ((names || room.Id == _hovered) && room.Id != _hovered)
             {

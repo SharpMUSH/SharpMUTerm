@@ -41,6 +41,9 @@ public enum SurfaceActionKind
     /// <summary>A room id on the map.</summary>
     Walk,
 
+    /// <summary>A change to a map (<c>MapEdit</c>), checked and applied by the client.</summary>
+    MapEdit,
+
     /// <summary>A change to a declared setting, committed through the client's save funnel.</summary>
     Edit,
 
@@ -288,10 +291,18 @@ public static class SurfaceCatalog
         new(
             PanelIds.Map,
             typeof(MapViewModel),
-            [new(SurfaceActionKind.Walk, "room", "WalkFromMap"), PopOut],
+            [
+                new(SurfaceActionKind.Walk, "room", "WalkFromMap"),
+
+                // Editing: a room selected (a cell click while editing, the cell arrows; the window's right click or a click
+                // while editing), and every edit — cell key, /map command, native menu or inspector — through one funnel.
+                new(SurfaceActionKind.Pick, "select room", "SelectMapRoom"),
+                new(SurfaceActionKind.MapEdit, "edit", "ApplyMapEdit"),
+                PopOut,
+            ],
             CellsUnderNative,
             "SharpMUTerm.Tui.MapRenderer.Render",
-            PanelViews("MapCanvas")),
+            [.. PanelViews("MapCanvas"), "SharpMUTerm.Avalonia.MapInspector"]),
         new(
             PanelIds.WhoHere,
             typeof(WhoHereModel),

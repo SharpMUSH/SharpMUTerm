@@ -410,6 +410,48 @@ public class SurfaceParityTests
         await Same("map: pop out", "layout-combat",
             (app, d) => Panel(d, PanelIds.Map).PopOut!(),
             (app, d) => app.DispatchCommand(PanelFloatCommands.PopOut(Panel(d, PanelIds.Map).WindowId)));
+
+        // Map editing: a room selected and edited on the canvas, and the same with the cell map's keys.
+        await Same("map: select", "layout-combat",
+            (app, d) => Panel(d, PanelIds.Map).SelectRoom!(OtherRoom(Panel(d, PanelIds.Map).Map!)),
+            (app, d) => CellSelect(app, d));
+        await Same("map: rename", "layout-combat",
+            (app, d) => NativeEdit(d, room => MapEdit.Rename(room, "Spice Yard")),
+            (app, d) =>
+            {
+                CellSelect(app, d);
+                MapKeys(app, MapKey(ConsoleKey.R, 'r'));
+                while (app.PrimaryInputText.Count(c => c == ' ') > 3 || !app.PrimaryInputText.EndsWith(' '))
+                {
+                    MapKeys(app, MapKey(ConsoleKey.Backspace, '\b'));
+                }
+
+                TypeLine(app, "Spice Yard");
+            });
+        await Same("map: lock", "layout-combat",
+            (app, d) => NativeEdit(d, room => MapEdit.Lock(room, true)),
+            (app, d) => { CellSelect(app, d); MapKeys(app, MapKey(ConsoleKey.L, 'l')); });
+        await Same("map: move", "layout-combat",
+            (app, d) => NativeEdit(d, room => MapEdit.Move(room, 1, 0)),
+            (app, d) => { CellSelect(app, d); MapKeys(app, new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, true, false, false)); });
+        await Same("map: delete", "layout-combat",
+            (app, d) => NativeEdit(d, MapEdit.Delete),
+            (app, d) => { CellSelect(app, d); MapKeys(app, MapKey(ConsoleKey.Delete, '\0')); });
+        await Same("map: undo", "layout-combat",
+            (app, d) =>
+            {
+                NativeEdit(d, room => MapEdit.Lock(room, true));
+                Panel(d, PanelIds.Map).EditMap!(MapEdit.Undo);
+            },
+            (app, d) => { CellSelect(app, d); MapKeys(app, MapKey(ConsoleKey.L, 'l'), MapKey(ConsoleKey.U, 'u')); });
+        await Same("map: exit to the next room", "layout-combat",
+            (app, d) => NativeEdit(d, room => MapEdit.LinkNext(room, "climb")),
+            (app, d) =>
+            {
+                CellSelect(app, d);
+                MapKeys(app, MapKey(ConsoleKey.X, 'x'));
+                TypeLine(app, "climb next");
+            });
         probed.Add(PanelIds.Map);
 
         // Vitals: the pop-out button, and ⌃P's entry for the same window.
@@ -985,6 +1027,7 @@ public class SurfaceParityTests
         "help=" + app.HelpIsOpen + "/" + app.DictionaryOfferOpen,
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
+        "map=" + app.MapDigest(),
         "rail=" + (app.BuildChromeOverlay().Sidebar.Collapsed ? "folded" : "open"),
         "floating=" + string.Join(",", app.FloatingPublished.Select(f => f.Model.WindowId)),
         "notice=" + app.LastNotice,
@@ -1008,6 +1051,42 @@ public class SurfaceParityTests
 
     private static long OtherRoom(MapViewModel map) =>
         map.Rooms.First(r => !r.Current && r.Id != map.AnchorId).Id;
+
+    private static ConsoleKeyInfo MapKey(ConsoleKey key, char c) => new(c, key, false, false, false);
+
+    /// <summary>The cell way to select a room: Edit map from the palette, then a click on the room's cell link while editing.</summary>
+    private static void CellSelect(SharpMUTermApp app, AvaloniaConsoleDriver driver)
+    {
+        var room = OtherRoom(Panel(driver, PanelIds.Map).Map!);
+        app.DispatchCommand("map:edit");
+        app.SimulateMapClick(Panel(driver, PanelIds.Map).WindowId, MapRenderer.LinkPrefix + room);
+    }
+
+    /// <summary>The native way: the room selected on the canvas, then an edit from its menu or inspector.</summary>
+    private static void NativeEdit(AvaloniaConsoleDriver driver, Func<long, MapEdit> edit)
+    {
+        var room = OtherRoom(Panel(driver, PanelIds.Map).Map!);
+        Panel(driver, PanelIds.Map).SelectRoom!(room);
+        Panel(driver, PanelIds.Map).EditMap!(edit(room));
+    }
+
+    private static void MapKeys(SharpMUTermApp app, params ConsoleKeyInfo[] keys)
+    {
+        foreach (var key in keys)
+        {
+            app.SimulateKey(key);
+        }
+    }
+
+    private static void TypeLine(SharpMUTermApp app, string text)
+    {
+        foreach (var c in text)
+        {
+            app.SimulateKey(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+        }
+
+        app.SimulateKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+    }
 
     // ── F4 and the quick bar, per host ──────────────────────────────────────────────────────────
 
