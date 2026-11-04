@@ -134,7 +134,7 @@ public class PackagesAppTests
         rig.App.PackageFetch = (uri, _) => { asked = uri; return Task.FromResult<byte[]?>(Archive()); };
 
         Type(rig.App, "/package install https://packages.example/basics.zip");
-        for (var i = 0; i < 1000 && !rig.App.PackageView.IsOpen; i++)
+        for (var i = 0; i < 1000 && rig.App.PackageView.Mode != "review"; i++)
         {
             await Task.Delay(10);
         }
