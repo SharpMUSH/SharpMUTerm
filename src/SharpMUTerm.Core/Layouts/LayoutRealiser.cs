@@ -28,7 +28,7 @@ public sealed record RealisedLayout(
 /// <list type="bullet">
 /// <item>A pane takes every window of every panel folded into it, in that order; a pane left with none is dropped
 /// and its split collapsed.</item>
-/// <item>A collapsed panel's windows are background tabs of the first pane in its region, else of the output pane:
+/// <item>A collapsed panel's windows are background tabs of the first pane in its region that is not a strip, else of the output pane:
 /// a title the player can open, which is what collapsed means in a pane tree.</item>
 /// <item>Every window in <c>keep</c> that no panel placed survives — in the pane it asks for when that pane still
 /// exists, else in the output pane. Applying a layout never closes a window.</item>
@@ -119,8 +119,10 @@ public static class LayoutRealiser
                 continue;
             }
 
+            // Never a strip's pane (the vitals, the quick bar): a tab there would turn it into a pane that shares.
             var target = panes.FirstOrDefault(p =>
                     paneFirstPanel.TryGetValue(p.Id, out var first)
+                    && PanelSizing.FixedRows(first) is null
                     && layout.PlacementOf(first)?.Region == collapsed.Region)
                 ?? output;
             target.Tabs.AddRange(windows);

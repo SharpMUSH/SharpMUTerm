@@ -1428,11 +1428,27 @@ fallbacks) for inline images/maps.
     shares are proportional, so the height is a pane property instead: `BuildWorkspaceRow` derives it from each
     pane's tabs on every rebuild (never persisted — a strip handed an ordinary window stops being one), the grid
     gives a fixed child `GridLength.Cells` and a floored one `Star(min:)`, and `LayoutSolver` shares rows the same
-    way (`PaneExtent.DistributeRows`; if every child is fixed the last shares, in both). A one-tab strip draws **no
-    tab strip** (`TabControl.ShowTabHeader`, which `PaneOutputRects` already reads) and offers no drag handle. Only
+    way (`PaneExtent.DistributeRows`; if every child is fixed the last shares, in both). A pane holding **one panel and
+    nothing else draws no tab strip** (`PanelSizing.ShowsTabStrip`, applied as `PaneNode.DrawsHeader` →
+    `TabControl.ShowTabHeader`, which `PaneOutputRects` already reads) and offers no drag handle: every panel titles
+    itself (COMPOSE, HERE, VITALS, a strip's row), as the mockups draw the composer and who-here columns, and the row
+    goes to the panel. A panel pane holding a window or a second tab keeps its strip; the map is a window and keeps it. Only
     rows: a strip's width is a share. No divider row is drawn beside a fixed pane (it sits flush, on a recessed
     plane), and a drag of that border returns `PaneResizeOutcome.FixedSize`, and ⌥⇧↑/↓ take rows from a sharing pane beyond the strip or
     pass to the next split up, refusing out loud when only a strip could pay.
+  - **The built-ins are the mockups' arrangements** (`BuiltInLayouts`). Roleplay: the output with chat as tabs behind
+    it, and a side column (35%) of the composer (3) over who-here (2). Combat: the output with the quick bar under it,
+    and a side column of the vitals card over the map, chat collapsed behind the map (a collapsed panel never joins a
+    strip's pane, `LayoutRealiser`). **Below 100 columns a built-in folds its narrow arrangement**
+    (`BuiltInLayouts.ForWidth`, same id and name; `ApplyLayout`/`RefoldLayout` read `IsNarrow()`, and
+    `SyncNarrowLayout` re-folds on a crossing): Roleplay's composer goes under the output, Combat's vitals become a
+    one-row strip across the top so the column's rows go to the map. Only `IsBuiltIn` layouts swap; a saved copy of
+    a built-in (a new id) is drawn as saved, and an old copy keeps the old arrangement.
+  - **A vitals pane under half the window's width is a card** (`PanelSizing.ApplyAll`, `WidthShares`,
+    `CardBelowWidthShare`; `VitalsCardRows` = 2 a meter + 6: heading, the target's rows reserved): it draws its own VITALS heading
+    (no tab strip, above), the cells draw name and numbers over a full-width bar (`VitalsStripRenderer.RenderCard`, chosen by box
+    height ≥ 3), and at 20 px rows the window's gauges stack in it, headed. Decided from the tree on every rebuild, so a
+    player's own layout gets it too; the terminal mockup's top strip is the narrow arrangement, not the wide one.
   - **The status row leaves its meters out while the vitals strip shows them** (`VitalsStripShowing`: the status
     row's character's vitals window is the front tab of a drawn pane, zoom included). `SyncStatusMeters` repaints
     the row only when that flips (on a rebuild or an activation), so a notice is not displaced for nothing. The

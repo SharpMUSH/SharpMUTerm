@@ -384,6 +384,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The built-in layouts follow the new designs: Roleplay puts the composer in the side column above who is here, with
+  the chat windows as tabs behind the output; Combat puts the vitals in the side column above the map as a card, one
+  meter over another. Below 100 columns they fall back to what fits: Roleplay's composer goes under the output and
+  Combat's vitals become a one-row strip across the top. Layouts you saved are unchanged. A pane showing only a panel
+  (the composer, who is here, the vitals) no longer draws a tab strip over it; the panel's own heading names it.
 - In the desktop window, each pane's tabs are taller with larger, centred labels, game text no longer runs against the
   pane's edge (a column of space either side, reported to the game as the pane's width), the header shows the plain
   "SharpMUTerm" name with the search box beside your character, and the command line's prompt sits at the field's

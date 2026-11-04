@@ -79,6 +79,93 @@ internal static class VitalsStripRenderer
             width,
             ink);
 
+    /// <summary>
+    /// The card a tall vitals pane draws (<see cref="Core.Layouts.PanelSizing.VitalsCardRows"/>): a heading, then per meter its title
+    /// and numbers on one row and a bar the width of the box under it, then a rule and the target the same way, its
+    /// rows held whether or not the game names one — the window's stacked gauges, block for block. A box too short
+    /// for that draws one row a meter, and one row or two draws the strip.
+    /// </summary>
+    internal static IReadOnlyList<string> RenderCard(VitalsModel vitals, int width, int height, Ink ink)
+    {
+        width = Math.Max(1, width);
+        var blocks = vitals.Meters.Count;
+        if (height < 3 || vitals.IsEmpty)
+        {
+            return [Render(vitals, width, ink)];
+        }
+
+        var lines = new List<string>();
+
+        // The card titles itself (a one-panel pane draws no tab strip): VITALS and where the numbers come from, as the
+        // window's heading says it — when there is a row for it beside the blocks.
+        if (height >= (2 * blocks) + 5)
+        {
+            var source = vitals.Source is { } from ? "  [dim]" + Escape(Fit(from, Math.Max(1, width - 8))) + "[/]" : string.Empty;
+            lines.Add($"[bold {ink.Bar}]VITALS[/]{source}");
+            lines.Add(string.Empty);
+        }
+
+        if (height >= (2 * blocks) + 3)
+        {
+            foreach (var meter in vitals.Meters)
+            {
+                var colour = meter.Low ? ink.Low : ink.Bar;
+                var title = Escape(Fit(meter.Low ? $"{meter.Title} · {LowMark}" : meter.Title, width - 1));
+                lines.Add(Spread(meter.Low ? $"[bold {colour}]{title}[/]" : $"[bold]{title}[/]", Numbers(meter), width));
+                lines.Add(Bar(meter.HasMax ? meter.Share ?? 0 : 1, width, colour, ink));
+            }
+
+            lines.Add($"[{ink.Empty}]{new string('─', width)}[/]");
+            if (vitals.Target is { } target)
+            {
+                var percent = target.Share is { } share ? StatusMeterRenderer.Percent(share) : string.Empty;
+                var name = Escape(Fit(target.Name, Math.Max(1, width - 8 - percent.Length)));
+                lines.Add(Spread("[dim]Target[/] " + (target.Low ? $"[{ink.Low}]{name}[/]" : name), percent, width));
+                lines.Add(target.Share is { } s ? Bar(s, width, target.Low ? ink.Low : ink.Bar, ink) : string.Empty);
+            }
+
+            return lines;
+        }
+
+        // One row a meter: the label, a bar in what is left, the value.
+        foreach (var meter in vitals.Meters.Take(Math.Max(1, height - (vitals.Target is null ? 0 : 1))))
+        {
+            var colour = meter.Low ? ink.Low : ink.Bar;
+            var value = Escape(StatusMeter.Fit(meter.Value, StatusMeterRenderer.ValueWidth));
+            var label = Fit(meter.Label, 4).PadRight(4);
+            var bar = Math.Max(0, width - label.Length - VisibleLength(value) - 2);
+            var drawn = bar > 0 && meter.HasMax ? " " + Bar(meter.Share, bar, colour, ink) : new string(' ', bar + 1);
+            lines.Add($"[dim]{Escape(label)}[/]{drawn} " + (meter.Low ? $"[bold {colour}]{value}[/]" : $"[bold]{value}[/]"));
+        }
+
+        if (vitals.Target is { } t && lines.Count < height)
+        {
+            var percent = t.Share is { } share ? StatusMeterRenderer.Percent(share) : string.Empty;
+            lines.Add(Spread("[dim]target[/] " + Escape(Fit(t.Name, Math.Max(1, width - 8 - percent.Length))), percent, width));
+        }
+
+        return lines;
+    }
+
+    /// <summary>The numbers a card's meter row ends in: <c>412/500</c>, or the value alone.</summary>
+    private static string Numbers(VitalsMeter meter) => meter.HasMax ? $"{meter.Value}/{meter.Max ?? "?"}" : meter.Value;
+
+    /// <summary><paramref name="left"/> markup at the start of a row of <paramref name="width"/>, <paramref name="right"/> text at its end.</summary>
+    private static string Spread(string left, string right, int width)
+    {
+        var room = width - VisibleLength(left) - right.Length;
+        if (room < 1)
+        {
+            return ElideVisible(left, Math.Max(1, width - right.Length - 1)) + " " + Escape(right);
+        }
+
+        return left + new string(' ', room) + $"[bold]{Escape(right)}[/]";
+    }
+
+    /// <summary><paramref name="text"/> cut to <paramref name="width"/> cells with an ellipsis.</summary>
+    private static string Fit(string text, int width) =>
+        width <= 0 ? string.Empty : text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
+
     private static string Compose(
         IReadOnlyList<StatusMeterRenderer.MeterReading> meters, CombatTarget? target, Level level, int width, Ink ink)
     {

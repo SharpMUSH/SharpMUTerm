@@ -21,13 +21,13 @@ public class StackedDividerTests
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-    private static SharpMUTermApp App(string view, string theme = "Dark")
+    private static SharpMUTermApp App(string view, string theme = "Dark", int width = Width, int height = Height)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.ThemeName = theme;
         config.Theme = ThemeLibrary.Get(theme);
-        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(width, height));
         app.RenderSnapshot(view);
         app.RenderNextFrame();
         return app;
@@ -60,7 +60,7 @@ public class StackedDividerTests
     /// <summary>
     /// The vitals strip sits flush on the panes under it and is told apart from them by its plane, on every theme
     /// and whether or not the pane beside it holds the focus: an unfocused strip is recessed a step, so it is never
-    /// the same plane as an unfocused pane.
+    /// the same plane as an unfocused pane. Narrow, where Combat draws its vitals as a strip across the top.
     /// </summary>
     [Test]
     [Arguments("Dark")]
@@ -68,7 +68,7 @@ public class StackedDividerTests
     [Arguments("Solarized Dark")]
     public async Task AStripSitsFlushAndIsToldApartByItsPlane(string theme)
     {
-        var app = App("layout-combat", theme);
+        var app = App("layout-combat", theme, 80, 24);
         foreach (var moved in new[] { false, true })
         {
             if (moved)

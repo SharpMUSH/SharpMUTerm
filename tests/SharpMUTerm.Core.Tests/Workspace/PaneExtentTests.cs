@@ -264,6 +264,33 @@ public class PaneExtentTests
     }
 
     [Test]
+    public async Task AVitalsPaneInASideColumnIsACardAndAFullWidthOneIsAStrip()
+    {
+        // Row[ Column[ output, quick bar ], Column[ vitals, map ] ] with the side column at 30%.
+        var side = new PaneNode("side", ["panel:vitals:W.C"]);
+        var top = new PaneNode("top", ["panel:vitals:W.C"]);
+        var root = new SplitNode(SplitDirection.Column,
+        [
+            top,
+            new SplitNode(SplitDirection.Row, [new PaneNode("output", ["main"]), new SplitNode(SplitDirection.Column, [side, new PaneNode("map", ["map:W.C"])])], [0.7, 0.3]),
+        ], [0.1, 0.9]);
+
+        PanelSizing.ApplyAll(root, PanelOf, tabStripRows: 1, _ => 3);
+
+        await Assert.That(side.FixedRows).IsEqualTo(PanelSizing.VitalsCardRows(3));
+        await Assert.That(side.DrawsHeader).IsFalse();
+        await Assert.That(top.FixedRows).IsEqualTo(1);
+        await Assert.That(top.DrawsHeader).IsFalse();
+    }
+
+    [Test]
+    public async Task AVitalsCardHoldsTwoRowsAMeterAndTheTargetsRowsWhetherOrNotThereIsOne()
+    {
+        await Assert.That(PanelSizing.VitalsCardRows(3)).IsEqualTo(12);
+        await Assert.That(PanelSizing.VitalsCardRows(0)).IsEqualTo(6);
+    }
+
+    [Test]
     public async Task AStripHandedAnOrdinaryWindowStopsBeingAStrip()
     {
         var pane = new PaneNode("p", ["panel:vitals:W.C"]) { FixedRows = 1 };
@@ -275,13 +302,20 @@ public class PaneExtentTests
     }
 
     [Test]
-    public async Task AComposerPaneHasAFloorOfItsEditorAndItsTabStrip()
+    public async Task AComposerPaneHasAFloorOfItsEditorAndNoTabStripUntilItHoldsAWindowToo()
     {
         var pane = new PaneNode("p", ["panel:composer:W.C"]);
 
         PanelSizing.Apply(pane, PanelOf, tabStripRows: 1);
 
+        // Alone, the composer titles itself (COMPOSE): no tab strip over it.
         await Assert.That(pane.FixedRows).IsNull();
+        await Assert.That(pane.DrawsHeader).IsFalse();
+        await Assert.That(pane.MinRows).IsEqualTo(PanelSizing.ComposerMinRows);
+
+        pane.Tabs.Add("main");
+        PanelSizing.Apply(pane, PanelOf, tabStripRows: 1);
+        await Assert.That(pane.DrawsHeader).IsTrue();
         await Assert.That(pane.MinRows).IsEqualTo(PanelSizing.ComposerMinRows + 1);
     }
 

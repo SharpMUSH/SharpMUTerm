@@ -10934,10 +10934,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Each pane's height claim, from what it holds: a strip panel is as tall as its content and an editor has a
         // floor. Derived here on every rebuild rather than stored, so a pane handed an ordinary window stops being a
         // strip at once.
-        foreach (var pane in _workspace.Layout.Root.Panes())
-        {
-            Core.Layouts.PanelSizing.Apply(pane, PanelIdOfWindow, TabStripRows);
-        }
+        // A vitals pane in a side column is a card, its height from the character's meters.
+        Core.Layouts.PanelSizing.ApplyAll(_workspace.Layout.Root, PanelIdOfWindow, TabStripRows, VitalsMetersOfWindow);
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
@@ -11580,6 +11578,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private static string? PanelIdOfWindow(string windowId) =>
         TerminalPanels.TryParseWindowId(windowId, out var panelId, out _) ? panelId : null;
 
+    /// <summary>How many meters the character behind a vitals panel window draws: the height of its card.</summary>
+    private int VitalsMetersOfWindow(string windowId) =>
+        TerminalPanels.TryParseWindowId(windowId, out _, out var sessionKey) ? PanelMeters(sessionKey).Count : 0;
+
     /// <summary>Whether a pane is the one every workspace keystroke is aimed at.</summary>
     private bool IsFocusedPane(string paneId) =>
         string.Equals(paneId, _workspace.Layout.FocusedPaneId, StringComparison.Ordinal);
@@ -11668,10 +11670,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         PaintTabChips(tabs, PaneSurfaceTone(pane.Id));
 
-        // A one-tab strip (the vitals meters, the quick bar) draws no tab strip: its row already says what it is,
-        // and a strip the height of its content has no row to spare. PaneOutputRects reads TabHeaderHeight, so the
-        // rectangle it reports follows.
-        tabs.ShowTabHeader = Core.Layouts.PanelSizing.ShowsTabStrip(pane.Tabs.Select(PanelIdOfWindow).ToList());
+        // A pane holding one panel and nothing else draws no tab strip: the panel titles itself (PanelSizing.ShowsTabStrip,
+        // which ApplyAll has just applied). PaneOutputRects reads TabHeaderHeight, so the rectangle it reports follows.
+        tabs.ShowTabHeader = pane.DrawsHeader;
 
         var paneId = pane.Id;
         tabs.TabChanged += (_, e) => OnTabChanged(paneId, e.NewTab);

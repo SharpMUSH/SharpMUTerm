@@ -67,6 +67,9 @@ internal sealed partial class SharpMUTermApp
         }
 
         _narrowSeen = narrow;
+
+        // A built-in layout owning the panes has a narrow arrangement; crossing the line re-folds into it (or out of it).
+        RefoldLayout();
         if (_railCollapsed == narrow)
         {
             return false;

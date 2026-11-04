@@ -171,15 +171,23 @@ internal sealed partial class SharpMUTermApp
 
     private IWindowControl NewVitalsPanel(TerminalPanelContext context)
     {
-        var view = NewPanelView(context, (width, _) =>
+        var view = NewPanelView(context, (width, height) =>
         {
             if (ReadVitals(context.SessionKey) is not { } vitals)
             {
                 return ["[dim]No vitals: this character is not connected.[/]"];
             }
 
-            var strip = VitalsStripRenderer.Render(Drawing(PanelIds.Vitals, context.WindowId, vitals), width, VitalsInk());
-            return [strip.Length > 0 ? strip : "[dim]No vitals yet — the game has sent none of the meters F7 names.[/]"];
+            var drawn = Drawing(PanelIds.Vitals, context.WindowId, vitals);
+            if (drawn.IsEmpty)
+            {
+                return ["[dim]No vitals yet — the game has sent none of the meters F7 names.[/]"];
+            }
+
+            // A pane in a side column is a card (PanelSizing.ApplyAll made it tall); a strip is one row.
+            return height >= 3
+                ? [.. VitalsStripRenderer.RenderCard(drawn, width, height, VitalsInk())]
+                : [VitalsStripRenderer.Render(drawn, width, VitalsInk())];
         });
 
         if (context.Session is { } session)

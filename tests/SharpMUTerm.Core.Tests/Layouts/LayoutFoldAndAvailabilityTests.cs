@@ -56,21 +56,22 @@ public class LayoutFoldAndAvailabilityTests
     }
 
     [Test]
-    public async Task RoleplayWithEverythingFoldsIntoOutputComposerAndASideColumnWithChatAsATab()
+    public async Task RoleplayWithEverythingFoldsIntoOutputWithChatBehindItAndAColumnOfComposerOverWhoHere()
     {
         var fold = LayoutFold.Fold(BuiltInLayouts.Roleplay);
 
-        // Row[ Column[ output, composer ], side ]
+        // Row[ output+chat, Column[ composer, who-here ] ]
         var root = (SplitNode)fold.Root!;
         await Assert.That(root.Direction).IsEqualTo(SplitDirection.Row);
-        await Assert.That(root.Sizes[1]).IsEqualTo(LayoutFold.DefaultShare(LayoutRegion.Side)).Within(1e-9);
+        await Assert.That(root.Sizes[1]).IsEqualTo(0.35).Within(1e-9);
 
-        var centre = (SplitNode)root.Children[0];
-        await Assert.That(centre.Direction).IsEqualTo(SplitDirection.Column);
-        await Assert.That(centre.Panes().Select(p => p.Id)).IsEquivalentTo(new[] { "panel:output", "panel:composer" });
+        var main = (PaneNode)root.Children[0];
+        await Assert.That(main.Tabs).IsEquivalentTo(new[] { PanelIds.Output, PanelIds.Chat });
 
-        var side = (PaneNode)root.Children[1];
-        await Assert.That(side.Tabs).IsEquivalentTo(new[] { PanelIds.WhoHere, PanelIds.Chat });
+        var side = (SplitNode)root.Children[1];
+        await Assert.That(side.Direction).IsEqualTo(SplitDirection.Column);
+        await Assert.That(side.Panes().Select(p => p.Id)).IsEquivalentTo(new[] { "panel:composer", "panel:who-here" });
+        await Assert.That(side.Sizes[0]).IsGreaterThan(side.Sizes[1]);
         await Assert.That(fold.Collapsed).IsEmpty();
         await Assert.That(fold.Waiting).IsEmpty();
     }
@@ -79,11 +80,22 @@ public class LayoutFoldAndAvailabilityTests
     public async Task ATabWhoseHostHasNoDataTakesAPaneOfItsOwn()
     {
         // A MUSH sends no Room.Players, but trigger rules have opened a channel window.
-        var fold = LayoutFold.Fold(BuiltInLayouts.Roleplay, new PanelAvailability(SpawnWindows: 1));
+        var layout = new LayoutDefinition
+        {
+            Id = "x",
+            Name = "X",
+            Placements =
+            [
+                new() { PanelId = PanelIds.Output },
+                new() { PanelId = PanelIds.WhoHere, Region = LayoutRegion.Side, Order = 0 },
+                new() { PanelId = PanelIds.Chat, Region = LayoutRegion.Side, Order = 1, TabOf = PanelIds.WhoHere },
+            ],
+        };
+        var fold = LayoutFold.Fold(layout, new PanelAvailability(SpawnWindows: 1));
 
         var panes = fold.Root!.Panes().ToList();
-        await Assert.That(panes.Select(p => p.Id)).IsEquivalentTo(new[] { "panel:output", "panel:composer", "panel:chat" });
-        await Assert.That(panes[2].Tabs).IsEquivalentTo(new[] { PanelIds.Chat });
+        await Assert.That(panes.Select(p => p.Id)).IsEquivalentTo(new[] { "panel:output", "panel:chat" });
+        await Assert.That(panes[1].Tabs).IsEquivalentTo(new[] { PanelIds.Chat });
         await Assert.That(fold.Waiting.Select(p => p.PanelId)).IsEquivalentTo(new[] { PanelIds.WhoHere });
     }
 
@@ -97,18 +109,59 @@ public class LayoutFoldAndAvailabilityTests
     }
 
     [Test]
-    public async Task CombatWithEverythingHasAStripOnTopAndListsChatAsCollapsed()
+    public async Task CombatWithEverythingHasAColumnOfVitalsOverTheMapAndListsChatAsCollapsed()
     {
         var fold = LayoutFold.Fold(BuiltInLayouts.Combat);
 
-        // Column[ vitals, Row[ Column[ output, quick-bar ], map ] ]
+        // Row[ Column[ output, quick-bar ], Column[ vitals, map ] ]
         var root = (SplitNode)fold.Root!;
+        await Assert.That(root.Direction).IsEqualTo(SplitDirection.Row);
+        var side = (SplitNode)root.Children[1];
+        await Assert.That(side.Direction).IsEqualTo(SplitDirection.Column);
+        await Assert.That(side.Panes().Select(p => p.Id)).IsEquivalentTo(new[] { "panel:vitals", "panel:map" });
+        await Assert.That(root.Panes().Select(p => p.Id))
+            .IsEquivalentTo(new[] { "panel:output", "panel:quick-bar", "panel:vitals", "panel:map" });
+        await Assert.That(fold.Collapsed.Select(p => p.PanelId)).IsEquivalentTo(new[] { PanelIds.Chat });
+    }
+
+    [Test]
+    public async Task NarrowCombatPutsTheVitalsInAStripOnTop()
+    {
+        var narrow = BuiltInLayouts.ForWidth(BuiltInLayouts.Combat, narrow: true);
+        await Assert.That(narrow.Id).IsEqualTo(BuiltInLayouts.CombatId);
+        await Assert.That(narrow.IsBuiltIn).IsTrue();
+
+        // Column[ vitals, Row[ Column[ output, quick-bar ], map ] ]
+        var root = (SplitNode)LayoutFold.Fold(narrow).Root!;
         await Assert.That(root.Direction).IsEqualTo(SplitDirection.Column);
         await Assert.That(((PaneNode)root.Children[0]).Id).IsEqualTo("panel:vitals");
         await Assert.That(root.Sizes[0]).IsEqualTo(LayoutFold.DefaultShare(LayoutRegion.TopStrip)).Within(1e-9);
-        await Assert.That(root.Panes().Select(p => p.Id))
-            .IsEquivalentTo(new[] { "panel:vitals", "panel:output", "panel:quick-bar", "panel:map" });
-        await Assert.That(fold.Collapsed.Select(p => p.PanelId)).IsEquivalentTo(new[] { PanelIds.Chat });
+    }
+
+    [Test]
+    public async Task NarrowRoleplayPutsTheComposerUnderTheOutput()
+    {
+        var narrow = BuiltInLayouts.ForWidth(BuiltInLayouts.Roleplay, narrow: true);
+        await Assert.That(narrow.Id).IsEqualTo(BuiltInLayouts.RoleplayId);
+
+        // Row[ Column[ output+chat, composer ], who-here ]
+        var root = (SplitNode)LayoutFold.Fold(narrow).Root!;
+        await Assert.That(root.Direction).IsEqualTo(SplitDirection.Row);
+        await Assert.That(root.Children[0].Panes().Select(p => p.Id)).IsEquivalentTo(new[] { "panel:output", "panel:composer" });
+        await Assert.That(((PaneNode)root.Children[1]).Id).IsEqualTo("panel:who-here");
+    }
+
+    [Test]
+    public async Task OnlyABuiltInHasANarrowArrangement()
+    {
+        await Assert.That(BuiltInLayouts.ForWidth(BuiltInLayouts.Combat, narrow: false)).IsSameReferenceAs(BuiltInLayouts.Combat);
+
+        // A saved copy of a built-in is the player's, even under the built-in's id (a hand-edited file).
+        var copy = BuiltInLayouts.Combat with { IsBuiltIn = false };
+        await Assert.That(BuiltInLayouts.ForWidth(copy, narrow: true)).IsSameReferenceAs(copy);
+        var library = new LayoutLibrary([]);
+        var saved = library.SaveAsNew("Mine", BuiltInLayouts.Combat.Placements);
+        await Assert.That(BuiltInLayouts.ForWidth(saved, narrow: true)).IsSameReferenceAs(saved);
     }
 
     [Test]

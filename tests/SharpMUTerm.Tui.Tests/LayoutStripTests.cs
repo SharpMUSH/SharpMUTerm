@@ -42,11 +42,10 @@ public class LayoutStripTests
     private static ConsoleKeyInfo Typed(char c) => char.IsLetter(c) ? Letter(c) : new(c, ConsoleKey.Spacebar, false, false, false);
 
     [Test]
-    [Arguments(120, 32)]
-    [Arguments(80, 24)]
-    public async Task CombatsVitalsAndQuickBarAreOneRowEachWithNoTabStrip(int width, int height)
+    public async Task NarrowCombatsVitalsAndQuickBarAreOneRowEachWithNoTabStrip()
     {
-        await using var app = Demo(width: width, height: height);
+        const int height = 24;
+        await using var app = Demo(width: 80, height: height);
         app.RenderSnapshot("layout-combat");
 
         var output = app.PaneOutputRects();
@@ -57,10 +56,36 @@ public class LayoutStripTests
         // No tab strip: the pane is its content, so its whole rectangle is that one row too.
         await Assert.That(whole["panel:vitals"].Height).IsEqualTo(1);
         await Assert.That(whole["panel:quick-bar"].Height).IsEqualTo(1);
+        await Assert.That(whole["panel:vitals"].Width).IsGreaterThan(whole["panel:output"].Width);
 
         // The output pane keeps its tab strip, and everything the strips did not take.
         await Assert.That(whole["panel:output"].Height - output["panel:output"].Height).IsEqualTo(1);
         await Assert.That(output["panel:output"].Height).IsGreaterThan(height / 2);
+    }
+
+    [Test]
+    public async Task WideCombatsVitalsAreACardOverTheMapWithItsOwnTitle()
+    {
+        await using var app = Demo(width: 120, height: 32);
+        app.RenderSnapshot("layout-combat");
+
+        var output = app.PaneOutputRects();
+        var whole = app.PaneSnapshot().Rects;
+        var vitals = whole["panel:vitals"];
+        var map = whole["panel:map"];
+
+        // A card of its heading, the demo's three meters and the target's reserved rows, with no tab strip, flush above the map.
+        await Assert.That(output["panel:vitals"].Height).IsEqualTo(PanelSizing.VitalsCardRows(3));
+        await Assert.That(vitals.Height).IsEqualTo(PanelSizing.VitalsCardRows(3));
+        await Assert.That(map.Y).IsEqualTo(vitals.Y + vitals.Height);
+        await Assert.That(map.X).IsEqualTo(vitals.X);
+        await Assert.That(output["panel:quick-bar"].Height).IsEqualTo(1);
+
+        var card = string.Join("\n", app.PanelMarkup(TerminalPanels.WindowId(PanelIds.Vitals, DemoScene.ActiveSessionKey)));
+        await Assert.That(card).Contains("VITALS");
+        await Assert.That(card).Contains("Health");
+        await Assert.That(card).Contains("412/500");
+        await Assert.That(app.VitalsStripShowing()).IsTrue();
     }
 
     [Test]

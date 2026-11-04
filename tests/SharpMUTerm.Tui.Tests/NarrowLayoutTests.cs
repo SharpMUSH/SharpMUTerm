@@ -155,6 +155,28 @@ public class NarrowLayoutTests
     }
 
     /// <summary>
+    /// A built-in layout owning the panes re-folds when the width crosses the line: Combat's vitals card in the side
+    /// column becomes a one-row strip across the top below 100 columns, and comes back when the window widens.
+    /// </summary>
+    [Test]
+    public async Task CrossingTheLineFoldsABuiltInIntoItsNarrowArrangementAndBack()
+    {
+        var window = new WindowPresenter { Columns = 120 };
+        await using var app = App(120, 32, HostChrome.None, window, "layout-combat");
+        await Assert.That(app.PaneOutputRects()["panel:vitals"].Height).IsGreaterThan(1);
+
+        window.Columns = 90;
+        app.SyncNarrowLayout();
+        app.RenderNextFrame();
+        await Assert.That(app.PaneOutputRects()["panel:vitals"].Height).IsEqualTo(1);
+
+        window.Columns = 120;
+        app.SyncNarrowLayout();
+        app.RenderNextFrame();
+        await Assert.That(app.PaneOutputRects()["panel:vitals"].Height).IsGreaterThan(1);
+    }
+
+    /// <summary>
     /// ⌃B b (or ⌃P, or the window's fold button) wins over the automatic fold until the width crosses the line again:
     /// a resize that stays on one side changes nothing the player chose.
     /// </summary>

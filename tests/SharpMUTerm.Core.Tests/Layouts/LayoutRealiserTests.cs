@@ -92,7 +92,8 @@ public class LayoutRealiserTests
         var byId = captured.Placements.ToDictionary(p => p.PanelId);
         await Assert.That(byId[PanelIds.Output].Region).IsEqualTo(LayoutRegion.Main);
         await Assert.That(byId[PanelIds.Map].Region).IsEqualTo(LayoutRegion.Side);
-        await Assert.That(byId[PanelIds.Vitals].Region).IsEqualTo(LayoutRegion.TopStrip);
+        await Assert.That(byId[PanelIds.Vitals].Region).IsEqualTo(LayoutRegion.Side);
+        await Assert.That(byId[PanelIds.Vitals].Order).IsLessThan(byId[PanelIds.Map].Order);
         await Assert.That(byId[PanelIds.Chat].TabOf).IsEqualTo(PanelIds.Map);
         // Not on screen (no window draws it), so it keeps the placement the layout gave it.
         await Assert.That(byId[PanelIds.QuickBar].Region).IsEqualTo(LayoutRegion.Bottom);

@@ -267,6 +267,8 @@ internal sealed partial class SharpMUTermApp
             return false;
         }
 
+        layout = BuiltInLayouts.ForWidth(layout, IsNarrow()); // a built-in's narrow arrangement below 100 columns
+
         if (CanFloatPanels && adoptFloating)
         {
             AdoptFloating(key, layout);
@@ -351,7 +353,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         var layout = Layouts.Find(live.LayoutId) ?? ResolveLayout(live.SessionKey).Layout;
-        var fold = LayoutFold.Fold(layout, LayoutAvailability(live.SessionKey));
+        var fold = LayoutFold.Fold(BuiltInLayouts.ForWidth(layout, IsNarrow()), LayoutAvailability(live.SessionKey));
         if (string.Equals(LayoutRealiser.FoldShape(fold), live.FoldShape, StringComparison.Ordinal))
         {
             return;
