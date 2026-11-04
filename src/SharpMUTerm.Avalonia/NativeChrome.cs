@@ -234,6 +234,19 @@ internal abstract class NativeChromeView : Control
         return Color.FromRgb(Mix(Plane.R, target.R), Mix(Plane.G, target.G), Mix(Plane.B, target.B));
     }
 
+    /// <summary>
+    /// The selection plate: the plane leaned toward the client's accent — about 14 % on a dark plane, the mockup's
+    /// <c>#1f3a3a</c> on <c>#141822</c> — a little further while hovered. Ink on it is held to the floor by the caller's
+    /// own reads, and the lean is small enough that the plane's ink clears it.
+    /// </summary>
+    protected Color Plate(bool hovered)
+    {
+        var accent = Parse(Overlay?.Palette.Accent);
+        var amount = hovered ? 0.20 : 0.14;
+        byte Mix(byte a, byte b) => (byte)Math.Round(a + ((b - a) * amount));
+        return Color.FromRgb(Mix(Plane.R, accent.R), Mix(Plane.G, accent.G), Mix(Plane.B, accent.B));
+    }
+
     /// <summary>The veil a modal in front lays over the chrome: drawn, readable, and plainly not the thing in use.</summary>
     protected void DrawVeil(DrawingContext context)
     {
@@ -976,16 +989,21 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
             var middle = r.Area.Center.Y;
             var hovered = Hovered(r.Area.Intersect(_list));
-            // Only the character in front wears the selected plate: its window in front is said by the accent mark beside
-            // the window's name, so the two rows do not read as two selections.
-            var selected = r.Kind == RailRowKind.Character && r.Character!.Active;
+            // One row wears the plate: the thing in front (SidebarModel.Plated), tinted with the client's accent as the
+            // mockup's selected row is (#1f3a3a on #141822).
+            var selected = r.Kind switch
+            {
+                RailRowKind.Character => overlay.Sidebar.Plated(r.Character!),
+                RailRowKind.Window => overlay.Sidebar.Plated(r.Window!),
+                _ => false,
+            };
             if (focused)
             {
                 context.DrawRectangle(new SolidColorBrush(Raised(0.14)), null, r.Area, 6, 6);
             }
             else if (selected || hovered)
             {
-                context.DrawRectangle(new SolidColorBrush(Raised(selected && hovered ? 0.16 : selected ? 0.11 : 0.07)), null, r.Area, 6, 6);
+                context.DrawRectangle(new SolidColorBrush(selected ? Plate(hovered) : Raised(0.07)), null, r.Area, 6, 6);
             }
 
             var accent = Accent(r.World.Accent);
@@ -1006,7 +1024,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
                     break;
 
                 case RailRowKind.Window:
-                    DrawWindow(context, r, r.Window!, accent, overlay.Sidebar.IsSelected(r.Window!), middle, right, size);
+                    DrawWindow(context, r, r.Window!, accent, selected, middle, right, size);
                     break;
             }
     }

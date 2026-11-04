@@ -2828,6 +2828,21 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     used to be `#222226`. A light theme is left alone: darkening it makes a grey theme, and its focus step
     clamps at white either way. The cost is the pane-over-backdrop step, a ratio, which is fewer L* points
     a range lower (Dark 4.0 → 2.8); `EveryThemeGetsARaisedSurfaceOverARecessedBackdrop` now measures L*.
+  - **The built-in Dark theme is the mockups' navy, and its values were solved for, not picked** (`ThemeLibrary.Dark`,
+    wave 21C). Background `#222835`, StatusBackground `#13161e`, Border `#495573`, Prompt `#3f61a3`, so the derived planes
+    land on the mockup: pane `#151921`, focused `#212835`, backdrop `#10131a` (the ground), header `#13161e`, armed band
+    `#233049` (Prompt is whatever lean lands it there), idle band a step below, rule `#2c3446`. Three constraints bound the
+    choice and each is a test: the armed−idle luma step > 28 (`TheNewStepIsMoreThanTwice…`, which is why the header is so
+    dark), pane-over-backdrop > 2.5 L* (why the pane is not the mockup's darker `#12161f`), and the colour-vision floors
+    (why it is not bluer: a bluer untinted plane meets Azure under protanopia, a greyer one meets Rose under deuteranopia).
+    **Dark's tints are laid over the old grey's hue** (`WorkspacePalette.TintGround`, `#18181b`): the anchors were
+    searched against it, and a navy residual pulled Moss/Ochre and Teal/Jade under the floor; every other theme, and the
+    command line's hue-only tint, still uses its own plane. The settings screens and `NativeTokens` were already navy, so
+    their hue shift treats the Dark background as the reference (`ScreenTheme.ShiftedBackground`) and nothing moved there.
+    The window's field edge is its fill ×1.6 on a dark fill (`TerminalView.FieldEdge`: `#3a4f73` on `#233049`); the dark
+    canon's `Rule` is the mockup's `#2c3447`, which the pane hairlines read. A selected sidebar row is one row
+    (`SidebarModel.Plated`: the character while its own `main` is in front, else that window; `RailWindow.Own`), on a teal
+    plate. A strip whose tabs share one owner drops the owner prefix (`TabStripModel.OneOwner`, both hosts; a lone tab keeps it).
   - **A light theme's backdrop takes a shallower step** (`LightBackdropScale` 0.95, `Backdrop` only — `Recessed`, the
     chips' step, is unchanged): the dark ratio off a near-white surface put the rail and status row at mid-grey
     `#b7b7b9` (L* 75), which read as disabled. Light's backdrop is `#e6e6e9` now, about 4 L* under the panes.

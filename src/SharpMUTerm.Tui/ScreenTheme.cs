@@ -101,13 +101,27 @@ internal sealed class ScreenTheme
 
     private static readonly Rgb LightReference = new(0xfa, 0xfa, 0xfa);
 
+    /// <summary>
+    /// The background a theme's hue shift is measured from. The canonical sets (these roles, the window's
+    /// <c>NativeTokens</c>) are the mockups' navy and were laid onto a neutral <c>#1e1e1e</c>; the built-in Dark theme
+    /// <em>is</em> that navy now, so its own background counts as the reference and it shifts nothing, while every other
+    /// theme (Solarized Dark, a customised one) is shifted exactly as before.
+    /// </summary>
+    internal static Rgb ShiftedBackground(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return theme.Background == DarkBuiltIn ? DarkReference : theme.Background;
+    }
+
+    private static readonly Rgb DarkBuiltIn = ThemeLibrary.Dark().Background;
+
     /// <summary>The palette for <paramref name="theme"/>.</summary>
     internal static ScreenTheme For(Theme theme)
     {
         ArgumentNullException.ThrowIfNull(theme);
 
         var light = Contrast.RelativeLuminance(theme.Background) >= LightPlaneLuminance;
-        var shift = Delta(theme.Background, light ? LightReference : DarkReference);
+        var shift = Delta(ShiftedBackground(theme), light ? LightReference : DarkReference);
         var roles = new Dictionary<string, Rgb>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var plane in Planes)

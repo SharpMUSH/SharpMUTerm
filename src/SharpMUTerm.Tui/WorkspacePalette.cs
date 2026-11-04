@@ -113,25 +113,43 @@ internal static class WorkspacePalette
     internal static Rgb Tint(Theme theme, PaneTint tint)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Tinted(Surface(theme), tint, TintDepth);
+        return Tinted(Surface(theme), TintGround(theme), tint, TintDepth);
     }
 
     /// <summary>
     /// One plane wearing one character's colour: re-lit to <paramref name="depth"/> of its own
     /// luminance, then mixed toward the tint's hue at that same luminance. The two callers pass
     /// different depths, which is the whole composition rule — a pane takes the step down, the command
-    /// line takes hue only.
+    /// line takes hue only. <paramref name="ground"/> is the hue the tint is laid over
+    /// (<see cref="TintGround"/>); only its hue counts, since it is re-lit to the plane.
     /// </summary>
-    private static Rgb Tinted(Rgb plane, PaneTint tint, double depth)
+    private static Rgb Tinted(Rgb plane, Rgb? ground, PaneTint tint, double depth)
     {
         if (Anchor(tint) is not { } anchor)
         {
             return plane;
         }
 
-        var lit = AtLuma(plane, Luma(plane) * depth);
+        var lit = AtLuma(ground ?? plane, Luma(plane) * depth);
         return Mix(lit, AtLuma(anchor, Luma(lit)), TintStrength);
     }
+
+    /// <summary>
+    /// The hue a tint is laid over, when it is not the plane's own (null). The built-in Dark theme's planes are the
+    /// mockups' navy, and the ten anchors were picked against the near-neutral grey its surface used to be: laid over
+    /// navy, the residual blue drew the tints together for a dichromat (Moss and Ochre to 1.6 under protanopia, Teal
+    /// and Jade to 1.7 under deuteranopia, against a floor of 1.9). So on Dark a tinted plane keeps that grey's hue
+    /// (<see cref="DarkTintGround"/>), at its own luminance as before — every tinted plane, and the step between them,
+    /// is what it was; only the untinted plane is navy. Every other theme lays its tints over its own plane, and so does
+    /// the command line on every theme: it takes hue only, and its band is not one of the ten-plus-one a reader compares.
+    /// </summary>
+    private static Rgb? TintGround(Theme theme) =>
+        theme.Background == DarkBackground ? DarkTintGround : null;
+
+    private static readonly Rgb DarkBackground = ThemeLibrary.Dark().Background;
+
+    /// <summary>The Dark theme's surface before it was navy, whose hue its tints are laid over.</summary>
+    private static readonly Rgb DarkTintGround = new(0x18, 0x18, 0x1b);
 
     /// <summary>
     /// How far below the untinted surface a tinted pane sits. <b>Bounded from below by the focus step,
@@ -227,7 +245,7 @@ internal static class WorkspacePalette
     internal static Rgb IdleBand(Theme theme, PaneTint tint)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Tinted(Scale(theme.StatusBackground, IdleBandScale), tint, depth: 1.0);
+        return Tinted(Scale(theme.StatusBackground, IdleBandScale), ground: null, tint, depth: 1.0);
     }
 
     /// <summary>

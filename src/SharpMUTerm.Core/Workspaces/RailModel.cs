@@ -90,7 +90,8 @@ public sealed record RailCharacter(
 /// that goes to that window, rather than to whatever else happens to share its pane.
 /// </para>
 /// </summary>
-public sealed record RailWindow(string Title, string Id, string? Chord, int Unread, bool HasUnsent, bool Closed);
+/// <param name="Own">Whether this is the character's own session window (the row labelled <c>main</c>).</param>
+public sealed record RailWindow(string Title, string Id, string? Chord, int Unread, bool HasUnsent, bool Closed, bool Own = false);
 
 /// <summary>
 /// Projects the worlds/characters/windows tree into a flat list of <see cref="RailRow"/>s for the

@@ -149,7 +149,8 @@ internal sealed partial record NativeTokens(
         var light = Contrast.RelativeLuminance(theme.Background) >= 0.18;
         var canon = light ? LightCanon : DarkCanon;
         var reference = light ? new Rgb(0xfa, 0xfa, 0xfa) : new Rgb(0x1e, 0x1e, 0x1e);
-        var shift = (theme.Background.R - reference.R, theme.Background.G - reference.G, theme.Background.B - reference.B);
+        var background = ScreenTheme.ShiftedBackground(theme);
+        var shift = (background.R - reference.R, background.G - reference.G, background.B - reference.B);
 
         var card = Shift(canon.Card, shift);
         var edge = Shift(canon.Edge, shift);
@@ -309,7 +310,7 @@ internal sealed partial record NativeTokens(
         Color.FromArgb(0x73, 0, 0, 0),
         new Rgb(0x17, 0x1b, 0x24),
         new Rgb(0x2c, 0x34, 0x47),
-        new Rgb(0x26, 0x2d, 0x3d),
+        new Rgb(0x2c, 0x34, 0x47),
         new Rgb(0xd7, 0xde, 0xec),
         new Rgb(0x9a, 0xa4, 0xb8),
         new Rgb(0x8f, 0x99, 0xad),

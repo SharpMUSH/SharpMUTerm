@@ -50,6 +50,23 @@ public sealed record TabChipModel(
 /// </summary>
 public sealed record TabStripModel(string PaneId, bool Focused, IReadOnlyList<TabChipModel> Tabs)
 {
+    /// <summary>
+    /// A strip's tabs with the owner prefix dropped when every tab belongs to the same character: <c>Corvid</c> beside
+    /// <c>Chat</c>, as the mockup's strip reads, rather than <c>Corvid · Chat</c>, which says the owner the strip's other
+    /// tabs, its chip and its pane already say. A strip holding two characters' windows keeps the prefix on each, and so
+    /// does a capture alone in a pane (one tab), which is what keeps it traceable once dragged away from its character.
+    /// </summary>
+    public static IReadOnlyList<TabChipModel> OneOwner(IReadOnlyList<TabChipModel> tabs)
+    {
+        ArgumentNullException.ThrowIfNull(tabs);
+        if (tabs.Count < 2 || tabs[0].Owner is not { } owner || tabs.Any(t => !string.Equals(t.Owner, owner, StringComparison.Ordinal)))
+        {
+            return tabs;
+        }
+
+        return [.. tabs.Select(t => t with { Name = t.Title })];
+    }
+
     /// <summary>The tab a click on <paramref name="windowId"/> names, or null when the strip does not hold it.</summary>
     public TabChipModel? Find(string windowId) => Tabs.FirstOrDefault(t => string.Equals(t.WindowId, windowId, StringComparison.Ordinal));
 

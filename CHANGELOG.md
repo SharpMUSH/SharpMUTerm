@@ -386,6 +386,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The Dark theme is navy, as the mockups are, in the terminal and the window alike: deep blue panes with the focused
+  one a step lighter, the sidebar and status row on the darkest ground, a dark header with a hairline under it, a
+  command line on `#233049` with a blue edge, blue-grey rules and text. Light and Solarized Dark are unchanged, and
+  pane tints look as they did.
+- The window's sidebar marks one row as selected, with a teal plate: the character, while their main window is in
+  front, or the other window that is.
+- A tab strip whose tabs all belong to one character names them plainly (`Corvid`, `Chat 2`); the owner is still
+  written in a strip holding two characters' windows, and on a capture alone in its pane.
 - The desktop window lines up: one spacing scale for every native view, the header at the mockup's 44 px, output
   starting about 20 px in from its pane's edges with a row of space under the tab strip, the sidebar's names, the brand
   and every panel's heading, rows and buttons on one 16 px edge, the "+ Add a world or connect" button left-aligned,

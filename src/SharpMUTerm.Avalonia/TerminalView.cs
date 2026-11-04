@@ -794,6 +794,23 @@ internal sealed class TerminalView : Control
         (byte)(from.Green + (to.Green - from.Green) * amount),
         (byte)(from.Blue + (to.Blue - from.Blue) * amount));
 
+    /// <summary>
+    /// The command-line field's one-pixel edge for a field filled <paramref name="fill"/>. On a dark fill it is the fill
+    /// lifted by the client's focus step (×1.6), which is how the mockup's <c>#3a4f73</c> sits on its <c>#233049</c> and
+    /// keeps a tinted band's hue; a light fill leans toward the ink instead, since a lift there clamps at white.
+    /// </summary>
+    internal static SKColor FieldEdge(SKColor fill, SKColor ink)
+    {
+        var luma = ((fill.Red * 299) + (fill.Green * 587) + (fill.Blue * 114)) / 1000;
+        if (luma >= 128)
+        {
+            return Mix(fill, ink, 0.22f);
+        }
+
+        static byte Lift(byte c) => (byte)Math.Clamp(Math.Round(c * 1.6), 0, 255);
+        return new SKColor(Lift(fill.Red), Lift(fill.Green), Lift(fill.Blue));
+    }
+
     private void RepeatPress()
     {
         if (_mouse.Repeat() is { } repeat)
@@ -1053,7 +1070,7 @@ internal sealed class TerminalView : Control
 
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = Math.Max(1, s);
-            paint.Color = Mix(fill, renderer.DefaultForeground, 0.22f);
+            paint.Color = FieldEdge(fill, renderer.DefaultForeground);
             var edge = rounded;
             edge.Deflate(paint.StrokeWidth / 2, paint.StrokeWidth / 2);
             canvas.DrawRoundRect(edge, paint);

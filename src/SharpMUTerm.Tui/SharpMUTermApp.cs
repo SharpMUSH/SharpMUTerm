@@ -8514,7 +8514,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 chords.GetValueOrDefault(window.Id),
                 window.Unread,
                 window.HasUnsentInput,
-                Closed: _workspace.Layout.FindWindow(window.Id) is null));
+                Closed: _workspace.Layout.FindWindow(window.Id) is null,
+                Own: mine && window.Kind == WindowKind.Main));
         }
 
         return windows;
@@ -13795,7 +13796,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         }
 
-        return new TabStripModel(paneId, IsFocusedPane(paneId), tabs);
+        return new TabStripModel(paneId, IsFocusedPane(paneId), TabStripModel.OneOwner(tabs));
     }
 
     /// <summary>The plane each unselected tab of a pane is drawn on (<see cref="ChipFor"/>), by its model.</summary>

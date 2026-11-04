@@ -74,6 +74,24 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
     public bool IsSelected(RailWindow window) => string.Equals(window.Id, SelectedWindowId, StringComparison.Ordinal);
 
     /// <summary>
+    /// Whether <paramref name="row"/> wears the selection plate — one row at most, the thing in front. While the active
+    /// character's own window (<c>main</c>) is in front that is the character's row, which already says it; any other
+    /// window in front wears it itself, and the character row then does not, so two rows never claim to be selected.
+    /// </summary>
+    public bool Plated(RailCharacter character)
+    {
+        ArgumentNullException.ThrowIfNull(character);
+        return character.Active && !character.Windows.Any(w => !w.Own && IsSelected(w));
+    }
+
+    /// <inheritdoc cref="Plated(RailCharacter)"/>
+    public bool Plated(RailWindow window)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        return !window.Own && IsSelected(window);
+    }
+
+    /// <summary>
     /// Every click target this model can emit, so a host's answer can be checked against what the client offered: a
     /// target that is not in this set did not come from the sidebar.
     /// </summary>
