@@ -43,7 +43,7 @@ internal sealed class WelcomeSurface
     internal const string ExampleCommand = WelcomeModel.ExampleCommand;
 
     /// <summary>The width the surface asks for; the overlay narrows it on a small terminal.</summary>
-    internal const int PreferredWidth = 66;
+    internal const int PreferredWidth = 78;
 
     private const int MaxHost = WelcomeModel.MaxHost;
 
@@ -334,15 +334,24 @@ internal sealed class WelcomeSurface
 
     // ---- What it says ---------------------------------------------------------------------------
 
-    private static string Accent(string text) => $"[bold {ScreenPalette.Accent}]{Escape(text)}[/]";
+    /// <summary>The plane the welcome is painted on: the settings screens' panel, the mockup's card.</summary>
+    internal const string Plane = ScreenPalette.PanelBg;
+
+    /// <summary>The body's indent inside the frame; the heading and key bands run edge to edge.</summary>
+    private const int Indent = 2;
 
     private static string Label(string text) => $"[{ScreenPalette.Label}]{Escape(text)}[/]";
+
+    private static string Muted(string text) => $"[{ScreenPalette.Muted}]{Escape(text)}[/]";
 
     private static string Value(string text, bool bold = false) =>
         $"[{(bold ? "bold " : string.Empty)}{ScreenPalette.Value}]{Escape(text)}[/]";
 
     private static string Pad(string markup, int width) =>
         markup + new string(' ', Math.Max(0, width - VisibleLength(markup)));
+
+    /// <summary>A body line, indented from the frame.</summary>
+    private static string Body(string markup) => markup.Length == 0 ? markup : new string(' ', Indent) + markup;
 
     /// <summary>
     /// The surface at a width: the menu, or the form. Both are the same number of lines, so the one window holds
@@ -351,7 +360,11 @@ internal sealed class WelcomeSurface
     /// </summary>
     public List<string> Render(int width) => Render(Model, width);
 
-    /// <summary>The surface for <paramref name="model"/> at a width — the cells of the model the window's native welcome draws.</summary>
+    /// <summary>
+    /// The surface for <paramref name="model"/> at a width — the cells of the model the window's native welcome draws. The
+    /// mockup's shape: the heading on a band across the top, the body indented under it, the keys on a band across the
+    /// foot, all on the settings screens' panel (<see cref="Plane"/>). <paramref name="width"/> is the frame's whole inside.
+    /// </summary>
     public static List<string> Render(WelcomeModel model, int width)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -375,10 +388,12 @@ internal sealed class WelcomeSurface
 
     private static List<string> RenderMenu(WelcomeModel model, int width)
     {
+        var inner = width - (2 * Indent);
         var lines = new List<string>
         {
-            Accent(WelcomeModel.Heading),
-            Label(WelcomeModel.Intro),
+            Band(WelcomeModel.Heading, width),
+            string.Empty,
+            Body(Value(WelcomeModel.Intro)),
             string.Empty,
         };
 
@@ -387,17 +402,17 @@ internal sealed class WelcomeSurface
             var selected = choice == model.Selected;
             var (title, detail) = model.Describe(choice);
             var marker = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
-            var row = $"{marker} {Pad(Value(title, selected), 20)} {(selected ? $"[{ScreenPalette.Muted}]{Escape(detail)}[/]" : Label(detail))}";
+            var row = $"{marker} {Pad(Value(title, selected), 20)} {Muted(detail)}";
 
-            // The choice ⏎ takes is a band across the list, the menus' selected row (the mockup's), not a marker alone.
-            lines.Add(selected ? $"[on {ScreenPalette.MenuSelectedBg}]{Pad(row, width)}[/]" : row);
+            // The choice ⏎ takes is a band across the list, the settings screens' cursor row (the mockup's).
+            lines.Add(Body(selected ? $"[on {ScreenPalette.CursorBg}]{Pad(row, inner)}[/]" : row));
         }
 
-        lines.Add(model.Problem is null ? string.Empty : $"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
-        lines.Add(Label(WelcomeModel.ExampleLead));
-        lines.Add($"  [{ScreenPalette.Accent}]{Escape(ExampleCommand)}[/]");
+        lines.Add(model.Problem is null ? string.Empty : Body($"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]"));
+        lines.Add(Body(Muted(WelcomeModel.ExampleLead)));
+        lines.Add(Body($"  [{ScreenPalette.Accent}]{Escape(ExampleCommand)}[/]"));
         lines.Add(string.Empty);
-        lines.Add(Label(model.LayoutHeading));
+        lines.Add(Body(Label(model.LayoutHeading)));
         var chips = string.Join("  ", Enum.GetValues<WelcomeLayout>().Select(layout =>
         {
             var name = WelcomeModel.LayoutName(layout);
@@ -405,10 +420,22 @@ internal sealed class WelcomeSurface
                 ? $"[bold {ScreenPalette.Ink} on {ScreenPalette.Accent}] {Escape(name)} [/]"
                 : $"[{ScreenPalette.Value}] {Escape(name)} [/]";
         }));
-        lines.Add("  " + chips);
-        lines.Add("  " + Label(WelcomeModel.LayoutNote));
+
+        // The note goes beside the chips where the row has room for both (the mockup's), else on the row under them.
+        var note = Muted(WelcomeModel.LayoutNote);
+        var beside = "  " + chips + "   " + note;
+        if (VisibleLength(beside) <= inner)
+        {
+            lines.Add(Body(beside));
+        }
+        else
+        {
+            lines.Add(Body("  " + chips));
+            lines.Add(Body("  " + note));
+        }
+
         lines.Add(string.Empty);
-        lines.Add(Footer(width, WelcomeModel.MenuKeys.Left, WelcomeModel.MenuKeys.Right));
+        lines.Add(Keys(width, WelcomeModel.MenuKeys.Left, WelcomeModel.MenuKeys.Right));
         return lines;
     }
 
@@ -416,24 +443,25 @@ internal sealed class WelcomeSurface
     {
         var lines = new List<string>
         {
-            Accent(WelcomeModel.FormHeading),
-            Label(model.FormIntroLine),
+            Band(WelcomeModel.FormHeading, width),
+            string.Empty,
+            Body(Value(model.FormIntroLine)),
             string.Empty,
         };
 
-        var boxWidth = Math.Clamp(width - 16, 12, 44);
+        var boxWidth = Math.Clamp(width - (2 * Indent) - 16, 12, 44);
         var field = model.Field;
-        lines.Add(Row(field, WelcomeField.Host, Box(model.Host, boxWidth, field == WelcomeField.Host, WelcomeModel.HostPlaceholder)));
-        lines.Add(Row(field, WelcomeField.Port, Box(model.Port, 7, field == WelcomeField.Port, null)));
-        lines.Add(Row(field, WelcomeField.Tls, Toggle(model.Tls, WelcomeModel.TlsOn, WelcomeModel.TlsOff)));
-        lines.Add(Row(field, WelcomeField.Character, Box(model.Character, boxWidth, field == WelcomeField.Character, WelcomeModel.CharacterPlaceholder)));
-        lines.Add(Row(field, WelcomeField.Password, Toggle(model.PasswordLater, WelcomeModel.PasswordOn, WelcomeModel.PasswordOff)));
+        lines.Add(Body(Row(field, WelcomeField.Host, Box(model.Host, boxWidth, field == WelcomeField.Host, WelcomeModel.HostPlaceholder))));
+        lines.Add(Body(Row(field, WelcomeField.Port, Box(model.Port, 7, field == WelcomeField.Port, null))));
+        lines.Add(Body(Row(field, WelcomeField.Tls, Toggle(model.Tls, WelcomeModel.TlsOn, WelcomeModel.TlsOff))));
+        lines.Add(Body(Row(field, WelcomeField.Character, Box(model.Character, boxWidth, field == WelcomeField.Character, WelcomeModel.CharacterPlaceholder))));
+        lines.Add(Body(Row(field, WelcomeField.Password, Toggle(model.PasswordLater, WelcomeModel.PasswordOn, WelcomeModel.PasswordOff))));
         lines.Add(string.Empty);
-        lines.Add(model.Problem is null
-            ? Label(model.FormLayoutLine)
-            : $"[{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
+        lines.Add(Body(model.Problem is null
+            ? Muted(model.FormLayoutLine)
+            : $"[{ScreenPalette.Caution}]{Escape(model.Problem)}[/]"));
         lines.Add(string.Empty);
-        lines.Add(Footer(width, "↑↓ field · Space toggle", WelcomeModel.FormKeys));
+        lines.Add(Keys(width, "↑↓ field · Space toggle", WelcomeModel.FormKeys));
         return lines;
     }
 
@@ -459,11 +487,31 @@ internal sealed class WelcomeSurface
     private static string Toggle(bool on, string yes, string no) =>
         on ? $"[{ScreenPalette.Accent}]●[/] {Value(yes)}" : $"[{ScreenPalette.Label}]○[/] {Value(no)}";
 
-    private static string Footer(int width, string left, string right)
+    /// <summary>The heading on a band across the whole inside, in bold, a cell in from the frame.</summary>
+    private static string Band(string text, int width) =>
+        $"[on {ScreenPalette.HeaderBg}]{Pad($" {Value(text, bold: true)}", width)}[/]";
+
+    /// <summary>
+    /// The keys on a band across the foot: what moves on the left, what acts on the right, each key in bold and its word
+    /// quieter, a cell in from either edge. Below the width for both, the left side goes: the right holds the way out.
+    /// </summary>
+    private static string Keys(int width, string left, string right)
     {
-        var gap = Math.Max(2, width - left.Length - right.Length);
-        return Label(left) + new string(' ', gap) + Label(right);
+        var l = KeyRun(left);
+        var r = KeyRun(right);
+        var room = width - VisibleLength(l) - VisibleLength(r) - 2;
+        var row = room >= 2 ? " " + l + new string(' ', room) + r : " " + r;
+        return $"[on {ScreenPalette.FooterBg}]{Pad(row, width)}[/]";
     }
+
+    /// <summary><c>⏎ choose · Esc closes</c> with each key (the first word of a part) bold and the rest of the part quieter.</summary>
+    private static string KeyRun(string keys) => string.Join(Muted(" · "), keys.Split(" · ").Select(part =>
+    {
+        var space = part.IndexOf(' ', StringComparison.Ordinal);
+        return space < 0
+            ? Value(part, bold: true)
+            : Value(part[..space], bold: true) + Muted(part[space..]);
+    }));
 
     /// <summary>
     /// The welcome said as lines, for <c>--plain</c>: every choice is a command a reader can type, because

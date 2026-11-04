@@ -118,14 +118,16 @@ internal sealed partial class SharpMUTermApp
         var welcome = _welcome!;
         _welcomeView.Open(
             "welcome",
-            "Welcome",
+            string.Empty, // the heading is the surface's own band, the mockup's; a frame title would say it twice
             welcome.Render,
             key => WelcomeKey(welcome, key),
             WelcomeSurface.PreferredWidth,
             escape: () =>
             {
                 return welcome.Back();
-            });
+            },
+            plane: WelcomeSurface.Plane,
+            flush: true);
     }
 
     private bool WelcomeKey(WelcomeSurface welcome, ConsoleKeyInfo key) =>

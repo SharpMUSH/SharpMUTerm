@@ -428,6 +428,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The first-run welcome looks like its design. In the desktop window it is the whole first page rather than a card
+  over an empty client: a centred column on the dark ground, Find a world wider than Connect directly, the first listed
+  world raised with Add in the accent, the chosen starting layout outlined in the accent, and square check boxes. Drag
+  its empty ground to move the window. In the terminal the welcome's title and its keys sit on bands across the top
+  and foot of the box, the box is the settings screens' plane with a quiet frame, and the layout note sits beside the
+  layout chips when the terminal is wide enough.
+- In the desktop window, Browse worlds' search box is sunk into the card with a magnifier, like every other search box.
 - A pane scrolled back now splits in half rather than giving the live tail 30%, and the history being read is drawn
   on a slightly different background from the lines still arriving. In the desktop window the "Scrolled back" band is
   taller, runs the whole width of the pane with its words lined up with the output and a full-size "Jump to latest"

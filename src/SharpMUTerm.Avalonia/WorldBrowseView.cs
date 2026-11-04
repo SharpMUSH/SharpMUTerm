@@ -52,7 +52,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         SetDock(credit, Dock.Top);
         Children.Add(credit);
 
-        _box = ModalParts.SearchBox(WorldBrowseModel.SearchPlaceholder, "Search worlds");
+        _box = ModalParts.SearchBox(WorldBrowseModel.SearchPlaceholder, "Search worlds", colours); // sunk, as every modal search box is
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 

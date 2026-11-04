@@ -61,10 +61,19 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _done = done;
         _model = session.Model;
 
-        var page = new StackPanel { Margin = new Thickness(NativeTokens.Space32, NativeTokens.Space28, NativeTokens.Space32, NativeTokens.Space24), Spacing = 0 };
+        // The mockup's page: one column, at most ColumnWidth wide, centred on the ground with PageTop above it.
+        var page = new StackPanel
+        {
+            MaxWidth = ColumnWidth,
+            Margin = new Thickness(NativeTokens.PageInset, PageTop, NativeTokens.PageInset, NativeTokens.PageInset),
+            Spacing = 0,
+            Background = Brushes.Transparent,
+            Tag = ModalOverlay.GroundTag,
+        };
         page.Children.Add(new TextBlock
         {
             Text = WelcomeModel.Heading,
+            Tag = ModalOverlay.GroundTag,
             FontSize = NativeTokens.Display,
             FontWeight = FontWeight.SemiBold,
             Foreground = colours.Brush(colours.Text),
@@ -72,10 +81,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(new TextBlock
         {
             Text = WelcomeModel.PageIntro,
-            FontSize = NativeTokens.Title,
+            FontSize = NativeTokens.Title + 1,
             Foreground = colours.Brush(colours.Dim),
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, NativeTokens.Space6, 0, NativeTokens.Space24),
+            Margin = new Thickness(0, NativeTokens.Space8, 0, NativeTokens.Space28),
+            Tag = ModalOverlay.GroundTag,
         });
 
         // ── Find a world ───────────────────────────────────────────────────────────────────────
@@ -94,8 +104,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
         // default (the raised plane itself) had no plane of its own and on Light read as no field at all.
         ModalParts.Sunk(_search, colours);
         _search.TextChanged += (_, _) => DrawRows();
-        _findNote = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
-        var find = new StackPanel { Spacing = NativeTokens.Space12 };
+        _findNote = new TextBlock { FontSize = NativeTokens.Small + 1, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
+        var find = new StackPanel { Spacing = NativeTokens.Space14 };
         find.Children.Add(CardTitle(WelcomeModel.FindHeading));
         find.Children.Add(_search);
         find.Children.Add(_findBody);
@@ -112,9 +122,9 @@ internal sealed class WelcomeView : DockPanel, IModalView
             ModalParts.Sunk(box, colours, magnifier: false);
         }
 
-        _tls = new CheckBox { Content = "Encrypt the connection (TLS)", FontSize = NativeTokens.Title };
-        _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body };
-        _command = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
+        _tls = new CheckBox { Content = "Encrypt the connection (TLS)", FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS) };
+        _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS) };
+        _command = new TextBlock { FontSize = NativeTokens.Small + 1, LineHeight = NativeTokens.Space16 + NativeTokens.Space2, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
         _problem = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Warn), TextWrapping = TextWrapping.Wrap, IsVisible = false };
         foreach (var box in new[] { _host, _port, _character })
         {
@@ -136,9 +146,10 @@ internal sealed class WelcomeView : DockPanel, IModalView
         connectButton.HorizontalContentAlignment = HorizontalAlignment.Center;
         connectButton.Padding = new Thickness(NativeTokens.Space14, 0);
         connectButton.Height = NativeTokens.FieldHeight; // the fields' height above it, as the mockup's primary button
+        connectButton.FontSize = NativeTokens.Title;
         connectButton.Name = "Connect";
 
-        var connect = new StackPanel { Spacing = NativeTokens.Space10 };
+        var connect = new StackPanel { Spacing = NativeTokens.Space14 };
         connect.Children.Add(CardTitle(WelcomeModel.ConnectHeading));
         connect.Children.Add(Labelled(WelcomeModel.FieldLabel(WelcomeField.Host), _host));
         connect.Children.Add(portAndName);
@@ -148,7 +159,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
         connect.Children.Add(_problem);
         connect.Children.Add(_command);
 
-        var cards = new Grid { ColumnDefinitions = new ColumnDefinitions("*,20,*") };
+        // The mockup's 3 : 2: the list wants the room, the form is four short fields.
+        var cards = new Grid { ColumnDefinitions = new ColumnDefinitions("3*,24,2*") };
         var findCard = Card(find);
         var connectCard = Card(connect);
         Grid.SetColumn(findCard, 0);
@@ -158,7 +170,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(cards);
 
         // ── Starting layout ────────────────────────────────────────────────────────────────────
-        var layoutHeading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space10, Margin = new Thickness(0, NativeTokens.Space24, 0, NativeTokens.Space10) };
+        var layoutHeading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space10, Margin = new Thickness(0, NativeTokens.Space28, 0, NativeTokens.Space12) };
         layoutHeading.Children.Add(new TextBlock
         {
             Text = WelcomeModel.LayoutsHeading,
@@ -192,15 +204,16 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(layouts);
         _layoutReason = new TextBlock
         {
-            FontSize = NativeTokens.Body,
+            FontSize = NativeTokens.Small + 1,
             Foreground = colours.Brush(colours.Dim),
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, NativeTokens.Space10, 0, 0),
+            Margin = new Thickness(0, NativeTokens.Space12, 0, 0),
+            Tag = ModalOverlay.GroundTag,
         };
         page.Children.Add(_layoutReason);
 
         // ── The other ways in ─────────────────────────────────────────────────────────────────
-        var others = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space16, 0, 0) };
+        var others = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space20, 0, 0) };
         others.Children.Add(new TextBlock
         {
             Text = WelcomeModel.OtherWays,
@@ -220,7 +233,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         Children.Add(footer);
         Children.Add(new ScrollViewer
         {
-            Content = page,
+            Content = new Panel { Background = Brushes.Transparent, Tag = ModalOverlay.GroundTag, Children = { page } },
             HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
         });
@@ -238,9 +251,18 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     public string Title => "Welcome";
 
-    public double PreferredWidth => 1040;
+    public double PreferredWidth => ColumnWidth;
 
     public bool Centred => true;
+
+    /// <summary>The welcome is the window's whole first page, the mockup's, not a card over the cells.</summary>
+    public bool FullPage => true;
+
+    /// <summary>The page's column: the mockup's 1,040 px.</summary>
+    private const double ColumnWidth = 1040;
+
+    /// <summary>The ground above the heading: the mockup's 56 px.</summary>
+    private const double PageTop = NativeTokens.Space28 * 2;
 
     /// <summary>The model drawn now, for a test.</summary>
     public WelcomeModel Model => _model;
@@ -412,10 +434,12 @@ internal sealed class WelcomeView : DockPanel, IModalView
             var chosen = layout == model.Layout;
             card.BorderBrush = _colours.Brush(chosen ? _colours.Accent : _colours.Edge);
             card.BorderThickness = new Thickness(chosen ? NativeTokens.BorderStrong : NativeTokens.Hairline);
+            // The mockup's: the chosen card raised with the accent edge, the other on the card plane; the padding takes
+            // up the thicker edge so the words do not move.
             card.Padding = chosen
-                ? new Thickness(NativeTokens.Space16 - NativeTokens.Hairline, NativeTokens.Space12 - NativeTokens.Hairline)
-                : new Thickness(NativeTokens.Space16, NativeTokens.Space12);
-            card.Background = _colours.Brush(chosen ? _colours.Selected : _colours.Card);
+                ? new Thickness(NativeTokens.Space16 + NativeTokens.Space2, NativeTokens.Space16)
+                : new Thickness(NativeTokens.Space16 + NativeTokens.Space2 + NativeTokens.Hairline, NativeTokens.Space16 + NativeTokens.Hairline);
+            card.Background = _colours.Brush(chosen ? _colours.Raised : _colours.Card);
         }
 
         DrawCommand();
@@ -513,7 +537,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
             _findBody.Children.Add(new ScrollViewer
             {
                 Content = list,
-                MaxHeight = (ShownRows * 56) + ((ShownRows - 1) * 8),
+                MaxHeight = (ShownRows * 62) + ((ShownRows - 1) * 8),
                 HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             });
@@ -684,11 +708,14 @@ internal sealed class WelcomeView : DockPanel, IModalView
             FontSize = NativeTokens.Body,
             Foreground = _colours.Brush(_colours.Dim),
             TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, NativeTokens.Space2, 0, 0),
         });
 
         var add = ModalParts.Button(WelcomeModel.AddButton, null, _colours, () => Add(index), accent: index == 0);
         add.IsEnabled = enabled;
-        add.Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space4);
+        add.CornerRadius = new CornerRadius(NativeTokens.RadiusControl);
+        add.MinHeight = NativeTokens.ControlHeightSmall + NativeTokens.Space4;
+        add.Padding = new Thickness(NativeTokens.Space14, 0);
         add.VerticalAlignment = VerticalAlignment.Center;
         global::Avalonia.Automation.AutomationProperties.SetName(add, $"{WelcomeModel.AddButton} {world.Name}");
 
@@ -697,14 +724,15 @@ internal sealed class WelcomeView : DockPanel, IModalView
         add.Margin = new Thickness(NativeTokens.Space12, 0, 0, 0);
         grid.Children.Add(words);
         grid.Children.Add(add);
+        // The mockup's rows: the first, the one Enter would add, raised with the focused edge; the rest only outlined.
         var row = new Border
         {
             Child = grid,
-            Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space8),
-            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space12),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
             BorderThickness = new Thickness(NativeTokens.Hairline),
-            BorderBrush = _colours.Brush(_colours.Edge),
-            Background = _colours.Brush(index == 0 ? _colours.Selected : _colours.Card),
+            BorderBrush = _colours.Brush(index == 0 ? _colours.Focus : _colours.Edge),
+            Background = index == 0 ? _colours.Brush(_colours.Raised) : Brushes.Transparent,
         };
         ToolTip.SetTip(row, world.Tagline.Length > 0 ? world.Tagline : world.Name);
         global::Avalonia.Automation.AutomationProperties.SetName(row, world.Name);
@@ -724,7 +752,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
         words.Children.Add(new TextBlock
         {
             Text = WelcomeModel.LayoutDetail(layout),
-            FontSize = NativeTokens.Body + 1,
+            LineHeight = NativeTokens.Space16 + NativeTokens.Space2 + NativeTokens.Hairline,
+            FontSize = NativeTokens.Body,
             Foreground = _colours.Brush(_colours.Dim),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -759,20 +788,21 @@ internal sealed class WelcomeView : DockPanel, IModalView
         Foreground = _colours.Brush(_colours.Text),
     };
 
+    /// <summary>A card on the page's ground: the card plane, a hairline edge, the mockup's 22 px inside.</summary>
     private Border Card(Control content) => new()
     {
         Child = content,
-        Padding = new Thickness(NativeTokens.Space24, NativeTokens.Space20),
+        Padding = new Thickness(NativeTokens.Space20 + NativeTokens.Space2),
         CornerRadius = new CornerRadius(NativeTokens.RadiusL),
         BorderThickness = new Thickness(NativeTokens.Hairline),
         BorderBrush = _colours.Brush(_colours.Edge),
-        Background = _colours.Brush(_colours.Raised),
+        Background = _colours.Brush(_colours.Card),
     };
 
     private StackPanel Labelled(string label, Control field)
     {
-        var column = new StackPanel { Spacing = NativeTokens.Space4 };
-        column.Children.Add(new TextBlock { Text = label, FontSize = NativeTokens.Body + 1, Foreground = _colours.Brush(_colours.Dim) });
+        var column = new StackPanel { Spacing = NativeTokens.Space6 };
+        column.Children.Add(new TextBlock { Text = label, FontSize = NativeTokens.Body, Foreground = _colours.Brush(_colours.Dim) });
         column.Children.Add(field);
         return column;
     }

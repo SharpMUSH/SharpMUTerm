@@ -59,7 +59,7 @@ internal sealed partial record NativeTokens(
     public const double Heading = 18;
 
     /// <summary>The type ramp: a whole page's title, of which there is one (the first-run welcome).</summary>
-    public const double Display = 26;
+    public const double Display = 28;
 
     /// <summary>
     /// Not on the ramp: the theme cards' miniature of the cells (F7), which is a picture of a terminal at a quarter of

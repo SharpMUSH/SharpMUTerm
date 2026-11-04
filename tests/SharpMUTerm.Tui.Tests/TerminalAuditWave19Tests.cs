@@ -62,8 +62,8 @@ public class TerminalAuditWave19Tests
     {
         var model = new WelcomeSurface(null).Model;
         var lines = WelcomeSurface.Render(model, 60);
-        var band = lines.Single(l => l.Contains($"[on {ScreenPalette.MenuSelectedBg}]", StringComparison.Ordinal));
+        var band = lines.Single(l => l.Contains($"[on {ScreenPalette.CursorBg}]", StringComparison.Ordinal));
         await Assert.That(MarkupText.Plain(band)).Contains(model.Describe(model.Selected).Title);
-        await Assert.That(MarkupText.Plain(band).Length).IsEqualTo(60);
+        await Assert.That(MarkupText.Plain(band).Length).IsEqualTo(60 - 2).Because("indented from the frame on both sides, the body's inset");
     }
 }

@@ -1636,6 +1636,17 @@ fallbacks) for inline images/maps.
   (`WelcomeView`): its Find card attaches a `WorldBrowseSession` to the welcome (`WelcomeSession.FindWorlds` →
   `FindWorldsInWelcome`, actions `find`/`add`), fetched only on Show worlds, forgotten when the welcome closes; Add is the
   browse pick, which reopens the welcome with the form filled.
+- **Wave 25 first run: both welcomes are drawn to `Desktop-FirstRun`/`Terminal-FirstRun`.** The window's is a **full page**
+  (`IModalView.FullPage`, default false): `ModalOverlay` paints `Well` over the whole window, header and sidebar included,
+  with no card, edge or scrim, and a press on its ground (`ModalOverlay.GroundTag`) moves the window, resizes it at an
+  edge, double-click maximises — never dismisses. The page is a 1,040 px column 56 px down, cards on `Card` at 3 : 2,
+  the first world row `Raised` with the `Focus` edge, the chosen layout `Raised` with a 2 px accent edge; `Display` is 28.
+  The cells' is a `ListOverlay` opened `flush` on `plane: PanelBg` (both additive parameters, popups unchanged): no frame
+  title and no padding, the heading on a `HeaderBg` band and the keys on a `FooterBg` band edge to edge
+  (`WelcomeSurface.Render`, body indented 2), the frame in `Rule`, the selected row on `CursorBg`, and the layout note
+  beside the chips once the row holds both (`PreferredWidth` 78, so from 82 columns). Not taken from the mockups: their
+  genre chips and *Package* tag (mu*index gives neither), example data (port 4201, TLS on), the "games" noun, and the
+  mockup's suggested-layout card (nothing is known before the first connect, so *suggested* stays a third state).
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

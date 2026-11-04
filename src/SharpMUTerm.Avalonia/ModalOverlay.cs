@@ -54,8 +54,13 @@ internal sealed class ModalOverlay : Panel
             _ => throw new ArgumentException($"no native view for {session.GetType().Name}", nameof(session)),
         };
         AutomationProperties.SetName(this, _view.Title);
+        var page = _view.FullPage;
+        if (page)
+        {
+            Background = new SolidColorBrush(Colours.Well);
+        }
 
-        _card = new Border
+        _card = page ? new Border { Background = new SolidColorBrush(Colours.Well), ClipToBounds = true, Child = (Control)_view } : new Border
         {
             Background = new SolidColorBrush(Colours.Card),
             BorderBrush = new SolidColorBrush(Colours.Edge),
@@ -69,9 +74,9 @@ internal sealed class ModalOverlay : Panel
         var scope = new ThemeVariantScope
         {
             RequestedThemeVariant = session.IsDark ? ThemeVariant.Dark : ThemeVariant.Light,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = _view.Centred ? VerticalAlignment.Center : VerticalAlignment.Top,
-            Margin = new Thickness(NativeTokens.Space16, _view.Centred ? NativeTokens.Space16 : NativeLayout.HeaderHeight + NativeTokens.Space12, NativeTokens.Space16, NativeTokens.Space16),
+            HorizontalAlignment = page ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
+            VerticalAlignment = page ? VerticalAlignment.Stretch : _view.Centred ? VerticalAlignment.Center : VerticalAlignment.Top,
+            Margin = page ? default : new Thickness(NativeTokens.Space16, _view.Centred ? NativeTokens.Space16 : NativeLayout.HeaderHeight + NativeTokens.Space12, NativeTokens.Space16, NativeTokens.Space16),
             Child = _card,
         };
         scope.Styles.Add(new FluentTheme());
@@ -86,9 +91,15 @@ internal sealed class ModalOverlay : Panel
                 forward(new ConsoleKeyInfo('\x11', ConsoleKey.Q, false, false, true));
             }
         }, RoutingStrategies.Tunnel);
+        if (page)
+        {
+            // The page's ground, wherever no control is: the window's handle, as the header it covers was.
+            _card.PointerPressed += (_, e) => TakeHoldOfWindow(e);
+        }
+
         PointerPressed += (_, e) =>
         {
-            if (ReferenceEquals(e.Source, this))
+            if (!page && ReferenceEquals(e.Source, this))
             {
                 e.Handled = true;
                 Session.Dismiss();
@@ -128,8 +139,39 @@ internal sealed class ModalOverlay : Panel
         }
     }
 
+    /// <summary>The <see cref="Control.Tag"/> a full page's view puts on its bare ground, which a press takes hold of the window by.</summary>
+    internal const string GroundTag = "page-ground";
+
+    private void TakeHoldOfWindow(PointerPressedEventArgs e)
+    {
+        if (e.Handled || TopLevel.GetTopLevel(this) is not Window window || !e.GetCurrentPoint(window).Properties.IsLeftButtonPressed
+            || !(ReferenceEquals(e.Source, _card) || e.Source is Control { Tag: GroundTag }))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        if (window is { WindowState: WindowState.Normal, CanResize: true } && WindowChrome.EdgeAt(e.GetPosition(window), window.ClientSize) is { } edge)
+        {
+            window.BeginResizeDrag(edge, e);
+        }
+        else if (e.ClickCount == 2)
+        {
+            window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        }
+        else
+        {
+            window.BeginMoveDrag(e);
+        }
+    }
+
     private void Fit()
     {
+        if (_view.FullPage)
+        {
+            return;
+        }
+
         _card.Width = Math.Max(260, Math.Min(_view.PreferredWidth, Bounds.Width - 32));
         _card.MaxHeight = Math.Max(180, Bounds.Height - (_view.Centred ? 32 : 88));
     }
@@ -146,6 +188,13 @@ internal interface IModalView
 
     /// <summary>Centred in the window (a question), rather than near its top (a list that grows as it is filtered).</summary>
     bool Centred { get; }
+
+    /// <summary>
+    /// A page over the whole window rather than a card on a scrim (the welcome, the mockup's first run): the ground plane
+    /// edge to edge, the view laying out its own column. Nothing is outside it, so a press on its ground does not close it;
+    /// it moves the window, or resizes it at an edge, as the header it covers would.
+    /// </summary>
+    bool FullPage => false;
 
     /// <summary>Gives the keyboard to the control a reader starts in.</summary>
     void FocusFirst();

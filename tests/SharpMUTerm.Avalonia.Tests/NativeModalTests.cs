@@ -311,4 +311,29 @@ public class NativeModalTests
         await Assert.That(worlds).IsEqualTo(1);
         await Assert.That(worldsBefore).IsGreaterThan(0).Because("the demo has worlds of its own, which the import leaves alone");
     }
+
+    /// <summary>
+    /// The welcome is the window's first page, the mockup's: the ground plane over the whole window rather than a card on
+    /// the scrim, and a press on that ground leaves it open (there is nothing outside it to dismiss it into).
+    /// </summary>
+    [Test]
+    public async Task TheWelcomeIsAPageOnTheGroundOverTheWholeWindow_AndAPressOnItsGroundKeepsItOpen()
+    {
+        var (fullPage, plane, spans, open) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("welcome");
+            DesktopLayerTests.Drain();
+            var modal = rig.Driver.Modals.Modal!;
+            var spans = modal.Card.Bounds.Width >= rig.Root.Bounds.Width - 1 && modal.Card.Bounds.Height >= rig.Root.Bounds.Height - 1;
+            rig.Window.MouseDown(new Point(12, rig.Root.Bounds.Height / 2), MouseButton.Left);
+            rig.Window.MouseUp(new Point(12, rig.Root.Bounds.Height / 2), MouseButton.Left);
+            DesktopLayerTests.Drain();
+            return (((IModalView)modal.View).FullPage, (modal.Background as SolidColorBrush)?.Color, spans, !modal.Session.IsEnded);
+        });
+
+        await Assert.That(fullPage).IsTrue();
+        await Assert.That(plane).IsEqualTo(NativeTokens.Dark.Well).Because("the page sits on the ground, the mockup's #10131a");
+        await Assert.That(spans).IsTrue();
+        await Assert.That(open).IsTrue();
+    }
 }

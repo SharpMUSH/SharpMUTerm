@@ -345,4 +345,28 @@ public class WelcomeTests
 
         await Assert.That(run.Config.Worlds.Single().Layout).IsEqualTo(BuiltInLayouts.CombatId);
     }
+
+    /// <summary>
+    /// The cell welcome is the mockup's shape: its heading on a band across the whole inside, its keys on a band across the
+    /// foot, the body indented between them, and the layout note beside the chips where the row has room for both.
+    /// </summary>
+    [Test]
+    public async Task TheCellWelcomeHasAHeadingBandAndAKeyBand_AndTheLayoutNoteSitsBesideTheChipsWhereItFits()
+    {
+        var model = new WelcomeSurface(null).Model;
+        var wide = WelcomeSurface.Render(model, WelcomeSurface.PreferredWidth + 2);
+        var narrow = WelcomeSurface.Render(model, 60);
+        var form = WelcomeSurface.Render(model with { InForm = true }, WelcomeSurface.PreferredWidth + 2);
+
+        await Assert.That(wide[0]).StartsWith($"[on {ScreenPalette.HeaderBg}]");
+        await Assert.That(MarkupText.VisibleLength(wide[0])).IsEqualTo(WelcomeSurface.PreferredWidth + 2);
+        await Assert.That(MarkupText.Plain(wide[0]).Trim()).IsEqualTo(WelcomeModel.Heading);
+        await Assert.That(wide[^1]).StartsWith($"[on {ScreenPalette.FooterBg}]");
+        await Assert.That(MarkupText.VisibleLength(wide[^1])).IsEqualTo(WelcomeSurface.PreferredWidth + 2);
+        await Assert.That(wide.Any(l => MarkupText.Plain(l).Contains("Combat") && MarkupText.Plain(l).Contains(WelcomeModel.LayoutNote))).IsTrue();
+        await Assert.That(narrow.Any(l => MarkupText.Plain(l).Contains("Combat") && MarkupText.Plain(l).Contains(WelcomeModel.LayoutNote))).IsFalse();
+        await Assert.That(narrow.Any(l => MarkupText.Plain(l).Contains(WelcomeModel.LayoutNote))).IsTrue();
+        await Assert.That(form.Count).IsEqualTo(wide.Count).Because("one window holds the menu and the form");
+        await Assert.That(MarkupText.Plain(form[0]).Trim()).IsEqualTo(WelcomeModel.FormHeading);
+    }
 }

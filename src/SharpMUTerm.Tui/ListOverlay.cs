@@ -26,6 +26,8 @@ internal sealed class ListOverlay
     private Func<bool>? _escape;
     private Action? _closed;
     private Action<string>? _link;
+    private string _plane = ScreenPalette.MenuBg;
+    private int _inset = 4;
 
     private ScreenTheme _scheme;
 
@@ -73,6 +75,11 @@ internal sealed class ListOverlay
     /// Told the target of a <c>[link=…]</c> clicked in the body: this surface's own handler, never the output panes'
     /// (whose links are scheme-tagged server text). With none, a link in the body does nothing.
     /// </param>
+    /// <param name="plane">The role the modal is painted on: a popup's <see cref="ScreenPalette.MenuBg"/> by default.</param>
+    /// <param name="flush">
+    /// No cell between the frame and the words, and the lines drawn at the whole inner width: for a surface that lays out
+    /// its own heading and key bands edge to edge and indents its body itself (the welcome).
+    /// </param>
     public void Open(
         string mode,
         string title,
@@ -83,7 +90,9 @@ internal sealed class ListOverlay
         Action? closed = null,
         Func<int, List<string>>? footer = null,
         bool scrollKeys = false,
-        Action<string>? link = null)
+        Action<string>? link = null,
+        string plane = ScreenPalette.MenuBg,
+        bool flush = false)
     {
         if (_window is not null)
         {
@@ -97,16 +106,18 @@ internal sealed class ListOverlay
         _closed = closed;
         _footer = footer;
         _scrollKeys = scrollKeys && footer is not null;
+        _plane = plane;
+        _inset = flush ? 2 : 4;
         var desktop = _system.DesktopDimensions;
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
-        var lines = render(outer - 4);
-        var footerLines = footer?.Invoke(outer - 4) ?? [];
+        var lines = render(outer - _inset);
+        var footerLines = footer?.Invoke(outer - _inset) ?? [];
         // A modal whose body scrolls under pinned keys is at most four rows short of the desktop, so centred it leaves the
         // header, the command line and the status row in view (two short, the import review at 80×24 sat on the command
         // line). One without scrolling keeps the two: its last rows are its keys, and they must not be cut off.
-        var height = Math.Clamp(Rows(lines, outer - 3) + footerLines.Count + 2, 8, Math.Max(8, desktop.Height - (footer is null ? 2 : 4)));
-        _content = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
+        var height = Math.Clamp(Rows(lines, outer - (flush ? 2 : 3)) + footerLines.Count + 2, 8, Math.Max(8, desktop.Height - (footer is null ? 2 : 4)));
+        _content = new MarkupControl(_scheme.Lines(lines, plane));
         _content.LinkClicked += (_, e) => _link?.Invoke(e.Url);
         IWindowControl body = _content;
         if (footer is not null)
@@ -123,7 +134,7 @@ internal sealed class ListOverlay
             };
             _body.AddControl(_content);
             body = _body;
-            _footerControl = new MarkupControl(_scheme.Lines(footerLines, ScreenPalette.MenuBg))
+            _footerControl = new MarkupControl(_scheme.Lines(footerLines, plane))
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 StickyPosition = StickyPosition.Bottom,
@@ -136,10 +147,10 @@ internal sealed class ListOverlay
             .WithTitle(title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(_scheme.Colour(ScreenPalette.MenuBg))
+            .WithBackgroundColor(_scheme.Colour(plane))
             .HideTitleButtons()
             .Resizable(false)
-            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
+            .WithPadding(new SharpConsoleUI.Layout.Padding(flush ? 0 : 1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(outer, height)
             .Centered()
             .AddControl(body)
@@ -156,6 +167,12 @@ internal sealed class ListOverlay
             .Build();
         _window = built;
         _scheme.Frame(_window);
+        if (flush)
+        {
+            // Its bands mark its top and foot, so the frame steps back to a rule (the mockup's).
+            _window.ActiveBorderForegroundColor = _window.InactiveBorderForegroundColor = _scheme.Colour(ScreenPalette.Rule);
+        }
+
         if (_footerControl is not null)
         {
             _window.AddControl(_footerControl);
@@ -190,10 +207,10 @@ internal sealed class ListOverlay
     {
         if (_render is not null && _content is not null)
         {
-            _content.SetContent(_scheme.Lines(_render(Width()), ScreenPalette.MenuBg));
+            _content.SetContent(_scheme.Lines(_render(Width()), _plane));
             if (_footer is not null)
             {
-                _footerControl?.SetContent(_scheme.Lines(_footer(Width()), ScreenPalette.MenuBg));
+                _footerControl?.SetContent(_scheme.Lines(_footer(Width()), _plane));
             }
 
             _window?.Invalidate(redrawAll: true);
@@ -219,7 +236,7 @@ internal sealed class ListOverlay
         }
     }
 
-    private int Width() => Math.Max(20, (_window?.Width ?? 80) - 4);
+    private int Width() => Math.Max(20, (_window?.Width ?? 80) - _inset);
 
     private void OnKey(object? sender, KeyPressedEventArgs e)
     {
