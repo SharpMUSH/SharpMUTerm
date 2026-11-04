@@ -186,8 +186,8 @@ public sealed record ComposerModel(
     /// <summary>The text field's label in both hosts.</summary>
     public const string TextLabel = "Text";
 
-    /// <summary>What an empty command field says: what goes there, and that it may be left empty.</summary>
-    public const string CommandPlaceholder = "+pose, say, +bbpost 3= … or none";
+    /// <summary>What an empty command field says: what goes there. Short enough to read whole in the docked composer.</summary>
+    public const string CommandPlaceholder = "+pose, say, +bbpost 3=";
 
     /// <summary>
     /// The model for a composer's state. The keys are worked out here, so the cells and the window offer the same row:

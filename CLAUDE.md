@@ -1250,6 +1250,9 @@ fallbacks) for inline images/maps.
     the lit rule's plane), because three renderers lay their headings out three ways. Who-here draws its band before
     the roster arrives, so the boundary never comes and goes. **Not in the window** (`HostChrome.Strips`): its native
     panels lie over that row and take its presses, so it keeps the divider row. `HeadingDividerTests`.
+    **Under `Strips` the cells draw no band at all** (`PanelHeadingInk` is null, the bare accent label): the window
+    paints each half of a divider row in the plane read off the cell beside it, so a band under a native panel's heading
+    was read as that pane's plane and drew a filled bar across the seam (wave 23's regression).
   - **The rail is `rail │ panes`: the spacer column after the rule went to the panes in wave 24** (NAWS +1 column).
     Measured, not preferred (`RailEdgeTests`): the mockup lets the planes carry the rail's edge (~6 L*), but here an
     unfocused pane is 2.9 L* above the backdrop on Dark (a tinted one less) and the rule 15.9, so the rule stays and
