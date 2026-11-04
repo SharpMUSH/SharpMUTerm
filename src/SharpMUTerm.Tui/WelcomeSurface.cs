@@ -1,42 +1,8 @@
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Layouts;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
-
-/// <summary>What the welcome's menu offers, in the order it lists them.</summary>
-internal enum WelcomeChoice
-{
-    /// <summary>The small form: host, port, TLS, a character name.</summary>
-    Connect,
-
-    /// <summary>The package index browser, fetched only now.</summary>
-    Browse,
-
-    /// <summary>F5, to add a world by hand.</summary>
-    Settings,
-}
-
-/// <summary>
-/// The starting layout a first world is given. <see cref="Suggested"/> sets nothing, so the client's own
-/// suggestion (<see cref="LayoutSuggester"/>) still applies when it first connects; the other two are the
-/// player's choice outright and are written to <c>WorldDefinition.Layout</c>.
-/// </summary>
-internal enum WelcomeLayout
-{
-    Suggested,
-    Roleplay,
-    Combat,
-}
-
-/// <summary>The connect form's rows, top to bottom.</summary>
-internal enum WelcomeField
-{
-    Host,
-    Port,
-    Tls,
-    Character,
-    Password,
-}
 
 /// <summary>What a key on the welcome asks the app to do.</summary>
 internal enum WelcomeAction
@@ -71,16 +37,14 @@ internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? C
 internal sealed class WelcomeSurface
 {
     /// <summary>The example the surface names, a host nobody owns (RFC 2606).</summary>
-    internal const string ExampleCommand = "/connect mud.example.org 4201 tls";
+    internal const string ExampleCommand = WelcomeModel.ExampleCommand;
 
     /// <summary>The width the surface asks for; the overlay narrows it on a small terminal.</summary>
     internal const int PreferredWidth = 66;
 
-    /// <summary>The longest host the form takes: a DNS name's limit.</summary>
-    private const int MaxHost = 253;
+    private const int MaxHost = WelcomeModel.MaxHost;
 
-    /// <summary>A character name long enough for any game's.</summary>
-    private const int MaxCharacter = 40;
+    private const int MaxCharacter = WelcomeModel.MaxCharacter;
 
     private readonly string? _indexProblem;
 
@@ -111,6 +75,37 @@ internal sealed class WelcomeSurface
 
     /// <summary>The checked form, once ⏎ has accepted it.</summary>
     public WelcomeConnect? Request { get; private set; }
+
+    /// <summary>Everything the surface says now: what the cells draw and the window's native welcome draws.</summary>
+    public WelcomeModel Model =>
+        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem);
+
+    /// <summary>
+    /// A menu choice made outright — the native welcome's click, or ⏎ on the cell menu once the pointer is on it. The
+    /// cell menu's own rules: Connect opens the form, Browse with no index says so in place.
+    /// </summary>
+    public WelcomeAction Choose(WelcomeChoice choice)
+    {
+        Selected = choice;
+        Problem = null;
+        return MenuKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+    }
+
+    /// <summary>
+    /// The native form's Connect: the fields as typed, held to the cell form's limits, then checked as ⏎ checks them.
+    /// </summary>
+    public WelcomeAction Submit(WelcomeForm form, Func<IReadOnlyList<string>, (string Host, int Port)?> parse)
+    {
+        ArgumentNullException.ThrowIfNull(form);
+        InForm = true;
+        Host = new string(form.Host.Trim().Where(c => !char.IsWhiteSpace(c) && !char.IsControl(c)).Take(MaxHost).ToArray());
+        Port = new string(form.Port.Trim().Where(char.IsAsciiDigit).Take(5).ToArray());
+        Tls = form.Tls;
+        Character = new string(form.Character.Where(c => !char.IsControl(c)).Take(MaxCharacter).ToArray()).TrimStart();
+        PasswordLater = form.PasswordLater;
+        Problem = null;
+        return Submit(parse);
+    }
 
     /// <summary>The built-in layout id <see cref="Layout"/> names, or null for the suggestion.</summary>
     public string? LayoutId => LayoutIdOf(Layout);
@@ -313,17 +308,21 @@ internal sealed class WelcomeSurface
     /// either — the form's footer sits where the menu's does, and nothing has to be closed and reopened to switch,
     /// which a window running its own loop does not do in the order a headless one does.
     /// </summary>
-    public List<string> Render(int width)
+    public List<string> Render(int width) => Render(Model, width);
+
+    /// <summary>The surface for <paramref name="model"/> at a width — the cells of the model the window's native welcome draws.</summary>
+    public static List<string> Render(WelcomeModel model, int width)
     {
-        if (!InForm)
+        ArgumentNullException.ThrowIfNull(model);
+        if (!model.InForm)
         {
-            return RenderMenu(width);
+            return RenderMenu(model, width);
         }
 
-        var form = RenderForm(width);
+        var form = RenderForm(model, width);
         var footer = form[^1];
         form.RemoveAt(form.Count - 1);
-        var height = RenderMenu(width).Count;
+        var height = RenderMenu(model, width).Count;
         while (form.Count < height - 1)
         {
             form.Add(string.Empty);
@@ -333,7 +332,7 @@ internal sealed class WelcomeSurface
         return form;
     }
 
-    private List<string> RenderMenu(int width)
+    private static List<string> RenderMenu(WelcomeModel model, int width)
     {
         var lines = new List<string>
         {
@@ -344,28 +343,21 @@ internal sealed class WelcomeSurface
 
         foreach (var choice in Enum.GetValues<WelcomeChoice>())
         {
-            var selected = choice == Selected;
-            var (title, detail) = choice switch
-            {
-                WelcomeChoice.Connect => ("Connect to a host", "type a host and port"),
-                WelcomeChoice.Browse => ("Browse games", _indexProblem is null ? "from the package index" : "no package index set"),
-                _ => ("Open settings", "F5, add a world by hand"),
-            };
+            var selected = choice == model.Selected;
+            var (title, detail) = model.Describe(choice);
             var marker = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
             lines.Add($"{marker} {Pad(Value(title, selected), 20)} {Label(detail)}");
         }
 
-        lines.Add(Problem is null ? string.Empty : $"  [{ScreenPalette.Caution}]{Escape(Problem)}[/]");
+        lines.Add(model.Problem is null ? string.Empty : $"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
         lines.Add(Label("Or type it on the command line below:"));
         lines.Add("  " + Value(ExampleCommand));
         lines.Add(string.Empty);
-        lines.Add(Label(Layout == WelcomeLayout.Suggested
-            ? "Starting layout, picked from what the game sends:"
-            : "Starting layout, whatever the game sends:"));
+        lines.Add(Label(model.LayoutHeading));
         var chips = string.Join("  ", Enum.GetValues<WelcomeLayout>().Select(layout =>
         {
-            var name = layout == WelcomeLayout.Suggested ? "suggested" : layout.ToString();
-            return layout == Layout
+            var name = WelcomeModel.LayoutName(layout);
+            return layout == model.Layout
                 ? $"[bold {ScreenPalette.Ink} on {ScreenPalette.Accent}] {Escape(name)} [/]"
                 : $"[{ScreenPalette.Value}] {Escape(name)} [/]";
         }));
@@ -376,7 +368,7 @@ internal sealed class WelcomeSurface
         return lines;
     }
 
-    private List<string> RenderForm(int width)
+    private static List<string> RenderForm(WelcomeModel model, int width)
     {
         var lines = new List<string>
         {
@@ -386,25 +378,24 @@ internal sealed class WelcomeSurface
         };
 
         var boxWidth = Math.Clamp(width - 16, 12, 44);
-        lines.Add(Row(WelcomeField.Host, "host", Box(Host, boxWidth, Field == WelcomeField.Host, "mud.example.org")));
-        lines.Add(Row(WelcomeField.Port, "port", Box(Port, 7, Field == WelcomeField.Port, null)));
-        lines.Add(Row(WelcomeField.Tls, "TLS", Toggle(Tls, "on, encrypted", "off")));
-        lines.Add(Row(WelcomeField.Character, "character", Box(Character, boxWidth, Field == WelcomeField.Character, "optional, the name you log in as")));
-        lines.Add(Row(WelcomeField.Password, "password", Toggle(PasswordLater, "save it on F5 after connecting", "type it at the login prompt")));
+        var field = model.Field;
+        lines.Add(Row(field, WelcomeField.Host, "host", Box(model.Host, boxWidth, field == WelcomeField.Host, "mud.example.org")));
+        lines.Add(Row(field, WelcomeField.Port, "port", Box(model.Port, 7, field == WelcomeField.Port, null)));
+        lines.Add(Row(field, WelcomeField.Tls, "TLS", Toggle(model.Tls, "on, encrypted", "off")));
+        lines.Add(Row(field, WelcomeField.Character, "character", Box(model.Character, boxWidth, field == WelcomeField.Character, "optional, the name you log in as")));
+        lines.Add(Row(field, WelcomeField.Password, "password", Toggle(model.PasswordLater, "save it on F5 after connecting", "type it at the login prompt")));
         lines.Add(string.Empty);
-        lines.Add(Problem is null
-            ? Label(Layout == WelcomeLayout.Suggested
-                ? "Layout: suggested from what the game sends."
-                : $"Layout: {Layout}.")
-            : $"[{ScreenPalette.Caution}]{Escape(Problem)}[/]");
+        lines.Add(model.Problem is null
+            ? Label(model.FormLayoutLine)
+            : $"[{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");
         lines.Add(string.Empty);
         lines.Add(Footer(width, "↑↓ field · Space toggle", "Esc back · ⏎ connect"));
         return lines;
     }
 
-    private string Row(WelcomeField field, string label, string value)
+    private static string Row(WelcomeField current, WelcomeField field, string label, string value)
     {
-        var selected = Field == field;
+        var selected = current == field;
         var marker = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
         return $"{marker} {Pad(selected ? Value(label, bold: true) : Label(label), 11)} {value}";
     }

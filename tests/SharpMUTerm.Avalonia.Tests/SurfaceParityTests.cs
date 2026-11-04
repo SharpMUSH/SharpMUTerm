@@ -4,6 +4,7 @@ using Avalonia.Input;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Client.Composer;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Client.Settings;
@@ -241,6 +242,54 @@ public class SurfaceParityTests
             covered.Add(PanelIds.Composer);
         }
 
+        // The modals: the session the window was handed carries the model the cell modal drew for the same scene — the
+        // quit prompt's facts (connections and a draft), ⌃F's hits in each of its toggles, ⌃R's list, ⌥M's rows and the
+        // welcome's menu and filled-in form.
+        foreach (var (surface, view) in new[]
+        {
+            (SurfaceCatalog.Quit, "quit"),
+            (SurfaceCatalog.Search, "search"),
+            (SurfaceCatalog.Search, "search-regex"),
+            (SurfaceCatalog.Search, "search-all"),
+            (SurfaceCatalog.History, "history-search"),
+            (SurfaceCatalog.Layouts, "layouts"),
+            (SurfaceCatalog.Welcome, "welcome"),
+            (SurfaceCatalog.Welcome, "welcome-connect"),
+        })
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            var modals = new FakeModals();
+            await using var native = App(nativeDriver, DemoScene.Build(), modals: modals);
+            native.RenderSnapshot(view);
+
+            using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var cells = App(cellDriver, DemoScene.Build());
+            cells.RenderSnapshot(view);
+
+            var session = modals.Open(surface);
+            await Assert.That(session).IsNotNull().Because($"{view}: opened in the window's controls");
+            var drawn = cells.DrawnModel(surface);
+            await Assert.That(drawn).IsNotNull().Because($"{view}: the cell modal is open in the cell client");
+            await Assert.That(drawn).IsEqualTo(ModelOf(session!)).Because(view);
+            covered.Add(surface);
+        }
+
+        // ⌃R filtered: the native list's rows for a query are the cell list's rows for it.
+        {
+            using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+            var modals = new FakeModals();
+            await using var native = App(nativeDriver, DemoScene.Build(), modals: modals);
+            native.RenderSnapshot("history-search");
+
+            using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+            await using var cells = App(cellDriver, DemoScene.Build());
+            cells.RenderSnapshot("history-search-filter");
+
+            var rows = ((HistorySession)modals.Open(SurfaceCatalog.History)!).Model.View("north").Select(m => m.Text).ToArray();
+            await Assert.That(rows).IsNotEmpty();
+            await Assert.That(rows).IsEquivalentTo(cells.HistorySearchRows, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        }
+
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
         await Assert.That(covered).IsEquivalentTo(drawnNatively).Because("every surface the window draws natively has its model compared here");
     }
@@ -416,6 +465,150 @@ public class SurfaceParityTests
             probed.Add(PanelIds.Composer);
         }
 
+        // The quit prompt: Y quits and N stays, from the window's buttons and from the cell prompt's keys.
+        await SameModal("quit: yes", "quit",
+            (app, m) => ((QuitSession)m.Open(SurfaceCatalog.Quit)!).Answer(true),
+            app => app.SimulateQuitKey(new ConsoleKeyInfo('y', ConsoleKey.Y, false, false, false)));
+        await SameModal("quit: no", "quit",
+            (app, m) => ((QuitSession)m.Open(SurfaceCatalog.Quit)!).Answer(false),
+            app => app.SimulateQuitKey(new ConsoleKeyInfo('n', ConsoleKey.N, false, false, false)));
+        probed.Add(SurfaceCatalog.Quit);
+
+        // ⌃F: ⏎ on the second hit lands on the same line; ⌥A widens and ⌥E reads a pattern, then ⏎ on the last hit.
+        await SameModal("search: go", "search",
+            (app, m) => ((SearchSession)m.Open(SurfaceCatalog.Search)!).Go(1),
+            app =>
+            {
+                app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        await SameModal("search: every window", "search",
+            (app, m) =>
+            {
+                var search = (SearchSession)m.Open(SurfaceCatalog.Search)!;
+                search.Search(search.Model.Query, regex: false, allWindows: true);
+                search.Go(search.Model.Rows.Count - 1);
+            },
+            app =>
+            {
+                app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
+                app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.UpArrow, false, false, false));
+                app.SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        await SameModal("search: regex", "search",
+            (app, m) =>
+            {
+                var search = (SearchSession)m.Open(SurfaceCatalog.Search)!;
+                search.Search("gob+lin c", regex: true, allWindows: false);
+                search.Go(0);
+            },
+            app =>
+            {
+                app.SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
+                foreach (var _ in "goblin")
+                {
+                    app.SimulateSearchKey(new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false));
+                }
+
+                app.SimulateSearchTyping("gob+lin c");
+                app.SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        probed.Add(SurfaceCatalog.Search);
+
+        // ⌃R: ⏎ on the first row for "north" places the same text on the command line, and sends nothing.
+        await SameModal("history: insert", "history-search",
+            (app, m) =>
+            {
+                var history = (HistorySession)m.Open(SurfaceCatalog.History)!;
+                history.Insert(history.Model.View("north")[0].Index);
+            },
+            app =>
+            {
+                app.SimulateHistorySearchTyping("north");
+                app.SimulateHistorySearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        probed.Add(SurfaceCatalog.History);
+
+        // ⌥M: apply Roleplay, save as new, rename the copy and delete it — each through the one verb method, so the
+        // status, the library and the panes agree.
+        await SameModal("layouts: apply", "layouts",
+            (app, m) =>
+            {
+                var layouts = (LayoutsSession)m.Open(SurfaceCatalog.Layouts)!;
+                layouts.Run(LayoutVerb.Apply, BuiltInLayouts.RoleplayId);
+            },
+            app => LayoutsKeysTo(app, BuiltInLayouts.RoleplayId, new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+        await SameModal("layouts: save as new", "layouts",
+            (app, m) =>
+            {
+                var layouts = (LayoutsSession)m.Open(SurfaceCatalog.Layouts)!;
+                layouts.Run(LayoutVerb.SaveAsNew, BuiltInLayouts.CombatId);
+            },
+            app => LayoutsKeysTo(app, BuiltInLayouts.CombatId, new ConsoleKeyInfo('n', ConsoleKey.N, false, false, false)));
+        await SameModal("layouts: rename", "layouts",
+            (app, m) =>
+            {
+                var layouts = (LayoutsSession)m.Open(SurfaceCatalog.Layouts)!;
+                layouts.Run(LayoutVerb.SaveAsNew, BuiltInLayouts.CombatId);
+                layouts.Run(LayoutVerb.Rename, layouts.Model.Current!.Id, "Raid night");
+            },
+            app =>
+            {
+                LayoutsKeysTo(app, BuiltInLayouts.CombatId, new ConsoleKeyInfo('n', ConsoleKey.N, false, false, false));
+                app.SimulateLayoutsKey(new ConsoleKeyInfo('r', ConsoleKey.R, false, false, false));
+                for (var i = 0; i < 40; i++)
+                {
+                    app.SimulateLayoutsKey(new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false));
+                }
+
+                foreach (var c in "Raid night")
+                {
+                    app.SimulateLayoutsKey(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+                }
+
+                app.SimulateLayoutsKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        await SameModal("layouts: delete", "layouts",
+            (app, m) =>
+            {
+                var layouts = (LayoutsSession)m.Open(SurfaceCatalog.Layouts)!;
+                layouts.Run(LayoutVerb.SaveAsNew, BuiltInLayouts.CombatId);
+                layouts.Run(LayoutVerb.Delete, layouts.Model.Current!.Id);
+            },
+            app =>
+            {
+                LayoutsKeysTo(app, BuiltInLayouts.CombatId, new ConsoleKeyInfo('n', ConsoleKey.N, false, false, false));
+                app.SimulateLayoutsKey(new ConsoleKeyInfo('d', ConsoleKey.D, false, false, false));
+                app.SimulateLayoutsKey(new ConsoleKeyInfo('y', ConsoleKey.Y, false, false, false));
+            });
+        probed.Add(SurfaceCatalog.Layouts);
+
+        // The welcome: the form filled in, then Connect in the window and ⏎ in the cells — through /connect's path, to
+        // the same world and character, connected.
+        await SameModal("welcome: connect", "welcome-connect",
+            (app, m) =>
+            {
+                var welcome = (WelcomeSession)m.Open(SurfaceCatalog.Welcome)!;
+                var form = welcome.Model;
+                welcome.Connect(new WelcomeForm(form.Host, form.Port, form.Tls, form.Character, form.PasswordLater));
+            },
+            app => app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+        await SameModal("welcome: layout and browse", "welcome",
+            (app, m) =>
+            {
+                var welcome = (WelcomeSession)m.Open(SurfaceCatalog.Welcome)!;
+                welcome.SetLayout(WelcomeLayout.Combat);
+                welcome.Choose(WelcomeChoice.Settings);
+            },
+            app =>
+            {
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.LeftArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        probed.Add(SurfaceCatalog.Welcome);
+
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         await Assert.That(probed).IsEquivalentTo(acting).Because("every native surface with actions has a probe here");
     }
@@ -565,9 +758,67 @@ public class SurfaceParityTests
         await Assert.That(Outcome(a)).IsEqualTo(Outcome(b)).Because(probe);
     }
 
+    /// <summary>
+    /// A modal probe: two clients on the same view, one handed native modals and one drawing them in cells; the
+    /// native gesture on one, the cell keys on the other, and the client's state after each the same.
+    /// </summary>
+    private static async Task SameModal(
+        string probe, string view, Action<SharpMUTermApp, FakeModals> native, Action<SharpMUTermApp> cells)
+    {
+        using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+        var modals = new FakeModals();
+        await using var a = App(nativeDriver, DemoScene.Build(), modals: modals);
+        a.TelnetFactory = _ => new SharpMUTerm.Tui.Tests.RecordingTelnetSession();
+        a.RenderSnapshot(view);
+        var before = Outcome(a);
+        native(a, modals);
+
+        using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+        await using var b = App(cellDriver, DemoScene.Build());
+        b.TelnetFactory = _ => new SharpMUTerm.Tui.Tests.RecordingTelnetSession();
+        b.RenderSnapshot(view);
+        cells(b);
+
+        await Assert.That(Outcome(a)).IsNotEqualTo(before).Because($"{probe}: the native action did something");
+        await Assert.That(Outcome(a)).IsEqualTo(Outcome(b)).Because(probe);
+    }
+
+    /// <summary>Moves the cell ⌥M list's pointer to <paramref name="layoutId"/> with ↑↓, then presses <paramref name="key"/>.</summary>
+    private static void LayoutsKeysTo(SharpMUTermApp app, string layoutId, ConsoleKeyInfo key)
+    {
+        var model = app.LayoutsModelFor(DemoScene.ActiveSessionKey);
+        var target = model.Rows.ToList().FindIndex(r => r.Id == layoutId);
+        var step = target > model.Selected
+            ? new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false)
+            : new ConsoleKeyInfo('\0', ConsoleKey.UpArrow, false, false, false);
+        for (var i = 0; i < Math.Abs(target - model.Selected); i++)
+        {
+            app.SimulateLayoutsKey(step);
+        }
+
+        app.SimulateLayoutsKey(key);
+    }
+
+    private static object ModelOf(ModalSession session) => session switch
+    {
+        QuitSession quit => quit.Model,
+        SearchSession search => search.Model,
+        HistorySession history => history.Model,
+        LayoutsSession layouts => layouts.Model,
+        WelcomeSession welcome => welcome.Model,
+        _ => throw new ArgumentException(session.GetType().Name),
+    };
+
     /// <summary>Everything a surface's action can change, read off the client.</summary>
     private static string Outcome(SharpMUTermApp app) => string.Join(
         " | ",
+        "quit=" + app.QuitPromptOpen,
+        "exit=" + app.ExitRequested,
+        "search=" + app.SearchIsOpen + "@" + app.SearchBarIndex(app.ActiveWindowId()),
+        "history=" + app.HistorySearchOpen,
+        "layouts=" + app.LayoutsOpen + " " + Layouts(app),
+        "worlds=" + string.Join(",", app.Configuration.Worlds.Select(w => $"{w.Name}:{w.Host}:{w.Port}:{w.UseTls}:{w.Layout}:{string.Join("+", w.Characters.Select(c => c.Name))}")),
+        "sessions=" + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters.Select(c => $"{w.Name}.{c.Name}")).Select(k => k + ":" + app.FindSession(k)?.State)),
         "input=" + app.PrimaryInputText,
         "window=" + app.ActiveWindowId(),
         "panes=" + app.PaneIds.Count,
@@ -580,6 +831,12 @@ public class SurfaceParityTests
         "rail=" + (app.BuildChromeOverlay().Sidebar.Collapsed ? "folded" : "open"),
         "notice=" + app.LastNotice,
         "recent=" + string.Join(",", app.RecentCommandIds));
+
+    private static string Layouts(SharpMUTermApp app)
+    {
+        var model = app.LayoutsModelFor(DemoScene.ActiveSessionKey);
+        return $"{model.Status} [{string.Join(",", model.Rows.Select(r => r.Name + (r.InUse ? "*" : string.Empty) + (r.WorldDefault ? "^" : string.Empty)))}]";
+    }
 
     private static PanelOverlay Panel(AvaloniaConsoleDriver driver, string id) =>
         driver.Pointer.Panels.First(p => p.PanelId == id);
@@ -654,7 +911,8 @@ public class SurfaceParityTests
         INativePalette? palette = null,
         Action<AppConfiguration>? save = null,
         HostKeys? keys = null,
-        INativeComposer? composer = null) =>
+        INativeComposer? composer = null,
+        INativeModals? modals = null) =>
         new(config, WindowHost.Create(driver, clipboard: null) with
         {
             Capabilities = WindowOptions.Capabilities,
@@ -666,6 +924,7 @@ public class SurfaceParityTests
             NativePalette = palette,
             Keys = keys ?? WindowHost.Keys,
             NativeComposer = composer,
+            NativeModals = modals,
         }, save: save);
 
     /// <summary>A window editor that only records the session it was handed, so the client's side can be driven.</summary>
@@ -687,6 +946,24 @@ public class SurfaceParityTests
         public void Show(SettingsForm form) => Form = form;
 
         public void Close() => Form = null;
+    }
+
+    /// <summary>Native modals that only record the sessions they were handed, so the client's side can be driven.</summary>
+    private sealed class FakeModals : INativeModals
+    {
+        public List<ModalSession> Shown { get; } = [];
+
+        public List<ModalSession> Closed { get; } = [];
+
+        public bool Available => true;
+
+        /// <summary>The session of <paramref name="surface"/> shown last and not closed since, or null.</summary>
+        public ModalSession? Open(string surface) =>
+            Shown.LastOrDefault(s => s.Surface == surface && !Closed.Contains(s) && !s.IsEnded);
+
+        public void Show(ModalSession session) => Shown.Add(session);
+
+        public void Close(ModalSession session) => Closed.Add(session);
     }
 
     private sealed class FakePalette : INativePalette

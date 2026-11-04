@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: the quit prompt, search (Ctrl+F), history search (Ctrl+R), the layouts list (Alt+M) and the
+  first-run welcome are native dialogs in the window's light or dark look, worked from the keyboard exactly as in the
+  terminal. The quit prompt always comes up in front of whatever is open — closing the window while writing a post
+  no longer hides it behind the composer — and Stay takes you back to what you were doing.
 - Triggers, aliases, key bindings and timers (F2, F3, F4, F6) open in the desktop window's settings as a list
   beside the selected item's fields: tick a box to switch one on or off, add, copy, delete or move it up and down,
   and watch the trigger's live test mark the matching lines as you type its pattern. A package's sets are shown

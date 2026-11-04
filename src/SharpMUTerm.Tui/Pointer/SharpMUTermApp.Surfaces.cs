@@ -28,6 +28,11 @@ internal sealed partial class SharpMUTermApp
         surface == SurfaceCatalog.Palette ? (_palette.IsOpen ? _palette.View : null)
         : surface == SurfaceCatalog.Prefix ? (_prefixPanel.IsOpen ? _prefixPanel.Drawn : null)
         : surface == SurfaceCatalog.Compose ? (_composer.IsOpen ? _composer.Model : null)
+        : surface == SurfaceCatalog.Quit ? _quit.Model
+        : surface == SurfaceCatalog.Search ? _search.Model
+        : surface == SurfaceCatalog.History ? _historySearch.Model
+        : surface == SurfaceCatalog.Layouts ? (_layoutsView.IsOpen && _layoutsView.Mode == "layouts" && LayoutsKey() is { } key2 ? LayoutsModelFor(key2) : null)
+        : surface == SurfaceCatalog.Welcome ? (_welcomeView.IsOpen ? _welcome?.Model : null)
         : _drawnModels.TryGetValue((surface, key), out var model) ? model : null;
 
     /// <summary>A click on a header link, as the header's own handler receives it.</summary>

@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Tui.Tests;

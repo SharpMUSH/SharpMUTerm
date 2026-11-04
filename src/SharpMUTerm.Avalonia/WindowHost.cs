@@ -78,5 +78,8 @@ internal static class WindowHost
         // F1 and the docked composer are a native editor: a proportional or monospace face, IME, native selection and
         // a real underline under a misspelling. The draft, the send and the keys stay the client's.
         NativeComposer = driver.Composer,
+
+        // The quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals over the window, the prompt always in front.
+        NativeModals = driver.Modals,
     };
 }

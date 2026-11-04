@@ -452,7 +452,8 @@ internal sealed class ComposerView : Border
 
         if (_fullScreen)
         {
-            // F1 again closes it, as the cell window's F1 does; ⌃Q closes it first so the quit prompt is not under it.
+            // F1 again closes it, as the cell window's F1 does. ⌃Q goes to the client and leaves F1 open: the quit prompt
+            // is drawn in front of it (ModalPresenter), so Stay comes back to the post.
             if (e.Key == Key.F1 && mods == KeyModifiers.None)
             {
                 e.Handled = true;
@@ -461,7 +462,6 @@ internal sealed class ComposerView : Border
             else if (e.Key == Key.Q && mods == KeyModifiers.Control && mapped is { } quit)
             {
                 e.Handled = true;
-                session.Close(text);
                 _view.Driver.RaiseKey(quit);
             }
 

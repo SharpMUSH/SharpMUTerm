@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Session;
@@ -38,7 +39,7 @@ internal sealed partial class SharpMUTermApp
     private string? _tourWindow;
 
     /// <summary>Whether the welcome surface is up, for the tests.</summary>
-    internal bool WelcomeIsOpen => _welcomeView.IsOpen;
+    internal bool WelcomeIsOpen => _welcomeView.IsOpen || NativeModalOf(Client.Surfaces.SurfaceCatalog.Welcome) is not null;
 
     /// <summary>What the welcome shows now, for the tests.</summary>
     internal IReadOnlyList<string> WelcomeLines => _welcomeView.Lines;
@@ -47,7 +48,28 @@ internal sealed partial class SharpMUTermApp
     internal WelcomeSurface? Welcome => _welcome;
 
     /// <summary>Feeds a key to the welcome surface the way the window's own handler would.</summary>
-    internal void SimulateWelcomeKey(ConsoleKeyInfo key) => _welcomeView.SimulateKey(key);
+    internal void SimulateWelcomeKey(ConsoleKeyInfo key)
+    {
+        // The native welcome takes the same keys through the same surface, and says what they did by republishing.
+        if (NativeWelcome is { } native && _welcome is { } welcome)
+        {
+            var stays = key.Key == ConsoleKey.Escape
+                ? welcome.Back()
+                : RunWelcomeAction(welcome, welcome.Interpret(key, words => ParseEndpoint(words)));
+            if (stays)
+            {
+                native.Publish(welcome.Model);
+            }
+            else if (key.Key == ConsoleKey.Escape)
+            {
+                CloseNativeModal(native);
+            }
+
+            return;
+        }
+
+        _welcomeView.SimulateKey(key);
+    }
 
     /// <summary>Why the package index cannot be browsed, or null when it can be asked for.</summary>
     private string? PackageIndexProblem() =>
@@ -79,18 +101,21 @@ internal sealed partial class SharpMUTermApp
 
         // Already up: left as it is, form and all. Asking again (a second /welcome, or the startup pass a live
         // loop runs after a scene was laid out) must not throw away what the player has typed.
-        if (_welcomeView.IsOpen && _welcome is not null)
+        if (WelcomeIsOpen && _welcome is not null)
         {
             return;
         }
 
-        if (ComposerIsInTheWay("the welcome") || (AnyOverlayOpen && !_welcomeView.IsOpen && Refuse($"close {OpenOverlayName()} first")))
+        if (ComposerIsInTheWay("the welcome") || (AnyOverlayOpen && Refuse($"close {OpenOverlayName()} first")))
         {
             return;
         }
 
         _welcome = new WelcomeSurface(problem) { Layout = _welcomeLayout };
-        OpenWelcomeView();
+        if (!TryOpenNativeWelcome(_welcome))
+        {
+            OpenWelcomeView();
+        }
     }
 
     private void OpenWelcomeView()
@@ -108,19 +133,26 @@ internal sealed partial class SharpMUTermApp
             });
     }
 
-    private bool WelcomeKey(WelcomeSurface welcome, ConsoleKeyInfo key)
+    private bool WelcomeKey(WelcomeSurface welcome, ConsoleKeyInfo key) =>
+        RunWelcomeAction(welcome, welcome.Interpret(key, words => ParseEndpoint(words)));
+
+    /// <summary>
+    /// What the welcome asked for, from either host: the cell surface's key and the native welcome's click both end
+    /// here. Browse and Open settings close it and open what they name; Connect closes it and dials the form through
+    /// <c>/connect</c>'s path. Anything else keeps it open, which is the return value.
+    /// </summary>
+    private bool RunWelcomeAction(WelcomeSurface welcome, WelcomeAction action)
     {
-        var action = welcome.Interpret(key, words => ParseEndpoint(words));
         _welcomeLayout = welcome.Layout;
         switch (action)
         {
             case WelcomeAction.Browse:
-                _welcomeView.Close();
+                CloseWelcome();
                 BrowsePackages();
                 return false;
 
             case WelcomeAction.Settings:
-                _welcomeView.Close();
+                CloseWelcome();
                 if (!ComposerIsInTheWay("a settings screen"))
                 {
                     _settings.Toggle(ConsoleKey.F5, WorldsScreen);
@@ -129,13 +161,31 @@ internal sealed partial class SharpMUTermApp
                 return false;
 
             case WelcomeAction.Connect when welcome.Request is { } request:
-                _welcomeView.Close();
+                CloseWelcome();
                 ConnectFromWelcome(request);
                 return false;
 
             default:
                 return true;
         }
+    }
+
+    /// <summary>A layout chip: the welcome's starting layout, for the run.</summary>
+    private void SetWelcomeLayout(WelcomeSurface welcome, WelcomeLayout layout)
+    {
+        welcome.Layout = layout;
+        _welcomeLayout = layout;
+    }
+
+    /// <summary>Closes the welcome in whichever host it is open.</summary>
+    private void CloseWelcome()
+    {
+        if (NativeModalOf(Client.Surfaces.SurfaceCatalog.Welcome) is { } native)
+        {
+            CloseNativeModal(native);
+        }
+
+        _welcomeView.Close();
     }
 
     /// <summary>The form's answer, through <c>/connect</c>'s own path, with the character the form named.</summary>

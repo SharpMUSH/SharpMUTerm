@@ -1268,7 +1268,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1816,7 +1816,9 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     panels are not published, so F1 is never under a docked editor.
   - **F1 is an overlay over the cell area, under the desktop layer**, so the native header and sidebar stay (inert, as
     under a modal) and a toast is still seen over it. ⌥⏎ is the window's (it maximises); ⏎, ⌃⏎ and ⇧⏎ are newlines.
-    ⌃Q in F1 closes it first and then asks to quit, so the cell quit prompt is never hidden under it.
+    ⌃Q in F1 goes to the client and leaves F1 open: the native quit prompt is drawn in front of it, and Stay comes back
+    to the post. (A host with the native F1 but no native modals closes F1 first, keeping the draft, so the cell prompt
+    is not hidden — `ToggleQuit`.)
   - **The misspelling is a real wavy line**, drawn by a layer over the editor (`ComposerView.MarkLayer`) from the
     editor's own text layout (`TextLayout.HitTestTextRange`), so it follows wrapping and scrolling. The right-click menu
     offers WeCantSpell's suggestions (`SpellChecker.Suggest`, six at most), Add to dictionary, the editor's edits and the
@@ -1830,6 +1832,41 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave7/composer-*.png`). `--demo-config` in the
     window opens the installed dictionary read-only. Not done: no per-character face choice saved, no find bar, and
     the window's ⌥W adds to the run's dictionary in the demo only (a live client writes `user-words.txt` as F1 does).
+- **In the window, the quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals** (`ClientHost.NativeModals` →
+  `INativeModals`; Client `Modals/`: `ModalSession`, `QuitModel`/`QuitSession`, `SearchModel`/`SearchSession`,
+  `HistoryModel`/`HistorySession`, `LayoutsModel`/`LayoutsSession`, `WelcomeModel`/`WelcomeSession`; Avalonia
+  `ModalPresenter` on the driver, `ModalOverlay`, `QuitView`, `SearchView`, `HistoryView`, `LayoutsView`, `WelcomeView`,
+  `ModalParts`; `SharpMUTermApp.NativeModals.cs`). Decisions not to relitigate:
+  - **One host member for five modals**, not five. What they share is the hard part — stacking (the quit prompt in
+    front of everything), giving the keyboard back, the theme — and one presenter decides it once. A session per modal
+    carries its model and the gestures; `Available` is false until the main window attaches it, so `--render-png`, the
+    parity harness and every test without a window get the cells.
+  - **The model is the cell modal's.** `QuitPrompt.Render(QuitModel)`, `SearchPrompt.Render(SearchModel)`,
+    `HistorySearchPrompt.Render(HistoryModel, …)`, `LayoutsListLines(LayoutsModel)` and `WelcomeSurface.Render(WelcomeModel)`
+    draw the same records the views draw. ⌃F's hits come from one function (`SearchModelFor`, which the cell surface
+    asks too); ⌃R's rows are `HistoryModel.View` (= `HistorySearch.Match`) in both.
+  - **Every gesture ends in the cell key's method**: Y → `Quit`; ⏎ on a hit → `GoToSearchHit(model, index)`; ⏎ in ⌃R →
+    `InsertHistoryEntry`; every ⌥M key and button → `RunLayoutsVerb`, which returns the `LayoutActionResult` both lists
+    show as their status; the welcome's choices → `RunWelcomeAction`, and its form → `WelcomeSurface.Submit(form)` →
+    `ConnectFromWelcome` → `ConnectCommand`. The views read keys through the pure prompts' `Interpret`, so a key means
+    the same in both hosts; ⌥M's ↑↓ stop at the ends as the cell list does.
+  - **The quit prompt is never refused and always ends in front.** `ModalPresenter` adds it last, moves it back to the
+    end when anything is added to the root after it (⌃P, F1, a toast), activates the main window over the settings
+    window, and opens any other modal under it. ⌃Q from inside another modal is forwarded to the client, which opens
+    the prompt over it; Stay returns to what was open. The client funnels are `ToggleQuit`, `ToggleSearch`,
+    `ToggleHistorySearch`, `ShowLayouts`, `ShowWelcome`; each closes its own native modal on its chord.
+  - **Fluent scoped to the card** (the palette's rule), in the client's dark or light variant (`ModalColours.Dark`/
+    `Light`, the palette's colours and accent). A press on the scrim is Esc (the quit prompt: Stay). Focus goes back to
+    what had it when the modal opened if it is still on screen, else to the cells, whose pin puts it on the command line.
+  - **Parity**: `HostParityTests` has no presenter attached, so it compares the cell modals. `SurfaceParityTests`
+    holds the native side: the session's model equals the cell modal's for `quit`, `search`, `search-regex`,
+    `search-all`, `history-search` (and the filtered rows), `layouts`, `welcome` and `welcome-connect`; and quit Y/N,
+    search ⏎ / ⌥A / ⌥E, history ⏎, layouts apply / save as new / rename / delete, and the welcome's connect and
+    layout+settings end in the same `Outcome` as the cell keys. `NativeModalRoutingTests` (Tui) and `NativeModalTests`
+    (Avalonia, headless) drive the routing, the stacking and the views. The `search*` and `history-search` snapshot
+    views open the native surface when there is one (that is how the window's screenshots are taken).
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`). Not done: the native ⌃R
+    filters in its own box, so the `history-search-filter` view shows its list unfiltered in the window.
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on

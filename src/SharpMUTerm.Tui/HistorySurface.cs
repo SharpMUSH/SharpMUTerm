@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Input;
 
 namespace SharpMUTerm.Tui;
@@ -46,6 +47,7 @@ internal sealed class HistorySurface
     private readonly Func<IReadOnlyList<string>> _entries;
     private readonly Func<string> _label;
     private readonly Action<int> _insert;
+    private readonly Action? _closed;
 
     private Window? _window;
     private MarkupControl? _body;
@@ -71,8 +73,10 @@ internal sealed class HistorySurface
         ConsoleWindowSystem system,
         Func<IReadOnlyList<string>> entries,
         Func<string> label,
-        Action<int> insert)
+        Action<int> insert,
+        Action? closed = null)
     {
+        _closed = closed;
         _system = system;
         _entries = entries;
         _label = label;
@@ -83,7 +87,13 @@ internal sealed class HistorySurface
 
     /// <summary>What the surface is currently showing, for a headless test to read back.</summary>
     internal IReadOnlyList<string> Lines => HistorySearchPrompt.Render(
-        _matches, _query, _selected, _snapshot.Count, _barLabel, _contentWidth - 1, _listRows, _first);
+        Snapshot, _matches, _query, _selected, _contentWidth - 1, _listRows, _first);
+
+    /// <summary>The history and whose it is, as captured when the surface opened.</summary>
+    private HistoryModel Snapshot => new(_snapshot, _barLabel);
+
+    /// <summary>The model the open surface is drawn from, or null while it is closed.</summary>
+    internal HistoryModel? Model => _window is null ? null : Snapshot;
 
     /// <summary>The filter as typed so far.</summary>
     internal string Query => _query;
@@ -242,5 +252,6 @@ internal sealed class HistorySurface
     {
         _window = null;
         _body = null;
+        _closed?.Invoke();
     }
 }

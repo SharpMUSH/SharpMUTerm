@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Tui;
@@ -44,55 +45,90 @@ internal sealed class SearchSurface
     private const int ChromeRows = 4;
 
     private readonly ConsoleWindowSystem _system;
-    private readonly Func<bool, IReadOnlyList<SearchCorpus>> _corpus;
-    private readonly Action<SearchRow, string, int, int> _go;
+    private readonly Func<string, bool, bool, SearchModel> _search;
+    private readonly Action<SearchModel, int> _go;
+    private readonly Action? _closed;
 
     private Window? _window;
     private MarkupControl? _body;
-    private IReadOnlyList<SearchRow> _rows = Array.Empty<SearchRow>();
-    private string _query = string.Empty;
-    private string? _error;
-    private string _scope = string.Empty;
-    private bool _regex;
-    private bool _all;
-    private int _held;
+    private SearchModel _model = Empty;
     private int _selected = -1;
     private int _contentWidth;
     private int _listRows;
     private int _first;
 
+    /// <summary>A search that has not been typed yet.</summary>
+    private static readonly SearchModel Empty = new(string.Empty, false, false, string.Empty, 0, null, []);
+
     /// <summary>
-    /// <paramref name="corpus"/> is asked for the windows to search — all of them, or just the focused
-    /// one — and is read afresh on every keystroke. <paramref name="go"/> is handed the chosen row, the
-    /// query, and its ordinal out of the total, which is what the bar above the landed line says.
+    /// <paramref name="search"/> runs the search for a query and the two toggles, reading the windows
+    /// afresh — the client's <c>SearchModelFor</c>, which the window's native search calls too.
+    /// <paramref name="go"/> is handed the model and the chosen row's index in it, which is everything the
+    /// bar above the landed line says.
     /// </summary>
     public SearchSurface(
         ConsoleWindowSystem system,
-        Func<bool, IReadOnlyList<SearchCorpus>> corpus,
-        Action<SearchRow, string, int, int> go)
+        Func<string, bool, bool, SearchModel> search,
+        Action<SearchModel, int> go,
+        Action? closed = null)
     {
         _system = system;
-        _corpus = corpus;
+        _search = search;
         _go = go;
+        _closed = closed;
+    }
+
+    /// <summary>
+    /// The search for <paramref name="query"/> over <paramref name="windows"/>: every window's matches in
+    /// buffer order, or none and the reason when the pattern does not parse. The one place a search is run,
+    /// for the cell surface and the window's native one alike.
+    /// </summary>
+    internal static SearchModel Compute(IReadOnlyList<SearchCorpus> windows, string query, bool regex, bool all)
+    {
+        var scope = windows.Count == 1 ? windows[0].Label : "the focused window";
+        var held = windows.Sum(w => w.Lines.Count);
+
+        var rows = new List<SearchRow>();
+        string? error = null;
+        foreach (var window in windows)
+        {
+            var result = OutputSearch.Match(window.Lines, query, regex);
+            if (result.Error is not null)
+            {
+                // One bad pattern is bad for every window, so it is reported once and the list is empty
+                // — a result set holding whatever the earlier windows managed would be a search that
+                // half-worked without saying which half.
+                error = result.Error;
+                rows.Clear();
+                break;
+            }
+
+            rows.AddRange(result.Matches.Select(m =>
+                new SearchRow(window.WindowId, window.Label, m.LineIndex, m.Text, m.MatchStart, m.MatchLength)));
+        }
+
+        return new SearchModel(query, regex, all, scope, held, error, rows);
     }
 
     public bool IsOpen => _window is not null;
 
     /// <summary>What the surface is currently showing, for a headless test to read back.</summary>
-    internal IReadOnlyList<string> Lines => SearchPrompt.Render(
-        _rows, _query, _error, _regex, _all, _scope, _held, _selected, _contentWidth - 1, _listRows, _first);
+    internal IReadOnlyList<string> Lines => SearchPrompt.Render(_model, _selected, _contentWidth - 1, _listRows, _first);
+
+    /// <summary>The model the surface is drawn from now, or null while it is closed.</summary>
+    internal SearchModel? Model => _window is null ? null : _model;
 
     /// <summary>The query as typed so far.</summary>
-    internal string Query => _query;
+    internal string Query => _model.Query;
 
     /// <summary>The rows currently listed, in buffer order — what ↑↓ walk and ⏎ picks from.</summary>
-    internal IReadOnlyList<SearchRow> Rows => _rows;
+    internal IReadOnlyList<SearchRow> Rows => _model.Rows;
 
     /// <summary>Whether the query is being read as a pattern.</summary>
-    internal bool Regex => _regex;
+    internal bool Regex => _model.Regex;
 
     /// <summary>Whether every window is being searched rather than the focused one.</summary>
-    internal bool AllWindows => _all;
+    internal bool AllWindows => _model.AllWindows;
 
     /// <summary>Opens the surface, or closes it when ⌃F arrives a second time.</summary>
     public void Toggle()
@@ -127,13 +163,10 @@ internal sealed class SearchSurface
 
     private void Open()
     {
-        _query = string.Empty;
-        _error = null;
-        _regex = false;
-        _all = false;
+        _model = Empty;
         _selected = -1;
         _first = 0;
-        Refilter(_query, -1);
+        Refilter(string.Empty, false, false, -1);
 
         var desktop = _system.DesktopDimensions;
 
@@ -178,7 +211,7 @@ internal sealed class SearchSurface
             return;
         }
 
-        var decision = SearchPrompt.Interpret(e.KeyInfo, _query, _selected, _rows.Count, _regex, _all);
+        var decision = SearchPrompt.Interpret(e.KeyInfo, _model.Query, _selected, _model.Rows.Count, _model.Regex, _model.AllWindows);
         e.Handled = true;
 
         switch (decision.Action)
@@ -186,12 +219,10 @@ internal sealed class SearchSurface
             case SearchAction.Go:
                 // Closed first: the reader is about to be looking at the pane this row is in, and a modal
                 // still painted over it would hide the thing they asked to see.
-                var row = _rows[_selected];
-                var ordinal = _selected + 1;
-                var total = _rows.Count;
-                var query = _query;
+                var model = _model;
+                var index = _selected;
                 Close();
-                _go(row, query, ordinal, total);
+                _go(model, index);
                 break;
 
             case SearchAction.Cancel:
@@ -199,9 +230,7 @@ internal sealed class SearchSurface
                 break;
 
             case SearchAction.Redraw:
-                _regex = decision.Regex;
-                _all = decision.AllWindows;
-                Refilter(decision.Query, decision.Selected);
+                Refilter(decision.Query, decision.Regex, decision.AllWindows, decision.Selected);
                 Paint();
                 _window.Invalidate(redrawAll: true);
                 break;
@@ -216,37 +245,11 @@ internal sealed class SearchSurface
     /// Re-reads the corpus and re-runs the search. The pointer is clamped to what the query actually
     /// matched: a narrowing must not leave ⏎ aimed past the end of the list.
     /// </summary>
-    private void Refilter(string query, int selected)
+    private void Refilter(string query, bool regex, bool all, int selected)
     {
-        _query = query;
-
-        var windows = _corpus(_all);
-        _scope = windows.Count == 1 ? windows[0].Label : "the focused window";
-        _held = windows.Sum(w => w.Lines.Count);
-
-        var rows = new List<SearchRow>();
-        string? error = null;
-        foreach (var window in windows)
-        {
-            var result = OutputSearch.Match(window.Lines, query, _regex);
-            if (result.Error is not null)
-            {
-                // One bad pattern is bad for every window, so it is reported once and the list is empty
-                // — a result set holding whatever the earlier windows managed would be a search that
-                // half-worked without saying which half.
-                error = result.Error;
-                rows.Clear();
-                break;
-            }
-
-            rows.AddRange(result.Matches.Select(m =>
-                new SearchRow(window.WindowId, window.Label, m.LineIndex, m.Text, m.MatchStart, m.MatchLength)));
-        }
-
-        _error = error;
-        _rows = rows;
-        _selected = _rows.Count == 0 ? -1 : Math.Clamp(selected, 0, _rows.Count - 1);
-        _first = SearchPrompt.Scroll(_first, _selected, _rows.Count, _listRows);
+        _model = _search(query, regex, all);
+        _selected = _model.Rows.Count == 0 ? -1 : Math.Clamp(selected, 0, _model.Rows.Count - 1);
+        _first = SearchPrompt.Scroll(_first, _selected, _model.Rows.Count, _listRows);
     }
 
     private void Paint() => _body?.SetContent(new List<string>(Lines));
@@ -263,5 +266,6 @@ internal sealed class SearchSurface
     {
         _window = null;
         _body = null;
+        _closed?.Invoke();
     }
 }

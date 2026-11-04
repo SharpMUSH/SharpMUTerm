@@ -2,6 +2,7 @@ using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Layouts;
@@ -48,6 +49,12 @@ public enum SurfaceActionKind
     /// handed back through the composer's session (<c>ComposerSession</c>).
     /// </summary>
     Compose,
+
+    /// <summary>
+    /// A modal's gesture — a query typed, a toggle flipped, a row chosen, an answer given — handed back through the
+    /// modal's session (<c>ModalSession</c>).
+    /// </summary>
+    Modal,
 }
 
 /// <summary>
@@ -151,6 +158,34 @@ public static class SurfaceCatalog
 
     /// <summary>F1, the full-screen composer: a cell modal in a terminal, the window's native editor in its place.</summary>
     public const string Compose = "compose";
+
+    /// <summary>The ⌃Q confirmation: a cell modal in a terminal, a native prompt in the window.</summary>
+    public const string Quit = "quit";
+
+    /// <summary>⌃F, the search over the pane buffers.</summary>
+    public const string Search = "search";
+
+    /// <summary>⌃R, the armed command line's history.</summary>
+    public const string History = "history";
+
+    /// <summary>⌥M, the layouts list.</summary>
+    public const string Layouts = "layouts";
+
+    /// <summary>The first-run welcome and its connect form.</summary>
+    public const string Welcome = "welcome";
+
+    /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome];
+
+    /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
+    private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
+    {
+        [SurfaceHosts.Terminal] = SurfaceDrawing.Cells,
+        [SurfaceHosts.Window] = SurfaceDrawing.Native,
+    };
+
+    /// <summary>The window's overlay every native modal is drawn in, and the view of one.</summary>
+    private static string[] ModalViews(string view) => ["SharpMUTerm.Avalonia.ModalOverlay", "SharpMUTerm.Avalonia." + view];
 
     /// <summary>
     /// The header and the rail: cells in a terminal; in the window (<c>HostChrome.HeaderAndRail</c>) native views
@@ -333,6 +368,64 @@ public static class SurfaceCatalog
             CellsUnderNative,
             "SharpMUTerm.Tui.Panels.DockedComposer.Render",
             ["SharpMUTerm.Avalonia.ComposerView", "SharpMUTerm.Avalonia.ComposerEditor"]),
+        new(
+            Quit,
+            typeof(QuitModel),
+            [
+                // y: the client's quit. n, Esc and ⌃Q again: the prompt closes and nothing else happens.
+                new(SurfaceActionKind.Modal, "quit", "Quit"),
+                new(SurfaceActionKind.Modal, "stay", "QuitPromptClosed"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.QuitPrompt.Render",
+            ModalViews("QuitView")),
+        new(
+            Search,
+            typeof(SearchModel),
+            [
+                // Typing, ⌥E and ⌥A re-run the search over the pane buffers; ⏎ goes to the row through the one path to a hit.
+                new(SurfaceActionKind.Modal, "query", "SearchModelFor"),
+                new(SurfaceActionKind.Modal, "go", "GoToSearchHit"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.SearchPrompt.Render",
+            ModalViews("SearchView")),
+        new(
+            History,
+            typeof(HistoryModel),
+            [new(SurfaceActionKind.Modal, "insert", "InsertHistoryEntry")],
+            NativeModal,
+            "SharpMUTerm.Tui.HistorySearchPrompt.Render",
+            ModalViews("HistoryView")),
+        new(
+            Layouts,
+            typeof(LayoutsModel),
+            [
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.Apply), "RunLayoutsVerb"),
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.SaveChanges), "RunLayoutsVerb"),
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.SaveAsNew), "RunLayoutsVerb"),
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.UseForWorld), "RunLayoutsVerb"),
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.UseForCharacter), "RunLayoutsVerb"),
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.Rename), "RunLayoutsVerb"),
+                new(SurfaceActionKind.Modal, nameof(LayoutVerb.Delete), "RunLayoutsVerb"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.SharpMUTermApp.LayoutsListLines",
+            ModalViews("LayoutsView")),
+        new(
+            Welcome,
+            typeof(WelcomeModel),
+            [
+                // Browse and Open settings close it and open what they name; Connect opens the form.
+                new(SurfaceActionKind.Modal, "choose", "RunWelcomeAction"),
+                new(SurfaceActionKind.Modal, "layout", "SetWelcomeLayout"),
+
+                // The form goes through /connect's own path (ConnectCommand), so it can add nothing the command line cannot.
+                new(SurfaceActionKind.Modal, "connect", "ConnectFromWelcome"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.WelcomeSurface.Render",
+            ModalViews("WelcomeView")),
     ];
 
     /// <summary>The surface with <paramref name="id"/>, or null.</summary>

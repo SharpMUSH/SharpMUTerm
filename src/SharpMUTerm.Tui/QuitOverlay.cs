@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpMUTerm.Client.Modals;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
@@ -22,12 +23,13 @@ internal sealed class QuitOverlay
     private const int MinimumWidth = 34;
 
     private readonly ConsoleWindowSystem _system;
-    private readonly Func<QuitFacts> _facts;
+    private readonly Func<QuitModel> _facts;
     private readonly Action _quit;
+    private readonly Action? _closed;
 
     private Window? _window;
     private MarkupControl? _body;
-    private QuitFacts _current = QuitFacts.Nothing;
+    private QuitModel _current = QuitModel.Nothing;
     private QuitChoice _selected = QuitChoice.Stay;
 
     /// <summary>
@@ -35,14 +37,18 @@ internal sealed class QuitOverlay
     /// about is the state their keystroke arrived in. <paramref name="quit"/> is what a confirmed answer
     /// runs; the overlay never ends the loop itself.
     /// </summary>
-    public QuitOverlay(ConsoleWindowSystem system, Func<QuitFacts> facts, Action quit)
+    public QuitOverlay(ConsoleWindowSystem system, Func<QuitModel> facts, Action quit, Action? closed = null)
     {
+        _closed = closed;
         _system = system;
         _facts = facts;
         _quit = quit;
     }
 
     public bool IsOpen => _window is not null;
+
+    /// <summary>The model the open prompt was drawn from, or null while it is closed.</summary>
+    internal QuitModel? Model => _window is null ? null : _current;
 
     /// <summary>What the prompt is currently showing, for a headless test to read back.</summary>
     internal IReadOnlyList<string> Lines => QuitPrompt.Render(_current, _selected);
@@ -152,5 +158,6 @@ internal sealed class QuitOverlay
     {
         _window = null;
         _body = null;
+        _closed?.Invoke();
     }
 }

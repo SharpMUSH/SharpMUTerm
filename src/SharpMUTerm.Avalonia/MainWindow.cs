@@ -75,6 +75,10 @@ internal sealed class MainWindow : Window
 
         // ⌃P, over everything above; it is added last when it opens, and gives the keyboard back to the cells.
         _driver.Palette.Attach(root, () => layer.FocusArmedComposer());
+
+        // The modals, over everything; the quit prompt is kept the last child whatever is added after it, and brings
+        // this window forward. ⌃Q from any other modal goes to the client, which opens the prompt over it.
+        _driver.Modals.Attach(this, root, () => layer.FocusArmedComposer(), key => _driver.RaiseKey(key));
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
 

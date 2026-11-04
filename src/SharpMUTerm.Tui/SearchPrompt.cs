@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
 
@@ -22,13 +23,6 @@ internal enum SearchAction
 /// <summary>The answer to one keystroke: what to do, and the state it leaves behind.</summary>
 internal readonly record struct SearchDecision(
     SearchAction Action, string Query, int Selected, bool Regex, bool AllWindows);
-
-/// <summary>
-/// One row of results: which window the line is in, where it sits in that window's buffer, and where the
-/// query landed inside it.
-/// </summary>
-internal readonly record struct SearchRow(
-    string WindowId, string WindowLabel, int LineIndex, string Text, int MatchStart, int MatchLength);
 
 /// <summary>
 /// The search surface (⌃F), minus the window: what a keystroke means to it, and what it says. Pure, for
@@ -182,6 +176,23 @@ internal static class SearchPrompt
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(query);
+        return Render(new SearchModel(query, regex, all, scope, held, error, rows), selected, width, listRows, first);
+    }
+
+    /// <summary>
+    /// The surface for <paramref name="model"/> — the cells of the model the window's native search draws too.
+    /// </summary>
+    /// <param name="model">The query, the toggles, the bound and the matches.</param>
+    /// <param name="selected">Which row the pointer is on.</param>
+    /// <param name="width">The surface's content width, when known.</param>
+    /// <param name="listRows">How many rows the list area holds; zero means "as many as there are".</param>
+    /// <param name="first">Which match is drawn at the top of the list area.</param>
+    internal static List<string> Render(SearchModel model, int selected, int width = 0, int listRows = 0, int first = 0)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var rows = model.Rows;
+        var query = model.Query;
+        var all = model.AllWindows;
 
         var labelWidth = all
             ? Math.Min(MaxLabelWidth, rows.Select(r => r.WindowLabel.Length).DefaultIfEmpty(0).Max())
@@ -190,22 +201,14 @@ internal static class SearchPrompt
 
         var lines = new List<string>
         {
-            SpreadLR($"[{Label}]search[/] {QueryMarkup(query)}", $"[{Label}]{Escape(State(regex, all, scope))}[/]", width),
-            SpreadLR(string.Empty, $"[{Label}]{Escape(Counted(rows.Count, error, held))}[/]", width),
+            SpreadLR($"[{Label}]search[/] {QueryMarkup(query)}", $"[{Label}]{Escape(model.StateText)}[/]", width),
+            SpreadLR(string.Empty, $"[{Label}]{Escape(model.CountText)}[/]", width),
         };
 
         var body = new List<string>();
-        if (error is not null)
+        if (model.EmptyText is { } empty)
         {
-            body.Add($"[{Muted}]  {Escape(error)}[/]");
-        }
-        else if (query.Length == 0)
-        {
-            body.Add($"[{Muted}]  type to search {Escape(all ? "every window" : scope)}[/]");
-        }
-        else if (rows.Count == 0)
-        {
-            body.Add($"[{Muted}]  no matches — ⌫ widens the query[/]");
+            body.Add($"[{Muted}]  {Escape(empty)}[/]");
         }
 
         var top = Math.Clamp(first, 0, Math.Max(0, rows.Count - 1));
@@ -239,25 +242,6 @@ internal static class SearchPrompt
 
         var top = Math.Clamp(first, selected - listRows + 1, selected);
         return Math.Clamp(top, 0, count - listRows);
-    }
-
-    /// <summary>
-    /// The two toggles and what they currently mean, in words rather than in glyphs: the surface has to
-    /// be able to say <em>which way they are set</em>, because both change what a query finds and neither
-    /// is visible in the results themselves.
-    /// </summary>
-    private static string State(bool regex, bool all, string scope) =>
-        $"{(regex ? "regex" : "text")} · {(all ? "every window" : scope)}";
-
-    /// <summary>
-    /// How many lines matched out of how many were looked at. The second figure is the bound this search
-    /// actually had — the pane buffer, not a session's whole history — and it is on the frame so a reader
-    /// who cannot find an old line can see why rather than concluding the search is broken.
-    /// </summary>
-    private static string Counted(int shown, string? error, int held)
-    {
-        var searched = $"{held:n0} line{(held == 1 ? string.Empty : "s")} held";
-        return error is not null ? searched : $"{shown} found · {searched}";
     }
 
     /// <summary>

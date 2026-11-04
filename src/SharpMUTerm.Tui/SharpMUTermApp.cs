@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Surfaces;
 using SharpMUTerm.Core.Commands;
@@ -934,7 +935,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _welcomeView = new ListOverlay(_system, _screens);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
-        _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
+        _quit = new QuitOverlay(_system, QuitFactsNow, Quit, QuitPromptClosed);
 
         // The ⌃B which-key panel. Its facts are read at the moment it opens, so it explains the workspace
         // the user is actually looking at, and the key that ends it goes back through the very consumer a
@@ -949,7 +950,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             HistoryBarLabel,
             InsertHistoryEntry);
 
-        _search = new SearchSurface(_system, SearchableWindows, GoToSearchHit);
+        _search = new SearchSurface(_system, SearchModelFor, GoToSearchHit);
 
         _window.OnResize += (_, _) =>
         {
@@ -1652,27 +1653,38 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             AppendWindowLine(DemoScene.ChatWindowId, MarkupText.Escape("<OOC> Ana: the goblin room is bugged"));
             SettleScroll();
 
-            OpenSearchForSnapshot();
-            if (string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase))
+            // In a host that draws ⌃F itself, the same query through the native surface's session (the window's
+            // screenshots); the parity harness and the terminal have none and take the cell path below.
+            if (!string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase) && TryOpenNativeSearch())
             {
-                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
-            }
-
-            if (string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase))
-            {
-                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
-                SimulateSearchTyping(@"gobl\w+ (corpse|for)");
+                var all = string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase);
+                var regex = string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase);
+                NativeSearch!.Search(regex ? @"gobl\w+ (corpse|for)" : "goblin", regex, all);
             }
             else
             {
-                SimulateSearchTyping("goblin");
-            }
+                OpenSearchForSnapshot();
+                if (string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
+                }
 
-            if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
-            {
-                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
-                SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
-                SettleScroll();
+                if (string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
+                    SimulateSearchTyping(@"gobl\w+ (corpse|for)");
+                }
+                else
+                {
+                    SimulateSearchTyping("goblin");
+                }
+
+                if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                    SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                    SettleScroll();
+                }
             }
 
             ReArmWholeFrame();
@@ -1763,10 +1775,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // seeded here on purpose: the frame is where "the password is not in the list" is visible.
             HistoryFor(InputBar.Primary).Add("connect Corvid hunter2");
 
-            _historySearch.OpenForSnapshot();
-            if (view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase))
+            // A host that draws ⌃R itself filters in its own box, so only the list is handed over there.
+            if (!TryOpenNativeHistory())
             {
-                _historySearch.SimulateTyping("north");
+                _historySearch.OpenForSnapshot();
+                if (view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase))
+                {
+                    _historySearch.SimulateTyping("north");
+                }
             }
         }
 
@@ -4751,9 +4767,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// a search bar was on screen, which is a defect nobody would connect to search.
     /// </para>
     /// </summary>
-    private void GoToSearchHit(SearchRow row, string query, int ordinal, int total)
+    private void GoToSearchHit(SearchModel model, int index) =>
+        GoToSearchHit(model.Rows[index], model.Query, model.Regex, model.AllWindows, index + 1, model.Rows.Count);
+
+    /// <summary>Goes to <paramref name="row"/>, the <paramref name="ordinal"/>th of <paramref name="total"/> hits for a search.</summary>
+    private void GoToSearchHit(SearchRow row, string query, bool regex, bool all, int ordinal, int total)
     {
-        _lastSearch = (query, _search.Regex, _search.AllWindows);
+        _lastSearch = (query, regex, all);
 
         var previous = RemoveSearchBar();
         if (previous is { } cleared && !string.Equals(cleared, row.WindowId, StringComparison.Ordinal))
@@ -4841,7 +4861,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             next = current >= 0 ? (current + 1) % rows.Count : 0;
         }
 
-        GoToSearchHit(rows[next], last.Query, next + 1, rows.Count);
+        GoToSearchHit(rows[next], last.Query, last.Regex, last.All, next + 1, rows.Count);
     }
 
     /// <summary>
@@ -5439,12 +5459,21 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        if (NativeModalOf(SurfaceCatalog.History) is { } open)
+        {
+            CloseNativeModal(open);
+            return;
+        }
+
         if (AnyOverlayOpen || _moveMode)
         {
             return;
         }
 
-        _historySearch.Toggle();
+        if (!TryOpenNativeHistory())
+        {
+            _historySearch.Toggle();
+        }
     }
 
     /// <summary>
@@ -5454,7 +5483,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// how the framework happens to dispatch, and the next surface may not be modal.
     /// </summary>
     private bool AnyOverlayOpen =>
-        PaletteIsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
+        PaletteIsOpen || _settings.IsOpen || _quit.IsOpen || NativeModalOpen || _messageLog.IsOpen || _historySearch.IsOpen
         || _prefixPanel.IsOpen || ComposerOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
         || _layoutsView.IsOpen || _welcomeView.IsOpen;
 
@@ -5475,6 +5504,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        if (NativeModalOf(SurfaceCatalog.Search) is { } open)
+        {
+            CloseNativeModal(open);
+            return;
+        }
+
         if (ComposerOpen)
         {
             RefuseCommand("close the composer first — search cannot open over it");
@@ -5486,7 +5521,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        _search.Toggle();
+        if (!TryOpenNativeSearch())
+        {
+            _search.Toggle();
+        }
     }
 
     /// <summary>
@@ -5568,6 +5606,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _settings.IsOpen ? "the settings screen"
         : PaletteIsOpen ? "the command surface"
         : _quit.IsOpen ? "the quit prompt"
+        : NativeModalName is { } native ? native
         : _messageLog.IsOpen ? "the client messages"
         : _gameData.IsOpen ? "the game data"
         : _packageView.IsOpen ? "the packages"
@@ -7101,7 +7140,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // ⌃Q asks first. A second ⌃Q dismisses the question rather than answering it — the same
             // toggle every other surface in this client is on, and the only reading under which a held
             // or twice-fumbled chord cannot quit on its own. See QuitPrompt.
-            ConsoleKey.Q => () => { _quit.Toggle(); return true; },
+            ConsoleKey.Q => () => { ToggleQuit(); return true; },
             // Next window. ⌃Tab used to be listed here as a second spelling "where the terminal reports
             // it"; no terminal does — it writes 0x09, which is a bare Tab — so the arm was dead and the
             // claim behind it was telling F4 a chord was taken that cannot arrive. ⌃N is the chord.
@@ -7141,7 +7180,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// holding an OOC line is exactly the draft a per-window count would hide.
     /// </para>
     /// </summary>
-    private QuitFacts QuitFactsNow()
+    private QuitModel QuitFactsNow()
     {
         var activeId = ActiveWindowId();
         var holding = _workspace.Windows.Where(w => w.HasUnsentInput).ToList();
@@ -7164,7 +7203,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // — 3 unsaved edits", which was true while closing a screen could throw its edits away; now every
         // committed value is already written to disk when it is committed, so the count is always zero and a
         // line that could never appear is a line to delete rather than to leave hanging.
-        return new QuitFacts(ConnectedCharacters(), drafts, holding.Select(w => w.Title).ToList());
+        return new QuitModel(ConnectedCharacters(), drafts, holding.Select(w => w.Title).ToList());
     }
 
     /// <summary>
@@ -11699,7 +11738,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal string StatusMarkup => _statusBar.Text;
 
     /// <summary>Whether the ⌃Q confirmation is up.</summary>
-    internal bool QuitPromptOpen => _quit.IsOpen;
+    internal bool QuitPromptOpen => _quit.IsOpen || _nativeQuit is not null;
 
     /// <summary>What the ⌃Q confirmation is asking — the rendered markup, for a headless test to read.</summary>
     internal IReadOnlyList<string> QuitPromptLines => _quit.Lines;
@@ -11724,7 +11763,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal void SimulateReviewKey(ConsoleKeyInfo key) => _settings.Review.SimulateKey(key);
 
     /// <summary>Whether the ⌃R history surface is up.</summary>
-    internal bool HistorySearchOpen => _historySearch.IsOpen;
+    internal bool HistorySearchOpen => _historySearch.IsOpen || NativeModalOf(SurfaceCatalog.History) is not null;
 
     /// <summary>What the ⌃R surface is showing — the rendered markup, for a headless test to read.</summary>
     internal IReadOnlyList<string> HistorySearchLines => _historySearch.Lines;
@@ -11744,7 +11783,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal void SimulateHistorySearchKey(ConsoleKeyInfo key) => _historySearch.SimulateKey(key);
 
     /// <summary>Whether the ⌃F search surface is up.</summary>
-    internal bool SearchIsOpen => _search.IsOpen;
+    internal bool SearchIsOpen => _search.IsOpen || NativeModalOf(SurfaceCatalog.Search) is not null;
 
     /// <summary>What the search surface is currently listing — what ↑↓ walk and ⏎ picks from.</summary>
     internal IReadOnlyList<SearchRow> SearchRows => _search.Rows;

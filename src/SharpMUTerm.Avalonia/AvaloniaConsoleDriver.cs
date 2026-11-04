@@ -79,6 +79,12 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's native F1, drawn over the cells in the main window (<see cref="ComposerPresenter"/>).</summary>
     public ComposerPresenter Composer { get; } = new();
 
+    /// <summary>
+    /// The window's native quit prompt, ⌃F, ⌃R, ⌥M and welcome, drawn over everything in the main window, the quit prompt
+    /// always in front (<see cref="ModalPresenter"/>).
+    /// </summary>
+    public ModalPresenter Modals { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

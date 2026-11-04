@@ -105,6 +105,8 @@ internal sealed record ClientHost
     /// the terminal, the snapshot and the tests, so their frames are the ones they always were.
     /// </summary>
     public required HostChrome Chrome { get; init; }
+
+    /// <summary>
     /// Draws ⌃P with the host's own controls, or null for a host whose palette is the cell popup. Every way in (⌃P,
     /// the header, the pointer menu's <em>More commands…</em>) goes through one funnel that asks this first. Null in
     /// the terminal, the snapshot, the tests and the parity harness, so every cell frame is unchanged.
@@ -118,6 +120,14 @@ internal sealed record ClientHost
     /// cell frame is unchanged.
     /// </summary>
     public required INativeComposer? NativeComposer { get; init; }
+
+    /// <summary>
+    /// Draws the client's modals — the quit prompt, ⌃F search, ⌃R history, the ⌥M layouts list and the first-run welcome —
+    /// with the host's own controls, or null for a host whose modals are cell windows. One member for all five, because
+    /// their stacking (the quit prompt always in front), focus and theme are the host's to get right once. Null in the
+    /// terminal, the snapshot, the tests and the parity harness, so every cell frame is unchanged.
+    /// </summary>
+    public required INativeModals? NativeModals { get; init; }
 
     /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
@@ -160,6 +170,7 @@ internal sealed record ClientHost
         Chrome = HostChrome.None,
         NativePalette = null,
         NativeComposer = null,
+        NativeModals = null,
     };
 
     /// <summary>
@@ -186,6 +197,7 @@ internal sealed record ClientHost
         Chrome = HostChrome.None,
         NativePalette = null,
         NativeComposer = null,
+        NativeModals = null,
     };
 
     /// <summary>
