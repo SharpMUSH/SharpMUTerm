@@ -962,7 +962,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             HistoryBarLabel,
             InsertHistoryEntry);
 
-        _search = new SearchSurface(_system, SearchModelFor, GoToSearchHit);
+        _search = new SearchSurface(_system, SearchModelFor, GoToSearchHit, CancelDeepSearch);
         SchemePopups();
 
         _window.OnResize += (_, _) =>
@@ -1654,6 +1654,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // what the real filter produced rather than an impression of it.
         if (view is not null && view.StartsWith("search", StringComparison.OrdinalIgnoreCase))
         {
+            // `search-older` is ⌥H over the demo's own older history (an evening of the same streets, thousands of lines
+            // past the pane's), and `search-history` is ⏎ on its first older hit: the read-only history view.
+            var olderView = string.Equals(view, "search-older", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(view, "search-history", StringComparison.OrdinalIgnoreCase);
+            var historyView = string.Equals(view, "search-history", StringComparison.OrdinalIgnoreCase);
+            _deepInline = true;
+
             // A split first, so the pane is narrower than the terminal. That is the geometry that catches
             // a landing scrolled to the wrong row — a buffer index is not a viewport row, and in a narrow
             // pane almost every line wraps.
@@ -1692,7 +1699,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 var all = string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase);
                 var regex = string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase);
-                NativeSearch!.Search(regex ? @"gobl\w+ (corpse|for)" : "goblin", regex, all);
+                NativeSearch!.Search(regex ? @"gobl\w+ (corpse|for)" : "goblin", regex, all, olderView);
+                if (historyView && NativeSearch is { } older && older.Model.HeldRows < older.Model.Rows.Count)
+                {
+                    var hits = older.Model;
+                    CloseNativeModal(older);
+                    GoToSearchHit(hits, hits.HeldRows);
+                }
+
                 if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase) && NativeSearch is { } landing && landing.Model.Rows.Count > 0)
                 {
                     var hits = landing.Model;
@@ -1717,6 +1731,21 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 else
                 {
                     SimulateSearchTyping("goblin");
+                }
+
+                if (olderView)
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.H, false, true, false));
+                }
+
+                if (historyView)
+                {
+                    for (var i = 0; i < (_search.Model?.HeldRows ?? 0); i++)
+                    {
+                        SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                    }
+
+                    SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
                 }
 
                 if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
@@ -1910,6 +1939,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
                 _helpView.Repaint();
             }
+        }
+
+        // The script editing loop over the demo's scripts: ⌃P's list of them (`script-list`), and the demo's corvid.lua
+        // open in the composer's script mode with the caret on the line a reload's error named (`script-edit`). The demo
+        // saves nothing, so the header's error is the one a live save of this file would put there.
+        if (string.Equals(view, "script-list", StringComparison.OrdinalIgnoreCase))
+        {
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptEditCommand);
+        }
+
+        if (string.Equals(view, "script-edit", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenScript("corvid.lua", 14);
+            SetScriptStatus("! corvid.lua:(14,22-30): attempt to index a nil value (local 'room')");
         }
 
         // GMCP channel capture, the highlight-names list and a scene log, over the demo (scripting wave).
@@ -4955,8 +4998,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// a search bar was on screen, which is a defect nobody would connect to search.
     /// </para>
     /// </summary>
-    private void GoToSearchHit(SearchModel model, int index) =>
-        GoToSearchHit(model.Rows[index], model.Query, model.Regex, model.AllWindows, index + 1, model.Rows.Count);
+    private void GoToSearchHit(SearchModel model, int index)
+    {
+        if (model.Rows[index].IsOlder)
+        {
+            // A hit in older history: the pane if it still holds the line, else the read-only history view.
+            GoToOlderHit(model, model.Rows[index]);
+            return;
+        }
+
+        GoToSearchHit(model.Rows[index], model.Query, model.Regex, model.AllWindows, index + 1, model.HeldRows);
+    }
 
     /// <summary>Goes to <paramref name="row"/>, the <paramref name="ordinal"/>th of <paramref name="total"/> hits for a search.</summary>
     private void GoToSearchHit(SearchRow row, string query, bool regex, bool all, int ordinal, int total)
@@ -5254,6 +5306,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // `/script edit|new <name>` opens a script file from the scripts folder in the editor.
+        if (command.StartsWith("/script", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 7 || command[7] == ' '))
+        {
+            ScriptCommand(command[7..].Trim());
+            return;
+        }
+
         // `/package` opens the Packages screen; `/package install …` reads one for review.
         if (command.StartsWith("/package", StringComparison.OrdinalIgnoreCase)
             && (command.Length == 8 || command[8] == ' '))
@@ -5438,6 +5498,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void SendComposed(ComposeResult result)
     {
+        // A script is saved to disk, not sent: it needs no connection, only the scripts folder.
+        if (result.Script is { } script)
+        {
+            SaveScriptEdit(script, result.Body);
+            return;
+        }
+
         var windowId = ActiveWindowId();
         if (WindowSession(windowId) is not { } session)
         {
@@ -5476,6 +5543,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void KeepComposeDraft(ComposeResult result)
     {
+        // A script's unsaved text is kept by file, apart from the post drafts and the MOO edits.
+        if (result.Script is { } script)
+        {
+            KeepScriptBuffer(script, result.Body);
+            return;
+        }
+
         if (ComposeDraftKey(ActiveWindowId()) is not { } key)
         {
             return;
@@ -5840,7 +5914,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
         : _welcomeView.IsOpen ? "the welcome"
-        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", "script-console" => "the script console", _ => "help" })
+        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", "script-console" => "the script console", "history-view" => "the history view", _ => "help" })
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -8518,7 +8592,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             NoDictionary: NoOwnDictionary,
             SceneLogging: _sceneLogs.ContainsKey(ActiveWindowId()),
             NewConfiguration: _config.Worlds.Count == 0 || _config.KeyTourPending,
-            MapFound: MapFoundRooms());
+            MapFound: MapFoundRooms(),
+            ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }
 
     /// <summary>
@@ -8787,6 +8862,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (DispatchGroupCommand(id))
         {
             return true;
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptOpenPrefix, StringComparison.Ordinal))
+        {
+            return OpenScriptFromPalette(id[SharpMUTerm.Client.Commands.BuiltInCommands.ScriptOpenPrefix.Length..]);
         }
 
         if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.MapWalkPrefix, StringComparison.Ordinal))
@@ -9086,6 +9166,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 break;
             case Client.Commands.BuiltInCommands.ScriptConsoleCommand:
                 ShowScriptConsole();
+                break;
+            case Client.Commands.BuiltInCommands.ScriptEditCommand:
+                ListScriptsToEdit(fromConsole: false);
+                break;
+            case Client.Commands.BuiltInCommands.ScriptNewCommand:
+                PlaceGrab(ActiveBar(), "/script new ");
                 break;
             case Client.Commands.BuiltInCommands.SceneStartCommand:
                 StartSceneLog();

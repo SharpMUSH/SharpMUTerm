@@ -218,7 +218,7 @@ internal sealed class ComposerView : Border
                 try
                 {
                     _editor.Text = model.Body;
-                    _editor.CaretIndex = model.Body.Length;
+                    _editor.CaretIndex = model.Edit is { Line: > 0 } at ? LineStart(model.Body, at.Line) : model.Body.Length;
                     _editor.ClearSelection();
                 }
                 finally
@@ -232,6 +232,9 @@ internal sealed class ComposerView : Border
         {
             _editor.Marks = session.Marks(_editor.Text ?? string.Empty);
         }
+
+        // A package's script is only read: the editor shows it and keeps every edit out.
+        _editor.IsReadOnly = model.Edit?.ReadOnly == true;
 
         if (coloursChanged || previous is null)
         {
@@ -329,11 +332,37 @@ internal sealed class ComposerView : Border
         }
     }
 
+    /// <summary>Where line <paramref name="line"/> (from 1) of <paramref name="text"/> starts; the end when it has fewer.</summary>
+    internal static int LineStart(string text, int line)
+    {
+        var at = 0;
+        for (var i = 1; i < line; i++)
+        {
+            var next = text.IndexOf('\n', at);
+            if (next < 0)
+            {
+                return text.Length;
+            }
+
+            at = next + 1;
+        }
+
+        return at;
+    }
+
     /// <summary>The header and the key row, from the model.</summary>
     private void Label(ComposerModel model)
     {
         var ui = _title.FontSize;
-        if (model.Edit is { } edit)
+        if (model.Edit is { Script: true } script)
+        {
+            // A script: its name, that a save reloads the character's scripts, and what the last save did.
+            _title.Text = script.ReadOnly ? "READ ONLY" : "SCRIPT";
+            var whose = model.Target.Length == 0 ? "no connection" : model.Target;
+            _target.Text = $"{script.Name}   lua · {(script.ReadOnly ? "a package's script" : $"reloads {whose}")}"
+                + (script.Status is { } status ? $" · {status.TrimStart('!', ' ')}" : string.Empty);
+        }
+        else if (model.Edit is { } edit)
         {
             _title.Text = "EDIT";
             _target.Text = $"{edit.Name}   {edit.Type} · from {(model.Target.Length == 0 ? "no connection" : model.Target)}";
@@ -345,7 +374,8 @@ internal sealed class ComposerView : Border
             _target.Text = model.Target.Length == 0 ? $"{verb}no connection" : $"{verb}to {model.Target}";
         }
 
-        _target.Foreground = new SolidColorBrush(model.Target.Length == 0 ? Warn : _text);
+        _target.Foreground = new SolidColorBrush(
+            model.Target.Length == 0 || model.Edit?.Status?.StartsWith('!') == true ? Warn : _text);
 
         _chips.Children.Clear();
         if (model.Edit is null)
@@ -686,8 +716,12 @@ internal sealed class ComposerView : Border
         items.Add(Item("Copy", _editor.Copy, enabled: _editor.CanCopy));
         items.Add(Item("Paste", _editor.Paste, enabled: _editor.CanPaste));
         items.Add(Item("Select all", _editor.SelectAll));
-        items.Add(new Separator());
-        items.Add(Item(Proportional ? "Monospace font" : "Proportional font", () => ChooseFace(!Proportional)));
+        if (_model?.Edit is not { Script: true })
+        {
+            // A script is code, and stays monospace.
+            items.Add(new Separator());
+            items.Add(Item(Proportional ? "Monospace font" : "Proportional font", () => ChooseFace(!Proportional)));
+        }
 
         var menu = new ContextMenu { ItemsSource = items };
         menu.Closed += (_, _) => _editor.Focus();

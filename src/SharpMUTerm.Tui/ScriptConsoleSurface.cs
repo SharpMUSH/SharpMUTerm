@@ -40,6 +40,7 @@ internal sealed class ScriptConsoleSurface
         Run,
         Delete,
         Reload,
+        Edit,
     }
 
     /// <summary>
@@ -52,6 +53,11 @@ internal sealed class ScriptConsoleSurface
         if (ctrl && key.Key == ConsoleKey.L)
         {
             return Ask.Reload;
+        }
+
+        if (ctrl && key.Key == ConsoleKey.E)
+        {
+            return Model.CanRun ? Ask.Edit : Ask.None;
         }
 
         if (key.Key == ConsoleKey.Tab)
@@ -200,9 +206,10 @@ internal sealed class ScriptConsoleSurface
         ]
         :
         [
-            new("⏎", "runs", Drop: 4),
+            new("⏎", "runs", Drop: 5),
             new("↑↓", "history", Drop: 2),
             new("⇥", "store keys", "store", Drop: 3),
+            new("⌃E", "edits a script", "edit", Drop: 4),
             new("⌃L", "reloads scripts", "reload", Drop: 1),
             new("Esc", "closes"),
         ];

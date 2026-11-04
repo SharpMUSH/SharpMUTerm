@@ -70,6 +70,7 @@ public sealed record CharacterRef(
 /// Whether the configuration is new — no world yet, or the key tour still owed — so Help, Welcome and Import are suggested.
 /// </param>
 /// <param name="MapFound">The rooms the last <c>/map find</c> listed, newest search only, so ⌃P offers to walk to each.</param>
+/// <param name="ScriptFiles">The focused character's script files, so ⌃P offers to open each in the editor.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -94,7 +95,14 @@ public sealed record CommandContext(
     int MapAreas = 0,
     bool MapViewing = false,
     bool NewConfiguration = false,
-    IReadOnlyList<FoundRoom>? MapFound = null);
+    IReadOnlyList<FoundRoom>? MapFound = null,
+    IReadOnlyList<ScriptFileRef>? ScriptFiles = null);
+
+/// <summary>A script file ⌃P offers to open in the editor.</summary>
+/// <param name="Name">Its name under the scripts folder (<c>combat.lua</c>), or <c>package:&lt;id&gt;/&lt;file&gt;</c>.</param>
+/// <param name="Detail">What the entry says about it: where it is, whether it loaded, its last error's line.</param>
+/// <param name="ReadOnly">Whether it can only be read (a package's script).</param>
+public sealed record ScriptFileRef(string Name, string Detail, bool ReadOnly);
 
 /// <summary>A room the last <c>/map find</c> listed, for the command surface's <c>Walk to …</c> entries.</summary>
 /// <param name="Id">The room's id on the map.</param>

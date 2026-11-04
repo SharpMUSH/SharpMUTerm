@@ -44,7 +44,7 @@ internal sealed class SearchSurface
     private const int ChromeRows = 4;
 
     private readonly ConsoleWindowSystem _system;
-    private readonly Func<string, bool, bool, SearchModel> _search;
+    private readonly Func<string, bool, bool, bool, SearchModel> _search;
     private readonly Action<SearchModel, int> _go;
     private readonly Action? _closed;
 
@@ -73,7 +73,7 @@ internal sealed class SearchSurface
     /// </summary>
     public SearchSurface(
         ConsoleWindowSystem system,
-        Func<string, bool, bool, SearchModel> search,
+        Func<string, bool, bool, bool, SearchModel> search,
         Action<SearchModel, int> go,
         Action? closed = null)
     {
@@ -135,6 +135,25 @@ internal sealed class SearchSurface
     /// <summary>Whether every window is being searched rather than the focused one.</summary>
     internal bool AllWindows => _model.AllWindows;
 
+    /// <summary>Whether older history is being searched too (⌥H).</summary>
+    internal bool Older => _model.Older;
+
+    /// <summary>
+    /// Re-reads the model for the query and toggles as they stand and redraws, keeping the pointer: the older-history
+    /// search calls it as its results stream in.
+    /// </summary>
+    internal void Refresh()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        Refilter(_model.Query, _model.Regex, _model.AllWindows, _model.Older, _selected);
+        Paint();
+        _window.Invalidate(redrawAll: true);
+    }
+
     /// <summary>Opens the surface, or closes it when ⌃F arrives a second time.</summary>
     public void Toggle()
     {
@@ -171,7 +190,7 @@ internal sealed class SearchSurface
         _model = Empty;
         _selected = -1;
         _first = 0;
-        Refilter(string.Empty, false, false, -1);
+        Refilter(string.Empty, false, false, false, -1);
 
         var desktop = _system.DesktopDimensions;
 
@@ -217,7 +236,7 @@ internal sealed class SearchSurface
             return;
         }
 
-        var decision = SearchPrompt.Interpret(e.KeyInfo, _model.Query, _selected, _model.Rows.Count, _model.Regex, _model.AllWindows);
+        var decision = SearchPrompt.Interpret(e.KeyInfo, _model.Query, _selected, _model.Rows.Count, _model.Regex, _model.AllWindows, _model.Older);
         e.Handled = true;
 
         switch (decision.Action)
@@ -236,7 +255,7 @@ internal sealed class SearchSurface
                 break;
 
             case SearchAction.Redraw:
-                Refilter(decision.Query, decision.Regex, decision.AllWindows, decision.Selected);
+                Refilter(decision.Query, decision.Regex, decision.AllWindows, decision.Older, decision.Selected);
                 Paint();
                 _window.Invalidate(redrawAll: true);
                 break;
@@ -251,9 +270,9 @@ internal sealed class SearchSurface
     /// Re-reads the corpus and re-runs the search. The pointer is clamped to what the query actually
     /// matched: a narrowing must not leave ⏎ aimed past the end of the list.
     /// </summary>
-    private void Refilter(string query, bool regex, bool all, int selected)
+    private void Refilter(string query, bool regex, bool all, bool older, int selected)
     {
-        _model = _search(query, regex, all);
+        _model = _search(query, regex, all, older);
         _selected = _model.Rows.Count == 0 ? -1 : Math.Clamp(selected, 0, _model.Rows.Count - 1);
         _first = SearchPrompt.Scroll(_first, _selected, _model.Rows.Count, _listRows);
     }

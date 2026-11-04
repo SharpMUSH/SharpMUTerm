@@ -106,6 +106,14 @@ fallbacks) for inline images/maps.
   - **A rebuild clears the engines' runtime rules first** (`ClearRuntime`), or a reload doubles every
     `trigger.add`. `SaveConfiguration` rebuilds only when a session's file list changed (`SyncFiles`),
     since a rebuild restarts script timers; ⌃P ▸ *Reload scripts* always rebuilds and re-reads.
+  - **Scripts are edited in the composer's script mode** (`ScriptFiles`, Scripting; `SharpMUTermApp.ScriptEdit.cs`;
+    `ComposerEdit.Script`; ⌃P ▸ *Edit script…* / *New script…*, the console's ⌃E, `/script edit|new`; the `script-list`
+    and `script-edit` views). The files are ⌃P entries (`script:open:<name>`, a family listed only once asked for, map
+    find's rule). Names go through `ScriptFiles.Check` and then `SessionScripts.Resolve`; a save is a temp file in the same
+    folder and a rename, refused through a link and outside the root. Lines verbatim (no `%r`, no escaping, no spelling,
+    line numbers, monospace). ⌃S saves, reloads that character's scripts and says the first error (`file:line`) in the
+    header and the console; the editor stays open. Esc keeps unsaved text per file for the run. `package:` scripts open
+    read only. The demo saves nothing.
 - **GMCP and MSDP data is held per session in `GameDataStore`, and three things read it**: the status row's
   meters (`StatusMeter`, F7 ▸ `meters`), ⌃P ▸ *Show game data* (`GameDataOverlay`) and Lua (`gmcp.get`,
   `msdp.get`). GMCP packages are stored by name with objects merged key by key, because IRE and Aardwolf send
@@ -398,6 +406,15 @@ fallbacks) for inline images/maps.
     viewport width) when drawn, the label elides before the rule shrinks, and `SyncChromeBarWidths` (on
     `PostBufferPaint`) redraws a window's bars in place when its width moves. Width 0 (not arranged) draws 48 cells.
     ⌃F's footer is a drop ladder (`SearchPrompt.HintLadder`), so the surface fits from 44 columns.
+  - **⌥H searches older history too** (`ScrollbackSearch`, Core; `SharpMUTermApp.DeepSearch.cs`; `ScrollbackViewModel`,
+    Client; `ScrollbackViewSurface`, Tui; `ScrollbackView`, Avalonia; the `search-older` and `search-history` views). Only
+    a session window has any: its session's `ScrollbackBuffer`, ring and spill, walked newest first in ranged reads of
+    `MaxRangeLines` off the UI thread (inline headless, so frames are deterministic), cancelled by the next query or by
+    closing, `OutputSearch.Match`'s timeout per line, at most 500 hits. Lines the pane still holds are skipped by
+    reference (a session window's `PaneLine.Source` is the ring's instance). Older rows list after the pane's, tagged
+    `older`; the note on the count row says the bound and the progress, and that captures keep no older history. ⏎ on
+    one goes to the pane if it holds the line, else opens the **history view**: a modal page of 20 lines, every move a
+    ranged read, never inserted into a pane buffer. ⌥G stays pane-only.
   - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
     first frame, and every line would otherwise count as missed — so any frame that later made such a
     window visible carried an activity bar reporting the client's own setup as news.

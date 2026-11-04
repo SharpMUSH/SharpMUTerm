@@ -96,7 +96,7 @@ internal sealed partial class SharpMUTermApp
     /// Opens F1 on a draft: in the host's editor when it has one, else the cell window. Both are given the same draft
     /// and say the same thing about it (<see cref="ComposeOverlay.ModelFor"/>).
     /// </summary>
-    private void OpenComposer(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null)
+    private void OpenComposer(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null, ScriptEdit? script = null)
     {
         // The names a game reports change between openings; the dictionary learns them each time F1 opens.
         if (_composerSpellingOpened)
@@ -106,11 +106,16 @@ internal sealed partial class SharpMUTermApp
 
         if (NativeComposerHost is not { } native)
         {
-            _composer.Toggle(target, draft, escaping, canSend, edit);
+            _composer.Toggle(target, draft, escaping, canSend, edit, script);
             return;
         }
 
-        var open = new NativeCompose(target, canSend, edit) { Body = draft.Replace("\r\n", "\n", StringComparison.Ordinal), Escaping = escaping };
+        var open = new NativeCompose(target, canSend, script is null ? edit : null)
+        {
+            Body = draft.Replace("\r\n", "\n", StringComparison.Ordinal),
+            Escaping = escaping,
+            Script = script,
+        };
         open.Session = new ComposerSession(
             NativeComposeModel(open),
             () => _composerSpelling,
@@ -130,12 +135,12 @@ internal sealed partial class SharpMUTermApp
                     if (ReferenceEquals(_nativeCompose, open))
                     {
                         open.Body = body;
-                        SendComposed(new ComposeResult(body, open.Escaping, open.Edit));
+                        SendComposed(new ComposeResult(body, open.Escaping, open.Edit, open.Script));
                     }
                 }),
                 ToggleEscaping = () => OnUiThread(() =>
                 {
-                    if (ReferenceEquals(_nativeCompose, open) && open.Edit is null)
+                    if (ReferenceEquals(_nativeCompose, open) && open.Edit is null && open.Script is null)
                     {
                         open.Escaping = open.Escaping == ComposeEscaping.Literal ? ComposeEscaping.AsTyped : ComposeEscaping.Literal;
                         open.Session.Publish(NativeComposeModel(open));
@@ -143,7 +148,7 @@ internal sealed partial class SharpMUTermApp
                 }),
                 TogglePreview = () => OnUiThread(() =>
                 {
-                    if (ReferenceEquals(_nativeCompose, open) && open.Edit is null)
+                    if (ReferenceEquals(_nativeCompose, open) && open.Edit is null && open.Script is null)
                     {
                         // The cell window's fact, so F1 opens the same way in either host for the rest of the run.
                         _composer.Preview = !_composer.Preview;
@@ -152,7 +157,8 @@ internal sealed partial class SharpMUTermApp
                 }),
                 AddWord = word => OnUiThread(() => AddComposerWord(word)),
                 GetDictionary = () => OnUiThread(OfferDictionary),
-                Proportional = ComposerFaceOf(ComposeDraftKey(ActiveWindowId())),
+                // A script is code, and code is read in monospace whatever face the character writes posts in.
+                Proportional = script is null ? ComposerFaceOf(ComposeDraftKey(ActiveWindowId())) : () => false,
                 ChooseFace = ChooseComposerFace(ComposeDraftKey(ActiveWindowId())),
                 Closed = body => OnUiThread(() =>
                 {
@@ -202,7 +208,7 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>The native F1's model for what it holds now; the cell window's for the same draft.</summary>
     private ComposerModel NativeComposeModel(NativeCompose open) =>
-        ComposeOverlay.ModelFor(open.Target, open.Body, open.Escaping, open.Edit, open.Edit is null ? ComposerSpelling() : null, open.CanSend, _composer.Preview);
+        ComposeOverlay.ModelFor(open.Target, open.Body, open.Escaping, open.Edit, open.Edit is null && open.Script is null ? ComposerSpelling() : null, open.CanSend, _composer.Preview, open.Script);
 
     /// <summary>
     /// Closes F1, in whichever host it is open, keeping its buffer as the character's draft (or MOO edit) exactly as the
@@ -219,7 +225,7 @@ internal sealed partial class SharpMUTermApp
         _nativeCompose = null;
         open.Session.End();
         Host.NativeComposer?.Close();
-        KeepComposeDraft(new ComposeResult(open.Body, open.Escaping, open.Edit));
+        KeepComposeDraft(new ComposeResult(open.Body, open.Escaping, open.Edit, open.Script));
         PublishPanels();
         PublishHostChrome();
     }
@@ -375,6 +381,9 @@ internal sealed partial class SharpMUTermApp
         internal string Body { get; set; } = string.Empty;
 
         internal ComposeEscaping Escaping { get; set; }
+
+        /// <summary>The script file this is an edit of, or null; its status moves with each save.</summary>
+        internal ScriptEdit? Script { get; set; }
 
         internal ComposerSession Session { get; set; } = null!;
     }

@@ -12,8 +12,8 @@ using SharpMUTerm.Tui;
 namespace SharpMUTerm.Avalonia;
 
 /// <summary>
-/// The window's ⌃F: a search box, the two toggles as switches (⌥E regex, ⌥A every window), the count with its bound,
-/// and the hits with the match marked. The client searches (<see cref="SearchSession.Search"/>) and publishes the
+/// The window's ⌃F: a search box, the three toggles as switches (⌥E regex, ⌥A every window, ⌥H older history), the
+/// count with its bound and older history's progress, and the hits with the match marked (an older hit tagged so). The client searches (<see cref="SearchSession.Search"/>) and publishes the
 /// hits; ⏎ on a row goes through the client's one path to a hit. The keys that are not typing mean what they mean in
 /// cells, because they are read by the same rules (<see cref="SearchPrompt.Interpret"/>).
 /// </summary>
@@ -25,7 +25,9 @@ internal sealed class SearchView : DockPanel, IModalView
     private readonly TextBox _box;
     private readonly ToggleButton _regex;
     private readonly ToggleButton _all;
+    private readonly ToggleButton _older;
     private readonly TextBlock _state;
+    private readonly TextBlock _note;
     private readonly TextBlock _count;
     private readonly StackPanel _list;
     private readonly ScrollViewer _scroller;
@@ -49,9 +51,11 @@ internal sealed class SearchView : DockPanel, IModalView
         var toggles = new DockPanel { Margin = new Thickness(16, 0, 16, 6) };
         _regex = Toggle("Regex", "Alt+E", _model.Regex);
         _all = Toggle("All windows", "Alt+A", _model.AllWindows);
+        _older = Toggle("Older history", "Alt+H", _model.Older);
         var switches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         switches.Children.Add(_regex);
         switches.Children.Add(_all);
+        switches.Children.Add(_older);
         SetDock(switches, Dock.Left);
         toggles.Children.Add(switches);
         _count = new TextBlock
@@ -69,7 +73,11 @@ internal sealed class SearchView : DockPanel, IModalView
         SetDock(_state, Dock.Top);
         Children.Add(_state);
 
-        var footer = ModalParts.Footer("↑↓ pick · Enter go · Alt+E regex · Alt+A all windows · Esc cancel", colours);
+        _note = ModalParts.Dim(string.Empty, colours, new Thickness(20, 0, 20, 6));
+        SetDock(_note, Dock.Top);
+        Children.Add(_note);
+
+        var footer = ModalParts.Footer("↑↓ pick · Enter go · Alt+E regex · Alt+A all windows · Alt+H older history · Esc cancel", colours);
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
@@ -89,9 +97,27 @@ internal sealed class SearchView : DockPanel, IModalView
         };
         _regex.IsCheckedChanged += (_, _) => Toggled();
         _all.IsCheckedChanged += (_, _) => Toggled();
+        _older.IsCheckedChanged += (_, _) => Toggled();
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
         _session.Changed += OnChanged;
+
+        // A model published while this view was being built (an older-history search that finished first) is read again
+        // now that it listens, or the view would sit on the empty one it started from.
+        _model = session.Model;
+        SyncQuery();
         Draw();
+    }
+
+    /// <summary>Puts the model's query in an empty box: the client's own search (a snapshot, a reopening) typed it.</summary>
+    private void SyncQuery()
+    {
+        if (string.IsNullOrEmpty(_box.Text) && _model.Query.Length > 0)
+        {
+            _syncing = true;
+            _box.Text = _model.Query;
+            _box.CaretIndex = _model.Query.Length;
+            _syncing = false;
+        }
     }
 
     public string Title => "Search the output";
@@ -113,6 +139,12 @@ internal sealed class SearchView : DockPanel, IModalView
     public ToggleButton RegexToggle => _regex;
 
     public ToggleButton AllWindowsToggle => _all;
+
+    /// <summary>The ⌥H switch, for a test.</summary>
+    public ToggleButton OlderToggle => _older;
+
+    /// <summary>What older history says (its bound, or how far its search has got), for a test.</summary>
+    public string Note => _note.Text ?? string.Empty;
 
     public void FocusFirst()
     {
@@ -156,11 +188,13 @@ internal sealed class SearchView : DockPanel, IModalView
         }
     }
 
-    private void Search() => _session.Search(_box.Text ?? string.Empty, _regex.IsChecked == true, _all.IsChecked == true);
+    private void Search() =>
+        _session.Search(_box.Text ?? string.Empty, _regex.IsChecked == true, _all.IsChecked == true, _older.IsChecked == true);
 
     private void OnChanged(SearchModel model) => Dispatcher.UIThread.Post(() =>
     {
         _model = model;
+        SyncQuery();
         Draw();
     });
 
@@ -178,6 +212,11 @@ internal sealed class SearchView : DockPanel, IModalView
             {
                 _all.IsChecked = _model.AllWindows;
             }
+
+            if (_older.IsChecked != _model.Older)
+            {
+                _older.IsChecked = _model.Older;
+            }
         }
         finally
         {
@@ -186,6 +225,9 @@ internal sealed class SearchView : DockPanel, IModalView
 
         _state.Text = NativeKeys.Words(_model.StateText);
         _count.Text = _model.CountText;
+        _note.Text = NativeKeys.Words(_model.HistoryNote ?? string.Empty);
+        _note.IsVisible = _model.HistoryNote is not null;
+        _note.Foreground = _colours.Brush(_model.HistoryRunning ? _colours.Accent : _colours.Dim);
         _list.Children.Clear();
         _rows.Clear();
         _selected = _model.Rows.Count == 0 ? 0 : Math.Clamp(_selected, 0, _model.Rows.Count - 1);
@@ -201,16 +243,19 @@ internal sealed class SearchView : DockPanel, IModalView
             return;
         }
 
+        var labelled = _model.AllWindows || _model.Rows.Any(r => r.IsOlder);
         for (var i = 0; i < _model.Rows.Count; i++)
         {
             var row = _model.Rows[i];
             var index = i;
             var line = new DockPanel();
-            if (_model.AllWindows)
+            if (labelled)
             {
+                // The cells' window column: the window in ⌥A scope, and "older" on a row ⏎ opens in the history view.
+                var label = row.IsOlder ? (_model.AllWindows ? $"{row.WindowLabel} · older" : "older") : _model.AllWindows ? row.WindowLabel : string.Empty;
                 var window = new TextBlock
                 {
-                    Text = row.WindowLabel,
+                    Text = label,
                     Width = 130,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Foreground = _colours.Brush(_colours.Header),
@@ -277,7 +322,7 @@ internal sealed class SearchView : DockPanel, IModalView
         }
 
         var decision = SearchPrompt.Interpret(
-            key, _box.Text ?? string.Empty, _selected, _model.Rows.Count, _regex.IsChecked == true, _all.IsChecked == true);
+            key, _box.Text ?? string.Empty, _selected, _model.Rows.Count, _regex.IsChecked == true, _all.IsChecked == true, _older.IsChecked == true);
         if (!bare && key.Modifiers.HasFlag(ConsoleModifiers.Control) && decision.Action == SearchAction.None)
         {
             // ⌃A, ⌃C, ⌃V and the rest stay the box's.
@@ -294,10 +339,12 @@ internal sealed class SearchView : DockPanel, IModalView
                 _session.Dismiss();
                 _done();
                 break;
-            case SearchAction.Redraw when decision.Regex != (_regex.IsChecked == true) || decision.AllWindows != (_all.IsChecked == true):
+            case SearchAction.Redraw when decision.Regex != (_regex.IsChecked == true) || decision.AllWindows != (_all.IsChecked == true)
+                                          || decision.Older != (_older.IsChecked == true):
                 _syncing = true;
                 _regex.IsChecked = decision.Regex;
                 _all.IsChecked = decision.AllWindows;
+                _older.IsChecked = decision.Older;
                 _syncing = false;
                 _selected = 0;
                 Search();

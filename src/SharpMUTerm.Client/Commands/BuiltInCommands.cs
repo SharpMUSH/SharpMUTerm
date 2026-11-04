@@ -29,6 +29,21 @@ public static class BuiltInCommands
     /// <summary>⌃P ▸ Script console.</summary>
     public const string ScriptConsoleCommand = "world:script-console";
 
+    /// <summary>⌃P ▸ Edit script…: opens the palette on the character's script files.</summary>
+    public const string ScriptEditCommand = "world:script-edit";
+
+    /// <summary>⌃P ▸ New script…: puts <c>/script new </c> on the command line for the name.</summary>
+    public const string ScriptNewCommand = "world:script-new";
+
+    /// <summary>The prefix of the <c>Edit script …</c> entries: <c>script:open:&lt;name&gt;</c>, one per script file.</summary>
+    public const string ScriptOpenPrefix = "script:open:";
+
+    /// <summary>What the palette opens with typed in for Edit script…, so it lists the script files and New script….</summary>
+    public const string ScriptEditQuery = "script ";
+
+    /// <summary>The ⌃P id that opens script <paramref name="name"/> in the editor.</summary>
+    public static string ScriptOpen(string name) => ScriptOpenPrefix + name;
+
     /// <summary>⌃P ▸ Start scene log.</summary>
     public const string SceneStartCommand = "term:scene-on";
 
@@ -134,6 +149,14 @@ public static class BuiltInCommands
             detail: "re-reads this character's Lua files", when: c => c.State.ScriptsOn);
         Add(ScriptConsoleCommand, CommandGroup.World, "Script console",
             detail: "run Lua as this character, see what scripts print and keep");
+
+        // Editing the script files under the scripts folder, in the composer's editor: the list (one entry per file, which
+        // Edit script… opens the palette on) and a new one by name. Only where the client runs scripts.
+        Add(ScriptEditCommand, CommandGroup.World, "Edit script…",
+            detail: "open a .lua file from the scripts folder · ⌃S saves and reloads", when: c => c.State.ScriptsOn);
+        Add(ScriptNewCommand, CommandGroup.World, "New script…",
+            detail: "/script new <name> · starts from a template", when: c => c.State.ScriptsOn);
+        Family("world:script-open", ScriptOpenPrefix, ScriptFileEntries);
 
         // Only where the host has a screen reader to tell: the window's live region, or --plain.
         Add("a11y:toggle-window", CommandGroup.Terminal, "Read this window aloud",
@@ -459,6 +482,16 @@ public static class BuiltInCommands
             $"it wraps at {r.Column}, the pane is {r.PaneWidth} wide · F5 ▸ join wraps")
         {
             Detail = $"it wraps at {r.Column}, the pane is {r.PaneWidth} wide · F5 ▸ join wraps",
+        });
+
+    private static IEnumerable<CommandItem> ScriptFileEntries(ICommandContext context) =>
+        (context.State.ScriptFiles ?? []).Select(f => new CommandItem(
+            CommandGroup.World,
+            f.ReadOnly ? $"Script {f.Name} (read only)" : $"Script {f.Name}",
+            ScriptOpen(f.Name),
+            f.Detail)
+        {
+            Detail = f.Detail,
         });
 
     private static IEnumerable<CommandItem> MapFoundEntries(ICommandContext context) =>
