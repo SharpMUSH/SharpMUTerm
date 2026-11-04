@@ -98,7 +98,7 @@ public class NoticeAndMapSurfaceTests
 
         await Assert.That(model!.Source).IsEqualTo("Sound");
         await Assert.That(model.Key).IsNull().Because("a source is not a key");
-        await Assert.That(app.LastNotice).EndsWith("]Sound:[/] [dim]on.[/]");
+        await Assert.That(app.LastNotice).Matches(@"\]Sound:\[/\] \[#[0-9a-f]{6}\]on\.\[/\]$");
 
         var words = Directory.GetFiles(SourceRoot(), "*.cs", SearchOption.AllDirectories)
             .SelectMany(f => File.ReadAllLines(f).Select(l => (f, l)))
