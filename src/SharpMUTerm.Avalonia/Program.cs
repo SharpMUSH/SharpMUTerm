@@ -62,7 +62,7 @@ internal static class Program
 
     /// <summary>Also what the Avalonia designer looks for.</summary>
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>()
+        BundledFonts.Use(AppBuilder.Configure<App>()
             .UsePlatformDetect()
-            .LogToTrace();
+            .LogToTrace());
 }

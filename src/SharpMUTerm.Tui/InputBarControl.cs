@@ -313,7 +313,29 @@ internal sealed class InputBarControl : MultilineEditControl,
         InputLayout.Height(WrappedRowCount(FieldWidth(ActualWidth > 0 ? ActualWidth : Width ?? 80)), MinRows, MaxRows);
 
     /// <inheritdoc/>
-    public override int? ContentWidth => MarkupParser.StripLength(Prompt) + 10 + Margin.Left + Margin.Right;
+    public override int? ContentWidth => PromptWidth + 10 + Margin.Left + Margin.Right;
+
+    /// <summary>
+    /// Band-coloured columns before the prompt on every row (<see cref="InputLayout.HostFieldPad"/> when the host draws
+    /// the field, else none). Part of the gutter, so every row indents past it as it does past the prompt.
+    /// </summary>
+    internal int LeadingPad
+    {
+        get => _leadingPad;
+        set
+        {
+            if (_leadingPad != value)
+            {
+                _leadingPad = Math.Max(0, value);
+                Invalidate(Invalidation.Relayout);
+            }
+        }
+    }
+
+    private int _leadingPad;
+
+    /// <summary>The gutter: the leading pad and the prompt.</summary>
+    private int PromptWidth => _leadingPad + MarkupParser.StripLength(Prompt);
 
     /// <summary>⇥ is ours whenever there is another bar to hand it to; otherwise it stays traversal.</summary>
     public new bool WantsTabKey => HasSibling();
@@ -548,7 +570,7 @@ internal sealed class InputBarControl : MultilineEditControl,
 
     /// <summary>How many columns of text fit on one row: the field, less the prompt it indents past.</summary>
     private int FieldWidth(int width) =>
-        Math.Max(1, width - Margin.Left - Margin.Right - MarkupParser.StripLength(Prompt));
+        Math.Max(1, width - Margin.Left - Margin.Right - PromptWidth);
 
     /// <summary>
     /// The rows the text takes at <paramref name="fieldWidth"/>: the editor's own wrapped rows, plus one
@@ -604,11 +626,11 @@ internal sealed class InputBarControl : MultilineEditControl,
         // Past the last column means the end of a full row; the row under it is the one Rows() added.
         // A bar past its cap shows the editor's scrollbar, which takes the field's last column.
         var field = FieldWidth(ActualWidth > 0 ? ActualWidth : Width ?? 80);
-        var right = Margin.Left + MarkupParser.StripLength(Prompt) + field
+        var right = Margin.Left + PromptWidth + field
             - (WrappedRowCount(field) > ViewportHeight ? 1 : 0);
         if (caret.X >= right && caret.Y + 1 - Margin.Top < ViewportHeight)
         {
-            return new Point(Margin.Left + MarkupParser.StripLength(Prompt), caret.Y + 1);
+            return new Point(Margin.Left + PromptWidth, caret.Y + 1);
         }
 
         return caret.X >= right ? caret with { X = right - 1 } : caret;
@@ -674,7 +696,7 @@ internal sealed class InputBarControl : MultilineEditControl,
         // The prompt's width is re-read on every measure, so there is nothing for this to announce.
         public event EventHandler? Invalidated { add { } remove { } }
 
-        public int GetWidth(int totalLineCount) => MarkupParser.StripLength(Markup);
+        public int GetWidth(int totalLineCount) => bar._leadingPad + MarkupParser.StripLength(Markup);
 
         public void Render(in GutterRenderContext context, int width)
         {
@@ -687,9 +709,10 @@ internal sealed class InputBarControl : MultilineEditControl,
 
             if (context.SourceLineIndex == 0 && context.IsFirstWrappedSegment)
             {
+                var pad = Math.Min(bar._leadingPad, width);
                 context.Buffer.WriteCellsClipped(
-                    context.X, context.Y, MarkupParser.Parse(Markup, ink, band),
-                    new LayoutRect(context.X, context.Y, width, 1));
+                    context.X + pad, context.Y, MarkupParser.Parse(Markup, ink, band),
+                    new LayoutRect(context.X + pad, context.Y, width - pad, 1));
             }
         }
     }

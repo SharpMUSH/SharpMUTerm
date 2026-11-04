@@ -1302,7 +1302,7 @@ fallbacks) for inline images/maps.
     is blocked) and the exit, so the native header shows the keymap where the cell header shows its strip.
   - **`ClientHost.Chrome` (`HostChrome(Header, Rail)`, required) says which chrome the host draws, and the client
     leaves no cell for it.** `HostChrome.None` for the terminal, the snapshot, `--plain` and the tests;
-    `HeaderAndRail` for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
+    `Desktop` (header, rail, status row and field) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
     `--render-png` say None). It is a flag per part, not a size: the space is the host's own business (42 px, 232 px,
     `NativeLayout`), and the client is only told the part is not its to draw. With `Header` the header control is
     `Visible = false` — a hidden sticky band takes no row — and `ChromeRows()` counts no header row, so the
@@ -1631,6 +1631,30 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     native quick bars and docked composers; `DesktopLayer.ToastsHidden` (set by `MainWindow`: settings window, ⌃P, a
     native modal or the quit prompt) hides the stack rather than leaving it clipped under a window. F1 keeps them (it
     sits under the layer). The toast keeps its clock while hidden.
+- **The window draws the status row and the command line's field too** (`HostChrome.Status`/`Input`, `HostChrome.Desktop`
+  = all four, the window's default; `SharpMUTermApp.Footer.cs`; Client `StatusModel`; Avalonia `NativeFooter`, `TerminalView`'s
+  field; surface `status`). Decisions not to relitigate:
+  - **The footer says what the cells would**: `BuildStatusModel` parses the very markup `PaintStatus` writes with the
+    framework's `MarkupParser` into runs, split at the widest gap; the palette hint and a showing notice's action hints are
+    marked as targets. `IPointerPresenter.Status`, published from `PaintStatus` and `PostBufferPaint`, only on change.
+    A click is `ActivateStatusTarget`: refused unless offered, the palette through `OpenMenu`, an action through
+    `RunNoticeAction`. With `Status` the row is `Visible = false` and `ChromeRows` counts none. Toasts sit above it.
+  - **The command line stays the cell editor; the host draws the field around it.** The bars get `HostFieldPad` (3)
+    band-coloured columns either side (`InputBarControl.LeadingPad` + right margin), the client publishes an `InputBand`
+    (rows, pad, prompts, hint) on `PostBufferPaint`, `Flush` snapshots it into the `ScreenFrame` it belongs to, and
+    `TerminalView` draws the rows above it, the strip, a rounded field filled with the band colour read off the cells (so
+    armed, idle and the tint are the cells'), the bars' rows `FieldTop` px lower inside it, the prompt in semibold Inter
+    over its cells and the newline hint over blank cells. The grid gives up `FieldReserve` px, never a row, so panes and
+    NAWS are a terminal's told the same chrome. Null under a modal. Rebuilding it on a `TextBox` would fork every key rule
+    above.
+  - `HostParityTests` draws every view under `none`, `header-rail` and `desktop`.
+- **The window bundles its faces** (`BundledFonts`, Avalonia; `Fonts/README.md`). Inter 4.1 (four static weights, 1.67 MB)
+  and JetBrains Mono are registered as `fonts:SharpMUTerm`, Inter is Avalonia's default family and the bare names map onto
+  the bundle, so every view resolves them from the file on every OS; installed faces are only the fallback for glyphs the
+  bundle lacks (emoji, CJK, neither bundled). One token each: `NativeTokens.UiFont`/`MonoFont`/`CellFace`. The cells default
+  to the bundled JetBrains Mono at 10 pt unless `--font` names an installed family; `--line-height` (default 1.12) adds
+  leading by making the cell taller and centring the glyph, so a row is still one cell. No F7 face picker: the cell face is
+  a launch option of the window, read before the client exists, and not a declared setting.
 - **A pane narrower than its server's wrap is told about join wraps, once per world per run** (`SuggestJoinWraps`,
   `SharpMUTermApp.JoinWraps.cs`; `WorldSession.ServerWrapColumn`, now learnt whether or not the world joins). Checked on
   every pane-size report; the notice's action is `world:join-wraps:<world>`. **Suggested, never on by default**: a false

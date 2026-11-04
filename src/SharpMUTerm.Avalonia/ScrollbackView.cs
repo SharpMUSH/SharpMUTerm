@@ -96,7 +96,7 @@ internal sealed class ScrollbackView : DockPanel, IModalView
         _title.Text = _model.Title;
         _position.Text = _model.Position;
         _list.Children.Clear();
-        var mono = new FontFamily($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
+        var mono = NativeTokens.MonoFont;
         foreach (var line in _model.Lines)
         {
             // The hit on the selection plane, its context in the body ink behind a rule, the rest of the page in the dim ink:

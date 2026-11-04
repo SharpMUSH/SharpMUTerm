@@ -37,7 +37,7 @@ internal sealed class MainWindow : Window
         var (foreground, background) = WindowOptions.DefaultColours(_config);
 
         _driver = new AvaloniaConsoleDriver(options.Columns, options.Rows);
-        _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily);
+        _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily, options.LineHeight);
 
         Title = SharpMUTerm.Client.Chrome.WindowTitle.Product;
 

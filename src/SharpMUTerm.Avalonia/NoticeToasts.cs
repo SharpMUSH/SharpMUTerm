@@ -342,7 +342,7 @@ internal sealed class NoticeToasts : Control
 
     private static FormattedText Format(string text, double size, Color colour, bool bold, double maxWidth, int lines = 1) =>
         new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-            new Typeface(FontFamily.Default, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal), size, new SolidColorBrush(colour))
+            new Typeface(NativeTokens.UiFont, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal), size, new SolidColorBrush(colour))
         {
             MaxTextWidth = Math.Max(1, maxWidth),
             MaxLineCount = lines,

@@ -52,7 +52,7 @@ public class DesktopLayerTests
     public async Task PublishingPanelsMovesNoPaneRectangle()
     {
         using var headless = new HeadlessConsoleDriver(140, 36);
-        await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, WindowOptions.Capabilities) with { Chrome = HostChrome.HeaderAndRail });
+        await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, WindowOptions.Capabilities) with { Chrome = HostChrome.Desktop });
         terminal.RenderSnapshot("layout-combat");
 
         using var driver = new AvaloniaConsoleDriver(140, 36);

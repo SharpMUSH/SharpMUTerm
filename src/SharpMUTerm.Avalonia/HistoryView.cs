@@ -118,7 +118,7 @@ internal sealed class HistoryView : DockPanel, IModalView
             return;
         }
 
-        var mono = new FontFamily($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
+        var mono = NativeTokens.MonoFont;
         for (var i = 0; i < _matches.Count; i++)
         {
             var match = _matches[i];

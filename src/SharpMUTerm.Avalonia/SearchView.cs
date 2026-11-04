@@ -282,7 +282,7 @@ internal sealed class SearchView : DockPanel, IModalView
             var text = new TextBlock
             {
                 Foreground = _colours.Brush(_colours.Text),
-                FontFamily = new FontFamily($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace"),
+                FontFamily = NativeTokens.MonoFont,
                 FontSize = NativeTokens.Title,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,

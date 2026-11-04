@@ -309,7 +309,17 @@ internal sealed record ClientHost
 /// </summary>
 /// <param name="Header">The host draws the header band (the client's first row).</param>
 /// <param name="Rail">The host draws the connection rail (the client's left column, with its divider and spacer).</param>
-internal sealed record HostChrome(bool Header, bool Rail)
+/// <param name="Status">
+/// The host draws the status row (the client's last row) from <see cref="SharpMUTerm.Client.Chrome.StatusModel"/>,
+/// published through <see cref="IPointerPresenter.Status"/>.
+/// </param>
+/// <param name="Input">
+/// The host draws the command line's field around the cell editor: the client keeps the editor, its keys and its band
+/// colours, pads it (<see cref="InputLayout.HostFieldPad"/> band-coloured columns either side) and says where its rows are
+/// each frame (<see cref="IPointerPresenter.InputBand"/>), so the host can draw the field's frame and padding in its own
+/// units around those rows. No keystroke path changes.
+/// </param>
+internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, bool Input = false)
 {
     /// <summary>The client draws all of its chrome in cells: the terminal, the snapshot, the tests.</summary>
     public static HostChrome None { get; } = new(false, false);
@@ -317,6 +327,9 @@ internal sealed record HostChrome(bool Header, bool Rail)
     /// <summary>The host draws the header and the rail natively: the desktop window.</summary>
     public static HostChrome HeaderAndRail { get; } = new(true, true);
 
+    /// <summary>The host draws the header, the rail, the status footer and the command line's field: the desktop window.</summary>
+    public static HostChrome Desktop { get; } = new(true, true, true, true);
+
     /// <summary>Whether the host draws anything at all.</summary>
-    public bool Any => Header || Rail;
+    public bool Any => Header || Rail || Status || Input;
 }

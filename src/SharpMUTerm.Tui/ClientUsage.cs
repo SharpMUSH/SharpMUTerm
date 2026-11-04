@@ -51,7 +51,7 @@ internal static class ClientOptions
     /// <summary>The options that take a value, so their value is never mistaken for the host.</summary>
     public static IReadOnlySet<string> TakingValues { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        "--name", "--size", "--view", "--out", "--theme", "--transparency", "--font", "--font-size", "--render-png", OpenLink,
+        "--name", "--size", "--view", "--out", "--theme", "--transparency", "--font", "--font-size", "--line-height", "--render-png", OpenLink,
     };
 
     /// <summary>The arguments that are not an option or an option's value: the host, then the port.</summary>

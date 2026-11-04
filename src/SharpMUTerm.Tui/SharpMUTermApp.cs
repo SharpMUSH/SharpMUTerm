@@ -878,6 +878,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _statusBar = Controls.Markup("[dim]not connected[/]").StickyBottom().Build();
 
+        // A host that draws the status row itself (the window's footer) gets no cell for it: a hidden sticky band takes
+        // no row, and ChromeRows counts none, so the bars and the panes have the row.
+        _statusBar.Visible = !host.Chrome.Status;
+
         // Sticky-bottom, added ahead of the bars so it sits above them, and hidden until a prompt
         // arrives: most sessions never see one, and a permanently blank row would cost every pane a
         // row for nothing.
@@ -1034,6 +1038,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PublishPanels();
             PublishFloating();
             PublishChrome();
+            PublishInputBand();
+            PublishStatus();
             SyncMapSizes();
             SyncPanelSizes();
             SyncScrollSplitBars();
@@ -1043,7 +1049,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
         // panels are now under it; the modal stack changing says it instead.
-        _system.ModalStateService.StateChanged += (_, _) => PublishPanels();
+        _system.ModalStateService.StateChanged += (_, _) =>
+        {
+            PublishPanels();
+            PublishInputBand();
+        };
         if (_sixel is not null)
         {
             // Another window over this one rewrites the cells a picture sits on, and the frame that puts
@@ -1053,8 +1063,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         // The native chrome stands down while another window is in front, and that window repaints, not this one.
-        _window.Activated += (_, _) => PublishChrome();
-        _window.Deactivated += (_, _) => PublishChrome();
+        _window.Activated += (_, _) => { PublishChrome(); PublishInputBand(); PublishStatus(); };
+        _window.Deactivated += (_, _) => { PublishChrome(); PublishInputBand(); PublishStatus(); };
 
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level
@@ -5996,6 +6006,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // and the first chrome refresh.
         PaintInputBands(PaneTint.None);
         bar.HasSibling = () => _second.Visible;
+
+        // A host that draws the field (the window) gets band-coloured padding inside it at both ends of every row: the
+        // gutter's leading columns on the left, a margin the editor does not wrap into on the right.
+        if (Host.Chrome.Input)
+        {
+            bar.LeadingPad = InputLayout.HostFieldPad;
+            bar.Margin = new Margin(0, 0, InputLayout.HostFieldPad, 0);
+        }
         bar.Complete = CompleteWord;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
@@ -6164,7 +6182,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private int ChromeRows() =>
         // No row for a header the host draws: it is not in the cells, so the bars may have the row it would take.
         (_header.Visible ? InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth()) : 0)
-        + InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth())
+        + (_statusBar.Visible ? InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth()) : 0)
         // One, not WrappedRows: the prompt row is elided to a single row by construction, precisely so
         // that a long prompt cannot take a second row off the panes. See PromptRowRenderer.
         + (_promptRow.Visible ? 1 : 0);
@@ -13972,6 +13990,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         _statusBar.SetContent(new List<string> { StatusInk(FitStatusRow(markup, HeaderWidth())) });
         SyncInputHeights(_second.Visible);
+        PublishStatus(); // a host's footer has no cell to repaint, so a change may paint no frame (RefreshHeader's reason)
     }
 
     /// <summary>

@@ -22,6 +22,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   and Send buttons; Preview opens the full-screen composer with the as-sent band.
 - The window's welcome is one page: find a world from mu*index and add it, connect directly (with the `/connect` line
   it stands for), and pick a starting layout from two cards. Nothing is fetched until you ask for the list.
+- The desktop window's status line is now a footer under the whole window, in the window's own type, with keys in words.
+  Clicking "Ctrl+P palette" opens the palette, and clicking a notice's action (Reconnect, Open F5…) runs it.
+- The desktop window draws the command line as a rounded field with the prompt in its own type and a hint at the right
+  ("Enter sends · Ctrl+Enter new line") that steps aside when your typing reaches it. Typing, history, completion and
+  selection work exactly as before.
+- The desktop window ships the Inter typeface for its menus, panels and dialogs, and uses the bundled JetBrains Mono for
+  the text unless `--font` names another, so it looks the same on every computer. `--line-height` spaces the rows
+  (1–2, default 1.12).
+
 - A script error in the script console that names a file and line is now a link: click it to open that script with the
   caret on the line and the line marked. Closing the editor goes back to the console.
 - ⌃P ▸ Recent alerts lists the pages and alerts every character has had this run, newest first, with how long ago;

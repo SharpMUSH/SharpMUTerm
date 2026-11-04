@@ -45,6 +45,7 @@ internal sealed class DesktopLayer : Canvas
     private readonly Dictionary<string, PopOutButton> _popOuts = new(StringComparer.Ordinal);
     private readonly NativeHeader _header;
     private readonly NativeSidebar _sidebar;
+    private readonly NativeFooter _footer;
     private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ComposerView> _composers = new(StringComparer.Ordinal);
@@ -62,6 +63,7 @@ internal sealed class DesktopLayer : Canvas
         _chrome = chrome;
         _pointer = view.Driver.Pointer;
         _view.CellsHoldHeader = !chrome.Header;
+        _view.DrawsInputField = chrome.Input;
         ClipToBounds = true;
         _pointer.ActionsChanged += () => Dispatcher.UIThread.Post(Sync);
         _pointer.PanelsChanged += () => Dispatcher.UIThread.Post(Sync);
@@ -70,8 +72,11 @@ internal sealed class DesktopLayer : Canvas
         // The chrome first, so every panel and button is drawn over it.
         _header = new NativeHeader(view) { IsVisible = false };
         _sidebar = new NativeSidebar(view) { IsVisible = false };
+        _footer = new NativeFooter(view) { IsVisible = false };
         Children.Add(_header);
         Children.Add(_sidebar);
+        Children.Add(_footer);
+        _pointer.StatusChanged += () => Dispatcher.UIThread.Post(Sync);
 
         // The toasts last, over everything: a notice is the one thing the window says over a panel.
         _toasts = new NoticeToasts();
@@ -132,6 +137,9 @@ internal sealed class DesktopLayer : Canvas
 
     /// <summary>The native sidebar. Internal for tests.</summary>
     internal NativeSidebar Sidebar => _sidebar;
+
+    /// <summary>The native status footer. Internal for tests.</summary>
+    internal NativeFooter Footer => _footer;
 
     /// <summary>The native who-here lists by window id. Internal for tests.</summary>
     internal IReadOnlyDictionary<string, WhoHereList> WhoHere => _whoHere;
@@ -229,6 +237,7 @@ internal sealed class DesktopLayer : Canvas
         var width = Bounds.Width;
         var height = Bounds.Height;
         var top = _chrome.Header ? NativeLayout.HeaderHeight : 0;
+        var bottom = _chrome.Status ? NativeLayout.StatusHeight : 0;
 
         // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above the header.
         _header.ReserveRight = _chrome.Header
@@ -240,8 +249,29 @@ internal sealed class DesktopLayer : Canvas
         var ink = chrome is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(chrome.Palette.Ink);
         Place(_header, _chrome.Header, new Rect(0, 0, width, NativeLayout.HeaderHeight), chrome,
             chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.HeaderPlane), ink);
-        Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top)), chrome,
+        Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top - bottom)), chrome,
             chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane), ink);
+
+        // The footer across the whole width under the cells and the sidebar; the field's strip on the same plane.
+        if (chrome is not null)
+        {
+            var plane = NativeChromeView.Parse(chrome.Palette.RailPlane);
+            _view.FooterPlane = new SKColor(plane.R, plane.G, plane.B);
+        }
+
+        if (_chrome.Status && width > 0 && height > bottom)
+        {
+            SetLeft(_footer, 0);
+            SetTop(_footer, height - bottom);
+            _footer.Width = width;
+            _footer.Height = bottom;
+            _footer.Show(_pointer.Status);
+            _footer.IsVisible = true;
+        }
+        else
+        {
+            _footer.IsVisible = false;
+        }
     }
 
     private static void Place(NativeChromeView view, bool drawn, Rect area, ChromeOverlay? chrome, Color plane, Color ink)
@@ -666,6 +696,27 @@ internal static class NativeLayout
     /// </summary>
     public const double SidebarGutter = 8;
 
+    /// <summary>The status footer's height (<see cref="HostChrome.Status"/>).</summary>
+    public const double StatusHeight = 28;
+
+    /// <summary>The footer's text inset from the window's edges.</summary>
+    public const double FooterPadX = 16;
+
+    /// <summary>The command line's strip: the padding above the field and below it (<see cref="HostChrome.Input"/>).</summary>
+    public const double FieldOuter = 10;
+
+    /// <summary>The field's own padding above its first row and below its last.</summary>
+    public const double FieldInner = 9;
+
+    /// <summary>How far the field's edge sits outside the client's padding columns, horizontally.</summary>
+    public const double FieldInsetX = 12;
+
+    /// <summary>How much lower the bars' rows are drawn than their cells: the strip's padding and the field's.</summary>
+    public const double FieldTop = FieldOuter + FieldInner;
+
+    /// <summary>The vertical pixels the field adds around the rows it frames, which the grid gives up.</summary>
+    public const double FieldReserve = 2 * FieldTop;
+
     /// <summary>A header button's side.</summary>
     public const double ButtonSize = 30;
 
@@ -677,5 +728,5 @@ internal static class NativeLayout
         chrome.Rail ? (collapsed ? SidebarSlim : SidebarWidth) + SidebarGutter : 0,
         chrome.Header ? HeaderHeight : 0,
         0,
-        0);
+        chrome.Status ? StatusHeight : 0);
 }

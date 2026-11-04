@@ -922,7 +922,7 @@ internal sealed class SettingsWindow : Window
         foreach (var item in received.Take(40))
         {
             var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            line.Children.Add(new TextBlock { Text = item.Path, FontFamily = FontFamily.Parse("monospace"), FontSize = NativeTokens.Body });
+            line.Children.Add(new TextBlock { Text = item.Path, FontFamily = NativeTokens.MonoFont, FontSize = NativeTokens.Body });
             var v = new TextBlock { Text = item.Value, FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(16, 0, 0, 0) };
             Grid.SetColumn(v, 1);
             line.Children.Add(v);
