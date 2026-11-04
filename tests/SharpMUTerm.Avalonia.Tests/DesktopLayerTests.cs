@@ -42,7 +42,7 @@ public class DesktopLayerTests
         var panel = driver.Pointer.Panels.SingleOrDefault(p => p.PanelId == PanelIds.Vitals);
         await Assert.That(panel).IsNotNull();
         var pane = app.PaneOutputRects().Single(r => app.PaneWindows().GetValueOrDefault(r.Key) == panel!.WindowId);
-        await Assert.That(panel!.Rect).IsEqualTo(pane.Value).Because("the overlay goes exactly where the strip's cells are");
+        await Assert.That(panel!.Rect).IsEqualTo(pane.Value with { X = pane.Value.X - 1, Width = pane.Value.Width + 2 }).Because("the overlay goes exactly where the strip's cells are, and over the gutter either side");
         await Assert.That(panel.Vitals).IsEqualTo(app.ReadVitals(DemoScene.ActiveSessionKey));
         await Assert.That(panel.Vitals!.Meters.Count).IsGreaterThan(0);
         await Assert.That(driver.Pointer.Actions.Select(a => a.Id)).Contains(HeaderAction.LayoutsId);

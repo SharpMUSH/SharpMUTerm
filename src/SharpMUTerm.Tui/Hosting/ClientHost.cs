@@ -322,9 +322,15 @@ internal sealed record ClientHost
 /// <param name="Tabs">
 /// The host draws each pane's tab strip. A strip's row cannot be taken out of one pane of a uniform cell grid, so this
 /// one part keeps its row: the client paints it blank and publishes the strip as data (<c>TabStripModel</c>), and the
-/// host draws over exactly that row. The pane rectangles, and so NAWS, are the terminal's.
+/// host draws over exactly those rows. The strip is two rows (the framework's <c>Separator</c> header style), so the
+/// host has the depth a desktop tab wants; the pane rectangles, and so NAWS, are the panes less those two rows.
 /// </param>
-internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, bool Input = false, bool Tabs = false)
+/// <param name="PaneGutter">
+/// The client leaves one blank column of the pane's own plane either side of every pane's content (the tab control's
+/// margin), so output does not run flush against the pane's edge. The columns are cells the pane really loses: the
+/// output rectangles, and so NAWS, are the narrower ones.
+/// </param>
+internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, bool Input = false, bool Tabs = false, bool PaneGutter = false)
 {
     /// <summary>The client draws all of its chrome in cells: the terminal, the snapshot, the tests.</summary>
     public static HostChrome None { get; } = new(false, false);
@@ -332,8 +338,11 @@ internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, b
     /// <summary>The host draws the header and the rail natively.</summary>
     public static HostChrome HeaderAndRail { get; } = new(true, true);
 
-    /// <summary>The host draws the header, the rail, the status footer, the command line's field and every pane's tab strip: the desktop window.</summary>
-    public static HostChrome Desktop { get; } = new(true, true, true, true, true);
+    /// <summary>
+    /// The host draws the header, the rail, the status footer, the command line's field and every pane's tab strip, and
+    /// the client pads every pane with a gutter: the desktop window.
+    /// </summary>
+    public static HostChrome Desktop { get; } = new(true, true, true, true, true, true);
 
     /// <summary>The same arrangement as <see cref="Desktop"/>; the name the tab strip's tests use.</summary>
     public static HostChrome Native => Desktop;

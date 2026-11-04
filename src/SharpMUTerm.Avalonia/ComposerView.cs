@@ -513,8 +513,9 @@ internal sealed class ComposerView : Border
         _keys.Children.Clear();
         if (!_fullScreen)
         {
-            // A docked composer too short for its footer keeps the editor and drops the footer.
-            _footer.IsVisible = Bounds.Height is 0 or >= 96;
+            // A docked composer too short for its footer keeps the editor and drops the footer: the heading, the footer
+            // and an editor of two lines need about 136 px, and below that the footer would squeeze the well shut.
+            _footer.IsVisible = Bounds.Height is 0 or >= 136;
             _editor.PlaceholderText = !model.Armed ? ComposerModel.ClickToWrite : null;
             _editor.PlaceholderForeground = new SolidColorBrush(Dim);
             return;

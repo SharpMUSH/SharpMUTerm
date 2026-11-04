@@ -2,6 +2,7 @@ using System.Drawing;
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Surfaces;
+using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Graphics;
 
 namespace SharpMUTerm.Tui.Tests;
@@ -54,13 +55,17 @@ public class NativeTabStripTests
     }
 
     [Test]
-    public async Task TheStripRowStaysAndNothingMoves()
+    public async Task TheStripTakesTwoRowsAndTheGutterAColumnEachSideAndThePanesSayso()
     {
-        // The same arrangement with the strips left to the cells: drawing them natively is the only difference.
-        await using var cells = App(HostChrome.Native with { Tabs = false }, out _, "split");
+        // The same arrangement with the strips and the gutter left to the cells: a native strip is two rows where a cell
+        // strip is one, and the gutter is a column either side, and the output rectangles (NAWS) lose exactly those.
+        await using var cells = App(HostChrome.Native with { Tabs = false, PaneGutter = false }, out _, "split");
         await using var native = App(HostChrome.Native, out _, "split");
 
-        await Assert.That(native.PaneOutputRects()).IsEquivalentTo(cells.PaneOutputRects());
+        var expected = cells.PaneOutputRects().ToDictionary(
+            p => p.Key, p => new PaneRect(p.Value.X + 1, p.Value.Y + 1, p.Value.Width - 2, p.Value.Height - 1));
+        await Assert.That(native.PaneOutputRects()).IsEquivalentTo(expected);
+        await Assert.That(native.PaneChromePublished?.Strips.All(s => s.Row.Height == 2) ?? true).IsTrue();
     }
 
     [Test]

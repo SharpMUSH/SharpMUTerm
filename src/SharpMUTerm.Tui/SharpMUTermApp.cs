@@ -11567,8 +11567,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return grid.Build();
     }
 
-    /// <summary>The rows the framework's tab strip takes over a pane (the classic header style).</summary>
-    private const int TabStripRows = 1;
+    /// <summary>
+    /// The rows the framework's tab strip takes over a pane: one for the classic header, two for the separator style a
+    /// host that draws the strips itself is given (<see cref="HostChrome.Tabs"/>).
+    /// </summary>
+    private int TabStripRows => Host.Chrome.Tabs ? 2 : 1;
+
+    /// <summary>The blank columns either side of a pane's content where the host asks for a gutter (<see cref="HostChrome.PaneGutter"/>).</summary>
+    private const int PaneGutterColumns = 1;
 
     /// <summary>The layout panel a window draws, or null for an ordinary window.</summary>
     private static string? PanelIdOfWindow(string windowId) =>
@@ -11635,6 +11641,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Stretch so the tab strip + content fill their pane column to the right edge; the control
         // default is Left, which self-sizes to content and leaves the pane short (docs/patterns.md §12).
         var tabs = builder.Fill().WithAlignment(HorizontalAlignment.Stretch).Build();
+
+        // Where the host draws the strips it gets two rows to draw them in, and where it asks for a gutter every pane
+        // gives up a column either side. Both are cells the pane really loses, so PaneOutputRects (TabHeaderHeight and
+        // the margin) and NAWS follow.
+        if (Host.Chrome.Tabs)
+        {
+            tabs.HeaderStyle = TabHeaderStyle.Separator;
+        }
+
+        if (Host.Chrome.PaneGutter)
+        {
+            tabs.Margin = new Margin(PaneGutterColumns, 0, PaneGutterColumns, 0);
+        }
+
         for (var i = 0; i < ids.Count; i++)
         {
             tabs.TabPages[i].Tag = ids[i];

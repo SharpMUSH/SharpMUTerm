@@ -887,10 +887,9 @@ internal sealed class TerminalView : Control
                 MaxLineCount = 1,
                 Trimming = TextTrimming.CharacterEllipsis,
             };
-            // Against the text, not the field's edge: the UI face is narrower than the cells it covers, and a prompt
-            // that kept to the left would leave a gap between itself and the line being typed.
-            var left = Math.Max(plate.X, plate.Right - formatted.Width);
-            context.DrawText(formatted, new Point(Math.Round(left), plate.Y + ((cell.Height - formatted.Height) / 2)));
+            // At the field's inner padding, as the mockup sets it: the UI face is narrower than the cells it covers, and
+            // what it leaves over reads as the space before the line being typed rather than a hole in front of the prompt.
+            context.DrawText(formatted, new Point(Math.Round(plate.X), plate.Y + ((cell.Height - formatted.Height) / 2)));
         }
 
         if (band.Hint.Length == 0 || band.Top >= frame.Height)

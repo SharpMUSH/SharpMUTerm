@@ -384,6 +384,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window, each pane's tabs are taller with larger, centred labels, game text no longer runs against the
+  pane's edge (a column of space either side, reported to the game as the pane's width), the header shows the plain
+  "SharpMUTerm" name with the search box beside your character, and the command line's prompt sits at the field's
+  left edge.
 - In the desktop window, ⌃P, the quit prompt, search, history, layouts, help, the script console, toasts and the
   right-click menu now match the window's new look: blue-grey cards, search boxes sunk into the page with a magnifier,
   keys drawn as small key caps, an accent bar on the selected row, and a footer band naming the keys.

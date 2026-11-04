@@ -57,11 +57,11 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     /// <summary>The <c>+N ▾</c> button's area, or null when every tab fits. Internal for tests.</summary>
     internal Rect? OverflowArea => _overflow;
 
-    /// <summary>The type size for the strip's depth: one cell row, which is the window's cell height.</summary>
+    /// <summary>The type size for the strip's depth: two cell rows where the host draws the strips, the mockup's 14 px Inter.</summary>
     private double Size => (double.IsNaN(Height) ? Bounds.Height : Height) switch
     {
-        >= 24 => NativeTokens.Title,
-        >= 18 => NativeTokens.Body,
+        >= 30 => NativeTokens.Title,
+        >= 18 => PanelText.Size,
         _ => NativeTokens.Small,
     };
 
@@ -114,7 +114,7 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
         }
 
         var x = 8.0;
-        var top = Math.Min(4, Math.Max(1, height / 6));
+        var top = Top(height);
         var names = Fit(overlay.Model.Tabs, right - x);
         for (var i = 0; i < overlay.Model.Tabs.Count; i++)
         {
@@ -135,6 +135,9 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
             }
         }
     }
+
+    /// <summary>Where the tabs start below the strip's top edge: a sixth of its depth, 2 to 8 pixels (the mockup's 6 at two rows).</summary>
+    private static double Top(double height) => Math.Clamp(Math.Round(height / 6), 1, 8);
 
     private double Extra(TabChipModel tab) =>
         (tab.Unread > 0 ? PanelText.Measure(" " + UnreadBadge.Format(tab.Unread), Size, true) : 0)
@@ -295,7 +298,11 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
         context.DrawLine(rule, new Point(0, bottom), new Point(bounds.Width, bottom));
 
         var size = Size;
-        var middle = (bounds.Height / 2) + 1;
+
+        // The labels sit in the middle of the tabs, not of the strip: the tabs start below its top edge and run down to
+        // the pane, so the strip's own middle would leave every label high.
+        var top = Top(bounds.Height);
+        var middle = top + ((bounds.Height - top) / 2);
         var index = -1;
         foreach (var (area, close, tab, plane) in _tabs)
         {

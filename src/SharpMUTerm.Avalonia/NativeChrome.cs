@@ -387,7 +387,9 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var plateTop = Math.Round((h - plateHeight) / 2);
         const double pad = 12;
 
-        _brand = new Rect(10, plateTop, Measure("SharpMUTerm", size + 1, bold: true) + pad + 22, plateHeight);
+        // The brand is the name in plain text, as a desktop app's title reads (the mockup's): still the palette's door,
+        // shown by a plate only under the pointer. The ribbon's filled segment is the cells' way of saying it.
+        _brand = new Rect(8, plateTop, Measure("SharpMUTerm", size + 2, bold: true) + 16, plateHeight);
         hits.Add((_brand, HeaderModel.PaletteTarget, $"Commands ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
 
         var right = Width - ReserveRight - 8;
@@ -414,14 +416,16 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var searchFloor = 18 + Measure("Search", size) + keyWidth + (pad * 3);
         if (right - countsWidth - 20 - start >= searchFloor)
         {
-            _counts = new Rect(right - countsWidth, 0, countsWidth, h);
-            right = _counts.Left - 20;
+            // The counts go to the left of the search box, which keeps its place beside the pill.
+            var searchWidth = Math.Min(360, right - countsWidth - 20 - start);
+            _counts = new Rect(right - searchWidth - 20 - countsWidth, 0, countsWidth, h);
         }
 
         if (right - start >= searchFloor)
         {
-            var width = Math.Min(460, right - start);
-            _search = new Rect(start, plateTop, width, plateHeight);
+            // Beside the character's pill at the right, as the mockup sets it, rather than against the brand.
+            var width = Math.Min(360, right - start);
+            _search = new Rect(right - width, plateTop, width, plateHeight);
             hits.Add((_search, HeaderModel.PaletteTarget, $"Commands, characters, windows and settings ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
         }
     }
@@ -481,23 +485,13 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var middle = Bounds.Height / 2;
         const double radius = 7;
 
-        // The brand: the ribbon's first segment, in its own fill, with the ☰ the ribbon carries.
-        var brand = Parse(overlay.Palette.Brand);
+        // The brand: the name in the header's own ink, a plate under it only while it is pointed at or pressed.
         if (Pressing(_brand) || Hovered(_brand))
         {
-            brand = Color.FromArgb(0xFF, (byte)Math.Min(255, brand.R + 18), (byte)Math.Min(255, brand.G + 18), (byte)Math.Min(255, brand.B + 18));
+            context.DrawRectangle(new SolidColorBrush(Pressing(_brand) ? Raised(0.13) : Raised(0.08)), null, _brand, radius, radius);
         }
 
-        context.DrawRectangle(new SolidColorBrush(brand), null, _brand, radius, radius);
-        var brandInk = Parse(overlay.Palette.BrandInk);
-        var menu = new Pen(new SolidColorBrush(brandInk), 1.6, lineCap: PenLineCap.Round);
-        var mx = _brand.X + 12;
-        foreach (var dy in new[] { -4.0, 0, 4 })
-        {
-            context.DrawLine(menu, new Point(mx, middle + dy), new Point(mx + 11, middle + dy));
-        }
-
-        Text(context, "SharpMUTerm", mx + 18, middle, size + 1, brandInk, bold: true);
+        Text(context, "SharpMUTerm", _brand.X + 8, middle, size + 2, Ink, bold: true);
 
         if (_search.Width > 0)
         {

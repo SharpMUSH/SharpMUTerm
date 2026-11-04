@@ -206,7 +206,12 @@ internal sealed partial class SharpMUTermApp
         var covered = _system.ModalStateService.HasModals || _nativeCompose is not null;
         foreach (var (paneId, rect) in !covered ? PaneOutputRects() : new Dictionary<string, Core.Workspaces.PaneRect>())
         {
-            if (_workspace.Layout.FindPane(paneId) is { ActiveTab: { } windowId } && OverlayFor(windowId, rect, docked: true) is { } overlay)
+            // A native panel lies over its pane's gutter too (HostChrome.PaneGutter): those columns hold nothing but the
+            // pane's plane, and the panel pads itself.
+            var over = Host.Chrome.PaneGutter
+                ? new Core.Workspaces.PaneRect(rect.X - PaneGutterColumns, rect.Y, rect.Width + (2 * PaneGutterColumns), rect.Height)
+                : rect;
+            if (_workspace.Layout.FindPane(paneId) is { ActiveTab: { } windowId } && OverlayFor(windowId, over, docked: true) is { } overlay)
             {
                 overlays.Add(overlay);
             }

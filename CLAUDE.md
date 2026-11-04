@@ -1384,10 +1384,16 @@ fallbacks) for inline images/maps.
   `ScrollBandModel`; Tui `Pointer/SharpMUTermApp.PaneChrome.cs`, `PaneChromeOverlay`; Avalonia `PaneChromeViews.cs`:
   `NativeTabStrip`, `ScrollBandView`; surfaces `tab-strip` (`NativeChrome`) and `scroll-band` (`CellsUnderNative`)).
   Decisions not to relitigate:
-  - **Unlike the header and rail, the strip keeps its cell row.** One cell grid cannot be inset per pane, so the
-    layout, `PaneOutputRects` and NAWS stay the terminal's exactly; the client paints the strip row blank in the
-    pane's recessed plane after the frame (`BlankNativeTabStrips`, `PostBufferPaint`) and the native strip lies on it.
-    The strip is one cell row tall (~25 px), not the mockup's 38. The band needs no blanking: its cells stay under it.
+  - **Unlike the header and rail, the strip keeps its cell rows.** One cell grid cannot be inset per pane; the client
+    paints the strip rows blank in the pane's recessed plane after the frame (`BlankNativeTabStrips`, `PostBufferPaint`)
+    and the native strip lies on them. **Under `Tabs` a strip is two rows** (`TabHeaderStyle.Separator`, `TabStripRows`),
+    the mockup's ~40 px with 14 px labels centred in the tabs; `PaneOutputRects` reads `TabHeaderHeight`, so NAWS is the
+    pane less two rows, never a native view over a row of output. The band needs no blanking: its cells stay under it.
+  - **`HostChrome.PaneGutter` (the window) gives every pane a blank column either side** (`tabs.Margin`,
+    `PaneGutterColumns`), in the pane's plane (the surface grid behind it), so output is not flush with the pane's edge.
+    The columns are lost by the pane: `PaneOutputRects` subtracts the margin and NAWS follows. A native panel is
+    published over its output rectangle *and* the gutter (`PublishPanels`), since those cells hold nothing and the panel
+    pads itself. The terminal has no gutter. `NativeTabStripTests.TheStripTakesTwoRows…` pins both against the cells.
   - **One model per strip, and the cells title from it**: `BuildPaneTabs`/`RetitlePane` build `StripModelFor` through
     `Drawing(TabStrip, paneId, …)` and `TabTitles.Strip` writes the titles; the band is recorded in
     `RefreshScrollSplitBar`. Published through `IPointerPresenter.PaneChrome` (default member) on `PostBufferPaint`
