@@ -48,6 +48,35 @@ public static class ScriptErrors
         return null;
     }
 
+    /// <summary>
+    /// The first script file and line <paramref name="text"/> names (<c>corvid.lua:(14,…)</c> → <c>corvid.lua</c>, 14), or
+    /// null when it names none — what makes a console error row a link to its line.
+    /// </summary>
+    public static (string File, int Line)? At(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        try
+        {
+            foreach (Match match in ErrorAt.Matches(text))
+            {
+                if (int.TryParse(match.Groups["line"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var line) && line > 0)
+                {
+                    return (match.Groups["file"].Value, line);
+                }
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
     /// <summary>The line the newest of <paramref name="errors"/> (oldest first) names in <paramref name="name"/>, or null.</summary>
     public static int? LineIn(IReadOnlyList<string> errors, string name)
     {

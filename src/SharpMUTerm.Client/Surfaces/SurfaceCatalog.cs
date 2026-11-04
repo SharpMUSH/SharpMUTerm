@@ -549,6 +549,10 @@ public static class SurfaceCatalog
 
                 // ⌃E (the window's Edit a script… button): the console closes and the palette lists the script files.
                 new(SurfaceActionKind.Modal, "edit a script", "EditScriptFromConsole"),
+
+                // A click on an error row naming file.lua:(N,…) (the cells' mux:script-error:N link, the console's own): the
+                // console closes and that script opens in the editor with the caret on line N and the line marked.
+                new(SurfaceActionKind.Modal, "open an error's line", "OpenConsoleError"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.ScriptConsoleSurface.Render",

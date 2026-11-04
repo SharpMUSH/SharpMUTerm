@@ -9,10 +9,18 @@ namespace SharpMUTerm.Client.Modals;
 /// <remarks>
 /// A row from older history (⌥H) has <see cref="History"/> at the line's absolute index in its session's scrollback and
 /// <see cref="LineIndex"/> −1: it is not in the pane buffer, so ⏎ opens it in the read-only history view (or scrolls the
-/// pane to it when the pane still holds it).
+/// pane to it when the pane still holds it). Its <see cref="Age"/> says how far back it is (<see cref="SearchModel.AgeLabel"/>).
 /// </remarks>
 public readonly record struct SearchRow(
-    string WindowId, string WindowLabel, int LineIndex, string Text, int MatchStart, int MatchLength, long History = -1, string? SessionKey = null)
+    string WindowId,
+    string WindowLabel,
+    int LineIndex,
+    string Text,
+    int MatchStart,
+    int MatchLength,
+    long History = -1,
+    string? SessionKey = null,
+    string? Age = null)
 {
     /// <summary>Whether this row came from older history rather than the pane buffer.</summary>
     public bool IsOlder => History >= 0;
@@ -118,17 +126,81 @@ public sealed record SearchModel(
     /// <summary>How many rows are the pane buffer's (the rest are older history's, listed after them).</summary>
     public int HeldRows => Rows.Count(r => !r.IsOlder);
 
+    /// <summary>How many older-history lines matched so far (⌥H): set by the client as the search streams in.</summary>
+    public int OlderFound { get; init; }
+
+    /// <summary>How many older-history lines have been read so far.</summary>
+    public long OlderSearched { get; init; }
+
+    /// <summary>How many lines the older-history search covers in all.</summary>
+    public long OlderTotal { get; init; }
+
+    /// <summary>Whether older history found more than the rows it lists.</summary>
+    public bool OlderCapped { get; init; }
+
     /// <summary>
-    /// How many lines matched out of how many were looked at — <c>12 found · 4,812 lines held</c> — so a reader who
-    /// cannot find an old line sees the bound rather than concluding the search is broken.
+    /// How many lines matched out of how many were looked at, on one row — <c>12 found · 4,812 lines held</c>, and with
+    /// older history (⌥H) both bounds side by side: <c>this window 3 of 39 · older 4 of 6,000</c> (while it reads,
+    /// <c>older 2… 1,200 of 6,000 read</c>) — so a reader who cannot find an old line sees the bound rather than concluding
+    /// the search is broken, and never two counts competing for the same row.
     /// </summary>
     public string CountText
     {
         get
         {
             var searched = $"{Held:n0} line{(Held == 1 ? string.Empty : "s")} held";
-            return Error is not null ? searched : $"{HeldRows} found · {searched}";
+            if (Error is not null)
+            {
+                return searched;
+            }
+
+            if (!Older || OlderTotal <= 0)
+            {
+                return $"{HeldRows} found · {searched}";
+            }
+
+            var here = $"{(AllWindows ? "these windows" : "this window")} {HeldRows} of {Held:n0}";
+            var older = HistoryRunning
+                ? $"older {OlderFound}… {OlderSearched:n0} of {OlderTotal:n0} read"
+                : $"older {OlderFound}{(OlderCapped ? "+" : string.Empty)} of {OlderTotal:n0}";
+            return $"{here} · {older}";
         }
+    }
+
+    /// <summary>
+    /// What a row's window column says, in both hosts: the window's name in ⌥A scope; on an older-history row how far back
+    /// it is (<see cref="SearchRow.Age"/>); and <c>here</c> on a row the pane holds once older rows are listed beside it.
+    /// </summary>
+    public string LabelFor(SearchRow row)
+    {
+        if (row.IsOlder)
+        {
+            var age = row.Age ?? "older";
+            return AllWindows ? $"{row.WindowLabel} · {age}" : age;
+        }
+
+        var olderListed = Rows.Any(r => r.IsOlder);
+        return AllWindows ? (olderListed ? $"{row.WindowLabel} · here" : row.WindowLabel) : olderListed ? "here" : string.Empty;
+    }
+
+    /// <summary>Whether the rows carry a window column at all: in ⌥A scope, or once older history lists a row.</summary>
+    public bool Labelled => AllWindows || Rows.Any(r => r.IsOlder);
+
+    /// <summary>
+    /// How far back an older-history line is, from how many lines arrived after it: <c>40 lines ago</c>, <c>1.6k lines ago</c>.
+    /// The scrollback keeps no clock, so the age is in lines — the unit the history view's position says too.
+    /// </summary>
+    public static string AgeLabel(long linesAfter)
+    {
+        linesAfter = Math.Max(0, linesAfter);
+        return linesAfter switch
+        {
+            0 => "the newest",
+            1 => "1 line ago",
+            < 1_000 => $"{linesAfter} lines ago",
+            < 100_000 => (linesAfter / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + "k lines ago",
+            _ => (linesAfter / 1000).ToString(CultureInfo.InvariantCulture) + "k lines ago",
+        };
     }
 
     /// <summary>What the list says when it lists nothing, or null when it lists something.</summary>
@@ -145,6 +217,7 @@ public sealed record SearchModel(
         && Scope == other.Scope && Held == other.Held && Error == other.Error
         && Older == other.Older && HistoryNote == other.HistoryNote && HistoryRunning == other.HistoryRunning
         && OlderLines == other.OlderLines && OlderSource == other.OlderSource
+        && OlderFound == other.OlderFound && OlderSearched == other.OlderSearched && OlderTotal == other.OlderTotal && OlderCapped == other.OlderCapped
         && ModelLists.Same(Rows, other.Rows);
 
     public override int GetHashCode() => HashCode.Combine(Query, Regex, AllWindows, Scope, Held, Error, ModelLists.Hash(Rows));

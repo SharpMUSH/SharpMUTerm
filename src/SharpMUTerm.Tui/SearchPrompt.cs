@@ -214,10 +214,8 @@ internal static class SearchPrompt
         ArgumentNullException.ThrowIfNull(model);
         var rows = model.Rows;
         var query = model.Query;
-        var all = model.AllWindows;
-
-        var labelWidth = all || rows.Any(r => r.IsOlder)
-            ? Math.Min(MaxLabelWidth, rows.Select(r => RowLabel(r, all).Length).DefaultIfEmpty(0).Max())
+        var labelWidth = model.Labelled
+            ? Math.Min(MaxLabelWidth, rows.Select(r => model.LabelFor(r).Length).DefaultIfEmpty(0).Max())
             : 0;
         var entryWidth = (width > 0 ? width : DefaultEntryWidth) - 4 - (labelWidth > 0 ? labelWidth + 2 : 0);
 
@@ -237,7 +235,7 @@ internal static class SearchPrompt
         var last = listRows > 0 ? Math.Min(rows.Count, top + listRows - body.Count) : rows.Count;
         for (var i = top; i < last; i++)
         {
-            body.Add(Row(rows[i], i == selected, entryWidth, labelWidth, width, all));
+            body.Add(Row(rows[i], model.LabelFor(rows[i]), i == selected, entryWidth, labelWidth, width));
         }
 
         while (body.Count < listRows)
@@ -296,16 +294,14 @@ internal static class SearchPrompt
             : $"[{Value}]{Escape(query)}[/][{Ink} on {Accent}] [/]";
 
     /// <summary>
-    /// What a row's window column says: the window's name in ⌥A scope, and <c>older</c> on a row from older history — the
-    /// only place a reader can tell a line the pane holds from one ⏎ will open in the history view.
+    /// One row. <paramref name="rowLabel"/> is the window column (<see cref="SearchModel.LabelFor"/>): the window's name in
+    /// ⌥A scope, how far back an older-history row is and <c>here</c> beside it — the only place a reader can tell a line the
+    /// pane holds from one ⏎ will open in the history view.
     /// </summary>
-    private static string RowLabel(SearchRow row, bool all) =>
-        row.IsOlder ? (all ? $"{row.WindowLabel} · older" : "older") : all ? row.WindowLabel : string.Empty;
-
-    private static string Row(SearchRow row, bool selected, int entryWidth, int labelWidth, int width, bool all)
+    private static string Row(SearchRow row, string rowLabel, bool selected, int entryWidth, int labelWidth, int width)
     {
         var (text, matchStart, matchLength) = Elide(row, entryWidth);
-        var label = labelWidth > 0 ? LabelCell(RowLabel(row, all), labelWidth) : string.Empty;
+        var label = labelWidth > 0 ? LabelCell(rowLabel, labelWidth) : string.Empty;
 
         if (selected)
         {

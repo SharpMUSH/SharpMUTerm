@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Client.Surfaces;
@@ -56,6 +57,15 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>Feeds a key to the cell console.</summary>
     internal void SimulateConsoleKey(ConsoleKeyInfo key) => _helpView.SimulateKey(key);
+
+    /// <summary>A click on a link in the cell console's body, for the tests: the console control's own handler.</summary>
+    internal void SimulateConsoleLink(string url)
+    {
+        if (CellConsole is not null)
+        {
+            _helpView.SimulateLink(url);
+        }
+    }
 
     /// <summary>Types <paramref name="text"/> at the cell console's prompt.</summary>
     internal void SimulateConsoleTyping(string text)
@@ -202,7 +212,8 @@ internal sealed partial class SharpMUTermApp
                     NativeModalClosed(session!);
                     _consoleKey = null;
                 }),
-                () => OnUiThread(() => ListScriptsToEdit(fromConsole: true)))
+                () => OnUiThread(() => ListScriptsToEdit(fromConsole: true)),
+                (drawn, index) => OnUiThread(() => OpenConsoleError(drawn, index)))
             {
                 Theme = _theme.Clone(),
             };
@@ -212,14 +223,19 @@ internal sealed partial class SharpMUTermApp
 
         var console = new ScriptConsoleSurface(model);
         _console = console;
-        var rows = Math.Clamp(_system.DesktopDimensions.Height - 6, 10, 30);
+
+        // Sized on the first draw (the overlay measures at its width before it is built) to what the console holds, so the
+        // log is not drawn under rows of blank padding; after that the size is fixed and the log scrolls.
+        var maxRows = Math.Clamp(_system.DesktopDimensions.Height - 6, 10, 30);
+        int? rows = null;
         _helpView.Open(
             "script-console",
             "Script console",
             width =>
             {
                 Drawing(SurfaceCatalog.ScriptConsole, string.Empty, console.Model);
-                return console.Render(width, rows);
+                rows ??= ScriptConsoleSurface.RowsFor(console.Model, width, maxRows);
+                return console.Render(width, rows.Value);
             },
             ConsoleKeyPressed,
             width: ScriptConsoleSurface.PreferredWidth,
@@ -227,7 +243,61 @@ internal sealed partial class SharpMUTermApp
             {
                 _console = null;
                 _consoleKey = null;
-            });
+            },
+            link: url => OpenConsoleErrorLink(console, url));
+    }
+
+    /// <summary>
+    /// A click on a link in the cell console: only <see cref="ScriptConsoleModel.ErrorLinkPrefix"/> and an index into the
+    /// lines the console last drew, so nothing a script printed can name another action.
+    /// </summary>
+    private void OpenConsoleErrorLink(ScriptConsoleSurface console, string url)
+    {
+        if (!url.StartsWith(ScriptConsoleModel.ErrorLinkPrefix, StringComparison.Ordinal)
+            || !int.TryParse(url.AsSpan(ScriptConsoleModel.ErrorLinkPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var index))
+        {
+            return;
+        }
+
+        OpenConsoleError(console.Model, index);
+    }
+
+    /// <summary>
+    /// A console error row clicked, from either host: the script it names (<c>file.lua:(N,…)</c>, matched against this
+    /// character's scripts the way ⌃P lists them) opens in the editor with the caret on line N and that line marked — the
+    /// path ⌃P's <c>Script …</c> entries take — and closing the editor comes back to the console. A row that names no line
+    /// of a script of this character's is refused out loud.
+    /// </summary>
+    internal void OpenConsoleError(ScriptConsoleModel model, int index)
+    {
+        if (model.ErrorAt(index) is not { } at)
+        {
+            RefuseCommand("that console line names no script line");
+            return;
+        }
+
+        var text = model.Lines[index].Text;
+        var name = ScriptFileRefs().FirstOrDefault(r => SharpMUTerm.Client.Composer.ScriptErrors.LineIn(text, r.Name) is not null)?.Name;
+        if (name is null)
+        {
+            RefuseCommand($"{Snippet(at.File)} is not one of this character's scripts");
+            return;
+        }
+
+        if (ScriptConsoleIsOpen)
+        {
+            if (NativeModalOf(SurfaceCatalog.ScriptConsole) is { } native)
+            {
+                CloseNativeModal(native);
+            }
+            else
+            {
+                _helpView.Close();
+            }
+        }
+
+        _scriptReturnToConsole = true;
+        OpenScriptAt(name, at.Line);
     }
 
     /// <summary>A key in the cell console.</summary>
@@ -380,7 +450,7 @@ internal sealed partial class SharpMUTermApp
         store.Set("last_room", JsonValue.Create("The Grand Plaza"));
         log.Add(ScriptConsoleKind.Note, "loaded corvid.lua");
         log.Add(ScriptConsoleKind.Output, "[info] corvid.lua: watching for tells");
-        log.Add(ScriptConsoleKind.Error, "corvid.lua:(14,8-12): attempt to index a nil value (field 'vitals')");
+        log.Add(ScriptConsoleKind.Error, DemoScriptError);
         return (host, store);
     }
 

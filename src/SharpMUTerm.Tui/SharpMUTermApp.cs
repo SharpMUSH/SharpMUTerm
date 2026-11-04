@@ -1954,7 +1954,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (string.Equals(view, "script-edit", StringComparison.OrdinalIgnoreCase))
         {
             OpenScript("corvid.lua", 14);
-            SetScriptStatus("! corvid.lua:(14,22-30): attempt to index a nil value (local 'room')");
+            SetScriptStatus("! " + DemoScriptError);
         }
 
         // GMCP channel capture, the highlight-names list and a scene log, over the demo (scripting wave).

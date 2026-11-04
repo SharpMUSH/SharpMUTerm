@@ -9,6 +9,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- A script error in the script console that names a file and line is now a link: click it to open that script with the
+  caret on the line and the line marked. Closing the editor goes back to the console.
 - The script editor numbers its lines in the desktop window too, and after a save whose reload fails, the line the
   error names is marked in both the terminal and the window.
 - When Ctrl+F finds fewer matches than it might because the pane no longer holds older lines, its status line offers
@@ -349,6 +351,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The older-history page fits an 80×24 terminal: it sizes its page to the screen, keeps its keys on screen and no longer
+  covers the command line.
+- Ctrl+F with older history says both counts on one line (`this window 3 of 39 · older 4 of 6,000`). Older matches say
+  how far back they are (`1.6k lines ago`) and the pane's own say `here`.
+- The script console opens at the size of what it holds, so its log no longer starts under blank rows.
 - The settings screens' key hints no longer lose words from the middle at 80 columns: the least-used keys are left
   out and the way to close is always there.
 - Help topics have headings and show their keys as keys, in the terminal and the window, and a topic's title fits

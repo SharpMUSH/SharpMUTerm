@@ -25,6 +25,7 @@ internal sealed class ListOverlay
     private Func<ConsoleKeyInfo, bool>? _key;
     private Func<bool>? _escape;
     private Action? _closed;
+    private Action<string>? _link;
 
     private ScreenTheme _scheme;
 
@@ -68,6 +69,10 @@ internal sealed class ListOverlay
     /// scrolled away (the import review at 80×24 lost both). Each row is one line, never wrapped: fit it to the width.
     /// </param>
     /// <param name="scrollKeys">Whether ↑↓ PgUp PgDn Home End scroll the body before the key handler sees them.</param>
+    /// <param name="link">
+    /// Told the target of a <c>[link=…]</c> clicked in the body: this surface's own handler, never the output panes'
+    /// (whose links are scheme-tagged server text). With none, a link in the body does nothing.
+    /// </param>
     public void Open(
         string mode,
         string title,
@@ -77,13 +82,15 @@ internal sealed class ListOverlay
         Func<bool>? escape = null,
         Action? closed = null,
         Func<int, List<string>>? footer = null,
-        bool scrollKeys = false)
+        bool scrollKeys = false,
+        Action<string>? link = null)
     {
         if (_window is not null)
         {
             Close();
         }
 
+        _link = link;
         _render = render;
         _key = key;
         _escape = escape;
@@ -97,6 +104,7 @@ internal sealed class ListOverlay
         var footerLines = footer?.Invoke(outer - 4) ?? [];
         var height = Math.Clamp(Rows(lines, outer - 3) + footerLines.Count + 2, 8, Math.Max(8, desktop.Height - 2));
         _content = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
+        _content.LinkClicked += (_, e) => _link?.Invoke(e.Url);
         IWindowControl body = _content;
         if (footer is not null)
         {
@@ -190,6 +198,15 @@ internal sealed class ListOverlay
 
     internal void SimulateKey(ConsoleKeyInfo key) => OnKey(this, new KeyPressedEventArgs(key, false));
 
+    /// <summary>A click on a body link with target <paramref name="url"/>, for a test (the surface's own handler, as a click).</summary>
+    internal void SimulateLink(string url)
+    {
+        if (_window is not null)
+        {
+            _link?.Invoke(url);
+        }
+    }
+
     public void Close()
     {
         if (_window is { } window)
@@ -278,6 +295,7 @@ internal sealed class ListOverlay
         _body = null;
         _footer = null;
         _scrollKeys = false;
+        _link = null;
         _render = null;
         _key = null;
         _escape = null;

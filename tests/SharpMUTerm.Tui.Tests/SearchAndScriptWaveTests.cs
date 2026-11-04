@@ -66,7 +66,7 @@ public class SearchAndScriptWaveTests
         var frame = app.RenderSnapshot("search-history");
         var page = app.HistoryViewModel!;
 
-        await Assert.That(page.Marked - page.Top).IsEqualTo(ScrollbackViewModel.PageRows / 2);
+        await Assert.That(page.Marked - page.Top).IsEqualTo(page.PageRows / 2);
         var rows = FrameGrid.Decode(frame, 120, 32);
         var context = rows.Count(r => r.Contains("│ ", StringComparison.Ordinal) && r.Contains("] ", StringComparison.Ordinal));
         await Assert.That(context).IsGreaterThanOrEqualTo(2 * ScrollbackViewModel.ContextRows).Because(string.Join('\n', rows));

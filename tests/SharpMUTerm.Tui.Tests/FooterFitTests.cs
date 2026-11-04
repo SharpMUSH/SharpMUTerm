@@ -56,6 +56,12 @@ public class FooterFitTests
         ("triggers", ["[Esc] Close", "[⏎] Edit"]),
         ("keypad", ["[Esc] Close", "[⏎] Edit"]),
         ("trigger-builder", ["[Esc] Revert", "[⏎] Commit"]),
+        ("search-older", ["↑↓ pick", "⌃F closes"]),
+        ("search-older", ["this window 3 of 39", "older 4 of 6,000"]),
+        ("search-history", ["↑↓ a line", "Esc closes"]),
+        ("search-history", ["OLDER HISTORY · Corvid · read only"]),
+        ("script-edit", ["⌃S save and reload", "Esc close"]),
+        ("script-list", ["Script corvid.lua", "line 14 in the console"]),
     ];
 
     public static IEnumerable<Func<(string View, string Hints)>> Cases() =>

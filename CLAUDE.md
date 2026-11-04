@@ -418,12 +418,18 @@ fallbacks) for inline images/maps.
     a session window has any: its session's `ScrollbackBuffer`, ring and spill, walked newest first in ranged reads of
     `MaxRangeLines` off the UI thread (inline headless, so frames are deterministic), cancelled by the next query or by
     closing, `OutputSearch.Match`'s timeout per line, at most 500 hits. Lines the pane still holds are skipped by
-    reference (a session window's `PaneLine.Source` is the ring's instance). Older rows list after the pane's, tagged
-    `older`; the note on the count row says the bound and the progress, and that captures keep no older history. ⏎ on
-    one goes to the pane if it holds the line, else opens the **history view**: a modal page of 20 lines, every move a
-    ranged read, never inserted into a pane buffer. ⌥G stays pane-only. It opens **centred on the hit**
-    (`ScrollbackViewModel.TopFor`, clamped at the ends), and `Role(line)` makes the `ContextRows` (3) either side context:
-    body ink behind a `│` in cells, a rule in the window; the rest of the page muted/dim.
+    reference (a session window's `PaneLine.Source` is the ring's instance). Older rows list after the pane's, their
+    window column saying how far back (`SearchModel.AgeLabel`: `1.6k lines ago` — the scrollback keeps no clock) and the
+    pane's rows `here` (`SearchModel.LabelFor`, both hosts). **Both counts are one row** (`CountText`: `this window 3 of 39 ·
+    older 4 of 6,000`, `older 2… 1,200 of 6,000 read` while it reads; `OlderFound`/`OlderSearched`/`OlderTotal`); the note
+    says only what is not a count (an error, captures keep no older history). ⏎ on one goes to the pane if it holds the
+    line, else opens the **history view**: a modal page, every move a ranged read, never inserted into a pane buffer. ⌥G
+    stays pane-only. **The page size is the model's** (`ScrollbackViewModel.PageRows`, from `PageRowsFor(rows, columns)` at
+    open: the modal ends above the command line, 13 at 80×24, at most 20), title and position on two rows below 100 columns
+    (`TwoTitleRows`), keys pinned with `ListOverlay.Open(footer:)` (`KeysLadder`); the window reads the same page. It opens
+    **centred on the hit** (`TopFor(…, page)`, clamped at the ends), and `Role(line)` makes the `ContextRows` (3) either side
+    context: body ink behind a `│` in cells, a rule in the window; the rest of the page muted/dim. The demo's history is
+    stamped 18:00–22:59 and only moves forward (`DemoHistoryStamp`).
   - **⌥H is offered on the status line, not in a modal, only while the pane cap trimmed what ⌃F searched**
     (`SearchModel.OlderLines`/`OlderSource`/`OffersOlder`: a query, ⌥H off, and the session scrollback holding lines the pane
     does not). `OlderHintLadder` is four rungs, all starting `⌥H`; the cells take the longest that fits beside the count
@@ -3183,6 +3189,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   The prompt exists only with a scripts root whose folder exists and a window with a character; otherwise the model's
   `Unavailable` says which. Every gesture ends in `RunConsoleLine`/`DeleteStoreKey`/`ReloadConsoleScripts` (surface
   `script-console`, parity-probed). The demo scene has its own sandbox (`_demoScripts`), so the snapshot's prompt runs.
+  - **An error row naming `file.lua:(N,…)` is a link to that line** (`ScriptConsoleModel.ErrorAt`, `ScriptErrors.At`): in
+    cells `[link=mux:script-error:N]`, N an index into the lines drawn, answered by the console's own `ListOverlay` link
+    handler (`Open(link:)`), never the panes'; in the window an underlined row (`ScriptConsoleSession.OpenError`). Both end
+    in `OpenConsoleError`: the file is matched against `ScriptFileRefs()`, the console closes, and `OpenScriptAt` (⌃P's
+    `Script …` path) opens it with the caret and `ErrorLine` on N; Esc returns to the console. The demo's error is one
+    constant, `DemoScriptError`, in the console and the `script-edit` header.
+  - **The cell console is sized to what it holds when it opens** (`ScriptConsoleSurface.RowsFor`, at least `MinBodyRows`
+    of log), so its log is not drawn under blank padding; then the size is fixed and the log scrolls, newest above the prompt.
 - **GMCP channels go to a window per channel through `SpawnLine`** (`ChannelCapture`, Core;
   `WorldDefinition.CaptureChannels`, F5 ▸ `channels`: off/copy/move, off by default). `Comm.Channel.Text`'s `channel`
   names the window (letters, digits, space, `-`, `_`, 24 at most); its `text` is parsed through `AnsiParser`. `move`

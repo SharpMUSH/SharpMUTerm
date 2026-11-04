@@ -89,7 +89,8 @@ public class DeepSearchTests
         await Assert.That(model.Rows[1].Text).IsEqualTo("a goblin, line 10");
         await Assert.That(model.HeldRows).IsEqualTo(1);
         await Assert.That(model.HistoryRunning).IsFalse();
-        await Assert.That(model.HistoryNote).Contains("1 found");
+        await Assert.That(model.CountText).StartsWith("this window 1 of ").And.Contains(" · older 1 of ");
+        await Assert.That(model.HistoryNote).IsNull().Because("the counts are one row; the note says only what is not a count");
         await Assert.That(model.StateText).Contains("older history");
     }
 
@@ -108,7 +109,7 @@ public class DeepSearchTests
         await Assert.That(app.SearchIsOpen).IsFalse();
         await Assert.That(app.HistoryViewIsOpen).IsTrue();
         var page = app.HistoryViewModel!;
-        await Assert.That(page.Lines.Count).IsEqualTo(ScrollbackViewModel.PageRows);
+        await Assert.That(page.Lines.Count).IsEqualTo(page.PageRows);
         await Assert.That(page.Lines.Any(l => l.Index == page.Marked && l.Text == "a goblin, line 10")).IsTrue();
         await Assert.That(page.Title).Contains("read only");
 

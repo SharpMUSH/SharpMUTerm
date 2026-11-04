@@ -254,7 +254,7 @@ internal sealed class SearchView : DockPanel, IModalView
             return;
         }
 
-        var labelled = _model.AllWindows || _model.Rows.Any(r => r.IsOlder);
+        var labelled = _model.Labelled;
         for (var i = 0; i < _model.Rows.Count; i++)
         {
             var row = _model.Rows[i];
@@ -262,8 +262,9 @@ internal sealed class SearchView : DockPanel, IModalView
             var line = new DockPanel();
             if (labelled)
             {
-                // The cells' window column: the window in ⌥A scope, and "older" on a row ⏎ opens in the history view.
-                var label = row.IsOlder ? (_model.AllWindows ? $"{row.WindowLabel} · older" : "older") : _model.AllWindows ? row.WindowLabel : string.Empty;
+                // The cells' window column (SearchModel.LabelFor): the window in ⌥A scope, how far back an older row is
+                // (⏎ opens it in the history view), and "here" on a row the pane holds.
+                var label = _model.LabelFor(row);
                 var window = new TextBlock
                 {
                     Text = label,

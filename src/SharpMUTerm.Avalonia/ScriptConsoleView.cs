@@ -197,8 +197,9 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
             _output.Children.Add(Line(_model.CanRun ? ScriptConsoleModel.Empty : _model.Unavailable ?? string.Empty, _colours.Dim, string.Empty));
         }
 
-        foreach (var line in _model.Lines)
+        for (var i = 0; i < _model.Lines.Count; i++)
         {
+            var line = _model.Lines[i];
             var colour = line.Kind switch
             {
                 ScriptConsoleKind.Error => _colours.Warn,
@@ -206,7 +207,10 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
                 ScriptConsoleKind.Input or ScriptConsoleKind.Note => _colours.Dim,
                 _ => _colours.Text,
             };
-            _output.Children.Add(Line(line.Text, colour, ScriptConsoleModel.Mark(line.Kind)));
+            var index = i;
+            _output.Children.Add(_model.ErrorAt(i) is { } at
+                ? ErrorLink(line.Text, colour, at, () => OpenError(index))
+                : Line(line.Text, colour, ScriptConsoleModel.Mark(line.Kind)));
         }
 
         _outputScroller.ScrollToEnd();
@@ -235,6 +239,47 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
 
         _selectedKey = _model.Store.Count == 0 ? -1 : Math.Clamp(_selectedKey, -1, _model.Store.Count - 1);
         Highlight();
+    }
+
+    /// <summary>
+    /// A click on error row <paramref name="index"/>: the console closes and the client opens the script it names on its
+    /// line (<see cref="ScriptConsoleSession.OpenError"/>), the cells' link.
+    /// </summary>
+    public void OpenError(int index)
+    {
+        if (_session.OpenError(index))
+        {
+            _done();
+        }
+    }
+
+    /// <summary>An error row naming a script line: underlined, a hand under the pointer, and a click opens that line.</summary>
+    private Control ErrorLink(string text, Color colour, (string File, int Line) at, Action open)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, 1), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand) };
+        var gutter = new TextBlock { Text = ScriptConsoleModel.Mark(ScriptConsoleKind.Error), Width = 18, FontFamily = _mono, Foreground = _colours.Brush(colour), FontSize = NativeTokens.Body };
+        SetDock(gutter, Dock.Left);
+        row.Children.Add(gutter);
+        row.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontFamily = _mono,
+            FontSize = NativeTokens.Body,
+            Foreground = _colours.Brush(colour),
+            TextWrapping = TextWrapping.Wrap,
+            TextDecorations = TextDecorations.Underline,
+        });
+        ToolTip.SetTip(row, $"Open {at.File} at line {at.Line.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        global::Avalonia.Automation.AutomationProperties.SetName(row, text);
+        row.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(row).Properties.IsLeftButtonPressed)
+            {
+                e.Handled = true;
+                open();
+            }
+        };
+        return row;
     }
 
     private Control Line(string text, Color colour, string mark)

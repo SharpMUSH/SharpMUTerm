@@ -61,6 +61,12 @@ internal sealed partial class SharpMUTermApp
         "\n" +
         "trigger.add('^(\\\\w+) tells you', 'on_tell')\n";
 
+    /// <summary>
+    /// The demo's one script error: what its console shows and what the editor's header says over <c>corvid.lua</c> line 14
+    /// (<c>map.current</c> is columns 16–26 there), so the two never disagree.
+    /// </summary>
+    internal const string DemoScriptError = "corvid.lua:(14,16-26): attempt to call a nil value (field 'current')";
+
     /// <summary>Whether the focused window is the demo's, in a client with no scripts folder — the snapshot's scripts.</summary>
     private bool DemoScriptsShown =>
         _scriptsRoot is null && _workspace.FindWindow(ActiveWindowId())?.SessionKey is { } owner && IsDemoKey(owner);
@@ -184,10 +190,15 @@ internal sealed partial class SharpMUTermApp
 
         var owner = ScriptOwner();
         var errors = owner is null ? [] : ConsoleLog(owner).Lines.Where(l => l.Kind == ScriptConsoleKind.Error).Select(l => l.Text).ToArray();
-        var line = LastErrorLine(errors, name) ?? 0;
-        OpenScript(name, line, errorLine: line);
+        OpenScriptAt(name, LastErrorLine(errors, name) ?? 0);
         return true;
     }
+
+    /// <summary>
+    /// Opens script <paramref name="name"/> with the caret on <paramref name="line"/> and that line marked as the error's
+    /// (0 for neither): the one way in for ⌃P's <c>Script …</c> entries and a console error row's link.
+    /// </summary>
+    private void OpenScriptAt(string name, int line) => OpenScript(name, line, errorLine: line);
 
     /// <summary><c>/script</c>, <c>/script edit [name]</c>, <c>/script new &lt;name&gt;</c>.</summary>
     private void ScriptCommand(string args)
