@@ -69,6 +69,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharpMUTerm.Audio\SharpMUTerm.Audio.csproj" />
+    <ProjectReference Include="..\SharpMUTerm.Client\SharpMUTerm.Client.csproj" />
     <ProjectReference Include="..\SharpMUTerm.Core\SharpMUTerm.Core.csproj" />
     <ProjectReference Include="..\SharpMUTerm.Graphics\SharpMUTerm.Graphics.csproj" />
     <ProjectReference Include="..\SharpMUTerm.Scripting\SharpMUTerm.Scripting.csproj" />

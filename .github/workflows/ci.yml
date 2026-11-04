@@ -44,6 +44,11 @@ jobs:
         shell: bash
         run: dotnet run -c Release --no-build --project tests/SharpMUTerm.Core.Tests/SharpMUTerm.Core.Tests.csproj
 
+      - name: Test — Client
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: dotnet run -c Release --no-build --project tests/SharpMUTerm.Client.Tests/SharpMUTerm.Client.Tests.csproj
+
       - name: Test — Graphics
         if: ${{ !cancelled() }}
         shell: bash

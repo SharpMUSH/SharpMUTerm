@@ -892,6 +892,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // short with the input bar a row up, for good.
         _window.IsScrollable = false;
 
+        RegisterBuiltInContributions();
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
@@ -6462,7 +6463,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         .ToList();
 
     /// <summary>The command-surface id prefix for "open this settings screen".</summary>
-    private const string ScreenCommandPrefix = "screen:";
+    private const string ScreenCommandPrefix = CommandIds.ScreenPrefix;
 
     /// <summary>
     /// Binds every chord the app claims globally: the window/pane commands, and each settings screen's
@@ -7684,9 +7685,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// the SETTINGS group from that table is that the two cannot disagree, and only a test that reads
     /// both can say so.
     /// </summary>
-    internal IReadOnlyList<CommandItem> BuildCatalog()
+    internal IReadOnlyList<CommandItem> BuildCatalog() => _contributions.Commands.Catalog(CommandEnvironment());
+
+    /// <summary>The stateful flags the catalog's labels read, as they stand now.</summary>
+    private CommandContext CommandState()
     {
-        var context = new CommandContext(
+        return new CommandContext(
             LoggingOn: _active?.IsLogging == true,
             Zoomed: _workspace.Layout.ZoomedPaneId is not null,
             Frozen: _workspace.Layout.FocusedPane.Frozen,
@@ -7698,8 +7702,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()));
-        return CommandCatalog.Build(
-            _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
     }
 
     /// <summary>
@@ -7947,9 +7949,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal bool MessageLogIsOpen => _messageLog.IsOpen;
 
     /// <summary>
-    /// Runs a command-surface entry by its id, doing what the current shell supports. Internal so a
-    /// headless test can dispatch an id the way the palette does, without opening the surface and
-    /// typing at it.
+    /// Does the work for a built-in command id: the <c>run</c> every contribution
+    /// <c>BuiltInCommands.Register</c> makes is handed. <see cref="DispatchCommand"/> reaches it through the
+    /// registry, which is what lets a package's or a host's command sit beside these.
     /// <para>
     /// Returns <see langword="false"/> for an id nothing here implements. That is not a nicety: the
     /// catalog is generated from live state and this is a hand-written switch, so the two drift in
@@ -7958,7 +7960,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// fails on a false, which is the only thing that makes them stay in step.
     /// </para>
     /// </summary>
-    internal bool DispatchCommand(string id)
+    private bool RunBuiltInCommand(string id)
     {
         if (DispatchGroupCommand(id))
         {

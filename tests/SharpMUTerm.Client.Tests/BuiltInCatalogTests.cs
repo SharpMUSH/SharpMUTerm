@@ -1,9 +1,10 @@
+using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Workspaces;
 
-namespace SharpMUTerm.Core.Tests.Commands;
+namespace SharpMUTerm.Client.Tests;
 
-public class CommandCatalogTests
+public class BuiltInCatalogTests
 {
     private static readonly CharacterRef[] Characters =
     {
@@ -15,7 +16,7 @@ public class CommandCatalogTests
     public async Task NonFocusedCharacters_BecomeSwitchEntries()
     {
         var ws = new Workspace();
-        var catalog = CommandCatalog.Build(ws, Characters, "Aetherfall.Corvid", new CommandContext());
+        var catalog = BuiltInCommands.Catalog(ws, Characters, "Aetherfall.Corvid", new CommandContext());
 
         var switches = catalog.Where(c => c.Id.StartsWith("char:")).ToArray();
         await Assert.That(switches).HasSingleItem(); // Corvid is focused, only Rookery remains
@@ -29,7 +30,7 @@ public class CommandCatalogTests
         var ws = new Workspace();
         ws.RouteSpawn("Chat"); // background window, 1 unread, owner unset here
 
-        var catalog = CommandCatalog.Build(ws, Characters, "Aetherfall.Corvid", new CommandContext());
+        var catalog = BuiltInCommands.Catalog(ws, Characters, "Aetherfall.Corvid", new CommandContext());
         var goTo = catalog.Single(c => c.Id.StartsWith("win:"));
         await Assert.That(goTo.Title).IsEqualTo("Go to Chat");
         await Assert.That(goTo.Subtitle).Contains("1 unread");
@@ -39,10 +40,10 @@ public class CommandCatalogTests
     public async Task StatefulCommands_ReadCurrentValue()
     {
         var ws = new Workspace();
-        var loggingOff = CommandCatalog.Build(ws, Characters, null, new CommandContext(LoggingOn: false));
+        var loggingOff = BuiltInCommands.Catalog(ws, Characters, null, new CommandContext(LoggingOn: false));
         await Assert.That(loggingOff.Any(c => c.Title == "Start logging")).IsTrue();
 
-        var loggingOn = CommandCatalog.Build(ws, Characters, null, new CommandContext(LoggingOn: true, Zoomed: true, Frozen: true));
+        var loggingOn = BuiltInCommands.Catalog(ws, Characters, null, new CommandContext(LoggingOn: true, Zoomed: true, Frozen: true));
         await Assert.That(loggingOn.Any(c => c.Title == "Pause logging")).IsTrue();
         await Assert.That(loggingOn.Any(c => c.Title == "Unzoom pane")).IsTrue();
         await Assert.That(loggingOn.Any(c => c.Title == "Resume scrollback")).IsTrue();
@@ -56,7 +57,7 @@ public class CommandCatalogTests
     [Test]
     public async Task TheTabCycleIsListedWithItsChord()
     {
-        var catalog = CommandCatalog.Build(new Workspace(), Characters, null, new CommandContext());
+        var catalog = BuiltInCommands.Catalog(new Workspace(), Characters, null, new CommandContext());
 
         var entry = catalog.Single(c => c.Id == "layout:next-tab");
         await Assert.That(entry.Title).IsEqualTo("Focus the next tab");
@@ -72,7 +73,7 @@ public class CommandCatalogTests
     [Test]
     public async Task NumberedPaneEntries_AppearOnlyOnASplit_AndOnlyTheFirstNineCarryAChord()
     {
-        var one = CommandCatalog.Build(new Workspace(), Characters, null, new CommandContext());
+        var one = BuiltInCommands.Catalog(new Workspace(), Characters, null, new CommandContext());
         await Assert.That(one.Any(c => c.Id.StartsWith(CommandIds.PanePrefix, StringComparison.Ordinal)))
             .IsFalse();
 
@@ -97,7 +98,7 @@ public class CommandCatalogTests
         var panes = ws.Layout.Panes.Count;
         await Assert.That(panes).IsGreaterThan(CommandIds.PaneJumpDigits);
 
-        var entries = CommandCatalog.Build(ws, Characters, null, new CommandContext())
+        var entries = BuiltInCommands.Catalog(ws, Characters, null, new CommandContext())
             .Where(c => c.Id.StartsWith(CommandIds.PanePrefix, StringComparison.Ordinal))
             .ToList();
 
@@ -137,7 +138,7 @@ public class CommandCatalogTests
         // focused *character* is Corvid, because the numbering is scoped to whoever is active and a
         // catalog built for nobody would correctly hand out no chords at all.
         ws.Layout.FocusedPane.ActiveIndex = -1;
-        var entries = CommandCatalog.Build(ws, Characters, "Aetherfall.Corvid", new CommandContext())
+        var entries = BuiltInCommands.Catalog(ws, Characters, "Aetherfall.Corvid", new CommandContext())
             .Where(c => c.Id.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal))
             .ToDictionary(c => c.Id, c => c.Subtitle, StringComparer.Ordinal);
 
@@ -162,7 +163,7 @@ public class CommandCatalogTests
     public async Task Catalog_CoversEveryGroup()
     {
         var ws = new Workspace();
-        var catalog = CommandCatalog.Build(ws, Characters, "Aetherfall.Corvid", new CommandContext(), Screens);
+        var catalog = BuiltInCommands.Catalog(ws, Characters, "Aetherfall.Corvid", new CommandContext(), Screens);
         foreach (var group in Enum.GetValues<CommandGroup>())
         {
             await Assert.That(catalog.Any(c => c.Group == group)).IsTrue();
@@ -179,7 +180,7 @@ public class CommandCatalogTests
     public async Task EverySettingsScreenTheHostOffers_BecomesAnEntry_SubtitledWithItsKey()
     {
         var ws = new Workspace();
-        var catalog = CommandCatalog.Build(ws, Characters, null, new CommandContext(), Screens);
+        var catalog = BuiltInCommands.Catalog(ws, Characters, null, new CommandContext(), Screens);
 
         var settings = catalog.Where(c => c.Group == CommandGroup.Settings).ToArray();
         await Assert.That(settings.Length).IsEqualTo(2);
@@ -194,7 +195,7 @@ public class CommandCatalogTests
     public async Task AHostThatOffersNoScreens_GetsNoSettingsGroup()
     {
         var ws = new Workspace();
-        var catalog = CommandCatalog.Build(ws, Characters, null, new CommandContext());
+        var catalog = BuiltInCommands.Catalog(ws, Characters, null, new CommandContext());
 
         await Assert.That(catalog.Any(c => c.Group == CommandGroup.Settings)).IsFalse();
     }

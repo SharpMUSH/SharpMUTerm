@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/SharpMUTerm.Audio/SharpMUTerm.Audio.csproj" />
     <Project Path="src/SharpMUTerm.Avalonia/SharpMUTerm.Avalonia.csproj" />
+    <Project Path="src/SharpMUTerm.Client/SharpMUTerm.Client.csproj" />
     <Project Path="src/SharpMUTerm.Core/SharpMUTerm.Core.csproj" />
     <Project Path="src/SharpMUTerm.Graphics/SharpMUTerm.Graphics.csproj" />
     <Project Path="src/SharpMUTerm.Scripting/SharpMUTerm.Scripting.csproj" />
@@ -10,6 +11,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SharpMUTerm.Avalonia.Tests/SharpMUTerm.Avalonia.Tests.csproj" />
+    <Project Path="tests/SharpMUTerm.Client.Tests/SharpMUTerm.Client.Tests.csproj" />
     <Project Path="tests/SharpMUTerm.Core.Tests/SharpMUTerm.Core.Tests.csproj" />
     <Project Path="tests/SharpMUTerm.Graphics.Tests/SharpMUTerm.Graphics.Tests.csproj" />
     <Project Path="tests/SharpMUTerm.Scripting.Tests/SharpMUTerm.Scripting.Tests.csproj" />
