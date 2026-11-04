@@ -1155,9 +1155,24 @@ fallbacks) for inline images/maps.
     exists for), and covering both arrangements means the layout a person actually runs in the window is held to
     the terminal's cell for cell, rather than compared below an offset or skipped. What the native header and
     sidebar *say* is held to the cells by the shared models (`NativeChromeModelTests`), not by pixels.
-  - **Not done**: no keyboard navigation of the native views (the keys are the client's: ⌥N, ⌥J/⌥K, ⌃P), no
-    scrolling of an overlong sidebar (rows past the foot are cut), no right-click menu on a sidebar row, no
-    animation when the sidebar folds.
+  - **An overlong sidebar scrolls** under the title and above the foot button, with the wheel or the panes' overlay
+    bar (4 px, 8 px under the pointer, dragged by its thumb); rows are laid out unscrolled, the scroll clamped, and
+    a row half under the title is clickable only where it shows (hit areas intersect the list).
+  - **⌥C moves the keyboard into the sidebar, in both hosts** (`SharpMUTermApp.RailKeys.cs`; `SidebarModel.Cursor`;
+    ⌃P `layout:rail-keys`; the `rail-keys` view). ↑↓ Home End walk `NavigableRows()`, ⏎ goes where a click goes
+    (`DispatchRailTarget`), Esc or ⌥C hands the keys back, and any other key hands them back *and* does what it does
+    on the command line. Focus never moves: the cursor is client state `HandleWindowKey` reads first (`TryRailKey`),
+    the way an armed ⌃B is, and every other global shortcut leaves it before acting. The cell rail draws the row on
+    the armed band padded to the rail's widest row (no cell spent; inks re-held to the floor on the band,
+    `RailRenderer.OnBand`); the native sidebar draws an accent ring and scrolls the row into view. ⌥C because it
+    is `ESC c` (one Alt chord in a terminal), C names CONNECTIONS, and nothing claimed it — not `AppShortcuts`, the
+    bar's table, nor the window's `HostKeys.Reserved`.
+  - **A right click on a sidebar row opens the client's menu for that row** (`SidebarRowMenu`, `RunSidebarMenuEntry`;
+    `ChromeOverlay.RowMenu`/`RunRowMenu`; the cell rail's pointer menu reads the same method). Entries are registry
+    commands with their keys (switch, connect/disconnect, edit in F5/F9, go to, close, clear), each offered only if
+    the registry resolves it; running one brings the row forward first, and an id the menu did not offer is refused.
+  - **Not done**: no animation when the sidebar folds; the command line keeps its armed band while the sidebar holds
+    the keys; the terminal has no row menu (no pointer menus there), its entries are ⌃P's.
 
 - **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
   `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
@@ -1664,9 +1679,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     theme** (`OptionsScreen.Preview` → `SchemeFor`), so Esc closing with nothing committed is the revert; ⏎ commits
     through `ScreenEdits.Apply`. F7 opens with the cursor on the theme in force. **A theme change is noticed in
     `SaveConfiguration`** (`ApplyThemeIfChanged`, by colour signature) and `ApplyTheme` re-derives the chrome, the
-    formatters, every overlay's `Scheme` and the panes' planes. **Output already in a pane keeps its colours** —
-    it is markup by then — and the notice says so; on a light theme the old dark-theme greys are faint until they
-    scroll away. A customised theme replaced by the picker is kept in `AppConfiguration.CustomThemes` (no schema
+    formatters, every overlay's `Scheme` and the panes' planes. **Output already in a pane is repainted too**
+    (`RestylePaneLines`, the `theme-switched` view): a `PaneLine` keeps the `StyledLine` it was formatted from
+    (`Source`) and a chrome bar the function that draws it (`Bar`), and the switch formats each again against the new
+    reading plane *in place*, so no index moves — freeze point, away/missed/search bars, picture anchors (a reserved
+    picture's pieces through `PictureSlots.Cuts`/`Restyle`) — and the selection is kept (`keepSelection`), since only
+    colours changed. Rows nothing holds a source for (a picture's own rows, the restore replay) keep their markup.
+    Measured at the 2,000-line pane cap: ~106 ms for the switch, ~743 KiB of `StyledLine`s for a window whose lines
+    are not shared with the session's ring (a spawn window; a session window shares the ring's instances).
+    Space on a theme row does what ⏎ does (`SettingsSession.Toggle` on an `Apply` button). A customised theme replaced by the picker is kept in `AppConfiguration.CustomThemes` (no schema
     bump), and listed. Unstyled text on a settings screen takes the scheme's ink (`ScreenChrome.Panel`/`Band`
     set `ForegroundColor`), not the window's, because the window is still the theme in force while one is previewed.
   - Not declared yet: F2–F4, F6 and F10 are listed by title only.

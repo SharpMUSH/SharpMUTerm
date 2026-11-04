@@ -46,7 +46,7 @@ public class FrameContrastTests
         // The selection band is the one plane this client invents rather than derives from a pane, and
         // its ink replaces the world's own colour on every selected cell — so it is the pair with the
         // most to lose from a theme it was not measured against.
-        "selection", "input-selection", "menu-fuzzy", "menu-recent",
+        "selection", "input-selection", "rail-keys", "menu-fuzzy", "menu-recent",
 
         // The split-scrollback band (the notice ink on a pane) and the reflowed room, whose two blocks carry
         // dim labels and the world's own text.

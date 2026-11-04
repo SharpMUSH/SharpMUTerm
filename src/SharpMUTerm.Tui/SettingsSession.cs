@@ -336,7 +336,11 @@ internal sealed class SettingsSession
     {
         if (model.ToggleAt(Selection.Pane, Selection.Index) is not { } toggle)
         {
-            return ScreenAction.Consumed;
+            // A choice row (a theme on F7: the cursor already previews it) takes Space as a checkbox does — as
+            // the commit — so Space is ⏎ there. Every other row with nothing to toggle swallows it, as before.
+            return model.RowAt(Selection.Pane, Selection.Index).Button is { Kind: ScreenButtonKind.Apply }
+                ? Activate(model)
+                : ScreenAction.Consumed;
         }
 
         Edits.Apply(toggle);

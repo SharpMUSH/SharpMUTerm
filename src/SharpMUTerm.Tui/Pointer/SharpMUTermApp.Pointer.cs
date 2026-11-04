@@ -554,26 +554,13 @@ internal sealed partial class SharpMUTermApp
                 break;
 
             case PointerKind.RailRow:
-                var railTarget = target.Key["rail:".Length..];
-                if (railTarget.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal) ||
-                    railTarget.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal))
+                // The native sidebar's row menu, entry for entry (SidebarRowMenu): one menu for one row, whichever
+                // host draws the rail.
+                foreach (var entry in SidebarRowMenu(RailRowKeyFor(target.Key["rail:".Length..])).Entries)
                 {
-                    var go = BuildCatalog().FirstOrDefault(c => c.Id == railTarget);
-                    items.Add(new PointerMenuItem(go?.Title ?? "Go to it", null, () => OnUiThread(() => DispatchRailTarget(railTarget))));
-                }
-
-                if (railTarget.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal))
-                {
-                    items.Add(new PointerMenuItem("Connect", "⌥R", () => OnUiThread(() =>
-                    {
-                        DispatchRailTarget(railTarget);
-                        DispatchCommand("world:reconnect");
-                    })));
-                    items.Add(new PointerMenuItem("Disconnect", "⌥D", () => OnUiThread(() =>
-                    {
-                        DispatchRailTarget(railTarget);
-                        DispatchCommand("world:disconnect");
-                    })));
+                    items.Add(entry.IsSeparator
+                        ? PointerMenuItem.Separator
+                        : new PointerMenuItem(entry.Label, entry.Key, () => OnUiThread(() => RunSidebarMenuEntry(entry.Command!)), entry.Enabled));
                 }
 
                 break;

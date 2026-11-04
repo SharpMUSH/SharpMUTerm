@@ -17,6 +17,9 @@ namespace SharpMUTerm.Client.Commands;
 /// </summary>
 public static class BuiltInCommands
 {
+    /// <summary>The command that moves the keyboard into the connection sidebar (⌥C).</summary>
+    public const string RailKeysCommand = "layout:rail-keys";
+
     /// <summary>
     /// Registers every built-in command. <paramref name="run"/> does the work for an id and returns false when
     /// it did not do what the label promised; it is called for every id these contributions handle, offered or not.
@@ -203,6 +206,9 @@ public static class BuiltInCommands
 
         // The window's sidebar folds from a button on it; this is the same fold from the keyboard, beside ⌃B b.
         Add("layout:toggle-rail", CommandGroup.Layout, "Fold or unfold the connection rail", "⌃B b");
+
+        // The keyboard's way into the sidebar, in both hosts: ↑↓ walk its rows, ⏎ goes there, Esc returns.
+        Add(RailKeysCommand, CommandGroup.Layout, "Move into the connection sidebar", "⌥C", "↑↓ walk it · ⏎ goes · Esc returns");
 
         Family("layout:panes", CommandIds.PanePrefix, Panes);
 

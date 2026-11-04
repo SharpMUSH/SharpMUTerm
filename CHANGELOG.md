@@ -14,6 +14,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   face (right-click), and a wavy red line under a misspelt word whose right-click menu offers suggestions and Add to
   dictionary. The draft, Ctrl+S, Alt+L, Alt+W and Esc work exactly as in the terminal, and the same text sends the same
   command.
+- Alt+C moves the keyboard into the connection sidebar, in the terminal and the desktop window: the arrow keys,
+  Home and End walk its rows, Enter goes to the one you are on, and Esc (or Alt+C, or just typing) returns to the
+  command line.
+- Desktop window: a sidebar with more rows than fit scrolls, with the mouse wheel or a scrollbar like the panes',
+  and a right click on a world, character or window opens a menu of what you can do with it (switch, connect or
+  disconnect, edit, go to, close, clear), each with its key.
+- Switching theme repaints the output already on screen, not only what arrives next, and Space on a theme in the
+  picker uses it as Enter does.
 - A narrow terminal gives its room to the game: below 100 columns the connection rail folds to its slim strip
   on its own (in the desktop window, the sidebar does), and below 100 columns or 30 rows an empty command line
   is one row tall and grows as you type. At 80×24 a pane is now 72 columns wide instead of 60, two rows taller,

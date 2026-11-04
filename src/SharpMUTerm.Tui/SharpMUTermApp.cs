@@ -1170,6 +1170,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             DispatchCommand("term:timestamps-on");
         }
 
+        // A theme switched while the scene is on screen, over a split so a session window and a spawn window are
+        // both in the frame: every line already there is formatted again against Light (PaneLine.Source), so this
+        // frame's output matches what `--theme Light` draws from the start. Before the repaint the history kept the
+        // colours it arrived in, and the white and grey lines were faint on the light planes.
+        if (string.Equals(view, "theme-switched", StringComparison.OrdinalIgnoreCase))
+        {
+            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            RebuildPaneArea();
+            Client.Settings.ThemeChoices.Apply(_config, "Light");
+            SaveConfiguration();
+            SettleScroll();
+        }
+
+        // The sidebar holding the keys (⌥C), its cursor walked one row down by a real ↓: the cell rail draws the row on
+        // the armed command line's band, padded to the rail's width, so the frame shows where ⏎ will go and that no
+        // cell moved. The window's sidebar draws the same cursor as a ring. Nothing when the rail has no rows.
+        if (string.Equals(view, "rail-keys", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateKey(new ConsoleKeyInfo('c', ConsoleKey.C, false, true, false));
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        }
+
         // Bring the Chat spawn window to the front, so one frame shows a *routed* window as the active tab
         // with the character's own window sitting behind it in the same strip. It used to exist for the dim
         // "⇱ capture …" header a spawn pane drew over its output; that header is gone (the user asked for
@@ -1447,7 +1469,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 foreach (var line in parser.Feed(text + "\n"))
                 {
-                    AppendWindowLine(MainWindowId, _formatter.ToMarkup(line), StampNow());
+                    AppendWindowLine(MainWindowId, line, StampNow());
                 }
             }
         }
@@ -2332,7 +2354,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void AppendDemoLine(string windowId, StyledLine line)
     {
         var shown = _config.Text.DetectLinks ? UrlDetector.ApplyToLine(line) : line;
-        AppendWindowLine(windowId, _formatter.ToMarkup(shown), StampNow());
+        AppendWindowLine(windowId, shown, StampNow());
     }
 
     private void LoadDemoScene()
@@ -2361,13 +2383,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             new StyledSpan("  ", TextStyle.Default),
             Link("east"),
         });
-        AppendWindowLine(MainWindowId, _formatter.ToMarkup(exits), StampNow());
+        AppendWindowLine(MainWindowId, exits, StampNow());
 
         // A trigger-highlighted line: carries a left-rule colour, so it gets the 2-col rule treatment.
         var highlighted = new StyledLine(
             new[] { new StyledSpan("[public] Rivane: to the crypt, then!", TextStyle.Default) },
             TerminalColor.FromRgb(0x00, 0xf5, 0xb7));
-        AppendWindowLine(MainWindowId, _formatter.ToMarkup(highlighted), StampNow());
+        AppendWindowLine(MainWindowId, highlighted, StampNow());
 
         // The Chat spawn window already exists (opened by the resumed session); feed its backlog and
         // leave it in the background with unread, as if lines arrived while another tab was focused.
@@ -2382,7 +2404,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             foreach (var line in chatParser.Feed(text + "\n"))
             {
-                AppendWindowLine(chatId, _formatter.ToMarkup(line), StampNow());
+                AppendWindowLine(chatId, line, StampNow());
             }
 
             _workspace.NoteActivity(chatId); // each line accrues unread while Chat is in the background
@@ -2517,14 +2539,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
             foreach (var line in window.Lines)
             {
-                AppendWindowLine(windowId, _formatter.ToMarkup(line.Line), line.Stamp);
+                AppendWindowLine(windowId, line.Line, line.Stamp);
             }
 
             // The boundary marker carries no stamp: it did not arrive, it was drawn, and a timestamp
             // gutter beside it would be claiming a time for a row the game never sent.
+            var restored = window.Lines.Count;
+            var written = window.LastWritten;
             AppendWindowLine(
                 windowId,
-                RestoreBarRenderer.Bar(window.Lines.Count, window.LastWritten, FrozenAccentHex()));
+                RestoreBarRenderer.Bar(restored, written, FrozenAccentHex()),
+                bar: accent => RestoreBarRenderer.Bar(restored, written, accent));
 
             restoredWindows++;
             restoredLines += window.Lines.Count;
@@ -3029,7 +3054,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         PaneContentFor(windowId, session.World.Name);
         foreach (var line in session.Scrollback.Snapshot())
         {
-            AppendWindowLine(windowId, _formatter.ToMarkup(line));
+            AppendWindowLine(windowId, line);
         }
 
         session.LinePrinted += (_, line) => OnUi(() => OnLine(session, windowId, line));
@@ -3321,6 +3346,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MarkupFormatter.WithTimestamp(line.Markup, ShowTimestamps ? line.Stamp : null);
 
     /// <summary>
+    /// Appends one of a world's lines to a window, formatted against the theme in force and kept beside its markup
+    /// (<see cref="PaneLine.Source"/>) so a theme change can format it again.
+    /// </summary>
+    private void AppendWindowLine(string windowId, StyledLine line, string? stamp = null) =>
+        AppendWindowLine(windowId, _formatter.ToMarkup(line), stamp, source: line);
+
+    /// <summary>
     /// Appends one already-formatted markup line to a window: records it in the scrollback buffer and,
     /// if the window has a live control, paints it. A frozen pane's live control is its tail region, so
     /// new lines land below the <c>▲ FROZEN ⌥F</c> bar while the pinned scrollback stays put.
@@ -3334,7 +3366,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         string markup,
         string? stamp = null,
         long imageAnchor = 0,
-        PictureSlots? pictures = null)
+        PictureSlots? pictures = null,
+        StyledLine? source = null,
+        Func<string, string>? bar = null)
     {
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
@@ -3361,7 +3395,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
         // every line of every window (see PaneLine.Plain).
-        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor, pictures));
+        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor, pictures, source, bar));
 
 
         // Cap what the pane holds, and trim its control with it. The control re-parses every line it
@@ -3563,7 +3597,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// Keep new callers going through here rather than touching a control's content directly.
     /// </para>
     /// </summary>
-    private void FeedRange(MarkupControl control, List<PaneLine> buffer, int from, int count)
+    private void FeedRange(MarkupControl control, List<PaneLine> buffer, int from, int count, bool keepSelection = false)
     {
         var start = Math.Clamp(from, 0, buffer.Count);
         var length = Math.Clamp(count, 0, buffer.Count - start);
@@ -3582,7 +3616,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         //
         // MarkupControl.SetContent does not do this itself — only its append path does
         // (OnContentAppended) — so it cannot be left to the framework.
-        control.ClearSelection();
+        //
+        // The one exception is a re-feed that changes colours and nothing else (a theme change,
+        // RestylePaneLines): every row holds the same text in the same place, so the selection still
+        // describes exactly what was dragged across, and dropping it would punish a reader for opening F7.
+        if (!keepSelection)
+        {
+            control.ClearSelection();
+        }
+
         control.SetContent(markup);
     }
 
@@ -3632,11 +3674,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// no arrival times and have no gutter to gain.
     /// </para>
     /// </summary>
-    private void RepaintPanes()
+    private void RepaintPanes(bool keepSelection = false)
     {
         foreach (var windowId in _lines.Keys)
         {
-            RepaintPane(windowId);
+            RepaintPane(windowId, keepSelection);
         }
     }
 
@@ -3647,7 +3689,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// (<see cref="AwayBarRenderer"/>) is one — it happens when the reader comes back and when they have
     /// read what they missed, not per line and not per frame.
     /// </summary>
-    private void RepaintPane(string windowId)
+    private void RepaintPane(string windowId, bool keepSelection = false)
     {
         // Skipped for the reason RepaintPanes gives: the web view's pane is not fed from this buffer at
         // all, so re-feeding it would replace the page with whatever last printed into that window.
@@ -3662,12 +3704,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var split = Math.Clamp(point, 0, buffer.Count);
             if (_frozenPanes.TryGetValue(windowId, out var frozen))
             {
-                FeedRange(frozen, buffer, 0, split);
+                FeedRange(frozen, buffer, 0, split, keepSelection);
             }
 
             if (_panes.TryGetValue(windowId, out var tail))
             {
-                FeedRange(tail, buffer, split, buffer.Count - split);
+                FeedRange(tail, buffer, split, buffer.Count - split, keepSelection);
             }
 
             return;
@@ -3675,7 +3717,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (_panes.TryGetValue(windowId, out var control))
         {
-            FeedRange(control, buffer, 0, buffer.Count);
+            FeedRange(control, buffer, 0, buffer.Count, keepSelection);
         }
 
         RefreshScrollTail(windowId);
@@ -3749,7 +3791,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void MarkWhereTheReaderLeft(TimeSpan away)
     {
-        var accent = FrozenAccentHex();
         foreach (var windowId in _lines.Keys.ToArray())
         {
             if (string.Equals(windowId, WebWindowId, StringComparison.Ordinal))
@@ -3790,7 +3831,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            InsertChromeRow(windowId, at, AwayBarRenderer.Bar(missed, away, accent));
+            InsertChromeRow(windowId, at, ink => AwayBarRenderer.Bar(missed, away, ink));
 
             var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount, DrawnAt = _time.GetUtcNow() };
             _awayMarks[windowId] = mark;
@@ -3861,7 +3902,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 at = Math.Clamp(at, 0, buffer.Count);
             }
 
-            InsertChromeRow(windowId, at, AwayBarRenderer.Missed(buffer.Count - at, FrozenAccentHex()));
+            var count = buffer.Count - at;
+            InsertChromeRow(windowId, at, accent => AwayBarRenderer.Missed(count, accent));
 
             var mark = new AwayMark
             {
@@ -4116,9 +4158,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         else
         {
             slots.Sort((a, b) => a.Start.CompareTo(b.Start));
+            var cuts = slots.Select(slot => (slot.Start, slot.Columns)).ToArray();
             pictures = new PictureSlots(
-                _formatter.ToMarkupPieces(line, slots.Select(slot => (slot.Start, slot.Columns)).ToArray()),
-                slots.Select(slot => (slot.Picture, slot.Row, slot.Columns)).ToArray());
+                _formatter.ToMarkupPieces(line, cuts),
+                slots.Select(slot => (slot.Picture, slot.Row, slot.Columns)).ToArray())
+            {
+                Cuts = cuts,
+            };
             foreach (var picture in arrived)
             {
                 pictures.Draw(picture.Id, picture.Drawn!);
@@ -4127,7 +4173,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             markup = pictures.Compose();
         }
 
-        AppendWindowLine(windowId, markup, stamp, anchor, pictures);
+        AppendWindowLine(windowId, markup, stamp, anchor, pictures, line);
 
         IGraphicsProtocol? Kitty() => WebGraphicsSurface().CanPlaceKitty ? _system.ConsoleDriver as IGraphicsProtocol : null;
         if (anchor != 0)
@@ -4215,7 +4261,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // picture by its name.
         if (first && empty)
         {
-            buffer[at] = buffer[at] with { Markup = rows[0] };
+            buffer[at] = buffer[at] with { Markup = rows[0], Source = null };
             InsertImageRows(windowId, anchor, rows.Skip(1).ToArray(), repaint: true);
         }
         else if (empty && at + 1 < buffer.Count && buffer[at + 1].ImageAnchor == -anchor)
@@ -4223,13 +4269,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // The last label of a line holding only pictures, with the earlier ones already under it. This
             // picture cannot take the line, or it would sit above them; the first row under the line moves
             // up into it instead, so no blank row is left above the pictures.
-            buffer[at] = buffer[at] with { Markup = buffer[at + 1].Markup };
+            buffer[at] = buffer[at] with { Markup = buffer[at + 1].Markup, Source = buffer[at + 1].Source };
             RemoveChromeRow(windowId, at + 1);
             InsertImageRows(windowId, anchor, rows, repaint: true);
         }
         else
         {
-            buffer[at] = buffer[at] with { Markup = _formatter.ToMarkup(rest) };
+            buffer[at] = buffer[at] with { Markup = _formatter.ToMarkup(rest), Source = rest };
             InsertImageRows(windowId, anchor, rows, repaint: true);
         }
     }
@@ -4577,7 +4623,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The row carries no plain text, so a search cannot find it (see <see cref="PaneLine.Plain"/>).
     /// </para>
     /// </summary>
-    private void InsertChromeRow(string windowId, int at, string markup)
+    private void InsertChromeRow(string windowId, int at, Func<string, string> bar)
     {
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
@@ -4585,7 +4631,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         at = Math.Clamp(at, 0, buffer.Count);
-        buffer.Insert(at, new PaneLine(markup));
+        buffer.Insert(at, new PaneLine(bar(FrozenAccentHex()), Bar: bar));
 
         if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
         {
@@ -4731,7 +4777,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var at = Math.Clamp(row.LineIndex, 0, buffer.Count);
-        InsertChromeRow(row.WindowId, at, SearchBarRenderer.Bar(query, ordinal, total, FrozenAccentHex()));
+        InsertChromeRow(row.WindowId, at, accent => SearchBarRenderer.Bar(query, ordinal, total, accent));
         _searchMark = (row.WindowId, at);
 
         RepaintPane(row.WindowId);
@@ -6881,6 +6927,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 action = () => { DisarmPrefix(); return claimed(); };
             }
 
+            // And every one but ⌥C itself hands the keys back from the sidebar: a chord that opens a surface leaves
+            // the reader somewhere else, and arrows arriving later must not walk a sidebar nobody is looking at.
+            if (claim.Modifiers != ConsoleModifiers.Alt || claim.Key != ConsoleKey.C)
+            {
+                var claimed = action;
+                action = () => { LeaveRailKeys(); return claimed(); };
+            }
+
             _system.RegisterGlobalShortcut(claim.Modifiers, claim.Key, action);
             _shortcuts[(claim.Modifiers, claim.Key)] = action;
         }
@@ -7011,6 +7065,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (claim.Key == ConsoleKey.M)
             {
                 return () => { ShowLayouts(); return true; };
+            }
+
+            // ⌥C moves the keyboard into the connection sidebar, and back. ESC c, like the rest.
+            if (claim.Key == ConsoleKey.C)
+            {
+                return () => { ToggleRailKeys(); return true; };
             }
 
             // ⌥F freezes and resumes the focused pane. It was ⌃F, and moved so that search could have the
@@ -7955,7 +8015,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             index++;
         }
 
-        return new SidebarModel(worlds, ActiveWindowId(), _railCollapsed);
+        var sidebar = new SidebarModel(worlds, ActiveWindowId(), _railCollapsed);
+        return _railCursor is { } cursor && sidebar.NavigableRows().Any(r => SidebarModel.KeyOf(r) == cursor)
+            ? sidebar with { Cursor = cursor }
+            : sidebar;
     }
 
     /// <summary>
@@ -8552,6 +8615,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "layout:toggle-rail":
                 ToggleRail(); // ⌃B b's fold, and the window sidebar's fold button
+                return true;
+            case Client.Commands.BuiltInCommands.RailKeysCommand:
+                ToggleRailKeys(); // ⌥C
                 return true;
             case "term:newline":
                 // The same edit Alt+⏎ makes, through the same key table, so the surface cannot drift from
@@ -10708,7 +10774,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private List<string> RenderRailLines()
     {
-        return RailRenderer.Render(Drawing(SurfaceCatalog.Sidebar, string.Empty, BuildSidebar()), RailMaxWidth - RailMargin, _ink);
+        return RailRenderer.Render(
+            Drawing(SurfaceCatalog.Sidebar, string.Empty, BuildSidebar()), RailMaxWidth - RailMargin, _ink, RailCursorBand());
     }
 
     /// <summary>
@@ -11754,6 +11821,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // here because "a macro must not fire while a screen is open" is a rule of this app, not a
             // consequence of how the framework happens to dispatch, and the next surface may not be modal.
             if (AnyOverlayOpen)
+            {
+                return null;
+            }
+
+            // ⌥C put the keys on the connection sidebar: its arrows, ⏎ and Esc come first, and anything else hands
+            // the keys back and carries on down this chain (SharpMUTermApp.RailKeys.cs).
+            if (TryRailKey(e))
             {
                 return null;
             }

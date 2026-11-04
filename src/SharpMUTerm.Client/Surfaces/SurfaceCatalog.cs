@@ -187,6 +187,10 @@ public static class SurfaceCatalog
             [
                 new(SurfaceActionKind.Target, "world, character or window", "DispatchRailTarget"),
                 new(SurfaceActionKind.Command, SidebarModel.AddGameTarget, "DispatchCommand", CellsVia: SidebarModel.AddGameTarget),
+
+                // A right click on a row: entries the client builds for that row, each a registry command with its
+                // key (Disconnect is one), so every entry is also a ⌃P entry and a chord in the terminal.
+                new(SurfaceActionKind.Pick, "row menu entry", "RunSidebarMenuEntry", CellsVia: "world:disconnect"),
             ],
             NativeChrome,
             "SharpMUTerm.Tui.RailRenderer.Render",
