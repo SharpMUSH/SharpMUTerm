@@ -13,7 +13,7 @@ internal enum WelcomeAction
     /// <summary>Dial <see cref="WelcomeSurface.Request"/>.</summary>
     Connect,
 
-    /// <summary>Close, and open the package index.</summary>
+    /// <summary>Close, and open Browse worlds.</summary>
     Browse,
 
     /// <summary>Close, and open F5.</summary>
@@ -24,7 +24,7 @@ internal enum WelcomeAction
 }
 
 /// <summary>What the connect form asks for, read once ⏎ has checked it.</summary>
-internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? Character, bool PasswordLater);
+internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? Character, bool PasswordLater, string? WorldName = null);
 
 /// <summary>
 /// The first-run welcome: what it says and what a key on it means, with no window in it — the
@@ -51,7 +51,7 @@ internal sealed class WelcomeSurface
 
     private readonly string? _indexProblem;
 
-    /// <param name="indexProblem">Why the package index cannot be browsed, or null when it can be asked for.</param>
+    /// <param name="indexProblem">Why the world directory cannot be browsed, or null when it can be asked for.</param>
     public WelcomeSurface(string? indexProblem) => _indexProblem = indexProblem;
 
     public WelcomeChoice Selected { get; private set; } = WelcomeChoice.Connect;
@@ -79,9 +79,32 @@ internal sealed class WelcomeSurface
     /// <summary>The checked form, once ⏎ has accepted it.</summary>
     public WelcomeConnect? Request { get; private set; }
 
+    /// <summary>The world Browse worlds filled the form in for, or null; dropped once the host is changed.</summary>
+    public string? WorldName { get; private set; }
+
+    /// <summary>The host Browse worlds filled in, so a changed host drops the name that went with it.</summary>
+    private string? _prefilledHost;
+
     /// <summary>Everything the surface says now: what the cells draw and the window's native welcome draws.</summary>
     public WelcomeModel Model =>
-        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem);
+        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem, WorldName);
+
+    /// <summary>
+    /// The form, filled in from a world Browse worlds picked: its host, port and TLS, and its name for the world it will
+    /// be saved as. Only fills it in — the player's own ⏎ there is what saves and dials, through <c>/connect</c>'s path.
+    /// </summary>
+    public void Prefill(string worldName, string host, int port, bool tls)
+    {
+        InForm = true;
+        Field = WelcomeField.Character;
+        Host = new string(host.Where(c => !char.IsWhiteSpace(c) && !char.IsControl(c)).Take(MaxHost).ToArray());
+        Port = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Tls = tls;
+        WorldName = worldName;
+        _prefilledHost = Host;
+        Problem = null;
+        Request = null;
+    }
 
     /// <summary>
     /// A menu choice made outright — the native welcome's click, or ⏎ on the cell menu once the pointer is on it. The
@@ -292,7 +315,12 @@ internal sealed class WelcomeSurface
         }
 
         var character = Character.Trim();
-        Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater);
+        if (WorldName is not null && !string.Equals(Host, _prefilledHost, StringComparison.OrdinalIgnoreCase))
+        {
+            WorldName = null;
+        }
+
+        Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater, WorldName);
         return WelcomeAction.Connect;
     }
 
@@ -378,7 +406,7 @@ internal sealed class WelcomeSurface
         var lines = new List<string>
         {
             Accent(WelcomeModel.FormHeading),
-            Label(WelcomeModel.FormIntro),
+            Label(model.FormIntroLine),
             string.Empty,
         };
 
@@ -435,7 +463,7 @@ internal sealed class WelcomeSurface
         "Welcome to SharpMUTerm. No worlds yet.",
         "To connect, type /connect, a host and a port, and tls for an encrypted connection: " + ExampleCommand,
         indexProblem is null
-            ? "To browse worlds from the package index, type /package browse"
+            ? "To browse worlds listed on mu*index, type /browse, or /browse and words to search for"
             : "Browsing worlds is not available: " + indexProblem,
         "To import worlds and automation from MUSHclient, Mudlet or TinTin++, type /import and the path to the file",
         "Starting layout: " + (layout == WelcomeLayout.Suggested ? "suggested from what the game sends" : layout.ToString())

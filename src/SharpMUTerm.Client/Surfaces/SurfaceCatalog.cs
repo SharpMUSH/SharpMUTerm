@@ -189,6 +189,9 @@ public static class SurfaceCatalog
     /// <summary>The spelling dictionary offer: the consent step before anything is downloaded.</summary>
     public const string Dictionary = "dictionary";
 
+    /// <summary>Browse worlds: mu*index's listing, a pick filling in the welcome's connect form.</summary>
+    public const string BrowseWorlds = "browse-worlds";
+
     /// <summary>The review of an import from another client: the consent step before anything is written.</summary>
     public const string Import = "import";
 
@@ -224,7 +227,7 @@ public static class SurfaceCatalog
     private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
 
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
-    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, Import, ScriptConsole, HistoryView];
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, BrowseWorlds, Import, ScriptConsole, HistoryView];
 
     /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
     private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
@@ -512,6 +515,18 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.DictionaryOffer.Render",
             ModalViews("DictionaryOfferView")),
+        new(
+            BrowseWorlds,
+            typeof(WorldBrowseModel),
+            [
+                // A pick asks the directory where the world is, then opens the welcome's connect form filled in: nothing is
+                // saved or dialled before the player's own Enter there. A query the rows held cannot answer is asked of it.
+                new(SurfaceActionKind.Modal, "pick", "PickWorld"),
+                new(SurfaceActionKind.Modal, "ask", "AskWorldDirectory"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.WorldBrowseSurface.Render",
+            ModalViews("WorldBrowseView")),
         new(
             Import,
             typeof(ImportReviewModel),

@@ -15,6 +15,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   Alt+H to search older history, saying how many more lines there are (in the window, clicking the hint does it).
 - The read-only history page an older match opens is centred on the match, with the three lines either side drawn as
   its context and the rest of the page quieter.
+- Browse worlds: the welcome's Browse row, ⌃P ▸ Browse worlds… and `/browse [words]` list worlds from the mu*index
+  directory, most played first, searchable and sortable by name. Picking one fills in the connect form with its host,
+  port and TLS; nothing is saved or dialled until you press ⏎ there. The directory is asked only when you open the list.
+  With `--plain`, `/browse` reads the list out and `/browse 3` tells you the `/connect` line for world 3.
 
 - Scripts can be edited without leaving the client. ⌃P ▸ Edit script… (or ⌃E in the script console, or `/script edit`)
   lists your character's script files; one opens in the composer with line numbers, exactly as written. ⌃S saves it,

@@ -20,6 +20,8 @@ public static class SlashCommands
         new("/connect", "/connect <host> [port] [tls]", "Add a world for a host and connect to it (port 4000 by default)", "/connect "),
         new("/welcome", "/welcome", "Show the first-run welcome again", "/welcome"),
         new("/welcome", "/welcome layout roleplay|combat|suggested", "Choose the starting layout the welcome offers", "/welcome layout "),
+        new("/browse", "/browse [words]", "Browse worlds listed on mu*index, searched for the words; a pick fills in the connect form", "/browse "),
+        new("/browse", "/browse <n>", "Where world n of the list /browse said is (with no screen to read, the /connect line to type)", "/browse "),
         new("/import", "/import <file or Mudlet profile folder>", "Import worlds, characters and automation from MUSHclient, Mudlet or TinTin++; nothing is written before Enter", "/import "),
         new("/package", "/package", "Open the Packages screen (F10)", "/package"),
         new("/package", "/package browse", "Browse the package index, this game's packages first", "/package browse"),

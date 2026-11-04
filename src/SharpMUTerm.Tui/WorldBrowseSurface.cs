@@ -1,0 +1,209 @@
+using SharpMUTerm.Client.Modals;
+using SharpMUTerm.Core.WorldIndex;
+using static SharpMUTerm.Tui.MarkupText;
+
+namespace SharpMUTerm.Tui;
+
+/// <summary>What a key on Browse worlds asks the app to do.</summary>
+internal enum WorldBrowseAction
+{
+    /// <summary>Nothing beyond a repaint.</summary>
+    Redraw,
+
+    /// <summary>Ask where the selected row is (<see cref="WorldBrowseSurface.SelectedRow"/>), then open the connect form.</summary>
+    Pick,
+
+    /// <summary>Ask the directory itself for what is typed: nothing among the rows held matches it.</summary>
+    Ask,
+}
+
+/// <summary>
+/// Browse worlds in cells: a search line, mu*index's rows for what is typed, the credit its licence asks for, and the
+/// keys. The state is the reader's (what is typed, the order, which row); what it lists is the model's
+/// <see cref="WorldBrowseModel.View"/>, so the window's native list shows the same rows for the same query. Hosted in a
+/// <see cref="ListOverlay"/>, which is sized once when it opens, so <see cref="Render(WorldBrowseModel, string, WorldDirectorySort, int, int, int)"/>
+/// always draws exactly the rows it is given — loading, failed or listed.
+/// </summary>
+internal sealed class WorldBrowseSurface
+{
+    /// <summary>The width the surface asks for; the overlay narrows it on a small terminal.</summary>
+    internal const int PreferredWidth = 100;
+
+    public WorldBrowseSurface(string query = "") => Query = query.Length > WorldDirectory.MaxQuery ? query[..WorldDirectory.MaxQuery] : query;
+
+    public string Query { get; private set; }
+
+    public WorldDirectorySort Sort { get; private set; } = WorldDirectorySort.Players;
+
+    /// <summary>The row selected in the listed rows.</summary>
+    public int Selected { get; private set; }
+
+    /// <summary>The index in <paramref name="model"/>'s rows of the row selected, or -1.</summary>
+    public int SelectedRow(WorldBrowseModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var view = model.View(Query, Sort);
+        if (Selected < 0 || Selected >= view.Count)
+        {
+            return -1;
+        }
+
+        for (var i = 0; i < model.Rows.Count; i++)
+        {
+            if (ReferenceEquals(model.Rows[i], view[Selected]))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>A key, read against what the surface lists now.</summary>
+    public WorldBrowseAction Key(WorldBrowseModel model, ConsoleKeyInfo key)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var count = model.View(Query, Sort).Count;
+        switch (key.Key)
+        {
+            case ConsoleKey.UpArrow:
+                Selected = count == 0 ? 0 : (Selected - 1 + count) % count;
+                return WorldBrowseAction.Redraw;
+            case ConsoleKey.DownArrow:
+                Selected = count == 0 ? 0 : (Selected + 1) % count;
+                return WorldBrowseAction.Redraw;
+            case ConsoleKey.PageUp:
+                Selected = Math.Max(0, Selected - 10);
+                return WorldBrowseAction.Redraw;
+            case ConsoleKey.PageDown:
+                Selected = Math.Min(Math.Max(0, count - 1), Selected + 10);
+                return WorldBrowseAction.Redraw;
+            case ConsoleKey.Tab:
+                Sort = WorldBrowseModel.Next(Sort);
+                Selected = 0;
+                return WorldBrowseAction.Redraw;
+            case ConsoleKey.Backspace:
+                if (Query.Length > 0)
+                {
+                    Query = Query[..^1];
+                    Selected = 0;
+                }
+
+                return WorldBrowseAction.Redraw;
+            case ConsoleKey.Enter:
+                if (model.Opening is not null)
+                {
+                    return WorldBrowseAction.Redraw;
+                }
+
+                return model.AsksDirectory(Query) ? WorldBrowseAction.Ask
+                    : SelectedRow(model) >= 0 ? WorldBrowseAction.Pick
+                    : WorldBrowseAction.Redraw;
+        }
+
+        if (key.KeyChar >= ' ' && !char.IsControl(key.KeyChar)
+            && (key.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0
+            && Query.Length < WorldDirectory.MaxQuery)
+        {
+            Query += key.KeyChar;
+            Selected = 0;
+        }
+
+        return WorldBrowseAction.Redraw;
+    }
+
+    /// <summary>What the surface draws now, in <paramref name="rows"/> rows of <paramref name="width"/>.</summary>
+    public List<string> Render(WorldBrowseModel model, int width, int rows) => Render(model, Query, Sort, Selected, width, rows);
+
+    /// <summary>
+    /// Browse worlds for <paramref name="query"/> in <paramref name="sort"/>'s order, row <paramref name="selected"/> marked,
+    /// in exactly <paramref name="rows"/> rows: the search line, the credit, the list (or what stands for it), a note and
+    /// the keys.
+    /// </summary>
+    internal static List<string> Render(WorldBrowseModel model, string query, WorldDirectorySort sort, int selected, int width, int rows)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        width = Math.Max(30, width);
+        rows = Math.Max(9, rows);
+        var lines = new List<string>
+        {
+            SpreadLR(
+                $"[{ScreenPalette.Accent}]WORLDS[/]  [{ScreenPalette.Label}]search[/] [{ScreenPalette.Value}]{Escape(query)}▏[/]",
+                $"[{ScreenPalette.Label}]{Escape(Join(model.CountLine(query), WorldBrowseModel.SortName(sort)))}[/]",
+                width),
+            ElideVisible($"[{ScreenPalette.Muted}]{Escape(WorldBrowseModel.AttributionLine)}[/]", width),
+            string.Empty,
+        };
+
+        var body = rows - lines.Count - 2;
+        var view = model.View(query, sort);
+        if (model.Empty(query) is { } empty)
+        {
+            var tone = model.State is WorldBrowseState.Failed or WorldBrowseState.Unavailable ? ScreenPalette.Caution : ScreenPalette.Label;
+            lines.Add($"  [{tone}]{Escape(Elide(empty, width - 2))}[/]");
+        }
+        else
+        {
+            var nameWidth = Math.Clamp(view.Max(r => r.Name.Length) + 1, 12, Math.Max(12, width * 30 / 100));
+            var codebaseWidth = Math.Clamp(view.Max(r => r.Codebase.Length) + 1, 8, 14);
+            var first = Math.Clamp(selected - (body / 2), 0, Math.Max(0, view.Count - body));
+            for (var i = first; i < view.Count && i < first + body; i++)
+            {
+                lines.Add(Row(view[i], i == selected, width, nameWidth, codebaseWidth));
+            }
+        }
+
+        Pad(lines, rows - 2);
+        var note = model.Opening is not null ? model.OpeningLine
+            : model.State == WorldBrowseState.Ready && model.Problem is { } problem ? problem
+            : model.State == WorldBrowseState.Ready && view.Count > 0 ? (model.AnyDeclared ? WorldBrowseModel.DeclaredNote + " · " : string.Empty) + WorldBrowseModel.PickNote
+            : string.Empty;
+        var noteTone = model.State == WorldBrowseState.Ready && model.Problem is not null && model.Opening is null ? ScreenPalette.Caution : ScreenPalette.Label;
+        lines.Add(note.Length == 0 ? string.Empty : $"[{noteTone}]{Escape(Elide(note, width - 1))}[/]");
+        lines.Add(Footer(width));
+        return lines;
+    }
+
+    /// <summary>The key row, laddered to one row: the way out and the pick are never given up.</summary>
+    internal static string Footer(int width)
+    {
+        var keys = WorldBrowseModel.Keys.Select(k => k.Key switch
+        {
+            "⏎" or "Esc" => new LadderKey(k.Key, k.Label),
+            "⇥" => new LadderKey(k.Key, k.Label, Drop: 1),
+            _ => new LadderKey(k.Key, k.Label, Drop: 2),
+        }).ToList();
+        keys.Insert(0, new LadderKey("type", "to search", Drop: 0));
+        return KeyLadder.Fit(keys, width - 1, k => $"[{ScreenPalette.Accent}]{Escape(k)}[/]", l => $"[{ScreenPalette.Label}]{Escape(l)}[/]", $"[{ScreenPalette.Label}] · [/]");
+    }
+
+    private static string Row(WorldListing row, bool selected, int width, int nameWidth, int codebaseWidth)
+    {
+        var mark = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
+        var weight = selected ? "bold " : string.Empty;
+        var players = WorldBrowseModel.Players(row).PadLeft(5);
+        var tagline = Elide(row.Tagline, Math.Max(0, width - 2 - nameWidth - 6 - codebaseWidth - 1));
+        return $"{mark} [{weight}{ScreenPalette.Value}]{Escape(Elide(row.Name, nameWidth - 1).PadRight(nameWidth))}[/]"
+            + $"[{ScreenPalette.Accent}]{Escape(players)}[/] "
+            + $"[{ScreenPalette.Label}]{Escape(Elide(row.Codebase, codebaseWidth - 1).PadRight(codebaseWidth))}[/]"
+            + $"[{ScreenPalette.Value}]{Escape(tagline)}[/]";
+    }
+
+    private static string Join(string a, string b) => a.Length == 0 ? b : $"{a} · {b}";
+
+    private static string Elide(string text, int width) =>
+        width <= 0 ? string.Empty : text.Length <= width ? text : width == 1 ? "…" : text[..(width - 1)] + "…";
+
+    private static void Pad(List<string> lines, int count)
+    {
+        while (lines.Count < count)
+        {
+            lines.Add(string.Empty);
+        }
+
+        if (lines.Count > count)
+        {
+            lines.RemoveRange(count, lines.Count - count);
+        }
+    }
+}

@@ -227,7 +227,8 @@ internal static class Program
             scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"),
             spelling: () => OpenDictionary(loadLogger),
             autoLayout: true,
-            dictionaries: DictionariesFolder);
+            dictionaries: DictionariesFolder,
+            worldFetch: SharpMUTerm.Core.WorldIndex.WorldDirectory.DownloadAsync);
         ready?.Invoke(liveApp);
 
         // A telnet:// link on the command line is followed once the loop runs, the way /connect host port would be;
