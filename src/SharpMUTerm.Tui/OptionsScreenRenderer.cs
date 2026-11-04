@@ -93,10 +93,11 @@ internal static class OptionsScreenRenderer
     /// <summary>
     /// One options screen: the title and F-key its chrome shows, the rows it lists, and — while the cursor is
     /// on a row Delete can take out (a meter) — that removal, which the model carries as its pane's hidden
-    /// trailing button.
+    /// trailing button. <paramref name="Preview"/> is the theme under the cursor in the theme picker, or null while
+    /// the cursor is elsewhere: the screen is painted in that theme while it is, which is the picker's live preview.
     /// </summary>
     internal readonly record struct OptionsScreen(
-        string Title, string FKey, IReadOnlyList<OptionRow> Rows, ScreenButton? Remove = null);
+        string Title, string FKey, IReadOnlyList<OptionRow> Rows, ScreenButton? Remove = null, string? Preview = null);
 
     /// <summary>
     /// Merges every sub-block into one line list (header, options, footer). Used by the unit tests and
@@ -405,6 +406,7 @@ internal static class OptionsScreenRenderer
 
         var rows = new List<OptionRow>();
         ScreenButton? remove = null;
+        string? preview = null;
         string? group = null;
         var navigable = 0;
         foreach (var field in section.Fields)
@@ -434,12 +436,216 @@ internal static class OptionsScreenRenderer
                 continue;
             }
 
+            if (field is ThemeField { Binding: SettingBinding<string> theme })
+            {
+                preview = ThemeRows(rows, config, field, theme, cursor, ref navigable) ?? preview;
+                continue;
+            }
+
             rows.Add(Row(field, config));
             navigable++;
         }
 
-        return new OptionsScreen(section.Title, section.Key ?? string.Empty, rows, remove);
+        return new OptionsScreen(section.Title, section.Key ?? string.Empty, rows, remove, preview);
     }
+
+    /// <summary>What the theme picker's caption says of the theme in use.</summary>
+    internal const string ThemeInUse = "in use";
+
+    /// <summary>The width a preview is drawn at when the screen is rendered without one (the unit tests' merged path).</summary>
+    private const int PreviewFallbackWidth = 76;
+
+    /// <summary>
+    /// F7's theme picker, appended to <paramref name="rows"/>: one cursor stop per theme (⏎ uses it, through the
+    /// screen's edits and so the save funnel), then the preview of the theme under the cursor — or of the theme in use,
+    /// while the cursor is elsewhere. Returns the theme under the cursor, which the screen is painted in while it is
+    /// there; Esc closes the screen with nothing committed, which is the revert.
+    /// </summary>
+    private static string? ThemeRows(
+        List<OptionRow> rows,
+        AppConfiguration config,
+        SettingsField field,
+        SettingBinding<string> binding,
+        int cursor,
+        ref int navigable)
+    {
+        var cards = ThemePreviews.Cards(config);
+        var current = binding.Get(config);
+        var reset = binding.IsDefault(config) ? null : (Action)(() => binding.Reset(config));
+        string? under = null;
+        for (var i = 0; i < cards.Count; i++)
+        {
+            var card = cards[i];
+            rows.Add(new OptionRow(
+                card.Name, null, null,
+                Button: UseTheme(binding, config, card.Name),
+                Reset: reset,
+                FieldId: i == 0 ? field.Id : null,
+                Where: ScreenChrome.Position("theme", i, cards.Count),
+                Draw: (_, width) => ThemeRow(card, current, reset is not null && i == 0)));
+            if (navigable == cursor)
+            {
+                under = card.Name;
+            }
+
+            navigable++;
+        }
+
+        var shown = cards.FirstOrDefault(c => string.Equals(c.Name, under ?? current, StringComparison.OrdinalIgnoreCase))
+            ?? cards[0];
+        var caption = under is null || string.Equals(under, current, StringComparison.OrdinalIgnoreCase)
+            ? $"[dim]preview · {Escape(shown.Name)} · {ThemeInUse}[/]"
+            : $"[dim]preview · {Escape(shown.Name)} · ⏎ uses it, Esc keeps {Escape(current)}[/]";
+        rows.Add(new OptionRow(string.Empty, null, null, Static: true, Draw: (_, _) => new string(' ', AffordanceWidth) + caption));
+        for (var line = 0; line < PreviewRows; line++)
+        {
+            var at = line;
+            rows.Add(new OptionRow(string.Empty, null, null, Static: true,
+                Draw: (_, width) => PreviewLines(shown.Preview, width > 0 ? width : PreviewFallbackWidth)[at]));
+        }
+
+        return under;
+    }
+
+    /// <summary>⏎ on a theme: make it the theme, with the old one as the undo.</summary>
+    private static ScreenButton UseTheme(SettingBinding<string> binding, AppConfiguration config, string name) => new(
+        "use",
+        () =>
+        {
+            var before = binding.Get(config);
+            binding.Set(config, name);
+            return new ScreenPress(() => binding.Set(config, before));
+        },
+        ScreenButtonKind.Apply,
+        name);
+
+    /// <summary>One theme's row: the in-use mark, its name, a strip of its planes, and what kind of theme it is.</summary>
+    private static string ThemeRow(ThemeCard card, string current, bool changed)
+    {
+        var inUse = string.Equals(card.Name, current, StringComparison.OrdinalIgnoreCase);
+        var mark = inUse ? $"[{Accent}]●[/]   " : new string(' ', AffordanceWidth);
+        var preview = card.Preview;
+        var strip = string.Concat(
+            new[] { preview.Backdrop, preview.Panes[0].Plane, preview.Panes[1].Plane, preview.Panes[2].Plane, preview.CommandLine.Band }
+                .Select(p => $"[{p.ToHex()}]██[/]"));
+        var kind = $"{(card.IsDark ? "dark" : "light")} · {(card.IsCustom ? "your own" : "built in")}";
+        var name = Escape(card.Name).PadRight(LabelWidth - AffordanceWidth - 12);
+        var label = inUse ? $"[{Value}]{name}[/]" : name;
+        return $"{mark}{label} {strip}  [dim]{kind}[/]{(inUse ? $"  [{Accent}]{ThemeInUse}[/]" : string.Empty)}"
+            + (changed ? Changed() : string.Empty);
+    }
+
+    /// <summary>How many rows a preview takes under its caption: the tab strips, five lines, the command line.</summary>
+    internal const int PreviewRows = 7;
+
+    /// <summary>
+    /// A preview as <see cref="PreviewRows"/> rows of markup, <paramref name="width"/> wide: three panes on the
+    /// backdrop, each with its tab strip, and the command line across them. Every colour is the model's own, so the
+    /// window's cards and these rows say the same thing.
+    /// </summary>
+    internal static IReadOnlyList<string> PreviewLines(ThemePreview preview, int width)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        var indent = new string(' ', AffordanceWidth);
+        var room = Math.Max(3 * 8 + 4, width - AffordanceWidth - 1);
+        var paneWidth = (room - 4) / 3;
+        var full = (paneWidth * 3) + 4;
+        var backdrop = preview.Backdrop.ToHex();
+        var gap = $"[on {backdrop}] [/]";
+
+        var lines = new List<string>(PreviewRows);
+        var strips = new List<string>();
+        foreach (var pane in preview.Panes)
+        {
+            strips.Add(TabStrip(pane, paneWidth, backdrop));
+        }
+
+        lines.Add(indent + gap + string.Join(gap, strips) + gap);
+        var depth = preview.Panes.Max(p => p.Lines.Count);
+        for (var row = 0; row < Math.Min(depth, PreviewRows - 2); row++)
+        {
+            var cells = preview.Panes.Select(p => PaneLine(p, row, paneWidth));
+            lines.Add(indent + gap + string.Join(gap, cells) + gap);
+        }
+
+        while (lines.Count < PreviewRows - 1)
+        {
+            lines.Add(indent + gap + string.Join(gap, preview.Panes.Select(p => $"[on {p.Plane.ToHex()}]{new string(' ', paneWidth)}[/]")) + gap);
+        }
+
+        var line = preview.CommandLine;
+        var band = line.Band.ToHex();
+        var prompt = Clip(line.Prompt, full - 2);
+        var typed = Clip(line.Text, Math.Max(0, full - 3 - prompt.Length));
+        var used = prompt.Length + 1 + typed.Length;
+        lines.Add(indent + gap
+            + $"[{line.PromptInk.ToHex()} on {band}]{Escape(prompt)}[/][on {band}] [/]"
+            + $"[{line.Ink.ToHex()} on {band}]{Escape(typed)}[/]"
+            + $"[on {band}]{new string(' ', Math.Max(0, full - 2 - used))}[/]" + gap);
+        return lines;
+    }
+
+    private static string TabStrip(PreviewPane pane, int width, string backdrop)
+    {
+        var markup = new System.Text.StringBuilder();
+        var used = 0;
+        foreach (var tab in pane.Tabs)
+        {
+            var title = $" {tab.Title}";
+            var badge = tab.Badge is null ? string.Empty : $" {tab.Badge}";
+            var cost = title.Length + badge.Length + 1;
+            if (used + cost > width)
+            {
+                break;
+            }
+
+            var chip = tab.Chip.ToHex();
+            var weight = tab.Selected ? "bold " : string.Empty;
+            markup.Append($"[{weight}{tab.Ink.ToHex()} on {chip}]{Escape(title)}[/]");
+            if (tab.Badge is { } count && tab.BadgeInk is { } ink)
+            {
+                markup.Append($"[{ink.ToHex()} on {chip}]{Escape(" " + count)}[/]");
+            }
+
+            markup.Append($"[on {chip}] [/]");
+            used += cost;
+        }
+
+        if (used < width)
+        {
+            markup.Append($"[on {backdrop}]{new string(' ', width - used)}[/]");
+        }
+
+        return markup.ToString();
+    }
+
+    private static string PaneLine(PreviewPane pane, int row, int width)
+    {
+        var plane = pane.Plane.ToHex();
+        var markup = new System.Text.StringBuilder($"[on {plane}] [/]");
+        var used = 1;
+        if (row < pane.Lines.Count)
+        {
+            foreach (var run in pane.Lines[row])
+            {
+                var text = Clip(run.Text, width - 1 - used);
+                if (text.Length == 0)
+                {
+                    break;
+                }
+
+                var weight = run.Bold ? "bold " : string.Empty;
+                markup.Append($"[{weight}{run.Ink.ToHex()} on {plane}]{Escape(text)}[/]");
+                used += text.Length;
+            }
+        }
+
+        markup.Append($"[on {plane}]{new string(' ', Math.Max(0, width - used))}[/]");
+        return markup.ToString();
+    }
+
+    private static string Clip(string text, int width) =>
+        width <= 0 ? string.Empty : text.Length <= width ? text : width == 1 ? "…" : text[..(width - 1)] + "…";
 
     /// <summary>One declared field as a row, by kind. A field with no binding the row understands is shown read-only.</summary>
     private static OptionRow Row(SettingsField field, AppConfiguration config)
@@ -466,7 +672,7 @@ internal static class OptionsScreenRenderer
             case ChoiceField choice when field.Binding is SettingBinding<string> named:
                 return new OptionRow(
                     field.Label, named.Get(config), null, null, null,
-                    ScreenField.Choice(field.Label, () => named.Get(config), v => named.Set(config, v), choice.Choices),
+                    ScreenField.Choice(field.Label, () => named.Get(config), v => named.Set(config, v), choice.ChoicesIn(config)),
                     Reset: reset, FieldId: field.Id);
 
             case TextField when field.Binding is SettingBinding<string?> text:

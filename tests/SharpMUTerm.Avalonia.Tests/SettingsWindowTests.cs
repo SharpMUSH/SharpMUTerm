@@ -40,7 +40,9 @@ public class SettingsWindowTests
                 initial,
                 isDark: true,
                 () => [new ReceivedValue("Char.Vitals.hp", "412"), new ReceivedValue("Char.Vitals.maxhp", "500")],
-                meter => meter.Value == "Char.Vitals.hp" ? "412/500" : null);
+                meter => meter.Value == "Char.Vitals.hp" ? "412/500" : null,
+                () => ThemePreviews.Cards(Config),
+                () => ThemePreviews.IsDark(ThemeChoices.Resolve(Config)));
             return form;
         }
     }
@@ -156,6 +158,110 @@ public class SettingsWindowTests
 
         await Assert.That(harness.Opened).IsEquivalentTo(new[] { "triggers" });
         await Assert.That(shown).IsEqualTo("text");
+    }
+
+    /// <summary>The theme field is a card per theme, the one in use marked; a click uses another and the mark follows.</summary>
+    [Test]
+    public async Task TheThemeFieldIsCardsAndAClickUsesTheTheme()
+    {
+        var harness = new Harness();
+        var (names, before, after, dark) = await Run(harness, "text", window =>
+        {
+            var cards = window.ThemeCards;
+            var names = cards.Select(c => c.Card.Name).ToArray();
+            var before = cards.Single(c => c.InUse).Card.Name;
+            cards.Single(c => c.Card.Name == "Light").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return (names, before, window.ThemeCards.Single(c => c.InUse).Card.Name, window.RequestedThemeVariant == global::Avalonia.Styling.ThemeVariant.Dark);
+        });
+
+        await Assert.That(names).IsEquivalentTo(ThemeChoices.Names(new AppConfiguration()));
+        await Assert.That(before).IsEqualTo("Dark");
+        await Assert.That(harness.Config.ThemeName).IsEqualTo("Light");
+        await Assert.That(harness.Commits).IsEqualTo(1);
+        await Assert.That(after).IsEqualTo("Light");
+        await Assert.That(dark).IsFalse();
+    }
+
+    private static Harness TwoWorlds()
+    {
+        var harness = new Harness();
+        harness.Config.Worlds.Clear();
+        harness.Config.Worlds.Add(new WorldDefinition { Name = "Aetherfall", Host = "aether.example", Characters = { new CharacterDefinition { Name = "Corvid" } } });
+        harness.Config.Worlds.Add(new WorldDefinition { Name = "Brightwater", Host = "bright.example", Characters = { new CharacterDefinition { Name = "Wren" } } });
+        return harness;
+    }
+
+    /// <summary>F5's section is drawn here: a world picker over the declared fields, and an edit lands on the world picked.</summary>
+    [Test]
+    public async Task AWorldSectionPicksItsWorldAndEditsIt()
+    {
+        var harness = TwoWorlds();
+        var (fields, subjects) = await Run(harness, "worlds", window =>
+        {
+            var subjects = window.SubjectPicker!.ItemCount;
+            window.SubjectPicker.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            var box = (TextBox)window.FieldControls["edit-grab"];
+            box.Text = "Edit>";
+            box.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Enter });
+            Dispatcher.UIThread.RunJobs();
+            return (window.ShownFields.ToArray(), subjects);
+        });
+
+        await Assert.That(subjects).IsEqualTo(2);
+        await Assert.That(fields).IsEquivalentTo(BuiltInSettings.World.Fields.Select(f => f.Id).ToArray());
+        await Assert.That(harness.Config.Worlds[1].GrabPrefix).IsEqualTo("Edit>");
+        await Assert.That(harness.Config.Worlds[0].GrabPrefix).IsNull();
+        await Assert.That(harness.Commits).IsEqualTo(1);
+    }
+
+    /// <summary>A text the cell screen would refuse is refused here too, and the box shows the value kept.</summary>
+    [Test]
+    public async Task ARefusedTextIsPutBack()
+    {
+        var harness = TwoWorlds();
+        var shown = await Run(harness, "worlds", window =>
+        {
+            var box = (TextBox)window.FieldControls["host"];
+            box.Text = "   ";
+            box.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Enter });
+            Dispatcher.UIThread.RunJobs();
+            return box.Text;
+        });
+
+        await Assert.That(shown).IsEqualTo("aether.example");
+        await Assert.That(harness.Config.Worlds[0].Host).IsEqualTo("aether.example");
+        await Assert.That(harness.Commits).IsEqualTo(0);
+    }
+
+    /// <summary>The lists F5 holds (characters, trigger sets, adding and deleting) are its cell screen's; the door opens it.</summary>
+    [Test]
+    public async Task TheWorldSectionsDoorOpensTheCellScreen()
+    {
+        var harness = TwoWorlds();
+        await Run(harness, "worlds", window =>
+        {
+            window.ScreenDoor!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return 0;
+        });
+
+        await Assert.That(harness.Opened).IsEquivalentTo(new[] { "worlds" });
+    }
+
+    /// <summary>With no world there is nothing to edit: no fields, a sentence saying so, and the door to F5.</summary>
+    [Test]
+    public async Task AWorldSectionWithNoWorldsShowsOnlyTheDoor()
+    {
+        var harness = new Harness();
+        harness.Config.Worlds.Clear();
+        var (fields, door, picker) = await Run(harness, "worlds", window =>
+            (window.ShownFields.Count, window.ScreenDoor is not null, window.SubjectPicker is not null));
+
+        await Assert.That(fields).IsEqualTo(0);
+        await Assert.That(door).IsTrue();
+        await Assert.That(picker).IsFalse();
     }
 
     /// <summary>F7 in the window host reaches the presenter, which opens the settings window on that section.</summary>

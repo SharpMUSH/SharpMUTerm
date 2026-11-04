@@ -1334,7 +1334,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   same way.
 - **Views:** `worlds`/`settings`, `triggers`, `route`, `highlight`, `aliases`, `timers`, `keypad`,
   `set`, `textansi`, `input`, `settings-search` (F7, `/`, `meter` typed: the search with its section
-  list and match counts), `settings-meters`/`settings-meters-pick` (the meter table over the demo's game
+  list and match counts), `settings-themes`/`settings-themes-solarized`/`settings-themes-used` (F7's theme
+  picker with the cursor on Light and on Solarized Dark — the screen painted in the previewed theme — and Light
+  used with ⏎), `settings-meters`/`settings-meters-pick` (the meter table over the demo's game
   data, the cursor on a meter with the received-data box under it, and the same meter's value path open with
   its dropdown of received paths), `settings-changed` (F7 after two real edits: the `● changed` marks and
   `r reset`), `logging`, `password`, `startup`, `freeze`, `spawn`, `split`,
@@ -1582,9 +1584,34 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     trailing Remove button added only while the cursor is on one; the received-data box shows only while the
     cursor is in the table; path fields offer the received paths with their values as `ChoiceNotes`.
   - F7 and F8 are windowed to the screen height (`ScreenChrome.Window`), because F7 is taller than 24 rows.
-  - Not declared yet: F2–F6, F9 (F5's character form) and F10 are listed by title only. F9 was not declared
-    for the native window either: its fields are per *character*, and a `SettingBinding` reads an
-    `AppConfiguration`, so declaring it needs a binding that knows which character first.
+  - **F5's world fields and F9's character fields are declared, with scoped bindings** (`BuiltInSettings.World`
+    and `.Character`; `SettingScope`, `SettingTarget`, `SettingBinding<T>.ForWorld`/`ForCharacter`;
+    `WorldFieldValues`, `TextRules`; Tui `DeclaredFields`). A binding reads a `SettingTarget` (the configuration
+    plus a world and a character, implicitly just the configuration), and a section's `Scope` says which it needs.
+    A target that does not reach the scope reads as default, shows `per world`/`per character`, and resets nothing.
+    Defaults come off a fresh `WorldDefinition`/`CharacterDefinition`, the rule above. Identity fields (name, host,
+    port, character name, password) are declared not resettable. **The cell F5 is not drawn by `FromSection`**: its
+    world row, security checkboxes and character row are built from the declarations through `DeclaredFields`, in
+    the order `WorldFieldOrder`/`SecurityFieldOrder`/`CharacterFieldOrder` name, because ⇥ order and the field
+    ordinals tests navigate by are the cell screen's, while the declaration's order is the window's grouping. A
+    `TextRule` (Required, Name, Pattern, Secret, Defaulted) is the one rule both the cell field and
+    `SettingsForm.SetText` apply. The lists (characters, trigger sets, adding and deleting) stay the cell screen's.
+    `DeclaredWorldSettingsTests` holds the two surfaces' field lists together.
+  - **The theme is F7's first field, a `ThemeField`** (`ThemeChoices`, `ThemePreview`/`ThemeCard`, Client;
+    `ThemePreviews`, `SharpMUTermApp.Theme.cs`, Tui; `ThemeCardView`, Avalonia). One Client model per theme: three
+    panes (ANSI, focused with a tab strip, tinted) and the armed command line, every colour resolved by
+    `ThemePreviews.Preview` the way the workspace paints it and held to the floor. The cell picker draws a row per
+    theme (an `Apply` button: `ScreenButtonKind.Apply`, `[⏎] Use`) and a seven-row preview of the theme under the
+    cursor; the window draws the same cards natively. **Moving the cursor previews by painting the screen in that
+    theme** (`OptionsScreen.Preview` → `SchemeFor`), so Esc closing with nothing committed is the revert; ⏎ commits
+    through `ScreenEdits.Apply`. F7 opens with the cursor on the theme in force. **A theme change is noticed in
+    `SaveConfiguration`** (`ApplyThemeIfChanged`, by colour signature) and `ApplyTheme` re-derives the chrome, the
+    formatters, every overlay's `Scheme` and the panes' planes. **Output already in a pane keeps its colours** —
+    it is markup by then — and the notice says so; on a light theme the old dark-theme greys are faint until they
+    scroll away. A customised theme replaced by the picker is kept in `AppConfiguration.CustomThemes` (no schema
+    bump), and listed. Unstyled text on a settings screen takes the scheme's ink (`ScreenChrome.Panel`/`Band`
+    set `ForegroundColor`), not the window's, because the window is still the theme in force while one is previewed.
+  - Not declared yet: F2–F4, F6 and F10 are listed by title only.
 - **In the window, a declared section opens a native settings window, generated from the declarations**
   (`ClientHost.NativeSettings` → `INativeSettings`; Client `SettingsForm`; Avalonia `SettingsWindow`,
   `SettingsPresenter` on the driver; `OpenSettingsScreen`/`TryOpenNativeSettings` in `SharpMUTermApp.Settings.cs`).
@@ -1606,14 +1633,21 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     thread. `GameDataStore` is locked, but the focus is not safe to read from another thread. The `now` column is
     re-read each second (`OptionsScreenRenderer.NowText`). The received paths feed each path box's auto-complete
     and a list below it; clicking a path fills the path box last used.
+  - **A scoped section (F5, F9) has a subject picker and a door.** `SettingsForm.Subjects`/`Choose` pick the world
+    or character its fields edit; the form opens on the focused window's (`FocusedSubject`, resolved on the client's
+    thread). A write captures the subject at the moment it is made. `Open the F5 screen ↗` (`OpenScreen`) is the way
+    to the lists, and opens the *cell* screen: `OpenSectionScreen` calls `GoToSetting(…, native: false)`, or the door
+    would reopen this window. With no world there are no fields, only a sentence and the door. A text the rule
+    refuses is put back with the reason as a tooltip.
   - **Search is `SettingsSearch.Find` and nothing else**, so the two surfaces always find the same fields. While
     searching, the page shows only matched fields, and if the section on show has none it moves to the first that
     has some.
   - **Fluent is applied to this window only** (`Styles.Add(new FluentTheme())`), and `RequestedThemeVariant`
-    follows the client's theme (`SettingsForm.IsDark`). The rest of the window stays on the Simple theme the
-    native menu and tooltips were built against.
-  - Not done: the window is not modal and does not follow a theme change while it is open. Screenshots come from a
-    real window under Xvfb, driven with XTest (`ux-wave4/native-settings-*.png`).
+    follows the client's theme (`SettingsForm.IsDark`, read live), so a theme card clicked here flips the window's
+    variant and rebuilds the page. The rest of the window stays on the Simple theme the native menu and tooltips
+    were built against.
+  - Not done: the window is not modal. Screenshots come from a real window under Xvfb, driven with XTest
+    (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`).
 - **In the window, ⌃P is a native palette over the window, listing the cell palette's rows** (`ClientHost.NativePalette`
   → `INativePalette`; Client `PaletteSession`; Avalonia `PaletteOverlay`, `PalettePresenter` on the driver;
   `SharpMUTermApp.NativePalette.cs`). The terminal, the snapshot, the tests and the parity harness pass null. Decisions

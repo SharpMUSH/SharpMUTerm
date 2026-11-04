@@ -196,6 +196,12 @@ internal enum ScreenButtonKind
     /// "only the last world can be deleted", one feature later.
     /// </summary>
     Detail,
+
+    /// <summary>
+    /// Makes the row's own value the setting — a theme in F7's picker. A cursor stop like <see cref="Add"/>, but it
+    /// builds nothing, so ⏎ opens no field after it and the action bar says <c>Use</c>.
+    /// </summary>
+    Apply,
 }
 
 /// <summary>

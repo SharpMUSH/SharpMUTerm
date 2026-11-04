@@ -11,6 +11,9 @@ internal enum ScreenEnter
 
     /// <summary>The row is a button; ⏎ runs it. Only the building ones are reachable.</summary>
     Add,
+
+    /// <summary>The row is a value to use (a theme); ⏎ makes it the setting.</summary>
+    Apply,
 }
 
 /// <summary>

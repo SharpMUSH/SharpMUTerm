@@ -40,6 +40,7 @@ internal sealed class SettingsWindow : Window
     private readonly Dictionary<string, Button> _resets = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextBlock> _badges = new(StringComparer.Ordinal);
     private readonly List<(StatusMeter Meter, TextBlock Now)> _meterNow = [];
+    private readonly List<ThemeCardView> _themeCards = [];
     private SettingsForm _form;
     private IReadOnlyList<SettingsMatch> _matches = [];
     private string? _shown;
@@ -109,6 +110,15 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>The section list.</summary>
     public ListBox SectionList => _sections;
+
+    /// <summary>The theme cards on the page, for a test.</summary>
+    public IReadOnlyList<ThemeCardView> ThemeCards => _themeCards;
+
+    /// <summary>The world or character picker of a scoped section, for a test; null on an app-wide one.</summary>
+    public ComboBox? SubjectPicker { get; private set; }
+
+    /// <summary>The button that opens the section's own cell screen, for a test; null where there is none.</summary>
+    public Button? ScreenDoor { get; private set; }
 
     /// <summary>The meter table, for a test: a heading row and one row per meter.</summary>
     public Grid? MeterGrid { get; private set; }
@@ -237,6 +247,9 @@ internal sealed class SettingsWindow : Window
         _controls.Clear();
         _resets.Clear();
         _meterNow.Clear();
+        _themeCards.Clear();
+        SubjectPicker = null;
+        ScreenDoor = null;
         MeterGrid = null;
         _meterRows = -1;
         if (_shown is null || _form.Section(_shown) is not { } section)
@@ -249,6 +262,16 @@ internal sealed class SettingsWindow : Window
         if (section.Key is { } key)
         {
             _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Opacity = 0.7, Margin = new Thickness(0, 0, 0, 6) });
+        }
+
+        if (section.Scope != SettingScope.App)
+        {
+            _page.Children.Add(SubjectRow(section));
+            if (!_form.HasSubject(section))
+            {
+                ShownFields = [];
+                return;
+            }
         }
 
         var visible = Searching
@@ -275,11 +298,113 @@ internal sealed class SettingsWindow : Window
                 });
             }
 
-            _page.Children.Add(field is ListField { Id: BuiltInSettings.MetersField } meters ? MeterTable(meters) : FieldRow(field));
+            _page.Children.Add(field switch
+            {
+                ListField { Id: BuiltInSettings.MetersField } meters => MeterTable(meters),
+                ThemeField theme => ThemePicker(theme),
+                _ => FieldRow(field),
+            });
         }
 
         ShownFields = visible.Select(f => f.Id).ToList();
     }
+
+    /// <summary>
+    /// A scoped section's header row: which world or character its fields are for, picked from every one there is, and
+    /// the way to the section's own cell screen for what is not a field — the lists of characters and trigger sets,
+    /// adding and deleting. With nothing to edit yet it says so and offers only the screen.
+    /// </summary>
+    private StackPanel SubjectRow(SettingsSectionContribution section)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 6, 0, 2) };
+        var subjects = _form.Subjects(section.Scope);
+        var noun = section.Scope == SettingScope.World ? "world" : "character";
+        if (subjects.Count == 0)
+        {
+            row.Children.Add(new TextBlock { Text = $"There is no {noun} yet.", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 });
+        }
+        else
+        {
+            var labels = subjects.Select(s => s.Label).ToList();
+            var current = _form.Subject(section.Scope);
+            var picker = new ComboBox { ItemsSource = labels, MinWidth = 240, SelectedItem = current?.Label };
+            AutomationProperties.SetName(picker, $"The {noun} these settings are for");
+            picker.SelectionChanged += (_, _) =>
+            {
+                if (!_syncing && picker.SelectedIndex is >= 0 and var i && i < subjects.Count
+                    && !string.Equals(subjects[i].Label, _form.Subject(section.Scope)?.Label, StringComparison.Ordinal))
+                {
+                    _form.Choose(subjects[i]);
+                    var offset = _scroller.Offset;
+                    BuildPage();
+                    _scroller.Offset = offset;
+                }
+            };
+            SubjectPicker = picker;
+            row.Children.Add(new TextBlock { Text = section.Scope == SettingScope.World ? "World" : "Character", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold });
+            row.Children.Add(picker);
+        }
+
+        if (section.Key is { } key)
+        {
+            var door = new Button { Content = $"Open the {key} screen ↗", VerticalAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(door, section.Scope == SettingScope.World
+                ? "Adding and deleting worlds, their characters and trigger sets are on the cell screen"
+                : "Adding and deleting characters is on the cell screen");
+            AutomationProperties.SetName(door, $"Open the {key} screen");
+            var id = section.Id;
+            door.Click += (_, _) => _form.OpenScreen(id);
+            ScreenDoor = door;
+            row.Children.Add(door);
+        }
+
+        return row;
+    }
+
+    /// <summary>The theme field: a card per theme, its preview drawn from the client's model; a click uses it.</summary>
+    private StackPanel ThemePicker(ThemeField field)
+    {
+        var outer = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
+        var words = new StackPanel { Spacing = 1 };
+        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 14 });
+        if (field.Help is { } help)
+        {
+            words.Children.Add(new TextBlock { Text = Capitalise(help), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+        }
+
+        outer.Children.Add(words);
+
+        var wrap = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        var inUse = CurrentTheme(field);
+        foreach (var card in _form.Themes())
+        {
+            var view = new ThemeCardView(card, string.Equals(card.Name, inUse, StringComparison.OrdinalIgnoreCase), _form.IsDark);
+            view.Click += (_, _) =>
+            {
+                if (!string.Equals(card.Name, CurrentTheme(field), StringComparison.OrdinalIgnoreCase))
+                {
+                    _form.SetTheme(field, card.Name);
+                }
+            };
+            _themeCards.Add(view);
+            wrap.Children.Add(view);
+        }
+
+        _controls[field.Id] = wrap;
+        _refreshers.Add(() =>
+        {
+            var now = CurrentTheme(field);
+            foreach (var view in _themeCards)
+            {
+                view.SetInUse(string.Equals(view.Card.Name, now, StringComparison.OrdinalIgnoreCase), _form.IsDark);
+            }
+        });
+        outer.Children.Add(wrap);
+        return outer;
+    }
+
+    private string? CurrentTheme(ThemeField field) =>
+        field.Binding is SettingBinding<string> binding ? _form.Get(binding) : null;
 
     /// <summary>The accent the changed dot and headings wear: Fluent's own, for the theme variant.</summary>
     private SolidColorBrush Accent => new(_form.IsDark ? Color.Parse("#60cdff") : Color.Parse("#005fb8"));
@@ -387,7 +512,7 @@ internal sealed class SettingsWindow : Window
 
             case ChoiceField choice when field.Binding is SettingBinding<string> named:
             {
-                var combo = new ComboBox { ItemsSource = choice.Choices, SelectedItem = _form.Get(named), MinWidth = 180 };
+                var combo = new ComboBox { ItemsSource = _form.Choices(choice), SelectedItem = _form.Get(named), MinWidth = 180 };
                 combo.SelectionChanged += (_, _) =>
                 {
                     if (!_syncing && combo.SelectedItem is string value && value != _form.Get(named))
@@ -416,9 +541,9 @@ internal sealed class SettingsWindow : Window
                 return combo;
             }
 
-            case TextField text when field.Binding is SettingBinding<string?> optional:
+            case TextField text when field.Binding is SettingBinding<string?>:
             {
-                var box = new TextBox { Text = _form.Get(optional) ?? string.Empty, Width = 260 };
+                var box = new TextBox { Text = _form.Text(text), Width = 260 };
                 if (text.Masked)
                 {
                     box.PasswordChar = '•';
@@ -431,9 +556,19 @@ internal sealed class SettingsWindow : Window
 
                 void Commit()
                 {
-                    if (!_syncing && (box.Text ?? string.Empty) != (_form.Get(optional) ?? string.Empty))
+                    if (!_syncing && (box.Text ?? string.Empty) != _form.Text(text))
                     {
-                        _form.SetText(text, box.Text);
+                        if (_form.SetText(text, box.Text) is { } refused)
+                        {
+                            // Refused by the rule the cell screen's field applies: put the value back and say why.
+                            box.Text = _form.Text(text);
+                            ToolTip.SetTip(box, refused);
+                            ToolTip.SetIsOpen(box, true);
+                        }
+                        else
+                        {
+                            ToolTip.SetTip(box, null);
+                        }
                     }
                 }
 
@@ -450,7 +585,7 @@ internal sealed class SettingsWindow : Window
                 {
                     if (!box.IsKeyboardFocusWithin)
                     {
-                        box.Text = _form.Get(optional) ?? string.Empty;
+                        box.Text = _form.Text(text);
                     }
                 });
                 return box;
@@ -668,9 +803,13 @@ internal sealed class SettingsWindow : Window
     /// <summary>Re-reads every value and indicator on the page. A meter added or removed rebuilds the page, whose rows moved.</summary>
     internal void Refresh()
     {
-        if (_meterRows >= 0
-            && _form.Section(_shown ?? string.Empty)?.Fields.OfType<ListField>().FirstOrDefault() is { } meters
-            && _form.Meters(meters).Count != _meterRows)
+        var variant = _form.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        var flipped = RequestedThemeVariant != variant;
+        RequestedThemeVariant = variant;
+        if (flipped
+            || (_meterRows >= 0
+                && _form.Section(_shown ?? string.Empty)?.Fields.OfType<ListField>().FirstOrDefault() is { } meters
+                && _form.Meters(meters).Count != _meterRows))
         {
             var offset = _scroller.Offset;
             BuildPage();

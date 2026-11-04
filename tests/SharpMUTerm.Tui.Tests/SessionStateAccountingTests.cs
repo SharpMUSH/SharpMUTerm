@@ -124,7 +124,12 @@ public class SessionStateAccountingTests
         var wired = await Wired();
         wired.Config.Worlds[0].Characters[0].TriggerSets.Add("Comms");
 
-        wired.App.DispatchCommand("screen:textansi");
+        wired.App.DispatchCommand("screen:textansi"); // F7: past the theme rows, a checkbox
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            wired.App.SimulateSettingsKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        }
+
         wired.App.SimulateSettingsKey(new ConsoleKeyInfo(' ', ConsoleKey.Spacebar, false, false, false));
 
         wired.Receive(wired.MannazWire, PublicLine);

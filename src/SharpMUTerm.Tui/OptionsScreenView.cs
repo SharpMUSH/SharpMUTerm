@@ -62,9 +62,25 @@ internal static class OptionsScreenView
             .Columns(GridLength.Star(1));
         root.Place(header, 0, 0, 1, 1);
         root.Place(card, 1, 0, 1, 1);
+        root.Place(Backdrop(scheme), 2, 0, 1, 1);
         root.Place(footer, 3, 0, 1, 1);
 
         return root.Build();
+    }
+
+    /// <summary>
+    /// The backdrop under the card, painted from <paramref name="scheme"/> rather than left to the window: while F7's
+    /// theme picker previews another theme, the window behind is still the theme in force.
+    /// </summary>
+    private static IWindowControl Backdrop(ScreenTheme scheme)
+    {
+        var fill = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Column(c => c.Flex(1).Add(ScreenChrome.Panel([string.Empty], scheme, ScreenPalette.PanelBg)))
+            .Build();
+        fill.BackgroundColor = scheme.Colour(ScreenPalette.PanelBg);
+        return fill;
     }
 
     /// <summary>

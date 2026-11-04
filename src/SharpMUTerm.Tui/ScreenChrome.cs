@@ -141,6 +141,9 @@ internal static class ScreenChrome
     /// <summary>And on one of a pane's building buttons, which is the other row ⏎ acts on.</summary>
     internal const string AddAction = "[[⏎]] Add";
 
+    /// <summary>And on a value to use — a theme in F7's picker.</summary>
+    internal const string UseAction = "[[⏎]] Use";
+
     /// <summary>
     /// And on a row that is neither, where ⏎ leaves the screen. It says <c>Done</c> rather than
     /// <c>Save</c> because there is nothing left to save — every committed value is already on disk (see
@@ -191,6 +194,7 @@ internal static class ScreenChrome
     {
         ScreenEnter.Edit => EditAction,
         ScreenEnter.Add => AddAction,
+        ScreenEnter.Apply => UseAction,
         _ => DoneAction,
     };
 
@@ -733,17 +737,20 @@ internal static class ScreenChrome
         new(new List<string> { scheme.Paint(line, bg) })
         {
             BackgroundColor = scheme.Colour(bg),
+            ForegroundColor = scheme.Colour(ScreenPalette.PanelFg),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
 
     /// <summary>
     /// A column of a renderer's lines, resolved for <paramref name="scheme"/> and drawn on
     /// <paramref name="plane"/> (a <see cref="ScreenPalette"/> role: the backdrop unless the column sits on
-    /// a card). The one place a screen's markup becomes a control, so it is the one place it is themed.
+    /// a card). The one place a screen's markup becomes a control, so it is the one place it is themed — unstyled
+    /// text included, which takes the scheme's ink rather than the window's: while F7 previews a theme the window
+    /// behind is still the theme in force.
     /// </summary>
     internal static MarkupControl Panel(
         IEnumerable<string> lines, ScreenTheme scheme, string plane = ScreenPalette.PanelBg) =>
-        new(scheme.Lines(lines, plane));
+        new(scheme.Lines(lines, plane)) { ForegroundColor = scheme.Colour(ScreenPalette.PanelFg) };
 
     /// <summary>
     /// How many rows a two-column screen's body has: everything but the header band and the action bar.

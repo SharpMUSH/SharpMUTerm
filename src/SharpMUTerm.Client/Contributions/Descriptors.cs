@@ -1,4 +1,5 @@
 using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Client.Contributions;
@@ -51,6 +52,12 @@ public sealed class SettingsSectionContribution : IContribution
 
     /// <summary>The key that opens its screen (<c>F7</c>), or null for a section no key opens.</summary>
     public string? Key { get; init; }
+
+    /// <summary>
+    /// What its fields belong to: the client (F7, F8), one world (F5) or one character (F9). A surface drawing a
+    /// scoped section first says which world or character it is editing; every field's binding is of this scope.
+    /// </summary>
+    public SettingScope Scope { get; init; } = SettingScope.App;
 }
 
 /// <summary>
@@ -79,7 +86,17 @@ public sealed record BoolField(string Id, string Label, string? Help = null) : S
 
 /// <summary>One of a closed set of values.</summary>
 public sealed record ChoiceField(string Id, string Label, IReadOnlyList<string> Choices, string? Help = null)
-    : SettingsField(Id, Label, Help);
+    : SettingsField(Id, Label, Help)
+{
+    /// <summary>
+    /// The choices when they depend on the configuration (a layout row lists the player's own layouts), or null for
+    /// the fixed <see cref="Choices"/>.
+    /// </summary>
+    public Func<AppConfiguration, IReadOnlyList<string>>? ChoicesFrom { get; init; }
+
+    /// <summary>The choices over <paramref name="config"/>.</summary>
+    public IReadOnlyList<string> ChoicesIn(AppConfiguration config) => ChoicesFrom?.Invoke(config) ?? Choices;
+}
 
 /// <summary>A whole number within bounds.</summary>
 public sealed record NumberField(string Id, string Label, int Minimum, int Maximum, string? Help = null)
@@ -87,7 +104,21 @@ public sealed record NumberField(string Id, string Label, int Minimum, int Maxim
 
 /// <summary>Free text; <paramref name="Masked"/> for a password.</summary>
 public sealed record TextField(string Id, string Label, int? MaxLength = null, bool Masked = false, string? Help = null)
-    : SettingsField(Id, Label, Help);
+    : SettingsField(Id, Label, Help)
+{
+    /// <summary>What the text may be and how it is stored (<see cref="TextRules"/>); optional free text by default.</summary>
+    public TextRule Rule { get; init; } = TextRule.Optional;
+
+    /// <summary>For <see cref="TextRule.Defaulted"/>: the value an unset field stands for, and is shown and opened as.</summary>
+    public string? Fallback { get; init; }
+}
+
+/// <summary>
+/// The client's theme, picked from a list where each theme is shown as a preview (<see cref="ThemePreview"/>): a pane
+/// in a world's colours, a tinted pane, the focused pane, the command line and a tab strip, all in that theme. Its
+/// binding holds the theme's name; the choices are <see cref="ThemeChoices.Names"/>.
+/// </summary>
+public sealed record ThemeField(string Id, string Label, string? Help = null) : SettingsField(Id, Label, Help);
 
 /// <summary>A colour from a named palette (never a free hex: a name survives a theme change, a hex does not).</summary>
 public sealed record ColourField(string Id, string Label, IReadOnlyList<string> Names, string? Help = null)

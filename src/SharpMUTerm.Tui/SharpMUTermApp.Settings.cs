@@ -48,7 +48,14 @@ internal sealed partial class SharpMUTermApp
     /// The search's ⏎: opens the match's screen in the same window and, for a declared field, puts the cursor
     /// on the row drawing it. Packages (F10) is not a settings screen and is opened its own way.
     /// </summary>
-    private bool GoToSetting(SettingsMatch match)
+    private bool GoToSetting(SettingsMatch match) => GoToSetting(match, native: true);
+
+    /// <param name="match">What to go to.</param>
+    /// <param name="native">
+    /// Whether a declared section may open in the host's settings window. False when the window itself asked for the
+    /// cell screen — F5's world lists and trigger sets are the cell screen's, and the window links to it.
+    /// </param>
+    private bool GoToSetting(SettingsMatch match, bool native)
     {
         if (string.Equals(match.Section.Id, "packages", StringComparison.Ordinal))
         {
@@ -58,7 +65,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         // A declared section is the host's own settings window where the host has one.
-        if (TryOpenNativeSettings(match.Section))
+        if (native && TryOpenNativeSettings(match.Section))
         {
             return true;
         }
@@ -131,6 +138,13 @@ internal sealed partial class SharpMUTermApp
     {
         var edits = new ScreenEdits(SaveConfiguration);
         var data = SettingsGameData();
+        var (world, character) = FocusedSubject();
+
+        // The theme cards are built here, on the client's thread, and re-built only when a theme is added — the themes
+        // do not change while the window is open except by being picked, which changes which one is in use, not how
+        // each looks.
+        var cards = ThemePreviews.Cards(_config);
+        IReadOnlyList<ThemeCard> themes() => cards;
         SettingsForm? form = null;
         form = new SettingsForm(
             _contributions.SettingsSections.Ordered,
@@ -144,8 +158,23 @@ internal sealed partial class SharpMUTermApp
             initial,
             ThemeIsDark(),
             () => OptionsScreenRenderer.ReceivedPaths(data).Select(r => new ReceivedValue(r.Path, r.Value)).ToList(),
-            meter => OptionsScreenRenderer.NowText(meter, data));
+            meter => OptionsScreenRenderer.NowText(meter, data),
+            themes,
+            () => ThemePreviews.IsDark(_theme),
+            world,
+            character);
         return form;
+    }
+
+    /// <summary>
+    /// The world and character the focused window belongs to — what F5 and F9 open on — or nulls, and the form takes the
+    /// first. Resolved here, on the client's thread, because the focus is not safe to read from the window's.
+    /// </summary>
+    private (WorldDefinition? World, CharacterDefinition? Character) FocusedSubject()
+    {
+        var world = _config.Worlds.ElementAtOrDefault(ActiveWorldIndex());
+        var character = world?.Characters.ElementAtOrDefault(ActiveCharacterIndex());
+        return (world, character);
     }
 
     /// <summary>
@@ -156,7 +185,7 @@ internal sealed partial class SharpMUTermApp
         Host.NativeSettings?.Close();
         if (_contributions.SettingsSections.Find(id) is { } section)
         {
-            GoToSetting(new SettingsMatch(section, null, section.Title, -1, 0));
+            GoToSetting(new SettingsMatch(section, null, section.Title, -1, 0), native: false);
         }
     }
 

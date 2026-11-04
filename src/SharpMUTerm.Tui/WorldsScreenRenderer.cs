@@ -1,3 +1,5 @@
+using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Layouts;
 using System.Globalization;
 using SharpMUTerm.Core.Configuration;
@@ -103,37 +105,34 @@ internal static class WorldsScreenRenderer
     internal const int JoinWrapsField = 16;
 
     /// <summary>F5's words for <see cref="WorldDefinition.JoinWrappedLines"/>: off shows rows as the server sent them.</summary>
-    internal static readonly string[] JoinWrapChoices = ["off", "join"];
+    internal static readonly IReadOnlyList<string> JoinWrapChoices = WorldFieldValues.JoinWrapChoices;
 
     /// <summary>What a world with no layout of its own reads as: the suggestion it accepted, else Roleplay.</summary>
-    internal const string WorldLayoutDefault = "(suggested)";
+    internal const string WorldLayoutDefault = WorldFieldValues.WorldLayoutDefault;
 
     /// <summary>What a character with no layout of its own reads as.</summary>
-    internal const string CharacterLayoutDefault = "(world default)";
+    internal const string CharacterLayoutDefault = WorldFieldValues.CharacterLayoutDefault;
 
     /// <summary>The layout row's choices: the default word, then every layout by name.</summary>
-    internal static IReadOnlyList<string> LayoutChoices(IReadOnlyList<LayoutDefinition> layouts, string unset) =>
-        [unset, .. layouts.Select(l => l.Name)];
+    internal static IReadOnlyList<string> LayoutChoices(IReadOnlyList<LayoutDefinition> layouts, string unset) => WorldFieldValues.LayoutChoices(layouts, unset);
 
     /// <summary>The name of the layout <paramref name="id"/> names, or null for none (or one that is gone).</summary>
-    internal static string? LayoutName(IReadOnlyList<LayoutDefinition> layouts, string? id) =>
-        id is null ? null : layouts.FirstOrDefault(l => string.Equals(l.Id, id, StringComparison.Ordinal))?.Name;
+    internal static string? LayoutName(IReadOnlyList<LayoutDefinition> layouts, string? id) => WorldFieldValues.LayoutName(layouts, id);
 
     /// <summary>The id of the layout called <paramref name="name"/>, or null for the default word.</summary>
-    internal static string? LayoutId(IReadOnlyList<LayoutDefinition> layouts, string name) =>
-        layouts.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
+    internal static string? LayoutId(IReadOnlyList<LayoutDefinition> layouts, string name) => WorldFieldValues.LayoutId(layouts, name);
 
     /// <summary>F5's words for <see cref="WorldDefinition.DiscordPresence"/>.</summary>
-    internal static readonly string[] DiscordChoices = ["off", "show status"];
+    internal static readonly IReadOnlyList<string> DiscordChoices = WorldFieldValues.DiscordChoices;
 
     /// <summary>F5's words for <see cref="WorldDefinition.GmcpLogin"/>: how a character with a saved password logs in.</summary>
-    internal static readonly string[] LoginChoices = ["off", "if offered"];
+    internal static readonly IReadOnlyList<string> LoginChoices = WorldFieldValues.LoginChoices;
 
     /// <summary>The prefix the grab row suggests while it is off: AresMUSH's, and the one its /edit commands use.</summary>
     internal const string SuggestedGrabPrefix = "FugueEdit >";
 
     /// <summary>F5's words for <see cref="WorldDefinition.DownloadMedia"/>: on fetches what the game asks for.</summary>
-    internal static readonly string[] SoundChoices = ["download", "cached only"];
+    internal static readonly IReadOnlyList<string> SoundChoices = WorldFieldValues.SoundChoices;
 
     /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
@@ -338,8 +337,7 @@ internal static class WorldsScreenRenderer
     /// and is the default: it follows CHARSET negotiation. Every other entry is an <em>override</em> —
     /// used whatever the server says — which is why the detail column labels them as one.
     /// </summary>
-    private static readonly string[] Encodings =
-        { TelnetSessionOptions.AutoEncodingName, "UTF-8", "ISO-8859-1", "ASCII", "CP437", "CP1252" };
+    
 
     /// <summary>The label the WORLDS list's add button carries, and the row the renderer draws for it.</summary>
     internal const string AddWorldLabel = "+ world";
@@ -371,16 +369,16 @@ internal static class WorldsScreenRenderer
     internal const string StartupLabel = "at start";
 
     /// <summary>Marked: this character is dialled when the client launches.</summary>
-    internal const string StartupOn = "connect";
+    internal const string StartupOn = WorldFieldValues.StartupOn;
 
     /// <summary>
     /// Unmarked — the default. It reads <c>off</c> rather than <c>no</c> so it matches the world's
     /// <c>keepalive</c> row four lines above it, the screen's other "this feature is simply not on"
     /// value, and is drawn in the same muted ink for the same reason.
     /// </summary>
-    internal const string StartupOff = "off";
+    internal const string StartupOff = WorldFieldValues.StartupOff;
 
-    private static readonly string[] StartupChoices = { StartupOn, StartupOff };
+    
 
     /// <summary>
     /// The row for <see cref="LoggingSettings.RestoreLog"/>. It says <c>restore</c> and not "restore
@@ -399,15 +397,15 @@ internal static class WorldsScreenRenderer
     internal const string RestoreNote = "panes refill after a restart";
 
     /// <summary>The default: the panes come back.</summary>
-    internal const string RestoreOn = "on";
+    internal const string RestoreOn = WorldFieldValues.RestoreOn;
 
     /// <summary>
     /// Opted out. It reads <c>off</c> to match <c>at start</c> and the world's <c>keepalive</c> row —
     /// the screen's other "this feature is simply not on" values — and is drawn in the same muted ink.
     /// </summary>
-    internal const string RestoreOff = "off";
+    internal const string RestoreOff = WorldFieldValues.RestoreOff;
 
-    private static readonly string[] RestoreChoices = { RestoreOn, RestoreOff };
+    
 
     /// <summary>
     /// The row for <see cref="CharacterDefinition.Tint"/>. One word, because the CHARACTER panel is 48
@@ -486,44 +484,14 @@ internal static class WorldsScreenRenderer
 
         (selectedWorld, selectedCharacter) = Resolve(worlds, selectedWorld, selectedCharacter);
 
-        var worldRows = ScreenModel.Rows(worlds, w => ScreenRow.Of(
-            ScreenField.Name("name", () => w.Name, v => w.Name = v),
-            ScreenField.Text("host", () => w.Host, v => w.Host = v),
-            ScreenField.Integer("port", () => w.Port, v => w.Port = v, 1, 65535),
-            ScreenField.Choice("encoding", () => w.Encoding, v => w.Encoding = v, Encodings),
-            ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400),
-            ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v)),
-            ScreenField.Choice("content", () => ContentName(w.ContentFormat), v => w.ContentFormat = ContentOf(v), ContentChoices),
-            ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices),
-            ScreenField.OptionalPattern("map room", () => w.Map.RoomNamePattern, v => w.Map.RoomNamePattern = v),
-            ScreenField.OptionalPattern("map exits", () => w.Map.ExitsPattern, v => w.Map.ExitsPattern = v),
-            ScreenField.OptionalPattern("walk fail", () => w.Map.WalkFailurePattern, v => w.Map.WalkFailurePattern = v),
-            ScreenField.Choice(
-                "sounds",
-                () => w.DownloadMedia ? SoundChoices[0] : SoundChoices[1],
-                v => w.DownloadMedia = v == SoundChoices[0],
-                SoundChoices),
-            ScreenField.Optional("edit grab", () => w.GrabPrefix, v => w.GrabPrefix = v),
-            ScreenField.Choice(
-                "gmcp login",
-                () => w.GmcpLogin ? LoginChoices[1] : LoginChoices[0],
-                v => w.GmcpLogin = v == LoginChoices[1],
-                LoginChoices),
-            ScreenField.Choice(
-                "discord",
-                () => w.DiscordPresence ? DiscordChoices[1] : DiscordChoices[0],
-                v => w.DiscordPresence = v == DiscordChoices[1],
-                DiscordChoices),
-            ScreenField.Choice(
-                "layout",
-                () => LayoutName(all, w.Layout) ?? WorldLayoutDefault,
-                v => w.Layout = LayoutId(all, v),
-                LayoutChoices(all, WorldLayoutDefault)),
-            ScreenField.Choice(
-                "join wraps",
-                () => w.JoinWrappedLines ? JoinWrapChoices[1] : JoinWrapChoices[0],
-                v => w.JoinWrappedLines = v == JoinWrapChoices[1],
-                JoinWrapChoices)))
+        // The world's and character's fields are the declared ones (BuiltInSettings.World/.Character), built into cell
+        // fields through their own bindings, so this screen and the desktop's settings window edit one object one way.
+        // The bindings look a layout up in the configuration, so they are handed one holding these layouts.
+        var context = new AppConfiguration
+        {
+            Layouts = [.. all.Where(l => !BuiltInLayouts.All.Any(b => string.Equals(b.Id, l.Id, StringComparison.Ordinal)))],
+        };
+        var worldRows = ScreenModel.Rows(worlds, w => ScreenRow.Of(DeclaredRow(BuiltInSettings.World, WorldFieldOrder, new SettingTarget(context, w))))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -536,34 +504,11 @@ internal static class WorldsScreenRenderer
             // Every remaining ScreenToggle in this file is drawn where it is bound; see the security
             // rows and the trigger-set assignments, both of which render a real `[x]`.
             : ScreenModel.Rows(world.Characters, c => ScreenRow.Of(
-                ScreenField.Name("name", () => c.Name, v => c.Name = v),
-                ScreenField.Password("password", () => c.Password, v => c.Password = v),
-                ScreenField.Defaulted(
-                    "connect", () => c.ConnectString, v => c.ConnectString = v, ConnectStringTemplate.Default),
-                ScreenField.Optional("on connect", () => c.OnConnect, v => c.OnConnect = v),
-                ScreenField.Optional("disconnect", () => c.OnDisconnect, v => c.OnDisconnect = v),
-                ScreenField.Choice(
-                    StartupLabel,
-                    () => c.ConnectAtStartup ? StartupOn : StartupOff,
-                    v => c.ConnectAtStartup = string.Equals(v, StartupOn, StringComparison.OrdinalIgnoreCase),
-                    StartupChoices),
-                ScreenField.Enumeration("log", () => c.Logging.Format, v => c.Logging.Format = v),
-                ScreenField.Optional("log folder", () => c.Logging.Directory, v => c.Logging.Directory = v),
-                ScreenField.Choice(
-                    RestoreLabel,
-                    () => c.Logging.RestoreLog ? RestoreOn : RestoreOff,
-                    v => c.Logging.RestoreLog = string.Equals(v, RestoreOn, StringComparison.OrdinalIgnoreCase),
-                    RestoreChoices),
-                ScreenField.Enumeration(TintLabel, () => c.Tint, v => c.Tint = v),
-                ScreenField.Choice(
-                    "layout",
-                    () => LayoutName(all, c.Layout) ?? CharacterLayoutDefault,
-                    v => c.Layout = LayoutId(all, v),
-                    LayoutChoices(all, CharacterLayoutDefault))))
+                DeclaredRow(BuiltInSettings.Character, CharacterFieldOrder, new SettingTarget(context, world, c))))
                 .Concat(CharacterButtons(world, selectedCharacter))
                 .ToArray();
 
-        var securityRows = world is null ? Array.Empty<ScreenRow>() : SecurityRows(world);
+        var securityRows = world is null ? Array.Empty<ScreenRow>() : SecurityRows(new SettingTarget(context, world));
 
         if (!HasCharacter(worlds, selectedWorld, selectedCharacter))
         {
@@ -629,8 +574,7 @@ internal static class WorldsScreenRenderer
         });
 
     /// <summary>A world's extra GMCP modules as the well shows and edits them, or null for none.</summary>
-    internal static string? JoinModules(WorldDefinition world) =>
-        world.GmcpModules.Count == 0 ? null : string.Join(", ", world.GmcpModules);
+    internal static string? JoinModules(WorldDefinition world) => WorldFieldValues.JoinModules(world);
 
     /// <summary>
     /// Writes the well back: split on commas, and only entries <see cref="GmcpHandshake.Parse"/> accepts are
@@ -639,18 +583,7 @@ internal static class WorldsScreenRenderer
     private static string PatternDetail(string? pattern, string unset) =>
         string.IsNullOrWhiteSpace(pattern) ? $"[{Label}]{unset}[/]" : $"[{Value}]{Escape(pattern)}[/]";
 
-    internal static void SplitModules(WorldDefinition world, string? value)
-    {
-        world.GmcpModules.Clear();
-        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (GmcpHandshake.Parse(part) is { } module
-                && !world.GmcpModules.Any(m => m.StartsWith(module.Name + " ", StringComparison.OrdinalIgnoreCase)))
-            {
-                world.GmcpModules.Add($"{module.Name} {module.Version.ToString(CultureInfo.InvariantCulture)}");
-            }
-        }
-    }
+    internal static void SplitModules(WorldDefinition world, string? value) => WorldFieldValues.SplitModules(world, value);
 
     /// <summary>A set's script files as the well shows and edits them, or null for none.</summary>
     internal static string? JoinScripts(TriggerSet set) =>
@@ -806,12 +739,34 @@ internal static class WorldsScreenRenderer
     /// be one negation away from silently turning verification off.
     /// </para>
     /// </summary>
-    private static ScreenRow[] SecurityRows(WorldDefinition world) => new[]
-    {
-        ScreenRow.Of(ScreenToggle.Bind(() => world.UseTls, v => world.UseTls = v)),
-        ScreenRow.Of(ScreenToggle.Bind(
-            () => world.AllowInvalidCertificates, v => world.AllowInvalidCertificates = v)),
-    };
+    private static ScreenRow[] SecurityRows(SettingTarget world) =>
+    [
+        .. SecurityFieldOrder.Select(id => ScreenRow.Of(DeclaredFields.Toggle(DeclaredFields.Find(BuiltInSettings.World, id), world))),
+    ];
+
+    /// <summary>
+    /// The world row's fields, in the order ⇥ steps through them and the ordinals above number them (<see
+    /// cref="WorldNameField"/> …), by declared id. The declaration's own order is the settings window's grouping; this is
+    /// the cell screen's, which tests and muscle memory address by position.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> WorldFieldOrder =
+    [
+        "name", "host", "port", "encoding", "keepalive", "gmcp-modules", "content", "emoji", "map-room", "map-exits",
+        "walk-fail", "sounds", "edit-grab", "gmcp-login", "discord", "layout", "join-wraps",
+    ];
+
+    /// <summary>The world's two security checkboxes, drawn in the WORLD block (<see cref="SecurityPane"/>), by declared id.</summary>
+    internal static readonly IReadOnlyList<string> SecurityFieldOrder = ["tls", "invalid-certificates"];
+
+    /// <summary>The character row's fields, in ⇥ order (<see cref="CharacterNameField"/> …), by declared id.</summary>
+    internal static readonly IReadOnlyList<string> CharacterFieldOrder =
+    [
+        "name", "password", "connect", "on-connect", "disconnect", "at-start", "log", "log-folder", "restore", "tint", "layout",
+    ];
+
+    /// <summary>A row of cell fields built from the declared fields <paramref name="order"/> names, editing <paramref name="target"/>.</summary>
+    private static ScreenField[] DeclaredRow(SettingsSectionContribution section, IReadOnlyList<string> order, SettingTarget target) =>
+        [.. order.Select(id => DeclaredFields.Screen(DeclaredFields.Find(section, id), target))];
 
     /// <summary>
     /// The WORLDS pane's buttons, in the order <see cref="ScreenModel.Sizes"/> needs them: the cursor
@@ -1310,50 +1265,23 @@ internal static class WorldsScreenRenderer
     /// The <c>content</c> field's words. <c>auto</c> is <see cref="ContentFormat.Ansi"/>, the stored default,
     /// which starts on ANSI and follows a negotiated MXP; <c>ansi</c> is the deliberate choice not to.
     /// </summary>
-    internal static readonly IReadOnlyList<string> ContentChoices = ["auto", "ansi", "mxp", "pueblo"];
+    internal static readonly IReadOnlyList<string> ContentChoices = WorldFieldValues.ContentChoices;
 
-    internal static string ContentName(ContentFormat format) => format switch
-    {
-        ContentFormat.AnsiOnly => "ansi",
-        ContentFormat.Mxp => "mxp",
-        ContentFormat.Pueblo => "pueblo",
-        _ => "auto",
-    };
+    internal static string ContentName(ContentFormat format) => WorldFieldValues.ContentName(format);
 
-    internal static ContentFormat ContentOf(string name) => name.ToLowerInvariant() switch
-    {
-        "ansi" => ContentFormat.AnsiOnly,
-        "mxp" => ContentFormat.Mxp,
-        "pueblo" => ContentFormat.Pueblo,
-        _ => ContentFormat.Ansi,
-    };
+    internal static ContentFormat ContentOf(string name) => WorldFieldValues.ContentOf(name);
 
-    internal const string EmojiOff = "off";
+    internal const string EmojiOff = WorldFieldValues.EmojiOff;
 
     /// <summary>
     /// The <c>emoji</c> field's words: which of the two substitutions run. Three switches in the
     /// configuration, one field here, because "on, with neither kind" is not a state anybody wants.
     /// </summary>
-    internal static readonly IReadOnlyList<string> EmojiChoices = [EmojiOff, "emoticons", "shortcodes", "both"];
+    internal static readonly IReadOnlyList<string> EmojiChoices = WorldFieldValues.EmojiChoices;
 
-    internal static string EmojiName(EmojiSettings emoji) => (emoji.Enabled, emoji.Emoticons, emoji.Shortcodes) switch
-    {
-        (false, _, _) or (true, false, false) => EmojiOff,
-        (true, true, false) => "emoticons",
-        (true, false, true) => "shortcodes",
-        _ => "both",
-    };
+    internal static string EmojiName(EmojiSettings emoji) => WorldFieldValues.EmojiName(emoji);
 
-    internal static void SetEmoji(EmojiSettings emoji, string name)
-    {
-        var choice = name.ToLowerInvariant();
-        emoji.Enabled = choice != EmojiOff;
-        if (emoji.Enabled)
-        {
-            emoji.Emoticons = choice is "emoticons" or "both";
-            emoji.Shortcodes = choice is "shortcodes" or "both";
-        }
-    }
+    internal static void SetEmoji(EmojiSettings emoji, string name) => WorldFieldValues.SetEmoji(emoji, name);
 
     /// <summary>
     /// What an unset log directory reads as. The field itself holds null — the logger picks a

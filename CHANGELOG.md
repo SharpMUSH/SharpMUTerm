@@ -9,6 +9,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- A theme picker at the top of F7: each theme with a preview of the panes, a tab strip and the command line.
+  Moving onto a theme shows the screen in it, Enter uses it and Esc keeps the one you had. The desktop window's
+  settings show the same themes as cards; click one to use it. A customised theme stays in the list when you
+  try another.
+- Desktop window: the settings window now edits Worlds & Characters (F5) and Characters (F9) too, with a
+  picker for which world or character you are editing and a button to the full screen for adding and deleting.
 - Ctrl+P lists *Fold or unfold the connection rail*, the same fold as Ctrl+B b and as the desktop window's
   sidebar button.
 - Desktop window: the header and the connections sidebar now have room of their own — a full-height toolbar
