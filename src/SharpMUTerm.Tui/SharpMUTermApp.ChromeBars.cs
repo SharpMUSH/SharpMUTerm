@@ -53,5 +53,17 @@ internal sealed partial class SharpMUTermApp
                 RepaintPane(windowId, keepSelection: true);
             }
         }
+
+        // The freeze bar is a control of its own between a frozen pane's halves, not a buffer row.
+        foreach (var (windowId, (control, drawn)) in _freezeBars.ToArray())
+        {
+            var width = BarWidth(windowId);
+            if (width > 0 && width != drawn)
+            {
+                accent ??= FrozenAccentHex();
+                control.SetContent(new List<string> { FreezeBarRenderer.Bar(accent, width) });
+                _freezeBars[windowId] = (control, width);
+            }
+        }
     }
 }

@@ -102,7 +102,10 @@ internal sealed class ListOverlay
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
         var lines = render(outer - 4);
         var footerLines = footer?.Invoke(outer - 4) ?? [];
-        var height = Math.Clamp(Rows(lines, outer - 3) + footerLines.Count + 2, 8, Math.Max(8, desktop.Height - 2));
+        // A modal whose body scrolls under pinned keys is at most four rows short of the desktop, so centred it leaves the
+        // header, the command line and the status row in view (two short, the import review at 80×24 sat on the command
+        // line). One without scrolling keeps the two: its last rows are its keys, and they must not be cut off.
+        var height = Math.Clamp(Rows(lines, outer - 3) + footerLines.Count + 2, 8, Math.Max(8, desktop.Height - (footer is null ? 2 : 4)));
         _content = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
         _content.LinkClicked += (_, e) => _link?.Invoke(e.Url);
         IWindowControl body = _content;
@@ -136,6 +139,7 @@ internal sealed class ListOverlay
             .WithBackgroundColor(_scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(outer, height)
             .Centered()
             .AddControl(body)

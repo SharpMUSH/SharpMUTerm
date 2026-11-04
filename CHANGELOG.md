@@ -484,6 +484,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Terminal polish from a sweep of every screen at 80×24 and 120×32: the header's brand reads `SharpMUTerm` where the row
+  has room; the welcome's chosen row is a band across the list; pop-ups keep a cell between their frame and their words;
+  a tall pop-up (the import review at 80×24) no longer covers the command line; the `❄ FROZEN` bar's rule runs to the
+  pane's edge instead of vanishing in a narrow pane or stopping short in a wide one; the script editor's line numbers are
+  legible on the Light theme; and the status row no longer says a key twice (`⌥R … connects it · ⌥R Reconnect`) or a
+  label twice (`Map: map: …`).
+
 - The command palette no longer covers the command line on an 80×24 terminal.
 - A tab squeezed by a crowded strip keeps at least three letters of its name.
 - The build no longer warns about an ImageSharp advisory in a decoder SharpMUTerm never uses.

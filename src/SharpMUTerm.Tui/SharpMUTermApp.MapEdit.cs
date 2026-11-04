@@ -131,7 +131,7 @@ internal sealed partial class SharpMUTermApp
         if (entering)
         {
             // Not toasted: the window's map inspector shows these as buttons; the status row says them for the cells.
-            Notice("map: ←↑→↓ select · r rename · l lock · Del delete · u undo · Esc done", MessageSeverity.Info, source: NoticeModel.Sources.Map, toast: false);
+            Notice("←↑→↓ select · r rename · l lock · Del delete · u undo · Esc done", MessageSeverity.Info, source: NoticeModel.Sources.Map, toast: false);
         }
     }
 

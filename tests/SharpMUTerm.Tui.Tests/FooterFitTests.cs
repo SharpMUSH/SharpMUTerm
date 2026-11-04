@@ -122,7 +122,8 @@ public class FooterFitTests
     {
         var app = App();
         var first = FrameGrid.Decode(app.RenderSnapshot("import-review"), Width, Height);
-        await Assert.That(first.Any(r => r.Contains("LEFT OUT", StringComparison.Ordinal) && !r.Contains("password", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(first.Any(r => r.Contains("WHAT IT ADDS", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(first.Any(r => r.Contains("Your health is", StringComparison.Ordinal))).IsFalse().Because("the end of the list is below the fold");
 
         app.SimulateImportKey(new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false));
         var scrolled = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);

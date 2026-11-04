@@ -60,7 +60,9 @@ internal sealed partial class SharpMUTermApp
 
         // The toast offers the action as a button; the row names the way to it, where it fits whole — never by cutting
         // the notice's own words, and never wrapping the row (FitStatusRow).
-        if (NoticeActionHints(notice.Action).FirstOrDefault(h => MarkupWidth(row) + 3 + h.Length <= HeaderWidth()) is { } hint)
+        // A notice whose own words already name the way (`offline — ⌥R (⌃P ▸ Reconnect) connects it`) gets no second
+        // copy: the row read `… connects it · ⌥R Reconnect`.
+        if (NoticeActionHints(notice.Action).FirstOrDefault(h => !NamesWay(notice.Text, h) && MarkupWidth(row) + 3 + h.Length <= HeaderWidth()) is { } hint)
         {
             row += $"[{label}] · {Escape(hint)}[/]";
         }
@@ -95,6 +97,16 @@ internal sealed partial class SharpMUTermApp
         return string.Equals(entry.Title, action.Label, StringComparison.OrdinalIgnoreCase)
             ? [$"⌃P ▸ {entry.Title}"]
             : [$"⌃P ▸ {entry.Title}", $"⌃P ▸ {action.Label}"];
+    }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> already says <paramref name="hint"/>'s way to the action: its chord (<c>⌥R</c> of
+    /// <c>⌥R Reconnect</c>), or the whole <c>⌃P ▸ …</c> path.
+    /// </summary>
+    internal static bool NamesWay(string text, string hint)
+    {
+        var way = hint.StartsWith("⌃P ▸ ", StringComparison.Ordinal) ? hint : hint.Split(' ')[0];
+        return text.Contains(way, StringComparison.Ordinal);
     }
 
     /// <summary>A colour held to <see cref="WorkspacePalette.HeaderTextFloor"/> on <paramref name="plane"/>: notice text is small text.</summary>

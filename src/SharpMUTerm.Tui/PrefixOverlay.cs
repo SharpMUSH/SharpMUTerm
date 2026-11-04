@@ -108,6 +108,7 @@ internal sealed class PrefixOverlay
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(new MarkupControl(Scheme.Lines(lines, ScreenPalette.MenuBg)))

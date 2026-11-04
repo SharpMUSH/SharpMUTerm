@@ -204,7 +204,7 @@ internal sealed class SearchSurface
         _listRows = Math.Max(3, desktop.Height - ChromeRows - 6);
         _contentWidth = Math.Max(MinimumWidth, desktop.Width - 6);
 
-        var width = _contentWidth + 2; // + the 1-cell left/right border
+        var width = _contentWidth + 3; // + the 1-cell left/right border and the cell of padding on the left
         var height = Math.Min(_listRows + ChromeRows + 2, Math.Max(ChromeRows + 3, desktop.Height - 2));
 
         _body = new MarkupControl(new List<string>());
@@ -217,6 +217,7 @@ internal sealed class SearchSurface
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_body)

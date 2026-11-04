@@ -57,7 +57,7 @@ internal sealed class GameDataOverlay
         var desktop = _system.DesktopDimensions;
         var width = Math.Max(44, desktop.Width - 8);
         var height = Math.Max(10, desktop.Height - 4);
-        _content = new MarkupControl(Scheme.Lines(Lines(width - 3, height - 2), ScreenPalette.MenuBg));
+        _content = new MarkupControl(Scheme.Lines(Lines(width - 4, height - 2), ScreenPalette.MenuBg));
 
         // Centered() after WithSize(), for CommandPalette's reason.
         _window = new WindowBuilder(_system)
@@ -67,6 +67,7 @@ internal sealed class GameDataOverlay
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_content)
@@ -144,7 +145,7 @@ internal sealed class GameDataOverlay
     {
         if (_window is { } window)
         {
-            _content?.SetContent(Scheme.Lines(Lines(Math.Max(20, window.Width - 3), Math.Max(6, window.Height - 2)), ScreenPalette.MenuBg));
+            _content?.SetContent(Scheme.Lines(Lines(Math.Max(20, window.Width - 4), Math.Max(6, window.Height - 2)), ScreenPalette.MenuBg));
         }
     }
 
