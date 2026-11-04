@@ -182,6 +182,11 @@ internal sealed partial class SharpMUTermApp
     {
         if (NativeModalOf(Client.Surfaces.SurfaceCatalog.Welcome) is { } native)
         {
+            if (native is WelcomeSession welcome)
+            {
+                ForgetWelcomeWorlds(welcome);
+            }
+
             CloseNativeModal(native);
         }
 

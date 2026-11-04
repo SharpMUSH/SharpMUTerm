@@ -660,6 +660,15 @@ public class SurfaceParityTests
             probed.Add(PanelIds.Composer);
         }
 
+        // The docked composer's Preview: F1 opens on the same draft with the as-sent band, in the window's editor and in
+        // the cells (F1, then ⌥P).
+        {
+            var native = await DockedPreview(native: true);
+            var cells = await DockedPreview(native: false);
+            await Assert.That(native).IsEqualTo(cells).Because("composer: preview");
+            await Assert.That(native).IsEqualTo("hello there|True|FullScreen");
+        }
+
         // The quit prompt: Y quits and N stays, from the window's buttons and from the cell prompt's keys.
         await SameModal("quit: yes", "quit",
             (app, m) => ((QuitSession)m.Open(SurfaceCatalog.Quit)!).Answer(true),
@@ -801,6 +810,21 @@ public class SurfaceParityTests
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        // The welcome's Find a world card: Show worlds lists the directory in the page, Add on the first row is the
+        // browse list's pick — the same connect form, filled in, as the cells' Browse worlds row and ⏎.
+        await SameModal("welcome: find a world and add it", "welcome",
+            (app, m) =>
+            {
+                var welcome = (WelcomeSession)m.Open(SurfaceCatalog.Welcome)!;
+                welcome.FindWorlds(string.Empty);
+                welcome.Worlds!.Pick(0);
+            },
+            app =>
+            {
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
             });
         probed.Add(SurfaceCatalog.Welcome);
 
@@ -1041,6 +1065,31 @@ public class SurfaceParityTests
         }
 
         return (telnet.Lines.ToList(), $"{Outcome(app)} | armed={app.ComposerArmed} | docked={app.DockedComposerIn(windowId)!.Body}");
+    }
+
+    /// <summary>A connected client docks its composer, types a draft and asks for the preview; the F1 it opens, read back.</summary>
+    private static async Task<string> DockedPreview(bool native)
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        var composer = native ? new FakeComposer() : null;
+        var (app, _) = await Connected(driver, composer);
+        await using var __ = app;
+        app.DispatchCommand("panel:composer");
+        app.RenderNextFrame();
+        if (composer is not null)
+        {
+            var session = driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.Composer).ComposerSession!;
+            session.Edited("hello there");
+            session.TogglePreview();
+            var model = composer.Session!.Model;
+            return $"{model.Body}|{model.Preview}|{model.Place}";
+        }
+
+        app.SimulateComposerTyping("hello there");
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+        app.Composer.SimulateKey(new ConsoleKeyInfo('p', ConsoleKey.P, false, true, false));
+        var cells = app.Composer.Model;
+        return $"{cells.Body}|{cells.Preview}|{cells.Place}";
     }
 
     private static async Task<(SharpMUTermApp App, SharpMUTerm.Tui.Tests.RecordingTelnetSession Telnet)> Connected(

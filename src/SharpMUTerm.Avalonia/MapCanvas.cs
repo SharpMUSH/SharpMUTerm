@@ -471,8 +471,9 @@ internal sealed class MapCanvas : Control
             return buttons;
         }
 
-        var x = 10.0;
-        var y = _model.Walking is not null || _model.Current is not null ? 46.0 : 28.0;
+        var x = PanelText.Pad;
+        var heading = PanelText.HeadingHeight(CellHeight);
+        var y = _model.Walking is not null || _model.Current is not null ? heading + 26 : heading + 8;
         void Add(string id, string label, bool enabled)
         {
             var width = PanelText.Measure(label, ButtonSize, bold: false) + 14;
@@ -500,6 +501,9 @@ internal sealed class MapCanvas : Control
     }
 
     private const double ButtonSize = 11;
+
+    /// <summary>The cell height the panel sits on, which sizes its heading as every panel's.</summary>
+    private double CellHeight => _view.CellExtent.Height > 0 ? _view.CellExtent.Height : 17;
 
     private LookButton? LookButtonAt(Point point) => LookButtons().FirstOrDefault(b => b.Rect.Contains(point));
 
@@ -750,17 +754,22 @@ internal sealed class MapCanvas : Control
             DrawName(context, hovered.Current ? $"{hovered.Name} — you are here" : hovered.Name, CentreOf(hovered), size, plate: true);
         }
 
-        // What and where, in the corner: the area and level, and a walk under way.
-        var label = (_model.Viewing ? "Viewing " : string.Empty)
-            + (_model.Area is { Length: > 0 } areaName ? $"{areaName} · level {_model.Level}" : $"level {_model.Level}");
-        DrawText(context, label, new Point(10, 8), 12, _model.AreaColour is { } areaHex ? Parse(areaHex) : Faded(0.75));
+        // What and where: the panel heading (Map, the area and level) with the area's colour as a mark before its name's
+        // line, then the room the character is in, or a walk under way, under it.
+        var heading = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, CellHeight, _plane, _text, right: 20);
+        if (_model.AreaColour is { } areaHex)
+        {
+            context.DrawRectangle(new SolidColorBrush(Parse(areaHex)), null, new Rect(PanelText.Pad - 9, (heading / 2) - 5, 3, 10), 1.5, 1.5);
+        }
+
+        var under = heading + 6;
         if (_model.Walking is { } walking)
         {
-            DrawText(context, walking, new Point(10, 26), 12, path);
+            DrawText(context, walking, new Point(PanelText.Pad, under), 12, path);
         }
         else if (_model.Current is { } here)
         {
-            DrawText(context, here.Name, new Point(10, 26), 12, accent);
+            DrawText(context, here.Name, new Point(PanelText.Pad, under), 12, accent);
         }
 
         if (_dragRoom is { } moving && byId.TryGetValue(moving.Id, out var shown))

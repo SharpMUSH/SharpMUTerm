@@ -1,42 +1,54 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SharpMUTerm.Client.Modals;
+using SharpMUTerm.Core.WorldIndex;
 
 namespace SharpMUTerm.Avalonia;
 
 /// <summary>
-/// The window's first-run welcome: the menu (connect to a host, browse games, open settings, the <c>/connect</c>
-/// example and the starting layout) and the connect form (host, port, TLS, a character, a password reminder). A choice,
-/// a layout and the filled form go back through the session; the client checks the form through <c>/connect</c>'s own
-/// path, so a refusal comes back as the model's problem and the form stays up. ↑↓ and ⏎ work the menu, ←→ the
-/// layout; on the form ⇥ moves, ⏎ connects and Esc goes back to the menu.
+/// The window's first-run welcome as one page: a heading, then two cards side by side — <b>Find a world</b> (a search box
+/// and mu*index's rows, asked only when the player opens the list, each with an Add that does what a pick in Browse worlds
+/// does: fills in the connect form) and <b>Connect directly</b> (host, port, character, TLS, Connect, and the
+/// <c>/connect</c> line it is the same as) — then the starting layout as two cards. Everything it says is
+/// <see cref="WelcomeModel"/>'s and <see cref="WorldBrowseModel"/>'s; every button ends in the session: a choice and a
+/// layout in <c>RunWelcomeAction</c>/<c>SetWelcomeLayout</c>, the form in <c>ConnectFromWelcome</c> (through
+/// <c>/connect</c>'s own path, so a refusal comes back as the model's problem and the page stays up), the list in
+/// <c>FindWorldsInWelcome</c> and a row's Add in <c>PickWorld</c>. ⏎ in the form connects, ⏎ in the search asks, Esc
+/// closes. The cells keep their menu (<c>WelcomeSurface</c>): a page this wide does not fit a terminal.
 /// </summary>
 internal sealed class WelcomeView : DockPanel, IModalView
 {
-    private static readonly WelcomeChoice[] Choices = [WelcomeChoice.Connect, WelcomeChoice.Browse, WelcomeChoice.Settings, WelcomeChoice.Import];
-    private static readonly WelcomeLayout[] Layouts = [WelcomeLayout.Suggested, WelcomeLayout.Roleplay, WelcomeLayout.Combat];
+    /// <summary>The most rows the find card shows at once; the rest scroll.</summary>
+    private const int ShownRows = 3;
 
     private readonly WelcomeSession _session;
     private readonly NativeTokens _colours;
     private readonly Action _done;
-    private readonly StackPanel _body = new();
-    private readonly TextBlock _footer;
-    private readonly TextBlock _heading;
-    private readonly List<Border> _choiceRows = [];
-    private readonly List<Button> _chips = [];
+    private readonly TextBox _host;
+    private readonly TextBox _port;
+    private readonly CheckBox _tls;
+    private readonly TextBox _character;
+    private readonly CheckBox _passwordLater;
+    private readonly TextBlock _command;
+    private readonly TextBlock _problem;
+    private readonly TextBox _search;
+    private readonly StackPanel _findBody = new() { Spacing = 8 };
+    private readonly TextBlock _findNote;
+    private readonly TextBlock _layoutTag;
+    private readonly TextBlock _layoutReason;
+    private readonly List<(WelcomeLayout Layout, Border Card)> _layoutCards = [];
+    private readonly List<Border> _worldRows = [];
     private WelcomeModel _model;
-    private int _selected;
-    private TextBox? _host;
-    private TextBox? _port;
-    private CheckBox? _tls;
-    private TextBox? _character;
-    private CheckBox? _passwordLater;
-    private bool _drawnInForm;
+    private WorldBrowseSession? _worlds;
+    private WelcomeModel? _filledFrom;
 
     public WelcomeView(WelcomeSession session, NativeTokens colours, Action done)
     {
@@ -44,36 +56,184 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _colours = colours;
         _done = done;
         _model = session.Model;
-        _selected = Array.IndexOf(Choices, _model.Selected);
 
-        var heading = _heading = ModalParts.Heading(WelcomeModel.Heading, colours);
-        heading.Margin = new Thickness(22, 18, 22, 2);
-        SetDock(heading, Dock.Top);
-        Children.Add(heading);
+        var page = new StackPanel { Margin = new Thickness(32, 28, 32, 24), Spacing = 0 };
+        page.Children.Add(new TextBlock
+        {
+            Text = WelcomeModel.Heading,
+            FontSize = NativeTokens.Display,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = colours.Brush(colours.Text),
+        });
+        page.Children.Add(new TextBlock
+        {
+            Text = WelcomeModel.PageIntro,
+            FontSize = NativeTokens.Title,
+            Foreground = colours.Brush(colours.Dim),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 6, 0, 22),
+        });
 
-        _footer = ModalParts.Footer(string.Empty, colours);
-        SetDock(_footer, Dock.Bottom);
-        Children.Add(_footer);
+        // ── Find a world ───────────────────────────────────────────────────────────────────────
+        _search = new TextBox
+        {
+            PlaceholderText = WelcomeModel.FindPlaceholder,
+            FontSize = NativeTokens.Title,
+            Padding = new Thickness(12, 8),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            MaxLength = WorldDirectory.MaxQuery,
+        };
+        global::Avalonia.Automation.AutomationProperties.SetName(_search, WelcomeModel.FindHeading);
+        _search.TextChanged += (_, _) => DrawRows();
+        _findNote = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
+        var find = new StackPanel { Spacing = 12 };
+        find.Children.Add(CardTitle(WelcomeModel.FindHeading));
+        find.Children.Add(_search);
+        find.Children.Add(_findBody);
+        find.Children.Add(_findNote);
 
-        Children.Add(_body);
+        // ── Connect directly ───────────────────────────────────────────────────────────────────
+        _host = Field(WelcomeModel.FieldLabel(WelcomeField.Host), WelcomeModel.HostPlaceholder, WelcomeModel.MaxHost);
+        _host.FontFamily = Mono;
+        _port = Field(WelcomeModel.FieldLabel(WelcomeField.Port), "4000", 5);
+        _port.FontFamily = Mono;
+        _character = Field(WelcomeModel.FieldLabel(WelcomeField.Character), "Name", WelcomeModel.MaxCharacter);
+        _tls = new CheckBox { Content = "Encrypt the connection (TLS)", FontSize = NativeTokens.Title };
+        _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body };
+        _command = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
+        _problem = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Warn), TextWrapping = TextWrapping.Wrap, IsVisible = false };
+        foreach (var box in new[] { _host, _port, _character })
+        {
+            box.TextChanged += (_, _) => DrawCommand();
+        }
+
+        _tls.IsCheckedChanged += (_, _) => DrawCommand();
+
+        var portAndName = new Grid { ColumnDefinitions = new ColumnDefinitions("110,12,*") };
+        var portColumn = Labelled(WelcomeModel.FieldLabel(WelcomeField.Port), _port);
+        var nameColumn = Labelled("Character (optional)", _character);
+        Grid.SetColumn(portColumn, 0);
+        Grid.SetColumn(nameColumn, 2);
+        portAndName.Children.Add(portColumn);
+        portAndName.Children.Add(nameColumn);
+
+        var connectButton = ModalParts.Button("Connect", null, colours, Connect, accent: true);
+        connectButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        connectButton.HorizontalContentAlignment = HorizontalAlignment.Center;
+        connectButton.Padding = new Thickness(14, 8);
+        connectButton.Name = "Connect";
+
+        var connect = new StackPanel { Spacing = 10 };
+        connect.Children.Add(CardTitle(WelcomeModel.ConnectHeading));
+        connect.Children.Add(Labelled(WelcomeModel.FieldLabel(WelcomeField.Host), _host));
+        connect.Children.Add(portAndName);
+        connect.Children.Add(_tls);
+        connect.Children.Add(_passwordLater);
+        connect.Children.Add(connectButton);
+        connect.Children.Add(_problem);
+        connect.Children.Add(_command);
+
+        var cards = new Grid { ColumnDefinitions = new ColumnDefinitions("*,20,*") };
+        var findCard = Card(find);
+        var connectCard = Card(connect);
+        Grid.SetColumn(findCard, 0);
+        Grid.SetColumn(connectCard, 2);
+        cards.Children.Add(findCard);
+        cards.Children.Add(connectCard);
+        page.Children.Add(cards);
+
+        // ── Starting layout ────────────────────────────────────────────────────────────────────
+        var layoutHeading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 26, 0, 10) };
+        layoutHeading.Children.Add(new TextBlock
+        {
+            Text = WelcomeModel.LayoutsHeading,
+            FontSize = NativeTokens.Title + 2,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = colours.Brush(colours.Text),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        _layoutTag = new TextBlock
+        {
+            Text = WelcomeModel.SuggestedTag,
+            FontSize = NativeTokens.Body,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = colours.Brush(colours.Accent),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        layoutHeading.Children.Add(_layoutTag);
+        page.Children.Add(layoutHeading);
+
+        var layouts = new Grid { ColumnDefinitions = new ColumnDefinitions("*,16,*") };
+        var column = 0;
+        foreach (var layout in new[] { WelcomeLayout.Roleplay, WelcomeLayout.Combat })
+        {
+            var card = LayoutCard(layout);
+            Grid.SetColumn(card, column);
+            layouts.Children.Add(card);
+            _layoutCards.Add((layout, card));
+            column += 2;
+        }
+
+        page.Children.Add(layouts);
+        _layoutReason = new TextBlock
+        {
+            FontSize = NativeTokens.Body,
+            Foreground = colours.Brush(colours.Dim),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+        page.Children.Add(_layoutReason);
+
+        // ── The other ways in ─────────────────────────────────────────────────────────────────
+        var others = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 18, 0, 0) };
+        others.Children.Add(new TextBlock
+        {
+            Text = WelcomeModel.OtherWays,
+            FontSize = NativeTokens.Body,
+            Foreground = colours.Brush(colours.Dim),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+        });
+        var settings = ModalParts.Button("Open settings", "F5", colours, () => Choose(WelcomeChoice.Settings));
+        settings.Margin = new Thickness(0, 0, 8, 0);
+        others.Children.Add(settings);
+        others.Children.Add(ModalParts.Button("Import…", null, colours, () => Choose(WelcomeChoice.Import)));
+        page.Children.Add(others);
+
+        var footer = ModalParts.Footer("Tab moves · Enter connects, or searches · Esc closes", colours);
+        SetDock(footer, Dock.Bottom);
+        Children.Add(footer);
+        Children.Add(new ScrollViewer
+        {
+            Content = page,
+            HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+        });
+
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
         _session.Changed += OnChanged;
-        Draw();
+        _session.WorldsAttached += OnWorldsAttached;
+        Fill(_model);
+        DrawFind();
+        if (_session.Worlds is { } already)
+        {
+            Attach(already);
+        }
     }
 
     public string Title => "Welcome";
 
-    public double PreferredWidth => 560;
+    public double PreferredWidth => 1040;
 
     public bool Centred => true;
 
     /// <summary>The model drawn now, for a test.</summary>
     public WelcomeModel Model => _model;
 
-    /// <summary>The menu row ⏎ chooses.</summary>
-    public WelcomeChoice Selected => Choices[Math.Clamp(_selected, 0, Choices.Length - 1)];
+    /// <summary>The menu row ⏎ would choose in the cells: the page has no menu, so it is the model's.</summary>
+    public WelcomeChoice Selected => _model.Selected;
 
-    /// <summary>The form's fields, for a test; null while the menu is shown.</summary>
+    /// <summary>The form's fields, for a test.</summary>
     public TextBox? HostBox => _host;
 
     public TextBox? PortBox => _port;
@@ -82,22 +242,38 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     public TextBox? CharacterBox => _character;
 
+    /// <summary>The find card's search box, for a test.</summary>
+    public TextBox SearchBox => _search;
+
+    /// <summary>The world rows the find card shows now, for a test.</summary>
+    public IReadOnlyList<Border> WorldRows => _worldRows;
+
+    /// <summary>The <c>/connect</c> line under the form as drawn, for a test.</summary>
+    public string CommandLine => string.Concat(_command.Inlines?.OfType<Run>().Select(r => r.Text) ?? []);
+
     public void FocusFirst()
     {
-        if (_model.InForm && _host is not null)
+        if (_model.InForm || _model.Host.Length > 0 || !_session.CanFindWorlds)
         {
             _host.Focus();
         }
         else
         {
-            Focusable = true;
-            Focus();
+            _search.Focus();
         }
     }
 
-    public void Detach() => _session.Changed -= OnChanged;
+    public void Detach()
+    {
+        _session.Changed -= OnChanged;
+        _session.WorldsAttached -= OnWorldsAttached;
+        if (_worlds is not null)
+        {
+            _worlds.Changed -= OnWorldsChanged;
+        }
+    }
 
-    /// <summary>A menu choice, as ⏎ on its row.</summary>
+    /// <summary>A choice the page offers as a button (settings, import, or Browse worlds where it cannot list in place).</summary>
     public void Choose(WelcomeChoice choice)
     {
         _session.Choose(choice);
@@ -111,190 +287,334 @@ internal sealed class WelcomeView : DockPanel, IModalView
     public void Connect()
     {
         _session.Connect(new WelcomeForm(
-            _host?.Text ?? string.Empty,
-            _port?.Text ?? string.Empty,
-            _tls?.IsChecked == true,
-            _character?.Text ?? string.Empty,
-            _passwordLater?.IsChecked == true));
+            _host.Text ?? string.Empty,
+            _port.Text ?? string.Empty,
+            _tls.IsChecked == true,
+            _character.Text ?? string.Empty,
+            _passwordLater.IsChecked == true));
         if (_session.IsEnded)
         {
             _done();
         }
     }
 
+    /// <summary>The find card's ask: the list the first time, the directory's own search for words the rows do not hold.</summary>
+    public void Find() => _session.FindWorlds(_search.Text ?? string.Empty);
+
+    /// <summary>A row's Add: Browse worlds' pick of row <paramref name="index"/> of the list's rows.</summary>
+    public void Add(int index) => _worlds?.Pick(index);
+
+    private static FontFamily Mono => new("JetBrains Mono, DejaVu Sans Mono, Consolas, Menlo, monospace");
+
     private void OnChanged(WelcomeModel model) => Dispatcher.UIThread.Post(() =>
     {
-        var wasForm = _model.InForm;
         _model = model;
-        _selected = Array.IndexOf(Choices, model.Selected);
-        if (model.InForm && wasForm && _drawnInForm)
+        Fill(model);
+        DrawFind();
+    });
+
+    private void OnWorldsAttached(WorldBrowseSession worlds) => Dispatcher.UIThread.Post(() => Attach(worlds));
+
+    private void OnWorldsChanged(WorldBrowseModel model) => Dispatcher.UIThread.Post(DrawFind);
+
+    private void Attach(WorldBrowseSession worlds)
+    {
+        if (ReferenceEquals(worlds, _worlds))
         {
-            DrawProblem();
             return;
         }
 
-        Draw();
-        FocusFirst();
-    });
+        if (_worlds is not null)
+        {
+            _worlds.Changed -= OnWorldsChanged;
+        }
 
-    private void Draw()
-    {
-        _body.Children.Clear();
-        _choiceRows.Clear();
-        _chips.Clear();
-        _drawnInForm = _model.InForm;
-        if (_model.InForm)
-        {
-            DrawForm();
-        }
-        else
-        {
-            DrawMenu();
-        }
+        _worlds = worlds;
+        worlds.Changed += OnWorldsChanged;
+        DrawFind();
     }
 
-    private void DrawMenu()
+    /// <summary>
+    /// The model's fields into the form, but only when the client changed them (a pick prefilling the form), so the
+    /// player's typing is never overwritten by a republish that only carried a problem or a layout.
+    /// </summary>
+    private void Fill(WelcomeModel model)
     {
-        _host = _port = _character = null;
-        _tls = _passwordLater = null;
-        _heading.Text = WelcomeModel.Heading;
-        _body.Children.Add(ModalParts.Dim(WelcomeModel.Intro, _colours, new Thickness(22, 0, 22, 10)));
-
-        var list = new StackPanel { Margin = new Thickness(12, 0, 12, 4) };
-        for (var i = 0; i < Choices.Length; i++)
+        var previous = _filledFrom;
+        _filledFrom = model;
+        if (previous is null || previous.Host != model.Host || previous.WorldName != model.WorldName)
         {
-            var choice = Choices[i];
-            var index = i;
-            var (title, detail) = _model.Describe(choice);
-            var words = new StackPanel();
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(title), FontSize = NativeTokens.Title, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(detail), FontSize = NativeTokens.Body, Foreground = _colours.Brush(_colours.Dim) });
-            var row = ModalParts.Row(words, title, () => SelectChoice(index), () => Choose(choice));
-            row.Padding = new Thickness(12, 8);
-            _choiceRows.Add(row);
+            _host.Text = model.Host;
+        }
+
+        if (previous is null || previous.Port != model.Port)
+        {
+            _port.Text = model.Port;
+        }
+
+        if (previous is null || previous.Tls != model.Tls)
+        {
+            _tls.IsChecked = model.Tls;
+        }
+
+        if (previous is null || previous.Character != model.Character)
+        {
+            _character.Text = model.Character;
+        }
+
+        if (previous is null || previous.PasswordLater != model.PasswordLater)
+        {
+            _passwordLater.IsChecked = model.PasswordLater;
+        }
+
+        _problem.Text = NativeKeys.Words(model.Problem);
+        _problem.IsVisible = model.Problem is not null;
+        _layoutTag.IsVisible = model.Layout == WelcomeLayout.Suggested;
+        _layoutReason.Text = NativeKeys.Words(model.LayoutReason);
+        foreach (var (layout, card) in _layoutCards)
+        {
+            var chosen = layout == model.Layout;
+            card.BorderBrush = _colours.Brush(chosen ? _colours.Accent : _colours.Edge);
+            card.BorderThickness = new Thickness(chosen ? 2 : 1);
+            card.Padding = chosen ? new Thickness(17, 13) : new Thickness(18, 14);
+            card.Background = _colours.Brush(chosen ? _colours.Selected : _colours.Card);
+        }
+
+        DrawCommand();
+    }
+
+    /// <summary>Same as typing <c>/connect host port tls</c> in any window — from what the fields hold now.</summary>
+    private void DrawCommand()
+    {
+        var (lead, tail) = WelcomeModel.CommandWords;
+        _command.Inlines!.Clear();
+        _command.Inlines.Add(new Run(lead + " "));
+        _command.Inlines.Add(new Run(WelcomeModel.CommandFor(_host.Text ?? string.Empty, _port.Text ?? string.Empty, _tls.IsChecked == true))
+        {
+            FontFamily = Mono,
+            Foreground = _colours.Brush(_colours.Text),
+        });
+        _command.Inlines.Add(new Run(" " + tail));
+    }
+
+    /// <summary>The find card's body: the button that asks, then the rows and what the list says about itself.</summary>
+    private void DrawFind()
+    {
+        _findBody.Children.Clear();
+        _worldRows.Clear();
+        if (!_session.CanFindWorlds)
+        {
+            // No directory set (or a host that cannot list in place): the model's reason, and Browse worlds as a choice.
+            _search.IsEnabled = false;
+            _findNote.Text = _model.IndexProblem ?? WelcomeModel.FindNote;
+            var browse = ModalParts.Button(_model.Describe(WelcomeChoice.Browse).Title, null, _colours, () => Choose(WelcomeChoice.Browse));
+            browse.IsEnabled = _model.IndexProblem is null;
+            _findBody.Children.Add(browse);
+            return;
+        }
+
+        _search.IsEnabled = true;
+        if (_worlds is null)
+        {
+            var show = ModalParts.Button(WelcomeModel.FindButton, "Enter", _colours, Find);
+            show.Name = "ShowWorlds";
+            _findBody.Children.Add(show);
+            _findNote.Text = WelcomeModel.FindNote;
+            return;
+        }
+
+        DrawRows();
+    }
+
+    private void DrawRows()
+    {
+        if (_worlds is not { } worlds)
+        {
+            return;
+        }
+
+        _findBody.Children.Clear();
+        _worldRows.Clear();
+        var model = worlds.Model;
+        var query = _search.Text ?? string.Empty;
+        var shown = model.View(query, WorldDirectorySort.Players);
+        var list = new StackPanel { Spacing = 8 };
+        foreach (var world in shown)
+        {
+            var index = IndexOf(model, world);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            var row = WorldRow(world, index, model.Opening is null);
+            _worldRows.Add(row);
             list.Children.Add(row);
         }
 
-        _body.Children.Add(list);
-
-        var example = new TextBlock { Margin = new Thickness(22, 6, 22, 0), FontSize = NativeTokens.Body, Foreground = _colours.Brush(_colours.Dim), TextWrapping = TextWrapping.Wrap };
-        example.Inlines!.Add(new global::Avalonia.Controls.Documents.Run(WelcomeModel.ExampleLead + " "));
-        example.Inlines.Add(new global::Avalonia.Controls.Documents.Run(WelcomeModel.ExampleCommand)
+        if (list.Children.Count > 0)
         {
-            Foreground = _colours.Brush(_colours.Accent),
-            FontFamily = new FontFamily("JetBrains Mono, DejaVu Sans Mono, Consolas, Menlo, monospace"),
+            _findBody.Children.Add(new ScrollViewer
+            {
+                Content = list,
+                MaxHeight = (ShownRows * 56) + ((ShownRows - 1) * 8),
+                HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            });
+        }
+
+        // What the list says about itself: asking, why it is empty, or how many and from where.
+        var status = model.Opening is not null ? model.OpeningLine
+            : model.Problem is { } problem && model.State == WorldBrowseState.Ready ? problem
+            : model.Empty(query);
+        _findNote.Text = status is not null
+            ? NativeKeys.Words(status)
+            : $"{model.CountLine(query)} · {WorldBrowseModel.AttributionLine}";
+        _findNote.Foreground = _colours.Brush(model.State is WorldBrowseState.Failed || (model.Problem is not null && model.State == WorldBrowseState.Ready) ? _colours.Warn : _colours.Dim);
+    }
+
+    private static int IndexOf(WorldBrowseModel model, WorldListing world)
+    {
+        for (var i = 0; i < model.Rows.Count; i++)
+        {
+            if (ReferenceEquals(model.Rows[i], world) || model.Rows[i] == world)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>One listed world: its name over its codebase, players and tagline, with Add at the right.</summary>
+    private Border WorldRow(WorldListing world, int index, bool enabled)
+    {
+        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        words.Children.Add(new TextBlock
+        {
+            Text = world.Name,
+            FontSize = NativeTokens.Title,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _colours.Brush(_colours.Text),
+            TextTrimming = TextTrimming.CharacterEllipsis,
         });
-        _body.Children.Add(example);
-
-        _body.Children.Add(ModalParts.Dim(_model.LayoutHeading, _colours, new Thickness(22, 14, 22, 6)));
-        var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(22, 0, 22, 4) };
-        foreach (var layout in Layouts)
+        var detail = string.Join(" · ", new[]
         {
-            var chosen = layout;
-            var chip = ModalParts.Button(WelcomeModel.LayoutName(layout), null, _colours, () => _session.SetLayout(chosen), accent: layout == _model.Layout);
-            chip.Focusable = false;
-            chip.Padding = new Thickness(12, 4);
-            _chips.Add(chip);
-            chips.Children.Add(chip);
-        }
-
-        _body.Children.Add(chips);
-        _body.Children.Add(ModalParts.Dim(NativeKeys.Words(WelcomeModel.LayoutNote), _colours, new Thickness(22, 2, 22, 0)));
-        _footer.Text = NativeKeys.Words($"{WelcomeModel.MenuKeys.Left} · {WelcomeModel.MenuKeys.Right}");
-        HighlightChoice();
-    }
-
-    private void DrawForm()
-    {
-        _heading.Text = WelcomeModel.FormHeading;
-        _body.Children.Add(ModalParts.Dim(NativeKeys.Words(_model.FormIntroLine), _colours, new Thickness(22, 0, 22, 10)));
-        var grid = new Grid
+            world.Codebase,
+            world.Players is null ? null : $"{WorldBrowseModel.Players(world)} playing",
+            world.Tagline,
+        }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        words.Children.Add(new TextBlock
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto"),
-            Margin = new Thickness(22, 0, 22, 0),
+            Text = detail,
+            FontSize = NativeTokens.Body,
+            Foreground = _colours.Brush(_colours.Dim),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+
+        var add = ModalParts.Button(WelcomeModel.AddButton, null, _colours, () => Add(index), accent: index == 0);
+        add.IsEnabled = enabled;
+        add.Padding = new Thickness(14, 4);
+        add.VerticalAlignment = VerticalAlignment.Center;
+        global::Avalonia.Automation.AutomationProperties.SetName(add, $"{WelcomeModel.AddButton} {world.Name}");
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(add, 1);
+        add.Margin = new Thickness(12, 0, 0, 0);
+        grid.Children.Add(words);
+        grid.Children.Add(add);
+        var row = new Border
+        {
+            Child = grid,
+            Padding = new Thickness(14, 9),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            BorderThickness = new Thickness(1),
+            BorderBrush = _colours.Brush(_colours.Edge),
+            Background = _colours.Brush(index == 0 ? _colours.Selected : _colours.Card),
         };
-
-        TextBlock Label(string text, int row)
-        {
-            var label = new TextBlock { Text = text, Foreground = _colours.Brush(_colours.Dim), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
-            Grid.SetRow(label, row);
-            grid.Children.Add(label);
-            return label;
-        }
-
-        TextBox Field(string name, string text, string placeholder, int row, int max)
-        {
-            var box = new TextBox { Text = text, PlaceholderText = placeholder, MaxLength = max, Margin = new Thickness(0, 4), Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(NativeTokens.RadiusM) };
-            global::Avalonia.Automation.AutomationProperties.SetName(box, name);
-            Grid.SetRow(box, row);
-            Grid.SetColumn(box, 1);
-            grid.Children.Add(box);
-            return box;
-        }
-
-        CheckBox Check(string text, bool on, int row)
-        {
-            var box = new CheckBox { Content = text, IsChecked = on, Margin = new Thickness(0, 2) };
-            Grid.SetRow(box, row);
-            Grid.SetColumn(box, 1);
-            grid.Children.Add(box);
-            return box;
-        }
-
-        string Named(WelcomeField field) => WelcomeModel.FieldLabel(field);
-        Label(Named(WelcomeField.Host), 0);
-        _host = Field(Named(WelcomeField.Host), _model.Host, WelcomeModel.HostPlaceholder, 0, WelcomeModel.MaxHost);
-        Label(Named(WelcomeField.Port), 1);
-        _port = Field(Named(WelcomeField.Port), _model.Port, "4000", 1, 5);
-        _port.HorizontalAlignment = HorizontalAlignment.Left;
-        _port.Width = 110;
-        Label(Named(WelcomeField.Tls), 2);
-        _tls = Check(WelcomeModel.TlsOn, _model.Tls, 2);
-        Label(Named(WelcomeField.Character), 3);
-        _character = Field(Named(WelcomeField.Character), _model.Character, WelcomeModel.CharacterPlaceholder, 3, WelcomeModel.MaxCharacter);
-        Label(Named(WelcomeField.Password), 4);
-        _passwordLater = Check(NativeKeys.Words(WelcomeModel.PasswordOn), _model.PasswordLater, 4);
-        _body.Children.Add(grid);
-
-        _body.Children.Add(ModalParts.Dim(_model.FormLayoutLine, _colours, new Thickness(22, 10, 22, 0)));
-        var problem = new TextBlock { Name = "Problem", Margin = new Thickness(22, 6, 22, 0), TextWrapping = TextWrapping.Wrap, Foreground = _colours.Brush(_colours.Warn) };
-        _body.Children.Add(problem);
-
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Margin = new Thickness(22, 12, 22, 0) };
-        var back = ModalParts.Button("Back", "Esc", _colours, () => _session.Back());
-        var connect = ModalParts.Button("Connect", "Enter", _colours, Connect, accent: true);
-        buttons.Children.Add(back);
-        buttons.Children.Add(connect);
-        _body.Children.Add(buttons);
-        _footer.Text = "Tab moves between the fields";
-        DrawProblem();
+        ToolTip.SetTip(row, world.Tagline.Length > 0 ? world.Tagline : world.Name);
+        global::Avalonia.Automation.AutomationProperties.SetName(row, world.Name);
+        return row;
     }
 
-    private void DrawProblem()
+    private Border LayoutCard(WelcomeLayout layout)
     {
-        if (_body.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "Problem") is { } problem)
+        var words = new StackPanel { Spacing = 4 };
+        words.Children.Add(new TextBlock
         {
-            problem.Text = NativeKeys.Words(_model.Problem);
-            problem.IsVisible = _model.Problem is not null;
-        }
+            Text = layout.ToString(),
+            FontSize = NativeTokens.Title,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _colours.Brush(_colours.Text),
+        });
+        words.Children.Add(new TextBlock
+        {
+            Text = WelcomeModel.LayoutDetail(layout),
+            FontSize = NativeTokens.Body + 1,
+            Foreground = _colours.Brush(_colours.Dim),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        var card = new Border
+        {
+            Child = words,
+            CornerRadius = new CornerRadius(NativeTokens.RadiusL),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Name = layout.ToString(),
+        };
+        global::Avalonia.Automation.AutomationProperties.SetName(card, $"{layout} layout");
+        card.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(card).Properties.IsLeftButtonPressed)
+            {
+                e.Handled = true;
+                PickLayout(layout);
+            }
+        };
+        return card;
     }
 
-    private void SelectChoice(int index)
+    /// <summary>A layout card: chooses it, or, chosen already, goes back to letting the game suggest one.</summary>
+    public void PickLayout(WelcomeLayout layout) =>
+        _session.SetLayout(_model.Layout == layout ? WelcomeLayout.Suggested : layout);
+
+    private TextBlock CardTitle(string text) => new()
     {
-        if (index != _selected)
-        {
-            _selected = index;
-            HighlightChoice();
-        }
+        Text = text,
+        FontSize = NativeTokens.Title + 2,
+        FontWeight = FontWeight.SemiBold,
+        Foreground = _colours.Brush(_colours.Text),
+    };
+
+    private Border Card(Control content) => new()
+    {
+        Child = content,
+        Padding = new Thickness(22, 20),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusL),
+        BorderThickness = new Thickness(1),
+        BorderBrush = _colours.Brush(_colours.Edge),
+        Background = _colours.Brush(_colours.Raised),
+    };
+
+    private StackPanel Labelled(string label, Control field)
+    {
+        var column = new StackPanel { Spacing = 4 };
+        column.Children.Add(new TextBlock { Text = label, FontSize = NativeTokens.Body + 1, Foreground = _colours.Brush(_colours.Dim) });
+        column.Children.Add(field);
+        return column;
     }
 
-    private void HighlightChoice()
+    private static TextBox Field(string name, string placeholder, int max)
     {
-        for (var i = 0; i < _choiceRows.Count; i++)
+        var box = new TextBox
         {
-            _choiceRows[i].Background = i == _selected ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
-        }
+            PlaceholderText = placeholder,
+            MaxLength = max,
+            FontSize = NativeTokens.Title,
+            Padding = new Thickness(10, 7),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+        };
+        global::Avalonia.Automation.AutomationProperties.SetName(box, name);
+        return box;
     }
 
     private void OnKey(object? sender, KeyEventArgs e)
@@ -304,48 +624,40 @@ internal sealed class WelcomeView : DockPanel, IModalView
             return;
         }
 
-        if (_model.InForm)
+        if (e.Key == Key.Escape)
         {
-            if (e.Key == Key.Escape)
-            {
-                e.Handled = true;
-                _session.Back();
-            }
-            else if (e.Key == Key.Enter)
-            {
-                e.Handled = true;
-                Connect();
-            }
-
+            e.Handled = true;
+            _session.Dismiss();
+            _done();
             return;
         }
 
-        var handled = true;
-        switch (e.Key)
+        if (e.Key != Key.Enter)
         {
-            case Key.Up:
-                SelectChoice(ModalParts.Step(_selected, -1, Choices.Length));
-                break;
-            case Key.Down:
-                SelectChoice(ModalParts.Step(_selected, 1, Choices.Length));
-                break;
-            case Key.Left:
-            case Key.Right:
-                var at = Array.IndexOf(Layouts, _model.Layout);
-                _session.SetLayout(Layouts[ModalParts.Step(at, e.Key == Key.Left ? -1 : 1, Layouts.Length)]);
-                break;
-            case Key.Enter:
-                Choose(Selected);
-                break;
-            case Key.Escape:
-                _session.Dismiss();
-                _done();
-                break;
-            default:
-                handled = false;
-                break;
+            return;
         }
 
-        e.Handled = handled;
+        e.Handled = true;
+        if (ReferenceEquals(e.Source, _search) || (e.Source is Visual v && IsWithin(v, _search)))
+        {
+            Find();
+        }
+        else
+        {
+            Connect();
+        }
+    }
+
+    private static bool IsWithin(Visual visual, Visual ancestor)
+    {
+        for (Visual? at = visual; at is not null; at = at.GetVisualParent())
+        {
+            if (ReferenceEquals(at, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

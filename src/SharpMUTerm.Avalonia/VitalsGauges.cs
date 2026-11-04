@@ -59,14 +59,31 @@ internal sealed class VitalsGauges : Control
         InvalidateVisual();
     }
 
-    /// <summary>Height one stacked block takes: a line of text and a bar under it.</summary>
-    private static double BlockHeight(double cellHeight) => Math.Max(30, cellHeight * 2.1);
+    /// <summary>The meter's label line in a stacked block: the name and the numbers over the bar.</summary>
+    private static double LabelHeight(double cellHeight) => Math.Max(14, cellHeight * 0.85);
+
+    /// <summary>A stacked meter's bar: ten pixels on an ordinary cell, as the mockups draw it.</summary>
+    private static double BarHeight(double cellHeight) => cellHeight >= 15 ? 10 : 8;
+
+    /// <summary>Height one stacked block takes: a line of text, the bar under it, and the gap to the next.</summary>
+    private static double BlockHeight(double cellHeight) => LabelHeight(cellHeight) + 4 + BarHeight(cellHeight) + 10;
+
+    /// <summary>The height every stacked block takes, the target's rule included.</summary>
+    private double BlocksHeight(VitalsModel model) =>
+        (model.Meters.Count * BlockHeight(_cellHeight)) + (model.Target is null ? 0 : BlockHeight(_cellHeight) + 8);
 
     private bool StackedFor(double height, VitalsModel model)
     {
         var blocks = model.Meters.Count + (model.Target is null ? 0 : 1);
-        return blocks > 0 && height >= (blocks * BlockHeight(_cellHeight)) + 8;
+        return blocks > 0 && height >= BlocksHeight(model) + 12;
     }
+
+    /// <summary>Whether a stacked pane also has room for the panel heading over the blocks.</summary>
+    private bool HeadedFor(double height, VitalsModel model) =>
+        height >= PanelText.HeadingHeight(_cellHeight) + 12 + BlocksHeight(model) + 4;
+
+    /// <summary>Whether the heading is drawn now. Internal for tests.</summary>
+    internal bool Headed => Stacked && HeadedFor(Bounds.Height > 0 ? Bounds.Height : Height, _model);
 
     public override void Render(DrawingContext context)
     {
@@ -90,31 +107,46 @@ internal sealed class VitalsGauges : Control
         }
     }
 
+    /// <summary>
+    /// The side column's card: the heading (Vitals and where the numbers come from) when there is room for it, then a
+    /// block per meter — the name and the numbers over a ten-pixel rounded bar, a low meter's words and bar in the
+    /// warning ink with <c>· low</c> — and the target under a rule, on a thinner bar.
+    /// </summary>
     private void RenderStacked(DrawingContext context, Rect bounds)
     {
         var block = BlockHeight(_cellHeight);
-        var size = Math.Clamp(_cellHeight * 0.68, 10, 15);
-        var barHeight = Math.Clamp(_cellHeight * 0.45, 6, 10);
-        var inner = bounds.Deflate(new Thickness(12, 8));
+        var label = LabelHeight(_cellHeight);
+        var barHeight = BarHeight(_cellHeight);
+        var size = Math.Min(PanelText.Size - 1, Math.Max(10, _cellHeight * 0.68));
+        var top = HeadedFor(bounds.Height, _model)
+            ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: 20) + 12
+            : 8;
+        var inner = new Rect(PanelText.Pad, top, Math.Max(1, bounds.Width - (PanelText.Pad * 2)), Math.Max(1, bounds.Height - top));
+        var dim = PanelText.Dim(_text, _plane);
+        var warn = Parse(_ink.Low);
         var y = inner.Top;
         foreach (var meter in _model.Meters)
         {
             var low = meter.Low;
+            var middle = y + (label / 2);
             var title = low ? $"{meter.Title} · low" : meter.Title;
-            DrawText(context, title, new Point(inner.Left, y), size, low ? Parse(_ink.Low) : Dim(), bold: low, alignRight: false, inner.Width);
-            DrawText(context, Numbers(meter), new Point(inner.Right, y), size, _text, bold: true, alignRight: true, inner.Width);
-            var bar = new Rect(inner.Left, y + (size * 1.45), inner.Width, barHeight);
-            DrawBar(context, bar, meter.HasMax ? meter.Share ?? 0 : 1, low);
+            PanelText.Draw(context, title, inner.Left, middle, size, low ? warn : _text, low, inner.Width * 0.6);
+            PanelText.Draw(context, Numbers(meter), inner.Right, middle, size, low ? warn : _text, false, inner.Width * 0.4, alignRight: true);
+            DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, barHeight), meter.HasMax ? meter.Share ?? 0 : 1, low);
             y += block;
         }
 
         if (_model.Target is { } target)
         {
-            DrawText(context, $"Target · {target.Name}", new Point(inner.Left, y), size, Dim(), bold: false, alignRight: false, inner.Width * 0.75);
+            context.FillRectangle(new SolidColorBrush(PanelText.Rule(_text, _plane)), new Rect(inner.Left, y - 4, inner.Width, 1));
+            y += 4;
+            var middle = y + (label / 2);
+            var leadWidth = 6 + PanelText.Draw(context, "Target", inner.Left, middle, size, dim, false, inner.Width * 0.3);
+            PanelText.Draw(context, target.Name, inner.Left + leadWidth, middle, size, target.Low ? warn : _text, false, (inner.Width * 0.75) - leadWidth);
             if (target.Share is { } share)
             {
-                DrawText(context, Percent(share), new Point(inner.Right, y), size, _text, bold: true, alignRight: true, inner.Width);
-                DrawBar(context, new Rect(inner.Left, y + (size * 1.45), inner.Width, barHeight), share, target.Low);
+                PanelText.Draw(context, Percent(share), inner.Right, middle, size, _text, false, inner.Width * 0.25, alignRight: true);
+                DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, Math.Max(4, barHeight - 4)), share, target.Low);
             }
         }
     }
@@ -126,7 +158,7 @@ internal sealed class VitalsGauges : Control
     {
         var size = Math.Clamp(_cellHeight * 0.62, 9, 14);
         var barHeight = Math.Clamp(bounds.Height * 0.32, 4, 9);
-        var inner = bounds.Deflate(new Thickness(10, 0));
+        var inner = bounds.Deflate(new Thickness(10, 0, 30, 0));
         var gap = 18.0;
         var shares = _model.Meters.Count + (_model.Target is null ? 0 : 1.4);
         var unit = (inner.Width - (gap * Math.Max(0, Math.Ceiling(shares) - 1))) / shares;
@@ -214,23 +246,13 @@ internal sealed class VitalsGauges : Control
 
     private void DrawBar(DrawingContext context, Rect track, double share, bool low)
     {
+        // Flat fills on a track one step off the plane, rounded to the bar's height: the mockups' gauge.
         var radius = track.Height / 2;
-        context.DrawRectangle(new SolidColorBrush(Parse(_ink.Track)), null, track, radius, radius);
+        context.DrawRectangle(new SolidColorBrush(PanelText.Mix(_plane, _text, 0.12)), null, track, radius, radius);
         var fill = new Rect(track.X, track.Y, track.Width * Math.Clamp(share, 0, 1), track.Height);
         if (fill.Width > 0.5)
         {
-            var colour = Parse(low ? _ink.Low : _ink.Bar);
-            var brush = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Lighten(colour, 0.18), 0),
-                    new GradientStop(colour, 1),
-                },
-            };
-            context.DrawRectangle(brush, null, fill, radius, radius);
+            context.DrawRectangle(new SolidColorBrush(Parse(low ? _ink.Low : _ink.Bar)), null, fill, radius, radius);
         }
 
         _drawn.Add((track, fill, low));
@@ -254,9 +276,4 @@ internal sealed class VitalsGauges : Control
     private Color Dim() => Color.FromArgb(0xB0, _text.R, _text.G, _text.B);
 
     private static Color Parse(string hex) => Color.TryParse(hex, out var colour) ? colour : Colors.Gray;
-
-    private static Color Lighten(Color colour, double amount) => Color.FromRgb(
-        (byte)(colour.R + ((255 - colour.R) * amount)),
-        (byte)(colour.G + ((255 - colour.G) * amount)),
-        (byte)(colour.B + ((255 - colour.B) * amount)));
 }

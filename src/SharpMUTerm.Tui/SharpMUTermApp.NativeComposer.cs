@@ -308,6 +308,7 @@ internal sealed partial class SharpMUTermApp
                     SendDocked(composer);
                 }),
                 ToggleEscaping = () => OnUiThread(composer.ToggleEscaping),
+                TogglePreview = () => OnUiThread(() => PreviewDocked(composer)),
                 AddWord = word => OnUiThread(() => AddComposerWord(word)),
                 Release = () => OnUiThread(() =>
                 {
@@ -322,6 +323,31 @@ internal sealed partial class SharpMUTermApp
             });
         _dockedSessions[composer.WindowId] = session;
         return session;
+    }
+
+    /// <summary>
+    /// The docked panel's Preview: the post as it will be sent, which is F1's as-sent band (⌥P) — so F1 opens on this
+    /// composer's draft with the band showing, the way F1 from the panel opens it (<see cref="ToggleComposer"/>). The
+    /// panel itself has no room for a second copy of the post. Refused, as F1 is, while another surface is open.
+    /// </summary>
+    internal void PreviewDocked(DockedComposer composer)
+    {
+        if (ComposerOpen || !_dockedComposers.ContainsKey(composer.WindowId))
+        {
+            return;
+        }
+
+        if (!string.Equals(ActiveWindowId(), composer.WindowId, StringComparison.Ordinal))
+        {
+            ArmComposer(composer);
+            if (!string.Equals(ActiveWindowId(), composer.WindowId, StringComparison.Ordinal))
+            {
+                return;
+            }
+        }
+
+        _composer.Preview = true;
+        ToggleComposer();
     }
 
     /// <summary>

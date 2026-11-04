@@ -154,6 +154,70 @@ public sealed record WelcomeModel(
     public string FormLayoutLine => Layout == WelcomeLayout.Suggested
         ? "Layout: suggested from what the game sends."
         : $"Layout: {Layout}.";
+
+    // ── The window's welcome page: the same choices laid out as one page rather than a menu ──────────────────────
+
+    /// <summary>The page's line under its heading.</summary>
+    public const string PageIntro = "Pick a world, or connect to one you already play. You can add more at any time.";
+
+    /// <summary>The card that lists mu*index's worlds, filled only once the player asks.</summary>
+    public const string FindHeading = "Find a world";
+
+    /// <summary>The search box's placeholder in that card.</summary>
+    public const string FindPlaceholder = "Search by name, codebase or tagline";
+
+    /// <summary>The button that asks the directory, before anything has been asked.</summary>
+    public const string FindButton = "Show worlds";
+
+    /// <summary>What that card says before it has asked anything: nothing is fetched until the player opens the list.</summary>
+    public const string FindNote = "Listed from mu*index. Nothing is fetched until you open this list.";
+
+    /// <summary>A row's button: what a pick does in Browse worlds — fills in the connect form, saving and dialling nothing.</summary>
+    public const string AddButton = "Add";
+
+    /// <summary>The card that is the connect form.</summary>
+    public const string ConnectHeading = "Connect directly";
+
+    /// <summary>The heading over the layout cards.</summary>
+    public const string LayoutsHeading = "Starting layout";
+
+    /// <summary>The tag beside <see cref="LayoutsHeading"/> while no layout is chosen.</summary>
+    public const string SuggestedTag = "suggested";
+
+    /// <summary>The page's last line: the other two ways in, which are buttons beside it.</summary>
+    public const string OtherWays = "Or add a world by hand, or bring your worlds from another client:";
+
+    /// <summary>What a built-in layout gives, in a sentence: the layout cards' second line.</summary>
+    public static string LayoutDetail(WelcomeLayout layout) => layout switch
+    {
+        WelcomeLayout.Roleplay => "A docked composer for poses, a list of who is here, channels in their own tab.",
+        WelcomeLayout.Combat => "Health and mana gauges, a map, a quick bar for your key bindings.",
+        _ => "Picked from what the game sends at the first connect.",
+    };
+
+    /// <summary>The line under the layout cards: why it is what it is, and where it is changed later.</summary>
+    public string LayoutReason => Layout == WelcomeLayout.Suggested
+        ? "None chosen: the layout is picked from what the game sends at the first connect. " + LayoutNote
+        : $"{Layout} for the first world you add. " + LayoutNote;
+
+    /// <summary>
+    /// The command line that does what the form would with these fields: <c>/connect mud.example.org 4201 tls</c>. An
+    /// empty host or port reads as its placeholder, so the line always shows the shape; an IPv6 host is bracketed, as
+    /// <c>/connect</c> wants it.
+    /// </summary>
+    public static string CommandFor(string host, string port, bool tls)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(port);
+        host = host.Trim();
+        port = port.Trim();
+        host = host.Length == 0 ? HostPlaceholder : host.Contains(':', StringComparison.Ordinal) && !host.StartsWith('[') ? $"[{host}]" : host;
+        port = port.Length == 0 ? "4000" : port;
+        return $"/connect {host} {port}" + (tls ? " tls" : string.Empty);
+    }
+
+    /// <summary>The words either side of <see cref="CommandFor"/> under the form.</summary>
+    public static (string Lead, string Tail) CommandWords => ("Same as typing", "in any window.");
 }
 
 /// <summary>
@@ -190,6 +254,45 @@ public sealed class WelcomeSession : ModalSession<WelcomeModel>
     }
 
     public override string Surface => "welcome";
+
+    private WorldBrowseSession? _worlds;
+
+    /// <summary>
+    /// The client's: asks the world directory from inside the welcome (<c>FindWorldsInWelcome</c>), attaching the list
+    /// through <see cref="AttachWorlds"/>. Null where the welcome cannot list worlds itself, and the page then offers
+    /// Browse worlds as a choice instead.
+    /// </summary>
+    public Action<string>? FindWorldsWith { get; init; }
+
+    /// <summary>Whether the page can list worlds in place: the client can ask, and a directory is set.</summary>
+    public bool CanFindWorlds => FindWorldsWith is not null && Model.IndexProblem is null;
+
+    /// <summary>
+    /// The world list shown inside the welcome once the player asked for it: Browse worlds' own session, whose
+    /// <see cref="WorldBrowseSession.Pick"/> is what a row's Add does. Null until asked.
+    /// </summary>
+    public WorldBrowseSession? Worlds => Volatile.Read(ref _worlds);
+
+    /// <summary>Raised when <see cref="Worlds"/> is attached, on the client's thread.</summary>
+    public event Action<WorldBrowseSession>? WorldsAttached;
+
+    /// <summary>The host's: the find card's search, or its button. Asks nothing before this, and nothing where it cannot.</summary>
+    public void FindWorlds(string query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (!IsEnded && CanFindWorlds)
+        {
+            FindWorldsWith!(query);
+        }
+    }
+
+    /// <summary>The client's: hands the welcome the list it asked for.</summary>
+    public void AttachWorlds(WorldBrowseSession worlds)
+    {
+        ArgumentNullException.ThrowIfNull(worlds);
+        Volatile.Write(ref _worlds, worlds);
+        WorldsAttached?.Invoke(worlds);
+    }
 
     /// <summary>The host's: a menu choice. Connect opens the form; the other two close the welcome and open what they name.</summary>
     public void Choose(WelcomeChoice choice)

@@ -252,6 +252,8 @@ internal sealed partial class SharpMUTermApp
                     return;
                 }
 
+                // The ask is over, so a list shown again (the welcome's) offers its rows to pick from again.
+                _worldModel = _worldModel with { Opening = null };
                 OpenWorldForm(game.Address(0));
                 return;
             }
@@ -326,6 +328,83 @@ internal sealed partial class SharpMUTermApp
         }
     }
 
+    /// <summary>The world list the native welcome shows in place, and the welcome it belongs to; null until asked.</summary>
+    private WorldBrowseSession? _welcomeWorlds;
+
+    private WelcomeSession? _welcomeWorldsOwner;
+
+    /// <summary>Whether the player has asked the welcome for its list this run, so a welcome reopened by a pick keeps it.</summary>
+    private bool _welcomeWorldsShown;
+
+    /// <summary>The list the native welcome shows, for the tests.</summary>
+    internal WorldBrowseSession? WelcomeWorlds => _welcomeWorlds;
+
+    /// <summary>
+    /// The native welcome's find card, its search or its button: the directory asked from inside the welcome — the list
+    /// Browse worlds would show, attached to the welcome rather than opened over it. The first ask fetches the directory's
+    /// most played (or its search for <paramref name="query"/>); a query the rows hold none of asks the directory, as ⏎
+    /// does in Browse worlds. A row's Add is <see cref="PickWorld"/>, so a pick fills in the welcome's form the same way.
+    /// </summary>
+    internal void FindWorldsInWelcome(WelcomeSession welcome, string query)
+    {
+        if (!ReferenceEquals(_nativeModal, welcome) || welcome.IsEnded)
+        {
+            return;
+        }
+
+        query = WorldDirectory.Clean(query, WorldDirectory.MaxQuery);
+        if (welcome.Worlds is null)
+        {
+            _welcomeWorldsShown = true;
+            AttachWelcomeWorlds(welcome);
+            if (_worldModel.State != WorldBrowseState.Ready || (query.Length > 0 && _worldModel.AsksDirectory(query)))
+            {
+                StartWorldList(query);
+            }
+
+            return;
+        }
+
+        if (_worldModel.AsksDirectory(query))
+        {
+            AskWorldDirectory(query);
+        }
+    }
+
+    /// <summary>Attaches a Browse worlds session showing the current list to <paramref name="welcome"/>.</summary>
+    private void AttachWelcomeWorlds(WelcomeSession welcome)
+    {
+        WorldBrowseSession? worlds = null;
+        worlds = new WorldBrowseSession(
+            _worldModel,
+            ThemeIsDark(),
+            index => OnUiThread(() => PickWorld(worlds!.Model, index)),
+            words => OnUiThread(() => AskWorldDirectory(words)),
+            () => { })
+        {
+            Theme = _theme.Clone(),
+        };
+        _welcomeWorlds = worlds;
+        _welcomeWorldsOwner = welcome;
+        welcome.AttachWorlds(worlds);
+    }
+
+    /// <summary>A welcome closed: its list goes with it, and an answer still on its way is dropped.</summary>
+    private void ForgetWelcomeWorlds(WelcomeSession welcome)
+    {
+        if (ReferenceEquals(_welcomeWorldsOwner, welcome))
+        {
+            _welcomeWorlds?.End();
+            _welcomeWorlds = null;
+            _welcomeWorldsOwner = null;
+            _worldGeneration++;
+            if (_worldModel.Opening is not null)
+            {
+                _worldModel = _worldModel with { Opening = null };
+            }
+        }
+    }
+
     /// <summary>Closes Browse worlds in whichever host it is open.</summary>
     private void CloseWorldBrowse()
     {
@@ -348,6 +427,8 @@ internal sealed partial class SharpMUTermApp
         {
             session.Publish(model);
         }
+
+        _welcomeWorlds?.Publish(model);
 
         if (_helpView.IsOpen && _helpView.Mode == WorldBrowseMode)
         {

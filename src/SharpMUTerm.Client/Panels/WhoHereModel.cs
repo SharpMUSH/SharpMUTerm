@@ -41,6 +41,19 @@ public sealed record WhoHereModel(bool Known, string? Room, IReadOnlyList<WhoHer
     /// <summary>What every view says in a room with nobody else in it.</summary>
     public const string EmptyText = "Nobody else is here.";
 
+    /// <summary>What a view that has the room says under the list: where the names come from, and what a click does.</summary>
+    public const string Footnote = "From the game's Room.Players. Click a name to look.";
+
+    /// <summary>
+    /// What a row says at its right: <c>NPC</c> for a creature, how idle a player is when the game says (<c>active</c>,
+    /// <c>idle 4m</c>), else nothing — a player the game sends no idle time for is not called active.
+    /// </summary>
+    public static string? StateText(WhoHereRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return row.IsNpc ? "NPC" : row.Idle;
+    }
+
     /// <summary>The game has not said who is here.</summary>
     public static WhoHereModel Unknown { get; } = new(false, null, []);
 

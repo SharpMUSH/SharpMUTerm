@@ -432,6 +432,9 @@ public static class SurfaceCatalog
                 // editor asks for the same thing by name.
                 new(SurfaceActionKind.Compose, "arm", "ArmComposer"),
                 new(SurfaceActionKind.Compose, "add word", "AddComposerWord"),
+
+                // The window's Preview button: F1 on the same draft with its as-sent band, which F1 then ⌥P in the cells reach.
+                new(SurfaceActionKind.Compose, "preview", "PreviewDocked"),
             ],
             CellsUnderNative,
             "SharpMUTerm.Tui.Panels.DockedComposer.Render",
@@ -492,6 +495,11 @@ public static class SurfaceCatalog
 
                 // The form goes through /connect's own path (ConnectCommand), so it can add nothing the command line cannot.
                 new(SurfaceActionKind.Modal, "connect", "ConnectFromWelcome"),
+
+                // The window's find card lists Browse worlds' rows in place, asked only when the player opens it; a row's
+                // Add is Browse worlds' own pick. The cells reach both through the Browse row.
+                new(SurfaceActionKind.Modal, "find", "FindWorldsInWelcome"),
+                new(SurfaceActionKind.Modal, "add", "PickWorld"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.WelcomeSurface.Render",

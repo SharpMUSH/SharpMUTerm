@@ -368,7 +368,7 @@ public class NativeComposerTests
 
         await Assert.That(armed).IsTrue();
         await Assert.That(focused).IsTrue();
-        await Assert.That(header).Contains("COMPOSE").And.Contains("to Ann");
+        await Assert.That(header).Contains("Compose").And.Contains("for Ann");
         await Assert.That(footer).Contains("Ctrl+S").And.Contains("Esc");
         await Assert.That(width).IsGreaterThan(0);
     }
