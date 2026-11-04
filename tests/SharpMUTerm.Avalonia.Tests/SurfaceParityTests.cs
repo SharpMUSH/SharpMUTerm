@@ -862,6 +862,16 @@ public class SurfaceParityTests
         await SameModal("script console: edit a script", "script-console",
             (app, m) => ((ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!).EditScript(),
             app => app.SimulateConsoleKey(new ConsoleKeyInfo('\u0005', ConsoleKey.E, false, false, true)));
+
+        // A click on the demo's error row (corvid.lua:(14,…)): the native row through the session, the cells' row through its
+        // own mux:script-error:N link — both end in OpenConsoleError, the script open on line 14 with the line marked.
+        await SameModal("script console: open an error's line", "script-console",
+            (app, m) =>
+            {
+                var console = (ScriptConsoleSession)m.Open(SurfaceCatalog.ScriptConsole)!;
+                console.OpenError(ErrorRow(console.Model));
+            },
+            app => app.SimulateConsoleLink(ScriptConsoleModel.ErrorLinkPrefix + ErrorRow(app.ScriptConsoleModelNow())));
         probed.Add(SurfaceCatalog.ScriptConsole);
 
         // ⌃F's older history: ⌥H then ⏎ on the first older hit opens the history view on the same page in both; and the
@@ -1164,6 +1174,7 @@ public class SurfaceParityTests
         "import=" + app.ImportReviewOpen + " " + string.Join(",", app.Configuration.TriggerSets.Select(s => s.Name + ":" + s.Triggers.Count))
             + " " + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters).Select(c => c.Name + (c.Password is null ? string.Empty : "*"))),
         "console=" + app.ScriptConsoleIsOpen + " " + ConsoleState(app),
+        "script=" + (app.OpenScriptEdit is { } script ? $"{script.Name}:{script.Line}:{script.ErrorLine}" : "shut"),
         "older=" + (app.HistoryViewModel is { } page ? $"{page.Window}:{page.Top}:{page.Marked}" : "shut"),
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
@@ -1172,6 +1183,10 @@ public class SurfaceParityTests
         "floating=" + string.Join(",", app.FloatingPublished.Select(f => f.Model.WindowId)),
         "notice=" + app.LastNotice,
         "recent=" + string.Join(",", app.RecentCommandIds));
+
+    /// <summary>The index of the first console line that names a script line (the demo's corvid.lua error).</summary>
+    private static int ErrorRow(ScriptConsoleModel model) =>
+        Enumerable.Range(0, model.Lines.Count).First(i => model.ErrorAt(i) is not null);
 
     private static string ConsoleState(SharpMUTermApp app)
     {

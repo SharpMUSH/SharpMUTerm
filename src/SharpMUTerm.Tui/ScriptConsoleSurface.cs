@@ -140,6 +140,25 @@ internal sealed class ScriptConsoleSurface
         }
     }
 
+    /// <summary>The fewest log rows the console opens with, so a short log still leaves room for the next few lines.</summary>
+    internal const int MinBodyRows = 6;
+
+    /// <summary>
+    /// The rows the console asks for at <paramref name="width"/>: what its log and store hold when it opens (at least
+    /// <see cref="MinBodyRows"/> of body), up to <paramref name="maxRows"/>. Sized to what it holds, so the log is not drawn
+    /// under rows of blank padding; once open the overlay keeps its size and the log scrolls, newest above the prompt.
+    /// </summary>
+    internal static int RowsFor(ScriptConsoleModel model, int width, int maxRows)
+    {
+        width = Math.Max(30, width);
+        var two = width >= TwoColumns;
+        var storeWidth = two ? Math.Clamp(width / 3, 26, 40) : width;
+        var outWidth = two ? width - storeWidth - 3 : width;
+        var log = model.Lines.Sum(l => HelpSurface.Wrap(l.Text, Math.Max(4, outWidth - 2)).Count());
+        var store = two ? 1 + Math.Max(1, model.Store.Count) + (model.StoreCount > model.Store.Count ? 1 : 0) : 0;
+        return Math.Clamp(5 + Math.Max(Math.Max(log, store), MinBodyRows), 8, Math.Max(8, maxRows));
+    }
+
     /// <summary>What the console draws now.</summary>
     public List<string> Render(int width, int rows) => Render(Model, Input, OnStore, StoreSelected, width, rows);
 
@@ -217,9 +236,16 @@ internal sealed class ScriptConsoleSurface
     private static List<string> OutputRows(ScriptConsoleModel model, int width, int rows)
     {
         var wrapped = new List<string>();
-        foreach (var line in model.Lines)
+        for (var index = 0; index < model.Lines.Count; index++)
         {
+            var line = model.Lines[index];
             var mark = ScriptConsoleModel.Mark(line.Kind);
+
+            // An error naming file.lua:(N,…) is a link to that line: the console's own link, an index into these lines,
+            // answered by the console control and never by the output panes' handler.
+            var link = model.ErrorAt(index) is not null
+                ? ScriptConsoleModel.ErrorLinkPrefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : null;
             var colour = line.Kind switch
             {
                 ScriptConsoleKind.Error => ScreenPalette.Warn,
@@ -231,7 +257,8 @@ internal sealed class ScriptConsoleSurface
             var first = true;
             foreach (var part in HelpSurface.Wrap(line.Text, Math.Max(4, width - 2)))
             {
-                wrapped.Add($"[{colour}]{(first ? mark : " ")} {Escape(part)}[/]");
+                var row = $"[{colour}]{(first ? mark : " ")} {Escape(part)}[/]";
+                wrapped.Add(link is null ? row : $"[link={link}]{row}[/]");
                 first = false;
             }
         }

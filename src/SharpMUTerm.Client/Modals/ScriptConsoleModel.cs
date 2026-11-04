@@ -89,6 +89,21 @@ public sealed record ScriptConsoleModel(
         (var n, _) => $"{n} files loaded",
     };
 
+    /// <summary>
+    /// The scheme of a cell console error row's link: <c>mux:script-error:N</c>, N an index into <see cref="Lines"/>. Answered by
+    /// the console's own control (never the output panes' handler), and only for a row this model says names a line.
+    /// </summary>
+    public const string ErrorLinkPrefix = "mux:script-error:";
+
+    /// <summary>
+    /// The script file and line console line <paramref name="index"/> names, when it is an error that names one
+    /// (<see cref="Composer.ScriptErrors.At"/>) — such a row is a link that opens that script on that line — else null.
+    /// </summary>
+    public (string File, int Line)? ErrorAt(int index) =>
+        index >= 0 && index < Lines.Count && Lines[index].Kind == ScriptConsoleKind.Error
+            ? Composer.ScriptErrors.At(Lines[index].Text)
+            : null;
+
     /// <summary>A console line's mark, the same in both hosts.</summary>
     public static string Mark(ScriptConsoleKind kind) => kind switch
     {
@@ -212,6 +227,7 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
     private readonly Action<string> _delete;
     private readonly Action _reload;
     private readonly Action? _edit;
+    private readonly Action<ScriptConsoleModel, int>? _openError;
 
     /// <param name="model">What the console shows.</param>
     /// <param name="isDark">Whether the client's theme is a dark one.</param>
@@ -220,6 +236,10 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
     /// <param name="reload">Reloads the character's scripts (<c>ReloadConsoleScripts</c>).</param>
     /// <param name="closed">Told the console closed.</param>
     /// <param name="edit">Opens the list of the character's script files to edit (<c>EditScriptFromConsole</c>); null for none.</param>
+    /// <param name="openError">
+    /// Opens the script an error row names on its line (<c>OpenConsoleError</c>), handed the model the row was drawn from
+    /// and its index; null for none.
+    /// </param>
     public ScriptConsoleSession(
         ScriptConsoleModel model,
         bool isDark,
@@ -227,7 +247,8 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
         Action<string> delete,
         Action reload,
         Action closed,
-        Action? edit = null)
+        Action? edit = null,
+        Action<ScriptConsoleModel, int>? openError = null)
         : base(model, isDark, closed)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -237,6 +258,18 @@ public sealed class ScriptConsoleSession : ModalSession<ScriptConsoleModel>
         _delete = delete;
         _reload = reload;
         _edit = edit;
+        _openError = openError;
+    }
+
+    /// <summary>
+    /// The host's: a click on console line <paramref name="index"/>, an error naming <c>file.lua:(N,…)</c>. Closes the
+    /// console first; the client opens that script with the caret on line N and the line marked. False for a line that
+    /// names none.
+    /// </summary>
+    public bool OpenError(int index)
+    {
+        var model = Model;
+        return _openError is not null && !IsEnded && model.ErrorAt(index) is not null && CloseThen(() => _openError(model, index));
     }
 
     /// <summary>Whether the console can open a script to edit.</summary>

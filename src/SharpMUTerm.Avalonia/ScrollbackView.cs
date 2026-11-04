@@ -122,7 +122,7 @@ internal sealed class ScrollbackView : DockPanel, IModalView
             });
         }
 
-        for (var i = _model.Lines.Count; i < ScrollbackViewModel.PageRows; i++)
+        for (var i = _model.Lines.Count; i < _model.PageRows; i++)
         {
             _list.Children.Add(new TextBlock { Text = " ", FontFamily = mono, FontSize = NativeTokens.Body, Margin = new Thickness(12, 2) });
         }

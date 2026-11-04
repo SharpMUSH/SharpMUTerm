@@ -68,9 +68,12 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>The history view: whose scrollback, the search it came from, the line it found, and where the page starts.</summary>
-    private sealed class HistoryViewState(HistorySource source, string query, bool regex, long marked)
+    private sealed class HistoryViewState(HistorySource source, string query, bool regex, long marked, int pageRows)
     {
         public HistorySource Source { get; } = source;
+
+        /// <summary>The lines a page holds, from the screen when the view opened (<see cref="ScrollbackViewModel.PageRowsFor"/>).</summary>
+        public int PageRows { get; } = pageRows;
 
         public string Query { get; } = query;
 
@@ -155,17 +158,26 @@ internal sealed partial class SharpMUTermApp
                     break;
                 }
 
-                rows.Add(new SearchRow(source.WindowId, source.Label, -1, match.Line.Text, match.MatchStart, match.MatchLength, match.Index, source.SessionKey));
+                var age = SearchModel.AgeLabel(source.Buffer.TotalLines - 1 - match.Index);
+                rows.Add(new SearchRow(source.WindowId, source.Label, -1, match.Line.Text, match.MatchStart, match.MatchLength, match.Index, source.SessionKey, age));
                 found++;
             }
         }
 
-        var said = error is not null
-            ? $"older history: {error}"
-            : deep.Running
-                ? $"searching older history · {N(searched)} of {N(deep.Total)} lines…"
-                : $"older history · {found} found in {N(deep.Total)} lines{(capped ? $" · the first {ScrollbackSearch.MaxHits}" : string.Empty)}";
-        return held with { Rows = rows, Older = true, HistoryNote = said + spill, HistoryRunning = deep.Running && error is null };
+        // The counts are one row (SearchModel.CountText: "this window 3 of 39 · older 4 of 6,000"); the note says only what
+        // is not a count — an error, or that a capture keeps no older history.
+        var said = error is not null ? $"older history: {error}{spill}" : spill.Length > 0 ? spill.TrimStart(' ', '·') : null;
+        return held with
+        {
+            Rows = rows,
+            Older = true,
+            HistoryNote = said,
+            HistoryRunning = deep.Running && error is null,
+            OlderFound = found,
+            OlderSearched = searched,
+            OlderTotal = deep.Total,
+            OlderCapped = capped,
+        };
     }
 
     /// <summary>
@@ -362,9 +374,13 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        var view = new HistoryViewState(source, query, regex, marked);
+        // The page is sized from the screen, so the cell view (a modal centred on it) ends above the command line with its
+        // keys on screen at 80×24; the window's view reads the same model and so shows the same page.
+        var screen = _system.DesktopDimensions;
+        var twoTitleRows = ScrollbackViewModel.TwoTitleRows(screen.Width);
+        var view = new HistoryViewState(source, query, regex, marked, ScrollbackViewModel.PageRowsFor(screen.Height, screen.Width));
         _historyView = view;
-        view.Top = ScrollbackViewModel.TopFor(marked, source.Buffer.OldestIndex, source.Buffer.TotalLines);
+        view.Top = ScrollbackViewModel.TopFor(marked, source.Buffer.OldestIndex, source.Buffer.TotalLines, view.PageRows);
         view.Model = HistoryPage(view);
         if (NativeModalsHost is { } host)
         {
@@ -396,7 +412,7 @@ internal sealed partial class SharpMUTermApp
             {
                 var model = view.Model!;
                 Drawing(SurfaceCatalog.HistoryView, string.Empty, model);
-                return ScrollbackViewSurface.Render(model, width);
+                return ScrollbackViewSurface.Render(model, width, twoTitleRows);
             },
             key =>
             {
@@ -414,7 +430,8 @@ internal sealed partial class SharpMUTermApp
                 {
                     _historyView = null;
                 }
-            });
+            },
+            footer: ScrollbackViewSurface.Footer);
     }
 
     /// <summary>
@@ -428,7 +445,7 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        view.Top = ScrollbackViewModel.Clamp(top, view.Source.Buffer.OldestIndex, view.Source.Buffer.TotalLines);
+        view.Top = ScrollbackViewModel.Clamp(top, view.Source.Buffer.OldestIndex, view.Source.Buffer.TotalLines, view.PageRows);
         view.Model = HistoryPage(view);
         if (view.Native is { } native)
         {
@@ -445,8 +462,8 @@ internal sealed partial class SharpMUTermApp
         var buffer = view.Source.Buffer;
         var oldest = buffer.OldestIndex;
         var end = buffer.TotalLines;
-        var top = ScrollbackViewModel.Clamp(view.Top, oldest, end);
-        var lines = buffer.GetRange(top, ScrollbackViewModel.PageRows);
+        var top = ScrollbackViewModel.Clamp(view.Top, oldest, end, view.PageRows);
+        var lines = buffer.GetRange(top, view.PageRows);
         var first = Math.Max(top, oldest);
         var texts = lines.Select(l => l.Text).ToArray();
         var matches = OutputSearch.Match(texts, view.Query, view.Regex).Matches.ToDictionary(m => m.LineIndex);
@@ -457,14 +474,27 @@ internal sealed partial class SharpMUTermApp
             page.Add(new ScrollbackViewLine(first + i, texts[i], matches.ContainsKey(i) ? hit.MatchStart : -1, matches.ContainsKey(i) ? hit.MatchLength : 0));
         }
 
-        return new ScrollbackViewModel(view.Source.Label, view.Query, top, oldest, end, view.Marked, page);
+        return new ScrollbackViewModel(view.Source.Label, view.Query, top, oldest, end, view.Marked, page, view.PageRows);
+    }
+
+    /// <summary>How many lines the demo's older history holds.</summary>
+    private const int DemoHistoryLines = 6_000;
+
+    /// <summary>
+    /// The clock stamp of the demo's history line <paramref name="index"/>: 18:00 to 22:59 over the evening, never going
+    /// back, so every line — the goblin's included — reads like its neighbours.
+    /// </summary>
+    internal static string DemoHistoryStamp(int index)
+    {
+        var minutes = 18 * 60 + (index * 300 / DemoHistoryLines);
+        return $"{minutes / 60:00}:{minutes % 60:00}";
     }
 
     /// <summary>
     /// The demo's older history: an evening of the same streets, a few thousand lines older than anything the pane holds,
     /// with a goblin fight in it to find.
     /// </summary>
-    private static ScrollbackBuffer DemoHistory()
+    internal static ScrollbackBuffer DemoHistory()
     {
         var buffer = new ScrollbackBuffer(10_000);
         string[] streets =
@@ -475,7 +505,7 @@ internal sealed partial class SharpMUTermApp
             "Merrow pages: meet at the Grand Plaza after the bell.",
             "The smell of roasting chestnuts drifts from a cart nearby.",
         ];
-        for (var i = 0; i < 6_000; i++)
+        for (var i = 0; i < DemoHistoryLines; i++)
         {
             var text = i switch
             {
@@ -483,9 +513,9 @@ internal sealed partial class SharpMUTermApp
                 1_203 => "You hit the goblin for 9 damage.",
                 1_207 => "The goblin flees north, clutching a stolen purse.",
                 4_410 => "Ashlyn says, \"That goblin came back — it is in the sewers now.\"",
-                _ => $"[{18 + i / 1_000:00}:{i * 7 % 60:00}] {streets[i % streets.Length]}",
+                _ => streets[i % streets.Length],
             };
-            buffer.Append(StyledLine.FromText(text, TextStyle.Default));
+            buffer.Append(StyledLine.FromText($"[{DemoHistoryStamp(i)}] {text}", TextStyle.Default));
         }
 
         return buffer;
