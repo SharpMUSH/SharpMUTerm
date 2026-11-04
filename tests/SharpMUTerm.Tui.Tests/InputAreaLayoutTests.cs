@@ -125,7 +125,7 @@ public class InputAreaLayoutTests
     /// </summary>
     [Test]
     [Arguments(120, 34)]
-    [Arguments(100, 24)]
+    [Arguments(100, 30)] // the smallest size that keeps the configured rows (NarrowColumns, ShortRows)
     public async Task OneBar_GetsItsConfiguredRows_AndTheWorkspaceTakesTheRest(int width, int height)
     {
         var frame = Frame(width, height);
@@ -143,7 +143,7 @@ public class InputAreaLayoutTests
     /// </summary>
     [Test]
     [Arguments(120, 34)]
-    [Arguments(100, 24)]
+    [Arguments(100, 30)] // the smallest size that keeps the configured rows (NarrowColumns, ShortRows)
     public async Task TwoBars_EachGetTheirRows_AndTheWorkspaceGivesThemUp(int width, int height)
     {
         Console.SetIn(TextReader.Null);
@@ -171,7 +171,7 @@ public class InputAreaLayoutTests
     /// </summary>
     [Test]
     [Arguments(120, 34)]
-    [Arguments(100, 24)]
+    [Arguments(100, 30)] // the smallest size that keeps the configured rows (NarrowColumns, ShortRows)
     public async Task BothBands_ArePaintedForAsManyRowsAsTheyWereGiven(int width, int height)
     {
         // draft2 raises the second bar, puts a line in each, and arms the second — so the armed band

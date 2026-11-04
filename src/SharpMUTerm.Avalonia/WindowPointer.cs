@@ -58,6 +58,20 @@ internal sealed class WindowPointer : IPointerPresenter
 
     public bool DrawsMenus => true;
 
+    private int _windowColumns;
+
+    /// <summary>
+    /// The window's whole width in cells, the native header and sidebar included: written by <see cref="TerminalView"/>
+    /// before each resize of the grid, so the client reads it fresh with the resize. Zero until then.
+    /// </summary>
+    internal int WindowColumnsMeasured
+    {
+        get => Volatile.Read(ref _windowColumns);
+        set => Volatile.Write(ref _windowColumns, value);
+    }
+
+    int? IPointerPresenter.WindowColumns => WindowColumnsMeasured is > 0 and var columns ? columns : null;
+
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
         Volatile.Write(ref _bars, bars);

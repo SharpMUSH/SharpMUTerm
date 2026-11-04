@@ -852,6 +852,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // The pane area renders the workspace's split tree (one TabControl per leaf pane). It's built
         // from the model and rebuilt whenever the layout changes; the initial row goes into the window.
+        // A narrow terminal starts with the rail folded (SyncNarrowLayout), so the first row is built that way.
+        SyncNarrowLayout();
         _workspaceRow = BuildWorkspaceRow();
 
         // The input area is one or two bars pinned above the status line. Each paints its own full-width
@@ -956,6 +958,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // laid out — so a report made here would announce a size that was already wrong. The
             // repaint this resize forces reports them once they are real; see ReportPaneSizes.
             RefreshHeader(); // re-align the status cluster to the new width
+            SyncNarrowLayout(); // fold or unfold the rail if the width crossed the narrow line
             SyncInputWidth(); // keep the input band spanning the full row after a resize
             SyncInputBars();  // and re-derive how tall the bars may grow in the new window
         };
@@ -1013,6 +1016,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncMapSizes();
             SyncPanelSizes();
             SyncScrollSplitBars();
+            SyncStatusMode();
         };
 
         // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
@@ -5637,9 +5641,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void SyncInputHeights(bool secondShown)
     {
         var room = InputLayout.Room(HeaderHeight(), ChromeRows(), secondShown ? 2 : 1);
+
+        // A narrow or short window starts an empty command line at one row; it still grows to MaxRows as it wraps.
+        var rows = CompactInput() ? InputSettings.MinRows : _config.Input.Rows;
         foreach (var bar in new[] { _input, _second })
         {
-            bar.MinRows = Math.Min(_config.Input.Rows, room);
+            bar.MinRows = Math.Min(rows, room);
             bar.MaxRows = Math.Min(_config.Input.MaxRows, room);
         }
     }
@@ -9350,6 +9357,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         RebuildPaneArea();
+        SyncStatusMode(); // ⌥F thaws, or the scrollback keys again
     }
 
     /// <summary>The custom link scheme the header's <c>☰</c> affordance uses to open the menu.</summary>
@@ -13320,7 +13328,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var scrollback = ScrollbackStatus();
         var suffix = scrollback.Length == 0 ? string.Empty : $"   {scrollback}";
-        return $"[dim]not connected · Graphics {Escape(_capabilities.Protocol.ToString())} · ⌃P palette · ⌃Q quit[/]{suffix}";
+        var row = $"[dim]not connected · Graphics {Escape(_capabilities.Protocol.ToString())} · ⌃P palette · ⌃Q quit[/]{suffix}";
+
+        // A client with nothing connected is still read back through, frozen and searched: the mode's keys go on
+        // the end where they fit, the longest that does.
+        var mode = CurrentStatusMode();
+        _statusModeShown = mode;
+        return mode != StatusMode.None
+            && ModeHintMarkup(mode).FirstOrDefault(h => MarkupWidth(row) + 3 + MarkupWidth(h) <= HeaderWidth()) is { } hint
+            ? $"{row}   {hint}"
+            : row;
     }
 
     private void UpdateStatus()
@@ -13796,6 +13813,42 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             left = $"{left}   {meters}";
         }
 
+        // A mode's keys outrank the room and the MOO's status, and the encoding and the palette hint too: while the
+        // pane is scrolled back, frozen, carrying a search bar or a composer holds the keyboard, the way out is the
+        // thing the reader needs from this row. The longest candidate goes in that fits once as few of those two
+        // cells as it needs are given up (the encoding first, as the drop loop above does); a mode is temporary, and
+        // ⌃P is also on the header. The focus hints are not offered at all while a mode holds.
+        var mode = CurrentStatusMode();
+        _statusModeShown = mode;
+        if (mode != StatusMode.None)
+        {
+            bool Fits(string hint, IEnumerable<string> cluster) =>
+                MarkupWidth(left) + 3 + MarkupWidth(hint) + MarkupWidth(string.Join("   ", cluster)) + MinStatusGap <= HeaderWidth();
+
+            var droppables = new[] { encodingCell, paletteCell }.OfType<string>().Where(right.Contains).ToList();
+            foreach (var hint in ModeHintMarkup(mode))
+            {
+                var given = 0;
+                while (!Fits(hint, right.Except(droppables.Take(given))) && given < droppables.Count)
+                {
+                    given++;
+                }
+
+                if (!Fits(hint, right.Except(droppables.Take(given))))
+                {
+                    continue;
+                }
+
+                right.RemoveAll(c => droppables.Take(given).Contains(c));
+
+                // Leftmost of the cluster but for the scrollback segment, which states the mode the hint answers.
+                right.Insert(right.Count > 0 && ScrollbackStatus().Length > 0 ? 1 : 0, hint);
+                break;
+            }
+
+            rightBar = string.Join("   ", right);
+        }
+
         // Where the character stands, once the map knows. A reserved width, so a walk does not move the right
         // cluster with every room name; a name too long for it is elided, never wrapped.
         if (StatusRoom() is { } here)
@@ -13816,7 +13869,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
-        foreach (var focusHint in FocusHints())
+        foreach (var focusHint in mode == StatusMode.None ? FocusHints() : [])
         {
             if (MarkupWidth(focusHint) + 3 <= room)
             {

@@ -90,7 +90,7 @@ public class NativeChromeTests
     [Test]
     public async Task AFoldedRailIsASlimStripAndTheGridWidensIntoTheRoomItGaveBack()
     {
-        var (open, folded, openColumns, foldedColumns, rows) = await Run((window, view, layer, driver) =>
+        var (open, folded, openColumns, foldedColumns, rows, openWindow, foldedWindow) = await Run((window, view, layer, driver) =>
         {
             ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }));
             Drain();
@@ -98,12 +98,20 @@ public class NativeChromeTests
             Drain();
             var open = layer.Sidebar.Bounds.Width;
             var openColumns = driver.ScreenSize.Width;
+            var openWindow = ((IPointerPresenter)driver.Pointer).WindowColumns;
             ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }, collapsed: true));
             Drain();
             window.UpdateLayout();
             Drain();
-            return (open, layer.Sidebar.Bounds.Width, openColumns, driver.ScreenSize.Width, layer.Sidebar.Rows.Select(r => r.Kind).ToArray());
+            return (open, layer.Sidebar.Bounds.Width, openColumns, driver.ScreenSize.Width, layer.Sidebar.Rows.Select(r => r.Kind).ToArray(),
+                openWindow, ((IPointerPresenter)driver.Pointer).WindowColumns);
         });
+
+        // The client's narrow layout reads the window's whole width, which the fold does not change: measured on the
+        // cells, the fold that widened them would read as the window growing past the line and undo itself.
+        await Assert.That(openWindow).IsNotNull();
+        await Assert.That(openWindow!.Value).IsGreaterThan(openColumns);
+        await Assert.That(foldedWindow).IsEqualTo(openWindow);
 
         await Assert.That(open).IsEqualTo(NativeLayout.SidebarWidth + NativeLayout.SidebarGutter);
         await Assert.That(folded).IsEqualTo(NativeLayout.SidebarSlim + NativeLayout.SidebarGutter);

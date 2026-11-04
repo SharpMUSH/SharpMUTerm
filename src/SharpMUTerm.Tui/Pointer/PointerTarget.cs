@@ -147,6 +147,14 @@ internal interface IPointerPresenter
     void Chrome(ChromeOverlay chrome)
     {
     }
+
+    /// <summary>
+    /// How many columns a terminal the size of the host's whole window would have: its cells plus the chrome it draws
+    /// beside them, in cells. Null when the cells are the whole window (the terminal, and the default). The client's
+    /// narrow layout measures this rather than the cells (<c>SharpMUTermApp.LayoutColumns</c>), because folding a
+    /// sidebar the host draws gives the cells its width: measured on the cells, the fold would undo itself.
+    /// </summary>
+    int? WindowColumns => null;
 }
 
 /// <summary>

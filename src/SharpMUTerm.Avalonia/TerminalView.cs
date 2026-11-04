@@ -138,6 +138,10 @@ internal sealed class TerminalView : Control
     {
         base.OnSizeChanged(e);
         var (columns, rows) = GridFor(e.NewSize);
+
+        // The width a terminal this window's size would have, sidebar and all, said before the grid moves: the
+        // client's narrow layout reads it with the resize, and it does not change when the sidebar folds.
+        _driver.Pointer.WindowColumnsMeasured = Math.Max(columns, (int)((e.NewSize.Width + Margin.Left + Margin.Right) / CellSize.Width));
         _driver.Resize(columns, rows);
         Repainted?.Invoke();
     }

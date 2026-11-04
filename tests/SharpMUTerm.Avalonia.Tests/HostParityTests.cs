@@ -1,4 +1,6 @@
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Graphics;
 using SharpMUTerm.Tui;
 using SharpMUTerm.Tui.Tests;
@@ -212,6 +214,55 @@ public partial class HostParityTests
                     .Because($"{where} in the {name} names {reserved.Chord.Text}, which the {name} {reserved.Action}");
             }
         }
+    }
+
+    public static IEnumerable<(string Host, string View, StatusMode Mode, int Width, int Height)> ModeViews() =>
+        from host in Hosts()
+        from view in new (string View, StatusMode Mode)[]
+        {
+            ("scrollback-up", StatusMode.SplitScrollback),
+            ("scrollback-split", StatusMode.SplitScrollback),
+            ("freeze", StatusMode.Frozen),
+            ("freeze-scrollback", StatusMode.Frozen),
+            ("search-landed", StatusMode.SearchResult),
+            ("panel-composer", StatusMode.Composer),
+        }
+        from size in new[] { (80, 24), (120, 32) }
+        select (host, view.View, view.Mode, size.Item1, size.Item2);
+
+    /// <summary>
+    /// While a mode holds, the status row names that mode's keys — at least the first, the way out — as this host
+    /// spells them, and none of the chords the host keeps; and the row still fits on one row at 80 columns, where a
+    /// status line that wrapped once took a row off every pane and re-announced every pane's size.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(ModeViews))]
+    public async Task TheStatusRowNamesEachModesKeysAsThisHostSpellsThem(string name, string view, StatusMode mode, int width, int height)
+    {
+        var (keys, _) = HostNamed(name);
+        Console.SetIn(TextReader.Null);
+        using var headless = new HeadlessConsoleDriver(width, height);
+        await using var app = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps) with { Keys = keys });
+        var frame = app.RenderSnapshot(view);
+
+        await Assert.That(app.CurrentStatusMode()).IsEqualTo(mode);
+        var glyphs = new SharpMUTerm.Client.Contributions.HostKeyGlyphs(keys.Newline.Glyph);
+        var status = System.Text.RegularExpressions.Regex.Replace(app.StatusMarkup, @"\[[^\]]*\]", string.Empty);
+        await Assert.That(status).Contains(ModeHints.Candidates(mode, glyphs)[^1]);
+        if (width >= 120)
+        {
+            await Assert.That(status).Contains(ModeHints.Candidates(mode, glyphs)[0]).Because("a wide row has room for every key");
+        }
+
+        foreach (var reserved in keys.Reserved)
+        {
+            await Assert.That(status).DoesNotContain(reserved.Chord.Glyph);
+            await Assert.That(status).DoesNotContain(KeyGlyphs.Normalize(reserved.Chord.Glyph));
+        }
+
+        await Assert.That(app.LaidOutRows.Status).IsEqualTo(1).Because("the status row never wraps");
+        await Assert.That(SharpMUTermApp.MarkupWidth(app.StatusMarkup)).IsLessThanOrEqualTo(width);
+        await Assert.That(FrameGrid.Decode(frame, width, height)[height - 1]).Contains(ModeHints.Candidates(mode, glyphs)[^1]);
     }
 
     /// <summary>The chord the window names as its newline is one it hands the client, not one it keeps.</summary>

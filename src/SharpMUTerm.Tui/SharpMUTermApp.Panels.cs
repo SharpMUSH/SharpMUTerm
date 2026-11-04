@@ -369,6 +369,7 @@ internal sealed partial class SharpMUTermApp
 
         _input.Armed = armed is null && ReferenceEquals(_armed, _input);
         _second.Armed = armed is null && ReferenceEquals(_armed, _second);
+        SyncStatusMode(); // the composer's keys on the status row, or the pane's again
     }
 
     /// <summary>Re-derives who holds the keyboard after the focused pane or window changed.</summary>

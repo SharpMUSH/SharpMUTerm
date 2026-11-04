@@ -531,6 +531,33 @@ fallbacks) for inline images/maps.
     `UnreadBadge` in a reserved field), refreshed on `PostBufferPaint` with the status row repainted beside it
     when it moves, so the two surfaces never disagree. It says *rows*, not lines: a buffer index is not a
     viewport row.
+- **Below 100 columns the layout is narrow** (`SharpMUTermApp.Narrow.cs`; `NarrowColumns`, `ShortRows`;
+  `NarrowLayoutTests`). The rail folds itself to its strip, and below 100 columns *or* 30 rows an empty command line
+  is one row (`SyncInputHeights`: `MinRows` becomes `InputSettings.MinRows`; it still grows to `MaxRows` as it wraps).
+  At 80×24 that is a 72-column pane instead of 60 and two more output rows. Decisions not to relitigate:
+  - **100 because of the server's wrap width**: the open rail, divider and spacer cost ~20 columns, so 100 still
+    leaves the pane 80; below it a world's 80-column text orphans a word on every other row. 30 rows because above it
+    the output keeps 24 rows with a three-row bar. Height never folds the rail.
+  - **The automatic fold acts only on a crossing** (`_narrowSeen`) and once at start, never on a resize that stays on
+    one side, so ⌃B b / ⌃P / the window sidebar's fold button win until the width next crosses 100. It is the same
+    `_railCollapsed` those toggle, published as `SidebarModel.Collapsed`, so whichever rail is drawn folds.
+  - **The window measures its whole width, not its cells** (`LayoutColumns`; `IPointerPresenter.WindowColumns`, set by
+    `TerminalView` before each grid resize as the view's width plus its margin, in cells). Folding a sidebar the host
+    draws widens the cells; measured on them, the fold would cross back over the line and undo itself. A host that
+    says nothing (the terminal, every test presenter) is measured on its cells.
+  - **A growing bar takes back the editor's scroll** (`InputBarControl.MeasureDOM`, `_verticalScrollOffset` by
+    reflection). The editor scrolls to keep the caret on a row the viewport does not have yet and never scrolls back
+    when the viewport grows, so a newline in a one-row bar drew the new row and a blank. The three-row floor had hidden
+    it; `NewlineKeyTests` caught it.
+- **The status row names the keys of the mode you are in** (`ModeHints`/`StatusMode`, Client;
+  `SharpMUTermApp.ModeHints.cs`). Composer armed > search bar in the focused window > frozen > split > scrolled back;
+  while one holds, its hints replace `FocusHints` (`End returns · ⌥F freezes`, `⌥F thaws`, `⌥G next hit · ⌃F searches
+  again`, `⌃S sends · Esc releases · F1 full screen`). The keys are `KeyHint`s resolved through the host's
+  `HostKeyGlyphs` and written through `KeyGlyphs.Normalize`; `HostParityTests.TheStatusRowNamesEachModesKeysAsThisHost…`
+  reads each mode's row once per host at 80 and 120 columns. The longest candidate goes in that fits once as few of the
+  encoding and `⌃P palette` cells as it needs are given up; meters and the scrollback segment are never given up for
+  it, and nothing may wrap the row (the D1 lesson). A change of mode alone repaints the row: `SyncStatusMode` rides
+  `PostBufferPaint` as well as freeze, the composer's bands and the scroll path.
 - **F5 ▸ `join wraps` joins the lines a server hard-wrapped** (`ServerWrapJoiner`, Core; `WorldSession.Reflow`;
   `WorldDefinition.JoinWrappedLines`, off by default; the `reflow` view). **A false join is worse than a missed
   one**, so every condition is a reason not to join: the wrap column is known (third-longest of the last 128

@@ -9,6 +9,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- A narrow terminal gives its room to the game: below 100 columns the connection rail folds to its slim strip
+  on its own (in the desktop window, the sidebar does), and below 100 columns or 30 rows an empty command line
+  is one row tall and grows as you type. At 80×24 a pane is now 72 columns wide instead of 60, two rows taller,
+  and a world's 80-column text no longer leaves a stray word on every other line. Folding or unfolding the rail
+  yourself (Ctrl+B b) always wins, until the window next crosses 100 columns.
+- The status row names the keys of whatever you are in: scrolled back (End returns, Alt+F freezes), frozen
+  (Alt+F thaws), on a search result (Alt+G next hit), or writing in a docked composer (Ctrl+S sends, Esc
+  releases, F1 full screen), in place of the pane hints, and only where they fit.
 - Ctrl+P lists *Fold or unfold the connection rail*, the same fold as Ctrl+B b and as the desktop window's
   sidebar button.
 - Desktop window: the header and the connections sidebar now have room of their own — a full-height toolbar

@@ -56,6 +56,9 @@ internal sealed class InputBarControl : MultilineEditControl,
     private static readonly MethodInfo? WrappedLinesMethod = typeof(MultilineEditControl).GetMethod(
         "GetWrappedLines", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(int)]);
 
+    private static readonly FieldInfo? VerticalScrollField = typeof(MultilineEditControl).GetField(
+        "_verticalScrollOffset", BindingFlags.Instance | BindingFlags.NonPublic);
+
     private readonly PromptGutter _gutter;
     private bool _armed = true;
     private int _minRows = 3;
@@ -574,7 +577,19 @@ internal sealed class InputBarControl : MultilineEditControl,
     public override LayoutSize MeasureDOM(LayoutConstraints constraints)
     {
         var width = Width ?? constraints.MaxWidth;
-        ViewportHeight = InputLayout.Height(WrappedRowCount(FieldWidth(width)), MinRows, MaxRows);
+        var rows = WrappedRowCount(FieldWidth(width));
+        ViewportHeight = InputLayout.Height(rows, MinRows, MaxRows);
+
+        // A bar that grows lets the rows it scrolled past back into view. The editor scrolled to keep the caret on a
+        // row the viewport did not yet have (a newline typed into a one-row bar), and nothing in it scrolls back when
+        // the viewport is made taller: the bar would grow to two rows and show the second and a blank. Private, so by
+        // reflection, and a rename only costs that frame.
+        var most = Math.Max(0, rows - ViewportHeight);
+        if (VerticalScrollOffset > most)
+        {
+            VerticalScrollField?.SetValue(this, most);
+        }
+
         return base.MeasureDOM(constraints);
     }
 
