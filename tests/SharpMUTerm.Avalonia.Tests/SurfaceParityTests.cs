@@ -258,6 +258,8 @@ public class SurfaceParityTests
             (SurfaceCatalog.Welcome, "welcome-connect"),
             (SurfaceCatalog.Help, "help"),
             (SurfaceCatalog.Dictionary, "dictionary-offer"),
+            (SurfaceCatalog.BrowseWorlds, "browse-worlds"),
+            (SurfaceCatalog.BrowseWorlds, "browse-worlds-failed"),
             (SurfaceCatalog.Import, "import-review"),
             (SurfaceCatalog.ScriptConsole, "script-console"),
             (SurfaceCatalog.Search, "search-older"),
@@ -810,6 +812,25 @@ public class SurfaceParityTests
             app => app.SimulateHelpKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
         probed.Add(SurfaceCatalog.Dictionary);
 
+        // Browse worlds: a pick asks the demo's directory where the world is and opens the welcome's connect form filled
+        // in, saving nothing; a search none of the rows match asks the directory itself — the same in both hosts.
+        await SameModal("browse worlds: pick", "browse-worlds",
+            (app, m) => ((WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!).Pick(0),
+            app => app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+        await SameModal("browse worlds: ask the directory", "browse-worlds",
+            (app, m) => ((WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!).Ask("zork"),
+            app =>
+            {
+                foreach (var c in "zork")
+                {
+                    app.SimulateWorldBrowseKey(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+                }
+
+                // None of the demo's most played hold the word, so the cells' Enter asks the directory rather than picking.
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        probed.Add(SurfaceCatalog.BrowseWorlds);
+
         // The import review: Import writes the same world, character and set as the cells' Enter; with the passwords
         // switched on first (the window's check box, the cells' p), the password is stored on the character in both.
         await SameModal("import: accept", "import-review",
@@ -1122,6 +1143,7 @@ public class SurfaceParityTests
         WelcomeSession welcome => welcome.Model,
         HelpSession help => help.Model,
         DictionaryOfferSession offer => offer.Model,
+        WorldBrowseSession browse => browse.Model,
         ImportReviewSession import => import.Model,
         ScriptConsoleSession console => console.Model,
         ScrollbackViewSession history => history.Model,
@@ -1146,6 +1168,8 @@ public class SurfaceParityTests
         "layout=" + app.LiveLayoutId,
         "welcome=" + app.WelcomeIsOpen,
         "help=" + app.HelpIsOpen + "/" + app.DictionaryOfferOpen,
+        "browse=" + app.WorldBrowseOpen + " " + app.WorldBrowseModelNow.State + ":" + app.WorldBrowseModelNow.AskedFor + ":" + app.WorldBrowseModelNow.Rows.Count
+            + " " + (app.Welcome is { } w ? $"{w.InForm}:{w.Host}:{w.Port}:{w.Tls}:{w.WorldName}" : "none"),
         "import=" + app.ImportReviewOpen + " " + string.Join(",", app.Configuration.TriggerSets.Select(s => s.Name + ":" + s.Triggers.Count))
             + " " + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters).Select(c => c.Name + (c.Password is null ? string.Empty : "*"))),
         "console=" + app.ScriptConsoleIsOpen + " " + ConsoleState(app),

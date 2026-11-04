@@ -140,6 +140,15 @@ public sealed class AppConfiguration
     public const string DefaultPackageIndexUrl = "https://raw.githubusercontent.com/SharpMUSH/sharpmuterm-packages/main/index.json";
 
     /// <summary>
+    /// The world directory Browse worlds reads: the https base of a mu*index API (<c>/games</c> and <c>/games/{id}</c>
+    /// under it). Asked only when the player opens Browse, never at start.
+    /// </summary>
+    public string WorldDirectoryUrl { get; set; } = DefaultWorldDirectoryUrl;
+
+    /// <summary>mu*index, the maintainer's own MU* directory.</summary>
+    public const string DefaultWorldDirectoryUrl = "https://mu-index.com/api";
+
+    /// <summary>
     /// The last workspace layout (panes, windows, focus) so the app can resume where it left off.
     /// Null on a fresh config; the shell rebuilds a live workspace from it at startup via
     /// <see cref="WorkspaceState.Restore"/>. Only structure lives here — the <em>content</em> of each

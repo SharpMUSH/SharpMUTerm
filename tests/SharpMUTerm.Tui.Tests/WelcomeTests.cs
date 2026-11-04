@@ -238,17 +238,17 @@ public class WelcomeTests
         await Assert.That(run.App.Welcome!.InForm).IsFalse();
     }
 
-    /// <summary>With no index to read, Browse says so where the player is looking and fetches nothing.</summary>
+    /// <summary>With no world directory to read, Browse says so where the player is looking and fetches nothing.</summary>
     [Test]
     public async Task BrowseWithNoIndexSaysSoInPlace()
     {
-        await using var run = await Start(new AppConfiguration { PackageIndexUrl = string.Empty });
+        await using var run = await Start(new AppConfiguration { WorldDirectoryUrl = string.Empty });
 
         run.App.SimulateWelcomeKey(Key(ConsoleKey.DownArrow));
         run.App.SimulateWelcomeKey(Key(ConsoleKey.Enter, '\r'));
 
         await Assert.That(run.App.WelcomeIsOpen).IsTrue();
-        await Assert.That(string.Join('\n', run.App.WelcomeLines.Select(MarkupText.Plain))).Contains("no package index is set");
+        await Assert.That(string.Join('\n', run.App.WelcomeLines.Select(MarkupText.Plain))).Contains("no world directory is set");
     }
 
     [Test]

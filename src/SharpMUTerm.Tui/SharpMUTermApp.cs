@@ -733,9 +733,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         string? scriptStoreRoot = null,
         Func<SpellChecker?>? spelling = null,
         bool autoLayout = false,
-        string? dictionaries = null)
+        string? dictionaries = null,
+        Func<Uri, CancellationToken, Task<byte[]?>>? worldFetch = null)
     {
         _spelling = spelling;
+        _worldFetch = worldFetch;
         _dictionariesRoot = string.IsNullOrWhiteSpace(dictionaries) ? null : dictionaries;
         _autoLayout = autoLayout;
         var capabilities = host.Capabilities;
@@ -1961,6 +1963,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return scriptingFrame;
         }
 
+        // Browse worlds over the demo's directory (answered from memory): the list through its ⌃P entry; `-failed` with a
+        // directory that does not answer; `-picked` after a pick, so the frame is the welcome's connect form filled in.
+        if (string.Equals(view, "browse-worlds", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "browse-worlds-failed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(view, "browse-worlds-failed", StringComparison.OrdinalIgnoreCase))
+            {
+                WorldFetch = static (_, _) => Task.FromResult<byte[]?>(null);
+            }
+
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.BrowseWorldsCommand);
+            if (string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase))
+            {
+                PickWorld(_worldModel, 0);
+            }
+        }
+
         // The spelling dictionary offer, through its ⌃P entry. The demo keeps no dictionaries folder, so the offer says
         // nothing can be saved in this run — the text a live client shows names the folder instead.
         if (string.Equals(view, "dictionary-offer", StringComparison.OrdinalIgnoreCase))
@@ -2898,6 +2918,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void InitDemoRuntimeState()
     {
+        // The demo's world directory answers from memory, so Browse worlds lists and picks without a byte leaving.
+        WorldFetch ??= DemoWorldFetch;
+
         foreach (var (world, character) in StartupConnections.Resolve(_config))
         {
             var key = $"{world.Name}.{character?.Name ?? world.Name}";
@@ -5290,6 +5313,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // `/browse [words]` opens Browse worlds (mu*index); `/browse N` picks a row it said as lines.
+        if (command.StartsWith("/browse", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 7 || command[7] == ' '))
+        {
+            BrowseCommand(command[7..]);
+            return;
+        }
+
         // `/welcome` shows the first-run welcome again; `/welcome layout …` picks its starting layout.
         if (command.StartsWith("/welcome", StringComparison.OrdinalIgnoreCase)
             && (command.Length == 8 || command[8] == ' '))
@@ -5914,7 +5945,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
         : _welcomeView.IsOpen ? "the welcome"
-        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", "script-console" => "the script console", "history-view" => "the history view", _ => "help" })
+        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", "script-console" => "the script console", "history-view" => "the history view", "browse-worlds" => "Browse worlds", _ => "help" })
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -9111,6 +9142,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:welcome":
                 ShowWelcome();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.BrowseWorldsCommand:
+                ShowWorldBrowse();
                 return true;
             case SharpMUTerm.Client.Commands.BuiltInCommands.ImportCommand:
                 StartImport();

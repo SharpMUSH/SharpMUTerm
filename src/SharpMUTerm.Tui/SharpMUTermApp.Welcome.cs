@@ -71,13 +71,8 @@ internal sealed partial class SharpMUTermApp
         _welcomeView.SimulateKey(key);
     }
 
-    /// <summary>Why the package index cannot be browsed, or null when it can be asked for.</summary>
-    private string? PackageIndexProblem() =>
-        Uri.TryCreate(_config.PackageIndexUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
-            ? null
-            : string.IsNullOrWhiteSpace(_config.PackageIndexUrl)
-                ? "no package index is set (packageIndexUrl in config.json)"
-                : "the package index is not an https link (packageIndexUrl in config.json)";
+    /// <summary>Why the world directory cannot be browsed, or null when it can be asked for.</summary>
+    private string? WorldDirectoryProblem() => Core.WorldIndex.WorldDirectory.Problem(_config.WorldDirectoryUrl);
 
     /// <summary>
     /// Shows the welcome: the surface where the screen is seen, the lines where it is not. Opened at start on
@@ -85,7 +80,7 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     internal void ShowWelcome()
     {
-        var problem = PackageIndexProblem();
+        var problem = WorldDirectoryProblem();
         if (Host.Announcer is { } announcer)
         {
             foreach (var line in WelcomeSurface.PlainLines(_welcomeLayout, problem))
@@ -138,7 +133,7 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// What the welcome asked for, from either host: the cell surface's key and the native welcome's click both end
-    /// here. Browse and Open settings close it and open what they name; Connect closes it and dials the form through
+    /// here. Browse (Browse worlds) and Open settings close it and open what they name; Connect closes it and dials the form through
     /// <c>/connect</c>'s path. Anything else keeps it open, which is the return value.
     /// </summary>
     private bool RunWelcomeAction(WelcomeSurface welcome, WelcomeAction action)
@@ -148,7 +143,7 @@ internal sealed partial class SharpMUTermApp
         {
             case WelcomeAction.Browse:
                 CloseWelcome();
-                BrowsePackages();
+                ShowWorldBrowse();
                 return false;
 
             case WelcomeAction.Settings:
@@ -201,6 +196,13 @@ internal sealed partial class SharpMUTermApp
         ConnectCommand(ActiveWindowId(), arguments, world =>
         {
             ApplyWelcomeLayout(world);
+
+            // Browse worlds named it: the directory's name for it, made unique, in place of the host.
+            if (request.WorldName is { Length: > 0 } listed)
+            {
+                world.Name = UniqueWorldName(listed);
+            }
+
             if (request.Character is { } name)
             {
                 world.Characters.Add(new CharacterDefinition { Name = name });
@@ -370,6 +372,7 @@ internal sealed partial class SharpMUTermApp
         RefreshHeader();
         RefreshRail();
         UpdateStatus();
+        WorldFetch ??= DemoWorldFetch;
         LastCommand = StartAsync([]);
 
         if (string.Equals(view, WelcomeView + "-connect", StringComparison.OrdinalIgnoreCase))

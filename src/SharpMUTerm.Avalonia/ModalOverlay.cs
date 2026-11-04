@@ -47,6 +47,7 @@ internal sealed class ModalOverlay : Panel
             WelcomeSession welcome => new WelcomeView(welcome, Colours, Done),
             HelpSession help => new HelpView(help, Colours, Done),
             DictionaryOfferSession offer => new DictionaryOfferView(offer, Colours, Done),
+            WorldBrowseSession browse => new WorldBrowseView(browse, Colours, Done),
             ImportReviewSession import => new ImportReviewView(import, Colours, Done),
             ScriptConsoleSession console => new ScriptConsoleView(console, Colours, Done),
             ScrollbackViewSession history => new ScrollbackView(history, Colours, Done),

@@ -23,6 +23,9 @@ public static class BuiltInCommands
     /// <summary>The first-run welcome: connect to a world, browse worlds, pick a layout.</summary>
     public const string WelcomeCommand = "term:welcome";
 
+    /// <summary>Browse worlds: mu*index's listing, a pick filling in the connect form (<c>/browse</c>).</summary>
+    public const string BrowseWorldsCommand = "term:browse-worlds";
+
     /// <summary>Import from another client: a file picker in a host that has one, else <c>/import </c> on the command line.</summary>
     public const string ImportCommand = "term:import";
 
@@ -270,6 +273,7 @@ public static class BuiltInCommands
         // the one-line tour of the keys worth knowing that follows the first connect. The tour entry is one
         // toggle, so it can always be offered and always says what it will do: show it, or hide it.
         Add(WelcomeCommand, CommandGroup.Help, "Welcome", detail: "connect to a world, browse worlds, pick a layout");
+        Add(BrowseWorldsCommand, CommandGroup.Help, "Browse worlds…", detail: "the mu*index directory · /browse");
         Add(ImportCommand, CommandGroup.Help, "Import from another client…", detail: "MUSHclient, Mudlet, TinTin++ · reviewed before anything is written");
         Add("term:tour", CommandGroup.Help, "Key tour", detail: "the keys worth knowing · again to hide it");
 

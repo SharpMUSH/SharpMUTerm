@@ -207,7 +207,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private void DrawForm()
     {
         _heading.Text = WelcomeModel.FormHeading;
-        _body.Children.Add(ModalParts.Dim(WelcomeModel.FormIntro, _colours, new Thickness(22, 0, 22, 10)));
+        _body.Children.Add(ModalParts.Dim(NativeKeys.Words(_model.FormIntroLine), _colours, new Thickness(22, 0, 22, 10)));
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),

@@ -6,7 +6,7 @@ public enum WelcomeChoice
     /// <summary>The small form: host, port, TLS, a character name.</summary>
     Connect,
 
-    /// <summary>The package index browser, fetched only now.</summary>
+    /// <summary>The world directory (mu*index), fetched only now.</summary>
     Browse,
 
     /// <summary>F5, to add a world by hand.</summary>
@@ -40,7 +40,8 @@ public enum WelcomeField
 
 /// <summary>
 /// The first-run welcome's model: the menu or the connect form, with everything either says. Drawn by the cell
-/// surface (<c>WelcomeSurface.Render</c>) and by the window's native one.
+/// surface (<c>WelcomeSurface.Render</c>) and by the window's native one. <c>IndexProblem</c> is why Browse worlds cannot
+/// ask the world directory (null when it can); <c>WorldName</c> is the world Browse worlds filled the form in for.
 /// </summary>
 public sealed record WelcomeModel(
     bool InForm,
@@ -53,7 +54,8 @@ public sealed record WelcomeModel(
     string Character,
     bool PasswordLater,
     string? Problem,
-    string? IndexProblem)
+    string? IndexProblem,
+    string? WorldName = null)
 {
     /// <summary>The example the surface names, a host nobody owns (RFC 2606).</summary>
     public const string ExampleCommand = "/connect mud.example.org 4201 tls";
@@ -84,6 +86,14 @@ public sealed record WelcomeModel(
 
     /// <summary>The line under the form's heading.</summary>
     public const string FormIntro = "Saved as a world, so you can come back to it.";
+
+    /// <summary>
+    /// The line under the form's heading: <see cref="FormIntro"/>, or, when Browse worlds filled the form in, which world
+    /// it is and that the address came from the directory.
+    /// </summary>
+    public string FormIntroLine => WorldName is null
+        ? FormIntro
+        : $"{WorldName}, as listed on mu*index. Check it and press ⏎ to save and connect.";
 
     /// <summary>The TLS row's words when on; the window's check box carries these words.</summary>
     public const string TlsOn = "On, encrypted";
@@ -123,7 +133,7 @@ public sealed record WelcomeModel(
     public (string Title, string Detail) Describe(WelcomeChoice choice) => choice switch
     {
         WelcomeChoice.Connect => ("Connect to a world", "Type a host and port"),
-        WelcomeChoice.Browse => ("Browse worlds", IndexProblem is null ? "From the package index" : "No package index set"),
+        WelcomeChoice.Browse => ("Browse worlds", IndexProblem is null ? "From the mu*index directory" : "No world directory set"),
         WelcomeChoice.Import => ("Import", "From MUSHclient, Mudlet or TinTin++"),
         _ => ("Open settings", "F5, add a world by hand"),
     };

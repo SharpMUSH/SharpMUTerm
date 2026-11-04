@@ -742,8 +742,8 @@ fallbacks) for inline images/maps.
 - **A client with no worlds opens on a welcome, and the first connect of a new configuration leaves a key tour**
   (`WelcomeSurface`, `SharpMUTermApp.Welcome.cs`; `/welcome`, ⌃P ▸ *Welcome* / *Key tour*). The welcome is a
   `ListOverlay` over a pure model (the `QuitPrompt` split): *Connect to a host* (a form: host, port 4000, TLS, an
-  optional character, a password reminder), *Browse games* (`BrowsePackages`, so the index is still fetched only
-  when asked; with no https `PackageIndexUrl` it says so on the row instead), *Open settings* (F5), the
+  optional character, a password reminder), *Browse worlds* (mu*index, below; with no https
+  `WorldDirectoryUrl` it says so on the row instead), *Open settings* (F5), the
   `/connect` example, and a starting layout. Decisions not to relitigate:
   - **Its words live on `WelcomeModel`** (headings, intro, field labels, key rows), so both hosts say the same thing;
     the client calls a game a *world* on every surface of it.
@@ -765,6 +765,24 @@ fallbacks) for inline images/maps.
     run. The row is chrome (`AppendWindowLine`), found again by its markup, and hidden or shown by ⌃P ▸
     *Key tour* — not by a link, because the panes' link handler is scheme-tagged server text and a client action
     there would be a new trust path.
+- **Browse worlds lists mu*index, and a pick only fills in the welcome's connect form** (`WorldDirectory`, Core
+  `WorldIndex/`; `WorldBrowseModel`/`WorldBrowseSession`, Client; `WorldBrowseSurface`, `SharpMUTermApp.WorldBrowse.cs`,
+  `DemoWorldDirectory`, Tui; `WorldBrowseView`, Avalonia; the welcome's Browse row, ⌃P ▸ *Browse worlds…*, `/browse
+  [words]`, `/browse N`; surface `browse-worlds`; the `browse-worlds`, `-failed` and `-picked` views). Decisions:
+  - **Asked only when opened**, through `worldFetch:` (the `save:` family: null in tests and snapshots, which say they asked
+    nothing; `Program` passes `WorldDirectory.DownloadAsync`; the demo answers from `DemoWorldDirectory`, made-up worlds on
+    `.example` hosts). https only (`AppConfiguration.WorldDirectoryUrl`, default `https://mu-index.com/api`), 2 MiB capped
+    while streaming, 15 s, 200 rows; an answer from a stale request (newer question, or closed) is dropped by generation.
+  - **The answer is server text**: names, taglines and codebases are bounded and stripped of control, format (bidi),
+    private-use and unassigned characters (`WorldDirectory.Clean`); a row with no id or name, archived, or repeated is
+    dropped and counted; a player count is shown only when the directory says `measured`, or `declared` marked `~`.
+  - **A pick asks `GET /games/{id}` for the address**: `telnet` or `tls`, `active` before `stale`, never `gone`, newest
+    `lastSeenAt`, and only what `ConnectEndpoint.Parse` takes. Then Browse closes and the welcome's form opens prefilled
+    (`WelcomeSurface.Prefill`, `WelcomeModel.WorldName`); nothing is saved or dialled until its ⏎, which goes through
+    `ConnectFromWelcome` → `ConnectCommand` and names the world as listed (dropped if the host is edited).
+  - ⏎ on a search none of the held rows match asks the directory (`AsksDirectory`). Every listing shows the CC BY 4.0
+    credit (`AttributionLine`). `--plain` says the rows as numbered lines and `/browse N` says the `/connect` line.
+  - *Browse packages* is unchanged; the welcome no longer leads there. The live API has not been exercised from here.
 - **The URLs a world prints as plain text are marked up by this client, because the terminal's own
   detection cannot survive a pane** (`UrlDetector`, Core; F7 ▸ `detect links in output`, default on).
   Kitty, WezTerm and Ghostty all find URLs in the cells they paint — across the terminal **row**. A pane
@@ -1764,7 +1782,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   its connect form filled in by real keys), `tour` (the key tour row at the end of the demo's main window), `reconnect` (Corvid dropped, the second try
   counting down on the status row),
   `help`/`help-topic` (in-app help's list, and its *Reading output* page), `dictionary-offer` (the spelling dictionary
-  offer, in a run that keeps no folder) and `join-wraps`/`join-wraps-f5` (a ragged world suggested on ⌃P, and
+  offer, in a run that keeps no folder), `browse-worlds`/`browse-worlds-failed`/`browse-worlds-picked` (Browse worlds over
+  the demo's directory, one whose directory does not answer, and the connect form a pick leaves) and `join-wraps`/`join-wraps-f5` (a ragged world suggested on ⌃P, and
   recommended on F5 — the row is under `14 more` below about 50 rows), plus
   the default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
