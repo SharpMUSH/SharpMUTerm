@@ -9,6 +9,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The package review keeps ⏎ install and Esc cancel on screen at 80×24: the review scrolls (↑↓ PgUp PgDn Home End)
+  under its keys and stops above the command line.
 - Browse worlds: a world listed at several addresses (TLS and plain, another port, an old one) now lets you choose
   which before the connect form opens; the form takes that address's TLS setting, and the world is saved with the
   game's character set when mu*index names one other than UTF-8. `/browse N M` says address M in `--plain`.
@@ -384,6 +386,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The command palette in the terminal shrinks to the rows a search matches instead of filling the screen with blank.
+- In the window, notices are drawn on the same card colour as the palette and dialogs, and body text is a size larger
+  (13 px) across the window's own views.
 - The built-in layouts follow the new designs: Roleplay puts the composer in the side column above who is here, with
   the chat windows as tabs behind the output; Combat puts the vitals in the side column above the map as a card, one
   meter over another. Below 100 columns they fall back to what fits: Roleplay's composer goes under the output and

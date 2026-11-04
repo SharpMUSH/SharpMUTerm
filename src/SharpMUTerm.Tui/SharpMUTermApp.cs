@@ -2693,7 +2693,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // server agreed to UTF-8, which the row draws unqualified. A world that pinned an encoding
         // would read "utf-8 forced" and a server that never negotiated "utf-8 assumed".
         _demoEncoding = new SessionEncoding(Encoding.UTF8, EncodingSource.Negotiated);
-        _statusBar.SetContent(new List<string> { StatusInk(StatusBarMarkup("Corvid", "connected")) });
+        _statusModel = StatusBarRow("Corvid", "connected");
+        _statusBar.SetContent(new List<string> { StatusRowMarkup(_statusModel) });
         RefreshHeader();
         _input.SetAndNotify("say hello there");
         RebuildPaneArea(); // realise the Chat spawn tab, then refresh badges
@@ -7043,11 +7044,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// sign that a pane is not showing its newest line, because the panes deliberately carry no
     /// scrollbar (see <see cref="ScrollViewFor"/>), so it has to be right rather than decorative.
     /// </summary>
-    private string ScrollbackStatus()
+    private StatusSegment? ScrollbackStatus()
     {
         if (ScrollTarget() is not { CanScrollDown: true } panel)
         {
-            return string.Empty;
+            return null;
         }
 
         // Kept short on purpose. The row right-aligns a cluster of five segments and only guarantees a
@@ -7064,7 +7065,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // segment is the same width whatever it says.
         var below = Math.Max(1, panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset);
         var distance = UnreadBadge.Format(below).PadLeft(UnreadBadge.FieldWidth);
-        return $"[{_ink.Notice}]{Glyphs.Scrollback} scrollback[/] [dim]{distance} · ⌃End live[/]";
+        return Segment(StatusRole.Scrollback, Run($"{Glyphs.Scrollback} scrollback", _ink.Notice), Run(" "), Dim($"{distance} · ⌃End live"));
     }
 
     /// <summary>
@@ -7081,8 +7082,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         SetStatus(_statusIdentity is { } id
-            ? StatusBarMarkup(id.Character, id.State)
-            : NotConnectedMarkup());
+            ? StatusBarRow(id.Character, id.State)
+            : NotConnectedRow());
     }
 
     /// <summary>
@@ -7275,7 +7276,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        SetStatus(StatusBarMarkup(id.Character, id.State));
+        SetStatus(StatusBarRow(id.Character, id.State));
     }
 
     /// <summary>The <c>world.character</c> key of the character whose windows the rail expands.</summary>
@@ -12834,7 +12835,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         RebuildPaneArea();
-        SetStatus(MovePromptMarkup(), displace: true);
+        SetStatus(MovePromptRow(), displace: true);
     }
 
     /// <summary>Handles a key while in move mode: pick pane (1–9), edge (arrows), commit (⏎), cancel (Esc).</summary>
@@ -12862,7 +12863,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             _moveEdge = _moveEdge == edge ? null : edge;
             RebuildPaneArea();
-            SetStatus(MovePromptMarkup(), displace: true);
+            SetStatus(MovePromptRow(), displace: true);
             return;
         }
 
@@ -12874,7 +12875,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 _moveTargetPaneId = match.Key;
                 RebuildPaneArea();
-                SetStatus(MovePromptMarkup(), displace: true);
+                SetStatus(MovePromptRow(), displace: true);
             }
         }
     }
@@ -12908,12 +12909,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The move-mode status prompt.</summary>
-    private string MovePromptMarkup()
+    private StatusModel MovePromptRow()
     {
-        var name = _moveWindowId is { } id && _workspace.FindWindow(id) is { } w ? Escape(w.Title) : "window";
-        return $"[{_ink.Notice}]MOVE[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(_moveTargetPaneId, _moveEdge)}[/]"
-            + "   [dim]1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel[/]";
+        var name = _moveWindowId is { } id && _workspace.FindWindow(id) is { } w ? w.Title : "window";
+        return StatusRowModel(
+        [
+            DropPrompt("MOVE", name, DropLabel(_moveTargetPaneId, _moveEdge)),
+            Segment(StatusRole.ModeHint, Dim("1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel")),
+        ]);
     }
+
+    /// <summary>The move and drag prompts' first segment: <c>MOVE window → where</c>.</summary>
+    private StatusSegment DropPrompt(string verb, string window, string where) =>
+        Segment(StatusRole.Prompt, Run(verb, _ink.Notice), Run(" "), Run(window, bold: true), Run(" "), Dim("→"), Run(" "), Run(where, _ink.Accent));
 
     /// <summary>Human-readable description of a pending drop, for the move prompt and drag preview.</summary>
     private string DropLabel(string? paneId, Edge? edge)
@@ -13233,7 +13241,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 _dragTargetPaneId = result.TargetPaneId;
                 _dragEdge = result.Edge;
                 RebuildPaneArea();
-                SetStatus(DragPromptMarkup(result.WindowId, result.TargetPaneId, result.Edge), displace: true);
+                SetStatus(DragPromptRow(result.WindowId, result.TargetPaneId, result.Edge), displace: true);
                 break;
 
             case PaneDragAction.Commit:
@@ -13269,11 +13277,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The status line shown while a pane drag is in flight.</summary>
-    private string DragPromptMarkup(string? windowId, string? targetPaneId, Edge? edge)
+    private StatusModel DragPromptRow(string? windowId, string? targetPaneId, Edge? edge)
     {
-        var name = windowId is { } id && _workspace.FindWindow(id) is { } window ? Escape(window.Title) : "window";
-        return $"[{_ink.Notice}]DRAG[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(targetPaneId, edge)}[/]"
-            + "   [dim]release to drop · Esc cancel[/]";
+        var name = windowId is { } id && _workspace.FindWindow(id) is { } window ? window.Title : "window";
+        return StatusRowModel(
+        [
+            DropPrompt("DRAG", name, DropLabel(targetPaneId, edge)),
+            Segment(StatusRole.ModeHint, Dim("release to drop · Esc cancel")),
+        ]);
     }
 
     /// <summary>A pane rendered as a live drop target, sized from the drag's frozen geometry.</summary>
@@ -14049,32 +14060,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// took. Re-deriving here rather than in <see cref="SetStatus"/> is what covers the notice case too.
     /// </para>
     /// </summary>
-    private void PaintStatus(string markup)
+    private void PaintStatus(StatusModel model)
     {
-        _statusBar.SetContent(new List<string> { StatusInk(FitStatusRow(markup, HeaderWidth())) });
+        // The model first, the cells from it: cut to the width now (StatusModel.Fit), so a notice never wraps the row.
+        _statusModel = Drawing(SurfaceCatalog.Status, string.Empty, model);
+        _statusBar.SetContent(new List<string> { StatusRowMarkup(model.Fit(HeaderWidth())) });
         SyncInputHeights(_second.Visible);
         PublishStatus(); // a host's footer has no cell to repaint, so a change may paint no frame (RefreshHeader's reason)
     }
-
-    /// <summary>
-    /// The status row's quiet text in a grey held to 4.5:1 on the backdrop it is painted on, in place of the framework's
-    /// fixed <c>[dim]</c> <c>#808080</c> — 3.4:1 on Light's status plane, and the row is small text a reader looks for
-    /// (UX audit wave 11, #2 and #7). Only the bare tag is replaced; the cells do not move.
-    /// </summary>
-    private string StatusInk(string markup) =>
-        BareDim.Replace(markup, $"[{Hex(WorkspacePalette.NoticeMuted(_theme, WorkspacePalette.Backdrop(_theme)))}]");
-
-    /// <summary>A <c>[dim]</c> tag that is a tag, not the escaped text <c>[[dim]]</c>.</summary>
-    private static readonly System.Text.RegularExpressions.Regex BareDim = new(@"(?<!\[)\[dim\]", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// The status row's markup cut to <paramref name="width"/> cells, ending in <c>…</c>. The row is one row in every
-    /// host: a notice is a sentence, and a window narrower than it wrapped the row onto a second line and took that row
-    /// off the command line (the D1 lesson, live in the window). Everything the resting row lays out already fits; this is
-    /// the floor under the notices and anything else that does not measure itself. Internal for tests.
-    /// </summary>
-    internal static string FitStatusRow(string markup, int width) =>
-        width > 0 && MarkupWidth(markup) > width ? ElideVisible(markup, width) : markup;
 
     /// <summary>
     /// Sets what the status row says <em>at rest</em>: the connection identity, a mode prompt, the
@@ -14093,7 +14086,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// True for a line that must be seen <em>now</em> — the move and drag prompts, which are a mode the
     /// user just entered rather than a background repaint.
     /// </param>
-    private void SetStatus(string markup, bool displace = false)
+    private void SetStatus(StatusModel markup, bool displace = false)
     {
         _restingStatus = markup;
         if (displace)
@@ -14108,7 +14101,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>What the status row says with no notice over it. Kept in step by <see cref="SetStatus"/>.</summary>
-    private string _restingStatus = "[dim]not connected[/]";
+    private StatusModel? _restingStatus;
 
     /// <summary>
     /// How long a <see cref="Notice"/> holds the status row. tmux's <c>display-time</c> is well under a
@@ -14193,11 +14186,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 Second = action is null ? null : second,
             });
-        var markup = NoticeMarkup(model);
+        var segment = NoticeSegment(model);
 
-        _notice = markup;
+        _notice = StatusRowMarkup(segment.Runs);
         _noticeShown = model;
-        PaintStatus(markup);
+        PaintStatus(StatusRowModel([segment], notice: model));
         if (toast)
         {
             PublishNotice(model);
@@ -14225,7 +14218,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         ForgetNotice();
-        PaintStatus(_restingStatus);
+        PaintStatus(_restingStatus ?? NotConnectedRow());
     }
 
     /// <summary>Forgets the notice and disarms its timer, without painting — for callers about to paint.</summary>
@@ -14236,22 +14229,30 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The resting status row of a client with nothing connected.</summary>
-    private string NotConnectedMarkup()
+    private StatusModel NotConnectedRow()
     {
-        var scrollback = ScrollbackStatus();
-        var suffix = scrollback.Length == 0 ? string.Empty : $"   {scrollback}";
         // No graphics readout: which protocol the probe chose is a startup fact (--help and the session's first line say it), and on a
         // first run it was the one technical word on the screen.
-        var row = $"[dim]not connected · ⌃P palette · ⌃Q quit[/]{suffix}";
+        var row = new List<StatusSegment>
+        {
+            Segment(StatusRole.Text, Dim("not connected · "), Dim(PaletteHintText, HeaderModel.PaletteTarget), Dim(" · ⌃Q quit")),
+        };
+        if (ScrollbackStatus() is { } scrollback)
+        {
+            row.Add(scrollback);
+        }
 
         // A client with nothing connected is still read back through, frozen and searched: the mode's keys go on
         // the end where they fit, the longest that does.
         var mode = CurrentStatusMode();
         _statusModeShown = mode;
-        return mode != StatusMode.None
-            && ModeHintMarkup(mode).FirstOrDefault(h => MarkupWidth(row) + 3 + MarkupWidth(h) <= HeaderWidth()) is { } hint
-            ? $"{row}   {hint}"
-            : row;
+        if (mode != StatusMode.None
+            && ModeHintSegments(mode).FirstOrDefault(h => StatusModel.WidthOf(row) + 3 + h.Width <= HeaderWidth()) is { } hint)
+        {
+            row.Add(hint);
+        }
+
+        return StatusRowModel(row);
     }
 
     private void UpdateStatus()
@@ -14262,7 +14263,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // Clear the identity too: leaving a stale one behind means the next RefreshStatusBar
             // repaints a connection that is no longer there.
             _statusIdentity = null;
-            SetStatus(NotConnectedMarkup());
+            SetStatus(NotConnectedRow());
             return;
         }
 
@@ -14532,7 +14533,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// you are outlives everything.
     /// </para>
     /// </summary>
-    private string[] FocusHints()
+    private StatusSegment[] FocusHints()
     {
         var panes = _workspace.Layout.Panes.Count > 1 && _workspace.Layout.ZoomedPaneId is null;
         var bars = _second.Visible;
@@ -14556,10 +14557,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         };
 
         var segments = ordered.OfType<(string Text, int Rank)>().ToList();
-        var candidates = new List<string>(segments.Count);
+        var candidates = new List<StatusSegment>(segments.Count);
         while (segments.Count > 0)
         {
-            candidates.Add($"[dim]{string.Join(" · ", segments.Select(s => s.Text))}[/]");
+            candidates.Add(Segment(StatusRole.FocusHint, Dim(string.Join(" · ", segments.Select(s => s.Text)))));
             segments.Remove(segments.MinBy(s => s.Rank));
         }
 
@@ -14585,11 +14586,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// place. A function of the row and never of the room's name, so a walk still moves nothing: at 160 columns the
     /// cell read <c>The Grand Plaza · Aetherf…</c> with thirty cells free beside it.
     /// </summary>
-    private int RoomCellFor(string left, string rightBar, StatusMode mode)
+    private int RoomCellFor(int left, int rightBar, StatusMode mode)
     {
-        var hints = mode == StatusMode.None ? FocusHints().Select(h => MarkupWidth(h) + 3).DefaultIfEmpty(0).Max() : 0;
+        var hints = mode == StatusMode.None ? FocusHints().Select(h => h.Width + 3).DefaultIfEmpty(0).Max() : 0;
         var moo = _active?.McpStatus is null ? 0 : MooStatusCellWidth + 3;
-        var spare = HeaderWidth() - MarkupWidth(left) - 3 - MarkupWidth(rightBar) - MinStatusGap - MeterSlack - hints - moo;
+        var spare = HeaderWidth() - left - 3 - rightBar - MinStatusGap - MeterSlack - hints - moo;
         return Math.Clamp(spare, RoomCellWidth, RoomCellMaxWidth);
     }
 
@@ -14599,7 +14600,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary><c>⌂ Room · Area</c>, elided and padded to <see cref="RoomCellWidth"/>. The room leads: it is what
     /// changes, and it is what an elision should keep.</summary>
-    internal static string RoomCell(string name, string? area, int width = RoomCellWidth)
+    internal static string RoomCell(string name, string? area, int width = RoomCellWidth) =>
+        $"[dim]{Escape(RoomCellText(name, area, width))}[/]";
+
+    /// <summary><see cref="RoomCell"/>'s text: <c>⌂ Room · Area</c>, elided and padded.</summary>
+    internal static string RoomCellText(string name, string? area, int width = RoomCellWidth)
     {
         var text = string.IsNullOrWhiteSpace(area) ? name : $"{name} · {area}";
         var room = Math.Max(RoomCellWidth, width) - 2;
@@ -14608,7 +14613,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             text = text[..(room - 1)] + "…";
         }
 
-        return $"[dim]⌂ {Escape(text.PadRight(room))}[/]";
+        return $"⌂ {text.PadRight(room)}";
     }
 
     /// <summary>Whether the status row last left its meters out because the vitals strip was showing them.</summary>
@@ -14648,24 +14653,37 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The cells the meters leave free for the typed-character count to grow into.</summary>
     private const int MeterSlack = 4;
 
-    private string StatusBarMarkup(string character, string state)
+    /// <summary>
+    /// The resting status row of a connected client, as a model: every segment by its role, laid out to the row's width
+    /// with the row's reserved fields and drop order. The cells are rendered from it (<see cref="PaintStatus"/>), and the
+    /// window's footer draws the same instance.
+    /// </summary>
+    private StatusModel StatusBarRow(string character, string state)
     {
         // A dropped connection waiting to dial again says when, in place of "faulted" (SharpMUTermApp.Reconnect.cs).
         state = ReconnectStatus(_active) ?? state;
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
-        var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
+        var left = new List<StatusSegment>
+        {
+            Segment(StatusRole.Identity, Run("●", accent), Run(" "), Run(character, bold: true), Run(" "), Dim(state)),
+        };
+        int W(IReadOnlyCollection<StatusSegment> cluster) => StatusModel.WidthOf(cluster);
+
         // The vitals strip already draws these meters for this character, larger; the row says them only while it
         // is not on screen. Nothing else on the row moves with it: every other cell is reserved or dropped by width.
         _statusMetersHidden = VitalsStripShowing();
-        var meters = _statusMetersHidden
-            ? string.Empty
-            : StatusMeterRenderer.Render(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground));
+        StatusSegment? MeterSegment(bool compact) =>
+            StatusMeterRenderer.Runs(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), StatusDim, compact) is { Count: > 0 } runs
+                ? new StatusSegment(StatusRole.Meters, runs)
+                : null;
+        var meters = _statusMetersHidden ? null : MeterSegment(compact: false);
 
-        var right = new List<string>();
+        var right = new List<StatusSegment>();
 
         // Leftmost of the right cluster while it is there at all: a pane that is not showing its newest
         // line is the most important thing the row can say, because nothing else on screen says it.
-        if (ScrollbackStatus() is { Length: > 0 } scrollback)
+        var scrollback = ScrollbackStatus();
+        if (scrollback is not null)
         {
             right.Add(scrollback);
         }
@@ -14674,13 +14692,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Only by a keystroke, like the mute cell below, so it needs no reserved width; and never given up for room.
         if (SceneRecording)
         {
-            right.Add($"[{HeldOn(ScreenPalette.Warn, WorkspacePalette.Backdrop(_theme))}]{RecordingCell}[/]");
+            right.Add(Segment(StatusRole.Recording, Run(RecordingCell, HeldOn(ScreenPalette.Warn, WorkspacePalette.Backdrop(_theme)))));
         }
 
         // Only while muted, and only by a keystroke: nothing from the wire can make this cell appear.
         if (_muted)
         {
-            right.Add($"[{_ink.Notice}]{MutedCell}[/]");
+            right.Add(Segment(StatusRole.Muted, Run(MutedCell, _ink.Notice)));
         }
 
         // No latency meter. There was one — a heartbeat glyph, a sparkline and a round-trip figure — and
@@ -14705,10 +14723,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // "utf-8" means the server agreed, "utf-8 assumed" means nobody said, "iso-8859-1 forced" means
         // you did. With nothing connected there is no fact to report, and the cell is not drawn — the
         // same rule that took the address and the invented latency meter off this row.
-        string? encodingCell = null;
+        StatusSegment? encodingCell = null;
         if (EffectiveEncoding() is { } encoding)
         {
-            encodingCell = $"[dim]{Escape(encoding.Label)}[/]";
+            encodingCell = Segment(StatusRole.Encoding, Dim(encoding.Label));
             right.Add(encodingCell);
         }
 
@@ -14716,10 +14734,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // history it becomes the "back to draft" hint instead. Both read the armed bar, so a count that
         // moves is always the line ⏎ would send.
         right.Add(HistoryFor(BarKind(ActiveBar())).IsRecalling
-            ? $"[{AccentHex(AccentPalette[0])}]history[/] [dim]· ↓ back to draft[/]"
-            : $"[dim]{ActiveBar().Text.Length} chars[/]");
+            ? Segment(StatusRole.Count, Run("history", AccentHex(AccentPalette[0])), Run(" "), Dim("· ↓ back to draft"))
+            : Segment(StatusRole.Count, Dim($"{ActiveBar().Text.Length} chars")));
 
-        const string paletteCell = "[dim]⌃P palette[/]";
+        var paletteCell = Segment(StatusRole.Palette, Dim(PaletteHintText, HeaderModel.PaletteTarget));
         right.Add(paletteCell);
 
         // The cluster above is built unconditionally, and at 80 columns a scrolled-back pane's segment
@@ -14732,14 +14750,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The meters count here too: on a narrow terminal they are worth more to someone in a fight than
         // either of those two cells, and they used to be the thing that lost — at 80 columns a world
         // publishing HP showed none of it.
-        var compactMeters = meters.Length > 0
-            ? StatusMeterRenderer.Render(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), compact: true)
-            : string.Empty;
-        var meterCost = compactMeters.Length > 0 ? 3 + MarkupWidth(compactMeters) + MeterSlack : 0;
+        var compactMeters = meters is not null ? MeterSegment(compact: true) : null;
+        var meterCost = compactMeters is not null ? 3 + compactMeters.Width + MeterSlack : 0;
         foreach (var droppable in new[] { encodingCell, paletteCell })
         {
-            if (droppable is null
-                || MarkupWidth(left) + MinStatusGap + MarkupWidth(string.Join("   ", right)) + meterCost <= HeaderWidth())
+            if (droppable is null || W(left) + MinStatusGap + W(right) + meterCost <= HeaderWidth())
             {
                 continue;
             }
@@ -14747,8 +14762,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             right.Remove(droppable);
         }
 
-        if (right.Count > 1
-            && MarkupWidth(left) + MinStatusGap + MarkupWidth(string.Join("   ", right)) > HeaderWidth())
+        if (right.Count > 1 && W(left) + MinStatusGap + W(right) > HeaderWidth())
         {
             right.RemoveAt(right.Count - 1);
         }
@@ -14759,22 +14773,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // exactly this reason). A hint that quietly costs a row of output on a 100-column terminal is a
         // worse trade than a hint that is only there when there is room for it, and this is the same
         // measurement the header already makes to right-align its own cluster.
-        var rightBar = string.Join("   ", right);
 
         // The meters sit beside the identity they describe, and only when the row has room for them with a
         // few cells to spare: the character count on the right grows as a line is typed, and a cluster that
         // came and went with it would be worse than one that is absent on a narrow terminal.
-        if (meters.Length > 0
-            && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack > HeaderWidth())
+        if (meters is not null && W(left) + 3 + meters.Width + W(right) + MinStatusGap + MeterSlack > HeaderWidth())
         {
             // Too narrow for value/max: the share alone, in a field just as fixed.
-            meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), compact: true);
+            meters = MeterSegment(compact: true);
         }
 
-        if (meters.Length > 0
-            && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+        if (meters is not null && W(left) + 3 + meters.Width + W(right) + MinStatusGap + MeterSlack <= HeaderWidth())
         {
-            left = $"{left}   {meters}";
+            left.Add(meters);
         }
 
         // A mode's keys outrank the room and the MOO's status, and the encoding and the palette hint too: while the
@@ -14786,11 +14797,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _statusModeShown = mode;
         if (mode != StatusMode.None)
         {
-            bool Fits(string hint, IEnumerable<string> cluster) =>
-                MarkupWidth(left) + 3 + MarkupWidth(hint) + MarkupWidth(string.Join("   ", cluster)) + MinStatusGap <= HeaderWidth();
+            bool Fits(StatusSegment hint, IEnumerable<StatusSegment> cluster) =>
+                W(left) + 3 + hint.Width + W(cluster.ToList()) + MinStatusGap <= HeaderWidth();
 
-            var droppables = new[] { encodingCell, paletteCell }.OfType<string>().Where(right.Contains).ToList();
-            foreach (var hint in ModeHintMarkup(mode))
+            var droppables = new[] { encodingCell, paletteCell }.OfType<StatusSegment>().Where(right.Contains).ToList();
+            foreach (var hint in ModeHintSegments(mode))
             {
                 var given = 0;
                 while (!Fits(hint, right.Except(droppables.Take(given))) && given < droppables.Count)
@@ -14806,46 +14817,42 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 right.RemoveAll(c => droppables.Take(given).Contains(c));
 
                 // Leftmost of the cluster but for the scrollback segment, which states the mode the hint answers.
-                right.Insert(right.Count > 0 && ScrollbackStatus().Length > 0 ? 1 : 0, hint);
+                right.Insert(right.Count > 0 && scrollback is not null ? 1 : 0, hint);
                 break;
             }
-
-            rightBar = string.Join("   ", right);
         }
 
         // Where the character stands, once the map knows. A reserved width, so a walk does not move the right
         // cluster with every room name; a name too long for it is elided, never wrapped.
         if (StatusRoom() is { } here)
         {
-            var cell = RoomCell(here.Name, here.Area, RoomCellFor(left, rightBar, mode));
-            if (MarkupWidth(left) + 3 + RoomCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+            var cell = Segment(StatusRole.Room, Dim(RoomCellText(here.Name, here.Area, RoomCellFor(W(left), W(right), mode))));
+            if (W(left) + 3 + RoomCellWidth + W(right) + MinStatusGap + MeterSlack <= HeaderWidth())
             {
-                left = $"{left}   {cell}";
+                left.Add(cell);
             }
         }
 
         // What the MOO last put in its status line, once it has put anything there this connection. Reserved
         // and elided like the room, for the same reason, and dropped first when the row is short.
         if (_active?.McpStatus is { } mooStatus
-            && MarkupWidth(left) + 3 + MooStatusCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+            && W(left) + 3 + MooStatusCellWidth + W(right) + MinStatusGap + MeterSlack <= HeaderWidth())
         {
-            left = $"{left}   {MooStatusCell(mooStatus)}";
+            left.Add(Segment(StatusRole.Moo, Dim(MooStatusText(mooStatus))));
         }
 
-        var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
+        var room = HeaderWidth() - W(left) - W(right) - MinStatusGap;
         foreach (var focusHint in mode == StatusMode.None ? FocusHints() : [])
         {
-            if (MarkupWidth(focusHint) + 3 <= room)
+            if (focusHint.Width + 3 <= room)
             {
                 right.Insert(right.Count - 1, focusHint);
-                rightBar = string.Join("   ", right);
                 break;
             }
         }
 
-        // Right-align the cluster to the far edge; identity stays pinned left.
-        var gap = Math.Max(MinStatusGap, HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar));
-        return $"{left}{new string(' ', gap)}{rightBar}";
+        // Right-aligned to the far edge by the model (StatusModel.Row); identity stays pinned left.
+        return StatusRowModel(left, right);
     }
 
     /// <summary>

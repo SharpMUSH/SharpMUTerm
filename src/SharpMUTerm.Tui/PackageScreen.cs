@@ -47,10 +47,33 @@ internal static class PackageScreen
             }
         }
 
-        lines.Add(string.Empty);
-        lines.Add($"[{ScreenPalette.Label}]⏎ install · Esc cancel — nothing is written until you press ⏎[/]");
         return lines;
     }
+
+    /// <summary>
+    /// The rows pinned under the review, outside its scroll (the import review's shape): a rule, then the keys that answer
+    /// it and that nothing is written until ⏎. Pinned because this is a consent screen — at 80×24 the body filled the
+    /// screen down to the command line, and a longer package would have scrolled its way to accept out of sight.
+    /// </summary>
+    internal static List<string> ReviewFooter(int width)
+    {
+        width = Math.Max(30, width);
+        var keys = new List<LadderKey>
+        {
+            new("⏎", "install", Drop: LadderKey.Keep),
+            new("↑↓", "scroll", Drop: 1),
+            new("Esc", "cancel", Drop: LadderKey.Keep),
+        };
+        var ladder = KeyLadder.Fit(keys, width - 1, k => $"[{ScreenPalette.Accent}]{Escape(k)}[/]", Label, "   ");
+        var note = $"[{ScreenPalette.Label}]— nothing is written until you press ⏎[/]";
+        return
+        [
+            $"[{ScreenPalette.Rule}]{new string('─', width - 1)}[/]",
+            VisibleLength(ladder) + 3 + VisibleLength(note) <= width - 1 ? $"{ladder}   {note}" : ladder,
+        ];
+    }
+
+    private static string Label(string text) => $"[{ScreenPalette.Label}]{Escape(text)}[/]";
 
     private static string ReviewRow(PackageReviewRow row, int width)
     {

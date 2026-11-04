@@ -35,34 +35,44 @@ internal static class StatusMeterRenderer
     /// <see cref="ShareWidth"/>-cell field, for a status row too narrow for <c>value/max</c>; a meter with no
     /// usable maximum is drawn as its value either way.
     /// </summary>
-    internal static string Render(IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, bool compact = false)
+    internal static string Render(IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, bool compact = false) =>
+        string.Concat(Runs(meters, data, lowInk, DimMark, compact).Select(r =>
+            r.Ink == DimMark ? $"[dim]{MarkupText.Escape(r.Text)}[/]"
+            : r.Bold ? $"[bold{(r.Ink is null ? string.Empty : " " + r.Ink)}]{MarkupText.Escape(r.Text)}[/]"
+            : MarkupText.Escape(r.Text)));
+
+    /// <summary>The ink <see cref="Render"/> hands <see cref="Runs"/> to stand for the framework's <c>[dim]</c>.</summary>
+    private const string DimMark = "dim";
+
+    /// <summary>
+    /// The meters that have a value, as status-row runs, or none when none does: each label in
+    /// <paramref name="dimInk"/>, the value bold (in <paramref name="lowInk"/> when low), the maximum in
+    /// <paramref name="dimInk"/>, two cells between meters. <see cref="Render"/> is the same runs as markup.
+    /// </summary>
+    internal static List<SharpMUTerm.Client.Chrome.StatusRun> Runs(
+        IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, string dimInk, bool compact = false)
     {
-        var cells = new List<string>();
+        var runs = new List<SharpMUTerm.Client.Chrome.StatusRun>();
         foreach (var reading in Read(meters, data))
         {
-            var label = MarkupText.Escape(reading.Label);
-            if (compact && reading.Share is { } share)
+            if (runs.Count > 0)
             {
-                var percent = Percent(share).PadLeft(ShareWidth);
-                cells.Add(reading.Low
-                    ? $"[dim]{label}[/] [bold {lowInk}]{percent}[/]"
-                    : $"[dim]{label}[/] [bold]{percent}[/]");
-                continue;
+                runs.Add(new("  ", null, false));
             }
 
-            var shown = MarkupText.Escape(StatusMeter.Fit(reading.Value, ValueWidth).PadLeft(ValueWidth));
-            var cell = reading.Low
-                ? $"[dim]{label}[/] [bold {lowInk}]{shown}[/]"
-                : $"[dim]{label}[/] [bold]{shown}[/]";
-            if (reading.HasMax)
+            var value = compact && reading.Share is { } share
+                ? Percent(share).PadLeft(ShareWidth)
+                : StatusMeter.Fit(reading.Value, ValueWidth).PadLeft(ValueWidth);
+            runs.Add(new(reading.Label, dimInk, false));
+            runs.Add(new(" ", null, false));
+            runs.Add(new(value, reading.Low ? lowInk : null, true));
+            if (!(compact && reading.Share is not null) && reading.HasMax)
             {
-                cell += $"[dim]/{MarkupText.Escape(StatusMeter.Fit(reading.Max ?? string.Empty, ValueWidth).PadRight(ValueWidth))}[/]";
+                runs.Add(new($"/{StatusMeter.Fit(reading.Max ?? string.Empty, ValueWidth).PadRight(ValueWidth)}", dimInk, false));
             }
-
-            cells.Add(cell);
         }
 
-        return string.Join("  ", cells);
+        return runs;
     }
 
     /// <summary>

@@ -126,6 +126,7 @@ internal sealed class CommandPalette
         var clear = Math.Clamp(KeepClearBelow?.Invoke() ?? 0, 0, Math.Max(0, desktop.Height - 8));
         var above = desktop.Height - clear;
         var height = Math.Clamp(initial.Rows.Count + 1 + 3, 6, Math.Max(6, clear > 0 ? above - 1 : desktop.Height - 2));
+        _fullHeight = height;
         _contentWidth = Math.Clamp(
             Math.Max(CommandSurfaceRenderer.NaturalWidth(initial), HeaderWidth(initial)) + 1,
             32,
@@ -174,7 +175,41 @@ internal sealed class CommandPalette
         _view = Build(query);
         _selected = _view.Entries.Count == 0 ? -1 : Math.Clamp(_selected, 0, _view.Entries.Count - 1);
         Paint();
+        FitHeight(query);
     }
+
+    /// <summary>The height the palette opened at: the whole catalog's, capped above the command line.</summary>
+    private int _fullHeight;
+
+    /// <summary>The least a filtered palette shrinks to, so a query matching one row or none is still a surface.</summary>
+    internal const int FilteredMinHeight = 10;
+
+    /// <summary>
+    /// Sizes the palette to what it lists: the whole catalog's height while the query is empty, and the matching rows'
+    /// (at least <see cref="FilteredMinHeight"/>, never past the height it opened at, which is held above the command
+    /// line) once something is typed — a filtered list in a full-height frame was a column of blank. The top edge stays
+    /// where it opened, so the prompt being typed into does not move.
+    /// </summary>
+    private void FitHeight(string query)
+    {
+        if (_window is not { } window || _fullHeight <= 0)
+        {
+            return;
+        }
+
+        var height = query.Length == 0
+            ? _fullHeight
+            : Math.Clamp(_view.Rows.Count + 1 + 3, Math.Min(FilteredMinHeight, _fullHeight), _fullHeight);
+        if (height != window.Height)
+        {
+            var at = new System.Drawing.Point(window.Left, window.Top);
+            window.SetSize(window.Width, height);
+            window.SetPosition(at);
+        }
+    }
+
+    /// <summary>The palette window's height now, or 0 while closed; for a test.</summary>
+    internal int WindowHeight => _window?.Height ?? 0;
 
     private void Paint() =>
         _results?.SetContent(Scheme.Lines(CommandSurfaceRenderer.Render(_view, _selected, _context(), _contentWidth), ScreenPalette.MenuBg));

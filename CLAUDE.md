@@ -259,7 +259,9 @@ fallbacks) for inline images/maps.
   - **A consent screen's keys are pinned, not scrolled** (`ListOverlay.Open(footer:, scrollKeys:)`): the body goes in a
     `ScrollablePanelControl` and the footer rows are a sticky-bottom control, so a body taller than 80×24 scrolls under
     them (↑↓ PgUp PgDn Home End, answered before the caller's key handler). The import review uses it (`ImportReview.Footer`:
-    passwords question + keys); `Lines` is body then footer.
+    passwords question + keys); `Lines` is body then footer. So does the package review (`PackageScreen.ReviewFooter`: a rule,
+    then ⏎ install · ↑↓ scroll · Esc cancel laddered, the "nothing is written" note only where it fits); a modal with a
+    footer stops 4 rows short of the desktop, so the command line stays in view at 80×24.
   - **The index** (`PackageIndex`; ⌃P ▸ *Browse packages*, `b` on F10) is `{"packages":[…]}`, each entry a
     manifest plus an https `url` and a `sha256`, at `AppConfiguration.PackageIndexUrl`. **It is fetched only
     when the player opens it, never at start.** An entry that breaks a rule is dropped and counted, not
@@ -329,6 +331,9 @@ fallbacks) for inline images/maps.
     for the pointer menu and the tests that read it. Keys are shown through `KeyGlyphs.Normalize`, so the
     host's `Alt+⏎`/`Ctrl+⏎` read `⌥⏎`/`⌃⏎` in the column while `--help` keeps the words. The key column is
     right-aligned at the widest key; a narrow surface drops the detail, then elides the title, never the key.
+  - **The cell palette is as tall as what it lists** (`CommandPalette.FitHeight`): the whole catalog's height (capped above
+    the command line) while the query is empty, the matching rows' once something is typed, at least `FilteredMinHeight` (10)
+    and never taller than it opened; the top edge stays put, so the prompt does not move.
   - **Clashes come from `MacroKeys`, never a second table** (`KeyClashes`, Tui). `ClaimedBy` (a global
     shortcut: the client wins, `Verdict` already says Taken) and `YieldedBy` (what the main window does with a
     chord only after `DispatchMacro` declined it: the binding wins, a warning). `YieldedBy`'s list mirrors the
@@ -1675,13 +1680,14 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     the same door is ⌃P (`CellsVia: term:messages`). Three notices carry one so far: the layout suggestion
     (*Change layout*), "switched to … · offline" (*Reconnect*) and the orphan trigger-set notice (*Open F5*).
   - **Severity is mapped from `MessageSeverity`**: Info → info, Error → warning (a failure), Warning → refusal
-    (the default voice of `Notice`). Edge colours are the accent, `ScreenPalette.Warn` and the notice ink, held to
-    4.5:1 on the status plane because they also ink the key chip and the action line.
+    (the default voice of `Notice`). The card is `NativeTokens.Card` (rule `Edge`, text `Text`) of the theme the overlay
+    carries (`NoticeOverlay.Theme`); the edge colours — accent, `ScreenPalette.Warn`, the notice ink — are held to
+    `TextFloor` on that card, because they also ink the key chip and the action line (`NoticeToasts.ColoursOf`).
   - The message log (⌃P ▸ *Show client messages*) stays the history; a toast keeps nothing.
   - **A notice said again while it is still on the row is said once** (`Notice` compares text, key, severity and action
     with `_noticeShown`): the timer restarts, nothing is logged, announced or published twice. That was the audit's
     "notices show twice" — the row-plus-toast pair is the design above, the repeat was not.
-  - **The row is elided to its width in both hosts** (`FitStatusRow` in `PaintStatus`), so no notice can wrap it
+  - **The row is elided to its width in both hosts** (`StatusModel.Fit` in `PaintStatus`), so no notice can wrap it
     (`NoticeFitTests`, 80×24 down to 40×12).
   - **Toasts stay off what is being used and are hidden under a modal.** Besides the map's legend, `SyncToasts` avoids the
     native quick bars and docked composers; `DesktopLayer.ToastsHidden` (set by `MainWindow`: settings window, ⌃P, a
@@ -1690,9 +1696,11 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
 - **The window draws the status row and the command line's field too** (`HostChrome.Status`/`Input`, `HostChrome.Desktop`
   = all four, the window's default; `SharpMUTermApp.Footer.cs`; Client `StatusModel`; Avalonia `NativeFooter`, `TerminalView`'s
   field; surface `status`). Decisions not to relitigate:
-  - **The footer says what the cells would**: `BuildStatusModel` parses the very markup `PaintStatus` writes with the
-    framework's `MarkupParser` into runs, split at the widest gap; the palette hint and a showing notice's action hints are
-    marked as targets. `IPointerPresenter.Status`, published from `PaintStatus` and `PostBufferPaint`, only on change.
+  - **The model comes first and the cells are drawn from it**: `StatusBarRow`, `NotConnectedRow`, `NoticeSegment` and the
+    move/drag prompts build a `StatusModel` (left and right `StatusSegment`s with a `StatusRole`, each a list of
+    `StatusRun`s; a null ink is the row's own, so the cells write no tag for it), `PaintStatus` records it (`Drawing`) and
+    writes `StatusRowMarkup(model.Fit(width))`, and the footer draws the same instance. Terminal frames are byte for byte
+    what the markup-first row wrote; there is no markup parser. The palette hint and a notice's action hints carry targets. `IPointerPresenter.Status`, published from `PaintStatus` and `PostBufferPaint`, only on change.
     A click is `ActivateStatusTarget`: refused unless offered, the palette through `OpenMenu`, an action through
     `RunNoticeAction`. With `Status` the row is `Visible = false` and `ChromeRows` counts none. Toasts sit above it.
   - **The command line stays the cell editor; the host draws the field around it.** The bars get `HostFieldPad` (3)
@@ -2336,7 +2344,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`).
 - **The window has one design language: `NativeTokens`** (Avalonia). Planes (card, raised, selected, scrim), edge
   and rule, inks (text, dim, header, accent, warn, notice, accent and key inks), radii `RadiusS/M/L` 4/8/12 and
-  the type ramp `Small/Body/Title/Heading` 11/12/14/18 (`Miniature` 9 only for a theme card's preview). Derived
+  the type ramp `Small/Body/Title/Heading` 11/13/14/18 (`Miniature` 9 only for a theme card's preview). Derived
   from the client's `Theme` the `ScreenTheme` way: a canonical Dark (the mockup's: `#171b24` card) and Light (white) set, the
   theme background's hue shift added, every ink held to `TextFloor` 4.5:1 on each plane it is drawn on; the
   accent is the client's teal, never Fluent's blue. `Apply` sets the Fluent keys on a scope and `ApplySimple`

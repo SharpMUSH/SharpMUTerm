@@ -50,7 +50,7 @@ internal sealed partial record NativeTokens(
     public const double Small = 11;
 
     /// <summary>The type ramp: body text, help, rows.</summary>
-    public const double Body = 12;
+    public const double Body = 13;
 
     /// <summary>The type ramp: a field's label, a list item's name, a search box.</summary>
     public const double Title = 14;

@@ -46,20 +46,31 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>
-    /// The row's candidates for <paramref name="mode"/>, longest first, as markup: each key in the client's notice
-    /// voice and what it does dimmed, so the way out reads at a glance. Every candidate is exactly as wide as the
+    /// The row's candidates for <paramref name="mode"/>, longest first: each key in the client's notice voice and what
+    /// it does in the row's quiet ink, so the way out reads at a glance. Every candidate is exactly as wide as the
     /// plain text <see cref="ModeHints.Candidates"/> gives, which is what the row measures.
     /// </summary>
-    private List<string> ModeHintMarkup(StatusMode mode)
+    private List<StatusSegment> ModeHintSegments(StatusMode mode)
     {
         var keys = HostKeyGlyphs();
         var hints = ModeHints.For(mode)
-            .Select(h => $"[{_ink.Notice}]{MarkupText.Escape(Client.Palette.KeyGlyphs.Normalize(h.Key.Resolve(keys)))}[/] [dim]{MarkupText.Escape(h.Does)}[/]")
+            .Select(h => new[] { Run(Client.Palette.KeyGlyphs.Normalize(h.Key.Resolve(keys)), _ink.Notice), Run(" "), Dim(h.Does) })
             .ToList();
-        var candidates = new List<string>(hints.Count);
+        var candidates = new List<StatusSegment>(hints.Count);
         for (var n = hints.Count; n > 0; n--)
         {
-            candidates.Add(string.Join("[dim] · [/]", hints.Take(n)));
+            var runs = new List<StatusRun>();
+            foreach (var hint in hints.Take(n))
+            {
+                if (runs.Count > 0)
+                {
+                    runs.Add(Dim(" · "));
+                }
+
+                runs.AddRange(hint);
+            }
+
+            candidates.Add(new StatusSegment(StatusRole.ModeHint, runs));
         }
 
         return candidates;

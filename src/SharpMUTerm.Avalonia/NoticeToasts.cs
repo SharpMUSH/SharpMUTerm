@@ -326,17 +326,17 @@ internal sealed class NoticeToasts : Control
     private Placed? Measure(Toast toast, double width, double bottom)
     {
         var x = Bounds.Width - Inset - width;
-        var palette = toast.Overlay.Palette;
-        var ink = PanelText.Parse(palette.Text);
+        var colours = ColoursOf(toast);
+        var ink = colours.Text;
         var inner = width - EdgeWidth - (2 * Padding);
-        var chip = ChipText(toast) is { } key ? Format(key, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var chip = ChipText(toast) is { } key ? Format(key, ChipSize, colours.Edge, bold: true, inner) : null;
         var textWidth = inner - (chip is null ? 0 : chip.Width + 8);
         var text = Format(BodyText(toast), TextSize, ink, bold: false, Math.Max(40, textWidth), lines: 3);
-        var action = ActionText(toast) is { } a ? Format(a, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var action = ActionText(toast) is { } a ? Format(a, ChipSize, colours.Edge, bold: true, inner) : null;
         var second = action is not null && SecondText(toast) is { } b
-            ? Format(b, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, Math.Max(1, inner - action.Width - SecondGap))
+            ? Format(b, ChipSize, colours.Edge, bold: true, Math.Max(1, inner - action.Width - SecondGap))
             : null;
-        var source = SourceText(toast) is { } said ? Format(said.ToUpperInvariant(), ChipSize - 1, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var source = SourceText(toast) is { } said ? Format(said.ToUpperInvariant(), ChipSize - 1, colours.Edge, bold: true, inner) : null;
         var height = (2 * Padding) + text.Height + (action is null ? 0 : action.Height + 6) + (source is null ? 0 : source.Height + 2);
         var top = bottom - height;
         return top < Inset ? null : new Placed(toast, new Rect(x, top, width, height), text, chip, action, source, second);
@@ -421,18 +421,17 @@ internal sealed class NoticeToasts : Control
         foreach (var placed in Layout())
         {
             var (toast, rect, text, chip, action, source, second) = placed;
-            var palette = toast.Overlay.Palette;
-            var plane = PanelText.Parse(palette.Plane);
-            var edge = PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity));
+            var colours = ColoursOf(toast);
+            var (plane, edge) = (colours.Plane, colours.Edge);
             using var _ = context.PushOpacity(FadeOf(toast, now));
 
             // The card on a soft shadow (NativeTokens' small one: it floats over the page, not over a scrim), a rule for
             // its edge, and the severity as a rounded bar down its left side.
-            var lift = toast == hovered ? 0.08 : 0;
+            var lift = toast == hovered ? 0.06 : 0;
             var card = new RoundedRect(rect, NativeTokens.RadiusM);
             context.DrawRectangle(
-                new SolidColorBrush(Mix(plane, PanelText.Parse(palette.Text), lift + 0.03)),
-                new Pen(new SolidColorBrush(Mix(plane, PanelText.Parse(palette.Text), 0.16)), 1),
+                new SolidColorBrush(Mix(plane, colours.Text, lift)),
+                new Pen(new SolidColorBrush(colours.Rule), 1),
                 card,
                 NativeTokens.ShadowSmall);
             context.DrawRectangle(
@@ -468,6 +467,29 @@ internal sealed class NoticeToasts : Control
             }
         }
     }
+
+    /// <summary>
+    /// A toast's colours: the tokens' card plane and its rule and text — the surface every other native card is — with
+    /// the severity's edge (which also inks the key chip, the source caption and the action line, all small text) held to
+    /// <see cref="NativeTokens.TextFloor"/> on that card. The client's palette says which edge; the window's tokens say
+    /// what it is drawn on.
+    /// </summary>
+    private static ToastColours ColoursOf(Toast toast) => ColoursOf(toast.Overlay);
+
+    /// <inheritdoc cref="ColoursOf(Toast)"/>
+    internal static ToastColours ColoursOf(NoticeOverlay overlay)
+    {
+        var said = PanelText.Parse(overlay.Palette.Plane);
+        var tokens = NativeTokens.For(overlay.Theme, (0.299 * said.R) + (0.587 * said.G) + (0.114 * said.B) < 140);
+        var card = new SharpMUTerm.Core.Text.Rgb(tokens.Card.R, tokens.Card.G, tokens.Card.B);
+        var edge = PanelText.Parse(overlay.Palette.Edge(overlay.Notice.Severity));
+        var held = SharpMUTerm.Core.Text.Contrast.Legible(
+            new SharpMUTerm.Core.Text.Rgb(edge.R, edge.G, edge.B), card, NativeTokens.TextFloor);
+        return new ToastColours(tokens.Card, tokens.Edge, tokens.Text, Color.FromRgb(held.R, held.G, held.B));
+    }
+
+    /// <summary>A toast's card, its rule, its text and its severity's edge.</summary>
+    internal readonly record struct ToastColours(Color Plane, Color Rule, Color Text, Color Edge);
 
     private static Color Mix(Color from, Color to, double amount) => Color.FromRgb(
         (byte)(from.R + ((to.R - from.R) * amount)),

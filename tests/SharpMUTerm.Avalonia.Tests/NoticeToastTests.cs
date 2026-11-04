@@ -24,6 +24,34 @@ public class NoticeToastTests
     private static NoticeOverlay Overlay(long sequence, string text, NoticeAction? action, Action<string> run, int aboveRow = 8) =>
         new(new NoticeModel(text, NoticeSeverity.Info, "⌥M", action, DateTimeOffset.UnixEpoch, sequence), aboveRow, Palette, run);
 
+    /// <summary>
+    /// A toast is a native card: the tokens' card plane, not the status row's, with every severity's edge (which inks its
+    /// chip and action line) held to the text floor on that card, in each built-in theme.
+    /// </summary>
+    [Test]
+    public async Task AToastIsDrawnOnTheTokensCardWithItsEdgesHeldToTheFloor()
+    {
+        foreach (var theme in SharpMUTerm.Core.Theming.ThemeLibrary.Names.Select(SharpMUTerm.Core.Theming.ThemeLibrary.Get))
+        {
+            var tokens = NativeTokens.For(theme);
+            foreach (var severity in Enum.GetValues<NoticeSeverity>())
+            {
+                var overlay = new NoticeOverlay(new NoticeModel("x", severity, null, null, DateTimeOffset.UnixEpoch, 1), 8, Palette, _ => { })
+                {
+                    Theme = theme,
+                };
+                var colours = NoticeToasts.ColoursOf(overlay);
+                await Assert.That(colours.Plane).IsEqualTo(tokens.Card).Because(theme.Name);
+                var ratio = SharpMUTerm.Core.Text.Contrast.Ratio(
+                    new SharpMUTerm.Core.Text.Rgb(colours.Edge.R, colours.Edge.G, colours.Edge.B),
+                    new SharpMUTerm.Core.Text.Rgb(colours.Plane.R, colours.Plane.G, colours.Plane.B));
+                await Assert.That(ratio).IsGreaterThanOrEqualTo(NativeTokens.TextFloor - 0.01).Because($"{theme.Name} {severity}");
+            }
+        }
+
+        await Assert.That(NativeTokens.Dark.Card).IsEqualTo(global::Avalonia.Media.Color.FromRgb(0x17, 0x1b, 0x24)).Because("the mockup's card");
+    }
+
     /// <summary>A notice's source is a caption on the toast, not a key chip: a word in a chip reads as a key to press.</summary>
     [Test]
     public async Task ASourceIsACaptionAndAKeyIsAChip()

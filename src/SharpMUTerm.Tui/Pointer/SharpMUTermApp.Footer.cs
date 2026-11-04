@@ -10,9 +10,10 @@ namespace SharpMUTerm.Tui;
 /// The status row and the command line's field, for a host that draws them itself (<see cref="HostChrome.Status"/>,
 /// <see cref="HostChrome.Input"/>; the window).
 /// <para>
-/// <b>The status row</b> is the markup <see cref="PaintStatus"/> writes, parsed by the framework's own parser into runs
-/// (<see cref="StatusModel"/>) — so the footer says exactly what the cells would, notices, mode keys, meters, reconnect,
-/// <c>● REC</c>, <c>♪ muted</c> and the scrollback segment included — and the row's cell is left out of the grid. A click
+/// <b>The status row</b> is a <see cref="StatusModel"/> built first — segments by role, laid out to the row's width — and
+/// <see cref="PaintStatus"/> renders the cells from it (<see cref="StatusRowMarkup(StatusModel)"/>), so the footer says
+/// exactly what the cells would, notices, mode keys, meters, reconnect, <c>● REC</c>, <c>♪ muted</c> and the scrollback
+/// segment included — and the row's cell is left out of the grid. A click
 /// hands back a target the client put on a run: a notice's action (to <see cref="RunNoticeAction"/>, the toast's path)
 /// or the palette hint (to the palette, the header search box's path). Anything else is refused.
 /// </para>
@@ -57,71 +58,74 @@ internal sealed partial class SharpMUTermApp
         return new StatusOverlay(BuildStatusModel(), MainWindowInFront(), _statusActivate);
     }
 
-    /// <summary>
-    /// The row's markup as runs: the framework's parse of exactly what the cells are given, one run per change of ink
-    /// or weight, split into the left and right clusters, with the palette hint and a showing notice's action marked
-    /// clickable.
-    /// </summary>
-    internal StatusModel BuildStatusModel()
-    {
-        var plane = WorkspacePalette.Backdrop(_theme);
-        var fg = ToColor(_theme.StatusForeground);
-        var bg = ToColor(plane);
-        var runs = new List<StatusRun>();
-        var text = new System.Text.StringBuilder();
-        (string Ink, bool Bold)? style = null;
-        foreach (var cell in MarkupParser.Parse(_statusBar.Text, fg, bg))
+    /// <summary>The status row's model, as last painted: the instance the cells were rendered from. Internal for tests.</summary>
+    internal StatusModel BuildStatusModel() => _statusModel ?? StatusRowModel([]);
+
+    /// <summary>The model the status row was last rendered from.</summary>
+    private StatusModel? _statusModel;
+
+    /// <summary>A status row laid out at the row's width now, on the row's plane, in the row's ink.</summary>
+    private StatusModel StatusRowModel(
+        IReadOnlyList<StatusSegment> left,
+        IReadOnlyList<StatusSegment>? right = null,
+        NoticeModel? notice = null) =>
+        new(left, right ?? [], Hex(WorkspacePalette.Backdrop(_theme)), Hex(_theme.StatusForeground))
         {
-            if (cell.IsWideContinuation)
+            Width = HeaderWidth(),
+            Notice = notice,
+        };
+
+    /// <summary>
+    /// The status row's quiet ink: a grey held to 4.5:1 on the backdrop it is painted on, in place of the framework's
+    /// fixed <c>[dim]</c> <c>#808080</c> — 3.4:1 on Light's status plane, and the row is small text a reader looks for
+    /// (UX audit wave 11, #2 and #7).
+    /// </summary>
+    private string StatusDim => Hex(WorkspacePalette.NoticeMuted(_theme, WorkspacePalette.Backdrop(_theme)));
+
+    /// <summary>A run of the status row; a null ink is the row's own.</summary>
+    private static StatusRun Run(string text, string? ink = null, bool bold = false, string? target = null) =>
+        new(text, ink, bold, target);
+
+    /// <summary>A run in the row's quiet ink.</summary>
+    private StatusRun Dim(string text, string? target = null) => new(text, StatusDim, false, target);
+
+    /// <summary>A segment of the status row.</summary>
+    private static StatusSegment Segment(StatusRole role, params StatusRun[] runs) => new(role, runs);
+
+    /// <summary>
+    /// The cell renderer of the status row: each run in its ink, bold where it is, a run in the row's own ink written
+    /// with no colour (so it takes the control's, as unstyled text always did), neighbouring runs of one style merged.
+    /// </summary>
+    internal static string StatusRowMarkup(IReadOnlyList<StatusRun> runs)
+    {
+        var markup = new System.Text.StringBuilder();
+        for (var i = 0; i < runs.Count;)
+        {
+            var (ink, bold) = (runs[i].Ink, runs[i].Bold);
+            var text = new System.Text.StringBuilder();
+            for (; i < runs.Count && runs[i].Ink == ink && runs[i].Bold == bold; i++)
+            {
+                text.Append(runs[i].Text);
+            }
+
+            if (text.Length == 0)
             {
                 continue;
             }
 
-            var next = (ColourHex(cell.Foreground), cell.Decorations.HasFlag(TextDecoration.Bold));
-            if (style is { } current && current != next)
-            {
-                runs.Add(new StatusRun(text.ToString(), current.Ink, current.Bold));
-                text.Clear();
-            }
-
-            style = next;
-            text.Append(cell.Character.ToString());
+            var escaped = MarkupText.Escape(text.ToString());
+            var tag = (bold ? "bold " : string.Empty) + (ink ?? string.Empty);
+            markup.Append(tag.Length == 0 ? escaped : $"[{tag.TrimEnd()}]{escaped}[/]");
         }
 
-        if (style is { } last && text.Length > 0)
-        {
-            runs.Add(new StatusRun(text.ToString(), last.Ink, last.Bold));
-        }
-
-        IReadOnlyList<StatusRun> marked = runs;
-        if (_noticeShown?.Action is { } action && _notice is not null)
-        {
-            foreach (var hint in NoticeActionHints(action))
-            {
-                marked = StatusModel.Mark(marked, hint, action.Command);
-            }
-        }
-
-        marked = StatusModel.Mark(marked, PaletteHintText, HeaderModel.PaletteTarget);
-        return StatusModel.From(marked, Hex(plane));
+        return markup.ToString();
     }
 
-    /// <summary>
-    /// The model as cell markup: each run in its ink, bold where it was, the clusters a gap apart. The row the cells
-    /// paint is the markup this model was parsed from; this is the way back, and <c>StatusFooterTests</c> holds the two
-    /// to the same visible text.
-    /// </summary>
-    internal static string StatusRowMarkup(StatusModel model)
-    {
-        static string Run(StatusRun run) =>
-            $"[{(run.Bold ? "bold " : string.Empty)}{run.Ink}]{MarkupText.Escape(run.Text)}[/]";
+    /// <summary>The status row's way to the palette, as the row writes it; the run a click opens ⌃P from.</summary>
+    private const string PaletteHintText = "⌃P palette";
 
-        var left = string.Concat(model.Left.Select(Run));
-        return model.Right.Count == 0 ? left : left + "   " + string.Concat(model.Right.Select(Run));
-    }
-
-    /// <summary>The status row's way to the palette, as the row writes it.</summary>
-    private static string PaletteHintText => $"{KeyGlyphs.Normalize("⌃P")} palette";
+    /// <summary>The model as cell markup, laid out at its width: what the cells paint. Internal for tests.</summary>
+    internal static string StatusRowMarkup(StatusModel model) => StatusRowMarkup(model.Row());
 
     /// <summary>
     /// A click on the host's status footer, by the target the client put on a run. Internal so a test can drive it the
@@ -203,7 +207,6 @@ internal sealed partial class SharpMUTermApp
         return new InputBand(top, rows, InputLayout.HostFieldPad, prompts, $"⏎ sends · {KeyGlyphs.Normalize(Host.Keys.Newline.Glyph)} new line");
     }
 
-    private static string ColourHex(Color colour) => $"#{colour.R:x2}{colour.G:x2}{colour.B:x2}";
 }
 
 /// <summary>The status row, for a host that draws it (<see cref="HostChrome.Status"/>).</summary>

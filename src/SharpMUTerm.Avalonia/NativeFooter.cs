@@ -117,7 +117,7 @@ internal sealed class NativeFooter : Control
             _hits.Add((area, target));
             if (_hover == target && Overlay is { Interactive: true })
             {
-                var colour = NativeChromeView.Parse(run.Ink);
+                var colour = InkOf(run);
                 context.FillRectangle(new SolidColorBrush(colour), new Rect(x, top + formatted.Baseline + 2, width, 1));
             }
         }
@@ -126,18 +126,21 @@ internal sealed class NativeFooter : Control
     }
 
     /// <summary>A run as text in the UI face: keys in words, padding runs of spaces shortened to a gap.</summary>
-    private static FormattedText Format(StatusRun run, Color plane) => new(
+    private FormattedText Format(StatusRun run, Color plane) => new(
         Gaps.Replace(NativeKeys.Words(run.Text), "   "),
         CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight,
         new Typeface(NativeTokens.UiFont, FontStyle.Normal, run.Bold ? FontWeight.SemiBold : FontWeight.Normal),
         NativeTokens.Body,
-        new SolidColorBrush(NativeChromeView.Parse(run.Ink)))
+        new SolidColorBrush(InkOf(run)))
     {
         MaxLineCount = 1,
     };
 
     private static readonly Regex Gaps = new(" {3,}", RegexOptions.CultureInvariant);
+
+    /// <summary>A run's ink: its own, else the row's (a run the cells write with no colour).</summary>
+    private Color InkOf(StatusRun run) => NativeChromeView.Parse(run.Ink ?? Overlay?.Model.Ink);
 
     private static string HexOf(SkiaSharp.SKColor colour) => $"#{colour.Red:x2}{colour.Green:x2}{colour.Blue:x2}";
 

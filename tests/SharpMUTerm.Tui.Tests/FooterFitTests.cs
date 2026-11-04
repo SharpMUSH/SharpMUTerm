@@ -136,6 +136,48 @@ public class FooterFitTests
         await Assert.That(app.ImportReviewLines.Count).IsGreaterThan(0).Because("the review is still open: End scrolled, it did not answer");
     }
 
+    [Test]
+    public async Task ThePackageReviewScrollsItsBodyUnderAPinnedFooterClearOfTheCommandLine()
+    {
+        var app = App();
+        var rows = FrameGrid.Decode(app.RenderSnapshot("package-review"), Width, Height);
+        var keys = rows.ToList().FindIndex(r => r.Contains("⏎ install", StringComparison.Ordinal) && r.Contains("Esc cancel", StringComparison.Ordinal));
+        var line = rows.ToList().FindIndex(r => r.Contains("say hello there", StringComparison.Ordinal));
+        await Assert.That(keys).IsGreaterThan(0).Because(string.Join('\n', rows));
+        await Assert.That(line).IsGreaterThan(keys + 1).Because("the review's bottom edge is above the command line, which stays in view");
+        await Assert.That(rows[keys - 1].Contains('─')).IsTrue().Because("a rule marks the pinned rows as the review's foot");
+
+        app.PackageView.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false));
+        var scrolled = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+        await Assert.That(scrolled.Any(r => r.Contains("characters", StringComparison.Ordinal) && r.Contains("Corvid", StringComparison.Ordinal))).IsTrue()
+            .Because("End scrolls to the last row:\n" + string.Join('\n', scrolled));
+        await Assert.That(scrolled[keys]).Contains("⏎ install").Because("the keys stay where they were");
+        await Assert.That(app.PackageView.IsOpen).IsTrue().Because("End scrolled, it did not answer");
+    }
+
+    [Test]
+    public async Task TheCellPaletteShrinksToItsRowsWhenFilteredAndNeverPastTheCommandLine()
+    {
+        var app = App();
+        app.RenderSnapshot("menu");
+        var full = app.Palette.WindowHeight;
+        var fullRows = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+        await Assert.That(full).IsGreaterThan(CommandPalette.FilteredMinHeight);
+
+        app.SimulateCellPaletteQuery("freeze");
+        var filtered = app.Palette.WindowHeight;
+        var rows = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+        await Assert.That(filtered).IsLessThan(full).Because("a few matches: not the whole catalog's height:\n" + string.Join('\n', rows));
+        await Assert.That(filtered).IsGreaterThanOrEqualTo(CommandPalette.FilteredMinHeight).Because("never below the floor");
+        await Assert.That(rows.Any(r => r.Contains("Freeze", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(rows.ToList().FindIndex(r => r.Contains("›freeze", StringComparison.Ordinal)))
+            .IsEqualTo(fullRows.ToList().FindIndex(r => r.Contains('›', StringComparison.Ordinal))).Because("the prompt does not move");
+        await Assert.That(rows.Any(r => r.Contains("say hello there", StringComparison.Ordinal))).IsTrue().Because("the command line stays clear");
+
+        app.SimulateCellPaletteQuery(string.Empty);
+        await Assert.That(app.Palette.WindowHeight).IsEqualTo(full).Because("an emptied query lists the whole catalog again");
+    }
+
     private static SharpMUTermApp App()
     {
         Console.SetIn(TextReader.Null);

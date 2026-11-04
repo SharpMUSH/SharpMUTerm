@@ -236,7 +236,9 @@ internal sealed partial class SharpMUTermApp
 
                 AcceptPackage(model);
                 return false;
-            });
+            },
+            footer: PackageScreen.ReviewFooter,
+            scrollKeys: true);
     }
 
     /// <summary>

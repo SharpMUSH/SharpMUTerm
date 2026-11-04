@@ -42,9 +42,14 @@ public class NativeFooterTests
     public async Task TheFooterDrawsWhatTheClientSaidAndHandsBackOnlyItsTargets()
     {
         var activated = new List<string>();
-        var model = StatusModel.From(
-            StatusModel.Mark([new("Corvid · connected", "#cccccc", false), new("      ", "#cccccc", false), new("⌃P palette", "#cccccc", false)], "⌃P palette", HeaderModel.PaletteTarget),
-            "#101014");
+        var model = new StatusModel(
+            [new StatusSegment(StatusRole.Identity, [new("Corvid · connected", null, false)])],
+            [new StatusSegment(StatusRole.Palette, [new("⌃P palette", "#cccccc", false, HeaderModel.PaletteTarget)])],
+            "#101014",
+            "#cccccc")
+        {
+            Width = 80,
+        };
 
         var (visible, top, height, hits, text, clicked) = await Run((window, layer, driver) =>
         {

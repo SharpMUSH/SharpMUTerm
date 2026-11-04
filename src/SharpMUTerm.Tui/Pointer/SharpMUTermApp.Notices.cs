@@ -45,29 +45,45 @@ internal sealed partial class SharpMUTermApp
     /// failure in the raw red was 1.39:1 on Light, and the framework's fixed <c>[dim]</c> grey 2.4:1. The cell
     /// renderer of the notice surface.
     /// </summary>
-    internal string NoticeMarkup(NoticeModel notice)
+    internal string NoticeMarkup(NoticeModel notice) => StatusRowMarkup(NoticeSegment(notice).Runs);
+
+    /// <summary>
+    /// The notice as the status row's segment: the key chip (or the source's label) in the notice ink, then the text —
+    /// in the warning red when something failed, otherwise a muted grey — then the way to its action, a click's target.
+    /// </summary>
+    private StatusSegment NoticeSegment(NoticeModel notice)
     {
         ArgumentNullException.ThrowIfNull(notice);
         var plane = WorkspacePalette.Backdrop(_theme);
         var ink = notice.Severity == NoticeSeverity.Warning
             ? HeldOn(ScreenPalette.Warn, plane)
             : Hex(WorkspacePalette.NoticeMuted(_theme, plane));
-        var body = $"[{ink}]{Escape(notice.Text)}[/]";
         var label = HeldOn(_ink.Notice, plane);
-        // A source is a label (Sound:), a key a chord chip (⌃P): two shapes, so a word is never read as a key to press.
-        var row = notice.Source is { } source ? $"[{label}]{Escape(source)}:[/] {body}"
-            : notice.Key is null ? body : $"[{label}]{Escape(notice.Key)}[/] {body}";
+        var runs = new List<StatusRun>();
 
-        // The toast offers the action as a button; the row names the way to it, where it fits whole — never by cutting
-        // the notice's own words, and never wrapping the row (FitStatusRow).
-        // A notice whose own words already name the way (`offline — ⌥R (⌃P ▸ Reconnect) connects it`) gets no second
-        // copy: the row read `… connects it · ⌥R Reconnect`.
-        if (NoticeActionHints(notice.Action).FirstOrDefault(h => !NamesWay(notice.Text, h) && MarkupWidth(row) + 3 + h.Length <= HeaderWidth()) is { } hint)
+        // A source is a label (Sound:), a key a chord chip (⌃P): two shapes, so a word is never read as a key to press.
+        if (notice.Source is { } source)
         {
-            row += $"[{label}] · {Escape(hint)}[/]";
+            runs.AddRange([Run($"{source}:", label), Run(" ")]);
+        }
+        else if (notice.Key is { } key)
+        {
+            runs.AddRange([Run(key, label), Run(" ")]);
         }
 
-        return row;
+        runs.Add(Run(notice.Text, ink));
+
+        // The toast offers the action as a button; the row names the way to it, where it fits whole — never by cutting
+        // the notice's own words, and never wrapping the row (StatusModel.Fit).
+        // A notice whose own words already name the way (`offline — ⌥R (⌃P ▸ Reconnect) connects it`) gets no second
+        // copy: the row read `… connects it · ⌥R Reconnect`.
+        var width = StatusModel.WidthOf(string.Concat(runs.Select(r => r.Text)));
+        if (NoticeActionHints(notice.Action).FirstOrDefault(h => !NamesWay(notice.Text, h) && width + 3 + h.Length <= HeaderWidth()) is { } hint)
+        {
+            runs.AddRange([Run(" · ", label), Run(hint, label, target: notice.Action!.Command)]);
+        }
+
+        return new StatusSegment(StatusRole.Notice, runs);
     }
 
     /// <summary>
@@ -136,7 +152,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         _noticeRun ??= id => OnUiThread(() => RunNoticeAction(id));
-        _pointer.Notice(new NoticeOverlay(notice, NoticeAboveRow(), NoticePalette(), _noticeRun));
+        _pointer.Notice(new NoticeOverlay(notice, NoticeAboveRow(), NoticePalette(), _noticeRun) { Theme = _theme });
     }
 
     /// <summary>
@@ -221,7 +237,14 @@ internal sealed partial class SharpMUTermApp
 /// Runs the notice's action by its command id, through the registry; a command no notice offered is refused. Safe to
 /// call from any thread. The same instance for the life of the client.
 /// </param>
-internal sealed record NoticeOverlay(NoticeModel Notice, int AboveRow, NoticePalette Palette, Action<string> Run);
+internal sealed record NoticeOverlay(NoticeModel Notice, int AboveRow, NoticePalette Palette, Action<string> Run)
+{
+    /// <summary>
+    /// The client's theme, which the window derives its card plane from (<c>NativeTokens</c>): a toast is a native card
+    /// like the palette's, not a piece of the status row. Null when not said; the host then picks by the palette's plane.
+    /// </summary>
+    public Core.Theming.Theme? Theme { get; init; }
+}
 
 /// <summary>A toast's colours as <c>#rrggbb</c>: its plane, its text, and its edge per severity.</summary>
 internal sealed record NoticePalette(string Plane, string Text, string Info, string Warning, string Refusal)

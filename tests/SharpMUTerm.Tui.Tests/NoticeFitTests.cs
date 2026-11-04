@@ -1,4 +1,5 @@
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Graphics;
@@ -44,9 +45,13 @@ public class NoticeFitTests
     [Test]
     public async Task FitStatusRowLeavesARowThatFitsAlone()
     {
-        await Assert.That(SharpMUTermApp.FitStatusRow("[dim]short[/]", 80)).IsEqualTo("[dim]short[/]");
-        await Assert.That(SharpMUTermApp.MarkupWidth(SharpMUTermApp.FitStatusRow("[dim]" + new string('x', 100) + "[/]", 80)))
-            .IsLessThanOrEqualTo(80);
+        static StatusModel Row(string text) =>
+            new([new StatusSegment(StatusRole.Text, [new(text, "#808080", false)])], [], "#000000", "#ffffff") { Width = 80 };
+
+        await Assert.That(SharpMUTermApp.StatusRowMarkup(Row("short").Fit(80))).IsEqualTo("[#808080]short[/]");
+        var cut = SharpMUTermApp.StatusRowMarkup(Row(new string('x', 100)).Fit(80));
+        await Assert.That(SharpMUTermApp.MarkupWidth(cut)).IsEqualTo(80);
+        await Assert.That(cut).EndsWith("x…[/]").Because("the mark takes the ink of the run it cut into");
     }
 
     [Test]
