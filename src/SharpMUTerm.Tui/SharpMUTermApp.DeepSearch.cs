@@ -210,7 +210,7 @@ internal sealed partial class SharpMUTermApp
 
         // Which lines each pane still holds, by reference, taken here on the UI thread: the worker never touches a pane.
         var held = sources.Select(s => _lines.TryGetValue(s.WindowId, out var buffer)
-            ? buffer.Select(l => l.Source).OfType<StyledLine>().ToHashSet(ReferenceEqualityComparer.Instance)
+            ? new HashSet<object>(buffer.Select(l => l.Source).OfType<StyledLine>(), ReferenceEqualityComparer.Instance)
             : new HashSet<object>(ReferenceEqualityComparer.Instance)).ToArray();
         var deep = new DeepSearch(key, sources, sources.Sum(s => s.Buffer.AvailableLines));
         _deep = deep;
