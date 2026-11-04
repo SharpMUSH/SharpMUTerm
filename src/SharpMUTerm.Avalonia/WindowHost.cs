@@ -81,5 +81,7 @@ internal static class WindowHost
 
         // The quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals over the window, the prompt always in front.
         NativeModals = driver.Modals,
+        // The title bar and the taskbar entry say who is in front: Character@World — SharpMUTerm.
+        Title = driver.TitleBar,
     };
 }

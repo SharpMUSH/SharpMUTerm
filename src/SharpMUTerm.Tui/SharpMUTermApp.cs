@@ -1068,11 +1068,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Here and not in the constructor: this is the one method that means "there is a live terminal
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
+        StartTitle();
         var exitCode = _system.Run();
 
         // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
         // output translucent wherever it happens to use one of them.
         ResetTransparentColours();
+
+        // The terminal's own title goes back to the shell's, as the colours do.
+        Host.Title?.Restore();
         return exitCode;
     }
 
@@ -13582,7 +13586,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The design header row: the brand affordance on the left, the active world (with its accent)
     /// in the middle, and connection/graphics/palette hints on the right.
     /// </summary>
-    private string HeaderMarkup() => HeaderMarkup(BuildHeaderModel());
+    private string HeaderMarkup()
+    {
+        var model = BuildHeaderModel();
+        PublishTitle(model);
+        return HeaderMarkup(model);
+    }
 
     /// <summary>
     /// The header as a view-model (<see cref="HeaderModel"/>): what the band says, with no presentation. The cell

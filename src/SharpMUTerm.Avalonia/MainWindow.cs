@@ -39,7 +39,10 @@ internal sealed class MainWindow : Window
         _driver = new AvaloniaConsoleDriver(options.Columns, options.Rows);
         _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily);
 
-        Title = "SharpMUTerm";
+        Title = SharpMUTerm.Client.Chrome.WindowTitle.Product;
+
+        // Character@World — SharpMUTerm for what is in front, from the client's own header (WindowTitle).
+        _driver.TitleBar.Changed += title => Dispatcher.UIThread.Post(() => Title = title);
         _driver.Settings.Owner = this;
 
         // The window's own pop-ups (tooltips, the right-click menu) follow the client's theme: a light menu

@@ -85,6 +85,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// </summary>
     public ModalPresenter Modals { get; } = new();
 
+    /// <summary>The window's title for what is in front, which the main window shows (<see cref="WindowTitleBar"/>).</summary>
+    public WindowTitleBar TitleBar { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────
@@ -170,4 +173,28 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     }
 
     public void Dispose() => Pictures.Dispose();
+}
+
+/// <summary>
+/// The window's half of <see cref="IWindowTitle"/>: the client hands it <c>Character@World — SharpMUTerm</c> on its own
+/// thread, and the main window, which subscribes, puts it on the title bar and the taskbar entry on Avalonia's.
+/// </summary>
+internal sealed class WindowTitleBar : IWindowTitle
+{
+    /// <summary>The last title, or null before the client has said one.</summary>
+    public string? Current { get; private set; }
+
+    /// <summary>Raised on the client's thread with each new title.</summary>
+    public event Action<string>? Changed;
+
+    public void Show(string title)
+    {
+        Current = title;
+        Changed?.Invoke(title);
+    }
+
+    /// <summary>A window's title goes with the window; there is nothing to give back.</summary>
+    public void Restore()
+    {
+    }
 }

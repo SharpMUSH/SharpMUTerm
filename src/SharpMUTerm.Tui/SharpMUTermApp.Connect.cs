@@ -1,5 +1,6 @@
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
+using SharpMUTerm.Core.Links;
 using SharpMUTerm.Core.Session;
 using static SharpMUTerm.Tui.MarkupText;
 
@@ -10,11 +11,15 @@ namespace SharpMUTerm.Tui;
 /// is read as a host (and port), saved as a new world and dialled. It exists because <c>--plain</c> has no
 /// settings screens a screen reader can use, so a first run there had no way to add a world at all, and it is
 /// the quickest way in everywhere else too.
+/// <para>
+/// A <c>telnet://</c> link (<see cref="OpenLink"/>) ends in the same place, through the same reader, so a link can do
+/// nothing <c>/connect</c> cannot.
+/// </para>
 /// </summary>
 internal sealed partial class SharpMUTermApp
 {
     /// <summary>The port a host given without one is dialled on, the same default as the command line's.</summary>
-    internal const int DefaultConnectPort = 4000;
+    internal const int DefaultConnectPort = ConnectEndpoint.DefaultPort;
 
     /// <summary>What <c>/connect</c> with nothing after it says.</summary>
     internal const string ConnectUsage = "/connect <world>, or /connect <host> [port] [tls] to add one";
@@ -43,35 +48,87 @@ internal sealed partial class SharpMUTermApp
 
         var world = _config.Worlds.FirstOrDefault(
             known => string.Equals(known.Name, string.Join(' ', words), StringComparison.OrdinalIgnoreCase));
-        if (world is null)
+        if (world is not null)
         {
-            if (ParseEndpoint(words) is not { } endpoint)
-            {
-                RefuseCommand($"no world called {Snippet(string.Join(' ', words))}, and that is not a host — {ConnectUsage}");
-                return;
-            }
-
-            world = new WorldDefinition
-            {
-                Name = UniqueWorldName(endpoint.Host),
-                Host = endpoint.Host,
-                Port = endpoint.Port,
-                UseTls = tls,
-            };
-
-            // A configuration's first world takes the layout the welcome was left at, whether it came from
-            // the welcome's form or from a /connect typed under it.
-            if (_config.Worlds.Count == 0)
-            {
-                ApplyWelcomeLayout(world);
-            }
-
-            shape?.Invoke(world);
-            _config.Worlds.Add(world);
-            SaveConfiguration();
-            Notice($"added {world.Name} ({world.Host}:{world.Port}) — F5 edits it", MessageSeverity.Info, "F5");
+            DialWorld(world);
+            return;
         }
 
+        if (ParseEndpoint(words) is not { } endpoint)
+        {
+            RefuseCommand($"no world called {Snippet(string.Join(' ', words))}, and that is not a host — {ConnectUsage}");
+            return;
+        }
+
+        ConnectToEndpoint(endpoint.Host, endpoint.Port, tls, shape);
+    }
+
+    /// <summary>
+    /// Follows a <c>telnet://</c> or <c>telnets://</c> link: the link from the command line a desktop launched the
+    /// client with, or one a second launch handed to this one. The link is server text, read by
+    /// <see cref="TelnetLink"/>; all it can do is what <c>/connect host port</c> does. A world already configured for
+    /// the same host, port and TLS is dialled rather than added again — matched on the endpoint and never on a name,
+    /// so a link cannot reach a world by naming it. Nothing is sent: a world a link adds has no character, and an
+    /// existing world logs in only as its own configuration says.
+    /// </summary>
+    internal void OpenLink(string text)
+    {
+        if (TelnetLink.TryParse(text, out var refusal) is not { } link)
+        {
+            RefuseCommand($"not following that link: {refusal}");
+            return;
+        }
+
+        OpenLink(link);
+    }
+
+    /// <inheritdoc cref="OpenLink(string)"/>
+    internal void OpenLink(TelnetLink link)
+    {
+        var world = _config.Worlds.FirstOrDefault(known =>
+            string.Equals(known.Host, link.Host, StringComparison.OrdinalIgnoreCase)
+            && known.Port == link.Port
+            && known.UseTls == link.Tls);
+        if (world is not null)
+        {
+            DialWorld(world);
+            return;
+        }
+
+        ConnectToEndpoint(link.Host, link.Port, link.Tls);
+    }
+
+    /// <summary>
+    /// Adds a world for <paramref name="host"/> and dials it: what <c>/connect host port</c> does once the words are
+    /// read, and all a <c>telnet://</c> link can do.
+    /// </summary>
+    private void ConnectToEndpoint(string host, int port, bool tls, Action<WorldDefinition>? shape = null)
+    {
+        var world = new WorldDefinition
+        {
+            Name = UniqueWorldName(host),
+            Host = host,
+            Port = port,
+            UseTls = tls,
+        };
+
+        // A configuration's first world takes the layout the welcome was left at, whether it came from
+        // the welcome's form or from a /connect typed under it.
+        if (_config.Worlds.Count == 0)
+        {
+            ApplyWelcomeLayout(world);
+        }
+
+        shape?.Invoke(world);
+        _config.Worlds.Add(world);
+        SaveConfiguration();
+        Notice($"added {world.Name} ({world.Host}:{world.Port}) — F5 edits it", MessageSeverity.Info, "F5");
+        DialWorld(world);
+    }
+
+    /// <summary>Opens <paramref name="world"/>'s first character (or the world alone), brings it forward and dials it.</summary>
+    private void DialWorld(WorldDefinition world)
+    {
         var character = world.Characters.FirstOrDefault();
         var key = character is null ? world.Name : $"{world.Name}.{character.Name}";
         var session = _sessions.Find(key);
@@ -96,52 +153,10 @@ internal sealed partial class SharpMUTermApp
         || word.Equals("--tls", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Reads <c>host port</c>, <c>host:port</c> or a bare host. A bracketed IPv6 address keeps its colons. Null
-    /// when the words are not one host with at most one port, so a mistyped world name is refused rather than
-    /// saved as a world that dials a host called "my world".
+    /// Reads <c>host port</c>, <c>host:port</c> or a bare host (<see cref="ConnectEndpoint"/>, the one reader
+    /// <c>/connect</c>, the welcome and a <c>telnet://</c> link share).
     /// </summary>
-    internal static (string Host, int Port)? ParseEndpoint(IReadOnlyList<string> words)
-    {
-        if (words.Count is 0 or > 2)
-        {
-            return null;
-        }
-
-        var host = words[0];
-        var port = DefaultConnectPort;
-        if (words.Count == 2)
-        {
-            if (!TryPort(words[1], out port))
-            {
-                return null;
-            }
-        }
-        else if (host.StartsWith('[') && host.IndexOf("]:", StringComparison.Ordinal) is var close and > 0)
-        {
-            if (!TryPort(host[(close + 2)..], out port))
-            {
-                return null;
-            }
-
-            host = host[..(close + 1)];
-        }
-        else if (host.Count(c => c == ':') == 1)
-        {
-            var colon = host.IndexOf(':');
-            if (!TryPort(host[(colon + 1)..], out port))
-            {
-                return null;
-            }
-
-            host = host[..colon];
-        }
-
-        host = host.Trim('[', ']');
-        return Uri.CheckHostName(host) == UriHostNameType.Unknown ? null : (host, port);
-    }
-
-    private static bool TryPort(string text, out int port) =>
-        int.TryParse(text, out port) && port is > 0 and <= 65535;
+    internal static (string Host, int Port)? ParseEndpoint(IReadOnlyList<string> words) => ConnectEndpoint.Parse(words);
 
     /// <summary>A world name not already taken: the host, then the host with a number after it.</summary>
     private string UniqueWorldName(string host)

@@ -1270,7 +1270,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -2676,8 +2676,55 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   framework is handed `TextReader.Null`, and the pump is started from the loop (`RunLive`'s `ready`), because a
   key raised before `Run()` has no listener and is lost. The window (`WindowAnnouncer`) uses two hidden live
   regions: output is polite and notices are assertive, posted to Avalonia's thread. This was built against the
-  API and has not been tried with NVDA or Orca. Not done: no speech engine of our own, and no per-line
-  automation peer on `TerminalView`.
+  API and has not been tried with NVDA or Orca. Not done: no speech engine of our own.
+  - **The window's output view has an automation peer** (`TerminalViewAutomationPeer`): a read-only `Document` named
+    `SharpMUTerm output: <window>`, whose Value pattern holds the front window's newest 50 lines, oldest first. Fed by
+    `IAnnouncer.Reading` (a default-implemented member, so `--plain` ignores it), said on `Activate` and on every line
+    landing in the front window, quiet or not — read from `PaneLine.Plain`, so chrome rows are left out and it is the
+    text ⌃F searches. A change raises the Value property's change. Avalonia 12 has no text pattern (`ITextProvider`),
+    so this is a value, not a caret-navigable text range. Pinned through Avalonia's headless peers
+    (`OutputAutomationTests`); **not tried with NVDA, Narrator, VoiceOver or Orca.**
+- **`telnet://` and `telnets://` links connect, and do nothing else** (`TelnetLink`, `ConnectEndpoint`, Core;
+  `SharpMUTermApp.OpenLink`; `LinkHandoff`, `ClientOptions.NarrowToLink`, Tui). A link is server text. Decisions not to
+  relitigate:
+  - **One reader with `/connect`** (`ConnectEndpoint.Parse`): a link reaches no host `/connect host port` would refuse.
+    Default ports are telnet's 23 and telnets' 992, not `/connect`'s 4000. Refused, not tidied: user information
+    (it would be a login the link chose), any path/query/fragment past a lone `/`, any control character, space,
+    non-ASCII, `%` or `\`, a port not 1–65535 in plain digits, an unbracketed IPv6 address, over 512 characters.
+  - **Matched on the endpoint, never a name.** A world already configured for the same host, port and TLS is dialled;
+    otherwise one is added with **no character**, so nothing logs in. An existing world logs in as its own
+    configuration says — that is the player's world, not the link's choice.
+  - **`--open-link <link>` drops every other argument** before anything reads them. Windows builds the handler's
+    command line by pasting the link into quotes, and a link holding a quote could add `--render-png` and write a file.
+  - **A second launch hands its link to the first** over a Unix domain socket (`$XDG_RUNTIME_DIR/sharpmuterm/links.sock`,
+    else beside `config.json`; `0600`), one line, acknowledged with `ok`, and exits. The receiver re-reads it through
+    `OpenLink(string)`. Nobody listening, or a stale socket: the launch runs its own client and listens. Only the live
+    entry point listens (`RunLive`); the window's `Program` and the terminal's hand off before building anything.
+    Verified between two `--plain` clients and two windows under Xvfb on Linux; Windows' AF_UNIX path is untried.
+  - **Registration is the package's, never the program's** — the `.desktop` file's `MimeType=` and an unchecked Inno
+    Setup task (`HKA\Software\Classes\telnet[s]`). See `docs/PACKAGING.md`.
+- **Passwords go to the OS credential store, with `secrets.json` behind it** (`ICredentialStore`, `CredentialVault`,
+  Core; `CredentialStores` in `Hosting/`). The `passwordRef` GUID is unchanged and is the key in both places.
+  - **One vault per run, from the live entry points only** (`Program.LiveVault`, `ClientLaunch`): a snapshot, a test
+    and the demo window never make one, so no test reads or writes a real keychain — `CredentialVaultTests` uses a fake.
+    `ConfigurationStore.Load/Save` without a vault are `secrets.json` alone, exactly as before.
+  - **The vault remembers what the store holds**, so a save that changed nothing spawns no `secret-tool` (saves happen
+    on every committed edit). A store that does not answer (`CredentialLookup.Unavailable`: no Secret Service over ssh)
+    **keeps the reference through a save** — otherwise the first save of such a run would forget every password.
+  - Migration is at load: a `secrets.json` entry the store accepts is moved and the file rewritten without it; one it
+    refuses stays. A changed password the store refuses goes to the file under a **new** reference, because the store,
+    read first, would otherwise win with the old one.
+  - Windows: `CredWriteW/CredReadW/CredDeleteW`, generic credentials `SharpMUTerm/<guid>` (built, never run). Linux:
+    `secret-tool` with `application=sharpmuterm ref=<guid>`, password on stdin (exercised against gnome-keyring on a
+    private D-Bus). macOS: `security`, the write through `security -i` on stdin so the password is not on a command
+    line (built, never run). Each call is bounded at 30 s so an unanswered unlock prompt does not hold the start.
+- **The title says who is in front** (`WindowTitle`, Client; `SharpMUTermApp.Title.cs`; `ClientHost.Title`).
+  `Character@World — SharpMUTerm`, worked out from the header's own `HeaderModel` whenever the header is built, so the
+  two cannot disagree (a command-line world that is not in the configuration names no world in either). Nothing is
+  written before `Run` (`StartTitle`). The terminal (`TerminalTitle`) pushes the title stack (`CSI 22;2t`), writes
+  OSC 2 through the `?1004` raw write, and pops it after the loop; the window sets `Window.Title`. Control
+  characters are stripped twice (names, then the sequence). Not a surface in `SurfaceCatalog`: nothing draws it in
+  cells and it hands nothing back.
 - **Discord presence is a host member and a per-world opt-in** (`ClientHost.Presence`, a lazy
   `Func<IPresence?>?`; `GamePresence`/`DiscordIpc`, Core; F5 ▸ `discord`, off by default). The world asks for
   `External.Discord 1`. `WorldSession.GamePresence` folds `Info` (application id: digits only) and `Status`
