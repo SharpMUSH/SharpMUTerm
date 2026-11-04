@@ -56,6 +56,18 @@ internal sealed class WindowPointer : IPointerPresenter
 
     public void ShowMenu(System.Drawing.Point cell, IReadOnlyList<PointerMenuItem> items) => MenuRequested?.Invoke(cell, items);
 
+    /// <summary>Raised on the client's thread when a menu the client built as data (the tab overflow list) is asked for.</summary>
+    public event Action<System.Drawing.Point, SharpMUTerm.Client.Commands.MenuModel, Action<string>>? ModelMenuRequested;
+
+    /// <summary>The last menu-as-data the client asked for, with its way back. Internal for tests.</summary>
+    internal (SharpMUTerm.Client.Commands.MenuModel Menu, Action<string> Dispatch)? LastModelMenu { get; private set; }
+
+    public void ShowMenu(System.Drawing.Point cell, SharpMUTerm.Client.Commands.MenuModel menu, Action<string> dispatch)
+    {
+        LastModelMenu = (menu, dispatch);
+        ModelMenuRequested?.Invoke(cell, menu, dispatch);
+    }
+
     public bool DrawsMenus => true;
 
     private int _windowColumns;

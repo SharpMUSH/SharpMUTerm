@@ -86,6 +86,10 @@ internal sealed class MainWindow : Window
         // this window forward. ⌃Q from any other modal goes to the client, which opens the prompt over it.
         _driver.Modals.Attach(this, root, () => layer.FocusArmedComposer(), key => _driver.RaiseKey(key));
 
+        // No toast while settings, ⌃P or a modal is in front of the cells (F1 keeps them: it sits under the layer).
+        layer.ToastsHidden = () => _driver.Settings.Window is not null || _driver.Palette.Overlay is not null
+            || _driver.Modals.Modal is not null || _driver.Modals.Quit is not null;
+
         // Panels popped out into windows of their own, owned by this one so they stay above it and go with it.
         _driver.Floating.Attach(this, _view);
         Closed += (_, _) => _driver.Floating.Detach();

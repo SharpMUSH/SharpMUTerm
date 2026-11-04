@@ -1011,6 +1011,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncTabStripWidths();
             SyncTransparentColours();
             PaintHeaderDividers(buffer);
+            PaintTabOverflow(buffer);
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             PublishPanels();
@@ -1219,15 +1220,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // live writer by ComposeWindowTests, which asserts that a real session's composer header reads
         // what SessionTitle produces. The body is prose with a '%' and brackets in it on purpose — it is
         // the text whose two renderings differ.
+        //
+        // compose-preview is the literal post with ⌥P's as-sent band under it, which shows the escapes and %r joins the
+        // header's length cell is counting.
         if (string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase))
+            string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(view, "compose-preview", StringComparison.OrdinalIgnoreCase))
         {
+            _composer.Preview = string.Equals(view, "compose-preview", StringComparison.OrdinalIgnoreCase);
             OpenComposer(
                 DemoScene.MainCharacterName,
                 "+bbpost 12=The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
                 + "short two horses. [Nobody] said what everyone was thinking.\n\n"
                 + "  -- Corvid, scribe",
-                string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase)
+                !string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase)
                     ? ComposeEscaping.Literal
                     : ComposeEscaping.AsTyped,
                 canSend: true);
@@ -8581,6 +8587,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return true;
         }
 
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.JoinWrapsPrefix, StringComparison.Ordinal))
+        {
+            return JoinWrapsFor(id[SharpMUTerm.Client.Commands.BuiltInCommands.JoinWrapsPrefix.Length..]);
+        }
+
         // Before the panels' own prefix, which they share: panel:popout:<window> and panel:dock:<window>.
         if (id.StartsWith(SharpMUTerm.Client.Panels.PanelFloatCommands.PopOutPrefix, StringComparison.Ordinal))
         {
@@ -13268,6 +13279,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             OfferWindowSize(session, (Math.Max(1, rect.Width), Math.Max(1, rect.Height)), now);
+            SuggestJoinWraps(session, rect.Width);
         }
 
         ArmSizeFlush(now);
@@ -13448,9 +13460,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PaintStatus(string markup)
     {
-        _statusBar.SetContent(new List<string> { markup });
+        _statusBar.SetContent(new List<string> { FitStatusRow(markup, HeaderWidth()) });
         SyncInputHeights(_second.Visible);
     }
+
+    /// <summary>
+    /// The status row's markup cut to <paramref name="width"/> cells, ending in <c>…</c>. The row is one row in every
+    /// host: a notice is a sentence, and a window narrower than it wrapped the row onto a second line and took that row
+    /// off the command line (the D1 lesson, live in the window). Everything the resting row lays out already fits; this is
+    /// the floor under the notices and anything else that does not measure itself. Internal for tests.
+    /// </summary>
+    internal static string FitStatusRow(string markup, int width) =>
+        width > 0 && MarkupWidth(markup) > width ? ElideVisible(markup, width) : markup;
 
     /// <summary>
     /// Sets what the status row says <em>at rest</em>: the connection identity, a mode prompt, the
@@ -13497,6 +13518,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>The transient message currently laid over the resting row, or null when there is none.</summary>
     private string? _notice;
+    private NoticeModel? _noticeShown;
     private ITimer? _noticeTimer;
 
     /// <summary>
@@ -13533,6 +13555,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </param>
     private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null)
     {
+        // The same notice raised again while it is still up is one notice: it keeps the row for another few seconds and
+        // is not said, toasted or announced a second time. Two identical toasts stacked in the window were the report.
+        if (_notice is not null && _noticeShown is { } shown && shown.Text == text && shown.Key == key
+            && shown.Severity == NoticeSeverityOf(severity) && shown.Action == action)
+        {
+            _noticeTimer?.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
+            return;
+        }
+
         // Through the logger, not straight into the buffer: the client's own messages and the telnet
         // stack's diagnostics then share one ordered history (and one rolling file), which is the point
         // of there being a pipeline at all.
@@ -13554,6 +13585,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var markup = NoticeMarkup(model);
 
         _notice = markup;
+        _noticeShown = model;
         PaintStatus(markup);
         PublishNotice(model);
         _noticeTimer ??= _time.CreateTimer(

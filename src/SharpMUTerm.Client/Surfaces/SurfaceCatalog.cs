@@ -181,6 +181,12 @@ public static class SurfaceCatalog
     public const string Welcome = "welcome";
 
     /// <summary>
+    /// The <c>+3 ▾</c> chip a tab strip carries when its tabs do not fit even at their floors, and the list of the tabs
+    /// past its edges it opens: a cell list in a terminal, a native menu in the window (the chip itself is cells in both).
+    /// </summary>
+    public const string TabOverflow = "tab-overflow";
+
+    /// <summary>
     /// A panel popped out into a window of its own (the desktop window only; a terminal keeps every panel in its
     /// region). The frame around the panel's own native view: its title, whose it is, and the way back.
     /// </summary>
@@ -449,6 +455,17 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.WelcomeSurface.Render",
             ModalViews("WelcomeView")),
+        new(
+            TabOverflow,
+            typeof(MenuModel),
+            [
+                // Each entry is a hidden tab's window, run through the registry (win:<id>, the ⌃P "Go to …" entry), and
+                // refused if the chip did not offer it.
+                new(SurfaceActionKind.Command, SharpMUTerm.Core.Commands.CommandIds.WindowPrefix, "RunTabOverflowEntry"),
+            ],
+            CellsUnderNative,
+            "SharpMUTerm.Tui.SharpMUTermApp.TabOverflowLines",
+            ["SharpMUTerm.Avalonia.NativeMenu"]),
         new(
             FloatingPanel,
             typeof(FloatingPanelModel),

@@ -550,7 +550,11 @@ fallbacks) for inline images/maps.
 - **Below 100 columns the layout is narrow** (`SharpMUTermApp.Narrow.cs`; `NarrowColumns`, `ShortRows`;
   `NarrowLayoutTests`). The rail folds itself to its strip, and below 100 columns *or* 30 rows an empty command line
   is one row (`SyncInputHeights`: `MinRows` becomes `InputSettings.MinRows`; it still grows to `MaxRows` as it wraps).
-  At 80×24 that is a 72-column pane instead of 60 and two more output rows. Decisions not to relitigate:
+  At 80×24 that is a 72-column pane instead of 60 and two more output rows. **`InputSettings.Rows` now defaults to 1
+  too**, so a fresh client's command line is one row everywhere and grows as it wraps; a saved value is kept.
+  **The window's native sidebar folds by the same rule** (verified under Xvfb at `--size 60x24` and on a live resize): at
+  `--size 80x24` the window is ~102 columns wide with its sidebar, so it stays open and the pane is the 80 columns the
+  rule protects. Decisions not to relitigate:
   - **100 because of the server's wrap width**: the open rail, divider and spacer cost ~20 columns, so 100 still
     leaves the pane 80; below it a world's 80-column text orphans a word on every other row. 30 rows because above it
     the output keeps 24 rows with a three-row bar. Height never folds the rail.
@@ -1383,6 +1387,29 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     (the default voice of `Notice`). Edge colours are the accent, `ScreenPalette.Warn` and the notice ink, held to
     4.5:1 on the status plane because they also ink the key chip and the action line.
   - The message log (⌃P ▸ *Show client messages*) stays the history; a toast keeps nothing.
+  - **A notice said again while it is still on the row is said once** (`Notice` compares text, key, severity and action
+    with `_noticeShown`): the timer restarts, nothing is logged, announced or published twice. That was the audit's
+    "notices show twice" — the row-plus-toast pair is the design above, the repeat was not.
+  - **The row is elided to its width in both hosts** (`FitStatusRow` in `PaintStatus`), so no notice can wrap it
+    (`NoticeFitTests`, 80×24 down to 40×12).
+  - **Toasts stay off what is being used and are hidden under a modal.** Besides the map's legend, `SyncToasts` avoids the
+    native quick bars and docked composers; `DesktopLayer.ToastsHidden` (set by `MainWindow`: settings window, ⌃P, a
+    native modal or the quit prompt) hides the stack rather than leaving it clipped under a window. F1 keeps them (it
+    sits under the layer). The toast keeps its clock while hidden.
+- **A pane narrower than its server's wrap is told about join wraps, once per world per run** (`SuggestJoinWraps`,
+  `SharpMUTermApp.JoinWraps.cs`; `WorldSession.ServerWrapColumn`, now learnt whether or not the world joins). Checked on
+  every pane-size report; the notice's action is `world:join-wraps:<world>`. **Suggested, never on by default**: a false
+  join is invisible and worse than a missed one, and whether a world's output is prose is the player's call.
+- **A strip that cannot draw every tab shows `+N ▾` at its right edge** (`SharpMUTermApp.TabOverflow.cs`;
+  `SurfaceCatalog.TabOverflow`, a `MenuModel`). Hidden tabs are read off `FrameworkHitTests.TabAt` over the strip just
+  painted, and the chip is painted after the frame over the strip's own last (clipped) cells, so no cell, pane or NAWS
+  moves. A click opens a native menu in the window (`IPointerPresenter.ShowMenu(cell, MenuModel, dispatch)`) and a cell
+  list (`_sendMenu`, digits) in a terminal; each entry is `win:<id>` through `RunTabOverflowEntry`, which refuses what
+  the list did not offer. The keyboard's way to a hidden tab is ⌃P *Go to …* or ⌃N.
+- **The composer says how long the post is as sent, and ⌥P shows it** (`ComposerModel.Characters`/`SentLength`, the
+  escaped and `%r`-joined command; a MOO edit counts its text). F1 and the docked panel carry the `N chars` cell in both
+  hosts; ⌥P toggles an *as sent* band under F1 (`ComposeOverlay.Preview`, run-wide, shared with the native editor via
+  `ComposerSession.TogglePreview`; not for a MOO edit). The `compose-preview` view.
 - **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
   `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
   `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer

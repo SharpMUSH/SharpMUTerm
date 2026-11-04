@@ -116,6 +116,18 @@ internal interface IPointerPresenter
     void ShowMenu(System.Drawing.Point cell, IReadOnlyList<PointerMenuItem> items);
 
     /// <summary>
+    /// A menu the client built as data (<see cref="SharpMUTerm.Client.Commands.MenuModel"/>) asked for at a cell: the tab strip's
+    /// overflow list. A choice is handed back as the entry's command through <paramref name="dispatch"/>, never run by the
+    /// host. A host that draws the plain kind only draws it as that (the default).
+    /// </summary>
+    void ShowMenu(System.Drawing.Point cell, SharpMUTerm.Client.Commands.MenuModel menu, Action<string> dispatch) =>
+        ShowMenu(cell, menu.Entries
+            .Select(e => e.IsSeparator
+                ? PointerMenuItem.Separator
+                : new PointerMenuItem(e.Label, e.Key, () => { if (e.Command is { } command) dispatch(command); }, e.Enabled, e.Checked))
+            .ToList());
+
+    /// <summary>
     /// Whether <see cref="ShowMenu"/> draws anything. Where it does not, the client opens its own chooser for
     /// the one menu a server can ask for, an MXP <c>&lt;SEND&gt;</c> with several commands.
     /// </summary>

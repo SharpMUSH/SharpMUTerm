@@ -168,6 +168,30 @@ public class NativeComposerTests
     }
 
     [Test]
+    public async Task TheHeaderCountsThePostAsSentAndAltPShowsIt()
+    {
+        var (count, previewShown, preview, hidden) = await Run(rig =>
+        {
+            var overlay = OpenF1(rig);
+            Type(overlay.Composer.Editor, "+post one");
+            var count = overlay.Composer.CountText;
+            Press(overlay.Composer.Editor, Key.P, KeyModifiers.Alt);
+            Drain();
+            var reopened = rig.Driver.Composer.Overlay!;
+            var shown = reopened.Composer.PreviewText is { Length: > 0 } && rig.App.Composer.Preview;
+            var text = reopened.Composer.PreviewText;
+            Press(reopened.Composer.Editor, Key.P, KeyModifiers.Alt);
+            Drain();
+            return (count, shown, text, !rig.App.Composer.Preview);
+        });
+
+        await Assert.That(count).IsEqualTo(ComposerModel.CharactersLabel("+post one".Length));
+        await Assert.That(previewShown).IsTrue();
+        await Assert.That(preview).Contains("+post one");
+        await Assert.That(hidden).IsTrue().Because("⌥P again hides it");
+    }
+
+    [Test]
     public async Task EscKeepsTheDraftForTheNextF1()
     {
         var (closed, sent, reopened, focusBack) = await Run(rig =>

@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- A tab strip too narrow for its tabs now says how many it could not draw (`+3 ▾` at its right edge); click it to
+  list them and go to one — a menu in the desktop window, a short list in a terminal.
+- The composer shows how many characters the post will be once escaped and joined, and Alt+P shows exactly what will
+  be sent (both in the terminal and in the desktop window).
+- When a pane is narrower than the line width a game wraps at, the client says so once and offers to turn on
+  "join wraps" for that world.
+
 - Desktop window: the map, vitals, who is here and the quick bar can be popped out into windows of their own — from
   the button in the panel's corner, the pane's right-click menu, or Ctrl+P ▸ Pop out. The output takes the room back,
   the floating window works exactly like the panel did, typing in it still goes to the command line, and closing it
@@ -265,6 +272,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   prints as a blank line.
 
 ### Changed
+
+- The command line starts as one row and grows as you type; a height you set before is kept.
+- The status row no longer wraps onto a second row when a message is long; it is shortened to fit.
+- The same message said twice in a row is shown once. In the desktop window, notification cards no longer cover the
+  quick bar or the composer, and are hidden while settings, Ctrl+P or a dialog is open.
 
 - Panes stacked one above the other no longer have an empty row between them when the lower pane shows its
   tabs: the tab row is the boundary, and the panes get the row back. Drag the empty part of that tab row to

@@ -27,7 +27,7 @@ namespace SharpMUTerm.Tui.Tests;
 [NotInParallel]
 public class InputAreaLayoutTests
 {
-    private const int DefaultRows = 3; // InputSettings.Rows — one bar's height before anything wraps
+    private const int DefaultRows = 1; // InputSettings.Rows — one bar's height before anything wraps
     private const int MaxRows = 8;     // InputSettings.MaxRows — the most it grows to as it wraps
 
     private static readonly TerminalCapabilities Headless =
@@ -182,8 +182,9 @@ public class InputAreaLayoutTests
             .IsEqualTo(frame.Rows.Primary);
         await Assert.That(RowsPainted(frame.Ansi, width, height, frame.ArmedBand))
             .IsEqualTo(frame.Rows.Second);
-        await Assert.That(frame.Rows.Primary).IsEqualTo(DefaultRows);
-        await Assert.That(frame.Rows.Second).IsEqualTo(DefaultRows);
+        // Each bar holds a draft, which may wrap past the one-row default; the bands still match the rows given.
+        await Assert.That(frame.Rows.Primary).IsGreaterThanOrEqualTo(DefaultRows);
+        await Assert.That(frame.Rows.Second).IsGreaterThanOrEqualTo(DefaultRows);
     }
 
     /// <summary>

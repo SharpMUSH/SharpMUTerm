@@ -73,6 +73,30 @@ public sealed record ComposerModel(
     public string? Command => Edit is null ? ComposeMessage.Build(Body, Escaping) : null;
 
     /// <summary>
+    /// Whether F1 shows the post as it will be sent (⌥P) — the <c>%r</c>-joined, escaped command — under the editor. The
+    /// client's toggle for the run, never saved; always false for the docked panel and a MOO edit.
+    /// </summary>
+    public bool Preview { get; init; }
+
+    /// <summary>The header's length cell for this draft: <see cref="SentLength"/>.</summary>
+    public int Characters => SentLength(Body, Escaping, Edit is not null);
+
+    /// <summary>
+    /// How long a draft is as the game will get it: the length of <see cref="ComposeMessage.Build"/>'s command, with its
+    /// <c>%r</c> breaks and its escapes, because that is what a board's length limit counts. A MOO edit is saved as its
+    /// lines, so it counts its text. A host editor that holds text the model has not caught up with asks this directly.
+    /// </summary>
+    public static int SentLength(string body, ComposeEscaping escaping, bool edit)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        body = body.Replace("\r\n", "\n", StringComparison.Ordinal);
+        return edit ? body.TrimEnd('\n').Length : ComposeMessage.Build(body, escaping)?.Length ?? 0;
+    }
+
+    /// <summary>The length cell's words: <c>1 char</c>, <c>240 chars</c>.</summary>
+    public static string CharactersLabel(int count) => count == 1 ? "1 char" : $"{count:N0} chars";
+
+    /// <summary>
     /// The verb the post starts with — <c>+pose</c>, <c>say</c> — for the docked header, so a reader can see what the
     /// buffer will be sent as without reading it. Empty for an empty buffer.
     /// </summary>
@@ -93,7 +117,8 @@ public sealed record ComposerModel(
         SpellChecker? spelling,
         bool canSend,
         bool armed,
-        long revision)
+        long revision,
+        bool preview = false)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(body);
@@ -110,11 +135,15 @@ public sealed record ComposerModel(
             armed,
             revision,
             ComposerMarks.For(body, checker),
-            KeysFor(place, edit is not null, checker is not null, canSend, armed));
+            KeysFor(place, edit is not null, checker is not null, canSend, armed, preview))
+        {
+            Preview = preview && place == ComposerPlace.FullScreen && edit is null,
+        };
     }
 
     /// <summary>The key row for a composer in this state.</summary>
-    public static IReadOnlyList<ComposerKey> KeysFor(ComposerPlace place, bool edit, bool dictionary, bool canSend, bool armed)
+    /// <param name="preview">Whether F1's as-sent preview is showing, which names what ⌥P does next.</param>
+    public static IReadOnlyList<ComposerKey> KeysFor(ComposerPlace place, bool edit, bool dictionary, bool canSend, bool armed, bool preview = false)
     {
         if (place == ComposerPlace.Docked)
         {
@@ -153,6 +182,7 @@ public sealed record ComposerModel(
             keys.Add(new("⌥W", "add word"));
         }
 
+        keys.Add(new("⌥P", preview ? "hide as sent" : "as sent"));
         keys.Add(new("Esc", "close (keeps the draft)"));
         return keys;
     }
@@ -179,6 +209,7 @@ public sealed record ComposerModel(
         && CanSend == other.CanSend
         && Armed == other.Armed
         && Revision == other.Revision
+        && Preview == other.Preview
         && Marks.SequenceEqual(other.Marks)
         && Keys.SequenceEqual(other.Keys);
 

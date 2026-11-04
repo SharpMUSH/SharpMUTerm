@@ -109,6 +109,15 @@ internal sealed partial class SharpMUTermApp
                         open.Session.Publish(NativeComposeModel(open));
                     }
                 }),
+                TogglePreview = () => OnUiThread(() =>
+                {
+                    if (ReferenceEquals(_nativeCompose, open) && open.Edit is null)
+                    {
+                        // The cell window's fact, so F1 opens the same way in either host for the rest of the run.
+                        _composer.Preview = !_composer.Preview;
+                        open.Session.Publish(NativeComposeModel(open));
+                    }
+                }),
                 AddWord = word => OnUiThread(() => AddComposerWord(word)),
                 Proportional = ComposerFaceOf(ComposeDraftKey(ActiveWindowId())),
                 ChooseFace = ChooseComposerFace(ComposeDraftKey(ActiveWindowId())),
@@ -160,7 +169,7 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>The native F1's model for what it holds now; the cell window's for the same draft.</summary>
     private ComposerModel NativeComposeModel(NativeCompose open) =>
-        ComposeOverlay.ModelFor(open.Target, open.Body, open.Escaping, open.Edit, open.Edit is null ? ComposerSpelling() : null, open.CanSend);
+        ComposeOverlay.ModelFor(open.Target, open.Body, open.Escaping, open.Edit, open.Edit is null ? ComposerSpelling() : null, open.CanSend, _composer.Preview);
 
     /// <summary>
     /// Closes F1, in whichever host it is open, keeping its buffer as the character's draft (or MOO edit) exactly as the

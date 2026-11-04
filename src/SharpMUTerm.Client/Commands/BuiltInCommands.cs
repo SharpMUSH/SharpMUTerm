@@ -21,6 +21,12 @@ public static class BuiltInCommands
     public const string RailKeysCommand = "layout:rail-keys";
 
     /// <summary>
+    /// Turns F5's <c>join wraps</c> on for the world named after the prefix: the action of the notice that says a pane is
+    /// narrower than the server's wrap column. Lists nothing on ⌃P (F5 is the setting's home).
+    /// </summary>
+    public const string JoinWrapsPrefix = "world:join-wraps:";
+
+    /// <summary>
     /// Registers every built-in command. <paramref name="run"/> does the work for an id and returns false when
     /// it did not do what the label promised; it is called for every id these contributions handle, offered or not.
     /// </summary>
@@ -71,6 +77,7 @@ public static class BuiltInCommands
         Add("world:reconnect", CommandGroup.World, "Reconnect", "⌥R");
         Add("world:disconnect", CommandGroup.World, "Disconnect", "⌥D");
         Family("world:send-group", CommandIds.GroupPrefix, SendGroup);
+        Family("world:join-wraps", JoinWrapsPrefix, _ => []);
         Add("world:reload-scripts", CommandGroup.World, "Reload scripts",
             detail: "re-reads this character's Lua files", when: c => c.State.ScriptsOn);
 
