@@ -19,14 +19,14 @@ namespace SharpMUTerm.Avalonia;
 internal sealed class QuitView : DockPanel, IModalView
 {
     private readonly QuitSession _session;
-    private readonly ModalColours _colours;
+    private readonly NativeTokens _colours;
     private readonly Action _done;
     private readonly Button _quit;
     private readonly Button _stay;
     private readonly TextBlock _footer;
     private QuitChoice _selected = QuitChoice.Stay;
 
-    public QuitView(QuitSession session, ModalColours colours, Action done)
+    public QuitView(QuitSession session, NativeTokens colours, Action done)
     {
         _session = session;
         _colours = colours;
@@ -47,10 +47,10 @@ internal sealed class QuitView : DockPanel, IModalView
         foreach (var consequence in model.Consequences)
         {
             var line = new DockPanel();
-            var dot = new TextBlock { Text = "●", Foreground = colours.Brush(colours.Accent), Margin = new Thickness(0, 0, 10, 0), FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+            var dot = new TextBlock { Text = "●", Foreground = colours.Brush(colours.Accent), Margin = new Thickness(0, 0, 10, 0), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
             SetDock(dot, Dock.Left);
             line.Children.Add(dot);
-            line.Children.Add(new TextBlock { Text = NativeKeys.Words(consequence), Foreground = colours.Brush(colours.Text), TextWrapping = TextWrapping.Wrap, FontSize = 14 });
+            line.Children.Add(new TextBlock { Text = NativeKeys.Words(consequence), Foreground = colours.Brush(colours.Text), TextWrapping = TextWrapping.Wrap, FontSize = NativeTokens.Title });
             facts.Children.Add(line);
         }
 

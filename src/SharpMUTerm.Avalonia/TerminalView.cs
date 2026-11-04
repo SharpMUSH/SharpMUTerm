@@ -63,7 +63,7 @@ internal sealed class TerminalView : Control
         _driver.FrameReady += OnFrameReady;
         _repeat = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Input, (_, _) => RepeatPress());
 
-        _tipText = new TextBlock { Foreground = Brush(foreground), FontSize = 12, MaxWidth = 420, TextWrapping = TextWrapping.Wrap };
+        _tipText = new TextBlock { Foreground = Brush(foreground), FontSize = NativeTokens.Body, MaxWidth = 420, TextWrapping = TextWrapping.Wrap };
         _tip = new Popup
         {
             PlacementTarget = this,
@@ -75,7 +75,7 @@ internal sealed class TerminalView : Control
                 Background = Brush(Mix(background, foreground, 0.12f)),
                 BorderBrush = Brush(Mix(background, foreground, 0.35f)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(3),
+                CornerRadius = new CornerRadius(NativeTokens.RadiusS),
                 Padding = new Thickness(7, 4),
                 Child = _tipText,
             },

@@ -50,6 +50,23 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>
+    /// Hands the workspace popups — ⌃P, the quit prompt, ⌃F, ⌃R, the ⌃B panel, the game data and the message log — the
+    /// settings screens' palette for the active theme (<see cref="ScreenTheme"/>), so they follow Light and Solarized
+    /// as the settings screens do rather than painting the Dark theme's navy over a light workspace. Each resolves its
+    /// plane, frame and markup through it the next time it opens.
+    /// </summary>
+    private void SchemePopups()
+    {
+        _palette.Scheme = _screens;
+        _quit.Scheme = _screens;
+        _search.Scheme = _screens;
+        _historySearch.Scheme = _screens;
+        _prefixPanel.Scheme = _screens;
+        _gameData.Scheme = _screens;
+        _messageLog.Scheme = _screens;
+    }
+
+    /// <summary>
     /// Re-derives everything the client paints from <paramref name="theme"/>. The caller (<see cref="SaveConfiguration"/>)
     /// goes on to repaint the header, the rail, the pane planes, the bars and the backdrop, which all read
     /// <see cref="_theme"/> as they paint; this does the parts that were resolved once at start.
@@ -69,9 +86,12 @@ internal sealed partial class SharpMUTermApp
         _sendMenu.Scheme = _screens;
         _layoutsView.Scheme = _screens;
         _welcomeView.Scheme = _screens;
+        SchemePopups();
 
         _header.BackgroundColor = ToColor(theme.StatusBackground);
         _header.FocusedLinkForegroundColor = ToColor(theme.Resolve(TerminalColor.Default, isBackground: true));
+        var brand = AccentPalette[2];
+        _header.FocusedLinkBackgroundColor = ToColor(WorkspacePalette.HeaderFill(theme, new Rgb(brand.R, brand.G, brand.B)));
         _window.ForegroundColor = ToColor(theme.Resolve(TerminalColor.Default, isBackground: false));
         foreach (var control in _panes.Values)
         {

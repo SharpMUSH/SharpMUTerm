@@ -82,7 +82,11 @@ internal sealed partial class SharpMUTermApp
             _ink.Notice,
             Hex(_theme.StatusBackground),
             Hex(WorkspacePalette.Backdrop(_theme)),
-            Hex(_theme.Resolve(Core.Text.TerminalColor.Default, isBackground: false)));
+            Hex(_theme.Resolve(Core.Text.TerminalColor.Default, isBackground: false)))
+        {
+            BrandInk = WorkspacePalette.HeaderInk(_theme, ParseHex(brand)).ToHex(),
+            HeaderMuted = WorkspacePalette.HeaderMuted(_theme).ToHex(),
+        };
 
         return new ChromeOverlay(
             Host.Chrome,
@@ -214,4 +218,11 @@ internal sealed record ChromePalette(
     string Notice,
     string HeaderPlane,
     string RailPlane,
-    string Ink);
+    string Ink)
+{
+    /// <summary>The ink on <see cref="Brand"/>, held to the header's floor — light on a light theme's deep fill.</summary>
+    public string BrandInk { get; init; } = "#000000";
+
+    /// <summary>The header's quiet text (counts, a pill's detail, the search hint), held to the header's floor on its band.</summary>
+    public string HeaderMuted { get; init; } = "#808080";
+}

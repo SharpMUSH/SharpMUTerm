@@ -41,7 +41,10 @@ internal sealed class SettingsWindow : Window
     private readonly Dictionary<string, TextBlock> _badges = new(StringComparer.Ordinal);
     private readonly List<(StatusMeter Meter, TextBlock Now)> _meterNow = [];
     private readonly List<ThemeCardView> _themeCards = [];
+    private readonly Border _frame;
+    private readonly TextBlock _title;
     private SettingsForm _form;
+    private NativeTokens _tokens;
     private IReadOnlyList<SettingsMatch> _matches = [];
     private string? _shown;
     private bool _syncing;
@@ -51,15 +54,59 @@ internal sealed class SettingsWindow : Window
     public SettingsWindow(SettingsForm form)
     {
         _form = form;
+        _tokens = TokensFor(form);
         Title = "Settings";
         Width = 960;
         Height = 680;
         MinWidth = 640;
         MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+        // The palette's frame, not the platform's: the window draws its own title, close button and edge, so it reads
+        // as one of the client's surfaces (and looks the same under every window manager, or none).
+        WindowDecorations = WindowDecorations.None;
         Styles.Add(new FluentTheme());
 
-        _search = new TextBox { PlaceholderText = "Search settings", Margin = new Thickness(16, 14, 16, 10) };
+        _title = new TextBlock
+        {
+            Text = "Settings",
+            FontSize = NativeTokens.Title,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 0, 0),
+        };
+        CloseButton = new Button
+        {
+            Content = "✕",
+            Padding = new Thickness(10, 4),
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+        };
+        AutomationProperties.SetName(CloseButton, "Close settings");
+        ToolTip.SetTip(CloseButton, "Close (Esc)");
+        CloseButton.Click += (_, _) => Close();
+        var bar = new DockPanel { Height = 40, LastChildFill = true, Background = Brushes.Transparent };
+        DockPanel.SetDock(CloseButton, Dock.Right);
+        bar.Children.Add(CloseButton);
+        bar.Children.Add(_title);
+        bar.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(bar).Properties.IsLeftButtonPressed && !ReferenceEquals(e.Source, CloseButton))
+            {
+                BeginMoveDrag(e);
+            }
+        };
+        DockPanel.SetDock(bar, Dock.Top);
+
+        _search = new TextBox
+        {
+            PlaceholderText = "Search settings",
+            Margin = new Thickness(16, 4, 16, 10),
+            FontSize = NativeTokens.Title,
+            Padding = new Thickness(12, 7),
+        };
         AutomationProperties.SetName(_search, "Search settings");
         _search.TextChanged += (_, _) => OnQuery();
         DockPanel.SetDock(_search, Dock.Top);
@@ -87,10 +134,12 @@ internal sealed class SettingsWindow : Window
         };
 
         var dock = new DockPanel { LastChildFill = true };
+        dock.Children.Add(bar);
         dock.Children.Add(_search);
         dock.Children.Add(_sections);
         dock.Children.Add(_scroller);
-        Content = dock;
+        _frame = new Border { BorderThickness = new Thickness(1), Child = dock };
+        Content = _frame;
 
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());
         Opened += (_, _) =>
@@ -126,6 +175,27 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>The section on the right, by id.</summary>
     public string? ShownSection => _shown;
+
+    /// <summary>The frame's close button, for a test.</summary>
+    public Button CloseButton { get; }
+
+    /// <summary>The tokens the window is drawn in now: the client's theme, followed when one is picked here.</summary>
+    public NativeTokens Tokens => _tokens;
+
+    private static NativeTokens TokensFor(SettingsForm form) => NativeTokens.For(form.Theme?.Invoke(), form.IsDark);
+
+    /// <summary>Wears <paramref name="tokens"/>: the variant, the planes, Fluent's resources and the frame.</summary>
+    private void ApplyTokens(NativeTokens tokens)
+    {
+        _tokens = tokens;
+        RequestedThemeVariant = tokens.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        tokens.Apply(Resources);
+        Background = tokens.Brush(tokens.Card);
+        Foreground = tokens.Brush(tokens.Text);
+        _frame.BorderBrush = tokens.Brush(tokens.Edge);
+        _title.Foreground = tokens.Brush(tokens.Text);
+        CloseButton.Foreground = tokens.Brush(tokens.Dim);
+    }
 
     /// <summary>The ids of the fields drawn on the right, in order, for a test.</summary>
     public IReadOnlyList<string> ShownFields { get; private set; } = [];
@@ -182,7 +252,7 @@ internal sealed class SettingsWindow : Window
         {
             after.Changed += OnPackagesChanged;
         }
-        RequestedThemeVariant = form.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        ApplyTokens(TokensFor(form));
         _shown = null;
         _matches = _form.Search(_search.Text);
         BuildSectionList();
@@ -202,7 +272,7 @@ internal sealed class SettingsWindow : Window
         foreach (var section in _form.Sections)
         {
             var title = new TextBlock { Text = section.Title, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-            var badge = new TextBlock { Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            var badge = new TextBlock { Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
             _badges[section.Id] = badge;
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             row.Children.Add(title);
@@ -313,17 +383,17 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        _page.Children.Add(new TextBlock { Text = section.Title, FontSize = 24, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 2) });
+        _page.Children.Add(new TextBlock { Text = section.Title, FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 2) });
         if (section.Key is { } key)
         {
-            _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Opacity = 0.7, Margin = new Thickness(0, 0, 0, 6) });
+            _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Foreground = DimInk, Margin = new Thickness(0, 0, 0, 6) });
         }
 
         if (section.Packages is not null)
         {
             if (_form.Packages is not { } manager)
             {
-                _page.Children.Add(new TextBlock { Text = "This client offers no packages.", Opacity = 0.7, Margin = new Thickness(0, 16, 0, 0) });
+                _page.Children.Add(new TextBlock { Text = "This client offers no packages.", Foreground = DimInk, Margin = new Thickness(0, 16, 0, 0) });
                 ShownFields = [];
                 return;
             }
@@ -331,8 +401,7 @@ internal sealed class SettingsWindow : Window
             var packages = new PackagePageView(
                 manager,
                 f => !Searching || _matches.Any(m => ReferenceEquals(m.Field, f)),
-                Accent,
-                _form.IsDark)
+                _tokens)
             {
                 Height = ListEditorHeight(),
             };
@@ -348,7 +417,7 @@ internal sealed class SettingsWindow : Window
                 _form,
                 section,
                 f => !Searching || _matches.Any(m => ReferenceEquals(m.Field, f)),
-                Accent)
+                _tokens)
             {
                 Height = ListEditorHeight(),
                 Margin = new Thickness(0, 8, 0, 0),
@@ -390,7 +459,7 @@ internal sealed class SettingsWindow : Window
             : section.Fields.ToList();
         if (visible.Count == 0)
         {
-            _page.Children.Add(new TextBlock { Text = "No setting here matches the search.", Opacity = 0.7, Margin = new Thickness(0, 16, 0, 0) });
+            _page.Children.Add(new TextBlock { Text = "No setting here matches the search.", Foreground = DimInk, Margin = new Thickness(0, 16, 0, 0) });
         }
 
         string? group = null;
@@ -401,11 +470,12 @@ internal sealed class SettingsWindow : Window
                 group = heading;
                 _page.Children.Add(new TextBlock
                 {
-                    Text = heading,
-                    FontSize = 15,
+                    Text = heading.ToUpperInvariant(),
+                    FontSize = NativeTokens.Small,
                     FontWeight = FontWeight.SemiBold,
-                    Margin = new Thickness(0, 18, 0, 4),
-                    Foreground = Accent,
+                    LetterSpacing = 0.8,
+                    Margin = new Thickness(0, 20, 0, 6),
+                    Foreground = _tokens.Brush(_tokens.Header),
                 });
             }
 
@@ -432,7 +502,7 @@ internal sealed class SettingsWindow : Window
         var noun = section.Scope == SettingScope.World ? "world" : "character";
         if (subjects.Count == 0)
         {
-            row.Children.Add(new TextBlock { Text = $"There is no {noun} yet.", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 });
+            row.Children.Add(new TextBlock { Text = $"There is no {noun} yet.", VerticalAlignment = VerticalAlignment.Center, Foreground = DimInk });
         }
         else
         {
@@ -477,10 +547,10 @@ internal sealed class SettingsWindow : Window
     {
         var outer = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
         var words = new StackPanel { Spacing = 1 };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 14 });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title });
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
         }
 
         outer.Children.Add(words);
@@ -489,7 +559,7 @@ internal sealed class SettingsWindow : Window
         var inUse = CurrentTheme(field);
         foreach (var card in _form.Themes())
         {
-            var view = new ThemeCardView(card, string.Equals(card.Name, inUse, StringComparison.OrdinalIgnoreCase), _form.IsDark);
+            var view = new ThemeCardView(card, string.Equals(card.Name, inUse, StringComparison.OrdinalIgnoreCase), _tokens);
             view.Click += (_, _) =>
             {
                 if (!string.Equals(card.Name, CurrentTheme(field), StringComparison.OrdinalIgnoreCase))
@@ -507,7 +577,7 @@ internal sealed class SettingsWindow : Window
             var now = CurrentTheme(field);
             foreach (var view in _themeCards)
             {
-                view.SetInUse(string.Equals(view.Card.Name, now, StringComparison.OrdinalIgnoreCase), _form.IsDark);
+                view.SetInUse(string.Equals(view.Card.Name, now, StringComparison.OrdinalIgnoreCase), _tokens);
             }
         });
         outer.Children.Add(wrap);
@@ -517,8 +587,11 @@ internal sealed class SettingsWindow : Window
     private string? CurrentTheme(ThemeField field) =>
         field.Binding is SettingBinding<string> binding ? _form.Get(binding) : null;
 
-    /// <summary>The accent the changed dot and headings wear: Fluent's own, for the theme variant.</summary>
-    private SolidColorBrush Accent => new(_form.IsDark ? Color.Parse("#60cdff") : Color.Parse("#005fb8"));
+    /// <summary>The accent the changed dot wears: the client's, as every native surface's.</summary>
+    private SolidColorBrush Accent => _tokens.Brush(_tokens.Accent);
+
+    /// <summary>A quiet line's ink, held to the floor (an opacity would not be).</summary>
+    private SolidColorBrush DimInk => _tokens.Brush(_tokens.Dim);
 
     /// <summary>One field: label and help on the left, its control, then the changed dot and the reset.</summary>
     private Grid FieldRow(SettingsField field)
@@ -526,10 +599,10 @@ internal sealed class SettingsWindow : Window
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 4), MinHeight = 44 };
 
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1, Margin = new Thickness(0, 0, 16, 0) };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 14, TextWrapping = TextWrapping.Wrap });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title, TextWrapping = TextWrapping.Wrap });
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
         }
 
         grid.Children.Add(words);
@@ -703,7 +776,7 @@ internal sealed class SettingsWindow : Window
             }
 
             default:
-                return new TextBlock { Text = "set on its own screen", Opacity = 0.7 };
+                return new TextBlock { Text = "set on its own screen", Foreground = DimInk };
         }
     }
 
@@ -712,7 +785,7 @@ internal sealed class SettingsWindow : Window
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Tag = name };
         if (Color.TryParse(name, out var colour))
         {
-            panel.Children.Add(new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(colour) });
+            panel.Children.Add(new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(NativeTokens.RadiusS), Background = new SolidColorBrush(colour) });
         }
 
         panel.Children.Add(new TextBlock { Text = name });
@@ -727,10 +800,10 @@ internal sealed class SettingsWindow : Window
 
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var words = new StackPanel { Spacing = 1 };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 14 });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title });
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
         }
 
         top.Children.Add(words);
@@ -749,7 +822,7 @@ internal sealed class SettingsWindow : Window
         grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         for (var c = 0; c < headings.Length; c++)
         {
-            var heading = new TextBlock { Text = headings[c], FontSize = 12, FontWeight = FontWeight.SemiBold, Opacity = 0.78 };
+            var heading = new TextBlock { Text = headings[c], FontSize = NativeTokens.Body, FontWeight = FontWeight.SemiBold, Foreground = DimInk };
             Grid.SetColumn(heading, c);
             grid.Children.Add(heading);
         }
@@ -814,17 +887,17 @@ internal sealed class SettingsWindow : Window
 
         // What this connection has received, to pick a path from: a click puts it in the path box last used.
         var box = new StackPanel { Spacing = 2 };
-        box.Children.Add(new TextBlock { Text = "Received on this connection", FontSize = 12, FontWeight = FontWeight.SemiBold, Opacity = 0.78, Margin = new Thickness(0, 2, 0, 2) });
+        box.Children.Add(new TextBlock { Text = "Received on this connection", FontSize = NativeTokens.Body, FontWeight = FontWeight.SemiBold, Foreground = DimInk, Margin = new Thickness(0, 2, 0, 2) });
         if (received.Count == 0)
         {
-            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = 12, Opacity = 0.72 });
+            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.Body, Foreground = DimInk });
         }
 
         foreach (var item in received.Take(40))
         {
             var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            line.Children.Add(new TextBlock { Text = item.Path, FontFamily = FontFamily.Parse("monospace"), FontSize = 12 });
-            var v = new TextBlock { Text = item.Value, FontSize = 12, Opacity = 0.72, Margin = new Thickness(16, 0, 0, 0) };
+            line.Children.Add(new TextBlock { Text = item.Path, FontFamily = FontFamily.Parse("monospace"), FontSize = NativeTokens.Body });
+            var v = new TextBlock { Text = item.Value, FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(16, 0, 0, 0) };
             Grid.SetColumn(v, 1);
             line.Children.Add(v);
             var pick = new Button
@@ -851,8 +924,8 @@ internal sealed class SettingsWindow : Window
         {
             Child = box,
             BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(_form.IsDark ? Color.Parse("#46464e") : Color.Parse("#c8c8d0")),
-            CornerRadius = new CornerRadius(6),
+            BorderBrush = _tokens.Brush(_tokens.Edge),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Padding = new Thickness(10, 6, 10, 8),
             Margin = new Thickness(0, 4, 0, 0),
         });
@@ -924,9 +997,13 @@ internal sealed class SettingsWindow : Window
     /// <summary>Re-reads every value and indicator on the page. A meter added or removed rebuilds the page, whose rows moved.</summary>
     internal void Refresh()
     {
-        var variant = _form.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
-        var flipped = RequestedThemeVariant != variant;
-        RequestedThemeVariant = variant;
+        var tokens = TokensFor(_form);
+        var flipped = tokens != _tokens;
+        if (flipped)
+        {
+            ApplyTokens(tokens);
+        }
+
         if (flipped
             || (_meterRows >= 0
                 && _form.Section(_shown ?? string.Empty)?.Fields.OfType<ListField>().FirstOrDefault() is { } meters

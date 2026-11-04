@@ -266,6 +266,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Desktop window: one look across settings, menus, the command palette and every prompt — the client's own teal
+  instead of a stock blue, one set of text sizes and corner radii, and every colour readable on Dark, Light and
+  Solarized Dark. The settings panel now has a title bar with a close button, dims the window behind it, and when
+  opened from "Make a trigger from the selection" sits on the right half so the line you picked stays visible.
+- Light themes: the header's coloured segments are deeper, with light text that is easy to read, and the low
+  vitals warning is a readable dark orange instead of a pale yellow — in the terminal and the window.
+- The terminal's command palette, quit prompt, search, history, Ctrl+B panel, game data and message log now
+  follow the theme instead of staying dark on Light.
 - Panes stacked one above the other no longer have an empty row between them when the lower pane shows its
   tabs: the tab row is the boundary, and the panes get the row back. Drag the empty part of that tab row to
   resize, or double-click it to even the panes out. The vitals and quick-bar strips sit flush against their

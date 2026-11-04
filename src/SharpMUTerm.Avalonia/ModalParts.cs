@@ -11,10 +11,10 @@ namespace SharpMUTerm.Avalonia;
 internal static class ModalParts
 {
     /// <summary>The modal's title line.</summary>
-    public static TextBlock Heading(string text, ModalColours colours) => new()
+    public static TextBlock Heading(string text, NativeTokens colours) => new()
     {
         Text = NativeKeys.Words(text),
-        FontSize = 18,
+        FontSize = NativeTokens.Heading,
         FontWeight = FontWeight.SemiBold,
         Foreground = colours.Brush(colours.Text),
         Margin = new Thickness(20, 16, 20, 4),
@@ -22,20 +22,20 @@ internal static class ModalParts
     };
 
     /// <summary>A quiet line: a count, a scope, an explanation.</summary>
-    public static TextBlock Dim(string text, ModalColours colours, Thickness? margin = null) => new()
+    public static TextBlock Dim(string text, NativeTokens colours, Thickness? margin = null) => new()
     {
         Text = NativeKeys.Words(text),
-        FontSize = 12.5,
+        FontSize = NativeTokens.Body,
         Foreground = colours.Brush(colours.Dim),
         Margin = margin ?? new Thickness(20, 0, 20, 6),
         TextWrapping = TextWrapping.Wrap,
     };
 
     /// <summary>The keys the modal answers, right-aligned under it, in the window's words.</summary>
-    public static TextBlock Footer(string text, ModalColours colours) => new()
+    public static TextBlock Footer(string text, NativeTokens colours) => new()
     {
         Text = NativeKeys.Words(text),
-        FontSize = 11.5,
+        FontSize = NativeTokens.Small,
         Foreground = colours.Brush(colours.Dim),
         Margin = new Thickness(20, 8, 20, 12),
         HorizontalAlignment = HorizontalAlignment.Right,
@@ -43,10 +43,10 @@ internal static class ModalParts
     };
 
     /// <summary>A group header in a list (BUILT IN, YOURS), the palette's.</summary>
-    public static TextBlock GroupHeader(string text, ModalColours colours, bool first) => new()
+    public static TextBlock GroupHeader(string text, NativeTokens colours, bool first) => new()
     {
         Text = text.ToUpperInvariant(),
-        FontSize = 11,
+        FontSize = NativeTokens.Small,
         FontWeight = FontWeight.SemiBold,
         LetterSpacing = 0.8,
         Foreground = colours.Brush(colours.Header),
@@ -59,17 +59,17 @@ internal static class ModalParts
         var box = new TextBox
         {
             PlaceholderText = placeholder,
-            FontSize = 15,
+            FontSize = NativeTokens.Title,
             Margin = new Thickness(14, 14, 14, 6),
             Padding = new Thickness(12, 8),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
         global::Avalonia.Automation.AutomationProperties.SetName(box, name);
         return box;
     }
 
     /// <summary>A list of rows that scrolls, ruled above and below.</summary>
-    public static (Border Frame, StackPanel List, ScrollViewer Scroller) List(ModalColours colours)
+    public static (Border Frame, StackPanel List, ScrollViewer Scroller) List(NativeTokens colours)
     {
         var list = new StackPanel { Margin = new Thickness(8, 4, 8, 4) };
         var scroller = new ScrollViewer
@@ -92,7 +92,7 @@ internal static class ModalParts
     {
         var row = new Border
         {
-            CornerRadius = new CornerRadius(7),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Padding = new Thickness(12, 6),
             Background = Brushes.Transparent,
             Child = content,
@@ -116,7 +116,7 @@ internal static class ModalParts
     /// <paramref name="text"/> with the run at <paramref name="start"/> marked in the accent and bold — where a query
     /// matched, as the cells mark it.
     /// </summary>
-    public static InlineCollection Marked(string text, int start, int length, ModalColours colours)
+    public static InlineCollection Marked(string text, int start, int length, NativeTokens colours)
     {
         var inlines = new InlineCollection();
         if (start < 0 || length <= 0 || start + length > text.Length)
@@ -140,20 +140,20 @@ internal static class ModalParts
     }
 
     /// <summary>A key chip, as the palette draws a key.</summary>
-    public static Border Key(string key, ModalColours colours) => new()
+    public static Border Key(string key, NativeTokens colours) => new()
     {
         Background = colours.Brush(colours.KeyFill),
         BorderBrush = colours.Brush(colours.Edge),
         BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(5),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusS),
         Padding = new Thickness(6, 0),
         Margin = new Thickness(6, 0, 0, 0),
         VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = NativeKeys.Words(key), FontSize = 11.5, Foreground = colours.Brush(colours.KeyInk) },
+        Child = new TextBlock { Text = NativeKeys.Words(key), FontSize = NativeTokens.Small, Foreground = colours.Brush(colours.KeyInk) },
     };
 
     /// <summary>A button whose label is followed by the key that presses it.</summary>
-    public static Button Button(string label, string? key, ModalColours colours, Action click, bool accent = false)
+    public static Button Button(string label, string? key, NativeTokens colours, Action click, bool accent = false)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         content.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
@@ -162,7 +162,7 @@ internal static class ModalParts
             content.Children.Add(new TextBlock
             {
                 Text = NativeKeys.Words(key),
-                FontSize = 11.5,
+                FontSize = NativeTokens.Small,
                 Opacity = 0.7,
                 Margin = new Thickness(8, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -173,7 +173,7 @@ internal static class ModalParts
         {
             Content = content,
             Padding = new Thickness(14, 6),
-            CornerRadius = new CornerRadius(7),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
         if (accent)
         {

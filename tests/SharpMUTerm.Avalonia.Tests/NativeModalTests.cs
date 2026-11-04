@@ -93,7 +93,7 @@ public class NativeModalTests
         await Assert.That(focused).IsTrue();
         await Assert.That(cellOpen).IsFalse().Because("no cell search under the native one");
         await Assert.That(onTop).IsTrue().Because("nothing native draws over it");
-        await Assert.That(colours).IsEqualTo(ModalColours.Dark).Because("the demo's theme is Dark");
+        await Assert.That(colours).IsEqualTo(NativeTokens.Dark).Because("the demo's theme is Dark");
     }
 
     /// <summary>
@@ -126,7 +126,7 @@ public class NativeModalTests
             return rig.Driver.Modals.Quit!.Colours;
         }, theme: "Light");
 
-        await Assert.That(colours).IsEqualTo(ModalColours.Light);
+        await Assert.That(colours).IsEqualTo(NativeTokens.Light);
     }
 
     [Test]

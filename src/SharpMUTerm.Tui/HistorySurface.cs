@@ -50,6 +50,12 @@ internal sealed class HistorySurface
     private readonly Action? _closed;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private MarkupControl? _body;
     private IReadOnlyList<string> _snapshot = Array.Empty<string>();
     private IReadOnlyList<HistoryMatch> _matches = Array.Empty<HistoryMatch>();
@@ -176,7 +182,7 @@ internal sealed class HistorySurface
             .WithTitle("Command history")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
             .WithSize(width, height)
@@ -184,6 +190,7 @@ internal sealed class HistorySurface
             .AddControl(_body)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -238,7 +245,7 @@ internal sealed class HistorySurface
         _first = HistorySearchPrompt.Scroll(_first, _selected, _matches.Count, _listRows);
     }
 
-    private void Paint() => _body?.SetContent(new List<string>(Lines));
+    private void Paint() => _body?.SetContent(Scheme.Lines(Lines, ScreenPalette.MenuBg));
 
     private void Close()
     {

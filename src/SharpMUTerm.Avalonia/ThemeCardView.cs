@@ -20,7 +20,7 @@ internal sealed class ThemeCardView : Button
     private readonly Border _frame;
     private readonly TextBlock _state;
 
-    public ThemeCardView(ThemeCard card, bool inUse, bool windowIsDark)
+    public ThemeCardView(ThemeCard card, bool inUse, NativeTokens tokens)
     {
         ArgumentNullException.ThrowIfNull(card);
         Card = card;
@@ -33,8 +33,8 @@ internal sealed class ThemeCardView : Button
         AutomationProperties.SetName(this, $"Use the {card.Name} theme");
         ToolTip.SetTip(this, $"Use {card.Name}");
 
-        var name = new TextBlock { Text = card.Name, FontSize = 14, FontWeight = FontWeight.SemiBold };
-        _state = new TextBlock { FontSize = 12, Opacity = 0.72 };
+        var name = new TextBlock { Text = card.Name, FontSize = NativeTokens.Title, FontWeight = FontWeight.SemiBold };
+        _state = new TextBlock { FontSize = NativeTokens.Body };
         var words = new StackPanel { Margin = new Thickness(10, 8, 10, 8), Spacing = 1 };
         words.Children.Add(name);
         words.Children.Add(_state);
@@ -46,13 +46,12 @@ internal sealed class ThemeCardView : Button
         _frame = new Border
         {
             Child = body,
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             ClipToBounds = true,
             BorderThickness = new Thickness(2),
-            Background = new SolidColorBrush(windowIsDark ? Color.Parse("#2b2b30") : Color.Parse("#f3f3f5")),
         };
         Content = _frame;
-        SetInUse(inUse, windowIsDark);
+        SetInUse(inUse, tokens);
     }
 
     /// <summary>The theme this card shows.</summary>
@@ -62,14 +61,15 @@ internal sealed class ThemeCardView : Button
     public bool InUse { get; private set; }
 
     /// <summary>Marks the card as the theme in use, or not.</summary>
-    public void SetInUse(bool inUse, bool windowIsDark)
+    public void SetInUse(bool inUse, NativeTokens tokens)
     {
+        ArgumentNullException.ThrowIfNull(tokens);
+        _frame.Background = tokens.Brush(tokens.Raised);
+        _state.Foreground = tokens.Brush(tokens.Dim);
         InUse = inUse;
         var kind = $"{(Card.IsDark ? "dark" : "light")} · {(Card.IsCustom ? "your own" : "built in")}";
         _state.Text = inUse ? $"In use · {kind}" : kind;
-        _frame.BorderBrush = inUse
-            ? new SolidColorBrush(windowIsDark ? Color.Parse("#60cdff") : Color.Parse("#005fb8"))
-            : new SolidColorBrush(windowIsDark ? Color.Parse("#46464e") : Color.Parse("#c8c8d0"));
+        _frame.BorderBrush = tokens.Brush(inUse ? tokens.Accent : tokens.Edge);
     }
 
     private static readonly FontFamily Mono = FontFamily.Parse("monospace");
@@ -89,7 +89,7 @@ internal sealed class ThemeCardView : Button
         }
 
         var line = preview.CommandLine;
-        var command = new TextBlock { FontFamily = Mono, FontSize = 9, Padding = new Thickness(4, 2), TextTrimming = TextTrimming.CharacterEllipsis };
+        var command = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, Padding = new Thickness(4, 2), TextTrimming = TextTrimming.CharacterEllipsis };
         command.Inlines!.Add(new Run(line.Prompt + " ") { Foreground = Brush(line.PromptInk), FontWeight = FontWeight.Bold });
         command.Inlines.Add(new Run(line.Text) { Foreground = Brush(line.Ink) });
 
@@ -105,7 +105,7 @@ internal sealed class ThemeCardView : Button
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
         foreach (var tab in pane.Tabs)
         {
-            var title = new TextBlock { FontFamily = Mono, FontSize = 9, Padding = new Thickness(3, 1) };
+            var title = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, Padding = new Thickness(3, 1) };
             title.Inlines!.Add(new Run(tab.Title) { Foreground = Brush(tab.Ink), FontWeight = tab.Selected ? FontWeight.Bold : FontWeight.Normal });
             if (tab.Badge is { } badge)
             {
@@ -118,7 +118,7 @@ internal sealed class ThemeCardView : Button
         var lines = new StackPanel { Margin = new Thickness(4, 3, 4, 4) };
         foreach (var runs in pane.Lines)
         {
-            var text = new TextBlock { FontFamily = Mono, FontSize = 9, TextTrimming = TextTrimming.CharacterEllipsis };
+            var text = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, TextTrimming = TextTrimming.CharacterEllipsis };
             foreach (var run in runs)
             {
                 text.Inlines!.Add(new Run(run.Text) { Foreground = Brush(run.Ink), FontWeight = run.Bold ? FontWeight.Bold : FontWeight.Normal });

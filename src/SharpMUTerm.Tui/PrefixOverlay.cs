@@ -40,6 +40,12 @@ internal sealed class PrefixOverlay
     private readonly Action<ConsoleKeyInfo> _run;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private PrefixFacts _current = PrefixFacts.Fresh;
 
     /// <summary>
@@ -99,14 +105,15 @@ internal sealed class PrefixOverlay
             .WithTitle("⌃B — pane commands")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
             .WithSize(width, height)
             .Centered()
-            .AddControl(new MarkupControl(new List<string>(lines)))
+            .AddControl(new MarkupControl(Scheme.Lines(lines, ScreenPalette.MenuBg)))
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);

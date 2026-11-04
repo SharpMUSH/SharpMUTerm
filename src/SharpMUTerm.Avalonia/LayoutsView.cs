@@ -19,7 +19,7 @@ namespace SharpMUTerm.Avalonia;
 internal sealed class LayoutsView : DockPanel, IModalView
 {
     private readonly LayoutsSession _session;
-    private readonly ModalColours _colours;
+    private readonly NativeTokens _colours;
     private readonly Action _done;
     private readonly StackPanel _list;
     private readonly TextBlock _status;
@@ -32,7 +32,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
     private bool _renaming;
     private bool _confirming;
 
-    public LayoutsView(LayoutsSession session, ModalColours colours, Action done)
+    public LayoutsView(LayoutsSession session, NativeTokens colours, Action done)
     {
         _session = session;
         _colours = colours;
@@ -51,13 +51,13 @@ internal sealed class LayoutsView : DockPanel, IModalView
         {
             Margin = new Thickness(14, 4, 14, 4),
             Padding = new Thickness(10, 6),
-            CornerRadius = new CornerRadius(7),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             IsVisible = false,
             PlaceholderText = "New name",
         };
         global::Avalonia.Automation.AutomationProperties.SetName(_rename, "New name");
 
-        var footer = ModalParts.Footer("↑↓ pick · Enter apply · Esc close", colours);
+        var footer = ModalParts.Footer("↑↓ pick · Esc close", colours);
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
@@ -190,11 +190,11 @@ internal sealed class LayoutsView : DockPanel, IModalView
         SetDock(tags, Dock.Right);
         line.Children.Add(tags);
         var words = new StackPanel();
-        words.Children.Add(new TextBlock { Text = layout.Name, FontSize = 14, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
+        words.Children.Add(new TextBlock { Text = layout.Name, FontSize = NativeTokens.Title, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
         words.Children.Add(new TextBlock
         {
             Text = layout.Description,
-            FontSize = 12,
+            FontSize = NativeTokens.Body,
             Foreground = _colours.Brush(_colours.Dim),
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
@@ -212,9 +212,9 @@ internal sealed class LayoutsView : DockPanel, IModalView
     private Border Chip(string text) => new()
     {
         Background = _colours.Brush(_colours.Selected),
-        CornerRadius = new CornerRadius(9),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         Padding = new Thickness(8, 1),
-        Child = new TextBlock { Text = text, FontSize = 11, Foreground = _colours.Brush(_colours.Accent) },
+        Child = new TextBlock { Text = text, FontSize = NativeTokens.Small, Foreground = _colours.Brush(_colours.Accent) },
     };
 
     private void DrawButtons()

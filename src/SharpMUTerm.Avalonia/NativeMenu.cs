@@ -40,7 +40,21 @@ internal static class NativeMenu
     private static ContextMenu Build(
         IEnumerable<(string Label, string? Hint, bool Enabled, bool Checked, Action Run)?> items, PlacementMode placement, Control target)
     {
-        var menu = new ContextMenu { Placement = placement, PlacementTarget = target };
+        // The palette's card: the client's planes, ink and highlight, a rounded edge — not Simple's grey square.
+        var tokens = NativeTokens.For(null, target.ActualThemeVariant != global::Avalonia.Styling.ThemeVariant.Light);
+        var menu = new ContextMenu
+        {
+            Placement = placement,
+            PlacementTarget = target,
+            Background = tokens.Brush(tokens.Card),
+            Foreground = tokens.Brush(tokens.Text),
+            BorderBrush = tokens.Brush(tokens.Edge),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            Padding = new Thickness(4),
+            FontSize = NativeTokens.Body,
+        };
+        tokens.ApplySimple(menu.Resources);
         Grid.SetIsSharedSizeScope(menu, true);
         foreach (var item in items)
         {
@@ -74,7 +88,7 @@ internal static class NativeMenu
         grid.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
         if (hint is { } key)
         {
-            var text = new TextBlock { Text = NativeKeys.Words(key), Opacity = 0.6, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            var text = new TextBlock { Text = NativeKeys.Words(key), Opacity = 0.7, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(text, 1);
             grid.Children.Add(text);
         }

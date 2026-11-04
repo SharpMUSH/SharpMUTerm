@@ -838,7 +838,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _header.BackgroundColor = ToColor(_theme.StatusBackground); // the menu bar is a distinct chrome band
         // Keep the clickable brand button on-brand (violet) instead of the driver's default link highlight.
         var brand = AccentPalette[2];
-        _header.FocusedLinkBackgroundColor = ToColor(new Rgb(brand.R, brand.G, brand.B));
+        _header.FocusedLinkBackgroundColor = ToColor(WorkspacePalette.HeaderFill(_theme, new Rgb(brand.R, brand.G, brand.B)));
         _header.FocusedLinkForegroundColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: true));
 
         // A host that draws the header (the window) gets no header row at all: hidden, a sticky band takes no row,
@@ -952,6 +952,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             InsertHistoryEntry);
 
         _search = new SearchSurface(_system, SearchModelFor, GoToSearchHit);
+        SchemePopups();
 
         _window.OnResize += (_, _) =>
         {
@@ -8015,19 +8016,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// A world's accent as a <em>fill</em> — the header ribbon's segments. Deliberately <b>not</b> lifted:
     /// a fill is identity, the same reasoning the pane tints are built on, and holding one to a floor
     /// against a plane it covers rather than sits on would flatten the ribbon's own hues to a row of
-    /// near-identical pastels. What has to clear the floor is the text on it, which is <see cref="Ink"/>.
+    /// near-identical pastels. What has to clear the floor is the text on it, which is <see cref="SegmentInk"/>.
+    /// A light theme deepens it (<see cref="WorkspacePalette.HeaderFill"/>) so its ink can be light.
     /// </summary>
     private string FillHex(TerminalColor accent) =>
-        accent.Kind == TerminalColorKind.Rgb
-            ? new Rgb(accent.R, accent.G, accent.B).ToHex()
-            : _ink.Accent;
+        WorkspacePalette.HeaderFill(
+            _theme,
+            accent.Kind == TerminalColorKind.Rgb ? new Rgb(accent.R, accent.G, accent.B) : ParseHex(_ink.Accent)).ToHex();
 
-    /// <summary>
-    /// Text on a known fill, held to the floor against <em>that fill</em> rather than against any plane —
-    /// the ribbon's segment labels and the ● that wears the world's colour on the character chip.
-    /// </summary>
-    private static string Ink(string inkHex, string fillHex) =>
-        ChromeInk.On(ParseHex(inkHex), ParseHex(fillHex));
+    /// <summary>The ink on a header segment's <paramref name="fillHex"/>, held to the header's floor.</summary>
+    private string SegmentInk(string fillHex) => WorkspacePalette.HeaderInk(_theme, ParseHex(fillHex)).ToHex();
 
     /// <summary>A <c>#rrggbb</c> markup colour back as a colour.</summary>
     private static Rgb ParseHex(string hex) => new(
@@ -13704,7 +13702,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The menu affordance opens the command surface (caret flips to ▾ while it's open). The whole
         // identity cluster is a powerline ribbon — menu ▸ world ▸ character — flowing accent colours.
         var caret = model.MenuOpen ? "▾" : Glyphs.Menu;
-        var dark = Hex(_theme.Resolve(TerminalColor.Default, isBackground: true));
         var headerBg = Hex(_theme.StatusBackground);
         // The dim chrome the character segment sits on. Derived rather than the literal #3f4859 it was:
         // the header is painted on the theme's own chrome band, and a fixed dark chip under a *light*
@@ -13720,14 +13717,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // legible is the text *on* it, so each segment's ink is measured against the fill it lands on.
         var brandBg = FillHex(AccentPalette[2]); // violet
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[link={HeaderModel.PaletteTarget}][bold {Ink(dark, brandBg)} on {brandBg}] {caret} muterm [/][/]");
+        sb.Append($"[link={HeaderModel.PaletteTarget}][bold {SegmentInk(brandBg)} on {brandBg}] {caret} muterm [/][/]");
 
         var tail = brandBg;
         if (model.World is { } active)
         {
             var worldAccent = FillHex(active.Accent);
             sb.Append($"[{tail} on {worldAccent}]{Glyphs.PowerRight}[/]");
-            sb.Append($"[bold {Ink(dark, worldAccent)} on {worldAccent}] {Escape(active.Name)} [/]");
+            sb.Append($"[bold {SegmentInk(worldAccent)} on {worldAccent}] {Escape(active.Name)} [/]");
             tail = worldAccent;
             if (model.Character?.Name is { } name)
             {
@@ -13736,7 +13733,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 // The ● wears the world's colour and is *text* here rather than a fill, so it is the one
                 // place on this row the accent has to clear the floor — against the chip, which is the
                 // plane it actually lands on.
-                sb.Append($"[{Ink(worldAccent, chip)} on {chip}] ● {Escape(name)} [/]");
+                sb.Append($"[{Contrast.Legible(ParseHex(worldAccent), chipRgb, WorkspacePalette.HeaderTextFloor).ToHex()} on {chip}] ● {Escape(name)} [/]");
                 tail = chip;
             }
         }
@@ -13765,17 +13762,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // graphics readout, which took the 80-column layout to precisely 80 cells; dropping that (see
         // below) gave the width back. InputAreaLayoutTests.TheFirstFrameFitsTheTerminalItIsOn(80) is the
         // test that says so, and anything added here has to keep it passing.
+        // The quiet half of the row is held to the header's floor on its band rather than left to the framework's
+        // fixed [dim] grey, which is 3.4:1 on Dark's band and less on Light's.
+        var muted = WorkspacePalette.HeaderMuted(_theme).ToHex();
         var conn = model.HasWorlds ? $"{model.ConnectedText}   " : string.Empty;
         var log = model.Log == LogFormat.None
-            ? $"[dim]{Glyphs.Log} {model.LogText}[/]"
-            : $"[{_ink.Accent}]{Glyphs.Log}[/] [dim]{model.LogText}[/]";
+            ? $"[{muted}]{Glyphs.Log} {model.LogText}[/]"
+            : $"[{Contrast.Legible(ParseHex(_ink.Accent), _theme.StatusBackground, WorkspacePalette.HeaderTextFloor).ToHex()}]{Glyphs.Log}[/] [{muted}]{model.LogText}[/]";
         // No graphics readout here. Which protocol the probe settled on is decided once at startup and
         // never changes, so a permanent cell of chrome spends the row's scarcest resource on a fact that
         // cannot become news — and it was already said twice elsewhere: the session prints
         // "*** SharpMUTerm — theme '…', graphics: …" when it opens, and the not-connected status line
         // repeats it. A startup fact belongs where startup facts are read, not in the row that has to
         // fit an identity ribbon and a live count at eighty columns.
-        var right = $"[dim]{conn}[/]{log}   ";
+        var right = $"[{muted}]{conn}[/]{log}   ";
 
         // Right-align the status cluster to the far edge so the menu bar spans the whole console.
         var gap = Math.Max(3, HeaderWidth() - MarkupWidth(leftBar) - MarkupWidth(right));
@@ -13970,7 +13970,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _statusMetersHidden = VitalsStripShowing();
         var meters = _statusMetersHidden
             ? string.Empty
-            : StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}");
+            : StatusMeterRenderer.Render(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground));
 
         var right = new List<string>();
 
@@ -14037,7 +14037,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // either of those two cells, and they used to be the thing that lost — at 80 columns a world
         // publishing HP showed none of it.
         var compactMeters = meters.Length > 0
-            ? StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}", compact: true)
+            ? StatusMeterRenderer.Render(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), compact: true)
             : string.Empty;
         var meterCost = compactMeters.Length > 0 ? 3 + MarkupWidth(compactMeters) + MeterSlack : 0;
         foreach (var droppable in new[] { encodingCell, paletteCell })
@@ -14072,7 +14072,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack > HeaderWidth())
         {
             // Too narrow for value/max: the share alone, in a field just as fixed.
-            meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}", compact: true);
+            meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), compact: true);
         }
 
         if (meters.Length > 0

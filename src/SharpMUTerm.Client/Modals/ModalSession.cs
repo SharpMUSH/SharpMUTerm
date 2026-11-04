@@ -28,6 +28,12 @@ public abstract class ModalSession
     /// <summary>Whether the client's theme is a dark one.</summary>
     public bool IsDark { get; }
 
+    /// <summary>
+    /// A copy of the client's theme when the modal opened, so the host can derive its colours from it as the cells do;
+    /// null leaves the host the built-in theme of <see cref="IsDark"/>'s variant.
+    /// </summary>
+    public Core.Theming.Theme? Theme { get; init; }
+
     /// <summary>The surface this is (<c>SurfaceCatalog</c>'s id).</summary>
     public abstract string Surface { get; }
 

@@ -192,6 +192,8 @@ internal sealed partial class SharpMUTermApp
         {
             Packages = PackageManager,
             Selections = _listSelections,
+            Theme = () => _theme.Clone(),
+            BesideOutput = item is not null,
         };
         return form;
     }

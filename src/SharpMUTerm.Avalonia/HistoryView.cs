@@ -18,7 +18,7 @@ namespace SharpMUTerm.Avalonia;
 internal sealed class HistoryView : DockPanel, IModalView
 {
     private readonly HistorySession _session;
-    private readonly ModalColours _colours;
+    private readonly NativeTokens _colours;
     private readonly Action _done;
     private readonly TextBox _box;
     private readonly TextBlock _count;
@@ -27,7 +27,7 @@ internal sealed class HistoryView : DockPanel, IModalView
     private IReadOnlyList<HistoryMatch> _matches = [];
     private int _selected;
 
-    public HistoryView(HistorySession session, ModalColours colours, Action done)
+    public HistoryView(HistorySession session, NativeTokens colours, Action done)
     {
         _session = session;
         _colours = colours;
@@ -39,8 +39,8 @@ internal sealed class HistoryView : DockPanel, IModalView
         Children.Add(_box);
 
         var header = new DockPanel { Margin = new Thickness(20, 0, 20, 6) };
-        var whose = new TextBlock { Text = model.BarLabel, FontSize = 12.5, Foreground = colours.Brush(colours.Dim) };
-        _count = new TextBlock { FontSize = 12.5, Foreground = colours.Brush(colours.Dim), HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right };
+        var whose = new TextBlock { Text = model.BarLabel, FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim) };
+        _count = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right };
         SetDock(whose, Dock.Left);
         header.Children.Add(whose);
         header.Children.Add(_count);
@@ -127,7 +127,7 @@ internal sealed class HistoryView : DockPanel, IModalView
             {
                 Foreground = _colours.Brush(_colours.Text),
                 FontFamily = mono,
-                FontSize = 13,
+                FontSize = NativeTokens.Title,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             text.Inlines = ModalParts.Marked(match.Text, match.MatchStart, match.MatchLength, _colours);

@@ -23,6 +23,12 @@ internal sealed class CommandPalette
     private readonly Func<IReadOnlyList<string>> _suggested;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private PromptControl? _search;
     private MarkupControl? _results;
     private PaletteView _view = Empty;
@@ -84,7 +90,18 @@ internal sealed class CommandPalette
     private void Open()
     {
         _selected = 0;
-        _search = Controls.Prompt("›").Build();
+        var prompt = Controls.Prompt("›");
+        if (!Scheme.IsIdentity)
+        {
+            // Off Dark the framework's own dark-grey well would be a dark island on the themed surface.
+            prompt = prompt
+                .WithInputBackgroundColor(Scheme.Colour(ScreenPalette.EditBg))
+                .WithInputFocusedBackgroundColor(Scheme.Colour(ScreenPalette.EditBg))
+                .WithInputForegroundColor(Scheme.Colour(ScreenPalette.Value))
+                .WithInputFocusedForegroundColor(Scheme.Colour(ScreenPalette.Value));
+        }
+
+        _search = prompt.Build();
         _search.InputChanged += (_, query) => Refresh(query);
         _search.Entered += (_, _) => Commit();
 
@@ -113,7 +130,7 @@ internal sealed class CommandPalette
             .WithTitle("Command surface")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
             .WithSize(width, height)
@@ -122,6 +139,7 @@ internal sealed class CommandPalette
             .AddControl(_results)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -143,7 +161,7 @@ internal sealed class CommandPalette
     }
 
     private void Paint() =>
-        _results?.SetContent(CommandSurfaceRenderer.Render(_view, _selected, _context(), _contentWidth));
+        _results?.SetContent(Scheme.Lines(CommandSurfaceRenderer.Render(_view, _selected, _context(), _contentWidth), ScreenPalette.MenuBg));
 
     private void Move(int delta)
     {

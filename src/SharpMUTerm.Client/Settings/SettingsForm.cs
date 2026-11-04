@@ -113,6 +113,18 @@ public sealed class SettingsForm
     public bool IsDark => _isDark();
 
     /// <summary>
+    /// The client's theme now — a copy, read from the host's thread — so the host derives its colours from it as the
+    /// cells do and follows a theme picked here; null leaves the host the built-in theme of <see cref="IsDark"/>'s variant.
+    /// </summary>
+    public Func<Core.Theming.Theme>? Theme { get; init; }
+
+    /// <summary>
+    /// Whether the form was opened on an item made from what is on screen (the trigger builder's new rule), so the host
+    /// should leave the output it was made from in view rather than cover it.
+    /// </summary>
+    public bool BesideOutput { get; init; }
+
+    /// <summary>
     /// Every world (for <see cref="SettingScope.World"/>) or every character (for <see cref="SettingScope.Character"/>)
     /// a scoped section can be edited for, in configuration order; empty for an app-wide section.
     /// </summary>

@@ -213,7 +213,10 @@ internal sealed partial class SharpMUTermApp
     /// meaning, so they are lifted like text; the empty part of a bar is a grey that still reads as a track.
     /// </summary>
     private VitalsStripRenderer.Ink VitalsInk() =>
-        new(_ink.Accent, _ink.Notice, _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)));
+        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)));
+
+    /// <summary>The low cue's ink on <paramref name="plane"/> (<see cref="WorkspacePalette.Low"/>), as markup.</summary>
+    private string LowInk(Rgb plane) => WorkspacePalette.Low(_theme, ParseHex(_ink.Notice), plane).ToHex();
 
     // --- Quick bar --------------------------------------------------------------------------------------------
 

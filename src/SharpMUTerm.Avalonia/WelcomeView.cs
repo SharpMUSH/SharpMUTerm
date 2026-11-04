@@ -22,7 +22,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private static readonly WelcomeLayout[] Layouts = [WelcomeLayout.Suggested, WelcomeLayout.Roleplay, WelcomeLayout.Combat];
 
     private readonly WelcomeSession _session;
-    private readonly ModalColours _colours;
+    private readonly NativeTokens _colours;
     private readonly Action _done;
     private readonly StackPanel _body = new();
     private readonly TextBlock _footer;
@@ -37,7 +37,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private CheckBox? _passwordLater;
     private bool _drawnInForm;
 
-    public WelcomeView(WelcomeSession session, ModalColours colours, Action done)
+    public WelcomeView(WelcomeSession session, NativeTokens colours, Action done)
     {
         _session = session;
         _colours = colours;
@@ -165,8 +165,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
             var index = i;
             var (title, detail) = _model.Describe(choice);
             var words = new StackPanel();
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(title), FontSize = 14.5, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(detail), FontSize = 12, Foreground = _colours.Brush(_colours.Dim) });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(title), FontSize = NativeTokens.Title, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(detail), FontSize = NativeTokens.Body, Foreground = _colours.Brush(_colours.Dim) });
             var row = ModalParts.Row(words, title, () => SelectChoice(index), () => Choose(choice));
             row.Padding = new Thickness(12, 8);
             _choiceRows.Add(row);
@@ -175,7 +175,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
         _body.Children.Add(list);
 
-        var example = new TextBlock { Margin = new Thickness(22, 6, 22, 0), FontSize = 12.5, Foreground = _colours.Brush(_colours.Dim), TextWrapping = TextWrapping.Wrap };
+        var example = new TextBlock { Margin = new Thickness(22, 6, 22, 0), FontSize = NativeTokens.Body, Foreground = _colours.Brush(_colours.Dim), TextWrapping = TextWrapping.Wrap };
         example.Inlines!.Add(new global::Avalonia.Controls.Documents.Run("Or type on the command line: "));
         example.Inlines.Add(new global::Avalonia.Controls.Documents.Run(WelcomeModel.ExampleCommand)
         {
@@ -221,7 +221,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
         TextBox Field(string name, string text, string placeholder, int row, int max)
         {
-            var box = new TextBox { Text = text, PlaceholderText = placeholder, MaxLength = max, Margin = new Thickness(0, 4), Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(7) };
+            var box = new TextBox { Text = text, PlaceholderText = placeholder, MaxLength = max, Margin = new Thickness(0, 4), Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(NativeTokens.RadiusM) };
             global::Avalonia.Automation.AutomationProperties.SetName(box, name);
             Grid.SetRow(box, row);
             Grid.SetColumn(box, 1);
@@ -260,7 +260,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         buttons.Children.Add(back);
         buttons.Children.Add(connect);
         _body.Children.Add(buttons);
-        _footer.Text = "Tab moves · Enter connects · Esc back";
+        _footer.Text = "Tab moves between the fields";
         DrawProblem();
     }
 

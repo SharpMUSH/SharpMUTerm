@@ -912,9 +912,15 @@ fallbacks) for inline images/maps.
     that happens to be `#00f5b7`); a foreground that is no role (a world's accent) is held to the floor on
     the plane it lands on, except on Dark, which stays as it was.
   - A bordered modal's title, border and unstyled text are the framework's cyan and `#eeeeee`, 1.4:1 on a
-    light backdrop; `ScreenTheme.Frame` recolours them off Dark. **Not themed**: the workspace popups that do
-    not sit on a settings screen (⌃P, quit, ⌃B panel, search, game data, message log, history) still paint
-    `ScreenPalette.MenuBg` raw. They pass the floor on Light and look dark; same recipe when someone wants it.
+    light backdrop; `ScreenTheme.Frame` recolours them off Dark. **The workspace popups follow it too** (⌃P, quit, ⌃B panel,
+    search, game data, message log, history): each has a `Scheme` the app sets in `SchemePopups()` (on
+    `ApplyTheme`), paints its plane with `Scheme.Colour(MenuBg)`, its lines with `Scheme.Lines` and its frame
+    with `Scheme.Frame`; ⌃P's prompt well takes `EditBg` off Dark. Dark is byte for byte unchanged.
+  - **The header's fills are derived per theme** (`WorkspacePalette.HeaderFill`/`HeaderInk`/`HeaderMuted`): on a
+    light theme a segment's fill is deepened until light ink clears 4.5:1 on it, and the muted right cluster is
+    held to 4.5:1 on the status plane; a dark theme's fills are as they were. The native header reads the same
+    inks through `ChromePalette.BrandInk`/`HeaderMuted`. The low-vitals cue is `WorkspacePalette.Low`: the notice
+    ink on dark, a deep orange held to 4.5:1 on light, in the status row, the vitals strip and the gauges.
 - **A trigger's `route` says three things, and the third is "nothing"** (`TriggerActions.MainWindow`,
   Core; F2's `route` list). `SpawnTarget = null` has always meant *this rule adds no destination — the
   line follows whatever the other matched rules decided*, which is exactly what a highlight rule wants.
@@ -1952,6 +1958,21 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `history-search-filter` opens ⌃R with its query typed (`HistorySession.InitialQuery`), and `search-landed` lands
     through the native search's own close and `GoToSearchHit`, so the cells it leaves match the terminal's.
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`).
+- **The window has one design language: `NativeTokens`** (Avalonia). Planes (card, raised, selected, scrim), edge
+  and rule, inks (text, dim, header, accent, warn, notice, accent and key inks), radii `RadiusS/M/L` 4/8/12 and
+  the type ramp `Small/Body/Title/Heading` 11/12/14/18 (`Miniature` 9 only for a theme card's preview). Derived
+  from the client's `Theme` the `ScreenTheme` way: a canonical Dark (`#1e1e25` card) and Light (white) set, the
+  theme background's hue shift added, every ink held to `TextFloor` 4.5:1 on each plane it is drawn on; the
+  accent is the client's teal, never Fluent's blue. `Apply` sets the Fluent keys on a scope and `ApplySimple`
+  the Simple theme's (menus). The settings window, list editor, package page, theme cards, menus, palette and
+  modals all read it; sessions carry the theme (`ModalSession.Theme`, `PaletteSession.Theme`,
+  `SettingsForm.Theme`). `NativeTokenTests.NoViewWritesALiteralFontSizeOrColour` fails on a literal
+  `FontSize =` number or `Color.Parse("#` anywhere in the window's assembly outside `NativeTokens.cs`; widen its
+  allow-list only with a reason. A quiet line is the `Dim` ink, never an opacity (an opacity is not floor-checked).
+  - **The settings window is the palette's modal**: undecorated with its own title bar (title, ✕, Esc, drag to
+    move), the tokens' card and edge, and a scrim over the main window (`SettingsPresenter.Scrim`; a press on it
+    closes). Opened from the trigger builder (`SettingsForm.BesideOutput`) it is docked to the main window's right
+    half with no scrim, so the line the rule came from stays in view. Still a separate OS window, not an overlay.
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus `⏎` → `Enter`):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them
   well; whatever it hands a native view — menu keys, a toast's chip and text, palette details and chips, the

@@ -34,6 +34,7 @@ internal sealed class ListEditorView : Grid
     private readonly SettingsCollection _collection;
     private readonly Func<SettingsField, bool> _visible;
     private readonly IBrush _accent;
+    private readonly NativeTokens _tokens;
     private readonly ListBox _list;
     private readonly StackPanel _detail;
     private readonly List<Action> _refreshers = [];
@@ -45,13 +46,14 @@ internal sealed class ListEditorView : Grid
     private bool _syncing;
     private bool _choosing;
 
-    public ListEditorView(SettingsForm form, SettingsSectionContribution section, Func<SettingsField, bool> visible, IBrush accent)
+    public ListEditorView(SettingsForm form, SettingsSectionContribution section, Func<SettingsField, bool> visible, NativeTokens tokens)
     {
         _form = form;
         _section = section;
         _collection = section.Collection!;
         _visible = visible;
-        _accent = accent;
+        _tokens = tokens;
+        _accent = tokens.Brush(tokens.Accent);
         ColumnDefinitions = new ColumnDefinitions("292,*");
         Margin = new Thickness(0, 10, 0, 0);
 
@@ -87,7 +89,7 @@ internal sealed class ListEditorView : Grid
             Child = _list,
             BorderThickness = new Thickness(1),
             BorderBrush = Hairline,
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         });
         Children.Add(left);
 
@@ -194,7 +196,10 @@ internal sealed class ListEditorView : Grid
 
     // ── the list ─────────────────────────────────────────────────────────────────────────────────
 
-    private IBrush Hairline => new SolidColorBrush(_form.IsDark ? Color.Parse("#46464e") : Color.Parse("#c8c8d0"));
+    private IBrush Hairline => _tokens.Brush(_tokens.Edge);
+
+    /// <summary>A quiet line's ink, held to the floor (an opacity would not be).</summary>
+    private IBrush DimInk => _tokens.Brush(_tokens.Dim);
 
     private static Button ToolButton(string text, string tip)
     {
@@ -229,7 +234,7 @@ internal sealed class ListEditorView : Grid
             {
                 items.Add(new ListBoxItem
                 {
-                    Content = new TextBlock { Text = $"no {_collection.Plural}", Opacity = 0.6, FontStyle = FontStyle.Italic },
+                    Content = new TextBlock { Text = $"no {_collection.Plural}", Foreground = DimInk, FontStyle = FontStyle.Italic },
                     IsEnabled = false,
                     Padding = new Thickness(30, 2),
                 });
@@ -245,7 +250,7 @@ internal sealed class ListEditorView : Grid
         {
             items.Add(new ListBoxItem
             {
-                Content = new TextBlock { Text = "No trigger set yet — make one on F5.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
+                Content = new TextBlock { Text = "No trigger set yet — make one on F5.", Foreground = DimInk, TextWrapping = TextWrapping.Wrap },
                 IsEnabled = false,
             });
         }
@@ -262,7 +267,7 @@ internal sealed class ListEditorView : Grid
         var row = new DockPanel { LastChildFill = true };
         if (group.ReadOnly)
         {
-            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(8, 1), FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(8, 1), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
             ToolTip.SetTip(copy, "A package's set is replaced when the package updates; copy it into your own sets to change it");
             AutomationProperties.SetName(copy, $"Copy {group.Set.Name} to edit");
             var set = group.Set;
@@ -273,10 +278,10 @@ internal sealed class ListEditorView : Grid
         }
 
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        words.Children.Add(new TextBlock { Text = group.Label, FontWeight = FontWeight.SemiBold, FontSize = 12, Foreground = _accent, TextTrimming = TextTrimming.CharacterEllipsis });
+        words.Children.Add(new TextBlock { Text = group.Label.ToUpperInvariant(), FontWeight = FontWeight.SemiBold, FontSize = NativeTokens.Small, LetterSpacing = 0.8, Foreground = _tokens.Brush(_tokens.Header), TextTrimming = TextTrimming.CharacterEllipsis });
         if (group.ReadOnly)
         {
-            words.Children.Add(new TextBlock { Text = "package · read-only", FontSize = 11, Opacity = 0.65 });
+            words.Children.Add(new TextBlock { Text = "package · read-only", FontSize = NativeTokens.Small, Foreground = DimInk });
         }
 
         row.Children.Add(words);
@@ -310,7 +315,7 @@ internal sealed class ListEditorView : Grid
             words.Children.Add(new TextBlock
             {
                 Text = detail,
-                FontSize = 11,
+                FontSize = NativeTokens.Small,
                 Opacity = 0.65,
                 FontFamily = Mono,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -440,7 +445,7 @@ internal sealed class ListEditorView : Grid
         }
 
         var title = _collection.TitleOf(item);
-        _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         if (group.ReadOnly)
         {
             var banner = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 4) };
@@ -461,7 +466,7 @@ internal sealed class ListEditorView : Grid
         }
         else
         {
-            _detail.Children.Add(new TextBlock { Text = $"in {group.Label}", Opacity = 0.65, Margin = new Thickness(0, 0, 0, 4) });
+            _detail.Children.Add(new TextBlock { Text = $"in {group.Label}", Foreground = DimInk, Margin = new Thickness(0, 0, 0, 4) });
         }
 
         var shown = new List<string>();
@@ -485,7 +490,7 @@ internal sealed class ListEditorView : Grid
             if (field.Group is { } g && !string.Equals(g, heading, StringComparison.Ordinal))
             {
                 heading = g;
-                _detail.Children.Add(new TextBlock { Text = g, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = _accent, Margin = new Thickness(0, 14, 0, 2) });
+                _detail.Children.Add(new TextBlock { Text = g.ToUpperInvariant(), FontSize = NativeTokens.Small, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.8, Foreground = _tokens.Brush(_tokens.Header), Margin = new Thickness(0, 16, 0, 4) });
             }
 
             var control = ControlFor(field);
@@ -501,7 +506,7 @@ internal sealed class ListEditorView : Grid
                     Child = _preview,
                     BorderThickness = new Thickness(1),
                     BorderBrush = Hairline,
-                    CornerRadius = new CornerRadius(6),
+                    CornerRadius = new CornerRadius(NativeTokens.RadiusM),
                     Padding = new Thickness(10, 6),
                     Margin = new Thickness(0, 2, 0, 6),
                 });
@@ -516,7 +521,7 @@ internal sealed class ListEditorView : Grid
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), Margin = new Thickness(0, 3), MinHeight = 34 };
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 13, TextWrapping = TextWrapping.Wrap });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title, TextWrapping = TextWrapping.Wrap });
         if (field.Help is { } help)
         {
             ToolTip.SetTip(words, NativeKeys.Words(Capitalise(help)));
@@ -540,7 +545,7 @@ internal sealed class ListEditorView : Grid
             return;
         }
 
-        var summary = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+        var summary = new TextBlock { FontSize = NativeTokens.Body, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
         if (result.Problem is { } problem)
         {
             summary.Text = $"Live test: {problem}";
@@ -561,7 +566,7 @@ internal sealed class ListEditorView : Grid
         _preview.Children.Add(summary);
         foreach (var sample in result.Samples)
         {
-            var line = new TextBlock { FontFamily = Mono, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
+            var line = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Body, TextTrimming = TextTrimming.CharacterEllipsis };
             var text = sample.Text;
             var start = Math.Clamp(sample.MatchStart, 0, text.Length);
             var length = Math.Clamp(sample.MatchLength, 0, text.Length - start);
@@ -719,7 +724,7 @@ internal sealed class ListEditorView : Grid
                 return TextControl(text);
 
             default:
-                return new TextBlock { Text = "set on its own screen", Opacity = 0.7 };
+                return new TextBlock { Text = "set on its own screen", Foreground = DimInk };
         }
     }
 
@@ -830,7 +835,7 @@ internal sealed class ListEditorView : Grid
     private Control KeyCapture(KeyField field, SettingBinding<string> chord)
     {
         var button = new Button { Content = NativeKeys.Words(_form.Get(chord)), MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, HorizontalContentAlignment = HorizontalAlignment.Left };
-        var note = new TextBlock { FontSize = 11, Opacity = 0.75, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+        var note = new TextBlock { FontSize = NativeTokens.Small, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
         var capturing = false;
         void Show()
         {
@@ -895,7 +900,7 @@ internal sealed class ListEditorView : Grid
         {
             Width = 14,
             Height = 14,
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusS),
             Background = hex is null ? Brushes.Transparent : new SolidColorBrush(Color.Parse(hex)),
             BorderBrush = Brushes.Gray,
             BorderThickness = new Thickness(hex is null ? 1 : 0),

@@ -28,6 +28,12 @@ internal sealed class QuitOverlay
     private readonly Action? _closed;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private MarkupControl? _body;
     private QuitModel _current = QuitModel.Nothing;
     private QuitChoice _selected = QuitChoice.Stay;
@@ -85,7 +91,7 @@ internal sealed class QuitOverlay
         _selected = QuitChoice.Stay;
 
         var lines = QuitPrompt.Render(_current, _selected);
-        _body = new MarkupControl(new List<string>(lines));
+        _body = new MarkupControl(Scheme.Lines(lines, ScreenPalette.MenuBg));
 
         // Hug the content: the question is as tall as it has things to say. Centred *after* WithSize,
         // because the builder reads the bounds set so far and falls back to 80x25 otherwise.
@@ -98,7 +104,7 @@ internal sealed class QuitOverlay
             .WithTitle("Quit")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
             .WithSize(width, height)
@@ -106,6 +112,7 @@ internal sealed class QuitOverlay
             .AddControl(_body)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -136,7 +143,7 @@ internal sealed class QuitOverlay
                 break;
 
             case QuitAction.Redraw:
-                _body?.SetContent(new List<string>(QuitPrompt.Render(_current, _selected)));
+                _body?.SetContent(Scheme.Lines(QuitPrompt.Render(_current, _selected), ScreenPalette.MenuBg));
                 _window.Invalidate(redrawAll: true);
                 break;
 

@@ -188,7 +188,7 @@ internal abstract class NativeChromeView : Control
     // ── Drawing ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The UI font size the chrome's text is set in.</summary>
-    protected const double FontSize = 13;
+    protected const double FontSize = NativeTokens.Body + 1;
 
     protected Color Dim => Color.FromArgb(0xA8, Ink.R, Ink.G, Ink.B);
 
@@ -474,7 +474,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         }
 
         context.DrawRectangle(new SolidColorBrush(brand), null, _brand, radius, radius);
-        var brandInk = On(brand, Colors.Black);
+        var brandInk = Parse(overlay.Palette.BrandInk);
         var menu = new Pen(new SolidColorBrush(brandInk), 1.6, lineCap: PenLineCap.Round);
         var mx = _brand.X + 12;
         foreach (var dy in new[] { -4.0, 0, 4 })
@@ -491,7 +491,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 
         if (_counts.Width > 0)
         {
-            Text(context, CountsText(model), _counts.X, middle, size - 1, Dim);
+            Text(context, CountsText(model), _counts.X, middle, size - 1, Parse(overlay.Palette.HeaderMuted));
         }
 
         if (model.Prefix is { } prefix)
@@ -512,7 +512,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
             x += nameWidth + 10;
             if (_pill.Right - 12 - x > 12)
             {
-                Text(context, character.Detail(world.Name), x, middle, size - 1, Dim, maxWidth: _pill.Right - 12 - x);
+                Text(context, character.Detail(world.Name), x, middle, size - 1, Parse(overlay.Palette.HeaderMuted), maxWidth: _pill.Right - 12 - x);
             }
         }
 

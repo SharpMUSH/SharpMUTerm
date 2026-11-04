@@ -66,6 +66,9 @@ public sealed class PaletteSession
     /// <summary>Whether the client's theme is a dark one.</summary>
     public bool IsDark { get; }
 
+    /// <summary>A copy of the client's theme when the palette opened, for the host's colours; null for the variant's built-in.</summary>
+    public Core.Theming.Theme? Theme { get; init; }
+
     /// <summary>How many entries the catalog held when the palette opened.</summary>
     public int Total => _catalog.Count;
 

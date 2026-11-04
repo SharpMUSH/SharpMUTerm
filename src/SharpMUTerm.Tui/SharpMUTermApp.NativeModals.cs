@@ -93,7 +93,10 @@ internal sealed partial class SharpMUTermApp
                 QuitFactsNow(),
                 ThemeIsDark(),
                 () => OnUiThread(Quit),
-                () => OnUiThread(() => NativeModalClosed(session!)));
+                () => OnUiThread(() => NativeModalClosed(session!)))
+            {
+                Theme = _theme.Clone(),
+            };
             _nativeQuit = session;
             native.Show(session);
             return;
@@ -142,7 +145,10 @@ internal sealed partial class SharpMUTermApp
                 }
             }),
             (model, index) => OnUiThread(() => GoToSearchHit(model, index)),
-            () => OnUiThread(() => NativeModalClosed(session!)));
+            () => OnUiThread(() => NativeModalClosed(session!)))
+        {
+            Theme = _theme.Clone(),
+        };
         ShowNativeModal(native, session);
         return true;
     }
@@ -162,6 +168,7 @@ internal sealed partial class SharpMUTermApp
             index => OnUiThread(() => InsertHistoryEntry(index)),
             () => OnUiThread(() => NativeModalClosed(session!)))
         {
+            Theme = _theme.Clone(),
             InitialQuery = query,
         };
         ShowNativeModal(native, session);
@@ -188,7 +195,10 @@ internal sealed partial class SharpMUTermApp
                     session!.Publish(LayoutsModelFor(key));
                 }
             }),
-            () => OnUiThread(() => NativeModalClosed(session!)));
+            () => OnUiThread(() => NativeModalClosed(session!)))
+        {
+            Theme = _theme.Clone(),
+        };
         ShowNativeModal(native, session);
         return true;
     }
@@ -238,7 +248,10 @@ internal sealed partial class SharpMUTermApp
                 welcome.Back();
                 Republish();
             }),
-            () => OnUiThread(() => NativeModalClosed(session!)));
+            () => OnUiThread(() => NativeModalClosed(session!)))
+        {
+            Theme = _theme.Clone(),
+        };
         ShowNativeModal(native, session);
         return true;
     }

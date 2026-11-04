@@ -20,7 +20,7 @@ namespace SharpMUTerm.Avalonia;
 internal sealed class SearchView : DockPanel, IModalView
 {
     private readonly SearchSession _session;
-    private readonly ModalColours _colours;
+    private readonly NativeTokens _colours;
     private readonly Action _done;
     private readonly TextBox _box;
     private readonly ToggleButton _regex;
@@ -34,7 +34,7 @@ internal sealed class SearchView : DockPanel, IModalView
     private int _selected;
     private bool _syncing;
 
-    public SearchView(SearchSession session, ModalColours colours, Action done)
+    public SearchView(SearchSession session, NativeTokens colours, Action done)
     {
         _session = session;
         _colours = colours;
@@ -56,7 +56,7 @@ internal sealed class SearchView : DockPanel, IModalView
         toggles.Children.Add(switches);
         _count = new TextBlock
         {
-            FontSize = 12.5,
+            FontSize = NativeTokens.Body,
             Foreground = colours.Brush(colours.Dim),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
@@ -133,13 +133,13 @@ internal sealed class SearchView : DockPanel, IModalView
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal };
         content.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
-        content.Children.Add(new TextBlock { Text = NativeKeys.Words(key), FontSize = 11, Opacity = 0.7, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = NativeKeys.Words(key), FontSize = NativeTokens.Small, Opacity = 0.7, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         var toggle = new ToggleButton
         {
             Content = content,
             IsChecked = on,
             Padding = new Thickness(10, 4),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Focusable = false,
         };
         global::Avalonia.Automation.AutomationProperties.SetName(toggle, label);
@@ -214,7 +214,7 @@ internal sealed class SearchView : DockPanel, IModalView
                     Width = 130,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Foreground = _colours.Brush(_colours.Header),
-                    FontSize = 12.5,
+                    FontSize = NativeTokens.Body,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 10, 0),
                 };
@@ -226,7 +226,7 @@ internal sealed class SearchView : DockPanel, IModalView
             {
                 Foreground = _colours.Brush(_colours.Text),
                 FontFamily = new FontFamily($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace"),
-                FontSize = 13,
+                FontSize = NativeTokens.Title,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };

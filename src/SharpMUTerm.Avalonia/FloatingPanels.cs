@@ -213,7 +213,7 @@ internal sealed class FloatingPanelWindow : Window
         };
         _content.Focusable = false;
 
-        _title = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Margin = new Thickness(10, 0, 0, 0) };
+        _title = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = NativeTokens.Body, Margin = new Thickness(10, 0, 0, 0) };
         _dock = new FrameButton("Dock") { Width = 52, Height = 20, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
         _dock.Click += () => Panel.Dock();
         AutomationProperties.SetName(_dock, "Dock back into the layout");

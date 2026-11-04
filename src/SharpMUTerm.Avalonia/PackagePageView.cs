@@ -29,6 +29,7 @@ internal sealed class PackagePageView : Grid
     private readonly Func<SettingsField, bool> _visible;
     private readonly IBrush _accent;
     private readonly bool _dark;
+    private readonly NativeTokens _tokens;
     private readonly TabControl _tabs;
     private readonly ListBox _installed = new() { Background = Brushes.Transparent };
     private readonly StackPanel _detail = new() { Spacing = 2, Margin = new Thickness(4, 0, 4, 16) };
@@ -36,7 +37,7 @@ internal sealed class PackagePageView : Grid
     private readonly StackPanel _browseDetail = new() { Spacing = 6, Margin = new Thickness(4, 0, 4, 16) };
     private readonly ContentControl _browseBody = new();
     private readonly Border _reviewLayer;
-    private readonly TextBlock _status = new() { Opacity = 0.8, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     private readonly Dictionary<string, TextBlock> _values = new(StringComparer.Ordinal);
     private readonly List<(PackageItem Item, ToggleSwitch Switch)> _rows = [];
     private string? _selected;
@@ -47,13 +48,14 @@ internal sealed class PackagePageView : Grid
     private bool _shownFetching;
     private PackageReviewModel? _shownReview;
 
-    public PackagePageView(PackageManager manager, Func<SettingsField, bool> visible, IBrush accent, bool dark)
+    public PackagePageView(PackageManager manager, Func<SettingsField, bool> visible, NativeTokens tokens)
     {
         _manager = manager;
         _declaration = manager.Declaration;
         _visible = visible;
-        _accent = accent;
-        _dark = dark;
+        _tokens = tokens;
+        _accent = tokens.Brush(tokens.Accent);
+        _dark = tokens.IsDark;
         RowDefinitions = new RowDefinitions("*,Auto");
         Margin = new Thickness(0, 6, 0, 0);
 
@@ -77,8 +79,8 @@ internal sealed class PackagePageView : Grid
         };
         AutomationProperties.SetName(_browse, "The package index");
 
-        InstalledTab = new TabItem { Header = "Installed", Content = MasterDetail(_installed, _detail), FontSize = 17 };
-        BrowseTab = new TabItem { Header = "Browse", Content = _browseBody, FontSize = 17 };
+        InstalledTab = new TabItem { Header = "Installed", Content = MasterDetail(_installed, _detail), FontSize = NativeTokens.Title };
+        BrowseTab = new TabItem { Header = "Browse", Content = _browseBody, FontSize = NativeTokens.Title };
         foreach (var tab in new[] { InstalledTab, BrowseTab })
         {
             // The header's size only: the page under it keeps the window's own.
@@ -102,7 +104,7 @@ internal sealed class PackagePageView : Grid
 
         _reviewLayer = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)),
+            Background = _tokens.Brush(_tokens.Scrim),
             IsVisible = false,
         };
         SetRowSpan(_reviewLayer, 2);
@@ -190,7 +192,7 @@ internal sealed class PackagePageView : Grid
             Child = list,
             BorderThickness = new Thickness(1),
             BorderBrush = Hairline,
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Margin = new Thickness(0, 0, 14, 0),
         });
         var scroller = new ScrollViewer { Content = detail, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -199,9 +201,12 @@ internal sealed class PackagePageView : Grid
         return grid;
     }
 
-    private IBrush Hairline => new SolidColorBrush(_dark ? Color.Parse("#46464e") : Color.Parse("#c8c8d0"));
+    private IBrush Hairline => _tokens.Brush(_tokens.Edge);
 
-    private IBrush Warning => new SolidColorBrush(_dark ? Color.Parse("#ffb454") : Color.Parse("#a4410e"));
+    /// <summary>A quiet line's ink, held to the floor (an opacity would not be).</summary>
+    private IBrush DimInk => _tokens.Brush(_tokens.Dim);
+
+    private IBrush Warning => _tokens.Brush(_tokens.Warn);
 
     private void BuildInstalled()
     {
@@ -234,12 +239,12 @@ internal sealed class PackagePageView : Grid
                 _rows.Add((item, toggle));
 
                 var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
-                words.Children.Add(new TextBlock { Text = Text("name", item), FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis });
+                words.Children.Add(new TextBlock { Text = Text("name", item), FontSize = NativeTokens.Title, TextTrimming = TextTrimming.CharacterEllipsis });
                 var tail = string.Join(" · ", _declaration.RowFields.Skip(1).Select(id => Text(id, item)));
-                words.Children.Add(new TextBlock { Text = tail, FontSize = 12, Opacity = 0.7, TextTrimming = TextTrimming.CharacterEllipsis });
+                words.Children.Add(new TextBlock { Text = tail, FontSize = NativeTokens.Body, Foreground = DimInk, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (item.Update is { } newer)
                 {
-                    words.Children.Add(new TextBlock { Text = $"update {newer} available", FontSize = 12, Foreground = _accent });
+                    words.Children.Add(new TextBlock { Text = $"update {newer} available", FontSize = NativeTokens.Body, Foreground = _accent });
                 }
 
                 var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
@@ -292,9 +297,9 @@ internal sealed class PackagePageView : Grid
 
         var shown = new List<string> { _declaration.EnabledField };
         shown.AddRange(_declaration.RowFields);
-        _detail.Children.Add(new TextBlock { Text = Text("name", item), FontSize = 20, FontWeight = FontWeight.SemiBold });
+        _detail.Children.Add(new TextBlock { Text = Text("name", item), FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold });
         var subtitle = string.Join(" · ", _declaration.RowFields.Skip(1).Select(id => Text(id, item)));
-        _detail.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, Margin = new Thickness(0, 0, 0, 6) });
+        _detail.Children.Add(new TextBlock { Text = subtitle, Foreground = DimInk, Margin = new Thickness(0, 0, 0, 6) });
 
         string? group = null;
         foreach (var field in _declaration.DetailFields.Where(_visible))
@@ -305,7 +310,7 @@ internal sealed class PackagePageView : Grid
                 _detail.Children.Add(new TextBlock
                 {
                     Text = heading,
-                    FontSize = 15,
+                    FontSize = NativeTokens.Title,
                     FontWeight = FontWeight.SemiBold,
                     Margin = new Thickness(0, 14, 0, 4),
                     Foreground = _accent,
@@ -313,7 +318,7 @@ internal sealed class PackagePageView : Grid
             }
 
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*"), Margin = new Thickness(0, 3) };
-            var label = new TextBlock { Text = Capitalise(field.Label), Opacity = 0.75 };
+            var label = new TextBlock { Text = Capitalise(field.Label), Foreground = DimInk };
             if (field.Help is { } help)
             {
                 ToolTip.SetTip(label, NativeKeys.Words(Capitalise(help)));
@@ -408,7 +413,7 @@ internal sealed class PackagePageView : Grid
         if (_manager.BrowseModel is not { } model)
         {
             var empty = new StackPanel { Spacing = 10, Margin = new Thickness(4, 24, 4, 0), MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
-            empty.Children.Add(new TextBlock { Text = "The package index", FontSize = 18, FontWeight = FontWeight.SemiBold });
+            empty.Children.Add(new TextBlock { Text = "The package index", FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold });
             empty.Children.Add(new TextBlock
             {
                 Text = "Rule sets, scripts and sounds other players have shared, this game's first. The index is fetched only when you ask, over https; every package is checked against it before you see its review.",
@@ -458,7 +463,7 @@ internal sealed class PackagePageView : Grid
         {
             var words = new StackPanel { Spacing = 1 };
             var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            title.Children.Add(new TextBlock { Text = row.Entry.Name, FontSize = 14 });
+            title.Children.Add(new TextBlock { Text = row.Entry.Name, FontSize = NativeTokens.Title });
             if (row.ForWorld)
             {
                 title.Children.Add(Chip(model.World ?? "this game", _accent));
@@ -473,7 +478,7 @@ internal sealed class PackagePageView : Grid
             words.Children.Add(new TextBlock
             {
                 Text = $"{row.Entry.Version} · {string.Join(", ", row.Entry.Games)}" + (row.StateText.Length == 0 ? string.Empty : $" · {row.StateText}"),
-                FontSize = 12,
+                FontSize = NativeTokens.Body,
                 Opacity = 0.7,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
@@ -495,10 +500,10 @@ internal sealed class PackagePageView : Grid
 
     private Border Chip(string text, IBrush brush) => new()
     {
-        Child = new TextBlock { Text = text, FontSize = 11, Foreground = brush },
+        Child = new TextBlock { Text = text, FontSize = NativeTokens.Small, Foreground = brush },
         BorderBrush = brush,
         BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(8),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         Padding = new Thickness(6, 0),
         VerticalAlignment = VerticalAlignment.Center,
     };
@@ -509,13 +514,13 @@ internal sealed class PackagePageView : Grid
         InstallButton = null;
         if (_manager.BrowseModel is not { Rows.Count: > 0 } model)
         {
-            _browseDetail.Children.Add(new TextBlock { Text = "The index lists nothing.", Opacity = 0.75 });
+            _browseDetail.Children.Add(new TextBlock { Text = "The index lists nothing.", Foreground = DimInk });
             return;
         }
 
         var row = model.Rows[Math.Clamp(_browseSelected, 0, model.Rows.Count - 1)];
         var entry = row.Entry;
-        _browseDetail.Children.Add(new TextBlock { Text = entry.Name, FontSize = 20, FontWeight = FontWeight.SemiBold });
+        _browseDetail.Children.Add(new TextBlock { Text = entry.Name, FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold });
         _browseDetail.Children.Add(new TextBlock
         {
             Text = entry.Version + (entry.Author is { } author ? $" · by {author}" : string.Empty),
@@ -551,10 +556,10 @@ internal sealed class PackagePageView : Grid
         _browseDetail.Children.Add(install);
     }
 
-    private static Grid Pair(string label, string value)
+    private Grid Pair(string label, string value)
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*") };
-        grid.Children.Add(new TextBlock { Text = label, Opacity = 0.75 });
+        grid.Children.Add(new TextBlock { Text = label, Foreground = DimInk });
         var text = new TextBlock { Text = value, TextWrapping = TextWrapping.Wrap };
         SetColumn(text, 1);
         grid.Children.Add(text);
@@ -578,11 +583,11 @@ internal sealed class PackagePageView : Grid
 
         var lines = new List<string>();
         var header = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 4) };
-        header.Children.Add(new TextBlock { Text = review.Title, FontSize = 13, Opacity = 0.7 });
+        header.Children.Add(new TextBlock { Text = review.Title, FontSize = NativeTokens.Title, Foreground = DimInk });
         header.Children.Add(new TextBlock
         {
             Text = $"{review.Name} {review.Version}",
-            FontSize = 20,
+            FontSize = NativeTokens.Heading,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
         });
@@ -593,7 +598,7 @@ internal sealed class PackagePageView : Grid
         }.Where(t => t is not null));
         if (byline.Length > 0)
         {
-            header.Children.Add(new TextBlock { Text = byline, Opacity = 0.75, TextWrapping = TextWrapping.Wrap });
+            header.Children.Add(new TextBlock { Text = byline, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
         }
 
         var card = new StackPanel { Spacing = 4 };
@@ -611,7 +616,7 @@ internal sealed class PackagePageView : Grid
             {
                 Text = Capitalise(section.Heading.ToLowerInvariant()),
                 FontWeight = FontWeight.SemiBold,
-                FontSize = 15,
+                FontSize = NativeTokens.Title,
                 Foreground = acts && review.Acts ? Warning : _accent,
                 Margin = new Thickness(0, 0, 0, 2),
             });
@@ -642,7 +647,7 @@ internal sealed class PackagePageView : Grid
                 }
 
                 var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*") };
-                grid.Children.Add(new TextBlock { Text = Capitalise(row.Label), Opacity = 0.75 });
+                grid.Children.Add(new TextBlock { Text = Capitalise(row.Label), Foreground = DimInk });
                 SetColumn(value, 1);
                 grid.Children.Add(value);
                 box.Children.Add(grid);
@@ -653,10 +658,10 @@ internal sealed class PackagePageView : Grid
                 Child = box,
                 Padding = new Thickness(12, 10),
                 Margin = new Thickness(0, 8, 0, 0),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = new CornerRadius(NativeTokens.RadiusM),
                 BorderThickness = new Thickness(acts && review.Acts ? 1 : 0),
                 BorderBrush = Warning,
-                Background = new SolidColorBrush(_dark ? Color.Parse("#2a2a30") : Color.Parse("#f3f3f6")),
+                Background = _tokens.Brush(_tokens.Raised),
             });
         }
 
@@ -698,8 +703,8 @@ internal sealed class PackagePageView : Grid
         _reviewLayer.Child = new Border
         {
             Child = layout,
-            Background = new SolidColorBrush(_dark ? Color.Parse("#202024") : Colors.White),
-            CornerRadius = new CornerRadius(8),
+            Background = _tokens.Brush(_tokens.Card),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Padding = new Thickness(22, 16),
             MaxWidth = 620,
             Margin = new Thickness(16),

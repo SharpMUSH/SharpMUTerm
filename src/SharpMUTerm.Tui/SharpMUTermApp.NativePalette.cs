@@ -74,7 +74,10 @@ internal sealed partial class SharpMUTermApp
             ThemeIsDark(),
             _openingQuery ?? string.Empty,
             id => OnUiThread(() => RunFromPalette(id)),
-            () => OnUiThread(() => NativePaletteClosed(session!)));
+            () => OnUiThread(() => NativePaletteClosed(session!)))
+        {
+            Theme = _theme.Clone(),
+        };
         _nativePaletteSession = session;
         native.Show(session);
         return true;

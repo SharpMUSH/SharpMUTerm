@@ -294,6 +294,66 @@ internal static class WorkspacePalette
     }
 
     /// <summary>
+    /// The floor the header's text is held to — WCAG AA for body text. The header is the one row every frame carries,
+    /// and its segment labels are names a reader looks for, not de-emphasis; <see cref="Contrast.Floor"/> (3:1) is for
+    /// the workspace's own chrome and left Light's ribbon at exactly 3.01:1.
+    /// </summary>
+    internal const double HeaderTextFloor = 4.5;
+
+    /// <summary>
+    /// A header ribbon segment's fill for <paramref name="theme"/>. A dark theme keeps the segment's own neon (the
+    /// identity the ribbon exists to show, inked in the dark background). A light theme gets a <em>deep</em> fill of the
+    /// same hue — darkened until the theme's own light background reads on it at <see cref="HeaderTextFloor"/> — and is
+    /// inked light, because Dark's neon with ink driven down to the floor read washed out. Both hosts read it: the cell
+    /// header and the native one (<c>ChromePalette.Brand</c>).
+    /// </summary>
+    internal static Rgb HeaderFill(Theme theme, Rgb fill)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance
+            ? fill
+            : Contrast.Legible(fill, theme.Background, HeaderTextFloor);
+    }
+
+    /// <summary>
+    /// The ink on a header segment's fill: the theme's own background (dark on a dark theme's neon, light on a light
+    /// theme's deep fill), held to <see cref="HeaderTextFloor"/> against the fill it lands on.
+    /// </summary>
+    internal static Rgb HeaderInk(Theme theme, Rgb fill)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(theme.Background, fill, HeaderTextFloor);
+    }
+
+    /// <summary>The header's quiet text (the counts, the log state), held to <see cref="HeaderTextFloor"/> on its band.</summary>
+    internal static Rgb HeaderMuted(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(Mix(theme.StatusBackground, theme.StatusForeground, MutedLean), theme.StatusBackground, HeaderTextFloor);
+    }
+
+    /// <summary>
+    /// The low cue on a meter (a vital below <c>StatusMeterRenderer.LowShare</c>): its bar, its value and its <c>low</c>
+    /// mark, in both hosts. A dark theme keeps the client's notice amber (<paramref name="notice"/>), which reads as a
+    /// warning on a dark plane. A light theme gets a deep orange held to <see cref="HeaderTextFloor"/> on
+    /// <paramref name="plane"/>: the amber pushed down to a light plane's floor turns olive, and the cue then read as a
+    /// grey word over an olive bar — no warning at all (UX audit #29).
+    /// </summary>
+    internal static Rgb Low(Theme theme, Rgb notice, Rgb plane)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance
+            ? notice
+            : Contrast.Legible(LowBase, plane, HeaderTextFloor);
+    }
+
+    /// <summary>The light themes' low cue before the plane has said how deep it must be: a warm, saturated orange.</summary>
+    private static readonly Rgb LowBase = new(0xe8, 0x59, 0x0c);
+
+    /// <summary>How far the header's quiet text leans from its band toward its ink before the floor is applied.</summary>
+    private const double MutedLean = 0.55;
+
+    /// <summary>
     /// How far the header chip is lifted toward the theme's ink: enough that the wedge between the two
     /// reads as a shape, no further, since this is a background for a name and not a highlight.
     /// </summary>

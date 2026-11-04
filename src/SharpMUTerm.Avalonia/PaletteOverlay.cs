@@ -35,7 +35,7 @@ internal sealed class PaletteOverlay : Panel
 
     private readonly PaletteSession _session;
     private readonly Action<PaletteOverlay> _remove;
-    private readonly Colours _colours;
+    private readonly NativeTokens _colours;
     private readonly Border _card;
     private readonly TextBox _search;
     private readonly TextBlock _status;
@@ -53,7 +53,7 @@ internal sealed class PaletteOverlay : Panel
     {
         _session = session;
         _remove = remove;
-        _colours = session.IsDark ? Colours.Dark : Colours.Light;
+        _colours = NativeTokens.For(session.Theme, session.IsDark);
         _view = session.View(string.Empty);
 
         Background = new SolidColorBrush(_colours.Scrim);
@@ -63,10 +63,10 @@ internal sealed class PaletteOverlay : Panel
         _search = new TextBox
         {
             PlaceholderText = "Type a command, a character, a window or a setting",
-            FontSize = 16,
+            FontSize = NativeTokens.Title,
             Margin = new Thickness(14, 14, 14, 6),
             Padding = new Thickness(12, 9),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
         AutomationProperties.SetName(_search, "Search commands");
         _search.TextChanged += (_, _) => Refresh(resetSelection: true);
@@ -74,7 +74,7 @@ internal sealed class PaletteOverlay : Panel
 
         _status = new TextBlock
         {
-            FontSize = 12,
+            FontSize = NativeTokens.Body,
             Foreground = new SolidColorBrush(_colours.Dim),
             Margin = new Thickness(20, 0, 20, 6),
         };
@@ -83,7 +83,7 @@ internal sealed class PaletteOverlay : Panel
         var footer = new TextBlock
         {
             Text = "↑↓ move   Enter run   Esc close",
-            FontSize = 11.5,
+            FontSize = NativeTokens.Small,
             Foreground = new SolidColorBrush(_colours.Dim),
             Margin = new Thickness(20, 6, 20, 10),
             HorizontalAlignment = HorizontalAlignment.Right,
@@ -114,8 +114,8 @@ internal sealed class PaletteOverlay : Panel
             Background = new SolidColorBrush(_colours.Card),
             BorderBrush = new SolidColorBrush(_colours.Edge),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            BoxShadow = BoxShadows.Parse("0 16 40 0 #66000000"),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusL),
+            BoxShadow = NativeTokens.Shadow,
             ClipToBounds = true,
             Child = dock,
         };
@@ -131,6 +131,7 @@ internal sealed class PaletteOverlay : Panel
             Child = _card,
         };
         scope.Styles.Add(new FluentTheme());
+        _colours.Apply(scope.Resources);
         Children.Add(scope);
 
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
@@ -228,7 +229,7 @@ internal sealed class PaletteOverlay : Panel
                     _list.Children.Add(new TextBlock
                     {
                         Text = header.Label,
-                        FontSize = 11,
+                        FontSize = NativeTokens.Small,
                         FontWeight = FontWeight.SemiBold,
                         LetterSpacing = 0.8,
                         Foreground = new SolidColorBrush(_colours.Header),
@@ -271,7 +272,7 @@ internal sealed class PaletteOverlay : Panel
     {
         var title = new TextBlock
         {
-            FontSize = 14,
+            FontSize = NativeTokens.Title,
             Foreground = new SolidColorBrush(_colours.Text),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -284,7 +285,7 @@ internal sealed class PaletteOverlay : Panel
             var words = new TextBlock
             {
                 Text = NativeKeys.Words(detail),
-                FontSize = 12.5,
+                FontSize = NativeTokens.Body,
                 Foreground = new SolidColorBrush(_colours.Dim),
                 Margin = new Thickness(12, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -312,10 +313,10 @@ internal sealed class PaletteOverlay : Panel
                     Background = new SolidColorBrush(_colours.KeyFill),
                     BorderBrush = new SolidColorBrush(_colours.Edge),
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(5),
+                    CornerRadius = new CornerRadius(NativeTokens.RadiusS),
                     Padding = new Thickness(7, 1),
                     VerticalAlignment = VerticalAlignment.Center,
-                    Child = new TextBlock { Text = part, FontSize = 12, Foreground = new SolidColorBrush(_colours.KeyInk) },
+                    Child = new TextBlock { Text = part, FontSize = NativeTokens.Body, Foreground = new SolidColorBrush(_colours.KeyInk) },
                 });
             }
 
@@ -325,7 +326,7 @@ internal sealed class PaletteOverlay : Panel
 
         var row = new Border
         {
-            CornerRadius = new CornerRadius(7),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Padding = new Thickness(12, 7),
             Background = Brushes.Transparent,
             Child = grid,
@@ -458,36 +459,5 @@ internal sealed class PaletteOverlay : Panel
             e.Handled = true;
             Dismiss();
         }
-    }
-
-    /// <summary>The card's colours, one set per variant: the client's accent marks a match, as in the cells.</summary>
-    private sealed record Colours(
-        Color Scrim, Color Card, Color Edge, Color Rule, Color Text, Color Dim, Color Header, Color Selected, Color Accent, Color KeyFill, Color KeyInk)
-    {
-        public static Colours Dark { get; } = new(
-            Color.FromArgb(0x59, 0, 0, 0),
-            Color.Parse("#1e1e25"),
-            Color.Parse("#3a3a46"),
-            Color.Parse("#2c2c36"),
-            Color.Parse("#ececf1"),
-            Color.Parse("#9a9aab"),
-            Color.Parse("#80808f"),
-            Color.Parse("#22403a"),
-            Color.Parse("#00f5b7"),
-            Color.Parse("#2a2a34"),
-            Color.Parse("#cfcfdb"));
-
-        public static Colours Light { get; } = new(
-            Color.FromArgb(0x33, 0, 0, 0),
-            Color.Parse("#ffffff"),
-            Color.Parse("#d4d4dd"),
-            Color.Parse("#e6e6ec"),
-            Color.Parse("#1d1d24"),
-            Color.Parse("#626270"),
-            Color.Parse("#7a7a88"),
-            Color.Parse("#d5efe7"),
-            Color.Parse("#007a63"),
-            Color.Parse("#f1f1f5"),
-            Color.Parse("#40404c"));
     }
 }

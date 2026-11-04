@@ -353,7 +353,7 @@ internal sealed class ComposerView : Border
         Background = new SolidColorBrush(Mix(_plane, ink, 0.14)),
         BorderBrush = new SolidColorBrush(Mix(_plane, ink, 0.32)),
         BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(4),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusS),
         Padding = new Thickness(6, 0, 6, 1),
         VerticalAlignment = VerticalAlignment.Center,
         Child = new TextBlock { Text = words, FontSize = Math.Max(9, size), Foreground = new SolidColorBrush(ink) },

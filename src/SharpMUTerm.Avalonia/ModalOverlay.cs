@@ -34,7 +34,7 @@ internal sealed class ModalOverlay : Panel
     {
         Session = session;
         _remove = remove;
-        Colours = session.IsDark ? ModalColours.Dark : ModalColours.Light;
+        Colours = NativeTokens.For(session.Theme, session.IsDark);
         Background = new SolidColorBrush(Colours.Scrim);
         Focusable = false;
 
@@ -54,8 +54,8 @@ internal sealed class ModalOverlay : Panel
             Background = new SolidColorBrush(Colours.Card),
             BorderBrush = new SolidColorBrush(Colours.Edge),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            BoxShadow = BoxShadows.Parse("0 16 40 0 #66000000"),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusL),
+            BoxShadow = NativeTokens.Shadow,
             ClipToBounds = true,
             Child = (Control)_view,
         };
@@ -96,7 +96,7 @@ internal sealed class ModalOverlay : Panel
     public ModalSession Session { get; }
 
     /// <summary>The colours the card is drawn in: the client's variant.</summary>
-    public ModalColours Colours { get; }
+    public NativeTokens Colours { get; }
 
     /// <summary>The view inside the card, for a test.</summary>
     public Control View => (Control)_view;
@@ -146,82 +146,4 @@ internal interface IModalView
 
     /// <summary>Stops listening to the session.</summary>
     void Detach();
-}
-
-/// <summary>
-/// The native modals' colours, one set per variant — the palette's card, with the client's accent for a match, the
-/// pointed-at row and the default button. <see cref="Apply"/> hands Fluent the same accent, so its own accent buttons
-/// and focus rings wear it too, with an ink on it that is legible in both variants.
-/// </summary>
-internal sealed record ModalColours(
-    Color Scrim,
-    Color Card,
-    Color Edge,
-    Color Rule,
-    Color Text,
-    Color Dim,
-    Color Header,
-    Color Selected,
-    Color Accent,
-    Color AccentInk,
-    Color KeyFill,
-    Color KeyInk,
-    Color Warn)
-{
-    public static ModalColours Dark { get; } = new(
-        Color.FromArgb(0x59, 0, 0, 0),
-        Color.Parse("#1e1e25"),
-        Color.Parse("#3a3a46"),
-        Color.Parse("#2c2c36"),
-        Color.Parse("#ececf1"),
-        Color.Parse("#9a9aab"),
-        Color.Parse("#80808f"),
-        Color.Parse("#22403a"),
-        Color.Parse("#00f5b7"),
-        Color.Parse("#06231b"),
-        Color.Parse("#2a2a34"),
-        Color.Parse("#cfcfdb"),
-        Color.Parse("#ffb454"));
-
-    public static ModalColours Light { get; } = new(
-        Color.FromArgb(0x33, 0, 0, 0),
-        Color.Parse("#ffffff"),
-        Color.Parse("#d4d4dd"),
-        Color.Parse("#e6e6ec"),
-        Color.Parse("#1d1d24"),
-        Color.Parse("#626270"),
-        Color.Parse("#7a7a88"),
-        Color.Parse("#d5efe7"),
-        Color.Parse("#007a63"),
-        Color.Parse("#ffffff"),
-        Color.Parse("#f1f1f5"),
-        Color.Parse("#40404c"),
-        Color.Parse("#a34a00"));
-
-    /// <summary>Fluent's accent, in the client's colour, for the card's scope.</summary>
-    public void Apply(IResourceDictionary resources)
-    {
-        foreach (var key in new[]
-        {
-            "SystemAccentColor", "SystemAccentColorDark1", "SystemAccentColorDark2", "SystemAccentColorDark3",
-            "SystemAccentColorLight1", "SystemAccentColorLight2", "SystemAccentColorLight3",
-        })
-        {
-            resources[key] = Accent;
-        }
-
-        var ink = new SolidColorBrush(AccentInk);
-        foreach (var key in new[]
-        {
-            "AccentButtonForeground", "AccentButtonForegroundPointerOver", "AccentButtonForegroundPressed",
-            "ToggleButtonForegroundChecked", "ToggleButtonForegroundCheckedPointerOver", "ToggleButtonForegroundCheckedPressed",
-            "CheckBoxCheckGlyphForegroundChecked", "CheckBoxCheckGlyphForegroundCheckedPointerOver",
-            "CheckBoxCheckGlyphForegroundCheckedPressed",
-        })
-        {
-            resources[key] = ink;
-        }
-    }
-
-    public SolidColorBrush Brush(Color colour) => new(colour);
 }
