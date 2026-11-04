@@ -79,6 +79,11 @@ internal sealed class SettingsWindow : Window
             {
                 editor.Height = ListEditorHeight();
             }
+
+            if (PackagePage is { } packages)
+            {
+                packages.Height = ListEditorHeight();
+            }
         };
 
         var dock = new DockPanel { LastChildFill = true };
@@ -93,6 +98,10 @@ internal sealed class SettingsWindow : Window
         {
             _clock.Stop();
             _form.Changed -= OnChanged;
+            if (_form.Packages is { } packages)
+            {
+                packages.Changed -= OnPackagesChanged;
+            }
         };
         KeyDown += OnKey;
 
@@ -110,6 +119,9 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>The height a list editor takes: the page's viewport less the title above it.</summary>
     private double ListEditorHeight() => Math.Max(360, _scroller.Bounds.Height - 96);
+
+    /// <summary>F10's package manager page, or null on any other page.</summary>
+    internal PackagePageView? PackagePage { get; private set; }
 
     /// <summary>The master-detail editor a list section (F2, F3, F4, F6) is drawn as, or null on any other page.</summary>
     internal ListEditorView? ListEditor { get; private set; }
@@ -143,8 +155,17 @@ internal sealed class SettingsWindow : Window
     public void Load(SettingsForm form)
     {
         _form.Changed -= OnChanged;
+        if (_form.Packages is { } before)
+        {
+            before.Changed -= OnPackagesChanged;
+        }
+
         _form = form;
         _form.Changed += OnChanged;
+        if (_form.Packages is { } after)
+        {
+            after.Changed += OnPackagesChanged;
+        }
         RequestedThemeVariant = form.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         _shown = null;
         _matches = _form.Search(_search.Text);
@@ -266,6 +287,7 @@ internal sealed class SettingsWindow : Window
         _themeCards.Clear();
         SubjectPicker = null;
         ListEditor = null;
+        PackagePage = null;
         ScreenDoor = null;
         MeterGrid = null;
         _meterRows = -1;
@@ -279,6 +301,29 @@ internal sealed class SettingsWindow : Window
         if (section.Key is { } key)
         {
             _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Opacity = 0.7, Margin = new Thickness(0, 0, 0, 6) });
+        }
+
+        if (section.Packages is not null)
+        {
+            if (_form.Packages is not { } manager)
+            {
+                _page.Children.Add(new TextBlock { Text = "This client offers no packages.", Opacity = 0.7, Margin = new Thickness(0, 16, 0, 0) });
+                ShownFields = [];
+                return;
+            }
+
+            var packages = new PackagePageView(
+                manager,
+                f => !Searching || _matches.Any(m => ReferenceEquals(m.Field, f)),
+                Accent,
+                _form.IsDark)
+            {
+                Height = ListEditorHeight(),
+            };
+            PackagePage = packages;
+            _page.Children.Add(packages);
+            ShownFields = packages.ShownFields;
+            return;
         }
 
         if (section.Collection is not null)
@@ -849,6 +894,16 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>Raised on the client's thread once a change has landed; the page catches up on this one.</summary>
     private void OnChanged() => Dispatcher.UIThread.Post(Refresh);
+
+    /// <summary>Raised on the client's thread when the packages moved; F10's page catches up on this one.</summary>
+    private void OnPackagesChanged() => Dispatcher.UIThread.Post(() =>
+    {
+        if (PackagePage is { } page)
+        {
+            page.Refresh();
+            ShownFields = page.ShownFields;
+        }
+    });
 
     /// <summary>Re-reads every value and indicator on the page. A meter added or removed rebuilds the page, whose rows moved.</summary>
     internal void Refresh()

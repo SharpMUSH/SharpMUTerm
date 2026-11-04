@@ -9,6 +9,15 @@ namespace SharpMUTerm.Core.Packages;
 public sealed record InstalledPackage(PackageManifest Manifest, IReadOnlyList<TriggerSet> Sets)
 {
     public string Id => Manifest.Id;
+
+    /// <summary>Its scripts, as paths under its <c>scripts/</c> folder, in order.</summary>
+    public IReadOnlyList<string> Scripts { get; init; } = [];
+
+    /// <summary>Its media files, as paths under its <c>media/</c> folder, in order.</summary>
+    public IReadOnlyList<string> Media { get; init; } = [];
+
+    /// <summary>The bytes its media files take.</summary>
+    public long MediaBytes { get; init; }
 }
 
 /// <summary>
@@ -97,7 +106,14 @@ public sealed class PackageStore
                     }
                 }
 
-                _installed[manifest.Id] = new InstalledPackage(manifest, Bind(manifest.Id, sets));
+                var (scripts, _) = Listed(Path.Combine(folder, "scripts"));
+                var (media, mediaBytes) = Listed(Path.Combine(folder, "media"));
+                _installed[manifest.Id] = new InstalledPackage(manifest, Bind(manifest.Id, sets))
+                {
+                    Scripts = scripts,
+                    Media = media,
+                    MediaBytes = mediaBytes,
+                };
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
@@ -167,7 +183,12 @@ public sealed class PackageStore
             }
         }
 
-        _installed[id] = new InstalledPackage(contents.Manifest, Bind(id, contents.Sets));
+        _installed[id] = new InstalledPackage(contents.Manifest, Bind(id, contents.Sets))
+        {
+            Scripts = contents.Scripts.Keys.Order(StringComparer.Ordinal).ToList(),
+            Media = contents.Media.Keys.Order(StringComparer.Ordinal).ToList(),
+            MediaBytes = contents.Media.Values.Sum(v => (long)v.Length),
+        };
         return null;
     }
 
@@ -238,6 +259,22 @@ public sealed class PackageStore
             .ToList();
         return copy;
     }).ToList();
+
+    /// <summary>The files under <paramref name="folder"/> as relative paths with <c>/</c>, and their total size.</summary>
+    private static (List<string> Files, long Bytes) Listed(string folder)
+    {
+        if (!Directory.Exists(folder))
+        {
+            return ([], 0);
+        }
+
+        var files = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+            .Select(f => new FileInfo(f))
+            .ToList();
+        return (
+            files.Select(f => Path.GetRelativePath(folder, f.FullName).Replace(Path.DirectorySeparatorChar, '/')).Order(StringComparer.Ordinal).ToList(),
+            files.Sum(f => f.Length));
+    }
 
     private static void Write(string root, string relative, byte[] bytes)
     {

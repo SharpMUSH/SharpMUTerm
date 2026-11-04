@@ -78,7 +78,9 @@ public static class SettingsSearch
     public static IEnumerable<SettingsField> Searchable(SettingsSectionContribution section)
     {
         ArgumentNullException.ThrowIfNull(section);
-        return section.Collection is { } collection ? section.Fields.Concat(collection.Fields) : section.Fields;
+        return section.Collection is { } collection ? section.Fields.Concat(collection.Fields)
+            : section.Packages is { } packages ? section.Fields.Concat(packages.Fields)
+            : section.Fields;
     }
 
     private static bool Contains(string? text, string query) =>

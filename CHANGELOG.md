@@ -13,6 +13,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   first-run welcome are native dialogs in the window's light or dark look, worked from the keyboard exactly as in the
   terminal. The quit prompt always comes up in front of whatever is open — closing the window while writing a post
   no longer hides it behind the composer — and Stay takes you back to what you were doing.
+- Packages (F10) open in the desktop window's settings as a package manager: switch each installed package on or
+  off, see what it adds, who it applies to and whether the index offers an update, copy its sets to edit or remove
+  it. The Browse tab fetches the package index only when you ask, lists your world's packages first, and Install
+  shows a review that leads with what can act as you; nothing is written until you install. In the terminal, F10
+  now also shows each package's author, description, scripts, media and update, and the install review opens with
+  what can send commands as you.
 - Triggers, aliases, key bindings and timers (F2, F3, F4, F6) open in the desktop window's settings as a list
   beside the selected item's fields: tick a box to switch one on or off, add, copy, delete or move it up and down,
   and watch the trigger's live test mark the matching lines as you type its pattern. A package's sets are shown

@@ -66,6 +66,14 @@ public sealed class SettingsSectionContribution : IContribution
     /// its item fields like any other.
     /// </summary>
     public SettingsCollection? Collection { get; init; }
+
+    /// <summary>
+    /// For F10: the installed packages as a list, each package's fields as ordinary <see cref="SettingsField"/>s over
+    /// <see cref="SettingScope.Item"/> bindings (the item is a <see cref="PackageItem"/>), and the actions a package row
+    /// offers. Null for every other section. Both hosts draw F10 from it — the cells as their list screen, the window
+    /// as its package manager page.
+    /// </summary>
+    public PackageCollection? Packages { get; init; }
 }
 
 /// <summary>
@@ -87,6 +95,16 @@ public abstract record SettingsField(string Id, string Label, string? Help = nul
 
     /// <summary>Further words the search finds it by, space-separated.</summary>
     public string? Keywords { get; init; }
+}
+
+/// <summary>
+/// A value a surface shows and nobody edits — a package's version, its games, what it adds. <see cref="Read"/> says
+/// it for the item a surface has selected.
+/// </summary>
+public sealed record InfoField(string Id, string Label, string? Help = null) : SettingsField(Id, Label, Help)
+{
+    /// <summary>The text shown for <c>target</c>'s item.</summary>
+    public required Func<SettingTarget, string> Read { get; init; }
 }
 
 /// <summary>A tick box.</summary>

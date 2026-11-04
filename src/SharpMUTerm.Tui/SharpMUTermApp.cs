@@ -2237,6 +2237,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var screenView = editing ? view![..^EditViewSuffix.Length] : view;
         if (screenView is not null && SettingsView(screenView) is { } screen)
         {
+            // A host with its own settings window (the desktop's demo) shows a screen's --view there, the way its
+            // F-key would; an -edit view drives cell keys, so it stays a cell screen. The snapshot and the parity
+            // harness attach no settings window, so their frames are the cells as before.
+            if (!editing && TryOpenNativeSettings(SectionForKey(screen.Key)))
+            {
+                SyncInputWidth();
+                return RenderFrame();
+            }
+
             _settings.OpenForSnapshot(screen.Key, screen.Open());
             if (editing)
             {

@@ -100,6 +100,12 @@ public sealed class SettingsForm
     /// <summary>Every section, in order.</summary>
     public IReadOnlyList<SettingsSectionContribution> Sections { get; }
 
+    /// <summary>
+    /// F10's page: the installed packages, the index once asked for, and the review waiting for consent — or null when
+    /// the client offers none, and the page says so.
+    /// </summary>
+    public Packages.PackageManager? Packages { get; init; }
+
     /// <summary>The id of the section shown first.</summary>
     public string Initial { get; }
 
@@ -186,7 +192,7 @@ public sealed class SettingsForm
     public static bool IsDeclared(SettingsSectionContribution section)
     {
         ArgumentNullException.ThrowIfNull(section);
-        return section.Fields.Count > 0 || section.Collection is not null;
+        return section.Fields.Count > 0 || section.Collection is not null || section.Packages is not null;
     }
 
     /// <summary>A section by id, or null.</summary>
