@@ -70,10 +70,11 @@ internal sealed class PaletteOverlay : Panel
         {
             PlaceholderText = Placeholder,
             FontSize = NativeTokens.Title,
-            Margin = new Thickness(14, 14, 14, 6),
-            Padding = new Thickness(12, 9),
+            Margin = new Thickness(14, 14, 14, 8),
+            Padding = new Thickness(8, 10, 12, 10),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
+        ModalParts.Sunk(_search, _colours);
         AutomationProperties.SetName(_search, "Command palette");
         _search.TextChanged += (_, _) => Refresh(resetSelection: true);
         DockPanel.SetDock(_search, Dock.Top);
@@ -82,17 +83,30 @@ internal sealed class PaletteOverlay : Panel
         {
             FontSize = NativeTokens.Body,
             Foreground = new SolidColorBrush(_colours.Dim),
-            Margin = new Thickness(20, 0, 20, 6),
+            Margin = new Thickness(22, 0, 22, 8),
         };
         DockPanel.SetDock(_status, Dock.Top);
 
-        var footer = new TextBlock
+        // The keys as caps on the card's foot band, the mockup's footer.
+        var keys = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right };
+        foreach (var (cap, does) in new[] { ("↑↓", "move"), ("Enter", "run"), ("Esc", "close") })
         {
-            Text = "↑↓ move   Enter run   Esc close",
-            FontSize = NativeTokens.Small,
-            Foreground = new SolidColorBrush(_colours.Dim),
-            Margin = new Thickness(20, 6, 20, 10),
-            HorizontalAlignment = HorizontalAlignment.Right,
+            keys.Children.Add(ModalParts.Chip(cap, _colours));
+            keys.Children.Add(new TextBlock
+            {
+                Text = does,
+                FontSize = NativeTokens.Small,
+                Foreground = new SolidColorBrush(_colours.Dim),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+
+        var footer = new Border
+        {
+            Background = new SolidColorBrush(_colours.Well),
+            Padding = new Thickness(20, 8, 12, 8),
+            Child = keys,
         };
         DockPanel.SetDock(footer, Dock.Bottom);
 
@@ -110,7 +124,7 @@ internal sealed class PaletteOverlay : Panel
         dock.Children.Add(footer);
         dock.Children.Add(new Border
         {
-            BorderBrush = new SolidColorBrush(_colours.Rule),
+            BorderBrush = new SolidColorBrush(_colours.Edge),
             BorderThickness = new Thickness(0, 1, 0, 1),
             Child = _scroller,
         });
@@ -314,16 +328,7 @@ internal sealed class PaletteOverlay : Panel
             var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(16, 0, 0, 0) };
             foreach (var part in key.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
-                chips.Children.Add(new Border
-                {
-                    Background = new SolidColorBrush(_colours.KeyFill),
-                    BorderBrush = new SolidColorBrush(_colours.Edge),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(NativeTokens.RadiusS),
-                    Padding = new Thickness(7, 1),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Child = new TextBlock { Text = part, FontSize = NativeTokens.Body, Foreground = new SolidColorBrush(_colours.KeyInk) },
-                });
+                chips.Children.Add(ModalParts.Chip(part, _colours));
             }
 
             Grid.SetColumn(chips, 1);
@@ -333,8 +338,10 @@ internal sealed class PaletteOverlay : Panel
         var row = new Border
         {
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(12, 7),
+            Padding = new Thickness(12 - NativeTokens.MarkWidth, 7, 12, 7),
             Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(NativeTokens.MarkWidth, 0, 0, 0),
             Child = grid,
             Cursor = new Cursor(StandardCursorType.Hand),
         };
@@ -395,14 +402,14 @@ internal sealed class PaletteOverlay : Panel
 
         if (_selected >= 0 && _selected < _entryRows.Count)
         {
-            _entryRows[_selected].Background = Brushes.Transparent;
+            ModalParts.Mark(_entryRows[_selected], false, _colours);
         }
 
         _selected = index;
         if (index >= 0 && index < _entryRows.Count)
         {
             var row = _entryRows[index];
-            row.Background = new SolidColorBrush(_colours.Selected);
+            ModalParts.Mark(row, true, _colours);
             if (reveal)
             {
                 row.BringIntoView();

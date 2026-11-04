@@ -356,6 +356,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window, ⌃P, the quit prompt, search, history, layouts, help, the script console, toasts and the
+  right-click menu now match the window's new look: blue-grey cards, search boxes sunk into the page with a magnifier,
+  keys drawn as small key caps, an accent bar on the selected row, and a footer band naming the keys.
 - The older-history page fits an 80×24 terminal: it sizes its page to the screen, keeps its keys on screen and no longer
   covers the command line.
 - Ctrl+F with older history says both counts on one line (`this window 3 of 39 · older 4 of 6,000`). Older matches say

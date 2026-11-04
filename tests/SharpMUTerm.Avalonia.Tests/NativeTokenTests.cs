@@ -66,7 +66,9 @@ public class NativeTokenTests
     [Test]
     public async Task TheDarkAndLightThemesResolveToThePalettesOwnCards()
     {
-        await Assert.That(NativeTokens.Dark.Card).IsEqualTo(Color.Parse("#1e1e25"));
+        await Assert.That(NativeTokens.Dark.Card).IsEqualTo(Color.Parse("#171b24")).Because("the mockup's panel plane");
+        await Assert.That(NativeTokens.Dark.Well).IsEqualTo(Color.Parse("#10131a")).Because("the mockup's ground, which its inputs sit in");
+        await Assert.That(NativeTokens.Dark.Selected).IsEqualTo(Color.Parse("#1f3a3a")).Because("the mockup's selected row");
         await Assert.That(NativeTokens.Dark.Accent).IsEqualTo(Color.Parse("#00f5b7")).Because("the client's own teal, already legible on a dark card");
         await Assert.That(NativeTokens.Light.Card).IsEqualTo(Colors.White);
         await Assert.That(NativeTokens.Dark.IsDark).IsTrue();
@@ -88,7 +90,7 @@ public class NativeTokenTests
     public async Task EveryInkClearsTheTextFloorOnEveryPlaneItIsDrawnOn(string name)
     {
         var tokens = NativeTokens.For(ThemeLibrary.Get(name));
-        Color[] planes = [tokens.Card, tokens.Selected, tokens.Raised];
+        Color[] planes = [tokens.Card, tokens.Selected, tokens.Raised, tokens.Well];
         var misses = new List<string>();
         foreach (var (ink, label) in new[]
         {

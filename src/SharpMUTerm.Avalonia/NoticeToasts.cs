@@ -39,7 +39,9 @@ internal sealed class NoticeToasts : Control
     /// <summary>How long a toast stays after the pointer leaves it.</summary>
     internal static readonly TimeSpan HoverGrace = TimeSpan.FromSeconds(2);
 
-    private const double Inset = 12, Gap = 8, Padding = 10, EdgeWidth = 4, CardWidth = 380, TextSize = 13, ChipSize = 11;
+    // The severity is a bar inset from the card's left edge (the mockup's pill mark, as a highlighted line wears it), so the
+    // text starts past the bar and its margin: EdgeWidth is that whole lead, BarInset where the bar starts.
+    private const double Inset = 12, Gap = 8, Padding = 12, EdgeWidth = 10, BarInset = 7, CardWidth = 380, TextSize = 13, ChipSize = 11;
 
     private readonly List<Toast> _toasts = [];
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -424,19 +426,19 @@ internal sealed class NoticeToasts : Control
             var edge = PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity));
             using var _ = context.PushOpacity(FadeOf(toast, now));
 
-            // A soft shadow, the card, and the severity edge down its left side.
-            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x50, 0, 0, 0)), null, rect.Translate(new Vector(0, 2)).Inflate(1), 7, 7);
+            // The card on a soft shadow (NativeTokens' small one: it floats over the page, not over a scrim), a rule for
+            // its edge, and the severity as a rounded bar down its left side.
             var lift = toast == hovered ? 0.08 : 0;
+            var card = new RoundedRect(rect, NativeTokens.RadiusM);
             context.DrawRectangle(
-                new SolidColorBrush(Mix(plane, PanelText.Parse(palette.Text), lift)),
-                new Pen(new SolidColorBrush(Color.FromArgb(0x60, edge.R, edge.G, edge.B)), 1),
-                rect,
-                6,
-                6);
-            using (context.PushClip(new RoundedRect(rect, 6)))
-            {
-                context.FillRectangle(new SolidColorBrush(edge), new Rect(rect.X, rect.Y, EdgeWidth, rect.Height));
-            }
+                new SolidColorBrush(Mix(plane, PanelText.Parse(palette.Text), lift + 0.03)),
+                new Pen(new SolidColorBrush(Mix(plane, PanelText.Parse(palette.Text), 0.16)), 1),
+                card,
+                NativeTokens.ShadowSmall);
+            context.DrawRectangle(
+                new SolidColorBrush(edge),
+                null,
+                new RoundedRect(new Rect(rect.X + BarInset, rect.Y + 9, NativeTokens.MarkWidth, Math.Max(4, rect.Height - 18)), NativeTokens.MarkWidth / 2));
 
             var x = rect.X + EdgeWidth + Padding;
             var y = rect.Y + Padding;
@@ -449,8 +451,8 @@ internal sealed class NoticeToasts : Control
 
             if (chip is not null)
             {
-                var chipRect = new Rect(x - 3, y + 1, chip.Width + 6, chip.Height);
-                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x30, edge.R, edge.G, edge.B)), null, chipRect, 3, 3);
+                var chipRect = new Rect(x - 4, y, chip.Width + 8, chip.Height + 2);
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x30, edge.R, edge.G, edge.B)), null, chipRect, NativeTokens.RadiusS, NativeTokens.RadiusS);
                 context.DrawText(chip, new Point(x, y + 1));
                 x += chip.Width + 8;
             }

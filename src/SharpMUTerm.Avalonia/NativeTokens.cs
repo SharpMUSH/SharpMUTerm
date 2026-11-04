@@ -40,7 +40,9 @@ internal sealed record NativeTokens(
     Color KeyFill,
     Color KeyInk,
     Color Warn,
-    Color Notice)
+    Color Notice,
+    Color Well,
+    Color Focus)
 {
     // ── the scales ──────────────────────────────────────────────────────────────────────────────
 
@@ -74,13 +76,27 @@ internal sealed record NativeTokens(
     /// <summary>The floor every ink is held to on every plane it is drawn on: WCAG AA for body text.</summary>
     public const double TextFloor = 4.5;
 
-    /// <summary>The shadow a surface casts on what it floats over.</summary>
+    /// <summary>The shadow a surface casts on what it floats over: the palette, a modal.</summary>
     public static BoxShadows Shadow { get; } = new(new BoxShadow
     {
-        OffsetY = 16,
-        Blur = 40,
-        Color = Color.FromArgb(0x66, 0, 0, 0),
+        OffsetY = 18,
+        Blur = 48,
+        Color = Color.FromArgb(0x80, 0, 0, 0),
     });
+
+    /// <summary>The smaller shadow a toast or a menu casts: it floats, but over the page rather than over a scrim.</summary>
+    public static BoxShadows ShadowSmall { get; } = new(new BoxShadow
+    {
+        OffsetY = 6,
+        Blur = 18,
+        Color = Color.FromArgb(0x59, 0, 0, 0),
+    });
+
+    /// <summary>The thickness of the accent bar a selected row and a toast's severity wear on their left.</summary>
+    public const double MarkWidth = 3;
+
+    /// <summary>The face keys are spelt in on a chip, as the mockup's rail spells <c>Alt+1</c>: the cells' bundled mono.</summary>
+    public static FontFamily KeyFace { get; } = new($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
 
     /// <summary>The raised plane an input, a key cap or a hovered row sits on.</summary>
     public Color Raised => KeyFill;
@@ -113,7 +129,8 @@ internal sealed record NativeTokens(
         var rule = Shift(canon.Rule, shift);
         var selected = Shift(canon.Selected, shift);
         var keyFill = Shift(canon.KeyFill, shift);
-        Rgb[] planes = [card, selected, keyFill];
+        var well = Shift(canon.Well, shift);
+        Rgb[] planes = [card, selected, keyFill, well];
 
         var accent = Held(ChromeInk.BaseAccent, planes);
         var accentInk = Contrast.Legible(
@@ -134,7 +151,9 @@ internal sealed record NativeTokens(
             Colour(keyFill),
             Colour(Held(canon.KeyInk, [keyFill])),
             Colour(Held(canon.Warn, planes)),
-            Colour(Held(ChromeInk.BaseNotice, planes)));
+            Colour(Held(ChromeInk.BaseNotice, planes)),
+            Colour(well),
+            Colour(Shift(canon.Focus, shift)));
     }
 
     /// <summary>A brush of <paramref name="colour"/>.</summary>
@@ -251,22 +270,28 @@ internal sealed record NativeTokens(
     /// <summary>One side of mid-grey's set, before a theme is laid onto it.</summary>
     private sealed record Canon(
         Color Scrim, Rgb Card, Rgb Edge, Rgb Rule, Rgb Text, Rgb Dim, Rgb Header, Rgb Selected, Rgb AccentInk, Rgb KeyFill,
-        Rgb KeyInk, Rgb Warn);
+        Rgb KeyInk, Rgb Warn, Rgb Well, Rgb Focus);
 
-    /// <summary>The palette's dark card, as it was drawn before there were tokens.</summary>
+    /// <summary>
+    /// The dark set: the mockup's (<c>ux-mockups/Main.dc.html</c>) — panels <c>#171b24</c>, raised <c>#1d2333</c>, the
+    /// ground an input sits in <c>#10131a</c>, rules <c>#2c3447</c> and a focused edge <c>#3a4f73</c>, ink <c>#d7deec</c>
+    /// over <c>#9aa4b8</c>, the selected row's <c>#1f3a3a</c>, and <c>#0f1620</c> on the accent.
+    /// </summary>
     private static readonly Canon DarkCanon = new(
         Color.FromArgb(0x73, 0, 0, 0),
-        new Rgb(0x1e, 0x1e, 0x25),
-        new Rgb(0x3a, 0x3a, 0x46),
-        new Rgb(0x2c, 0x2c, 0x36),
-        new Rgb(0xec, 0xec, 0xf1),
-        new Rgb(0x9a, 0x9a, 0xab),
-        new Rgb(0x80, 0x80, 0x8f),
-        new Rgb(0x22, 0x40, 0x3a),
-        new Rgb(0x06, 0x23, 0x1b),
-        new Rgb(0x2a, 0x2a, 0x34),
-        new Rgb(0xcf, 0xcf, 0xdb),
-        new Rgb(0xff, 0xb4, 0x54));
+        new Rgb(0x17, 0x1b, 0x24),
+        new Rgb(0x2c, 0x34, 0x47),
+        new Rgb(0x26, 0x2d, 0x3d),
+        new Rgb(0xd7, 0xde, 0xec),
+        new Rgb(0x9a, 0xa4, 0xb8),
+        new Rgb(0x8f, 0x99, 0xad),
+        new Rgb(0x1f, 0x3a, 0x3a),
+        new Rgb(0x0f, 0x16, 0x20),
+        new Rgb(0x1d, 0x23, 0x33),
+        new Rgb(0xc8, 0xd0, 0xe0),
+        new Rgb(0xff, 0xb4, 0x54),
+        new Rgb(0x10, 0x13, 0x1a),
+        new Rgb(0x3a, 0x4f, 0x73));
 
     /// <summary>The palette's light card.</summary>
     private static readonly Canon LightCanon = new(
@@ -281,7 +306,9 @@ internal sealed record NativeTokens(
         new Rgb(0xff, 0xff, 0xff),
         new Rgb(0xf1, 0xf1, 0xf5),
         new Rgb(0x40, 0x40, 0x4c),
-        new Rgb(0xa3, 0x4a, 0x00));
+        new Rgb(0xa3, 0x4a, 0x00),
+        new Rgb(0xf6, 0xf7, 0xfa),
+        new Rgb(0xa9, 0xb3, 0xc6));
 
     /// <summary>An ink moved, if it must be, until it clears <see cref="TextFloor"/> on every plane given.</summary>
     private static Rgb Held(Rgb ink, IReadOnlyList<Rgb> planes)

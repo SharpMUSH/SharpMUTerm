@@ -17,7 +17,7 @@ internal static class ModalParts
         FontSize = NativeTokens.Heading,
         FontWeight = FontWeight.SemiBold,
         Foreground = colours.Brush(colours.Text),
-        Margin = new Thickness(20, 16, 20, 4),
+        Margin = new Thickness(20, 18, 20, 4),
         TextWrapping = TextWrapping.Wrap,
     };
 
@@ -31,14 +31,20 @@ internal static class ModalParts
         TextWrapping = TextWrapping.Wrap,
     };
 
-    /// <summary>The keys the modal answers, right-aligned under it, in the window's words.</summary>
+    /// <summary>
+    /// The keys the modal answers, in the window's words, on a band along the card's foot — the mockup's footer: the
+    /// ground the card's inputs sit in, ruled off above, the keys right-aligned on it.
+    /// </summary>
     public static TextBlock Footer(string text, NativeTokens colours) => new()
     {
         Text = NativeKeys.Words(text),
         FontSize = NativeTokens.Small,
         Foreground = colours.Brush(colours.Dim),
-        Margin = new Thickness(20, 8, 20, 12),
-        HorizontalAlignment = HorizontalAlignment.Right,
+        Background = colours.Brush(colours.Well),
+        Padding = new Thickness(20, 9, 20, 10),
+        Margin = new Thickness(0, 10, 0, 0),
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        TextAlignment = TextAlignment.Right,
         TextWrapping = TextWrapping.Wrap,
     };
 
@@ -53,20 +59,66 @@ internal static class ModalParts
         Margin = new Thickness(12, first ? 8 : 14, 12, 4),
     };
 
-    /// <summary>A search box, the palette's.</summary>
-    public static TextBox SearchBox(string placeholder, string name)
+    /// <summary>
+    /// A search box, the palette's: the mockup's header search — sunk into the ground the page sits on, a rule for its
+    /// edge that turns to the focused edge while it has the keyboard, a magnifier before the text.
+    /// </summary>
+    public static TextBox SearchBox(string placeholder, string name, NativeTokens? colours = null)
     {
         var box = new TextBox
         {
             PlaceholderText = placeholder,
             FontSize = NativeTokens.Title,
-            Margin = new Thickness(14, 14, 14, 6),
-            Padding = new Thickness(12, 8),
+            Margin = new Thickness(14, 14, 14, 8),
+            Padding = new Thickness(8, 9, 12, 9),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
+        if (colours is not null)
+        {
+            Sunk(box, colours);
+        }
+
         global::Avalonia.Automation.AutomationProperties.SetName(box, name);
         return box;
     }
+
+    /// <summary>
+    /// Sinks <paramref name="box"/> into the ground (<see cref="NativeTokens.Well"/>), its edge a rule that becomes
+    /// <see cref="NativeTokens.Focus"/> while it has the keyboard, with a magnifier before the text when
+    /// <paramref name="magnifier"/>.
+    /// </summary>
+    public static void Sunk(TextBox box, NativeTokens colours, bool magnifier = true)
+    {
+        var well = colours.Brush(colours.Well);
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
+        {
+            box.Resources[key] = well;
+        }
+
+        box.Resources["TextControlBorderBrush"] = colours.Brush(colours.Edge);
+        box.Resources["TextControlBorderBrushPointerOver"] = colours.Brush(colours.Focus);
+        box.Resources["TextControlBorderBrushFocused"] = colours.Brush(colours.Focus);
+        box.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(1);
+        if (magnifier)
+        {
+            box.InnerLeftContent = Magnifier(colours);
+        }
+    }
+
+    /// <summary>The magnifier the mockup draws in its search box, in the quiet ink.</summary>
+    public static Control Magnifier(NativeTokens colours) => new global::Avalonia.Controls.Shapes.Path
+    {
+        Data = Geometry.Parse("M 6.5 1 A 5.5 5.5 0 1 1 6.5 12 A 5.5 5.5 0 1 1 6.5 1 Z M 10.5 10.5 L 14 14"),
+        Stroke = colours.Brush(colours.Dim),
+        StrokeThickness = 1.6,
+        StrokeLineCap = PenLineCap.Round,
+        Width = 15,
+        Height = 15,
+        Stretch = Stretch.None,
+        Margin = new Thickness(12, 0, 2, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+        IsHitTestVisible = false,
+    };
 
     /// <summary>A list of rows that scrolls, ruled above and below.</summary>
     public static (Border Frame, StackPanel List, ScrollViewer Scroller) List(NativeTokens colours)
@@ -93,8 +145,10 @@ internal static class ModalParts
         var row = new Border
         {
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(12, 6),
+            Padding = new Thickness(12 - NativeTokens.MarkWidth, 7, 12, 7),
             Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(NativeTokens.MarkWidth, 0, 0, 0),
             Child = content,
             Cursor = new Cursor(StandardCursorType.Hand),
         };
@@ -140,17 +194,43 @@ internal static class ModalParts
     }
 
     /// <summary>A key chip, as the palette draws a key.</summary>
-    public static Border Key(string key, NativeTokens colours) => new()
+    public static Border Key(string key, NativeTokens colours) => Chip(NativeKeys.Words(key), colours, new Thickness(6, 0, 0, 0));
+
+    /// <summary>
+    /// One key cap: the raised plane, a rule for its edge, the key in the cells' mono at the small size — the mockup's
+    /// <c>Alt+1</c> given a cap. Every native list (⌃P, help, the modals) draws a key with this.
+    /// </summary>
+    public static Border Chip(string words, NativeTokens colours, Thickness margin = default) => new()
     {
         Background = colours.Brush(colours.KeyFill),
         BorderBrush = colours.Brush(colours.Edge),
         BorderThickness = new Thickness(1),
         CornerRadius = new CornerRadius(NativeTokens.RadiusS),
-        Padding = new Thickness(6, 0),
-        Margin = new Thickness(6, 0, 0, 0),
+        Padding = new Thickness(6, 1, 6, 2),
+        Margin = margin,
+        MinWidth = 22,
         VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = NativeKeys.Words(key), FontSize = NativeTokens.Small, Foreground = colours.Brush(colours.KeyInk) },
+        Child = new TextBlock
+        {
+            Text = words,
+            FontFamily = NativeTokens.KeyFace,
+            FontSize = NativeTokens.Small,
+            Foreground = colours.Brush(colours.KeyInk),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        },
     };
+
+    /// <summary>
+    /// Paints <paramref name="row"/> selected or not: the selected row's plane, and the accent bar down its left edge
+    /// that the mockup's selected navigation wears — so the selection reads at a glance on every theme, not only by a
+    /// step in luminance.
+    /// </summary>
+    public static void Mark(Border row, bool selected, NativeTokens colours)
+    {
+        row.Background = selected ? colours.Brush(colours.Selected) : Brushes.Transparent;
+        row.BorderBrush = selected ? colours.Brush(colours.Accent) : Brushes.Transparent;
+        row.BorderThickness = new Thickness(NativeTokens.MarkWidth, 0, 0, 0);
+    }
 
     /// <summary>A button whose label is followed by the key that presses it.</summary>
     public static Button Button(string label, string? key, NativeTokens colours, Action click, bool accent = false)
@@ -172,8 +252,10 @@ internal static class ModalParts
         var button = new Button
         {
             Content = content,
-            Padding = new Thickness(14, 6),
+            Padding = new Thickness(14, 7),
+            MinHeight = 32,
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            FontWeight = accent ? FontWeight.SemiBold : FontWeight.Normal,
         };
         if (accent)
         {

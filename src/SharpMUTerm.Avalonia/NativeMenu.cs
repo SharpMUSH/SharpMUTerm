@@ -51,20 +51,41 @@ internal static class NativeMenu
             BorderBrush = tokens.Brush(tokens.Edge),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(4),
+            Padding = new Thickness(6),
             FontSize = NativeTokens.Body,
         };
         tokens.ApplySimple(menu.Resources);
+
+        // The highlighted entry is the palette's selected row, a plane; Simple outlines it in its accent too, which on a
+        // menu reads as a second, louder selection.
+        menu.Resources["ThemeAccentBrush"] = tokens.Brush(tokens.Selected);
+
+        // The popup's own window shows in the menu's rounded corners: clear where the platform composites it, else the
+        // card's own plane, so a corner is never the popup's default white.
+        menu.Opened += (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(menu) is { } root and not Window)
+            {
+                root.TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
+                root.Background = root.ActualTransparencyLevel == WindowTransparencyLevel.Transparent ? null : tokens.Brush(tokens.Card);
+            }
+        };
         Grid.SetIsSharedSizeScope(menu, true);
         foreach (var item in items)
         {
             if (item is not { } entry)
             {
-                menu.Items.Add(new Separator());
+                menu.Items.Add(new Separator { Background = tokens.Brush(tokens.Rule), Margin = new Thickness(8, 4) });
                 continue;
             }
 
-            var menuItem = new MenuItem { Header = Header(entry.Label, entry.Hint), IsEnabled = entry.Enabled };
+            // The palette's row: the same height and inset, so a menu and ⌃P read as one list.
+            var menuItem = new MenuItem
+            {
+                Header = Header(entry.Label, entry.Hint, tokens),
+                IsEnabled = entry.Enabled,
+                MinHeight = 30,
+            };
             if (entry.Checked)
             {
                 menuItem.ToggleType = MenuItemToggleType.CheckBox;
@@ -80,7 +101,7 @@ internal static class NativeMenu
     }
 
     /// <summary>An entry's label with its key after it, the keys lined up in a column of their own, both in the window's words.</summary>
-    private static Control Header(string label, string? hint)
+    private static Control Header(string label, string? hint, NativeTokens tokens)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "label" });
@@ -88,7 +109,17 @@ internal static class NativeMenu
         grid.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
         if (hint is { } key)
         {
-            var text = new TextBlock { Text = NativeKeys.Words(key), Opacity = 0.7, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            // The key in the quiet ink and the keys' face, as the mockup's rail spells Alt+1 — an ink held to the floor,
+            // never an opacity.
+            var text = new TextBlock
+            {
+                Text = NativeKeys.Words(key),
+                FontFamily = NativeTokens.KeyFace,
+                FontSize = NativeTokens.Small,
+                Foreground = tokens.Brush(tokens.Dim),
+                Margin = new Thickness(32, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
             Grid.SetColumn(text, 1);
             grid.Children.Add(text);
         }

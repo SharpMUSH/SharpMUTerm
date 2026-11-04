@@ -43,7 +43,7 @@ internal sealed class SearchView : DockPanel, IModalView
         _done = done;
         _model = session.Model;
 
-        _box = ModalParts.SearchBox("Search the output…", "Search");
+        _box = ModalParts.SearchBox("Search the output…", "Search", colours);
         _box.Text = _model.Query;
         SetDock(_box, Dock.Top);
         Children.Add(_box);
@@ -310,7 +310,7 @@ internal sealed class SearchView : DockPanel, IModalView
     {
         for (var i = 0; i < _rows.Count; i++)
         {
-            _rows[i].Background = i == _selected ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
+            ModalParts.Mark(_rows[i], i == _selected, _colours);
         }
 
         if (_selected < _rows.Count)

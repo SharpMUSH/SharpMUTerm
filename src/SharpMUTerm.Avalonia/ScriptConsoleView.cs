@@ -303,7 +303,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
     {
         for (var i = 0; i < _storeRows.Count; i++)
         {
-            _storeRows[i].Background = i == _selectedKey ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
+            ModalParts.Mark(_storeRows[i], i == _selectedKey, _colours);
         }
 
         _delete.IsEnabled = SelectedKey is not null;
