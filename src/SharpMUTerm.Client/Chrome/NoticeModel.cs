@@ -48,6 +48,9 @@ public sealed record NoticeModel(string Text, NoticeSeverity Severity, string? K
 
         /// <summary>Game sound and mute.</summary>
         public const string Sound = "Sound";
+
+        /// <summary>Spelling dictionary downloads.</summary>
+        public const string Spelling = "Spelling";
     }
 
     /// <summary>How long a notice holds the status row, and how long a toast stays before it fades.</summary>

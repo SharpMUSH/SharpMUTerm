@@ -364,7 +364,7 @@ internal sealed partial class SharpMUTermApp
         var source = DictionaryToFetch ?? DictionaryDownload.For(SpellChecker.PreferredLanguage());
         var fetch = DictionaryFetch ?? DictionaryDownload.DownloadAsync;
         _dictionaryDownloading = true;
-        Notice($"Downloading the {source.Language} dictionary from {source.Dic.Host}…", MessageSeverity.Info, key: "dictionary");
+        Notice($"Downloading the {source.Language} dictionary from {source.Dic.Host}…", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Spelling);
         DictionaryTask = Task.Run(async () =>
         {
             string? problem;
@@ -387,7 +387,7 @@ internal sealed partial class SharpMUTermApp
                 }
 
                 ForgetComposerSpelling();
-                Notice($"{source.Name} is installed · F1 checks spelling with it", MessageSeverity.Info, key: "dictionary");
+                Notice($"{source.Name} is installed · F1 checks spelling with it", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Spelling);
             });
         });
     }
