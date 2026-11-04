@@ -731,6 +731,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var capabilities = host.Capabilities;
         Host = host;
         _config = config;
+        _startedEmpty = config.Worlds.Count == 0;
         _save = save;
         _openUrl = host.OpenUrl;
         _clipboard = host.Clipboard;
@@ -743,7 +744,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sessions.SessionRemoved += OnSessionRemoved;
         _inlineImages = new InlineImageHost(
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
-            OnUi);
+            OnImageUi);
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
         _media = media ?? new MediaCache();
@@ -922,6 +923,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _packageView = new ListOverlay(_system, _screens);
         _sendMenu = new ListOverlay(_system, _screens);
         _layoutsView = new ListOverlay(_system, _screens);
+        _welcomeView = new ListOverlay(_system, _screens);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -1114,9 +1116,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // one of them would count as missed, so any frame that later made such a window visible (a split,
         // a tab change) would carry an activity bar reporting the client's own setup as news. Same
         // reasoning as `_watching` itself, which the restore replay needs for the same shape of reason.
+        // The first-run welcome is what a client with *no* worlds opens on, so it is drawn over an empty
+        // configuration whatever the caller loaded — --demo-config has worlds, and the welcome never opens
+        // over them.
+        if (view is not null && view.StartsWith(WelcomeView, StringComparison.OrdinalIgnoreCase))
+        {
+            return RenderWelcomeSnapshot(view);
+        }
+
         _watching = false;
         LoadDemoScene();
         _watching = true;
+
+        // The key tour row, as the first connect of a new configuration leaves it at the end of the window.
+        if (string.Equals(view, "tour", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowKeyTour(MainWindowId);
+            SettleScroll();
+        }
 
         // The reported bug, as a frame: the scene is already on screen with the column off, and *then*
         // the real ⌃P entry is dispatched. Under the old append-time gutter this frame was identical to
@@ -2133,7 +2150,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// hung/OOM'd.) A frame also arranges the layout, so control bounds are only real after one has
     /// been rendered.
     /// </summary>
-    private string RenderFrame() => HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
+    private string RenderFrame()
+    {
+        DrainHeadlessImageWork();
+        return HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
+    }
 
     /// <summary>
     /// Renders one more frame, the way a test drives the client on past a change it has just made —
@@ -2615,6 +2636,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice(
                 empty ? NoWorldsNotice : NothingAtStartNotice,
                 empty ? MessageSeverity.Warning : MessageSeverity.Info);
+
+            // And the first run gets somewhere to start from: the welcome, over the notice it leaves behind
+            // when it is closed.
+            if (empty)
+            {
+                ShowWelcome();
+            }
+
             return;
         }
 
@@ -2640,9 +2669,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         await Task.WhenAll(opened.Select(o => DialAtStartupAsync(o.Session))).ConfigureAwait(false);
     }
 
-    /// <summary>The empty-workspace message when there is nothing to connect because there is nothing at all.</summary>
+    /// <summary>
+    /// The empty-workspace message when there is nothing to connect because there is nothing at all. It is what
+    /// the welcome leaves behind when it is closed, so it names the welcome's way back as well as the two ways
+    /// in; and it is short enough for an 80-column status row, which a longer one wrapped onto a second row.
+    /// </summary>
     internal const string NoWorldsNotice =
-        "No world configured. Type /connect <host> <port>, pass one on the command line, or add one on F5.";
+        "No world configured · /connect <host> <port> · F5 adds one · /welcome";
 
     /// <summary>
     /// And when there are worlds but none of their characters is marked. It is the ordinary state of a
@@ -2740,7 +2773,59 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal Func<string, CancellationToken, Task<byte[]?>>? ImageFetch { get; set; }
 
     /// <summary>Completes when every MXP picture asked for so far has been delivered or given up on.</summary>
-    internal Task InlineImagesSettled => _inlineImages.Pending;
+    internal Task InlineImagesSettled => _headless ? SettleHeadlessImagesAsync() : _inlineImages.Pending;
+
+    /// <summary>
+    /// UI work the picture host hands back, held until whoever drives a headless app collects it.
+    /// <para>
+    /// The host fetches and decodes on the thread pool and hands its results to <see cref="OnImageUi"/>.
+    /// A headless app has no UI thread, and <see cref="OnUiThread"/> there runs the action inline — which
+    /// for these callers means <em>on the pool thread</em>, at the same moment the test or snapshot is
+    /// appending the next line on its own. <see cref="DrawReservedPicture"/> and the append that reads
+    /// <see cref="ReservedPicture.Drawn"/> then raced over the same buffer: the picture set
+    /// <c>Drawn</c> and scanned the lines a moment before the next line landed, that line read
+    /// <c>Drawn</c> a moment before it was set, and the row was left blank for ever. That was the
+    /// intermittent <c>APictureStopsAtTheFirstLineWithoutItsCells</c>. So a headless app queues the work
+    /// and runs it on the driving thread: at the next frame, or while <see cref="InlineImagesSettled"/>
+    /// is awaited — which is also what lets a Kitty transmit, itself UI work the load waits on, finish.
+    /// A real run marshals onto the loop exactly as before.
+    /// </para>
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _headlessImageWork = new();
+
+    private void OnImageUi(Action action)
+    {
+        if (_headless)
+        {
+            _headlessImageWork.Enqueue(action);
+            return;
+        }
+
+        OnUiThread(action);
+    }
+
+    private void DrainHeadlessImageWork()
+    {
+        while (_headlessImageWork.TryDequeue(out var action))
+        {
+            action();
+        }
+    }
+
+    private async Task SettleHeadlessImagesAsync()
+    {
+        while (true)
+        {
+            DrainHeadlessImageWork();
+            var pending = _inlineImages.Pending;
+            if (pending.IsCompleted && _headlessImageWork.IsEmpty)
+            {
+                return;
+            }
+
+            await Task.WhenAny(pending, Task.Delay(5)).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Waits for a snapshot scene's pictures — headless only. A Kitty picture is transmitted on the UI thread,
@@ -2752,7 +2837,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (_headless)
         {
-            _inlineImages.Pending.GetAwaiter().GetResult();
+            SettleHeadlessImagesAsync().GetAwaiter().GetResult();
         }
     }
 
@@ -2899,6 +2984,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 // report beside a connection time that is already here.
                 _mssp.RecordConnection(session.World.Host, session.World.Port, _time.GetUtcNow());
                 ScheduleLayoutSuggestion(session);
+                OnFirstRunConnected(session, windowId);
             }
 
             UpdateStatus();
@@ -4808,6 +4894,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // `/welcome` shows the first-run welcome again; `/welcome layout …` picks its starting layout.
+        if (command.StartsWith("/welcome", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            WelcomeCommand(command[8..].Trim());
+            return;
+        }
+
         // `/package` opens the Packages screen; `/package install …` reads one for review.
         if (command.StartsWith("/package", StringComparison.OrdinalIgnoreCase)
             && (command.Length == 8 || command[8] == ' '))
@@ -5239,7 +5333,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
         || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
-        || _layoutsView.IsOpen;
+        || _layoutsView.IsOpen || _welcomeView.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -5358,6 +5452,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
+        : _welcomeView.IsOpen ? "the welcome"
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -7102,6 +7197,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PersistConfiguration()
     {
+        NoteFirstWorld();
         if (_save is null)
         {
             return;
@@ -8406,6 +8502,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:package-browse":
                 BrowsePackages();
+                return true;
+            case "term:welcome":
+                ShowWelcome();
+                return true;
+            case "term:tour":
+                ToggleKeyTour();
                 return true;
             case "term:package-install":
                 ActiveBar().SetAndNotify("/package install ");

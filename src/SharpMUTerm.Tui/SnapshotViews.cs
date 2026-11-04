@@ -27,5 +27,6 @@ internal static class SnapshotViews
         "collapsed", "timestamps", "timestamps-toggled", "prompt", "meters", "gamedata", "map", "map-walking", "map-split",
         "packages", "package-review", "package-browse", "send-menu", "layouts", "layout-combat", "layout-roleplay",
         "panel-who", "panel-vitals", "panel-quickbar", "panel-composer",
+        "welcome", "welcome-connect", "tour",
     ];
 }

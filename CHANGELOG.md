@@ -27,6 +27,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   in a narrow one. It is careful — it joins only a full row that ends mid-sentence onto a row that carries on in
   lower case, in the same colour — and triggers see the joined line. It applies to lines that arrive after you
   turn it on.
+- A first run has somewhere to start: with no worlds, the client opens on a welcome offering *Connect to a
+  host* (a small form for the host, port, TLS and your character's name), *Browse games* from the package
+  index and *Open settings*, with the `/connect` line spelt out and a starting layout to pick (Roleplay,
+  Combat, or suggested from what the game sends). Esc closes it; `/welcome` or Ctrl+P ▸ *Welcome* brings it
+  back. With `--plain` the choices are read out as commands to type.
+- After the first connect of a new configuration, one row names the keys worth knowing (Ctrl+P, Alt+M, F1,
+  F5). Ctrl+P ▸ *Key tour* hides it and shows it again.
+
 - Ctrl+P matches as you type by initials and fragments, not only by prefix: `trig sel` finds *Make a trigger
   from the selection*, and the letters it matched are highlighted. The commands you last ran from it are
   listed first under RECENT, followed by what the moment suggests (copy while something is selected, back to
@@ -179,6 +187,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The message a client with no worlds shows no longer wraps the status row onto a second row at 80 columns.
+- A `--snapshot` frame with an MXP picture in cells a server left for it no longer sometimes leaves one of
+  the picture's rows blank.
 - At 80 columns the status row no longer wraps onto a second row: the encoding and the Ctrl+P hint are
   dropped first.
 - Health, mana and movement meters stay on the status row on a narrow terminal, shown as percentages when

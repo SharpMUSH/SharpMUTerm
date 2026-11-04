@@ -38,7 +38,8 @@ internal sealed class ListOverlay
 
     /// <summary>
     /// Opens a surface. <paramref name="render"/> draws it at a width; <paramref name="key"/> answers a key
-    /// and returns whether the surface stays open.
+    /// and returns whether the surface stays open. <paramref name="escape"/>, when given, is asked first about
+    /// Esc and keeps the surface open by returning true — a surface with a step to go back from.
     /// </summary>
     /// <param name="escape">
     /// Asked first when Esc is pressed: true when the surface took it (to leave a sub-mode of its own — a name being
@@ -133,7 +134,11 @@ internal sealed class ListOverlay
         var window = _window;
         if (e.KeyInfo.Key == ConsoleKey.Escape && _escape?.Invoke() == true)
         {
-            Repaint();
+            if (_window == window)
+            {
+                Repaint();
+            }
+
             return;
         }
 

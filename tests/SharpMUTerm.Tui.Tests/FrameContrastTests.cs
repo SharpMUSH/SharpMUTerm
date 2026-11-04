@@ -52,6 +52,10 @@ public class FrameContrastTests
         // dim labels and the world's own text.
         "scrollback-split", "reflow",
 
+        // The first run: the welcome over an empty client, its connect form mid-entry (a field on FieldBg, the
+        // caret, the toggles), and the key tour row on a pane.
+        "welcome", "welcome-connect", "tour",
+
         // The four panels: who is here and the quick bar carry the accent on links, the vitals strip paints bars
         // and the warning in a server-driven colour, and the docked composer is an editor on its own plane.
         "panel-who", "panel-vitals", "panel-quickbar", "panel-composer",

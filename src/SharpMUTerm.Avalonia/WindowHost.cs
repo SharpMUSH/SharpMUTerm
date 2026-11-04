@@ -55,5 +55,6 @@ internal static class WindowHost
 
         // A live region a screen reader watches; the terminal has none, and --plain is its answer.
         Announcer = driver.Announcer,
+        ScreenIsSeen = true,
     };
 }
