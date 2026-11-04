@@ -107,6 +107,7 @@ internal sealed class QuitOverlay
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_body)

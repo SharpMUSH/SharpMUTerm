@@ -379,7 +379,10 @@ internal sealed class WelcomeSurface
             var selected = choice == model.Selected;
             var (title, detail) = model.Describe(choice);
             var marker = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
-            lines.Add($"{marker} {Pad(Value(title, selected), 20)} {Label(detail)}");
+            var row = $"{marker} {Pad(Value(title, selected), 20)} {(selected ? $"[{ScreenPalette.Muted}]{Escape(detail)}[/]" : Label(detail))}";
+
+            // The choice ⏎ takes is a band across the list, the menus' selected row (the mockup's), not a marker alone.
+            lines.Add(selected ? $"[on {ScreenPalette.MenuSelectedBg}]{Pad(row, width)}[/]" : row);
         }
 
         lines.Add(model.Problem is null ? string.Empty : $"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]");

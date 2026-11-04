@@ -128,6 +128,11 @@ internal sealed partial class SharpMUTermApp
     internal void RestylePaneLines()
     {
         var accent = FrozenAccentHex();
+        foreach (var (windowId, (control, width)) in _freezeBars.ToArray())
+        {
+            control.SetContent(new List<string> { FreezeBarRenderer.Bar(accent, width) });
+        }
+
         foreach (var buffer in _lines.Values)
         {
             for (var i = 0; i < buffer.Count; i++)

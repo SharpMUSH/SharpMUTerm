@@ -267,6 +267,10 @@ internal sealed class ComposeOverlay
             FocusedForegroundColor = _scheme.Colour(ScreenPalette.Value),
             SelectionBackgroundColor = _scheme.Colour(ScreenPalette.CursorBg),
             SelectionForegroundColor = _scheme.Colour(ScreenPalette.Value),
+
+            // The script gutter's numbers in the screens' label ink, held to the floor on the well; the control's
+            // default grey was 2.7:1 on a light theme's well.
+            LineNumberColor = _scheme.Colour(ScreenPalette.Label),
         };
 
         if (!_spellingOpened)

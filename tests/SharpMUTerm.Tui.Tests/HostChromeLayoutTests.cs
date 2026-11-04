@@ -84,8 +84,8 @@ public class HostChromeLayoutTests
         await Assert.That(native.LaidOutRows.Workspace).IsEqualTo(cells.LaidOutRows.Workspace + 1);
 
         // The ribbon's brand is on the terminal's first row and on no row of the window's cells.
-        await Assert.That(FrameGrid.Decode(cellFrame, Width, Height)[0]).Contains("muterm");
-        await Assert.That(FrameGrid.Decode(nativeFrame, Width, Height).Any(row => row.Contains("muterm", StringComparison.Ordinal))).IsFalse();
+        await Assert.That(FrameGrid.Decode(cellFrame, Width, Height)[0]).Contains("MUTerm");
+        await Assert.That(FrameGrid.Decode(nativeFrame, Width, Height).Any(row => row.Contains("MUTerm", StringComparison.Ordinal) || row.Contains("muterm", StringComparison.Ordinal))).IsFalse();
 
         // The bands still fill the grid exactly: nothing promised to a header that is not there.
         var rows = native.LaidOutRows;

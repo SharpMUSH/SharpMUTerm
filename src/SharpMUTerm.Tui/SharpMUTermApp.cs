@@ -90,6 +90,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// the pinned half is precisely the half a reader scrolls through.
     /// </summary>
     private readonly Dictionary<string, MarkupControl> _frozenPanes = new(StringComparer.Ordinal);
+
+    /// <summary>Each frozen window's <c>❄ FROZEN</c> bar and the pane width its rule was drawn for (SyncChromeBarWidths).</summary>
+    private readonly Dictionary<string, (MarkupControl Bar, int Width)> _freezeBars = new(StringComparer.Ordinal);
     private readonly DraftStore _drafts;
     private readonly InputBarVisibility _secondBars;
 
@@ -11712,7 +11715,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var frozen = FrozenContentFor(windowId);
         FeedRange(frozen, buffer, 0, split);
 
-        var bar = new MarkupControl(new List<string> { FreezeBarRenderer.Bar(FrozenAccentHex()) });
+        var barWidth = BarWidth(windowId);
+        var bar = new MarkupControl(new List<string> { FreezeBarRenderer.Bar(FrozenAccentHex(), barWidth) });
+        _freezeBars[windowId] = (bar, barWidth);
 
         var live = PaneContentFor(windowId, title);
         FeedRange(live, buffer, split, buffer.Count - split);
@@ -13377,6 +13382,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _paneScrolls.Remove(id);              // and its scroll position: a reopened window starts live
         _paneScrolls.Remove(FrozenRegionKey(id));
         _frozenPanes.Remove(id);
+        _freezeBars.Remove(id);
         ForgetScrollSplit(id);
         _drafts.Forget(id);        // both bars: a closed window keeps neither of its two drafts
         _pendingGrabs.Remove(id);
@@ -14281,7 +14287,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // legible is the text *on* it, so each segment's ink is measured against the fill it lands on.
         var brandBg = FillHex(AccentPalette[2]); // violet
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[link={HeaderModel.PaletteTarget}][bold {SegmentInk(brandBg)} on {brandBg}] {caret} muterm [/][/]");
+        sb.Append($"[link={HeaderModel.PaletteTarget}][bold {SegmentInk(brandBg)} on {brandBg}] {caret} {BrandWord} [/][/]");
 
         var tail = brandBg;
         if (model.World is { } active)
@@ -14304,6 +14310,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
         var leftBar = sb.ToString();
+        var right = HeaderRight(model);
+
+        // The product's name where the row has room for it beside the ribbon and the right-hand cluster (the mockups'
+        // `≡ SharpMUTerm`); the short `muterm` it always was where it has not, because an overlong header wraps.
+        if (MarkupWidth(leftBar) + MarkupWidth(right) + 3 > HeaderWidth())
+        {
+            var at = leftBar.IndexOf($" {BrandWord} ", StringComparison.Ordinal);
+            leftBar = string.Concat(leftBar.AsSpan(0, at), $" {ShortBrandWord} ", leftBar.AsSpan(at + BrandWord.Length + 2));
+        }
 
         // The ⌃B prefix indicator shows only while armed, and it is the *terse* half of the which-key
         // pair: the keys immediately, the panel a few hundred milliseconds later if nothing was pressed.
@@ -14328,6 +14343,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // test that says so, and anything added here has to keep it passing.
         // The quiet half of the row is held to the header's floor on its band rather than left to the framework's
         // fixed [dim] grey, which is 3.4:1 on Dark's band and less on Light's.
+        // Right-align the status cluster to the far edge so the menu bar spans the whole console.
+        var gap = Math.Max(3, HeaderWidth() - MarkupWidth(leftBar) - MarkupWidth(right));
+        return $"{leftBar}{new string(' ', gap)}{right}";
+    }
+
+    /// <summary>The product's name on the header's brand button, and the short form a narrow row falls back to.</summary>
+    private const string BrandWord = "SharpMUTerm", ShortBrandWord = "muterm";
+
+    /// <summary>The header's right-hand cluster: the connected fraction and the log cell.</summary>
+    private string HeaderRight(HeaderModel model)
+    {
         var muted = WorkspacePalette.HeaderMuted(_theme).ToHex();
         var conn = model.HasWorlds ? $"{model.ConnectedText}   " : string.Empty;
         var log = model.Log == LogFormat.None
@@ -14339,11 +14365,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // "*** SharpMUTerm — theme '…', graphics: …" when it opens, and the not-connected status line
         // repeats it. A startup fact belongs where startup facts are read, not in the row that has to
         // fit an identity ribbon and a live count at eighty columns.
-        var right = $"[{muted}]{conn}[/]{log}   ";
-
-        // Right-align the status cluster to the far edge so the menu bar spans the whole console.
-        var gap = Math.Max(3, HeaderWidth() - MarkupWidth(leftBar) - MarkupWidth(right));
-        return $"{leftBar}{new string(' ', gap)}{right}";
+        return $"[{muted}]{conn}[/]{log}   ";
     }
 
     /// <summary>

@@ -61,7 +61,7 @@ internal sealed class MessageLogOverlay
         var width = Math.Clamp(ClientMessageRenderer.MaxWidth(entries) + 3, 44, Math.Max(44, desktop.Width - 6));
         var height = Math.Clamp(entries.Count + 4, 8, Math.Max(8, desktop.Height - 2));
 
-        _content = new MarkupControl(Scheme.Lines(Lines(width - 3), ScreenPalette.MenuBg));
+        _content = new MarkupControl(Scheme.Lines(Lines(width - 4), ScreenPalette.MenuBg));
 
         // Centered() after WithSize(): the builder reads the bounds set so far and falls back to 80x25,
         // so centring first places the window as if it were that size (see CommandPalette).
@@ -72,6 +72,7 @@ internal sealed class MessageLogOverlay
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_content)
@@ -102,7 +103,7 @@ internal sealed class MessageLogOverlay
         var index = Array.IndexOf(Levels, _diagnostics.MinimumLevel);
         index = index < 0 ? Array.IndexOf(Levels, LogLevel.Information) : index;
         _diagnostics.MinimumLevel = Levels[Math.Clamp(index + delta, 0, Levels.Length - 1)];
-        _content?.SetContent(Scheme.Lines(Lines(_window is { } window ? Math.Max(20, window.Width - 3) : 80), ScreenPalette.MenuBg));
+        _content?.SetContent(Scheme.Lines(Lines(_window is { } window ? Math.Max(20, window.Width - 4) : 80), ScreenPalette.MenuBg));
     }
 
     private static string Level(LogLevel level) => level.ToString().ToLowerInvariant();

@@ -688,6 +688,14 @@ fallbacks) for inline images/maps.
   hints share one painted row — add a view there when it gains a key row. Settings screen headers go through it too
   (`ScreenChrome.Hints(…, room)`, `HeaderRoom`): `{F}/Esc close` and an edit's ⏎/Esc are `Keep`, the pane and select
   keys go first; `FooterFitTests.SettingsHeaders` fails on a `…` in any F2–F10 header at 80×24.
+- **Wave 19's terminal sweep** (every `SnapshotViews.All` view at 80×24 and 120×32, Dark and Light; `TerminalAuditWave19Tests`).
+  Cell pop-ups take `WithPadding(1, 0, 0, 0)` (ListOverlay, quit, ⌃B, ⌃F, ⌃R, game data, messages; not ⌃P, whose `├`
+  headings join the frame): each already laid its lines out a cell or two narrower than its inside, so the padding spends
+  that slack, and ⌃F/⌃R grew one column where they had none. A `ListOverlay` with pinned keys (`footer:`) is at most `desktop − 4`
+  rows, so a centred one never covers the command line; one without keeps `desktop − 2`, since its keys are its last rows. The `❄ FROZEN` bar is sized to its pane like every other bar (`_freezeBars`, redrawn
+  in `SyncChromeBarWidths` and on a theme switch). The header's brand is `SharpMUTerm` unless the row would then not fit,
+  where it is `muterm` (`BrandWord`/`ShortBrandWord`). A notice whose words already name its action's way gets no
+  `· ⌥R Reconnect` after them (`NamesWay`).
 - **The status row names the keys of the mode you are in** (`ModeHints`/`StatusMode`, Client;
   `SharpMUTermApp.ModeHints.cs`). Composer armed > search bar in the focused window > frozen > split > scrolled back;
   while one holds, its hints replace `FocusHints` (`End returns · ⌥F freezes`, `⌥F thaws`, `⌥G next hit · ⌃F searches

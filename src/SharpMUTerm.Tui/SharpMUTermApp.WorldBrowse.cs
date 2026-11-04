@@ -301,7 +301,7 @@ internal sealed partial class SharpMUTermApp
         {
             if (generation == _worldGeneration)
             {
-                then(bytes, bytes is null ? problem ?? "it did not answer, or the answer was too large" : null);
+                then(bytes, bytes is null ? problem ?? "the request failed, or the answer was too large" : null);
             }
         }
 
