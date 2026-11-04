@@ -309,14 +309,22 @@ internal sealed record ClientHost
 /// </summary>
 /// <param name="Header">The host draws the header band (the client's first row).</param>
 /// <param name="Rail">The host draws the connection rail (the client's left column, with its divider and spacer).</param>
-internal sealed record HostChrome(bool Header, bool Rail)
+/// <param name="Tabs">
+/// The host draws each pane's tab strip. A strip's row cannot be taken out of one pane of a uniform cell grid, so this
+/// one part keeps its row: the client paints it blank and publishes the strip as data (<c>TabStripModel</c>), and the
+/// host draws over exactly that row. The pane rectangles, and so NAWS, are the terminal's.
+/// </param>
+internal sealed record HostChrome(bool Header, bool Rail, bool Tabs = false)
 {
     /// <summary>The client draws all of its chrome in cells: the terminal, the snapshot, the tests.</summary>
     public static HostChrome None { get; } = new(false, false);
 
-    /// <summary>The host draws the header and the rail natively: the desktop window.</summary>
+    /// <summary>The host draws the header and the rail natively.</summary>
     public static HostChrome HeaderAndRail { get; } = new(true, true);
 
+    /// <summary>The host draws the header, the rail and every pane's tab strip natively: the desktop window as it runs.</summary>
+    public static HostChrome Native { get; } = new(true, true, true);
+
     /// <summary>Whether the host draws anything at all.</summary>
-    public bool Any => Header || Rail;
+    public bool Any => Header || Rail || Tabs;
 }

@@ -40,7 +40,7 @@ internal static class WindowHost
     /// <param name="driver">The window's driver.</param>
     /// <param name="clipboard">Where a copy goes.</param>
     /// <param name="chrome">
-    /// Which chrome the window draws natively. The header and the rail by default, which is the window a person runs;
+    /// Which chrome the window draws natively. The header, the rail and the tab strips by default (<see cref="HostChrome.Native"/>), which is the window a person runs;
     /// <see cref="HostChrome.None"/> for <c>--render-png</c> and <c>--cell-chrome</c>, where the cells carry it all.
     /// </param>
     public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard, HostChrome? chrome = null) => new()
@@ -75,7 +75,7 @@ internal static class WindowHost
 
         // The header band and the connections sidebar are the window's own controls, beside the cell grid rather
         // than over it (MainWindow, DesktopLayer): the client draws neither.
-        Chrome = chrome ?? HostChrome.HeaderAndRail,
+        Chrome = chrome ?? HostChrome.Native,
         // ⌃P is a native palette over the window, listing the same rows as the cell one.
         NativePalette = driver.Palette,
 

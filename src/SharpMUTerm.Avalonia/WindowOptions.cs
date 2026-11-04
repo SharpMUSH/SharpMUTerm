@@ -30,7 +30,7 @@ internal sealed record WindowOptions(
     /// Which chrome the window draws natively: the header and the sidebar, unless <c>--cell-chrome</c> asked for the
     /// terminal's cells or this is <c>--render-png</c>, which draws cells and nothing native.
     /// </summary>
-    public HostChrome Chrome => CellChrome || RenderPng is not null ? HostChrome.None : HostChrome.HeaderAndRail;
+    public HostChrome Chrome => CellChrome || RenderPng is not null ? HostChrome.None : HostChrome.Native;
 
     /// <summary>
     /// What the client is told about this "terminal": Kitty graphics and truecolour. Both are true by

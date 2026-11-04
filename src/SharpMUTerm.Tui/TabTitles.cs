@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Workspaces;
 
 namespace SharpMUTerm.Tui;
@@ -60,27 +61,50 @@ internal static class TabTitles
         int nameBudget = 0)
     {
         ArgumentNullException.ThrowIfNull(window);
+        return For(TabChipModel.From(window, focusedCharacterKey, selected, closable: false), focusedPane, ink, chip, nameBudget);
+    }
 
-        var name = MarkupText.Escape(Elide(window, nameBudget));
+    /// <summary>
+    /// Every title of a strip, drawn from its model (<see cref="TabStripModel"/>): the cells' renderer of the tab-strip
+    /// surface, whose model the window's native strip draws. <paramref name="chipFor"/> gives an unselected tab its own
+    /// plane; <paramref name="budgets"/>, when given, is each name's budget (<see cref="TabStripFit"/>).
+    /// </summary>
+    public static List<string> Strip(
+        TabStripModel strip, ChromeInk? ink, Func<TabChipModel, TabChip?> chipFor, IReadOnlyList<int>? budgets = null)
+    {
+        ArgumentNullException.ThrowIfNull(strip);
+        ArgumentNullException.ThrowIfNull(chipFor);
+        var titles = new List<string>(strip.Tabs.Count);
+        for (var i = 0; i < strip.Tabs.Count; i++)
+        {
+            var tab = strip.Tabs[i];
+            titles.Add(For(tab, strip.Focused && tab.Selected, ink, chipFor(tab), budgets is null ? 0 : budgets[i]));
+        }
+
+        return titles;
+    }
+
+    /// <summary>One tab's title from its model; <see cref="For(WorkspaceWindow, string?, bool, bool, ChromeInk?, TabChip?, int)"/>'s work.</summary>
+    public static string For(TabChipModel tab, bool focusedPane, ChromeInk? ink, TabChip? chip, int nameBudget = 0)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+
+        var name = MarkupText.Escape(Elide(tab, nameBudget));
 
         // Capped through the sidebar's own formatter, so the two surfaces reading one number cannot print
         // different answers and a count from the wire cannot push a narrow strip's later tabs off the end.
-        var unread = window.Unread > 0 ? $" ({UnreadBadge.Format(window.Unread)})" : string.Empty;
-        var pen = window.HasUnsentInput ? $" {Glyphs.Draft}" : string.Empty;
+        var unread = tab.Unread > 0 ? $" ({UnreadBadge.Format(tab.Unread)})" : string.Empty;
+        var pen = tab.Draft ? $" {Glyphs.Draft}" : string.Empty;
 
         // ⌁ marks a window owned by a character other than the focused one.
-        var cross = focusedCharacterKey is not null
-                    && window.SessionKey is not null
-                    && !string.Equals(window.SessionKey, focusedCharacterKey, StringComparison.Ordinal)
-            ? " ⌁"
-            : string.Empty;
+        var cross = tab.Foreign ? " ⌁" : string.Empty;
 
         var focus = focusedPane ? Glyphs.FocusedPane + " " : string.Empty;
 
         // Tint and weight cover the name and count only: the ▌ ahead and the ✎ / ⌁ behind are other
         // facts. One tag rather than two nested, because a selected tab can also be unread.
         var named = name + unread;
-        var style = (selected, window.Unread > 0) switch
+        var style = (tab.Selected, tab.Unread > 0) switch
         {
             (true, true) => $"bold {UnreadBadge.TintFor(ink)}",
             (true, false) => "bold",
@@ -91,7 +115,7 @@ internal static class TabTitles
         // The chip is the tab's own plane, which only an unselected tab carries — the selected one is
         // painted by the strip, in the plane its page is on. Foreground first so an unread tab keeps its
         // accent: the plane says whose window this is, the accent says it has something new.
-        if (chip is { } tile && !selected)
+        if (chip is { } tile && !tab.Selected)
         {
             style = $"{style ?? tile.Ink} on {tile.Plane}";
         }
@@ -126,16 +150,16 @@ internal static class TabTitles
     /// the chip behind the tab already says whose window this is, and cutting from the front would spend
     /// the surviving cells on <c>Corvid…</c> — the half that every other tab in the strip repeats.
     /// </summary>
-    private static string Elide(WorkspaceWindow window, int budget)
+    private static string Elide(TabChipModel tab, int budget)
     {
-        var name = Name(window);
+        var name = tab.Name;
         if (budget <= 0 || name.Length <= budget)
         {
             return name;
         }
 
-        return window.Title.Length <= budget
-            ? window.Title
-            : window.Title[..Math.Max(1, budget - 1)] + "…";
+        return tab.Title.Length <= budget
+            ? tab.Title
+            : tab.Title[..Math.Max(1, budget - 1)] + "…";
     }
 }

@@ -108,6 +108,20 @@ internal sealed class WindowPointer : IPointerPresenter
         ChromeChanged?.Invoke();
     }
 
+    private PaneChromeOverlay? _paneChrome;
+
+    /// <summary>The panes' tab strips and scrolled-back bands as the client last described them, or null before it has.</summary>
+    public PaneChromeOverlay? PaneChrome => Volatile.Read(ref _paneChrome);
+
+    /// <summary>Raised on the client's thread when <see cref="PaneChrome"/> changes.</summary>
+    public event Action? PaneChromeChanged;
+
+    void IPointerPresenter.PaneChrome(PaneChromeOverlay chrome)
+    {
+        Volatile.Write(ref _paneChrome, chrome);
+        PaneChromeChanged?.Invoke();
+    }
+
     private IReadOnlyList<NoticeOverlay> _notices = [];
 
     /// <summary>The notices the client has said, newest last, the most recent <see cref="NoticesKept"/>.</summary>

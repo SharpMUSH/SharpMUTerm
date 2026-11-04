@@ -1285,9 +1285,9 @@ fallbacks) for inline images/maps.
     is the row projection. The header's presence dot reads `ConnectedCharacters()`, the same answer as the rail's
     dot and the fraction. While ⌃B is armed `HeaderModel.Prefix` carries `PrefixPanel.Entries` (key, title, why it
     is blocked) and the exit, so the native header shows the keymap where the cell header shows its strip.
-  - **`ClientHost.Chrome` (`HostChrome(Header, Rail)`, required) says which chrome the host draws, and the client
+  - **`ClientHost.Chrome` (`HostChrome(Header, Rail, Tabs)`, required) says which chrome the host draws, and the client
     leaves no cell for it.** `HostChrome.None` for the terminal, the snapshot, `--plain` and the tests;
-    `HeaderAndRail` for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
+    `Native` (header, rail and tab strips) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
     `--render-png` say None). It is a flag per part, not a size: the space is the host's own business (42 px, 232 px,
     `NativeLayout`), and the client is only told the part is not its to draw. With `Header` the header control is
     `Visible = false` — a hidden sticky band takes no row — and `ChromeRows()` counts no header row, so the
@@ -1328,8 +1328,8 @@ fallbacks) for inline images/maps.
     header space calls `TerminalView.WindowGestureFromChrome`: edge band resizes, the rest moves the window,
     double-click maximises. The header leaves the header buttons' slots clear; with a native header the buttons sit
     in it, 30 px, right-aligned.
-  - **Parity is cells against cells under the same `HostChrome`.** `HostParityTests` draws every view twice inline —
-    both hosts told `None`, and both told `HeaderAndRail` — and the looping pass with `HeaderAndRail`, comparing every
+  - **Parity is cells against cells under the same `HostChrome`.** `HostParityTests` draws every view three times inline —
+    both hosts told `None`, `HeaderAndRail`, then `Native` (tabs too) — and the looping pass with `Native`, comparing every
     cell. Telling both hosts the same arrangement keeps the comparison a comparison of drivers (the guarantee it
     exists for), and covering both arrangements means the layout a person actually runs in the window is held to
     the terminal's cell for cell, rather than compared below an offset or skipped. What the native header and
@@ -1354,6 +1354,31 @@ fallbacks) for inline images/maps.
     the registry resolves it; running one brings the row forward first, and an id the menu did not offer is refused.
   - **Not done**: no animation when the sidebar folds; the command line keeps its armed band while the sidebar holds
     the keys; the terminal has no row menu (no pointer menus there), its entries are ⌃P's.
+
+- **The window draws each pane's tab strip and the scrolled-back band natively, over rows the cells keep**
+  (`HostChrome.Tabs`, `HostChrome.Native` = all three, the window's default; Client `TabStripModel`/`TabChipModel`,
+  `ScrollBandModel`; Tui `Pointer/SharpMUTermApp.PaneChrome.cs`, `PaneChromeOverlay`; Avalonia `PaneChromeViews.cs`:
+  `NativeTabStrip`, `ScrollBandView`; surfaces `tab-strip` (`NativeChrome`) and `scroll-band` (`CellsUnderNative`)).
+  Decisions not to relitigate:
+  - **Unlike the header and rail, the strip keeps its cell row.** One cell grid cannot be inset per pane, so the
+    layout, `PaneOutputRects` and NAWS stay the terminal's exactly; the client paints the strip row blank in the
+    pane's recessed plane after the frame (`BlankNativeTabStrips`, `PostBufferPaint`) and the native strip lies on it.
+    The strip is one cell row tall (~25 px), not the mockup's 38. The band needs no blanking: its cells stay under it.
+  - **One model per strip, and the cells title from it**: `BuildPaneTabs`/`RetitlePane` build `StripModelFor` through
+    `Drawing(TabStrip, paneId, …)` and `TabTitles.Strip` writes the titles; the band is recorded in
+    `RefreshScrollSplitBar`. Published through `IPointerPresenter.PaneChrome` (default member) on `PostBufferPaint`
+    and modal changes, only on change, never while a modal or the native F1 covers the panes. Bands go to every host
+    with a presenter; strips only where `Tabs`.
+  - **Every gesture ends in the cell one's method, and is refused unless offered**: a tab → `ActivateStripTab` (what
+    `OnTabChanged` runs), its × → `CloseStripTab` (what the cell × runs; only where `Closable`), a right click →
+    `OpenTabMenu` (`AddTabMenu`, the cell tab's menu), `+N ▾` → `OpenTabOverflow` with the recorded `MenuModel`, the
+    band's button → `ReturnToLiveTail` (End's and ⌃End's path).
+  - **Presses**: the views hit only their tabs and buttons (`ICustomHitTest`); a press on the strip's empty run goes to
+    the cells, where the strip row is the stacked divider (`HeaderFill` returns the whole row under `Tabs`) and
+    `TakesNativeStripPress` strikes the button flags after the client's own handlers, so the framework never selects
+    or closes a tab under the native one. `PaneTargetAt` says Nothing on a strip row.
+  - **Not done**: no dragging a native tab to another pane (the cell drag handle is under it, unreachable); no hover
+    plate on the empty run.
 
 - **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
   `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
@@ -1537,8 +1562,8 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
   `ClientHost`. Don't use `WarningsAsErrors` for it: that ignores the folder's `severity = none`.
 - **Every snapshot view is drawn through both drivers and compared cell for cell**, glyph and background
   (`HostParityTests.EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal`, Avalonia suite), with the same
-  capabilities, keys and `HostChrome` — once with the chrome in cells and once with the header and rail drawn by
-  the host, as the window runs — so a difference can only be the driver. The list is `SnapshotViews.All`, and
+  capabilities, keys and `HostChrome` — with the chrome in cells, with the header and rail drawn by the host, and with
+  the tab strips drawn by it too, as the window runs — so a difference can only be the driver. The list is `SnapshotViews.All`, and
   `EveryViewTheSnapshotKnowsIsInTheParityList` reads `RenderSnapshot`'s source and fails when it learns a
   view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both. A second
   pass (`EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning`) draws each view with the window's loop

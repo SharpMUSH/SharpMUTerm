@@ -1026,6 +1026,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncTransparentColours();
             PaintHeaderDividers(buffer);
             PaintTabOverflow(buffer);
+            BlankNativeTabStrips(buffer);
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             PublishPanels();
@@ -1036,11 +1037,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncScrollSplitBars();
             SyncChromeBarWidths();
             SyncStatusMode();
+            PublishPaneChrome();
         };
 
         // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
         // panels are now under it; the modal stack changing says it instead.
-        _system.ModalStateService.StateChanged += (_, _) => PublishPanels();
+        _system.ModalStateService.StateChanged += (_, _) =>
+        {
+            PublishPanels();
+            PublishPaneChrome();
+        };
         if (_sixel is not null)
         {
             // Another window over this one rewrites the cells a picture sits on, and the frame that puts
@@ -10233,11 +10239,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnTabChanged(string paneId, TabPage? newTab)
     {
-        _workspace.Layout.Focus(paneId);
         if (newTab?.Tag is string id)
         {
-            Activate(id);
+            ActivateStripTab(paneId, id);
+            return;
         }
+
+        _workspace.Layout.Focus(paneId);
     }
 
     /// <summary>
@@ -11531,21 +11539,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var builder = Controls.TabControl();
         var ids = new List<string>();
-        var focused = IsFocusedPane(pane.Id);
-        foreach (var windowId in pane.Tabs)
-        {
-            if (_workspace.FindWindow(windowId) is not { } window)
-            {
-                continue;
-            }
 
-            // ▌ is the focus half of the signal and bold is the selection half; both read on a monochrome
-            // terminal, where a luminance step does not.
-            var selected = string.Equals(pane.ActiveTab, windowId, StringComparison.Ordinal);
-            builder.AddTab(
-                TabTitles.For(
-                    window, ActiveCharacterKey(), focused && selected, selected, _ink, ChipFor(pane.Id, window)),
-                BuildTabContent(pane, windowId, window));
+        // ▌ is the focus half of the signal and bold is the selection half; both read on a monochrome
+        // terminal, where a luminance step does not. The titles are the strip's model drawn as cells, the model the
+        // window's native strip draws (SurfaceCatalog.TabStrip).
+        var strip = Drawing(SurfaceCatalog.TabStrip, pane.Id, StripModelFor(pane.Id, pane.Tabs, pane.ActiveTab, ActiveCharacterKey()));
+        var titles = TabTitles.Strip(strip, _ink, ChipOf(pane.Id));
+        for (var i = 0; i < strip.Tabs.Count; i++)
+        {
+            var windowId = strip.Tabs[i].WindowId;
+            builder.AddTab(titles[i], BuildTabContent(pane, windowId, _workspace.FindWindow(windowId)!));
             ids.Add(windowId);
         }
 
@@ -12877,6 +12880,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // thread; the copy is because the driver may reuse its list.
         var frame = flags.ToList();
         OnUiThread(() => OnPointerFrame(frame, point));
+        try
+        {
+            RouteDriverMouseEvent(flags, point);
+        }
+        finally
+        {
+            // A strip row the host draws over: the press is the client's own (the divider, a window drag), never the
+            // framework's, whose labels under it are blank cells. Struck last, so the tracker above saw the frame whole.
+            TakesNativeStripPress(flags, point);
+        }
+    }
+
+    private void RouteDriverMouseEvent(List<MouseFlags> flags, System.Drawing.Point point)
+    {
 
         // A press on a tab strip's +N ▾ chip opens its list and nothing else: the framework, which reads this same list
         // after us, is left a pointer movement rather than a click on the tab under the chip.
@@ -13269,7 +13286,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (tab.Tag is string windowId)
         {
-            OnUiThread(() => CloseWindow(windowId));
+            OnUiThread(() => CloseStripTab(windowId));
         }
     }
 
@@ -13575,58 +13592,80 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var activeTab = _workspace.Layout.FindPane(paneId)?.ActiveTab;
         var pages = tabs.TabPages;
-        var costs = new List<TabCost>(pages.Count);
-        var windows = new WorkspaceWindow?[pages.Count];
-        var full = new string?[pages.Count];
 
+        // The × follows the active tab, so keep it in step with every title refresh — and it has to be settled before
+        // the strip is costed, because it is one of the cells being counted.
+        var ids = new List<string>(pages.Count);
+        for (var i = 0; i < pages.Count; i++)
+        {
+            if (pages[i].Tag is string id && _workspace.FindWindow(id) is not null)
+            {
+                pages[i].IsClosable = CanCloseTab(id, activeTab);
+                ids.Add(id);
+            }
+        }
+
+        var strip = Drawing(SurfaceCatalog.TabStrip, paneId, StripModelFor(paneId, ids, activeTab, focusedCharacter));
+        var chipOf = ChipOf(paneId);
+        var full = TabTitles.Strip(strip, _ink, chipOf);
+        var costs = new List<TabCost>(pages.Count);
+        var tabAt = new int[pages.Count];
+        var next = 0;
         for (var i = 0; i < pages.Count; i++)
         {
             var page = pages[i];
-            var id = page.Tag as string;
-            var window = id is not null ? _workspace.FindWindow(id) : null;
-            var selected = id is not null && string.Equals(activeTab, id, StringComparison.Ordinal);
-
-            // The × follows the active tab, so keep it in step with every title refresh — and it has to
-            // be settled before the strip is costed, because it is one of the cells being counted.
-            if (id is not null && window is not null)
-            {
-                page.IsClosable = CanCloseTab(id, activeTab);
-            }
-
             var frame = 2 + (page.IsClosable ? 1 : 0) + (i < pages.Count - 1 ? 1 : 0);
-            if (window is null)
+            var selected = page.Tag is string pageId && string.Equals(activeTab, pageId, StringComparison.Ordinal);
+            if (next >= strip.Tabs.Count || !string.Equals(page.Tag as string, strip.Tabs[next].WindowId, StringComparison.Ordinal))
             {
+                tabAt[i] = -1;
                 costs.Add(new TabCost(0, 0, MarkupText.VisibleLength(page.Title) + frame, selected));
                 continue;
             }
 
-            var title = TabTitles.For(
-                window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
-                ChipFor(paneId, window));
-            var name = TabTitles.Name(window).Length;
-
-            windows[i] = window;
-            full[i] = title;
-            costs.Add(new TabCost(
-                name, window.Title.Length, MarkupText.VisibleLength(title) - name + frame, selected));
+            var tab = strip.Tabs[next];
+            tabAt[i] = next;
+            var name = tab.Name.Length;
+            costs.Add(new TabCost(name, tab.Title.Length, MarkupText.VisibleLength(full[next]) - name + frame, selected));
+            next++;
         }
 
         var budgets = TabStripFit.Budgets(costs, _stripWidths.GetValueOrDefault(paneId));
         for (var i = 0; i < pages.Count; i++)
         {
-            if (windows[i] is not { } window)
+            if (tabAt[i] is var t and >= 0)
             {
-                continue;
+                var tab = strip.Tabs[t];
+                pages[i].Title = budgets[i] >= costs[i].NameLength
+                    ? full[t]
+                    : TabTitles.For(tab, strip.Focused && tab.Selected, _ink, chipOf(tab), budgets[i]);
             }
-
-            var selected = costs[i].Selected;
-            pages[i].Title = budgets[i] >= costs[i].NameLength
-                ? full[i]!
-                : TabTitles.For(
-                    window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
-                    ChipFor(paneId, window), budgets[i]);
         }
     }
+
+    /// <summary>
+    /// A pane's tab strip as data (<see cref="SurfaceCatalog.TabStrip"/>): one tab per window in <paramref name="windowIds"/>
+    /// that still exists, in strip order. What the cells write into the tab titles and what a host that draws the strips
+    /// (<see cref="HostChrome.Tabs"/>) is handed are this one model.
+    /// </summary>
+    private TabStripModel StripModelFor(string paneId, IEnumerable<string> windowIds, string? activeTab, string? focusedCharacter)
+    {
+        var tabs = new List<TabChipModel>();
+        foreach (var id in windowIds)
+        {
+            if (_workspace.FindWindow(id) is { } window)
+            {
+                var selected = string.Equals(activeTab, id, StringComparison.Ordinal);
+                tabs.Add(TabChipModel.From(window, focusedCharacter, selected, CanCloseTab(id, activeTab)));
+            }
+        }
+
+        return new TabStripModel(paneId, IsFocusedPane(paneId), tabs);
+    }
+
+    /// <summary>The plane each unselected tab of a pane is drawn on (<see cref="ChipFor"/>), by its model.</summary>
+    private Func<TabChipModel, TabChip?> ChipOf(string paneId) =>
+        tab => _workspace.FindWindow(tab.WindowId) is { } window ? ChipFor(paneId, window) : null;
 
     /// <summary>
     /// Re-measures each strip against the pane it was just arranged into, and re-titles the ones that

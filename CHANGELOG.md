@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window each pane's tabs are drawn as native tabs: the tab in front is a card joined to its pane,
+  unread counts are in the accent, a tab's close appears when you point at it, a right click shows the tab's menu,
+  and tabs that do not fit are behind a `+N` button. The terminal is unchanged.
+- In the desktop window a pane split by scrolling back shows a native band — "Scrolled back N rows · New lines keep
+  arriving below" — with a Jump to latest button that does what End does.
 - A script error in the script console that names a file and line is now a link: click it to open that script with the
   caret on the line and the line marked. Closing the editor goes back to the console.
 - The script editor numbers its lines in the desktop window too, and after a save whose reload fails, the line the

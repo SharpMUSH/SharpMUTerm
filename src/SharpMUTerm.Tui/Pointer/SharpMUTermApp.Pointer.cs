@@ -118,6 +118,13 @@ internal sealed partial class SharpMUTermApp
             return null;
         }
 
+        // A host that draws the strips takes the presses on its tabs; what reaches the cells is the strip's empty run,
+        // wherever the host's tabs end, so the whole blank row is the handle.
+        if (Host.Chrome.Tabs)
+        {
+            return new PaneRect(rect.X, rect.Y, rect.Width, 1);
+        }
+
         var from = rect.Width;
         while (from > 0 && FrameworkHitTests.TabAt(tabs, from - 1) < 0)
         {
@@ -420,6 +427,13 @@ internal sealed partial class SharpMUTermApp
     {
         if (point.Y < rect.Y + tabs.TabHeaderHeight)
         {
+            // Where the host draws the strips, the framework's labels under them are blank cells: a press on the row
+            // that reaches the cells is past the host's last tab, nothing the framework's hit test should answer.
+            if (Host.Chrome.Tabs)
+            {
+                return PointerTarget.Nothing;
+            }
+
             var index = FrameworkHitTests.TabAt(tabs, point.X - rect.X);
             var pages = tabs.TabPages;
             if (index < 0 || index >= pages.Count || pages[index].Tag is not string tabWindow)
@@ -573,15 +587,7 @@ internal sealed partial class SharpMUTermApp
                 break;
 
             case PointerKind.Tab:
-                var tabWindow = target.Key.Split(':', 3)[2];
-                Activate(tabWindow);
-                if (tabWindow != MainWindowId)
-                {
-                    items.Add(new PointerMenuItem("Close tab", "⌃W", () => OnUiThread(() => CloseWindow(tabWindow))));
-                }
-
-                AddCommands(items, "layout:next-tab", null, "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close");
-                AddPopOut(items);
+                AddTabMenu(items, target.Key.Split(':', 3)[2]);
                 break;
 
             case PointerKind.Link:
@@ -619,6 +625,22 @@ internal sealed partial class SharpMUTermApp
         }
 
         return Tidy(items);
+    }
+
+    /// <summary>
+    /// A tab's menu: the tab is brought forward, so every entry acts on it, then Close and the pane's own commands. One
+    /// list for a right click on a cell tab and on the window's native tab (<see cref="OpenTabMenu"/>).
+    /// </summary>
+    private void AddTabMenu(List<PointerMenuItem> items, string tabWindow)
+    {
+        Activate(tabWindow);
+        if (tabWindow != MainWindowId)
+        {
+            items.Add(new PointerMenuItem("Close tab", "⌃W", () => OnUiThread(() => CloseWindow(tabWindow))));
+        }
+
+        AddCommands(items, "layout:next-tab", null, "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close");
+        AddPopOut(items);
     }
 
     /// <summary>The window and payload of a link target, read back out of its key.</summary>

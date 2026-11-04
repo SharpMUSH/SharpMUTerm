@@ -377,7 +377,7 @@ public class NativeChromeTests
     public async Task TheLiveClientDrawsNoChromeCellAndLaysThePanesOutAsATerminalToldTheSame(string view)
     {
         using var headless = new HeadlessConsoleDriver(120, 32);
-        await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, WindowOptions.Capabilities) with { Chrome = HostChrome.HeaderAndRail });
+        await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, WindowOptions.Capabilities) with { Chrome = HostChrome.Native });
         terminal.RenderSnapshot(view);
 
         using var driver = new AvaloniaConsoleDriver(120, 32);
@@ -394,7 +394,7 @@ public class NativeChromeTests
 
         var chrome = driver.Pointer.Chrome;
         await Assert.That(chrome).IsNotNull();
-        await Assert.That(chrome!.Drawn).IsEqualTo(HostChrome.HeaderAndRail);
+        await Assert.That(chrome!.Drawn).IsEqualTo(HostChrome.Native);
         await Assert.That(chrome.Sidebar).IsEqualTo(window.BuildSidebar());
         await Assert.That(window.LaidOutRows.Header).IsEqualTo(0);
         await Assert.That(Enumerable.Range(0, 32).Any(y => driver.Frame.RowText(y).Contains("muterm", StringComparison.Ordinal))).IsFalse()
