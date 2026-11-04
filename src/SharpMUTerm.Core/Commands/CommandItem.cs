@@ -6,7 +6,7 @@ public enum CommandGroup
     /// <summary>Navigation: switch character, jump to a window.</summary>
     GoTo,
 
-    /// <summary>Connection actions: reconnect, disconnect, the send group, scripts.</summary>
+    /// <summary>Connection actions: reconnect, disconnect, the send group, recent alerts.</summary>
     World,
 
     /// <summary>Output actions: logging and scene logs, freeze/scrollback, clear, copy, timestamps, sound.</summary>
@@ -27,7 +27,7 @@ public enum CommandGroup
     /// <summary>Writing: the composer, command history, the second command line, the newline, the dictionary.</summary>
     Compose,
 
-    /// <summary>Help and setting up: help, the welcome, the key tour, import, packages.</summary>
+    /// <summary>Help and setting up: help, the welcome, the key tour, import, packages, scripts.</summary>
     Help,
 }
 

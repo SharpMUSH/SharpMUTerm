@@ -183,6 +183,9 @@ internal static class MacroKeys
         // are read off.
         new(ConsoleModifiers.Alt, ConsoleKey.J, "goes to the next character"),
         new(ConsoleModifiers.Alt, ConsoleKey.K, "goes to the previous character"),
+        // The send group's line (⌃P ▸ Send to group). ⌥S is `ESC s`, one Alt chord like the rest; nothing here, in the
+        // framework or in the window's HostKeys.Reserved takes it. S for send; ⌃S is the composer's own send.
+        new(ConsoleModifiers.Alt, ConsoleKey.S, "sends the command line to the send group"),
         // F1 is the composer and not a settings screen, which is why it sits ahead of the F2–F9 block
         // rather than in it: those keys all open the same overlay from one table, and this one opens a
         // different surface. It is claimed here for the same reason they are — F4 reads this list to say

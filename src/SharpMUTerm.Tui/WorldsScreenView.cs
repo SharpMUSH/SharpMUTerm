@@ -75,9 +75,12 @@ internal static class WorldsScreenView
         // Body: WORLDS list │ detail, as two real columns.
         var worldsCol = ScreenChrome.Stretch(ScreenChrome.Panel(
             WorldsScreenRenderer.WorldsColumn(worlds, selectedWorld, focus, rows, info), scheme));
+        // The detail column is what is left of the width after the WORLDS column, its rule and the spacer (32 cells); a
+        // value too long for it (`[x] TLS — encrypt this conne`) is elided to it rather than clipped by the control.
         var detailCol = ScreenChrome.Stretch(ScreenChrome.Panel(
             WorldsScreenRenderer
-                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts, joinWrapsAdvice),
+                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts, joinWrapsAdvice)
+                .ConvertAll(line => MarkupText.FitVisible(line, width - 32)),
             scheme));
         var body = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
@@ -107,7 +110,10 @@ internal static class WorldsScreenView
             // gives the full-width elevated band behind both.
             var formPanel = ScreenChrome.Panel(ScreenChrome.Indent(form), scheme, ScreenPalette.EditBg);
             formPanel.HorizontalAlignment = HorizontalAlignment.Left;
-            var trigPanel = ScreenChrome.Panel(triggers, scheme, ScreenPalette.EditBg);
+            // The checklist hugs its rows beside the 48-cell form and a 2-cell margin; on a narrow screen its notes
+            // (`channel + page routing`) are elided to what is left.
+            var trigPanel = ScreenChrome.Panel(
+                triggers.ConvertAll(line => MarkupText.FitVisible(line, width - 50)), scheme, ScreenPalette.EditBg);
             trigPanel.HorizontalAlignment = HorizontalAlignment.Left;
             var edit = Controls.HorizontalGrid()
                 .WithAlignment(HorizontalAlignment.Stretch)

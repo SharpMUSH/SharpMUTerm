@@ -1226,21 +1226,30 @@ internal static class WorldsScreenRenderer
         const int room = 28;
         yield return WorldField(string.Empty, $"[{Label}]{Escape(HighlightColours.NameSyntax.Split(';')[0])}[/]");
         yield return WorldField(string.Empty, $"[{Label}]{Escape(HighlightColours.NameSyntax.Split(';')[1].Trim())}[/]");
+        // Each colour's name is drawn in that colour, held to the floor on the column's plane (black and grey lift on a
+        // dark screen), so the list is its own sample; the light screens re-hold it on theirs (ScreenTheme.Paint).
+        var plane = RgbJsonConverter.Parse(PanelBg);
         var line = "colours:";
+        var markup = $"[{Label}]colours:[/]";
         foreach (var colour in HighlightColours.NameColours)
         {
             if (line.Length > 0 && line.Length + 1 + colour.Length > room)
             {
-                yield return WorldField(string.Empty, $"[{Label}]{line}[/]");
+                yield return WorldField(string.Empty, markup);
                 line = string.Empty;
+                markup = string.Empty;
             }
 
+            var ink = HighlightColours.TryParse(colour, out var parsed) && HighlightColours.Hex(parsed) is { } hex
+                ? Contrast.Legible(RgbJsonConverter.Parse(hex), plane).ToHex()
+                : Label;
+            markup += (line.Length == 0 ? string.Empty : " ") + $"[{ink}]{Escape(colour)}[/]";
             line = line.Length == 0 ? colour : line + " " + colour;
         }
 
         if (line.Length > 0)
         {
-            yield return WorldField(string.Empty, $"[{Label}]{line}[/]");
+            yield return WorldField(string.Empty, markup);
         }
     }
 

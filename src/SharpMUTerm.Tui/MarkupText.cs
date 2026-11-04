@@ -123,14 +123,26 @@ internal static class MarkupText
     /// Cuts a markup string to <paramref name="width"/> visible cells, ending in <c>…</c> when anything
     /// was cut. Tags are kept, including those after the cut, so every span that opened still closes.
     /// </summary>
-    internal static string ElideVisible(string markup, int width)
+    internal static string ElideVisible(string markup, int width) => ElideVisible(markup, width, mark: true);
+
+    /// <summary>
+    /// A row of a column <paramref name="width"/> cells wide: unchanged when it fits; cut without a mark when only its
+    /// trailing blanks (a cursor band's padding) are past the edge; else elided with <c>…</c> — never clipped mid-word
+    /// by the control, which says nothing about what was lost. Zero or less means the width is not known.
+    /// </summary>
+    internal static string FitVisible(string markup, int width) =>
+        width <= 0 || VisibleLength(markup) <= width
+            ? markup
+            : ElideVisible(markup, width, mark: Plain(markup).TrimEnd().Length > width);
+
+    private static string ElideVisible(string markup, int width, bool mark)
     {
         if (VisibleLength(markup) <= width)
         {
             return markup;
         }
 
-        var budget = Math.Max(0, width - 1);
+        var budget = Math.Max(0, mark ? width - 1 : width);
         var result = new System.Text.StringBuilder(markup.Length);
         var shown = 0;
         var cut = false;
@@ -145,7 +157,7 @@ internal static class MarkupText
             else if (!cut)
             {
                 cut = true;
-                if (width > 0)
+                if (mark && width > 0)
                 {
                     result.Append('…');
                 }

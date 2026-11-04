@@ -164,8 +164,11 @@ fallbacks) for inline images/maps.
     colour through `Contrast.Legible`. `Areas` lists the drawn area first, then areas reached by an exit. A room
     carries `Up`/`Down` (an up/down exit or stub, or an exit to a room on another level) and `Elsewhere` (the
     other area an exit leads to). The cells draw a one-line legend on the last row from 6 rows up — words go
-    first, then names shorten, then areas are counted (`+2`); it never wraps. The window adds names from zoom
-    1.6, the hovered name on a plate, stairs triangles, a halo on the current room and a legend plate.
+    first, then names shorten, then areas are counted (`+2`); it never wraps. The window opens fitted (`MapCanvas.Fit`: the
+    rooms within 6 steps of the character's, up to zoom 2.4) and refits on a new model until the player zooms or pans
+    (`Fitted`; a double-click or another level or area fits again); it names rooms whenever a step is 40 px or more
+    (`NamesFromStep`), the current room always, plus the hovered name on a plate, stairs triangles, a halo on the
+    current room and a legend plate.
   - **A speedwalk sends one step and waits for the map to say it arrived** (`Speedwalk`); it goes through
     `SendCommandAsync`, so the recorder sees the step. It stops off the path, on the world's
     `WalkFailurePattern`, after `StepTimeout` with no room, and on disconnect.
@@ -309,9 +312,9 @@ fallbacks) for inline images/maps.
   - **Matching is subsequence, word by word, in order**, scored per character: +1 matched, +8 at a word start,
     +6 straight after the previous match, +4 on the first character, −1 per skipped character (−4 at most
     per gap), +20 when the title starts with the whole query. Each word is aligned by dynamic programming,
-    falling back to the earliest-ending alignment. **A query word of `FuzzyMatch.StrictLength` (4) letters or
+    falling back to the earliest-ending alignment. **A query word of `FuzzyMatch.StrictLength` (5) letters or
     fewer must start at a word start and continue in runs or at word starts** (`layo` no longer finds "Clear
-    window, say you"); a longer word may match as any subsequence. A title match always
+    window, say you"; `scene` no longer finds Import or Packages); a longer word may match as any subsequence. A title match always
     lists above a match on the detail, the key or the group's name; ties keep catalog order. Groups keep
     their headers but are ordered by their best entry, so the best match is the first row.
   - **An empty query lists RECENT, then SUGGESTED, then the groups**, each entry once. SUGGESTED is read off
@@ -1481,6 +1484,15 @@ fallbacks) for inline images/maps.
     always-on-top choice; the composer does not float; positions on a mixed-DPI desktop are assumed to be in the main
     window's scaling.
 
+- **Wave 18 tidy-up.** The script entries (reload, console, edit, new, the files) are under HELP & SETUP; Edit and New
+  and the file entries are offered together, only while scripts are on or the files are listed (`ScriptsEditable`). The
+  cell ⌃P stops above the command line (`CommandPalette.KeepClearBelow` = `InputBandRows`), so at 80×24 its border is a row
+  above the prompt. F5's columns are fitted with `MarkupText.FitVisible` (elided with `…`, trailing blanks cut silently),
+  and `highlight names`' help inks each colour in itself, held to the floor. An overflowed tab keeps 3 letters and `…`
+  (`TabStripFit.MinimumName` 4); the tab the chip would leave shorter than that (`ChipReserve`) is counted under the chip.
+  In the window a pop-out button shows only while the pointer is over its panel (`DesktopLayer.SyncPopOutHover`), and a
+  one-row strip gives the button its right end (`ReservesPopOut`: the native control is narrowed, the corner painted the
+  pane's plane), so the button never sits on a strip's text.
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the
@@ -1878,8 +1890,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   **StbImageSharp reads no WebP**, and the bump silently turned every WebP picture (all of SharpMUSH's)
   back into its label. `ImageDecoder` is the one decode path for panes and the web view: the framework
   first, then ImageSharp 3.1 configured with the **WebP module only and metadata skipped**. That narrowing
-  is what keeps the 3.1.12 advisories (TIFF codecs, ICC/EXIF) unreachable and is why they are
-  `NuGetAuditSuppress`ed by id; 4.x fixes them but will not build without a Six Labors license key.
+  is what keeps the 3.1.12 advisories (TIFF codecs including the fax tile decoder, ICC/EXIF) unreachable
+  and is why they are `NuGetAuditSuppress`ed by id (`Directory.Packages.props`; a new one is NU1903 until listed); 4.x fixes them but will not build without a Six Labors license key.
 - **Controls default to `HorizontalAlignment.Left`, which self-sizes to content** instead of filling
   the slot. This is the single biggest cause of "why doesn't this fill the width?" Use
   `.WithAlignment(HorizontalAlignment.Stretch)`. A `.Flex(n)` column only fills if the grid is
@@ -3165,8 +3177,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   each member's `SendUserInputAsync`, so aliases and echo apply per character, once each. A disconnected member
   gets nothing and is named in the notice. A closed session leaves the group. `world.sendTo(name, cmd)` resolves
   through `SendGroup.Find`: an exact `World.Character` key, else a unique character name. It refuses an
-  ambiguous or disconnected name and sends raw, like `world.send`. Not done: no ⌃P chord, and no rail gesture
-  to toggle membership.
+  ambiguous or disconnected name and sends raw, like `world.send`. ⌃P ▸ *Send to group* is ⌥S (`BuiltInCommands.SendGroupKey`,
+  in `MacroKeys.AppShortcuts`); `g` on a row while ⌥C holds the sidebar toggles that row's character and keeps the keys
+  there (`ToggleGroupAtRailCursor`).
+- **⌃P ▸ *Recent alerts* lists every character's pages and alerts this run** (`SharpMUTermApp.RecentAlerts.cs`; kept from
+  `AttentionRequested` whether or not the host was asked, 20, newest first, in memory, never saved). The entry opens the
+  palette on `alert ` (`AlertQuery`), the only time the `alert:go:<id>` family lists anything (`CommandContext.Alerts`), and
+  an entry goes through `CommandIds.Character`, the id a ⌃P *Switch to …* runs. An id no longer kept refuses. The
+  `menu-alerts` view.
 - **NEW-ENVIRON is answered as MNES** (`TelnetSessionOptions.MnesIdentity`; the library's `NewEnvironProtocol`).
   The variables are `CLIENT_NAME`, `CLIENT_VERSION`, `TERMINAL_TYPE` and `MTTS`, read from the same TTYPE list,
   so the two channels cannot disagree (`MTTS 2845`, which now includes MNES 512). It answers a server's `DO` and

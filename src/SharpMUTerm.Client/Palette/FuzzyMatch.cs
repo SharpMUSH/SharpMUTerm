@@ -56,7 +56,7 @@ public static class FuzzyMatch
     public const int WholePrefix = 20;
 
     /// <summary>A query word this long or shorter matches only at word starts and runs (see the class remarks).</summary>
-    public const int StrictLength = 4;
+    public const int StrictLength = 5;
 
     /// <summary>
     /// Matches <paramref name="query"/> against <paramref name="text"/>, or returns null when it is not a

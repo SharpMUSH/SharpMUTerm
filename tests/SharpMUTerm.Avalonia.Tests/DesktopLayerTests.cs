@@ -304,7 +304,7 @@ public class DesktopLayerTests
         });
 
         await Assert.That(walked).IsEquivalentTo(new long[] { 2 });
-        await Assert.That(pan).IsEqualTo(new Vector(30, 12));
+        await Assert.That(new Vector(Math.Round(pan.X, 6), Math.Round(pan.Y, 6))).IsEqualTo(new Vector(30, 12));
         await Assert.That(zoom).IsGreaterThan(1.0);
         await Assert.That(clientSaw.Count).IsEqualTo(2).Because("only the right click is handed on, pressed and released");
         await Assert.That(clientSaw[0]).Contains(MouseFlags.Button3Pressed);

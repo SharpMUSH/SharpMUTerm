@@ -90,6 +90,12 @@ internal sealed class CommandPalette
         }
     }
 
+    /// <summary>
+    /// How many rows at the desktop's foot the palette must leave uncovered — the command line and the status row — or
+    /// null for none. Asked each time it opens, since the command line grows.
+    /// </summary>
+    public Func<int>? KeepClearBelow { get; init; }
+
     private void Open()
     {
         _selected = 0;
@@ -115,7 +121,11 @@ internal sealed class CommandPalette
         // narrower desktop elides titles and details, never keys (CommandSurfaceRenderer).
         var initial = Build(string.Empty);
         var desktop = _system.DesktopDimensions;
-        var height = Math.Clamp(initial.Rows.Count + 1 + 3, 6, Math.Max(6, desktop.Height - 2));
+        // The rows the command line and the status row take at the desktop's foot stay clear (KeepClearBelow), so the
+        // line being typed is never under the palette's bottom border; the palette centres in what is above them.
+        var clear = Math.Clamp(KeepClearBelow?.Invoke() ?? 0, 0, Math.Max(0, desktop.Height - 8));
+        var above = desktop.Height - clear;
+        var height = Math.Clamp(initial.Rows.Count + 1 + 3, 6, Math.Max(6, clear > 0 ? above - 1 : desktop.Height - 2));
         _contentWidth = Math.Clamp(
             Math.Max(CommandSurfaceRenderer.NaturalWidth(initial), HeaderWidth(initial)) + 1,
             32,
@@ -129,15 +139,18 @@ internal sealed class CommandPalette
         // Centered() *after* WithSize(): it reads the bounds set so far and falls back to 80x25, so
         // centring first placed the surface as if it were that size — which only became visible once
         // the catalog grew tall enough for the misplacement to push its bottom border off-screen.
-        _window = new WindowBuilder(_system)
+        var builder = new WindowBuilder(_system)
             .WithTitle(Title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
-            .WithSize(width, height)
-            .Centered()
+            .WithSize(width, height);
+        builder = clear > 0
+            ? builder.AtPosition(Math.Max(0, (desktop.Width - width) / 2), Math.Max(1, (above - height) / 2))
+            : builder.Centered();
+        _window = builder
             .AddControl(_search)
             .AddControl(_results)
             .OnClosed((_, _) => Reset())

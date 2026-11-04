@@ -367,10 +367,75 @@ internal sealed class DesktopLayer : Canvas
         SyncPopOuts(frame, cell);
     }
 
+    /// <summary>Whether a panel is a one-row strip that keeps a corner for its pop-out button rather than sitting under it.</summary>
+    internal static bool ReservesPopOut(PanelOverlay panel) => panel.PopOut is not null && panel.Rect.Height == 1;
+
+    /// <summary>The pixels a one-row strip leaves at its right end for the button.</summary>
+    private static double PopOutReserve(Size cell) => PopOutSize(cell) + 6;
+
+    private static double PopOutSize(Size cell) => Math.Clamp(cell.Height - 2, 12, 18);
+
+    /// <summary>Where the pointer last was over the window, in this layer's coordinates; null once it left.</summary>
+    private Point? _pointerAt;
+
+    /// <summary>
+    /// Shows each pop-out button while the pointer is over its panel and hides it otherwise (D3: an always-on button lay
+    /// over the panel's own text). A one-row strip's reserved corner stays, as the pane's plane, with the icon on hover.
+    /// </summary>
+    private void SyncPopOutHover()
+    {
+        foreach (var button in _popOuts.Values)
+        {
+            var over = _pointerAt is { } at && button.PanelBounds.Contains(at);
+            button.Hovering = over;
+            button.IsVisible = over || button.Reserved;
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (TopLevel.GetTopLevel(this) is { } top)
+        {
+            top.AddHandler(PointerMovedEvent, OnWindowPointerMoved, global::Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+            top.PointerExited += OnWindowPointerExited;
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is { } top)
+        {
+            top.RemoveHandler(PointerMovedEvent, OnWindowPointerMoved);
+            top.PointerExited -= OnWindowPointerExited;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
+    {
+        _pointerAt = e.GetPosition(this);
+        SyncPopOutHover();
+    }
+
+    private void OnWindowPointerExited(object? sender, PointerEventArgs e)
+    {
+        _pointerAt = null;
+        SyncPopOutHover();
+    }
+
+    /// <summary>Moves the pointer for a test, as the window's own pointer movement would.</summary>
+    internal void SimulatePointer(Point? at)
+    {
+        _pointerAt = at;
+        SyncPopOutHover();
+    }
+
     /// <summary>
     /// A pop-out button in the top right corner of every docked panel the client says can float, above the panel's
-    /// own view and below the toasts. A panel that cannot float (or a host that cannot) publishes no callback, and
-    /// gets no button.
+    /// own view and below the toasts, shown while the pointer is over the panel. A panel that cannot float (or a host
+    /// that cannot) publishes no callback, and gets no button.
     /// </summary>
     private void SyncPopOuts(ScreenFrame frame, Size cell)
     {
@@ -391,14 +456,35 @@ internal sealed class DesktopLayer : Canvas
                 Children.Insert(Math.Max(0, Children.IndexOf(_toasts)), button);
             }
 
-            var size = Math.Clamp(cell.Height - 2, 12, 18);
+            var size = PopOutSize(cell);
             var rect = panel.Rect;
-            button.Width = size;
-            button.Height = size;
-            SetLeft(button, origin.X + ((rect.X + rect.Width) * cell.Width) - size - 3);
-            SetTop(button, origin.Y + (rect.Y * cell.Height) + 2);
+            var right = origin.X + ((rect.X + rect.Width) * cell.Width);
+            button.PanelBounds = new Rect(origin.X + (rect.X * cell.Width), origin.Y + (rect.Y * cell.Height), rect.Width * cell.Width, rect.Height * cell.Height);
+            button.Reserved = ReservesPopOut(panel);
+            if (button.Reserved)
+            {
+                // The strip's reserved end: the whole row's height, on the pane's own plane.
+                var reserve = PopOutReserve(cell);
+                button.Width = reserve;
+                button.Height = rect.Height * cell.Height;
+                SetLeft(button, right - reserve);
+                SetTop(button, origin.Y + (rect.Y * cell.Height));
+                var inside = rect.X >= 0 && rect.Y >= 0 && rect.X < frame.Width && rect.Y < frame.Height;
+                button.Plane = Colour(inside ? _view.Renderer.Background(frame[rect.X + rect.Width - 1, rect.Y]) : _view.Renderer.DefaultBackground);
+            }
+            else
+            {
+                button.Width = size;
+                button.Height = size;
+                SetLeft(button, right - size - 3);
+                SetTop(button, origin.Y + (rect.Y * cell.Height) + 2);
+                button.Plane = null;
+            }
+
             button.Show(panel, Colour(_view.Renderer.DefaultForeground));
         }
+
+        SyncPopOutHover();
     }
 
     /// <summary>
@@ -436,7 +522,9 @@ internal sealed class DesktopLayer : Canvas
             var origin = CellOrigin;
             SetLeft(control, origin.X + (rect.X * cell.Width));
             SetTop(control, origin.Y + (rect.Y * cell.Height));
-            control.Width = rect.Width * cell.Width;
+            // A one-row strip that can pop out leaves its right end to the button (ReservesPopOut), so the button never
+            // lies over its text (`88 / 100`, `F4 edits keys`); the button paints the pane's plane over the cells there.
+            control.Width = Math.Max(0, (rect.Width * cell.Width) - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
             control.Height = rect.Height * cell.Height;
 
             // The pane's own plane, read off the frame, so the native view sits on whatever the pane wears — its

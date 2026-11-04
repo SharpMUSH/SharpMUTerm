@@ -935,7 +935,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             () => _active is { } acting ? DisplayName(acting.SessionKey) : null,
             id => DispatchCommand(id),
             _recentCommands,
-            () => CommandPaletteModel.Suggested(CommandState()));
+            () => CommandPaletteModel.Suggested(CommandState()))
+        {
+            KeepClearBelow = InputBandRows,
+        };
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
         _screens = ScreenTheme.For(_theme);
@@ -1910,6 +1913,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RunFromPalette("layout:split-right");
             RunFromPalette("layout:cycle");
             OpenMenu();
+        }
+
+        // ⌃P ▸ Recent alerts over three kept pages and alerts, two characters', oldest first in time: the entry itself runs,
+        // so the palette opens on them the way it does live, each with its character and how long ago.
+        if (string.Equals(view, "menu-alerts", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateAlert("Aetherfall.Rookery", SharpMUTerm.Core.Automation.AttentionReason.Page,
+                "Merrow pages: are you coming to the crypt?", TimeSpan.FromMinutes(14));
+            SimulateAlert("Grapevine.Thistle", SharpMUTerm.Core.Automation.AttentionReason.Name,
+                "Ashlyn says, \"Thistle, the herbs came in.\"", TimeSpan.FromMinutes(3));
+            SimulateAlert(DemoScene.ActiveSessionKey, SharpMUTerm.Core.Automation.AttentionReason.Page,
+                "Rivane pages: meet at the north gate");
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.RecentAlertsCommand);
         }
 
         // Help, opened by the ⌃P entry itself: the list, and a how-to page (the one that names join wraps).
@@ -6121,6 +6137,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// count is arithmetic on the text rather than a reading of the last frame: the veto has to be right
     /// on the first frame too, and nothing has been arranged yet when the window is built.
     /// </summary>
+    /// <summary>
+    /// The rows from the top of the input band (the prompt row, then the command lines) to the desktop's foot, as last
+    /// arranged — what a popup must leave uncovered so the line being typed stays in view. Zero before anything is
+    /// arranged.
+    /// </summary>
+    private int InputBandRows()
+    {
+        var tops = new[] { (IWindowControl)_promptRow, _input, _second }
+            .Where(c => c.Visible)
+            .Select(c => BoundsOf(c))
+            .Where(b => b is { Height: > 0 })
+            .Select(b => b!.Value.Y - _system.DesktopUpperLeft.Y)
+            .ToList();
+        return tops.Count == 0 ? 0 : Math.Max(0, _system.DesktopDimensions.Height - tops.Min());
+    }
+
     private int ChromeRows() =>
         // No row for a header the host draws: it is not in the cells, so the bars may have the row it would take.
         (_header.Visible ? InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth()) : 0)
@@ -7423,6 +7455,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return () => { CycleCharacter(-1); return true; };
             }
 
+            // ⌥S sends the command line to the send group, as ⌃P ▸ Send to group does.
+            if (claim.Key == ConsoleKey.S)
+            {
+                return () => { SendToGroup(); return true; };
+            }
+
             // ⌥G walks to the next hit of the last search, so a reader following a name down a transcript
             // presses one key rather than reopening the surface for each. There is no backward chord —
             // see MacroKeys, where the measurement that rules ⌥⇧G out is recorded.
@@ -8624,6 +8662,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SceneLogging: _sceneLogs.ContainsKey(ActiveWindowId()),
             NewConfiguration: _config.Worlds.Count == 0 || _config.KeyTourPending,
             MapFound: MapFoundRooms(),
+            RecentAlerts: _recentAlerts.Count,
+            Alerts: _alertsListed ? AlertRefs() : null,
             ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }
 
@@ -8898,6 +8938,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptOpenPrefix, StringComparison.Ordinal))
         {
             return OpenScriptFromPalette(id[SharpMUTerm.Client.Commands.BuiltInCommands.ScriptOpenPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.AlertPrefix, StringComparison.Ordinal))
+        {
+            return GoToAlert(id[SharpMUTerm.Client.Commands.BuiltInCommands.AlertPrefix.Length..]);
         }
 
         if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.MapWalkPrefix, StringComparison.Ordinal))
@@ -9200,6 +9245,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 break;
             case Client.Commands.BuiltInCommands.ScriptConsoleCommand:
                 ShowScriptConsole();
+                break;
+            case Client.Commands.BuiltInCommands.RecentAlertsCommand:
+                ShowRecentAlerts();
                 break;
             case Client.Commands.BuiltInCommands.ScriptEditCommand:
                 ListScriptsToEdit(fromConsole: false);
@@ -10060,6 +10108,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (ComposerIsInTheWay("the command surface"))
         {
             return;
+        }
+
+        // The alert entries are listed only in the palette Recent alerts opened, so they never crowd any other.
+        if (!_palette.IsOpen)
+        {
+            _alertsListed = _openingQuery == Client.Commands.BuiltInCommands.AlertQuery;
         }
 
         // A host that draws ⌃P itself gets it, unless the cell popup is already up (then this closes that).

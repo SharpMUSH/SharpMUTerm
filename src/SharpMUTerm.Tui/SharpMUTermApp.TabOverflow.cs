@@ -31,6 +31,9 @@ internal sealed partial class SharpMUTermApp
     /// <summary>The commands the last overflow list offered, so a choice can be checked against them.</summary>
     private MenuModel? _tabOverflowOffered;
 
+    /// <summary>The cells at a strip's right edge a chip takes, for deciding which clipped tab it covers: a space and <c>+9 ▾</c>.</summary>
+    private const int ChipReserve = 5;
+
     /// <summary>The chip for a list: <c>+3 ▾</c>.</summary>
     internal static string TabOverflowChip(MenuModel menu) => $"+{menu.Entries.Count} ▾";
 
@@ -189,16 +192,34 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private List<MenuEntry>? HiddenTabs(TabControl tabs, int width)
     {
-        var seen = new HashSet<int>();
+        // Cells per tab along the whole strip, and left of where a chip would sit. A tab the framework clipped at the
+        // right edge to a letter or two (`R`) names nothing, and the chip is painted over it anyway: it counts as hidden
+        // unless the part left of the chip holds its pad and TabStripFit's floor (three letters and an ellipsis).
+        var total = new Dictionary<int, int>();
+        var shown = new Dictionary<int, int>();
         for (var x = 0; x < width; x++)
         {
             if (FrameworkHitTests.TabAt(tabs, x) is var index and >= 0)
             {
-                seen.Add(index);
+                total[index] = total.GetValueOrDefault(index) + 1;
+                if (x < width - ChipReserve)
+                {
+                    shown[index] = shown.GetValueOrDefault(index) + 1;
+                }
             }
         }
 
-        if (seen.Count == 0 || seen.Count >= tabs.TabCount)
+        if (total.Count == 0)
+        {
+            return null;
+        }
+
+        // Only the tab reaching the strip's last cell can have been clipped.
+        var edge = FrameworkHitTests.TabAt(tabs, width - 1);
+        var seen = total.Keys
+            .Where(i => i != edge || shown.GetValueOrDefault(i) >= Math.Min(total[i], 1 + TabStripFit.MinimumName))
+            .ToHashSet();
+        if (seen.Count >= tabs.TabCount)
         {
             return null;
         }

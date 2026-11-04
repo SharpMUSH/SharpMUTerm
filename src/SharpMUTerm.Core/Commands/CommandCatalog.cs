@@ -71,6 +71,11 @@ public sealed record CharacterRef(
 /// </param>
 /// <param name="MapFound">The rooms the last <c>/map find</c> listed, newest search only, so ⌃P offers to walk to each.</param>
 /// <param name="ScriptFiles">The focused character's script files, so ⌃P offers to open each in the editor.</param>
+/// <param name="RecentAlerts">How many pages and alerts this run has kept, across every character, so ⌃P offers <c>Recent alerts</c>.</param>
+/// <param name="Alerts">
+/// Those alerts, newest first, once <c>Recent alerts</c> has opened the palette on them (null before), so each is an entry
+/// that goes to its character's window without crowding every other ⌃P.
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -96,7 +101,17 @@ public sealed record CommandContext(
     bool MapViewing = false,
     bool NewConfiguration = false,
     IReadOnlyList<FoundRoom>? MapFound = null,
-    IReadOnlyList<ScriptFileRef>? ScriptFiles = null);
+    IReadOnlyList<ScriptFileRef>? ScriptFiles = null,
+    int RecentAlerts = 0,
+    IReadOnlyList<AlertRef>? Alerts = null);
+
+/// <summary>A page or alert the client kept this run, for ⌃P's <c>Recent alerts</c> entries.</summary>
+/// <param name="Id">Its number this run, which the entry's id carries.</param>
+/// <param name="Who">The character it was for, as every surface names one (<c>Corvid · Aetherfall</c>).</param>
+/// <param name="Why">What it was: <c>page</c>, <c>mentioned you</c> or <c>alert</c>.</param>
+/// <param name="Text">The line, bounded.</param>
+/// <param name="Age">How long ago, in words (<c>just now</c>, <c>4 min ago</c>).</param>
+public sealed record AlertRef(int Id, string Who, string Why, string Text, string Age);
 
 /// <summary>A script file ⌃P offers to open in the editor.</summary>
 /// <param name="Name">Its name under the scripts folder (<c>combat.lua</c>), or <c>package:&lt;id&gt;/&lt;file&gt;</c>.</param>

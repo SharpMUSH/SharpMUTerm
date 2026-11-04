@@ -11,6 +11,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 - A script error in the script console that names a file and line is now a link: click it to open that script with the
   caret on the line and the line marked. Closing the editor goes back to the console.
+- ⌃P ▸ Recent alerts lists the pages and alerts every character has had this run, newest first, with how long ago;
+  choosing one goes to that character's window.
+- ⌥S sends the command line to the send group (⌃P ▸ Send to group), and `g` on a sidebar row while ⌥C holds the keys
+  adds that character to the group or takes them out.
+
 - The script editor numbers its lines in the desktop window too, and after a save whose reload fails, the line the
   error names is marked in both the terminal and the window.
 - When Ctrl+F finds fewer matches than it might because the pane no longer holds older lines, its status line offers
@@ -356,6 +361,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - Ctrl+F with older history says both counts on one line (`this window 3 of 39 · older 4 of 6,000`). Older matches say
   how far back they are (`1.6k lines ago`) and the pane's own say `here`.
 - The script console opens at the size of what it holds, so its log no longer starts under blank rows.
+- In the desktop window the map opens sized to the rooms around you, with their names, and stays where you put it
+  once you zoom or pan (a double-click fits it again).
+- The pop-out button on a docked panel shows only while the pointer is over that panel, and never covers the text of a
+  one-row strip.
+- The command palette's script entries are under Help & setup, and a five-letter search such as "scene" no longer
+  matches letters scattered across unrelated entries.
+- F5 at 80 columns shortens long values with "…" instead of cutting them off, and the highlight-names help shows each
+  colour in that colour.
+
 - The settings screens' key hints no longer lose words from the middle at 80 columns: the least-used keys are left
   out and the way to close is always there.
 - Help topics have headings and show their keys as keys, in the terminal and the window, and a topic's title fits
@@ -439,6 +453,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   still loading.
 
 ### Fixed
+
+- The command palette no longer covers the command line on an 80×24 terminal.
+- A tab squeezed by a crowded strip keeps at least three letters of its name.
+- The build no longer warns about an ImageSharp advisory in a decoder SharpMUTerm never uses.
 
 - The import review at 80×24 no longer scrolls its Enter and Esc keys and the passwords question out of sight: they
   stay at the bottom while the rest scrolls (arrow keys, PgUp/PgDn, Home/End).

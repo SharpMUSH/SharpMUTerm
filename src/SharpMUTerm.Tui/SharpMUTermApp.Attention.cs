@@ -78,6 +78,7 @@ internal sealed partial class SharpMUTermApp
 
     private void OnAttentionRequested(WorldSession session, AttentionEventArgs e)
     {
+        KeepAlert(session.SessionKey, e.Reason, e.Text);
         if (!_config.Text.AlertWhenAway || Host.Attention is not { } host)
         {
             return;

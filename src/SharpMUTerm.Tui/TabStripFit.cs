@@ -61,12 +61,13 @@ internal readonly record struct TabCost(int NameLength, int TitleLength, int Fix
 internal static class TabStripFit
 {
     /// <summary>
-    /// The fewest cells of name a background tab is cut to. Below three a name is an initial and an
-    /// ellipsis, which identifies nothing; at three there is still a syllable to recognise. It is a floor
-    /// rather than a guarantee — a strip narrower than its tabs at the floor is one the framework will
-    /// clip, and this cannot prevent that, only postpone it.
+    /// The fewest cells of name a background tab is cut to: three letters and the ellipsis. Below that a
+    /// name is an initial or two (<c>Pu…</c>), which identifies nothing; three letters are a syllable to
+    /// recognise. It is a floor rather than a guarantee — a strip narrower than its tabs at the floor is
+    /// one the framework will clip, and a tab it clips below the floor is counted into the overflow chip
+    /// (<c>+N ▾</c>) rather than left showing a letter.
     /// </summary>
-    internal const int MinimumName = 3;
+    internal const int MinimumName = 4;
 
     /// <summary>
     /// The fewest for the tab the pane is showing. Higher than <see cref="MinimumName"/> on purpose: it

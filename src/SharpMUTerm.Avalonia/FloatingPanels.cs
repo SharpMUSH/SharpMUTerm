@@ -489,6 +489,31 @@ internal sealed class PopOutButton : Control
     /// <summary>The panel it pops out, as the client last published it.</summary>
     public PanelOverlay? Panel { get; private set; }
 
+    /// <summary>The panel's rectangle in the layer, which the pointer must be over for the button to show.</summary>
+    internal Rect PanelBounds { get; set; }
+
+    /// <summary>Whether the button holds a one-row strip's reserved end, which stays (as <see cref="Plane"/>) when the icon goes.</summary>
+    internal bool Reserved { get; set; }
+
+    /// <summary>The pane's plane, painted under a reserved button so the cells under the strip's end do not show; else null.</summary>
+    internal Color? Plane { get; set; }
+
+    /// <summary>Whether the pointer is over the panel, which is when the icon is drawn.</summary>
+    internal bool Hovering
+    {
+        get => _hovering;
+        set
+        {
+            if (_hovering != value)
+            {
+                _hovering = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private bool _hovering;
+
     public Color Ink { get; set; } = Colors.White;
 
     /// <summary>Shows the button for <paramref name="panel"/>, in <paramref name="ink"/>.</summary>
@@ -546,7 +571,24 @@ internal sealed class PopOutButton : Control
 
     public override void Render(DrawingContext context)
     {
-        var bounds = new Rect(Bounds.Size);
+        var whole = new Rect(Bounds.Size);
+        if (Plane is { } under)
+        {
+            context.FillRectangle(new SolidColorBrush(under), whole);
+        }
+
+        if (!Hovering && !IsPointerOver && !_pressed)
+        {
+            return;
+        }
+
+        // A reserved strip end draws the icon as a square at its right, vertically centred.
+        var square = Math.Min(whole.Width, Math.Min(whole.Height, 18));
+        var bounds = Reserved
+            ? new Rect(whole.Width - square - 3, Math.Round((whole.Height - square) / 2), square, square)
+            : whole;
+        using var _ = context.PushTransform(Matrix.CreateTranslation(bounds.X, bounds.Y));
+        bounds = new Rect(bounds.Size);
         var plate = (byte)(_pressed ? 0x60 : IsPointerOver ? 0x40 : 0x18);
         context.DrawRectangle(new SolidColorBrush(Color.FromArgb(plate, Ink.R, Ink.G, Ink.B)), null, bounds, 3, 3);
 

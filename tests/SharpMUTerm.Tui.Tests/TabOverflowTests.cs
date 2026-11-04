@@ -104,9 +104,8 @@ public class TabOverflowTests
         var click = new List<MouseFlags> { MouseFlags.Button1Released, MouseFlags.Button1Clicked };
         var at = new System.Drawing.Point(chip.X + 1, chip.Y);
 
-        await Assert.That(app.AChipClickReachesTheTabUnderIt(paneId, filtered: false)).IsTrue()
-            .Because("unfiltered, the framework's own click on the chip's cells lands on the tab drawn under it — the defect");
-
+        // Since the tab floor (wave 18) a tab left with fewer than four cells beside the chip is counted under it, so in
+        // this fixture the chip sits on the strip's fill; the filter is still what keeps a press from reaching the strip.
         await Assert.That(app.TakesTabOverflowPress(press, at)).IsTrue();
         await Assert.That(app.TakesTabOverflowPress(click, at)).IsTrue();
         await Assert.That(press.Concat(click).Any(f => f.ToString().StartsWith("Button1", StringComparison.Ordinal))).IsFalse()

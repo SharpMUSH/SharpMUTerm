@@ -49,20 +49,37 @@ public class FuzzyMatchTests
     [Test]
     public async Task AWholePrefixBeatsAScatteredMatch()
     {
-        var prefix = FuzzyMatch.Match("layou", "Layouts")!;
-        var scattered = FuzzyMatch.Match("layou", "Clear window, say you")!;
+        // Six letters may scatter; the whole prefix still wins. (Five no longer may: see the next test.)
+        var prefix = FuzzyMatch.Match("layout", "Layouts")!;
+        var scattered = FuzzyMatch.Match("layout", "Clear window, say you two")!;
         await Assert.That(prefix.Score).IsGreaterThan(scattered.Score);
 
         // And a short query cannot scatter at all.
         await Assert.That(FuzzyMatch.Match("lay", "Clear window, say")).IsNull();
+        await Assert.That(FuzzyMatch.Match("layou", "Clear window, say you")).IsNull();
+    }
+
+    /// <summary>
+    /// Five letters are short too: <c>scene</c> listed Import, Packages and the panel entries (an s, c, e, n, e spread over
+    /// their titles and details), wave 18's D7. It finds what starts or runs with it, and acronym-like word starts.
+    /// </summary>
+    [Test]
+    public async Task AFiveLetterWordMatchesOnlyAtWordStartsAndRuns()
+    {
+        await Assert.That(FuzzyMatch.Match("scene", "Start scene log")).IsNotNull();
+        await Assert.That(FuzzyMatch.Match("scene", "Stop scene log")).IsNotNull();
+        await Assert.That(FuzzyMatch.Match("scene", "Show client messages")).IsNull();
+        await Assert.That(FuzzyMatch.Match("scene", "Import from another client…")).IsNull();
+        await Assert.That(FuzzyMatch.Match("scene", "installed packages, on/off, remove")).IsNull();
+        await Assert.That(FuzzyMatch.Match("scene", "players and creatures in the room · click a name to look")).IsNull();
     }
 
     [Test]
     public async Task WordStartsBeatTheMiddleOfAWord()
     {
-        // f…p at two word starts, against an f and a p buried in words.
-        var starts = FuzzyMatch.Match("frzpn", "Freeze pane")!;
-        var buried = FuzzyMatch.Match("frzpn", "Fur-zip ink")!;
+        // f…p at two word starts, against an f and a p buried in words (six letters, so it may scatter at all).
+        var starts = FuzzyMatch.Match("frzpan", "Freeze pane")!;
+        var buried = FuzzyMatch.Match("frzpan", "Fairs, zapped, ran")!;
         await Assert.That(starts.Score).IsGreaterThan(buried.Score);
     }
 

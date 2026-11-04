@@ -70,7 +70,7 @@ internal sealed partial class SharpMUTermApp
         RefreshRail();
         SyncComposerBands(); // the command line goes idle: ⏎ goes to a row now, not to the game
         UpdateInputChrome(); // and its prompt with it, which is painted to match the band
-        Notice("sidebar: ↑↓ walk · ⏎ goes · Esc returns", MessageSeverity.Info, "⌥C");
+        Notice("sidebar: ↑↓ walk · ⏎ goes · g send group · Esc returns", MessageSeverity.Info, "⌥C");
     }
 
     /// <summary>Hands the keys back to the command line. Does nothing when the sidebar does not hold them.</summary>
@@ -117,6 +117,9 @@ internal sealed partial class SharpMUTermApp
             case ConsoleKey.Escape:
                 LeaveRailKeys();
                 break;
+            case ConsoleKey.G when bare:
+                ToggleGroupAtRailCursor();
+                break;
             case ConsoleKey.Enter when bare:
                 var row = BuildSidebar().NavigableRows().FirstOrDefault(r => SidebarModel.KeyOf(r) == _railCursor);
                 LeaveRailKeys();
@@ -133,6 +136,30 @@ internal sealed partial class SharpMUTermApp
 
         e.Handled = true;
         return true;
+    }
+
+    /// <summary>
+    /// <c>g</c> on a sidebar row: the row's character joins or leaves the send group (⌃P's <c>Add … to the send group</c>,
+    /// through the same id), and the keys stay in the sidebar so the next row can be added. A window row stands for its
+    /// owner; a row with no character refuses.
+    /// </summary>
+    private void ToggleGroupAtRailCursor()
+    {
+        var row = BuildSidebar().NavigableRows().FirstOrDefault(r => SidebarModel.KeyOf(r) == _railCursor);
+        var key = row?.Target switch
+        {
+            { } t when t.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal) => t[CommandIds.CharacterPrefix.Length..],
+            { } t when t.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal) =>
+                _workspace.FindWindow(t[CommandIds.WindowPrefix.Length..])?.SessionKey,
+            _ => null,
+        };
+        if (key is null)
+        {
+            RefuseCommand("that row is no character — g adds a character to the send group");
+            return;
+        }
+
+        DispatchGroupCommand(CommandIds.GroupToggle(key));
     }
 
     /// <summary>Moves the cursor by <paramref name="step"/> rows, clamped; the extremes of int go to the ends.</summary>

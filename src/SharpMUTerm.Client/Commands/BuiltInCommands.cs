@@ -29,6 +29,21 @@ public static class BuiltInCommands
     /// <summary>Import from another client: a file picker in a host that has one, else <c>/import </c> on the command line.</summary>
     public const string ImportCommand = "term:import";
 
+    /// <summary>The chord that sends the command line to the send group (<see cref="CommandIds.GroupSend"/>).</summary>
+    public const string SendGroupKey = "⌥S";
+
+    /// <summary>⌃P ▸ Recent alerts: opens the palette on this run's pages and alerts, every character's.</summary>
+    public const string RecentAlertsCommand = "world:recent-alerts";
+
+    /// <summary>The prefix of the alert entries: <c>alert:go:&lt;id&gt;</c>, one per kept alert.</summary>
+    public const string AlertPrefix = "alert:go:";
+
+    /// <summary>What the palette opens with typed in for Recent alerts, so it lists the alerts.</summary>
+    public const string AlertQuery = "alert ";
+
+    /// <summary>The ⌃P id that goes to alert <paramref name="id"/>'s character.</summary>
+    public static string Alert(int id) => AlertPrefix + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>⌃P ▸ Script console.</summary>
     public const string ScriptConsoleCommand = "world:script-console";
 
@@ -147,19 +162,14 @@ public static class BuiltInCommands
         Add(StopReconnectCommand, CommandGroup.World, "Stop reconnecting", detail: "a dropped connection is waiting to dial again",
             when: c => c.State.Reconnecting);
         Family("world:send-group", CommandIds.GroupPrefix, SendGroup);
-        Family("world:join-wraps", JoinWrapsPrefix, JoinWrapsEntries);
-        Add("world:reload-scripts", CommandGroup.World, "Reload scripts",
-            detail: "re-reads this character's Lua files", when: c => c.State.ScriptsOn);
-        Add(ScriptConsoleCommand, CommandGroup.World, "Script console",
-            detail: "run Lua as this character, see what scripts print and keep");
 
-        // Editing the script files under the scripts folder, in the composer's editor: the list (one entry per file, which
-        // Edit script… opens the palette on) and a new one by name. Only where the client runs scripts.
-        Add(ScriptEditCommand, CommandGroup.World, "Edit script…",
-            detail: "open a .lua file from the scripts folder · ⌃S saves and reloads", when: c => c.State.ScriptsOn);
-        Add(ScriptNewCommand, CommandGroup.World, "New script…",
-            detail: "/script new <name> · starts from a template", when: c => c.State.ScriptsOn);
-        Family("world:script-open", ScriptOpenPrefix, ScriptFileEntries);
+        // The pages and alerts of this run, every character's (in memory, never saved): the entry opens the palette on
+        // them, one per alert, newest first, and choosing one goes to that character's window.
+        Add(RecentAlertsCommand, CommandGroup.World, "Recent alerts",
+            titleFor: c => $"Recent alerts ({c.State.RecentAlerts})",
+            detail: "pages and alerts this run, every character's", when: c => c.State.RecentAlerts > 0);
+        Family("world:alerts", AlertPrefix, AlertEntries);
+        Family("world:join-wraps", JoinWrapsPrefix, JoinWrapsEntries);
 
         // Only where the host has a screen reader to tell: the window's live region, or --plain.
         Add("a11y:toggle-window", CommandGroup.Terminal, "Read this window aloud",
@@ -283,6 +293,20 @@ public static class BuiltInCommands
         Add("term:packages", CommandGroup.Help, "Packages", "F10", "installed packages, on/off, remove");
         Add("term:package-install", CommandGroup.Help, "Install package…", detail: "from a file or an https link");
         Add("term:package-browse", CommandGroup.Help, "Browse packages", detail: "the package index, this game's first");
+
+        // Scripts: reload, the console, and editing the files under the scripts folder in the composer's editor (the list,
+        // one entry per file, which Edit script… opens the palette on, and a new one by name). Under HELP & SETUP: a script
+        // sets the client up, and CONNECTION is about the socket. The list and both editing entries share one predicate
+        // (ScriptsEditable), so the files are never listed without New script… beside them.
+        Add("world:reload-scripts", CommandGroup.Help, "Reload scripts",
+            detail: "re-reads this character's Lua files", when: c => c.State.ScriptsOn);
+        Add(ScriptConsoleCommand, CommandGroup.Help, "Script console",
+            detail: "run Lua as this character, see what scripts print and keep");
+        Add(ScriptEditCommand, CommandGroup.Help, "Edit script…",
+            detail: "open a .lua file from the scripts folder · ⌃S saves and reloads", when: ScriptsEditable);
+        Add(ScriptNewCommand, CommandGroup.Help, "New script…",
+            detail: "/script new <name> · starts from a template", when: ScriptsEditable);
+        Family("world:script-open", ScriptOpenPrefix, ScriptFileEntries);
 
 
         // A spelling dictionary, downloaded only when asked — the offer says what, from where and where to, first.
@@ -488,14 +512,28 @@ public static class BuiltInCommands
             Detail = $"it wraps at {r.Column}, the pane is {r.PaneWidth} wide · F5 ▸ join wraps",
         });
 
+    /// <summary>
+    /// Whether ⌃P offers the script files, Edit script… and New script…: the client runs scripts, or it is showing a
+    /// list of files to edit (the snapshot's demo scripts). One predicate for all three, so they come and go together.
+    /// </summary>
+    private static bool ScriptsEditable(ICommandContext context) =>
+        context.State.ScriptsOn || context.State.ScriptFiles is not null;
+
     private static IEnumerable<CommandItem> ScriptFileEntries(ICommandContext context) =>
-        (context.State.ScriptFiles ?? []).Select(f => new CommandItem(
-            CommandGroup.World,
+        !ScriptsEditable(context) ? [] : (context.State.ScriptFiles ?? []).Select(f => new CommandItem(
+            CommandGroup.Help,
             f.ReadOnly ? $"Script {f.Name} (read only)" : $"Script {f.Name}",
             ScriptOpen(f.Name),
             f.Detail)
         {
             Detail = f.Detail,
+        });
+
+    private static IEnumerable<CommandItem> AlertEntries(ICommandContext context) =>
+        (context.State.Alerts ?? []).Select(a =>
+        {
+            var detail = $"{a.Why} · {a.Age}";
+            return new CommandItem(CommandGroup.World, $"Alert · {a.Who}: {a.Text}", Alert(a.Id), detail) { Detail = detail };
         });
 
     private static IEnumerable<CommandItem> MapFoundEntries(ICommandContext context) =>
@@ -530,11 +568,14 @@ public static class BuiltInCommands
         var members = characters.Count(c => c.InGroup);
         if (members > 0)
         {
-            yield return new CommandItem(
-                CommandGroup.World,
-                "Send the command line to the group",
-                CommandIds.GroupSend,
-                members == 1 ? "1 character" : $"{members} characters");
+            // ⌥S, the group's own chord (MacroKeys), named here because this is where it is learnt; the rail's `g` while ⌥C
+            // holds the keys is the other half, putting characters in.
+            var who = members == 1 ? "the command line, to 1 character" : $"the command line, to {members} characters";
+            yield return new CommandItem(CommandGroup.World, "Send to group", CommandIds.GroupSend, $"{SendGroupKey} · {who}")
+            {
+                Key = SendGroupKey,
+                Detail = who,
+            };
             yield return new CommandItem(CommandGroup.World, "Clear the send group", CommandIds.GroupClear);
         }
     }

@@ -41,6 +41,12 @@ internal sealed class MapCanvas : Control
 
     private const double MinZoom = 0.35, MaxZoom = 3, DragThreshold = 4;
 
+    /// <summary>The most the fit zooms in: past it a small area's rooms are boxes the size of buttons.</summary>
+    internal const double FitMaxZoom = 2.4;
+
+    /// <summary>How many grid steps from the character's room the fit takes in; a larger area is fitted around them.</summary>
+    internal const int FitRadius = 6;
+
     private readonly TerminalView _view;
 
     /// <summary>
@@ -60,6 +66,14 @@ internal sealed class MapCanvas : Control
     private Vector _dragBy;
     private readonly MapInspector _inspector = new();
     private Vector _pan;
+
+    /// <summary>
+    /// The offset and zoom that fit the area to the canvas, recomputed whenever the picture or the canvas changes until the
+    /// player zooms or pans (<see cref="_moved"/>); a double-click or another level or area fits it again.
+    /// </summary>
+    private Vector _fit;
+    private bool _moved;
+    private (MapViewModel Model, Size Size, bool Inspector)? _fitFor;
     private Point? _pressAt;
     private Vector _panAtPress;
     private bool _dragging;
@@ -95,7 +109,21 @@ internal sealed class MapCanvas : Control
     internal MenuModel? OpenedRoomMenu { get; private set; }
 
     /// <summary>The zoom, 1 at <see cref="Spacing"/> pixels between rooms. Internal for tests.</summary>
-    internal double Zoom { get; private set; } = 1;
+    internal double Zoom
+    {
+        get
+        {
+            Fit();
+            return _zoom;
+        }
+
+        private set => _zoom = value;
+    }
+
+    private double _zoom = 1;
+
+    /// <summary>Whether the view is the fit (true) or where the player zoomed or panned it to. Internal for tests.</summary>
+    internal bool Fitted => !_moved;
 
     /// <summary>The pan from the character's room, in pixels. Internal for tests.</summary>
     internal Vector Pan => _pan;
@@ -117,10 +145,11 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        // Another level or area is another picture: the pan from the old one means nothing on it.
+        // Another level or area is another picture: the pan from the old one means nothing on it, and it is fitted afresh.
         if (model.Level != _model.Level || model.Area != _model.Area || model.Viewing != _model.Viewing)
         {
             _pan = default;
+            _moved = false;
         }
 
         _model = model;
@@ -135,7 +164,7 @@ internal sealed class MapCanvas : Control
     {
         var anchor = _model.Current ?? _model.Rooms.FirstOrDefault();
         var step = Spacing * Zoom;
-        var middle = Middle + _pan;
+        var middle = Middle + _fit + _pan;
         return anchor is null
             ? middle
             : new Point(middle.X + ((room.X - anchor.X) * step), middle.Y + ((room.Y - anchor.Y) * step));
@@ -154,6 +183,54 @@ internal sealed class MapCanvas : Control
     }
 
     private double RoomSize => Math.Max(5, Spacing * Zoom * 0.56);
+
+    /// <summary>
+    /// Fits the area to the canvas: the rooms within <see cref="FitRadius"/> steps of the character's, centred in the open
+    /// part below the corner label, at the largest zoom up to <see cref="FitMaxZoom"/> that holds them with a room's width
+    /// to spare. Only until the player zooms or pans; then the view is theirs.
+    /// </summary>
+    private void Fit()
+    {
+        if (_moved)
+        {
+            return;
+        }
+
+        var key = (_model, Bounds.Size, _inspector.IsVisible);
+        if (_fitFor is { } was && ReferenceEquals(was.Model, key._model) && was.Size == key.Size && was.Inspector == key.IsVisible)
+        {
+            return;
+        }
+
+        _fitFor = (key._model, key.Size, key.IsVisible);
+        var anchor = _model.Current ?? _model.Rooms.FirstOrDefault();
+        if (anchor is null || Bounds.Width <= 0 || Bounds.Height <= 0)
+        {
+            _zoom = 1;
+            _fit = default;
+            return;
+        }
+
+        var near = _model.Rooms.Where(r => Math.Abs(r.X - anchor.X) <= FitRadius && Math.Abs(r.Y - anchor.Y) <= FitRadius).ToList();
+        var minX = near.Min(r => r.X - anchor.X);
+        var maxX = near.Max(r => r.X - anchor.X);
+        var minY = near.Min(r => r.Y - anchor.Y);
+        var maxY = near.Max(r => r.Y - anchor.Y);
+        var open = Middle.X * 2;
+        const double top = 44; // the corner label and the walk or room line under it
+        var across = Math.Max(1, open - 24) / ((maxX - minX + 1.6) * Spacing);
+        var down = Math.Max(1, Bounds.Height - top - 16) / ((maxY - minY + 1.6) * Spacing);
+        _zoom = Math.Clamp(Math.Min(across, down), MinZoom, FitMaxZoom);
+        var step = Spacing * _zoom;
+        _fit = new Vector(-(minX + maxX) / 2.0 * step, (top / 2) - ((minY + maxY) / 2.0 * step));
+    }
+
+    /// <summary>The player took the view: the fit stops following, and stays where it was.</summary>
+    private void TakeView()
+    {
+        Fit();
+        _moved = true;
+    }
 
     /// <summary>The room under a point, or null.</summary>
     internal MapViewRoom? RoomAt(Point point)
@@ -222,7 +299,10 @@ internal sealed class MapCanvas : Control
 
         if (e.ClickCount == 2)
         {
+            // Re-centre: the fit again, as when the map opened.
             _pan = default;
+            _moved = false;
+            _fitFor = null;
             InvalidateVisual();
             return;
         }
@@ -257,6 +337,7 @@ internal sealed class MapCanvas : Control
                 }
                 else
                 {
+                    TakeView();
                     _pan = _panAtPress + moved;
                 }
 
@@ -517,6 +598,7 @@ internal sealed class MapCanvas : Control
     /// <summary>Zooms by <paramref name="notches"/> about <paramref name="point"/>, keeping what is under it there.</summary>
     internal void ZoomAbout(Point point, double notches)
     {
+        TakeView();
         var next = Math.Clamp(Zoom * Math.Pow(1.18, notches), MinZoom, MaxZoom);
         if (Math.Abs(next - Zoom) < 1e-9)
         {
@@ -526,16 +608,22 @@ internal sealed class MapCanvas : Control
         // The centre is middle + pan; a point at offset d from it moves to d·ratio, so the pan takes up the difference.
         var middle = Middle;
         var ratio = next / Zoom;
-        var fromCentre = point - (middle + _pan);
-        _pan = point - middle - (fromCentre * ratio);
+        var fromCentre = point - (middle + _fit + _pan);
+        _pan = point - middle - _fit - (fromCentre * ratio);
         Zoom = next;
         InvalidateVisual();
     }
 
     // ── Drawing ───────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The zoom from which every room's name is written under it, not only the hovered one's.</summary>
-    internal const double NamesFromZoom = 1.6;
+    /// <summary>
+    /// The pixels between room centres from which every room's name is written under it: wherever a few letters fit
+    /// between two rooms. Below it only the character's own room is named (and the hovered one, on a plate).
+    /// </summary>
+    internal const double NamesFromStep = 40;
+
+    /// <summary>Whether every room is named at the zoom shown. Internal for tests.</summary>
+    internal bool NamesShown => Spacing * Zoom >= NamesFromStep;
 
     /// <summary>
     /// The colour a room is drawn in: its area's, as the view gives it (<see cref="MapViewModel.AreaColour"/>), or the
@@ -593,7 +681,7 @@ internal sealed class MapCanvas : Control
         var accent = Parse(_ink.Bar);
         var path = Parse(_ink.Low);
         var radius = size * 0.22;
-        var names = Zoom >= NamesFromZoom;
+        var names = NamesShown;
         foreach (var room in _model.Rooms)
         {
             var c = CentreOf(room);
@@ -650,7 +738,7 @@ internal sealed class MapCanvas : Control
                 context.DrawRectangle(null, ring, rect.Inflate(size * 0.42), radius * 2.2, radius * 2.2);
             }
 
-            if ((names || room.Id == _hovered) && room.Id != _hovered)
+            if ((names || room.Current) && room.Id != _hovered)
             {
                 DrawName(context, room.Name, c, size, plate: false);
             }

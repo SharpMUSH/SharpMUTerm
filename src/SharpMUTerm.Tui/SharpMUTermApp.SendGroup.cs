@@ -6,7 +6,7 @@ namespace SharpMUTerm.Tui;
 
 /// <summary>
 /// The send group: characters picked on ⌃P, marked ◆ on the rail, and sent one line together by
-/// ⌃P ▸ <c>Send the command line to the group</c>. Lua reaches the same sessions by name through
+/// ⌃P ▸ <c>Send to group</c>. Lua reaches the same sessions by name through
 /// <c>world.sendTo</c>.
 /// </summary>
 internal sealed partial class SharpMUTermApp
