@@ -1497,6 +1497,34 @@ public class SurfaceParityTests
         await Assert.That(free.Fires).IsTrue();
     }
 
+    /// <summary>
+    /// The footer's compact row (wave 22): at rest the window draws the connection, the encoding and the log on the left
+    /// and where unread lines wait on the right — the mockups' row — built from the facts the cell row was built from, the
+    /// identity segment the same instance's; a notice puts the whole row back.
+    /// </summary>
+    [Test]
+    public async Task TheFootersCompactRowIsTheRowsFactsInTheMockupsWords()
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        await using var app = App(driver, DemoScene.Build());
+        app.RenderSnapshot(null);
+        var status = driver.Pointer.Status!;
+        var compact = status.Compact!;
+        await Assert.That(compact).IsNotNull();
+        await Assert.That(compact.LeftSegments.Select(s => s.Role)).IsEquivalentTo(
+            new[] { StatusRole.Identity, StatusRole.Encoding, StatusRole.Log }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That((object)compact.LeftSegments[0]).IsEqualTo(status.Model.LeftSegments.Single(s => s.Role == StatusRole.Identity));
+        await Assert.That(compact.LeftSegments[1].Text).IsEqualTo("UTF-8").Because("the charset in capitals, as the mockups write it");
+        await Assert.That(compact.LeftSegments[2].Text).IsEqualTo("Log off").Because("a snapshot owns no log root");
+        await Assert.That(compact.RightSegments.Single().Text).IsEqualTo("2 new in Chat");
+        await Assert.That(status.Shown).IsSameReferenceAs(compact);
+        await Assert.That(SharpMUTermApp.CompactEncoding("iso-8859-1 forced")).IsEqualTo("ISO-8859-1 forced");
+
+        app.RenderSnapshot("notices");
+        await Assert.That(driver.Pointer.Status!.Compact).IsNull().Because("a notice is drawn whole");
+        await Assert.That((object)driver.Pointer.Status!.Shown).IsEqualTo(driver.Pointer.Status!.Model);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SharpMUTermApp App(

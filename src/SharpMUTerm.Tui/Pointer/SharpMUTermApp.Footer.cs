@@ -3,6 +3,8 @@ using SharpConsoleUI.Parsing;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Surfaces;
+using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Workspaces;
 
 namespace SharpMUTerm.Tui;
 
@@ -55,7 +57,103 @@ internal sealed partial class SharpMUTermApp
     internal StatusOverlay BuildStatusOverlay()
     {
         _statusActivate ??= target => OnUiThread(() => ActivateStatusTarget(target));
-        return new StatusOverlay(BuildStatusModel(), MainWindowInFront(), _statusActivate);
+        var model = BuildStatusModel();
+        return new StatusOverlay(model, MainWindowInFront(), _statusActivate) { Compact = CompactStatus(model) };
+    }
+
+    /// <summary>
+    /// The status row as a host with a header and tab badges of its own words it (the window's footer, the mockups' row):
+    /// on the left the connection, the encoding in force and the log; on the right the state the row alone says
+    /// (scrolled back, <c>● REC</c>, <c>♪ muted</c>) and one short hint — the mode's keys while a mode holds that nothing
+    /// else on screen names, else where unread lines are waiting (<c>2 new in Chat</c>). Built from the same facts as
+    /// <paramref name="row"/>; null while a notice or a mode prompt is on the row, which the footer then draws whole.
+    /// The meters, the room, the typed count and the focus keys stay the cells': the window draws the first two as
+    /// panels, and its command line, tabs and header search say the rest. Internal for tests.
+    /// </summary>
+    internal StatusModel? CompactStatus(StatusModel row)
+    {
+        if (row.Notice is not null || row.LeftSegments.Concat(row.RightSegments).Any(s => s.Role == StatusRole.Prompt))
+        {
+            return null;
+        }
+
+        var left = new List<StatusSegment>();
+        var identity = row.LeftSegments.FirstOrDefault(s => s.Role == StatusRole.Identity);
+        if (identity is not null)
+        {
+            left.Add(identity);
+            if (EffectiveEncoding() is { } encoding)
+            {
+                left.Add(Segment(StatusRole.Encoding, Dim(CompactEncoding(encoding.Label))));
+            }
+
+            var log = HeaderLogFormat();
+            left.Add(Segment(StatusRole.Log, Dim(log == LogFormat.None ? "Log off" : $"Log {log.ToString().ToLowerInvariant()}")));
+        }
+        else
+        {
+            left.Add(Segment(StatusRole.Text, Dim("Not connected")));
+        }
+
+        // A split pane's band says how far back it is and its own way back in the window, with a button; every other
+        // mode is said here.
+        var mode = CurrentStatusMode();
+        var right = row.RightSegments
+            .Where(s => s.Role is StatusRole.Recording or StatusRole.Muted
+                || (s.Role == StatusRole.Scrollback && mode != StatusMode.SplitScrollback))
+            .ToList();
+
+        if (mode is not StatusMode.None and not StatusMode.SplitScrollback && ModeHintSegments(mode).FirstOrDefault() is { } hint)
+        {
+            right.Add(hint);
+        }
+        else if (UnreadHint() is { } unread)
+        {
+            right.Add(unread);
+        }
+
+        if (identity is null)
+        {
+            right.Add(Segment(StatusRole.Palette, Dim(PaletteHintText, HeaderModel.PaletteTarget)));
+        }
+
+        return new StatusModel(left, right, row.Plane, row.Ink) { Width = row.Width };
+    }
+
+    /// <summary><c>utf-8 assumed</c> as the mockups write a charset: the name in capitals, its qualifier as it was.</summary>
+    internal static string CompactEncoding(string label)
+    {
+        var space = label.IndexOf(' ', StringComparison.Ordinal);
+        return space < 0 ? label.ToUpperInvariant() : label[..space].ToUpperInvariant() + label[space..];
+    }
+
+    /// <summary>
+    /// Where the character in front has unread lines, as the compact row says it: <c>2 new in Chat</c>, the window with
+    /// most first, <c>· 1 in Pages</c> for a second, <c>· +2 more</c> past that; null when nothing is waiting.
+    /// </summary>
+    private StatusSegment? UnreadHint()
+    {
+        var waiting = _workspace.WindowsFor(ActiveCharacterKey())
+            .Where(w => w.Unread > 0)
+            .OrderByDescending(w => w.Unread)
+            .ToList();
+        if (waiting.Count == 0)
+        {
+            return null;
+        }
+
+        var text = $"{UnreadBadge.Format(waiting[0].Unread)} new in {Snippet(RailWindowLabel(waiting[0], waiting[0].Kind == WindowKind.Main))}";
+        if (waiting.Count > 1)
+        {
+            text += $" · {UnreadBadge.Format(waiting[1].Unread)} in {Snippet(RailWindowLabel(waiting[1], waiting[1].Kind == WindowKind.Main))}";
+        }
+
+        if (waiting.Count > 2)
+        {
+            text += $" · +{waiting.Count - 2} more";
+        }
+
+        return Segment(StatusRole.Activity, Dim(text));
     }
 
     /// <summary>The status row's model, as last painted: the instance the cells were rendered from. Internal for tests.</summary>
@@ -225,7 +323,17 @@ internal sealed partial class SharpMUTermApp
 /// <param name="Model">What the row says.</param>
 /// <param name="Interactive">Whether the main window is in front; while a modal is, the footer takes no click.</param>
 /// <param name="Activate">Acts on a run's target; safe from any thread, and the same instance for the life of the app.</param>
-internal sealed record StatusOverlay(StatusModel Model, bool Interactive, Action<string> Activate);
+internal sealed record StatusOverlay(StatusModel Model, bool Interactive, Action<string> Activate)
+{
+    /// <summary>
+    /// The row as the window's footer words it (<see cref="SharpMUTermApp.CompactStatus"/>), from the same facts as
+    /// <see cref="Model"/>; null while a notice or a mode prompt holds the row, when the footer draws <see cref="Model"/>.
+    /// </summary>
+    public StatusModel? Compact { get; init; }
+
+    /// <summary>What the footer draws: the compact row, else the row.</summary>
+    public StatusModel Shown => Compact ?? Model;
+}
 
 /// <summary>A command line's prompt, by the screen row its first line is on, as plain text.</summary>
 internal sealed record InputPrompt(int Row, string Text);

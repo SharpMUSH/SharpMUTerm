@@ -135,6 +135,18 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     /// <summary>What an undo would take back, or null when nothing would.</summary>
     public string? UndoLabel { get; init; }
 
+    /// <summary>What a click on a room does, as a host words it under the map; null when no click would do anything.</summary>
+    public string? Hint =>
+        Editing ? EditHint
+        : Walking is not null || Rooms.Count < 2 ? null
+        : WalkHint;
+
+    /// <summary>The map's hint while a click walks.</summary>
+    public const string WalkHint = "Click a room to walk there";
+
+    /// <summary>The map's hint while a click picks the room to edit.</summary>
+    public const string EditHint = "Click a room to edit it";
+
     /// <summary>The colour of the area the view draws, or null when that area has no name.</summary>
     public string? AreaColour => Areas.FirstOrDefault(a => a.Drawn)?.Colour;
 

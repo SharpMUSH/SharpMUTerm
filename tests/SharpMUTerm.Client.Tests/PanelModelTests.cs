@@ -36,6 +36,12 @@ public class PanelModelTests
         await Assert.That(view.Current!.Name).IsEqualTo("Plaza");
         await Assert.That(view.Rooms.Single(r => r.Id == 2).Ahead).IsTrue();
         await Assert.That(MapViewModel.From(map, 1, [2], "walking, 1 to go")).IsEqualTo(view);
+
+        // The hint a host writes under the map says what a click does: nothing while a walk is under way, walk otherwise.
+        await Assert.That(view.Hint).IsNull().Because("a walk is under way");
+        await Assert.That(MapViewModel.From(map, 1, [], null).Hint).IsEqualTo(MapViewModel.WalkHint);
+        await Assert.That(MapViewModel.From(map, 1, [], null, selected: 2).Hint).IsEqualTo(MapViewModel.EditHint);
+        await Assert.That(MapViewModel.From(map, 4, [], null).Hint).IsNull().Because("a lone room has nowhere to walk");
     }
 
     /// <summary>

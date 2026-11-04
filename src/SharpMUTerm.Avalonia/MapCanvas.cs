@@ -78,6 +78,7 @@ internal sealed class MapCanvas : Control
     private Vector _panAtPress;
     private bool _dragging;
     private long? _hovered;
+    private string? _buttonHovered;
 
     public MapCanvas(TerminalView view)
     {
@@ -182,7 +183,11 @@ internal sealed class MapCanvas : Control
         }
     }
 
-    private double RoomSize => Math.Max(5, Spacing * Zoom * 0.56);
+    /// <summary>
+    /// A room's side: about half the step between rooms (the mockup draws 32 px rooms 90 px apart; names under them need the room), so the exits read
+    /// as lines between boxes rather than boxes touching.
+    /// </summary>
+    private double RoomSize => Math.Max(5, Spacing * Zoom * 0.48);
 
     /// <summary>
     /// Fits the area to the canvas: the rooms within <see cref="FitRadius"/> steps of the character's, centred in the open
@@ -217,12 +222,16 @@ internal sealed class MapCanvas : Control
         var minY = near.Min(r => r.Y - anchor.Y);
         var maxY = near.Max(r => r.Y - anchor.Y);
         var open = Middle.X * 2;
-        const double top = 44; // the corner label and the walk or room line under it
+
+        // The rooms are fitted between what is drawn above them (the heading, a walk line, the look buttons) and below
+        // them (the legend and the hint), so neither ever covers a room of the fitted view.
+        var top = TopReserve();
+        var bottom = BottomReserve(Bounds.Size);
         var across = Math.Max(1, open - 24) / ((maxX - minX + 1.6) * Spacing);
-        var down = Math.Max(1, Bounds.Height - top - 16) / ((maxY - minY + 1.6) * Spacing);
+        var down = Math.Max(1, Bounds.Height - top - bottom) / ((maxY - minY + 1.6) * Spacing);
         _zoom = Math.Clamp(Math.Min(across, down), MinZoom, FitMaxZoom);
         var step = Spacing * _zoom;
-        _fit = new Vector(-(minX + maxX) / 2.0 * step, (top / 2) - ((minY + maxY) / 2.0 * step));
+        _fit = new Vector(-(minX + maxX) / 2.0 * step, ((top - bottom) / 2) - ((minY + maxY) / 2.0 * step));
     }
 
     /// <summary>The player took the view: the fit stops following, and stays where it was.</summary>
@@ -345,6 +354,19 @@ internal sealed class MapCanvas : Control
                 InvalidateVisual();
             }
 
+            return;
+        }
+
+        var button = LookButtonAt(position);
+        if (button?.Id != _buttonHovered)
+        {
+            _buttonHovered = button?.Id;
+            Cursor = new Cursor(button is { Enabled: true } ? StandardCursorType.Hand : StandardCursorType.Arrow);
+            InvalidateVisual();
+        }
+
+        if (button is not null)
+        {
             return;
         }
 
@@ -472,13 +494,12 @@ internal sealed class MapCanvas : Control
         }
 
         var x = PanelText.Pad;
-        var heading = PanelText.HeadingHeight(CellHeight);
-        var y = _model.Walking is not null || _model.Current is not null ? heading + 26 : heading + 8;
+        var y = UnderHeading();
         void Add(string id, string label, bool enabled)
         {
-            var width = PanelText.Measure(label, ButtonSize, bold: false) + 14;
-            buttons.Add(new LookButton(id, new Rect(x, y, width, 20), label, enabled));
-            x += width + 4;
+            var width = PanelText.Measure(label, ButtonSize, bold: false) + (2 * NativeTokens.Space10);
+            buttons.Add(new LookButton(id, new Rect(x, y, width, ButtonHeight), label, enabled));
+            x += width + NativeTokens.Space6;
         }
 
         if (_model.Levels.Count > 1)
@@ -500,7 +521,23 @@ internal sealed class MapCanvas : Control
         return buttons;
     }
 
-    private const double ButtonSize = 11;
+    /// <summary>The look buttons' type and height: the window's small controls (<see cref="NativeTokens.ControlHeightSmall"/>).</summary>
+    private const double ButtonSize = NativeTokens.Body, ButtonHeight = NativeTokens.ControlHeightSmall;
+
+    /// <summary>The first row under the panel heading: the walk line while one is under way, else the look buttons.</summary>
+    private double UnderHeading() =>
+        PanelText.HeadingHeight(CellHeight) + NativeTokens.Space10 + (_model.Walking is not null ? NativeTokens.Space20 : 0);
+
+    /// <summary>What is drawn above the rooms: the heading, a walk line, and the look buttons while there are any.</summary>
+    private double TopReserve()
+    {
+        var top = UnderHeading();
+        return LookButtons().Count > 0 ? top + ButtonHeight + NativeTokens.Space8 : top;
+    }
+
+    /// <summary>What is drawn below the rooms: the legend and the hint, with a gap above them.</summary>
+    private double BottomReserve(Size size) =>
+        (LegendRect(size) is { } legend ? size.Height - legend.Top : HintBand()) + NativeTokens.Space12;
 
     /// <summary>The cell height the panel sits on, which sizes its heading as every panel's.</summary>
     private double CellHeight => _view.CellExtent.Height > 0 ? _view.CellExtent.Height : 17;
@@ -558,14 +595,14 @@ internal sealed class MapCanvas : Control
         }
 
         var entries = LegendEntries();
-        var row = (int)Math.Floor((point.Y - plate.Y - LegendPad) / LegendRow);
-        if (row < 0 || row >= entries.Count)
+        var hit = LegendLayout(Bounds.Size).FirstOrDefault(e => e.Area.Contains(point));
+        if (hit.Area.Width <= 0)
         {
             return null;
         }
 
         var first = entries.Count - _model.Areas.Count;
-        return row >= first && !_model.Areas[row - first].Drawn ? _model.Areas[row - first].Name : null;
+        return hit.Index >= first && !_model.Areas[hit.Index - first].Drawn ? _model.Areas[hit.Index - first].Name : null;
     }
 
     /// <summary>
@@ -649,7 +686,7 @@ internal sealed class MapCanvas : Control
         var entries = new List<(string, Color)> { ("you", Parse(_ink.Bar)) };
         if (_model.Rooms.Any(r => r.Up || r.Down))
         {
-            entries.Add(("stairs up / down", Faded(0.85)));
+            entries.Add((StairsLabel, DimInk));
         }
 
         if (_model.Rooms.Any(r => r.Ahead))
@@ -671,8 +708,12 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        // The mockup's map: rooms a step off the pane's plane with a rule round them, exits as rules between them, the
+        // character's room ringed in the accent. Every shade is a mix of the pane's own plane and ink, so it is the same
+        // drawing on every theme; only the accent, the walk and the areas' marks are colours.
+        var rule = RuleColour;
         var byId = _model.Rooms.ToDictionary(r => r.Id);
-        var exitPen = new Pen(new SolidColorBrush(Faded(0.42)), Math.Clamp(1.6 * Zoom, 1, 2.5), lineCap: PenLineCap.Round);
+        var exitPen = new Pen(new SolidColorBrush(rule), Math.Clamp(Spacing * Zoom / 45, 1, 2), lineCap: PenLineCap.Round);
         foreach (var exit in _model.Exits)
         {
             if (byId.TryGetValue(exit.From, out var a) && byId.TryGetValue(exit.To, out var b))
@@ -684,8 +725,9 @@ internal sealed class MapCanvas : Control
         var size = RoomSize;
         var accent = Parse(_ink.Bar);
         var path = Parse(_ink.Low);
-        var radius = size * 0.22;
+        var radius = size * 0.19;
         var names = NamesShown;
+        var edge = new Pen(new SolidColorBrush(rule), Math.Clamp(size / 22, 1, 1.5));
         foreach (var room in _model.Rooms)
         {
             var c = CentreOf(room);
@@ -698,36 +740,41 @@ internal sealed class MapCanvas : Control
             // A way into another area: a short spur off the room's corner, in that area's colour.
             if (ElsewhereColourOf(room) is { } elsewhere)
             {
-                var spur = new Pen(new SolidColorBrush(elsewhere), Math.Clamp(2 * Zoom, 1.5, 3), lineCap: PenLineCap.Round);
-                context.DrawLine(spur, rect.BottomRight - new Vector(size * 0.1, size * 0.1), rect.BottomRight + new Vector(size * 0.32, size * 0.32));
-                context.DrawEllipse(new SolidColorBrush(elsewhere), null, rect.BottomRight + new Vector(size * 0.36, size * 0.36), size * 0.12, size * 0.12);
+                var spur = new Pen(new SolidColorBrush(elsewhere), Math.Clamp(1.6 * Zoom, 1.25, 2.5), lineCap: PenLineCap.Round);
+                context.DrawLine(spur, rect.BottomRight - new Vector(size * 0.1, size * 0.1), rect.BottomRight + new Vector(size * 0.3, size * 0.3));
+                var dot = Math.Max(2, size * 0.11);
+                context.DrawEllipse(new SolidColorBrush(elsewhere), null, rect.BottomRight + new Vector(size * 0.34, size * 0.34), dot, dot);
             }
 
-            var area = AreaColourOf(room);
             if (room.Current)
             {
-                // A soft halo and a ring, then the room in the accent: the one thing the eye should find first.
-                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x38, accent.R, accent.G, accent.B)), null, rect.Inflate(size * 0.34), radius * 2, radius * 2);
-                context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(0xB0, accent.R, accent.G, accent.B)), 1.5), rect.Inflate(size * 0.2), radius * 1.6, radius * 1.6);
-                context.DrawRectangle(new SolidColorBrush(accent), new Pen(new SolidColorBrush(Mix(accent, Colors.White, 0.35)), 1.5), rect, radius, radius);
+                // The accent at a fifth over the plane, a two-pixel ring of it, a touch larger than its neighbours: the one
+                // thing the eye should find first, without a solid block of colour.
+                var ring = rect.Inflate(size * 0.06);
+                context.DrawRectangle(
+                    new SolidColorBrush(Mix(_plane, accent, 0.2)), new Pen(new SolidColorBrush(accent), NativeTokens.BorderStrong), ring, radius * 1.15, radius * 1.15);
             }
             else
             {
-                var fill = new SolidColorBrush(Mix(_plane, area, room.Id == _hovered ? 0.55 : 0.3));
-                var edge = room.Ahead ? new Pen(new SolidColorBrush(path), 2.2) : new Pen(new SolidColorBrush(area), 1.4);
-                context.DrawRectangle(fill, edge, rect, radius, radius);
+                var fill = new SolidColorBrush(Mix(_plane, _text, room.Id == _hovered ? 0.13 : 0.07));
+                context.DrawRectangle(fill, room.Ahead ? new Pen(new SolidColorBrush(path), NativeTokens.BorderStrong) : edge, rect, radius, radius);
                 if (room.Locked)
                 {
-                    var lockPen = new Pen(new SolidColorBrush(Faded(0.7)), 1.2);
+                    var lockPen = new Pen(new SolidColorBrush(Faded(0.6)), 1.2);
                     context.DrawLine(lockPen, rect.TopLeft + new Vector(size * 0.25, size * 0.25), rect.BottomRight - new Vector(size * 0.25, size * 0.25));
                 }
             }
 
-            DrawStairs(context, room, rect, room.Current ? Contrasting(accent) : _text);
-            if (room.Symbol is { } symbol && !room.Up && !room.Down)
+            DrawStairs(context, room, rect, room.Current ? _text : DimInk);
+            var mark = room.Symbol ?? (room.Current ? YouGlyph : null);
+            if (mark is not null && !room.Up && !room.Down && size >= 10)
             {
-                var mark = PanelText.Format(symbol, Math.Max(8, size * 0.5), room.Current ? Contrasting(accent) : _text, bold: true, size);
-                context.DrawText(mark, new Point(c.X - (mark.Width / 2), c.Y - (mark.Height / 2)));
+                var glyph = new FormattedText(
+                    mark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(NativeTokens.MonoFont), Math.Max(8, size * 0.42), new SolidColorBrush(_text))
+                {
+                    MaxLineCount = 1,
+                };
+                context.DrawText(glyph, new Point(c.X - (glyph.Width / 2), c.Y - (glyph.Height / 2)));
             }
 
             if (room.Noted)
@@ -737,9 +784,9 @@ internal sealed class MapCanvas : Control
 
             if (room.Selected)
             {
-                // The room being edited: a ring in the draft colour, outside any halo, so it reads on the current room too.
+                // The room being edited: a ring in the draft colour, outside the room's own, so it reads on the current room too.
                 var ring = new Pen(new SolidColorBrush(path), 2, new DashStyle([2, 1.5], 0));
-                context.DrawRectangle(null, ring, rect.Inflate(size * 0.42), radius * 2.2, radius * 2.2);
+                context.DrawRectangle(null, ring, rect.Inflate(size * 0.3), radius * 2, radius * 2);
             }
 
             if ((names || room.Current) && room.Id != _hovered)
@@ -755,21 +802,16 @@ internal sealed class MapCanvas : Control
         }
 
         // What and where: the panel heading (Map, the area and level) with the area's colour as a mark before its name's
-        // line, then the room the character is in, or a walk under way, under it.
+        // line, then a walk under way, under it. The character's room is named under its own box.
         var heading = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, CellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this));
         if (_model.AreaColour is { } areaHex)
         {
             context.DrawRectangle(new SolidColorBrush(Parse(areaHex)), null, new Rect(PanelText.Pad - 9, (heading / 2) - 5, 3, 10), 1.5, 1.5);
         }
 
-        var under = heading + 6;
         if (_model.Walking is { } walking)
         {
-            DrawText(context, walking, new Point(PanelText.Pad, under), 12, path);
-        }
-        else if (_model.Current is { } here)
-        {
-            DrawText(context, here.Name, new Point(PanelText.Pad, under), 12, accent);
+            DrawText(context, walking, new Point(PanelText.Pad, heading + NativeTokens.Space8), NativeTokens.Body, path);
         }
 
         if (_dragRoom is { } moving && byId.TryGetValue(moving.Id, out var shown))
@@ -786,45 +828,56 @@ internal sealed class MapCanvas : Control
 
         DrawLookButtons(context);
         DrawLegend(context, bounds);
+        DrawHint(context, bounds);
     }
+
+    /// <summary>The mark in the character's room when the game gives it none: the roguelike's "you".</summary>
+    internal const string YouGlyph = "@";
+
+    /// <summary>The map's rule: a room's outline and an exit, the pane's ink a quarter of the way over its plane.</summary>
+    private Color RuleColour => Mix(_plane, _text, 0.24);
+
+    /// <summary>The map's secondary ink (names, the legend, the hint): opaque, so it reads the same over a rule.</summary>
+    private Color DimInk => Mix(_plane, _text, 0.62);
 
     private void DrawLookButtons(DrawingContext context)
     {
         foreach (var button in LookButtons())
         {
-            var alpha = button.Enabled ? 1.0 : 0.4;
+            var hovered = button.Enabled && _buttonHovered == button.Id;
             context.DrawRectangle(
-                new SolidColorBrush(Mix(_plane, _text, 0.1)),
-                new Pen(new SolidColorBrush(Faded(0.35 * alpha)), 1),
-                button.Rect,
-                4,
-                4);
-            var label = PanelText.Format(button.Label, ButtonSize, Faded(0.9 * alpha), bold: false, button.Rect.Width);
-            context.DrawText(label, new Point(button.Rect.X + 7, button.Rect.Y + ((button.Rect.Height - label.Height) / 2)));
+                new SolidColorBrush(Mix(_plane, _text, hovered ? 0.13 : 0.07)),
+                new Pen(new SolidColorBrush(RuleColour), NativeTokens.DevicePixel(this)),
+                NativeTokens.StrokeRect(this, button.Rect),
+                NativeTokens.RadiusControl,
+                NativeTokens.RadiusControl);
+            var ink = button.Enabled ? _text : Mix(_plane, _text, 0.4);
+            var label = PanelText.Format(button.Label, ButtonSize, ink, bold: false, button.Rect.Width);
+            context.DrawText(label, new Point(Math.Round(button.Rect.X + NativeTokens.Space10), Math.Round(button.Rect.Y + ((button.Rect.Height - label.Height) / 2))));
         }
     }
 
     /// <summary>Up and down marks: a small triangle at the top of the room for a way up, at the bottom for a way down.</summary>
-    private void DrawStairs(DrawingContext context, MapViewRoom room, Rect rect, Color ink)
+    private static void DrawStairs(DrawingContext context, MapViewRoom room, Rect rect, Color ink)
     {
         if (!room.Up && !room.Down)
         {
             return;
         }
 
-        var brush = new SolidColorBrush(Color.FromArgb(0xE0, ink.R, ink.G, ink.B));
-        var w = rect.Width * 0.26;
-        var h = rect.Height * 0.2;
+        var brush = new SolidColorBrush(ink);
+        var w = rect.Width * 0.22;
+        var h = rect.Height * 0.18;
         var mid = rect.Center.X;
         if (room.Up)
         {
-            var top = rect.Y + (rect.Height * 0.16);
+            var top = rect.Y + (rect.Height * 0.18);
             context.DrawGeometry(brush, null, Triangle(new Point(mid, top), new Point(mid - w, top + h), new Point(mid + w, top + h)));
         }
 
         if (room.Down)
         {
-            var bottom = rect.Bottom - (rect.Height * 0.16);
+            var bottom = rect.Bottom - (rect.Height * 0.18);
             context.DrawGeometry(brush, null, Triangle(new Point(mid, bottom), new Point(mid - w, bottom - h), new Point(mid + w, bottom - h)));
         }
     }
@@ -844,62 +897,86 @@ internal sealed class MapCanvas : Control
     private void DrawName(DrawingContext context, string name, Point centre, double size, bool plate)
     {
         var maxWidth = plate ? 280 : Math.Max(30, (Spacing * Zoom) - 4);
-        var text = PanelText.Format(name, 11, plate ? _text : Faded(0.8), bold: plate, maxWidth);
-        var at = new Point(centre.X - (text.Width / 2), centre.Y + (size / 2) + 3);
+        var text = PanelText.Format(name, NativeTokens.Small, plate ? _text : DimInk, bold: plate, maxWidth);
+        var at = new Point(Math.Round(centre.X - (text.Width / 2)), Math.Round(centre.Y + (size / 2) + NativeTokens.Space4));
         if (plate)
         {
             var back = new Rect(at.X - 6, at.Y - 2, text.Width + 12, text.Height + 4);
-            context.DrawRectangle(new SolidColorBrush(Mix(_plane, _text, 0.12)), new Pen(new SolidColorBrush(Faded(0.35)), 1), back, 4, 4);
+            context.DrawRectangle(new SolidColorBrush(Mix(_plane, _text, 0.1)), new Pen(new SolidColorBrush(RuleColour), 1), back, NativeTokens.RadiusS, NativeTokens.RadiusS);
         }
         else
         {
             // The pane's own plane behind the words, so an exit line passing under a room does not strike them out.
-            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xD0, _plane.R, _plane.G, _plane.B)), null, new Rect(at.X - 2, at.Y, text.Width + 4, text.Height), 2, 2);
+            context.DrawRectangle(new SolidColorBrush(_plane), null, new Rect(at.X - 2, at.Y, text.Width + 4, text.Height), 2, 2);
         }
 
         context.DrawText(text, at);
     }
 
     /// <summary>
-    /// The legend, in the bottom-left corner on a plate: you, the stairs, a walk, and each area in its colour. Drawn only
-    /// where it fits, and it never takes the pointer from a room under it (the canvas hit-tests rooms only).
+    /// The legend, a strip along the foot of the map above the hint: you, the stairs, a walk, and each area in its colour,
+    /// laid left to right and wrapped. The fit keeps the rooms above it (<see cref="BottomReserve"/>), so it covers none.
     /// </summary>
-    private const double LegendSize = 11, LegendRow = 16, LegendPad = 8, LegendSwatch = 9;
+    private const double LegendSize = NativeTokens.Small, LegendRow = 18, LegendSwatch = 8, LegendGap = NativeTokens.Space14;
+
+    /// <summary>The hint's band at the foot of the canvas, its gaps included; a small margin when there is no hint.</summary>
+    private double HintBand() => _model.Hint is null ? NativeTokens.Space8 : NativeTokens.Space12 + NativeTokens.Space20;
+
+    /// <summary>Each legend entry's place in a canvas of <paramref name="size"/>, by its index in <see cref="LegendEntries"/>.</summary>
+    private List<(Rect Area, int Index)> LegendLayout(Size size)
+    {
+        var entries = LegendEntries();
+        var placed = new List<(Rect, int)>();
+        var x = PanelText.Pad;
+        var row = 0;
+        var right = size.Width - PanelText.Pad;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var width = LegendSwatch + NativeTokens.Space6 + PanelText.Measure(entries[i].Label, LegendSize, bold: false);
+            if (x > PanelText.Pad && x + width > right)
+            {
+                x = PanelText.Pad;
+                row++;
+            }
+
+            placed.Add((new Rect(x, row * LegendRow, Math.Max(1, Math.Min(width, right - x)), LegendRow), i));
+            x += width + LegendGap;
+        }
+
+        // Laid out from the top of the strip, then moved down so its last row ends above the hint.
+        var top = size.Height - HintBand() - ((row + 1) * LegendRow);
+        return placed.Select(p => (p.Item1.Translate(new Vector(0, top)), p.Item2)).ToList();
+    }
 
     /// <summary>
-    /// Where the legend's plate is drawn in a canvas of <paramref name="size"/>, in the canvas's coordinates; null when
-    /// none is drawn (no rooms, or it would not fit). The window keeps its toasts off it (<see cref="NoticeToasts.Avoid"/>).
+    /// Where the legend is drawn in a canvas of <paramref name="size"/>, in the canvas's coordinates; null when none is
+    /// drawn (no rooms, or it would take more than a third of the height). The window keeps its toasts off it
+    /// (<see cref="NoticeToasts.Avoid"/>).
     /// </summary>
     internal Rect? LegendRect(Size size)
     {
-        if (_model.Rooms.Count == 0)
+        if (_model.Rooms.Count == 0 || size.Width <= 0)
         {
             return null;
         }
 
-        var entries = LegendEntries();
-        var widest = entries.Max(e => PanelText.Measure(e.Label, LegendSize, bold: false));
-        var width = LegendPad + LegendSwatch + 6 + widest + LegendPad;
-        var height = (LegendPad * 2) + (entries.Count * LegendRow) - (LegendRow - LegendSize - 3);
-        return width > size.Width * 0.6 || height > size.Height * 0.6 ? null : new Rect(10, size.Height - height - 10, width, height);
+        var area = LegendLayout(size).Select(e => e.Area).Aggregate((a, b) => a.Union(b));
+        return area.Height > size.Height / 3 ? null : area.Inflate(new Thickness(NativeTokens.Space4, 0));
     }
 
     private void DrawLegend(DrawingContext context, Rect bounds)
     {
-        if (LegendRect(bounds.Size) is not { } plate)
+        if (LegendRect(bounds.Size) is null)
         {
             return;
         }
 
         var entries = LegendEntries();
-        const double size = LegendSize, row = LegendRow, pad = LegendPad, swatch = LegendSwatch;
-        var widest = entries.Max(e => PanelText.Measure(e.Label, size, bold: false));
-        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE6, _plane.R, _plane.G, _plane.B)), new Pen(new SolidColorBrush(Faded(0.25)), 1), plate, 5, 5);
-        var y = plate.Y + pad;
-        foreach (var (label, colour) in entries)
+        foreach (var (area, index) in LegendLayout(bounds.Size))
         {
-            var mark = new Rect(plate.X + pad, y + 2, swatch, swatch);
-            if (label == "stairs up / down")
+            var (label, colour) = entries[index];
+            var mark = new Rect(area.X, area.Y + ((area.Height - LegendSwatch) / 2), LegendSwatch, LegendSwatch);
+            if (label == StairsLabel)
             {
                 var brush = new SolidColorBrush(colour);
                 context.DrawGeometry(brush, null, Triangle(new Point(mark.Center.X, mark.Y), new Point(mark.X, mark.Center.Y - 0.5), new Point(mark.Right, mark.Center.Y - 0.5)));
@@ -910,18 +987,28 @@ internal sealed class MapCanvas : Control
                 context.DrawRectangle(new SolidColorBrush(colour), null, mark, 2, 2);
             }
 
-            context.DrawText(PanelText.Format(label, size, Faded(0.85), bold: false, widest + 1), new Point(mark.Right + 6, y));
-            y += row;
+            PanelText.Draw(context, label, mark.Right + NativeTokens.Space6, area.Center.Y, LegendSize, DimInk, bold: false, area.Right - mark.Right - NativeTokens.Space6 + 1);
         }
     }
 
-    /// <summary>Black or white, whichever reads on <paramref name="fill"/>: the stairs marks on the accent room.</summary>
-    private static Color Contrasting(Color fill) =>
-        (0.299 * fill.R) + (0.587 * fill.G) + (0.114 * fill.B) > 140 ? Color.FromRgb(0x10, 0x10, 0x14) : Colors.White;
+    /// <summary>The model's hint, centred at the foot of the map: what a click on a room does.</summary>
+    private void DrawHint(DrawingContext context, Rect bounds)
+    {
+        if (_model.Hint is not { } hint)
+        {
+            return;
+        }
+
+        var text = PanelText.Format(hint, NativeTokens.Small, DimInk, bold: false, bounds.Width - (2 * PanelText.Pad));
+        context.DrawText(text, new Point(Math.Round((bounds.Width - text.Width) / 2), Math.Round(bounds.Height - NativeTokens.Space12 - text.Height)));
+    }
+
+    /// <summary>The legend's label for the stairs marks.</summary>
+    internal const string StairsLabel = "stairs up / down";
 
     private static void DrawText(DrawingContext context, string text, Point at, double size, Color colour) =>
         context.DrawText(
-            new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, size, new SolidColorBrush(colour))
+            new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(NativeTokens.UiFont), size, new SolidColorBrush(colour))
             {
                 MaxLineCount = 1,
             },

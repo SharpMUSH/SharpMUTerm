@@ -13,7 +13,9 @@ namespace SharpMUTerm.Avalonia;
 /// The window's status footer, across the bottom of the window under the cells and the sidebar (<see cref="HostChrome.Status"/>):
 /// the status row the client would have drawn in its last row, from the same <see cref="StatusModel"/> — the connection,
 /// the mode's keys, meters, reconnect, <c>● REC</c>, <c>♪ muted</c>, the scrollback segment, a notice — in the UI face,
-/// keys in words. The left cluster reads from the left edge and the right one ends at the right edge.
+/// keys in words. The left cluster reads from the left edge and the right one ends at the right edge. At rest it draws the
+/// row's compact form (<see cref="StatusOverlay.Compact"/>: the connection, encoding and log, and one short hint, the
+/// mockups' row), and the whole row while a notice or a mode prompt holds it.
 /// <para>
 /// A run the client marked (a notice's action, the palette hint) is a link: a click hands its target back through
 /// <see cref="StatusOverlay.Activate"/>, which runs the client's own method or refuses. Never focusable; every pointer
@@ -41,7 +43,7 @@ internal sealed class NativeFooter : Control
     internal IReadOnlyList<(Rect Area, string Target)> Hits => _hits;
 
     /// <summary>The footer's text as drawn, keys in words. Internal for tests.</summary>
-    internal string Text => Overlay is { } o ? NativeKeys.Words(o.Model.Text) : string.Empty;
+    internal string Text => Overlay is { } o ? NativeKeys.Words(o.Shown.Text) : string.Empty;
 
     /// <summary>Takes what the client said and redraws.</summary>
     public void Show(StatusOverlay? overlay)
@@ -66,7 +68,7 @@ internal sealed class NativeFooter : Control
 
     public override void Render(DrawingContext context)
     {
-        var plane = NativeChromeView.Parse(Overlay?.Model.Plane ?? HexOf(_view.Renderer.DefaultBackground));
+        var plane = NativeChromeView.Parse(Overlay?.Shown.Plane ?? HexOf(_view.Renderer.DefaultBackground));
         var bounds = new Rect(Bounds.Size);
         context.FillRectangle(new SolidColorBrush(plane), bounds);
         var ink = _view.Renderer.DefaultForeground;
@@ -79,15 +81,15 @@ internal sealed class NativeFooter : Control
 
         var middle = bounds.Height / 2;
         var right = bounds.Width - NativeLayout.FooterPadX - WindowChrome.EdgeBand;
-        var rightWidth = overlay.Model.Right.Sum(r => Format(r, plane).WidthIncludingTrailingWhitespace);
+        var rightWidth = overlay.Shown.Right.Sum(r => Format(r, plane).WidthIncludingTrailingWhitespace);
         var x = NativeLayout.FooterPadX;
-        foreach (var run in overlay.Model.Left)
+        foreach (var run in overlay.Shown.Left)
         {
             x += Draw(context, run, x, middle, plane, Math.Max(0, right - rightWidth - 16 - x));
         }
 
         x = Math.Max(x + 16, right - rightWidth);
-        foreach (var run in overlay.Model.Right)
+        foreach (var run in overlay.Shown.Right)
         {
             x += Draw(context, run, x, middle, plane, Math.Max(0, right - x));
         }
@@ -140,7 +142,7 @@ internal sealed class NativeFooter : Control
     private static readonly Regex Gaps = new(" {3,}", RegexOptions.CultureInvariant);
 
     /// <summary>A run's ink: its own, else the row's (a run the cells write with no colour).</summary>
-    private Color InkOf(StatusRun run) => NativeChromeView.Parse(run.Ink ?? Overlay?.Model.Ink);
+    private Color InkOf(StatusRun run) => NativeChromeView.Parse(run.Ink ?? Overlay?.Shown.Ink);
 
     private static string HexOf(SkiaSharp.SKColor colour) => $"#{colour.Red:x2}{colour.Green:x2}{colour.Blue:x2}";
 

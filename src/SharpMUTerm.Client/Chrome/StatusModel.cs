@@ -62,6 +62,12 @@ public enum StatusRole
 
     /// <summary>A mode prompt that displaces the row (moving or dragging a window).</summary>
     Prompt,
+
+    /// <summary>Whether the character in front is being logged (<c>Log off</c>, <c>Log html</c>): the compact row's.</summary>
+    Log,
+
+    /// <summary>Where unread lines are waiting (<c>2 new in Chat</c>): the compact row's.</summary>
+    Activity,
 }
 
 /// <summary>One part of the status row: its role and its runs.</summary>

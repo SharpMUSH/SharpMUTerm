@@ -235,6 +235,18 @@ internal abstract class NativeChromeView : Control
     }
 
     /// <summary>
+    /// The plane sunk by <paramref name="amount"/>: darker on a dark theme, lighter on a light one — the well an input sits
+    /// in (the mockups' <c>#10131a</c> search box on the <c>#171b24</c> header is about 0.3).
+    /// </summary>
+    protected Color Sunk(double amount)
+    {
+        var luma = (0.2126 * Plane.R) + (0.7152 * Plane.G) + (0.0722 * Plane.B);
+        var target = luma < 128 ? Colors.Black : Colors.White;
+        byte Mix(byte a, byte b) => (byte)Math.Round(a + ((b - a) * amount));
+        return Color.FromRgb(Mix(Plane.R, target.R), Mix(Plane.G, target.G), Mix(Plane.B, target.B));
+    }
+
+    /// <summary>
     /// The selection plate: the plane leaned toward the client's accent — about 14 % on a dark plane, the mockup's
     /// <c>#1f3a3a</c> on <c>#141822</c> — a little further while hovered. Ink on it is held to the floor by the caller's
     /// own reads, and the lean is small enough that the plane's ink clears it.
@@ -379,7 +391,6 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
     private Rect _brand;
     private Rect _search;
     private Rect _pill;
-    private Rect _counts;
     private Rect _prefix;
     private readonly List<(Rect Area, HeaderPrefixKey Key)> _keys = [];
     private Rect _exit;
@@ -391,7 +402,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 
     protected override void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits)
     {
-        _brand = _search = _pill = _counts = _prefix = _exit = default;
+        _brand = _search = _pill = _prefix = _exit = default;
         _keys.Clear();
         var model = overlay.HeaderModel;
         const double size = FontSize;
@@ -423,17 +434,10 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
             return;
         }
 
-        var counts = CountsText(model);
-        var countsWidth = Measure(counts, size - 1);
+        // No counts beside the search box: the mockups' header is the brand, the search and the character. How many are
+        // connected is the sidebar's dots, the log and the recording mark are the footer's (StatusOverlay.Compact).
         var keyWidth = Measure(KeyGlyphs.Words(HeaderModel.PaletteKey), size - 1.5) + 12;
         var searchFloor = 18 + Measure("Search", size) + keyWidth + (pad * 3);
-        if (right - countsWidth - 20 - start >= searchFloor)
-        {
-            // The counts go to the left of the search box, which keeps its place beside the pill.
-            var searchWidth = Math.Min(360, right - countsWidth - 20 - start);
-            _counts = new Rect(right - searchWidth - 20 - countsWidth, 0, countsWidth, h);
-        }
-
         if (right - start >= searchFloor)
         {
             // Beside the character's pill at the right, as the mockup sets it, rather than against the brand.
@@ -475,10 +479,6 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         }
     }
 
-    private static string CountsText(HeaderModel model) =>
-        (model.Recording ? $"{HeaderModel.RecordingText}  ·  " : string.Empty)
-        + (model.HasWorlds ? $"{model.ConnectedText}  ·  {model.LogText}" : model.LogText);
-
     protected override void PressedEmpty(PointerPressedEventArgs e) => View.WindowGestureFromChrome(e);
 
     public override void Render(DrawingContext context)
@@ -512,11 +512,6 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
             DrawSearch(context, middle, radius);
         }
 
-        if (_counts.Width > 0)
-        {
-            Text(context, CountsText(model), _counts.X, middle, size - 1, Parse(overlay.Palette.HeaderMuted));
-        }
-
         if (model.Prefix is { } prefix)
         {
             DrawPrefix(context, prefix, overlay, middle);
@@ -545,8 +540,8 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
     private void DrawSearch(DrawingContext context, double middle, double radius)
     {
         const double size = FontSize;
-        var fill = Hovered(_search) ? Raised(0.13) : Raised(0.07);
-        context.DrawRectangle(new SolidColorBrush(fill), NativeTokens.HairlinePen(this, Faint(0x30)), NativeTokens.StrokeRect(this, _search), radius, radius);
+        var fill = Hovered(_search) ? Raised(0.04) : Sunk(0.3);
+        context.DrawRectangle(new SolidColorBrush(fill), NativeTokens.HairlinePen(this, Faint(Hovered(_search) ? (byte)0x50 : (byte)0x30)), NativeTokens.StrokeRect(this, _search), radius, radius);
 
         // A magnifier: a ring and its handle.
         const double ring = 5;

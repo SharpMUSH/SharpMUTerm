@@ -1728,6 +1728,23 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     field, the row shift and the press mapping only in those columns, and carries the panes and dividers beside it down
     through the `FieldReserve` pixels. NAWS is the arranged rectangles. The terminal keeps the full-width band (`None`),
     so its frames and the parity harness (which tells both hosts the same chrome) are unchanged.
+  - **At rest the footer draws the row's compact form** (wave 22; `StatusOverlay.Compact`/`Shown`, `CompactStatus`): left the
+    identity segment (the cell row's instance), `UTF-8` (`CompactEncoding`) and `Log off`/`Log html` (`HeaderLogFormat`,
+    `StatusRole.Log`); right scrolled back (not in a split, whose native band says it), `● REC`, `♪ muted`, then one hint —
+    the mode's keys (not `SplitScrollback`) else `2 new in Chat` (`UnreadHint`, `StatusRole.Activity`, the active
+    character's windows by unread). A notice or a move/drag prompt sets it null and the footer draws `Model` whole. The cells
+    keep the full row (meters, room, count, focus keys): the window draws those as panels, tabs and its search box. `Model`
+    is still what `Drawing` recorded; parity probes compare it, `TheFootersCompactRowIsTheRowsFactsInTheMockupsWords` pins
+    the compact one. **The native header draws no counts** (`1/3 characters · LOG off`): the brand, the sunk search box
+    (`NativeChromeView.Sunk`) and the character pill, as the mockups; `HeaderModel` still carries them for the cell ribbon.
+- **The native map is the mockup's** (wave 22, `MapCanvas`). Rooms are the pane's plane a step lighter (`Mix(plane, text,
+  0.07)`) with a rule round them (`RuleColour`, 0.24), half a step wide; exits are that rule; the character's room is the
+  accent at 20% with a 2 px accent ring and `@` (`YouGlyph`) in mono when the game gives no symbol. The area colour is the
+  heading's mark, the legend and the spurs only. The look buttons are `ControlHeightSmall` with `RadiusControl`. The
+  legend is a wrapped strip at the foot above `MapViewModel.Hint` (`WalkHint`/`EditHint`, Client, null while walking or with
+  one room), and the fit reserves both and the buttons (`TopReserve`/`BottomReserve`), so nothing covers a fitted room
+  (`TheFittedRoomsAreClearOfTheButtonsTheLegendAndTheHint`). The current-room line under the heading is gone (its name is
+  under its box). The cell map is unchanged.
 - **The window draws pane dividers as the panes meeting at a hairline** (`IPointerPresenter.Dividers`,
   `PaneDividerOverlay`, `DividersNow`; `ScreenFrame.Dividers`; `TerminalView.FrameDraw.DrawDividers`). The client publishes
   each divider control's cells and whether it is lit (never a tab strip standing in for one, nothing under a modal) on

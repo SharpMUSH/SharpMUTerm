@@ -155,5 +155,44 @@ public class NativeMapViewTests
         await Assert.That(MapEditing.Menu(model.Rooms[0], null).Entries.Select(e => e.Command)).DoesNotContain(MapEditing.ResetVerb);
     }
 
+    /// <summary>
+    /// The mockup's map (wave 22): the fit keeps every room clear of what is drawn above it (the look buttons, sized to the
+    /// window's small controls) and below it (the legend strip and the model's hint), so the legend covers no room.
+    /// </summary>
+    [Test]
+    public async Task TheFittedRoomsAreClearOfTheButtonsTheLegendAndTheHint()
+    {
+        var (rooms, legend, buttons, height, hint) = await DesktopLayerTests.Run((window, view, layer, driver) =>
+        {
+            var model = Model(editing: false) with
+            {
+                Rooms =
+                [
+                    new MapViewRoom(1, "Plaza", 0, 0, Current: true, Ahead: false, Locked: false),
+                    new MapViewRoom(2, "North Road", 0, -1, Current: false, Ahead: false, Locked: false),
+                    new MapViewRoom(3, "South Road", 0, 2, Current: false, Ahead: false, Locked: false),
+                    new MapViewRoom(4, "Gate", 2, 2, Current: false, Ahead: false, Locked: false, Elsewhere: "Docks"),
+                ],
+            };
+            Publish(driver, model);
+            Dispatcher();
+            window.UpdateLayout();
+            var canvas = layer.Maps.Values.Single();
+            var size = canvas.Bounds.Size;
+            var rooms = canvas.Model.Rooms.Select(r => canvas.CentreOf(r)).ToList();
+            return (rooms, canvas.LegendRect(size)!.Value, canvas.LookButtons().Select(b => b.Rect).ToList(), canvas.Bounds.Height, canvas.Model.Hint);
+        }, columns: 60, rows: 24);
+
+        await Assert.That(hint).IsEqualTo(MapViewModel.WalkHint);
+        await Assert.That(buttons.All(b => b.Height == NativeTokens.ControlHeightSmall)).IsTrue();
+        foreach (var centre in rooms)
+        {
+            await Assert.That(centre.Y).IsLessThan(legend.Top).Because("no room under the legend");
+            await Assert.That(centre.Y).IsGreaterThan(buttons.Max(b => b.Bottom)).Because("no room under the look buttons");
+        }
+
+        await Assert.That(legend.Bottom).IsLessThan(height - NativeTokens.Space20).Because("the hint has its own line under the legend");
+    }
+
     private static void Dispatcher() => global::Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 }

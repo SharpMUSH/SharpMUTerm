@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window, the map is drawn the way the mockups draw it: dark rooms outlined in a rule, exits as thin lines,
+  your room ringed in the accent with an `@`, Up/Down/Areas as proper buttons, and the legend in a strip at the foot with
+  "Click a room to walk there" under it, so it never covers a room.
+- In the desktop window, the header shows only the search box and your character, and the status bar reads
+  "Corvid connected · UTF-8 · Log off" with a short hint on the right such as "2 new in Chat" (or the keys of the mode
+  you are in). Notices still take the whole bar while they show.
+
 - The package review keeps ⏎ install and Esc cancel on screen at 80×24: the review scrolls (↑↓ PgUp PgDn Home End)
   under its keys and stops above the command line.
 - Browse worlds: a world listed at several addresses (TLS and plain, another port, an old one) now lets you choose
