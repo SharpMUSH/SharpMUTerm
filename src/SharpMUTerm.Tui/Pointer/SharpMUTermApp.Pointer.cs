@@ -160,6 +160,55 @@ internal sealed partial class SharpMUTermApp
     private void PublishHeaderDividers() =>
         Volatile.Write(ref _headerDividerSlots, _dividers.Where(slot => slot.HeaderPaneId is not null).ToArray());
 
+    private IReadOnlyList<PaneDividerOverlay> _dividersSaid = [];
+
+    /// <summary>
+    /// Tells the host where the drawn dividers are (<see cref="IPointerPresenter.Dividers"/>), on every paint of the main
+    /// window, before the frame is flushed; said only on change.
+    /// </summary>
+    private void PublishDividers()
+    {
+        if (_pointer is null || _window is null)
+        {
+            return;
+        }
+
+        var now = DividersNow();
+        if (now.SequenceEqual(_dividersSaid))
+        {
+            return;
+        }
+
+        _dividersSaid = now;
+        _pointer.Dividers(now);
+    }
+
+    /// <summary>
+    /// The dividers drawn as cells (a tab strip standing in for one is the host's strip, not a divider), or none while
+    /// anything is drawn over the panes. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<PaneDividerOverlay> DividersNow()
+    {
+        if (!MainWindowInFront() || AnyOverlayOpen)
+        {
+            return [];
+        }
+
+        var list = new List<PaneDividerOverlay>();
+        foreach (var slot in _dividers)
+        {
+            if (slot.Control is null || AreaOf(slot) is not { Width: > 0, Height: > 0 } area)
+            {
+                continue;
+            }
+
+            var lit = _litDivider is { } key && key.Equals(new DividerKey(slot.Split, slot.Index));
+            list.Add(new PaneDividerOverlay(area, slot.Split.Direction == SplitDirection.Row, lit));
+        }
+
+        return list;
+    }
+
     /// <summary>Where a divider's handle is, in desktop cells: its control's cells, or the empty run of a tab strip.</summary>
     private PaneRect? AreaOf(DividerSlot slot) =>
         slot.Control is { } control ? BoundsOf(control) : slot.HeaderPaneId is { } paneId ? HeaderFill(paneId) : null;

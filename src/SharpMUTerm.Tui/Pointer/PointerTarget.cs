@@ -202,7 +202,24 @@ internal interface IPointerPresenter
     void InputBand(InputBand? band)
     {
     }
+
+    /// <summary>
+    /// The pane dividers on screen, where they are and whether one is lit, or an empty list while another of the client's
+    /// windows or a cell modal is in front of the panes. Said on the client's thread while the main window paints, before
+    /// the frame it describes is flushed, so a host may keep it with that frame and draw those cells its own way (the
+    /// window: the two panes' planes meeting at a hairline). The cells are drawn as in any host; a host that draws them as
+    /// cells ignores this (the default).
+    /// </summary>
+    void Dividers(IReadOnlyList<PaneDividerOverlay> dividers)
+    {
+    }
 }
+
+/// <summary>One pane divider, for a host that draws it rather than its cells.</summary>
+/// <param name="Area">Its cells, in desktop cells: one column between panes side by side, one row between stacked ones.</param>
+/// <param name="Vertical">Whether it is a column (the panes are side by side).</param>
+/// <param name="Lit">Whether it is under the pointer or being dragged: its cells are then <c>WorkspacePalette.RuleHover</c>.</param>
+internal sealed record PaneDividerOverlay(PaneRect Area, bool Vertical, bool Lit);
 
 /// <summary>
 /// One panel on screen, for a host that draws it natively over its pane rather than in cells: where it is and what

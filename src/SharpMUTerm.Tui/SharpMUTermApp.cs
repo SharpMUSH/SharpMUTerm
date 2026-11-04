@@ -1043,6 +1043,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PublishFloating();
             PublishChrome();
             PublishInputBand();
+            PublishDividers();
             PublishStatus();
             SyncMapSizes();
             SyncPanelSizes();
@@ -1058,6 +1059,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             PublishPanels();
             PublishInputBand();
+            PublishDividers();
             PublishPaneChrome();
         };
         if (_sixel is not null)
@@ -1069,8 +1071,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         // The native chrome stands down while another window is in front, and that window repaints, not this one.
-        _window.Activated += (_, _) => { PublishChrome(); PublishInputBand(); PublishStatus(); };
-        _window.Deactivated += (_, _) => { PublishChrome(); PublishInputBand(); PublishStatus(); };
+        _window.Activated += (_, _) => { PublishChrome(); PublishInputBand(); PublishDividers(); PublishStatus(); };
+        _window.Deactivated += (_, _) => { PublishChrome(); PublishInputBand(); PublishDividers(); PublishStatus(); };
 
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level

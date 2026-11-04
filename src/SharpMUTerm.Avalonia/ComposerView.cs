@@ -40,6 +40,14 @@ internal sealed class ComposerView : Border
     private readonly LineGutter _gutter;
     private readonly Border _header;
     private readonly TextBlock _title;
+
+    /// <summary>
+    /// "Click to write a post", in the UI face over the empty idle editor. The editor's own placeholder would be in the
+    /// editor's face, the post's monospace; a hint is the panel speaking, not the post. Never hit: a click goes to the editor.
+    /// </summary>
+    private readonly TextBlock _placeholder;
+
+    private bool _placeholderWanted;
     private readonly TextBlock _target;
     private readonly StackPanel _chips;
     private readonly TextBlock _count;
@@ -137,8 +145,18 @@ internal sealed class ComposerView : Border
         // The armed rule down the docked editor's left edge: the cell composer's ▌ marker, in the accent.
         _rule = new Border { Width = 3, HorizontalAlignment = HorizontalAlignment.Left };
 
+        _placeholder = new TextBlock
+        {
+            Text = ComposerModel.ClickToWrite,
+            FontFamily = NativeTokens.UiFont,
+            IsHitTestVisible = false,
+            IsVisible = false,
+            Margin = _editor.Padding + new Thickness(1),
+        };
+
         var text = new Panel();
         text.Children.Add(_editor);
+        text.Children.Add(_placeholder);
         text.Children.Add(_marks);
         text.Children.Add(_rule);
 
@@ -516,8 +534,7 @@ internal sealed class ComposerView : Border
             // A docked composer too short for its footer keeps the editor and drops the footer: the heading, the footer
             // and an editor of two lines need about 136 px, and below that the footer would squeeze the well shut.
             _footer.IsVisible = Bounds.Height is 0 or >= 136;
-            _editor.PlaceholderText = !model.Armed ? ComposerModel.ClickToWrite : null;
-            _editor.PlaceholderForeground = new SolidColorBrush(Dim);
+            ShowPlaceholder(!model.Armed);
             return;
         }
 
@@ -550,9 +567,22 @@ internal sealed class ComposerView : Border
 
         // A docked composer too short for its key row keeps the editor and drops the row.
         _footer.IsVisible = _fullScreen || Bounds.Height is 0 or >= 64;
-        _editor.PlaceholderText = placeholder ? ComposerModel.ClickToWrite : null;
-        _editor.PlaceholderForeground = new SolidColorBrush(Dim);
+        ShowPlaceholder(placeholder);
     }
+
+    /// <summary>The UI-face placeholder (<see cref="_placeholder"/>): wanted while idle, shown while the editor is empty.</summary>
+    private void ShowPlaceholder(bool wanted)
+    {
+        _placeholderWanted = wanted;
+        _placeholder.Foreground = new SolidColorBrush(Dim);
+        _placeholder.FontSize = Math.Max(NativeTokens.Body, _editor.FontSize - 1);
+        SyncPlaceholder();
+    }
+
+    private void SyncPlaceholder() => _placeholder.IsVisible = _placeholderWanted && string.IsNullOrEmpty(_editor.Text);
+
+    /// <summary>What the idle editor says while empty, or null. Internal for tests.</summary>
+    internal string? Placeholder => _placeholder.IsVisible ? _placeholder.Text : null;
 
     private Border Chip(string words, Color ink, double size) => new()
     {
@@ -638,6 +668,7 @@ internal sealed class ComposerView : Border
     private void OnTextChanged()
     {
         SyncLength();
+        SyncPlaceholder();
         var text = _editor.Text ?? string.Empty;
         if (_session is { } session)
         {

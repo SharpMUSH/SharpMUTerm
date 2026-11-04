@@ -1711,6 +1711,16 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     over its cells and the newline hint over blank cells. The grid gives up `FieldReserve` px, never a row, so panes and
     NAWS are a terminal's told the same chrome. Null under a modal. Rebuilding it on a `TextBox` would fork every key rule
     above.
+  - **The typed text meets the prompt by drawing, not by cells** (`TerminalView.BarsOf`, `FieldBar`). The Inter prompt is
+    narrower than its cells, so each bar's text is drawn `Shift` px left (to one mono space after the measured prompt), the
+    caret with it, and `Cell` maps a press there back to the cell under it; the right padding the shift uncovers is the
+    field's fill. The gutter, the caret's cell and every key are unchanged, so parity needs nothing.
+- **The window draws pane dividers as the panes meeting at a hairline** (`IPointerPresenter.Dividers`,
+  `PaneDividerOverlay`, `DividersNow`; `ScreenFrame.Dividers`; `TerminalView.FrameDraw.DrawDividers`). The client publishes
+  each divider control's cells and whether it is lit (never a tab strip standing in for one, nothing under a modal) on
+  `PostBufferPaint`, `Flush` keeps them with the frame, and the window paints each half of the cell in the plane beside it
+  (read off the frame) with `NativeTokens.Rule` 1 px in the middle; lit, the cells' own `RuleHover`, 3 px. The cells, the
+  hit area and NAWS are the terminal's.
   - `HostParityTests` draws every view under `none`, `header-rail` and `desktop`.
 - **The window bundles its faces** (`BundledFonts`, Avalonia; `Fonts/README.md`). Inter 4.1 (four static weights, 1.67 MB)
   and JetBrains Mono are registered as `fonts:SharpMUTerm`, Inter is Avalonia's default family and the bare names map onto
@@ -1718,7 +1728,10 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
   bundle lacks (emoji, CJK, neither bundled). One token each: `NativeTokens.UiFont`/`MonoFont`/`CellFace`. The cells default
   to the bundled JetBrains Mono at 10 pt unless `--font` names an installed family; `--line-height` (default 1.12) adds
   leading by making the cell taller and centring the glyph, so a row is still one cell. No F7 face picker: the cell face is
-  a launch option of the window, read before the client exists, and not a declared setting.
+  a launch option of the window, read before the client exists, and not a declared setting. **The eight faces are made
+  once per process** and every `BundledFonts` adds the same `GlyphTypeface`s, re-implementing `IDisposable` as a no-op:
+  the headless suite sets up an app (and a font manager that disposes its collections) per test, and remaking and
+  disposing the faces per test is what made a test now and then fail to find Inter.
 - **A pane narrower than its server's wrap is told about join wraps, once per world per run** (`SuggestJoinWraps`,
   `SharpMUTermApp.JoinWraps.cs`; `WorldSession.ServerWrapColumn`, now learnt whether or not the world joins). Checked on
   every pane-size report; the notice's action is `world:join-wraps:<world>`. **Suggested, never on by default**: a false

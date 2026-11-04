@@ -15,8 +15,18 @@ namespace SharpMUTerm.Avalonia;
 /// <c>"JetBrains Mono"</c> or <c>"Inter"</c> gets the bundled face and an installed copy cannot replace it.
 /// </para>
 /// </summary>
-internal sealed class BundledFonts : FontCollectionBase
+/// <para>
+/// <b>The faces are made once per process and shared by every collection.</b> A font manager disposes its collections,
+/// and the base collection disposes every face it holds; the headless tests set up a fresh application, and so a fresh
+/// font manager and collection, for every test, so the faces were read, made and disposed once per test, hundreds of
+/// times a run, and now and then one test failed to find Inter. Shared and never disposed, the eight faces are made
+/// once; the window has one font manager, so nothing changes there.
+/// </para>
+internal sealed class BundledFonts : FontCollectionBase, IDisposable
 {
+    private static readonly object Gate = new();
+    private static GlyphTypeface[]? s_faces;
+
     /// <summary>The collection's key: families in it are named <c>fonts:SharpMUTerm#Inter</c>.</summary>
     public static readonly Uri CollectionKey = new("fonts:SharpMUTerm");
 
@@ -40,14 +50,41 @@ internal sealed class BundledFonts : FontCollectionBase
 
     public BundledFonts()
     {
-        foreach (var file in Files)
+        GlyphTypeface[] shared;
+        lock (Gate)
         {
-            using var stream = typeof(BundledFonts).Assembly.GetManifestResourceStream($"Fonts.{file}");
-            if (stream is not null && TryAddGlyphTypeface(stream, out _))
+            if (s_faces is null)
+            {
+                var faces = new List<GlyphTypeface>();
+                foreach (var file in Files)
+                {
+                    using var stream = typeof(BundledFonts).Assembly.GetManifestResourceStream($"Fonts.{file}");
+                    if (stream is not null && TryAddGlyphTypeface(stream, out var face))
+                    {
+                        faces.Add(face);
+                    }
+                }
+
+                s_faces = [.. faces];
+                Loaded = s_faces.Length;
+                return;
+            }
+
+            shared = s_faces;
+        }
+
+        foreach (var face in shared)
+        {
+            if (TryAddGlyphTypeface(face))
             {
                 Loaded++;
             }
         }
+    }
+
+    /// <summary>The shared faces outlive any one font manager, so a manager disposing this collection disposes none of them.</summary>
+    void IDisposable.Dispose()
+    {
     }
 
     /// <summary>

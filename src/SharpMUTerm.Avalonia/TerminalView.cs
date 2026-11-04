@@ -129,6 +129,12 @@ internal sealed class TerminalView : Control
     /// <summary>The plane the field's strip is painted on: the backdrop the status row and the sidebar sit on.</summary>
     internal SKColor? FooterPlane { get; set; }
 
+    /// <summary>
+    /// The hairline a pane divider is drawn as (<see cref="ScreenFrame.Dividers"/>): the native tokens' rule, set with the
+    /// pane chrome. Null until then, when it is a faint step off the cells' background.
+    /// </summary>
+    internal SKColor? DividerRule { get; set; }
+
     /// <summary>The vertical pixels the field takes beside the rows it frames: none unless the view draws it.</summary>
     private double FieldReserve => DrawsInputField ? NativeLayout.FieldReserve : 0;
 
@@ -180,14 +186,81 @@ internal sealed class TerminalView : Control
     {
         var frame = _driver.Frame;
         var band = DrawsInputField ? frame.Band : null;
-        context.Custom(new FrameDraw(new Rect(Bounds.Size), frame, _driver.Pictures, _renderer, _scale, band, FooterPlane ?? Darker(_renderer.DefaultBackground)));
+        IReadOnlyList<FieldBar> bars = band is null ? [] : BarsOf(frame, band);
+        _fieldBars = bars;
+        var rule = DividerRule ?? Mix(_renderer.DefaultBackground, _renderer.DefaultForeground, 0.12f);
+        context.Custom(new FrameDraw(
+            new Rect(Bounds.Size), frame, _driver.Pictures, _renderer, _scale, band, FooterPlane ?? Darker(_renderer.DefaultBackground), bars, rule));
         if (band is not null)
         {
-            DrawFieldText(context, frame, band);
+            DrawFieldText(context, frame, band, bars);
         }
 
         DrawHover(context);
         DrawScrollbars(context);
+    }
+
+    /// <summary>
+    /// One command line inside the field: its screen rows, the column its typed text starts at (past the prompt's cells),
+    /// and how far that text is drawn to the left (<paramref name="Shift"/>, logical units) so it starts a mono space after
+    /// the prompt drawn in the UI face, which is narrower than the cells it covers. The cells do not move: only the drawing,
+    /// the caret drawn with it, and the pointer's mapping back to a cell (<see cref="Cell"/>) are shifted.
+    /// </summary>
+    internal readonly record struct FieldBar(int Top, int End, int TextStart, double PromptWidth, double Shift);
+
+    /// <summary>The bars as last drawn, for mapping the pointer: the same shifts the paint used.</summary>
+    private IReadOnlyList<FieldBar> _fieldBars = [];
+
+    private (string Text, double Width) _promptMeasure = ("", 0);
+
+    /// <summary>The prompt's width in the UI face it is drawn in, in logical units; the last one is remembered.</summary>
+    private double PromptWidth(string text)
+    {
+        if (_promptMeasure.Text == text)
+        {
+            return _promptMeasure.Width;
+        }
+
+        var width = PromptText(text, SKColors.White, double.PositiveInfinity).WidthIncludingTrailingWhitespace;
+        _promptMeasure = (text, width);
+        return width;
+    }
+
+    private static FormattedText PromptText(string text, SKColor ink, double maxWidth) =>
+        new(text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(NativeTokens.UiFont, FontStyle.Normal, FontWeight.SemiBold), NativeTokens.Input, Brush(ink))
+        {
+            MaxTextWidth = maxWidth,
+            MaxLineCount = 1,
+            Trimming = TextTrimming.CharacterEllipsis,
+        };
+
+    /// <summary>
+    /// Each bar in <paramref name="band"/>: from its prompt's row to the next prompt's (or the band's end), its text a
+    /// mono space after the prompt as the UI face draws it. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<FieldBar> BarsOf(ScreenFrame frame, InputBand band)
+    {
+        var cell = CellSize;
+        var end = Math.Min(frame.Height, band.Top + band.Rows);
+        var prompts = band.Prompts.Where(p => p.Row >= band.Top && p.Row < end).OrderBy(p => p.Row).ToList();
+        var bars = new List<FieldBar>(prompts.Count);
+        for (var i = 0; i < prompts.Count; i++)
+        {
+            var prompt = prompts[i];
+            var to = i + 1 < prompts.Count ? prompts[i + 1].Row : end;
+            var start = Math.Min(frame.Width, band.Pad + prompt.Text.Length);
+            var trimmed = prompt.Text.TrimEnd();
+            var width = trimmed.Length == 0 ? 0 : PromptWidth(trimmed);
+            var room = (start - band.Pad) * cell.Width;
+            var shift = trimmed.Length == 0 ? 0 : Math.Max(0, room - width - cell.Width);
+
+            // Whole device pixels, so the glyphs land on the pixel grid the unshifted ones would.
+            shift = Math.Round(shift * _scale) / _scale;
+            bars.Add(new FieldBar(prompt.Row, to, start, width, shift));
+        }
+
+        return bars;
     }
 
     /// <summary>
@@ -745,6 +818,15 @@ internal sealed class TerminalView : Control
         {
             var inside = (position.Y - (band.Top * size.Height) - NativeLayout.FieldTop) / size.Height;
             y = Math.Clamp(band.Top + (int)Math.Floor(inside), band.Top, Math.Min(frame.Height, band.Top + band.Rows) - 1);
+
+            // The typed text is drawn shifted left to meet the prompt; a press on it is a press on the cell drawn there.
+            foreach (var bar in _fieldBars)
+            {
+                if (y >= bar.Top && y < bar.End && bar.Shift > 0 && position.X >= (bar.TextStart * size.Width) - bar.Shift)
+                {
+                    x = Math.Clamp((int)((position.X + bar.Shift) / size.Width), Math.Min(bar.TextStart, frame.Width - 1), Math.Max(0, frame.Width - 1));
+                }
+            }
         }
 
         return new System.Drawing.Point(x, y);
@@ -756,7 +838,9 @@ internal sealed class TerminalView : Control
         | ((keys & KeyModifiers.Control) != 0 ? PointerModifiers.Ctrl : 0);
 
     /// <summary>One frame, drawn straight onto the compositor's Skia canvas.</summary>
-    private sealed class FrameDraw(Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale, InputBand? band, SKColor plane)
+    private sealed class FrameDraw(
+        Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale, InputBand? band, SKColor plane,
+        IReadOnlyList<FieldBar> bars, SKColor rule)
         : ICustomDrawOperation
     {
         public Rect Bounds { get; } = bounds;
@@ -764,7 +848,12 @@ internal sealed class TerminalView : Control
         public bool HitTest(Point p) => Bounds.Contains(p);
 
         public bool Equals(ICustomDrawOperation? other) =>
-            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane;
+            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane
+            && draw.Rule == Rule && draw.Bars.SequenceEqual(Bars);
+
+        private SKColor Rule => rule;
+
+        private IReadOnlyList<FieldBar> Bars => bars;
 
         private SKColor Plane => plane;
 
@@ -791,7 +880,108 @@ internal sealed class TerminalView : Control
                 RenderWithField(canvas, band);
             }
 
+            DrawDividers(canvas);
             canvas.Restore();
+        }
+
+        /// <summary>
+        /// Each pane divider's cells as the two panes' planes meeting, read off the cells beside it, with the tokens'
+        /// hairline centred where they meet; a lit divider (hovered or dragged) keeps the cells' own hover colour, wider.
+        /// The cells themselves, and so the divider's hit area, are the client's as in any host. Device pixels.
+        /// </summary>
+        private void DrawDividers(SKCanvas canvas)
+        {
+            var dividers = frame.Dividers;
+            if (dividers.Count == 0)
+            {
+                return;
+            }
+
+            var cw = renderer.Fonts.CellWidth;
+            var ch = renderer.Fonts.CellHeight;
+            var s = (float)scale;
+            var hair = Math.Max(1f, MathF.Round(s));
+            var wide = Math.Max(2f, MathF.Round(3 * s));
+            using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+            foreach (var divider in dividers)
+            {
+                var x0 = Math.Max(0, divider.Area.X);
+                var y0 = Math.Max(0, divider.Area.Y);
+                var x1 = Math.Min(frame.Width, divider.Area.X + divider.Area.Width);
+                var y1 = Math.Min(frame.Height, divider.Area.Y + divider.Area.Height);
+                if (band is { } field)
+                {
+                    y1 = Math.Min(y1, field.Top);
+                }
+
+                if (x1 <= x0 || y1 <= y0)
+                {
+                    continue;
+                }
+
+                var w = divider.Lit ? wide : hair;
+                var colour = divider.Lit ? renderer.Background(frame[x0, y0]) : rule;
+                if (divider.Vertical)
+                {
+                    float left = x0 * cw, right = x1 * cw;
+                    var at = MathF.Round(left + ((right - left - w) / 2));
+                    for (var y = y0; y < y1; y++)
+                    {
+                        paint.Color = PlaneBeside(x0 - 1, y, -1, 0);
+                        canvas.DrawRect(left, y * ch, at - left, ch, paint);
+                        paint.Color = PlaneBeside(x1, y, 1, 0);
+                        canvas.DrawRect(at + w, y * ch, right - at - w, ch, paint);
+                    }
+
+                    paint.Color = colour;
+                    canvas.DrawRect(at, y0 * ch, w, (y1 - y0) * ch, paint);
+                }
+                else
+                {
+                    float top = y0 * ch, bottom = y1 * ch;
+                    var at = MathF.Round(top + ((bottom - top - w) / 2));
+                    for (var x = x0; x < x1; x++)
+                    {
+                        paint.Color = PlaneBeside(x, y0 - 1, 0, -1);
+                        canvas.DrawRect(x * cw, top, cw, at - top, paint);
+                        paint.Color = PlaneBeside(x, y1, 0, 1);
+                        canvas.DrawRect(x * cw, at + w, cw, bottom - at - w, paint);
+                    }
+
+                    paint.Color = colour;
+                    canvas.DrawRect(x0 * cw, at, (x1 - x0) * cw, w, paint);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The plane of the pane beside a divider at (<paramref name="x"/>, <paramref name="y"/>), stepping along another
+        /// divider that crosses there (along it, not across it) so a junction takes a pane's plane, not a rule's.
+        /// </summary>
+        private SKColor PlaneBeside(int x, int y, int dx, int dy)
+        {
+            for (var step = 0; step < 4; step++)
+            {
+                x = Math.Clamp(x, 0, frame.Width - 1);
+                y = Math.Clamp(y, 0, frame.Height - 1);
+                var cx = x;
+                var cy = y;
+                if (!frame.Dividers.Any(d => cx >= d.Area.X && cx < d.Area.X + d.Area.Width && cy >= d.Area.Y && cy < d.Area.Y + d.Area.Height))
+                {
+                    break;
+                }
+
+                if (dx != 0)
+                {
+                    y = y > 0 ? y - 1 : y + 1;
+                }
+                else
+                {
+                    x = x > 0 ? x - 1 : x + 1;
+                }
+            }
+
+            return renderer.Background(frame[Math.Clamp(x, 0, frame.Width - 1), Math.Clamp(y, 0, frame.Height - 1)]);
         }
 
         /// <summary>
@@ -831,8 +1021,34 @@ internal sealed class TerminalView : Control
             canvas.Translate(0, (float)(NativeLayout.FieldTop * scale));
 
             // The bars' rows only, and not the client's right padding, whose colour is the margin's rather than the band's.
-            canvas.ClipRect(new SKRect(0, top, (frame.Width - band.Pad) * cw, (band.Top + band.Rows) * ch));
-            renderer.Render(canvas, frame, pictures);
+            var textRight = (frame.Width - band.Pad) * cw;
+            if (bars.Count == 0)
+            {
+                canvas.ClipRect(new SKRect(0, top, textRight, (band.Top + band.Rows) * ch));
+                renderer.Render(canvas, frame, pictures);
+            }
+            else
+            {
+                // Each bar in two parts: the prompt's cells as they are (the UI-face prompt is drawn over them), then the
+                // typed text drawn its shift to the left, to start a mono space after the prompt.
+                foreach (var bar in bars)
+                {
+                    var shift = (float)(bar.Shift * scale);
+                    var meet = (bar.TextStart * cw) - shift;
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(0, bar.Top * ch, meet, bar.End * ch));
+                    renderer.Render(canvas, frame, pictures);
+                    canvas.Restore();
+
+                    canvas.Save();
+                    // Short of the right padding by the shift, so what comes in from the right is the field's fill.
+                    canvas.ClipRect(new SKRect(meet, bar.Top * ch, textRight - shift, bar.End * ch));
+                    canvas.Translate(-shift, 0);
+                    renderer.Render(canvas, frame, pictures);
+                    canvas.Restore();
+                }
+            }
+
             canvas.Restore();
 
             paint.Style = SKPaintStyle.Stroke;
@@ -864,7 +1080,7 @@ internal sealed class TerminalView : Control
     /// The prompt in the UI face, semibold, over the prompt's own cells; and the newline hint at the right of the first
     /// row while the cells under it are blank — it stands down the moment the typed text reaches it.
     /// </summary>
-    private void DrawFieldText(DrawingContext context, ScreenFrame frame, InputBand band)
+    private void DrawFieldText(DrawingContext context, ScreenFrame frame, InputBand band, IReadOnlyList<FieldBar> bars)
     {
         var cell = CellSize;
         foreach (var prompt in band.Prompts)
@@ -877,18 +1093,15 @@ internal sealed class TerminalView : Control
 
             var first = frame[band.Pad, prompt.Row];
             var ink = Ink(frame, band.Pad, prompt.Row, text.Length);
-            var plate = new Rect(band.Pad * cell.Width, RowTop(prompt.Row), Math.Min(text.Length, frame.Width - band.Pad) * cell.Width, cell.Height);
+            // The plate hides the prompt's mono cells up to where the shifted text begins (BarsOf), never over that text.
+            var cells = Math.Min(text.Length, frame.Width - band.Pad) * cell.Width;
+            var room = Math.Min(prompt.Text.Length, frame.Width - band.Pad) * cell.Width;
+            var shift = bars.FirstOrDefault(b => b.Top == prompt.Row).Shift;
+            var plate = new Rect(band.Pad * cell.Width, RowTop(prompt.Row), Math.Max(0, room - shift), cell.Height);
             context.FillRectangle(Brush(_renderer.Background(first.Background)), plate);
-            var formatted = new FormattedText(
-                text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                new Typeface(NativeTokens.UiFont, FontStyle.Normal, FontWeight.SemiBold), NativeTokens.Input, Brush(ink))
-            {
-                MaxTextWidth = plate.Width + (2 * cell.Width),
-                MaxLineCount = 1,
-                Trimming = TextTrimming.CharacterEllipsis,
-            };
-            // At the field's inner padding, as the mockup sets it: the UI face is narrower than the cells it covers, and
-            // what it leaves over reads as the space before the line being typed rather than a hole in front of the prompt.
+            var formatted = PromptText(text, ink, cells + (2 * cell.Width));
+
+            // At the field's inner padding, as the mockup sets it, and the typed text a mono space after it (BarsOf).
             context.DrawText(formatted, new Point(Math.Round(plate.X), plate.Y + ((cell.Height - formatted.Height) / 2)));
         }
 

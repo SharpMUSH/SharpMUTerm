@@ -386,6 +386,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window, the line between two panes is a hairline where the panes meet instead of a grey band, and
+  lights up wider while you hover or drag it. In the command line, what you type starts right after the prompt.
+  The docked composer's "Click to write a post" is in the interface font.
 - The command palette in the terminal shrinks to the rows a search matches instead of filling the screen with blank.
 - In the window, notices are drawn on the same card colour as the palette and dialogs, and body text is a size larger
   (13 px) across the window's own views.

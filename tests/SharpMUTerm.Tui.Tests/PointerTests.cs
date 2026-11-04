@@ -30,6 +30,10 @@ public class PointerTests
         public bool DrawsMenus => true;
 
         public void Scrollbars(IReadOnlyList<PaneScrollbar> bars) => Bars = bars;
+
+        public IReadOnlyList<PaneDividerOverlay> Dividers { get; private set; } = [];
+
+        void IPointerPresenter.Dividers(IReadOnlyList<PaneDividerOverlay> dividers) => Dividers = dividers;
     }
 
     private static (SharpMUTermApp App, RecordingPresenter Pointer) App(string view, int width = 120, int height = 34)
@@ -77,6 +81,43 @@ public class PointerTests
         await Assert.That(divider.All(hit => hit.Target.Shape == PointerShape.ResizeColumns)).IsTrue();
         await Assert.That(divider.All(hit => hit.Cell.X >= rects[0].X + rects[0].Width && hit.Cell.X < rects[1].X)).IsTrue();
         await Assert.That(divider[0].Target.Tooltip).Contains("Drag to resize");
+    }
+
+    /// <summary>
+    /// The host is told where the divider cells are, so the window can draw them as the panes meeting at a hairline: the
+    /// column between the panes, the whole height, lit while hovered; and nothing while a modal is drawn over the panes.
+    /// </summary>
+    [Test]
+    public async Task TheHostIsToldWhereTheDividersAreAndWhichIsLit()
+    {
+        var (app, pointer) = App("split");
+        var rects = app.PaneSnapshot().Rects.Values.OrderBy(r => r.X).ToArray();
+        var said = pointer.Dividers.Single();
+
+        await Assert.That(said.Vertical).IsTrue();
+        await Assert.That(said.Lit).IsFalse();
+        await Assert.That(said.Area.X).IsEqualTo(rects[0].X + rects[0].Width);
+        await Assert.That(said.Area.Width).IsEqualTo(1);
+        await Assert.That(said.Area.Height).IsEqualTo(rects[0].Height);
+        await Assert.That(app.DividersNow()).IsEquivalentTo(pointer.Dividers);
+
+        app.SimulatePointer(DividerCell(app), MouseFlags.ReportMousePosition);
+        app.RenderNextFrame();
+        await Assert.That(pointer.Dividers.Single().Lit).IsTrue();
+
+        app.SimulateKey(new ConsoleKeyInfo('\u0010', ConsoleKey.P, shift: false, alt: false, control: true));
+        app.RenderNextFrame();
+        await Assert.That(app.MenuIsOpen).IsTrue();
+        await Assert.That(app.DividersNow()).IsEmpty().Because("⌃P is drawn over the panes, and the host must not draw over it");
+    }
+
+    /// <summary>A stacked split whose lower pane draws its strip has no divider row, and so tells the host of none.</summary>
+    [Test]
+    public async Task AStripStandingInForADividerIsNotADividerToDraw()
+    {
+        var (app, pointer) = App("split-stacked");
+
+        await Assert.That(pointer.Dividers).IsEmpty();
     }
 
     [Test]

@@ -39,10 +39,20 @@ internal sealed class ScreenFrame(int width, int height, GridCell[] cells, Caret
     /// </summary>
     public SharpMUTerm.Tui.InputBand? Band { get; init; }
 
+    /// <summary>
+    /// The pane dividers as the client said they were when this frame was painted: the window draws their cells as the
+    /// two panes' planes meeting at a hairline rather than as a band of the rule's colour.
+    /// </summary>
+    public IReadOnlyList<SharpMUTerm.Tui.PaneDividerOverlay> Dividers { get; init; } = [];
+
     public GridCell this[int x, int y] => cells[(y * Width) + x];
 
     /// <summary>This frame carrying <paramref name="band"/>: the same cells, not copied.</summary>
-    public ScreenFrame WithBand(SharpMUTerm.Tui.InputBand band) => new(Width, Height, cells, Caret) { Band = band };
+    public ScreenFrame WithBand(SharpMUTerm.Tui.InputBand band) => new(Width, Height, cells, Caret) { Band = band, Dividers = Dividers };
+
+    /// <summary>This frame carrying <paramref name="dividers"/>: the same cells, not copied.</summary>
+    public ScreenFrame WithDividers(IReadOnlyList<SharpMUTerm.Tui.PaneDividerOverlay> dividers) =>
+        new(Width, Height, cells, Caret) { Band = Band, Dividers = dividers };
 
     public static ScreenFrame Empty(int width, int height) =>
         new(width, height, Enumerable.Repeat(GridCell.Blank, width * height).ToArray(), default);

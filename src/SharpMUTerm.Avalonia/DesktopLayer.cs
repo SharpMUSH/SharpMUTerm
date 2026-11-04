@@ -208,6 +208,7 @@ internal sealed class DesktopLayer : Canvas
             }
 
             tokens = _paneTokens.Value.Tokens;
+            _view.DividerRule = new SKColor(tokens.Rule.R, tokens.Rule.G, tokens.Rule.B);
         }
 
         var origin = CellOrigin;

@@ -124,6 +124,11 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
             frame = frame.WithBand(band);
         }
 
+        if (Pointer.Dividers is { Count: > 0 } dividers)
+        {
+            frame = frame.WithDividers(dividers);
+        }
+
         Volatile.Write(ref _frame, frame);
         Interlocked.Increment(ref _frames);
         FrameReady?.Invoke();

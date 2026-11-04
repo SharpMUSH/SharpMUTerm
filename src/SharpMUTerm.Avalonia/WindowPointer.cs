@@ -156,6 +156,16 @@ internal sealed class WindowPointer : IPointerPresenter
 
     void IPointerPresenter.InputBand(InputBand? band) => Volatile.Write(ref _band, band);
 
+    private IReadOnlyList<PaneDividerOverlay> _dividers = [];
+
+    /// <summary>
+    /// The pane dividers as of the client's last word: read by the driver when it flushes a frame, so each frame carries
+    /// the dividers it was painted with (<see cref="ScreenFrame.Dividers"/>).
+    /// </summary>
+    public IReadOnlyList<PaneDividerOverlay> Dividers => Volatile.Read(ref _dividers);
+
+    void IPointerPresenter.Dividers(IReadOnlyList<PaneDividerOverlay> dividers) => Volatile.Write(ref _dividers, dividers);
+
     void IPointerPresenter.Notice(NoticeOverlay notice)
     {
         var next = Notices.Append(notice).TakeLast(NoticesKept).ToList();
