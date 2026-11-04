@@ -6,6 +6,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -182,8 +183,8 @@ internal sealed class SettingsWindow : Window
         DockPanel.SetDock(_bar, Dock.Top);
 
         // ── the footer ──
-        _footerLeft = new TextBlock { Text = "Changes apply to connected sessions as you make them.", FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
-        _footerRight = new TextBlock { Text = "Ctrl+F searches · Esc closes", FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
+        _footerLeft = new TextBlock { Text = FooterSentence, FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        _footerRight = new TextBlock { Text = FooterKeys, FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
         var footerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(NativeTokens.Space20, 0) };
         footerRow.Children.Add(_footerLeft);
         Grid.SetColumn(_footerRight, 1);
@@ -255,6 +256,7 @@ internal sealed class SettingsWindow : Window
             }
         };
         KeyDown += OnKey;
+        AddHandler(KeyDownEvent, OnUndoKey, RoutingStrategies.Tunnel);
 
         Load(form);
     }
@@ -486,8 +488,11 @@ internal sealed class SettingsWindow : Window
     private void Choose(string? id)
     {
         _shown = id;
+        _form.Showing = id;
+        _form.HistoryNote = null;
         Select(id);
         BuildPage();
+        ShowNote();
     }
 
     private void Select(string? id)
@@ -1380,7 +1385,61 @@ internal sealed class SettingsWindow : Window
     // ── changes landing ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>Raised on the client's thread once a change has landed; the page catches up on this one.</summary>
-    private void OnChanged() => Dispatcher.UIThread.Post(Refresh);
+    private void OnChanged() => Dispatcher.UIThread.Post(() =>
+    {
+        Refresh();
+        ShowNote();
+    });
+
+    /// <summary>The footer's sentence while nothing has been undone.</summary>
+    internal const string FooterSentence = "Changes apply to connected sessions as you make them.";
+
+    /// <summary>The footer's keys: the mockup's <c>Undo Ctrl+Z</c>, then redo, search and the way out.</summary>
+    internal const string FooterKeys = "Undo Ctrl+Z · Redo Ctrl+Shift+Z · Search Ctrl+F · Esc closes";
+
+    /// <summary>What the footer says on the left now: the last undo's sentence, else the standing one.</summary>
+    public string FooterNote => _footerLeft.Text ?? string.Empty;
+
+    /// <summary>
+    /// Puts what the last undo or redo said in the footer (<c>Undid port.</c>, <c>Nothing to undo in Timers.</c>) in place
+    /// of the standing sentence, until the next change or section.
+    /// </summary>
+    private void ShowNote()
+    {
+        var note = _form.HistoryNote;
+        _footerLeft.Text = note ?? FooterSentence;
+        _footerLeft.FontWeight = note is null ? FontWeight.Normal : FontWeight.SemiBold;
+        _footerLeft.Foreground = note is null ? _tokens.Page.Brush(_tokens.Page.Dim) : _tokens.Page.Brush(_tokens.Page.Text);
+    }
+
+    /// <summary>
+    /// Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) on the page: the section's committed edits, through the client. A text box being
+    /// typed in keeps the chords while it has its own typing to undo, as any editor does.
+    /// </summary>
+    private void OnUndoKey(object? sender, KeyEventArgs e)
+    {
+        var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0 && (e.KeyModifiers & KeyModifiers.Alt) == 0;
+        var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        var undo = ctrl && !shift && e.Key == Key.Z;
+        var redo = ctrl && ((shift && e.Key == Key.Z) || (!shift && e.Key == Key.Y));
+        if ((!undo && !redo) || _shown is not { } section)
+        {
+            return;
+        }
+
+        if (FocusManager?.GetFocusedElement() is TextBox box && (undo ? box.CanUndo : box.CanRedo))
+        {
+            return;
+        }
+
+        e.Handled = redo ? _form.Redo(section) : _form.Undo(section);
+    }
+
+    /// <summary>Undoes the last edit on the section shown, as Ctrl+Z does — for a test.</summary>
+    public bool UndoNow() => _shown is { } section && _form.Undo(section);
+
+    /// <summary>Redoes the last undone edit on the section shown, as Ctrl+Shift+Z does — for a test.</summary>
+    public bool RedoNow() => _shown is { } section && _form.Redo(section);
 
     /// <summary>Raised on the client's thread when the packages moved; F10's page catches up on this one.</summary>
     private void OnPackagesChanged() => Dispatcher.UIThread.Post(() =>

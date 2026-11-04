@@ -33,8 +33,9 @@ internal enum ScreenEnter
 /// rather than passed in per renderer for the reason the header's hints are: only the model knows what
 /// the row actually offers, and a claim written by hand drifts.
 /// </param>
+/// <param name="Note">What the last ⌃Z or ⌃Y said, drawn in the header in place of its hints; null otherwise.</param>
 internal readonly record struct ScreenFocus(
-    int Pane, int Index, ScreenFieldEdit? Edit = null, ScreenEnter Enter = ScreenEnter.Close)
+    int Pane, int Index, ScreenFieldEdit? Edit = null, ScreenEnter Enter = ScreenEnter.Close, string? Note = null)
 {
     /// <summary>No keyboard on this screen — nothing is drawn as the cursor.</summary>
     internal static ScreenFocus None => new(-1, -1);

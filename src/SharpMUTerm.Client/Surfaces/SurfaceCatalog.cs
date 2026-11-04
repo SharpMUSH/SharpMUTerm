@@ -367,7 +367,13 @@ public static class SurfaceCatalog
         new(
             Settings,
             typeof(SettingsSectionContribution),
-            [new(SurfaceActionKind.Edit, "field", "ScreenEdits.Apply")],
+            [
+                new(SurfaceActionKind.Edit, "field", "ScreenEdits.Apply"),
+
+                // Ctrl+Z / Ctrl+Shift+Z on a section: its last committed edit, undone or redone through the same funnel.
+                new(SurfaceActionKind.Edit, "undo", "ScreenEdits.Undo"),
+                new(SurfaceActionKind.Edit, "redo", "ScreenEdits.Redo"),
+            ],
             new Dictionary<string, SurfaceDrawing>
             {
                 [SurfaceHosts.Terminal] = SurfaceDrawing.Cells,

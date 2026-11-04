@@ -1928,7 +1928,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   picker with the cursor on Light and on Solarized Dark — the screen painted in the previewed theme — and Light
   used with ⏎), `settings-meters`/`settings-meters-pick` (the meter table over the demo's game
   data, the cursor on a meter with the received-data box under it, and the same meter's value path open with
-  its dropdown of received paths), `settings-changed` (F7 after two real edits: the `● changed` marks and
+  its dropdown of received paths), `settings-undo` (that, then ⌃Z: the header saying `Undid tab width (spaces).`), `settings-changed` (F7 after two real edits: the `● changed` marks and
   `r reset`), `logging`, `password`, `startup`, `freeze`, `spawn`, `split`,
   `split-stacked` (the same split stacked through the real ⌃B -, where the lower pane's tab strip is the
   boundary and no divider row is drawn), `move`, `drag`,
@@ -2320,6 +2320,17 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **A settings `--view` opens the native window when the host has one** (`RenderSnapshot`: a declared screen with
     no `-edit` goes through `TryOpenNativeSettings`, as do `packages`/`package-browse`/`package-review`). The parity
     harness passes `NativeSettings = null`, so its cells are still compared.
+  - **Committed edits undo per section, for the run** (Client `SettingsHistory`; `ScreenEdits.Track`/`Undo`/`Redo`;
+    `SettingsForm.CommitAs`/`UndoRedo`/`HistoryNote`/`Showing`; the `settings-undo` view). `ScreenEdits` captures the
+    configuration as JSON before each change and records it after the save, under the section it was made on (the cell
+    overlay's F-key, the window's page); 50 a section, a new edit clears redo, a no-op is not recorded. An undo writes the
+    *before* values back only at the paths that step changed, onto the configuration as it is now (an F5 edit made since
+    survives an F7 undo), merged into the live objects: an unchanged list element stays its instance, a changed list is
+    replaced. The snapshot carries the password (an ignored scalar), never `lastSession`/`version`/`keyTourPending`. It is
+    saved through the funnel. A deletion undone leaves the closing review; redone, it rejoins it. Cells: ⌃Z / ⌃Y (⌃⇧Z
+    where reported) only while navigating, the note in the header in place of the verbs until the next key, `⌃Z undo` a
+    low-drop ladder key. Window: a tunnel handler leaves the chord to a `TextBox` that has its own typing to undo; the
+    footer reads `Undo Ctrl+Z · Redo …` (the mockup's) and shows the note on the left.
   - Not done: the window is not modal. Screenshots come from a real window under Xvfb, driven with XTest
     (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`, `ux-wave7/lists-*.png`).
 - **In the window, ⌃P is a native palette over the window, listing the cell palette's rows** (`ClientHost.NativePalette`

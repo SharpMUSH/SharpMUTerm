@@ -160,8 +160,38 @@ internal sealed partial class SharpMUTermApp
 
     internal SettingsForm NativeSettingsForm(string initial, object? item = null)
     {
-        var edits = new ScreenEdits(SaveConfiguration);
         var data = SettingsGameData();
+
+        // One funnel per section: the window's edits are recorded under the section shown when each was made — the
+        // history that section's cell screen records into — so ⌃Z undoes the same edit in either host.
+        var sectionEdits = new Dictionary<string, ScreenEdits>(StringComparer.Ordinal);
+        SettingsForm? form = null;
+        ScreenEdits EditsFor(string section)
+        {
+            if (!sectionEdits.TryGetValue(section, out var found))
+            {
+                found = new ScreenEdits(SaveConfiguration);
+                found.Track(_settingsHistory, section);
+                sectionEdits[section] = found;
+            }
+
+            return found;
+        }
+
+        void Commit(Action change, string? what)
+        {
+            var section = form?.Showing ?? initial;
+            OnUiThread(() =>
+            {
+                EditsFor(section).Apply(change, what);
+                if (form is not null)
+                {
+                    form.HistoryNote = null;
+                    form.NotifyChanged();
+                }
+            });
+        }
+
         var (world, character) = FocusedSubject();
 
         // The theme cards are built here, on the client's thread, and re-built only when a theme is added — the themes
@@ -169,15 +199,10 @@ internal sealed partial class SharpMUTermApp
         // each looks.
         var cards = ThemePreviews.Cards(_config);
         IReadOnlyList<ThemeCard> themes() => cards;
-        SettingsForm? form = null;
         form = new SettingsForm(
             _contributions.SettingsSections.Ordered,
             _config,
-            change => OnUiThread(() =>
-            {
-                edits.Apply(change);
-                form?.NotifyChanged();
-            }),
+            change => Commit(change, null),
             id => OnUiThread(() => OpenSectionScreen(id)),
             initial,
             ThemeIsDark(),
@@ -195,6 +220,18 @@ internal sealed partial class SharpMUTermApp
             Theme = () => _theme.Clone(),
             BesideOutput = item is not null,
             WorldNotes = WorldNotesNow(),
+            CommitAs = Commit,
+            UndoRedo = (section, redo) => OnUiThread(() =>
+            {
+                var step = EditsFor(section);
+                var result = redo ? step.Redo() : step.Undo();
+                if (form is not null)
+                {
+                    form.HistoryNote = result.Note;
+                }
+
+                form?.NotifyChanged();
+            }),
         };
         return form;
     }

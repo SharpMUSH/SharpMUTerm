@@ -294,6 +294,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly CommandPalette _palette;
     private readonly SettingsOverlay _settings;
 
+    /// <summary>
+    /// Undo and redo of committed settings edits for the run, one history per section, shared by the cell screens and the
+    /// native settings window so ⌃Z on either undoes the section's last edit wherever it was made. Never saved.
+    /// </summary>
+    private readonly Client.Settings.SettingsHistory _settingsHistory;
+
     /// <summary>The F1 composer — a full editor for a post, sent as one line. See <see cref="ComposeOverlay"/>.</summary>
     private readonly ComposeOverlay _composer;
 
@@ -962,7 +968,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
         _screens = ScreenTheme.For(_theme);
-        _settings = new SettingsOverlay(_system, _screens) { SearchHost = SettingsSearchHost() };
+        _settingsHistory = new Client.Settings.SettingsHistory(_config, id => _contributions.SettingsSections.Find(id)?.Title);
+        _settings = new SettingsOverlay(_system, _screens)
+        {
+            SearchHost = SettingsSearchHost(),
+            History = _settingsHistory,
+            SectionOf = key => SectionForKey(key)?.Id,
+        };
         _composer = new ComposeOverlay(_system, ComposerSpelling, _screens);
         _packageView = new ListOverlay(_system, _screens);
         _sendMenu = new ListOverlay(_system, _screens);
@@ -2452,7 +2464,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return RenderFrame();
         }
 
-        if (string.Equals(view, "settings-changed", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(view, "settings-changed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "settings-undo", StringComparison.OrdinalIgnoreCase))
         {
             _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
 
@@ -2469,6 +2482,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _settings.SimulateKey(Stroke('\b', ConsoleKey.Backspace));
             _settings.SimulateKey(Stroke('8', ConsoleKey.D8));
             _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            if (string.Equals(view, "settings-undo", StringComparison.OrdinalIgnoreCase))
+            {
+                // ⌃Z: the tab width goes back, and the header says what was undone.
+                _settings.SimulateKey(new ConsoleKeyInfo('\u001a', ConsoleKey.Z, false, false, true));
+            }
+
             SyncInputWidth();
             return RenderFrame();
         }

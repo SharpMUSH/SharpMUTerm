@@ -62,6 +62,18 @@ internal sealed class SettingsOverlay
     /// </summary>
     internal SettingsSearchHost? SearchHost { get; set; }
 
+    /// <summary>
+    /// The undo history every screen this overlay opens records its edits in (⌃Z), and the section id an F-key's screen
+    /// records them under; set by the app. Without them a screen keeps no history and ⌃Z says there is nothing to undo.
+    /// </summary>
+    internal Client.Settings.SettingsHistory? History { get; set; }
+
+    /// <inheritdoc cref="History"/>
+    internal Func<ConsoleKey, string?>? SectionOf { get; set; }
+
+    private void Track(ConsoleKey key, ScreenBinding binding) =>
+        binding.Session.Edits.Track(History, SectionOf?.Invoke(key));
+
     /// <summary>Whether the settings search is up.</summary>
     internal bool IsSearching => _search is not null;
 
@@ -168,6 +180,7 @@ internal sealed class SettingsOverlay
         _behind.Clear();
         _openKey = key;
         _binding = binding;
+        Track(key, binding);
         Refresh();
     }
 
@@ -229,6 +242,7 @@ internal sealed class SettingsOverlay
     {
         _openKey = key;
         _binding = binding;
+        Track(key, binding);
 
         _window = new WindowBuilder(_system)
             .AsModal()

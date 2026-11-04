@@ -272,7 +272,7 @@ public sealed class SettingsForm
             return false;
         }
 
-        _commit(() => binding.Set(target, value));
+        Commit(() => binding.Set(target, value), LabelOf(binding));
         return true;
     }
 
@@ -326,7 +326,7 @@ public sealed class SettingsForm
         if (field.Binding is { } binding)
         {
             var target = Target;
-            _commit(() => binding.Reset(target));
+            Commit(() => binding.Reset(target), field.Label);
         }
     }
 
@@ -407,7 +407,7 @@ public sealed class SettingsForm
         }
 
         _item = item;
-        _commit(() => collection.Add(set, item));
+        Commit(() => collection.Add(set, item), $"adding a {collection.Noun}");
         return item;
     }
 
@@ -423,7 +423,7 @@ public sealed class SettingsForm
 
         var copy = collection.Duplicate(_config, item);
         _item = copy;
-        _commit(() => collection.InsertAfter(_config, item, copy));
+        Commit(() => collection.InsertAfter(_config, item, copy), $"copying a {collection.Noun}");
         return copy;
     }
 
@@ -442,7 +442,7 @@ public sealed class SettingsForm
             _item = null;
         }
 
-        _commit(() => collection.Delete(_config, item));
+        Commit(() => collection.Delete(_config, item), $"deleting a {collection.Noun}");
         return true;
     }
 
@@ -464,7 +464,7 @@ public sealed class SettingsForm
             return false;
         }
 
-        _commit(() => collection.Move(_config, item, delta));
+        Commit(() => collection.Move(_config, item, delta), $"moving a {collection.Noun}");
         return true;
     }
 
@@ -480,7 +480,7 @@ public sealed class SettingsForm
         }
 
         var target = new SettingTarget(_config, _world, _character, item);
-        _commit(() => flag.Set(target, on));
+        Commit(() => flag.Set(target, on), on ? $"switching a {section.Collection!.Noun} on" : $"switching a {section.Collection!.Noun} off");
         return true;
     }
 
@@ -503,7 +503,7 @@ public sealed class SettingsForm
             return false;
         }
 
-        _commit(() => SettingsCollection.CopyToEdit(_config, set));
+        Commit(() => SettingsCollection.CopyToEdit(_config, set), "copying a set to edit");
         return true;
     }
 
@@ -624,6 +624,70 @@ public sealed class SettingsForm
         ArgumentNullException.ThrowIfNull(sectionId);
         _openScreen(sectionId);
     }
+
+    /// <summary>
+    /// Runs a change through the client's funnel, naming it for the undo history when the client takes names
+    /// (<see cref="CommitAs"/>).
+    /// </summary>
+    private void Commit(Action change, string? what)
+    {
+        if (CommitAs is { } named)
+        {
+            named(change, what);
+        }
+        else
+        {
+            _commit(change);
+        }
+    }
+
+    /// <summary>The label of the declared field <paramref name="binding"/> belongs to, for the undo history.</summary>
+    private string? LabelOf(SettingBinding binding) =>
+        Sections.SelectMany(s => s.Fields.Concat(s.Collection?.Fields ?? []))
+            .FirstOrDefault(f => ReferenceEquals(f.Binding, binding))?.Label;
+
+    /// <summary>
+    /// The client's funnel with a name for the change (a field's label, <c>deleting a trigger</c>), so an undo can say
+    /// what it undid; null runs every change through <c>commit</c> unnamed.
+    /// </summary>
+    public Action<Action, string?>? CommitAs { get; init; }
+
+    /// <summary>
+    /// Undoes (false) or redoes (true) the last edit made on a section, by id — the footer's <c>Undo Ctrl+Z</c>. The
+    /// client runs it on its own thread through the same funnel, sets <see cref="HistoryNote"/> and raises <see cref="Changed"/>.
+    /// Null when the client keeps no history.
+    /// </summary>
+    public Action<string, bool>? UndoRedo { get; init; }
+
+    /// <summary>Undoes the last edit made on <paramref name="sectionId"/>; false when the client keeps no history.</summary>
+    public bool Undo(string sectionId) => Step(sectionId, redo: false);
+
+    /// <summary>Redoes the last edit undone on <paramref name="sectionId"/>; false when the client keeps no history.</summary>
+    public bool Redo(string sectionId) => Step(sectionId, redo: true);
+
+    private bool Step(string sectionId, bool redo)
+    {
+        ArgumentNullException.ThrowIfNull(sectionId);
+        if (UndoRedo is not { } step)
+        {
+            return false;
+        }
+
+        step(sectionId, redo);
+        return true;
+    }
+
+    /// <summary>
+    /// What the last undo or redo said (<c>Undid port.</c>, <c>Nothing to undo in Text &amp; display.</c>), shown in the
+    /// footer until the next change; null otherwise. Written on the client's thread, read on the host's.
+    /// </summary>
+    public string? HistoryNote { get; set; }
+
+    /// <summary>
+    /// The id of the section the host shows now, which the host sets as it changes: a change is recorded in that
+    /// section's history, so Ctrl+Z on a page undoes that page's edits. Null before the host shows one.
+    /// </summary>
+    public string? Showing { get; set; }
 
     /// <summary>Raises <see cref="Changed"/>; the client calls it once a committed change has landed.</summary>
     public void NotifyChanged() => Changed?.Invoke();

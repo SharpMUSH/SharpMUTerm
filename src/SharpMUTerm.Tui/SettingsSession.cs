@@ -135,7 +135,7 @@ internal sealed class SettingsSession
         Selection.Anchor(model.ListSizes);
         if (!Selection.HasSelection(model.Sizes))
         {
-            return ScreenFocus.None;
+            return ScreenFocus.None with { Note = Note };
         }
 
         var field = _edit is { } at ? model.FieldAt(at.Pane, at.Index, at.Field) : null;
@@ -154,7 +154,7 @@ internal sealed class SettingsSession
                 field?.ChoiceCaption)
             : (ScreenFieldEdit?)null;
 
-        return new ScreenFocus(Selection.Pane, Selection.Index, edit, Enter(model));
+        return new ScreenFocus(Selection.Pane, Selection.Index, edit, Enter(model), Note);
     }
 
     /// <summary>
@@ -195,6 +195,8 @@ internal sealed class SettingsSession
         Selection.Clamp(model.Sizes);
         Selection.Anchor(model.ListSizes);
 
+        // What the last undo said stays in the header until the next key.
+        Note = null;
         if (_edit is not null)
         {
             return HandleEdit(key, model);
@@ -202,6 +204,15 @@ internal sealed class SettingsSession
 
         switch (key.Key)
         {
+            // ⌃Z undoes this screen's last committed edit and ⌃Y (or ⌃⇧Z, where a host reports it) redoes it — only while
+            // navigating: inside a field the keyboard is the field's.
+            case ConsoleKey.Z when key.Modifiers == ConsoleModifiers.Control:
+                return Undone(Edits.Undo());
+
+            case ConsoleKey.Y when key.Modifiers == ConsoleModifiers.Control:
+            case ConsoleKey.Z when key.Modifiers == (ConsoleModifiers.Control | ConsoleModifiers.Shift):
+                return Undone(Edits.Redo());
+
             case ConsoleKey.Escape:
                 return ScreenAction.Close;
 
@@ -252,6 +263,19 @@ internal sealed class SettingsSession
             default:
                 return ScreenAction.None;
         }
+    }
+
+    /// <summary>
+    /// What the last ⌃Z or ⌃Y said (<c>Undid port.</c>, or <c>Nothing to undo in Text &amp; display.</c>), drawn in the
+    /// header in place of its hints until the next key; null otherwise. Refusing out loud is the point: a ⌃Z with nothing
+    /// to undo that did nothing visible would read as a key the screen does not have.
+    /// </summary>
+    internal string? Note { get; private set; }
+
+    private ScreenAction Undone(Client.Settings.SettingsUndoResult result)
+    {
+        Note = result.Note;
+        return ScreenAction.Redraw;
     }
 
     /// <summary>
@@ -334,7 +358,7 @@ internal sealed class SettingsSession
             return ScreenAction.None;
         }
 
-        Edits.Apply(reset);
+        Edits.Apply(reset, model.RowAt(Selection.Pane, Selection.Index).FieldAt(0)?.Label);
         return ScreenAction.Redraw;
     }
 
@@ -350,14 +374,14 @@ internal sealed class SettingsSession
             return ScreenAction.None;
         }
 
-        // The move is made first and saved only if it happened: at the end of its set nothing changed to save.
-        if (move(delta) is not { } row)
+        // The move is made inside the funnel, so the history sees the list before it, and saved only if it happened: at
+        // the end of its set nothing changed to save.
+        if (Edits.Apply(() => move(delta), "moving it") is not { } moved)
         {
             return ScreenAction.None;
         }
 
-        Edits.Apply(() => { });
-        Selection.Seed(Selection.Pane, row);
+        Selection.Seed(Selection.Pane, moved);
         return ScreenAction.Redraw;
     }
 
@@ -372,7 +396,7 @@ internal sealed class SettingsSession
                 : ScreenAction.Consumed;
         }
 
-        Edits.Apply(toggle);
+        Edits.Apply(toggle, model.RowAt(Selection.Pane, Selection.Index).FieldAt(0)?.Label);
         return ScreenAction.Redraw;
     }
 

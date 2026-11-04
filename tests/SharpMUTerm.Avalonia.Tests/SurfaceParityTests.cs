@@ -628,6 +628,14 @@ public class SurfaceParityTests
             await Assert.That(nativeEcho).IsTrue();
             await Assert.That(nativeEcho).IsEqualTo(cellEcho);
             await Assert.That(nativeSaves).IsEqualTo(cellSaves).Because("both go through the one save funnel, once");
+
+            // And undone: the window's Ctrl+Z and the cells' ⌃Z put the same field back, each saved through the funnel.
+            var (nativeUndone, nativeUndoSaves) = SettingsReset(native: true, undo: true);
+            var (cellUndone, cellUndoSaves) = SettingsReset(native: false, undo: true);
+            await Assert.That(nativeUndone).IsFalse().Because("the reset was undone");
+            await Assert.That(nativeUndone).IsEqualTo(cellUndone);
+            await Assert.That(nativeUndoSaves).IsEqualTo(2);
+            await Assert.That(nativeUndoSaves).IsEqualTo(cellUndoSaves);
             probed.Add(SurfaceCatalog.Settings);
         }
 
@@ -1276,7 +1284,7 @@ public class SurfaceParityTests
         return (app, telnet);
     }
 
-    private static (bool Echo, int Saves) SettingsReset(bool native)
+    private static (bool Echo, int Saves) SettingsReset(bool native, bool undo = false)
     {
         using var driver = new AvaloniaConsoleDriver(140, 36);
         var config = DemoScene.Build();
@@ -1297,6 +1305,18 @@ public class SurfaceParityTests
             else
             {
                 app.SimulateSettingsKey(new ConsoleKeyInfo('r', ConsoleKey.R, false, false, false));
+            }
+
+            if (undo)
+            {
+                if (settings is not null)
+                {
+                    settings.Form!.Undo("input");
+                }
+                else
+                {
+                    app.SimulateSettingsKey(new ConsoleKeyInfo('\u001a', ConsoleKey.Z, false, false, true));
+                }
             }
 
             return (config.Input.LocalEcho, saves);

@@ -89,8 +89,20 @@ internal static class ScreenChrome
             keys.Add(new LadderKey("i", "info", Drop: 4));
         }
 
+        keys.Add(new LadderKey(UndoKey, "undo", Drop: 2));
         keys.Add(new LadderKey("/", "search", Drop: 1));
         keys.Add(new LadderKey($"{fkey}/Esc", "close"));
+        if (focus?.Note is { } note)
+        {
+            // What ⌃Z or ⌃Y just did takes the verbs' place until the next key: the undo pair and the way out stay.
+            var undo = new List<LadderKey> { new(UndoKey, "undo", Drop: 2), new(RedoKey, "redo", Drop: 1), new($"{fkey}/Esc", "close") };
+            var said = MarkupText.Escape(note);
+            said = room <= 0 ? said : MarkupText.FitVisible(said, Math.Max(8, room - 24));
+            var rest = room <= 0 ? 0 : Math.Max(1, room - MarkupText.VisibleLength(said) - 3);
+            return $"[{ScreenPalette.Value}]{said}[/][{ScreenPalette.Label}] · [/]"
+                + HintMarkup(KeyLadder.Choose(undo, rest), fkey, closesWithEsc: true);
+        }
+
         return HintMarkup(KeyLadder.Choose(keys, room), fkey, closesWithEsc: true);
     }
 
@@ -100,6 +112,12 @@ internal static class ScreenChrome
     /// </summary>
     internal static int HeaderRoom(string title, int width) =>
         width <= 0 ? 0 : Math.Max(1, width - MarkupText.VisibleLength(title) - 2);
+
+    /// <summary>The chord that undoes a screen's last committed edit (<see cref="SettingsSession"/>).</summary>
+    internal const string UndoKey = "⌃Z";
+
+    /// <summary>The chord that redoes it.</summary>
+    internal const string RedoKey = "⌃Y";
 
     /// <summary>A verbs string (<see cref="ListHints"/>, <see cref="SingleListHints"/>) as ladder keys, each with its drop rank.</summary>
     private static IEnumerable<LadderKey> VerbKeys(string verbs)

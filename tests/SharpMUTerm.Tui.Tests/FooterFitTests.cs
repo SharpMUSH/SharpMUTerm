@@ -95,7 +95,7 @@ public class FooterFitTests
     internal static readonly string[] SettingsHeaders =
     [
         "settings", "worlds", "triggers", "route", "highlight", "set", "aliases", "timers", "keypad", "textansi", "input",
-        "logging", "password", "startup", "settings-search", "settings-meters", "settings-changed",
+        "logging", "password", "startup", "settings-search", "settings-meters", "settings-changed", "settings-undo",
         "settings-themes", "triggers-edit", "logging-edit", "keypad-edit", "password-edit", "startup-edit", "channels-f5",
         "join-wraps-f5",
     ];

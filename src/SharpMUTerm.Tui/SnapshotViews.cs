@@ -13,7 +13,7 @@ internal static class SnapshotViews
         null,
         "worlds", "settings", "triggers", "route", "highlight", "set", "aliases", "timers", "keypad", "textansi",
         "input", "logging", "password", "startup", "deletions",
-        "settings-search", "settings-meters", "settings-meters-pick", "settings-changed",
+        "settings-search", "settings-meters", "settings-meters-pick", "settings-changed", "settings-undo",
         "settings-themes", "settings-themes-solarized", "settings-themes-used",
         "triggers-edit", "logging-edit", "keypad-edit", "password-edit", "startup-edit",
         "freeze", "freeze-scrollback", "spawn", "split", "split-stacked", "move", "drag",

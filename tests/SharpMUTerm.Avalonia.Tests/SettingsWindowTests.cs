@@ -22,6 +22,9 @@ public class SettingsWindowTests
 
         public int Commits { get; set; }
 
+        /// <summary>The client's undo history, when the test wants the form to keep one.</summary>
+        public SettingsHistory? History { get; set; }
+
         public List<string> Opened { get; } = [];
 
         /// <summary>The sections the form lists; every built-in one is declared now, so a test adds one that is not.</summary>
@@ -52,6 +55,20 @@ public class SettingsWindowTests
                 () => ThemePreviews.IsDark(ThemeChoices.Resolve(Config)))
             {
                 WorldNotes = Notes,
+                CommitAs = History is null ? null : (change, what) =>
+                {
+                    var before = History.Capture();
+                    change();
+                    Commits++;
+                    History.Record(form!.Showing ?? initial, before, what);
+                    form.HistoryNote = null;
+                    form.NotifyChanged();
+                },
+                UndoRedo = History is null ? null : (section, redo) =>
+                {
+                    form!.HistoryNote = (redo ? History.Redo(section) : History.Undo(section)).Note;
+                    form.NotifyChanged();
+                },
             };
             return form;
         }
@@ -214,6 +231,50 @@ public class SettingsWindowTests
         await Assert.That(harness.Commits).IsEqualTo(1);
         await Assert.That(after).IsEqualTo("Light");
         await Assert.That(dark).IsFalse();
+    }
+
+    [Test]
+    public async Task CtrlZOnThePageUndoesTheSectionsEditAndTheFooterSaysSo()
+    {
+        var harness = new Harness();
+        harness.History = new SettingsHistory(harness.Config, id => BuiltInSettings.All.FirstOrDefault(s => s.Id == id)?.Title);
+        var fresh = new AppConfiguration().Text.KeepTextLegible;
+        var (edited, undone, said, redone, nothing, keys) = await Run(harness, "text", window =>
+        {
+            var toggle = (ToggleSwitch)window.FieldControls["legible"];
+            toggle.IsChecked = !fresh;
+            Dispatcher.UIThread.RunJobs();
+            var edited = harness.Config.Text.KeepTextLegible;
+
+            Press(window, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            var undone = harness.Config.Text.KeepTextLegible;
+            var said = window.FooterNote;
+
+            Press(window, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control | global::Avalonia.Input.KeyModifiers.Shift);
+            var redone = harness.Config.Text.KeepTextLegible;
+
+            Press(window, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            Press(window, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            return (edited, undone, said, redone, window.FooterNote, SettingsWindow.FooterKeys);
+        });
+
+        await Assert.That(edited).IsEqualTo(!fresh);
+        await Assert.That(undone).IsEqualTo(fresh).Because("Ctrl+Z undid the switch");
+        await Assert.That(said).StartsWith("Undid");
+        await Assert.That(redone).IsEqualTo(!fresh).Because("Ctrl+Shift+Z made it again");
+        await Assert.That(nothing).IsEqualTo($"Nothing to undo in {BuiltInSettings.Text.Title}.").Because("refused out loud");
+        await Assert.That(keys).StartsWith("Undo Ctrl+Z").Because("the mockup's footer");
+    }
+
+    private static void Press(SettingsWindow window, global::Avalonia.Input.Key key, global::Avalonia.Input.KeyModifiers modifiers)
+    {
+        window.RaiseEvent(new global::Avalonia.Input.KeyEventArgs
+        {
+            RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent,
+            Key = key,
+            KeyModifiers = modifiers,
+        });
+        Dispatcher.UIThread.RunJobs();
     }
 
     private static Harness TwoWorlds()

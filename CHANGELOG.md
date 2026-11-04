@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Settings edits can be undone and redone for the rest of the session: Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y) in the
+  desktop settings window, ⌃Z and ⌃Y on the terminal's settings screens. Each settings page keeps its own last 50
+  changes, an undo is saved and reaches connected sessions like any other change, and the footer (window) or header
+  (terminal) says what was undone — or that there was nothing to undo.
 - In the terminal, a docked panel's heading band is the boundary between stacked panes: Roleplay's composer and the
   who-is-here list no longer have a grey row between them (drag the HERE band's empty part to resize), and the panes
   are one column wider, because the spare column between the sidebar's rule and the output is gone.
