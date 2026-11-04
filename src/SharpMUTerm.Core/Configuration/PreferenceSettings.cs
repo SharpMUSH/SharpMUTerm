@@ -155,6 +155,14 @@ public sealed class TextSettings
     /// </summary>
     public int ActivityBarSeconds { get; set; } = DefaultActivityBarSeconds;
 
+    /// <summary>
+    /// Whether scrolling a pane back splits it: the history being read above, a band saying how far back it
+    /// is, and the newest few rows still arriving below (F7 ▸ SCROLLBACK, on by default). The split is inside
+    /// the pane, so it costs no cell of the pane's rectangle and reports no new size to a server. Off, a pane
+    /// scrolls as a whole, as it always did. A display setting, read when a pane is next scrolled back.
+    /// </summary>
+    public bool SplitScrollback { get; set; } = true;
+
     /// <summary>Thirty seconds: long enough to read a screenful, short enough not to become furniture.</summary>
     public const int DefaultActivityBarSeconds = 30;
 

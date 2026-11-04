@@ -364,14 +364,15 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 23 display rows: 5 group headings + 4 spacers + the meter table's column headings (drawn, never a
-        // stop) + 13 stops — eight settings in four groups, the three default meters, [+ meter], and the
-        // activity bar's hold. SOUND is left out because this caller passes no sound settings. Since F7 was
-        // drawn from its declared section the groups are COLOUR & LEGIBILITY, TEXT, LINKS & PICTURES,
-        // STATUS ROW & METERS and ACTIVITY; it was 21/10 with one row for the meters as a typed line.
-        await Assert.That(screen.Rows.Count).IsEqualTo(23);
+        // 26 display rows: 6 group headings + 5 spacers + the meter table's column headings (drawn, never a
+        // stop) + 14 stops — eight settings in four groups, the three default meters, [+ meter], the
+        // activity bar's hold and split scrollback. SOUND is left out because this caller passes no sound
+        // settings. Since F7 was drawn from its declared section the groups are COLOUR & LEGIBILITY, TEXT,
+        // LINKS & PICTURES, STATUS ROW & METERS, ACTIVITY and SCROLLBACK; it was 21/10 with one row for the
+        // meters as a typed line, and 23/13 before SCROLLBACK.
+        await Assert.That(screen.Rows.Count).IsEqualTo(26);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(13);
+        await Assert.That(model.Sizes[0]).IsEqualTo(14);
     }
 
     /// <summary>

@@ -32,6 +32,9 @@ public static class BuiltInSettings
     /// <summary>The bar marking where a reader left a window.</summary>
     public const string ActivityGroup = "Activity";
 
+    /// <summary>What a pane does when it is scrolled back.</summary>
+    public const string ScrollbackGroup = "Scrollback";
+
     /// <summary>Game sound; drawn only where a host passes the sound settings.</summary>
     public const string SoundGroup = "Sound";
 
@@ -99,6 +102,10 @@ public static class BuiltInSettings
                 ActivityGroup,
                 c => c.Text.ActivityBarSeconds, (c, v) => c.Text.ActivityBarSeconds = v,
                 "how long the NEW bar stays once you are back; 0 retires it at once", "unread new away"),
+
+            Flag("split-scrollback", "split the pane when scrolled back", ScrollbackGroup,
+                c => c.Text.SplitScrollback, (c, v) => c.Text.SplitScrollback = v,
+                "keep the newest lines in view below the history you are reading", "live tail history split"),
 
             Flag("sound", "game sound", SoundGroup,
                 c => c.Sound.Enabled, (c, v) => c.Sound.Enabled = v,

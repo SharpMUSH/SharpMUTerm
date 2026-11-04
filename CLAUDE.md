@@ -501,6 +501,51 @@ fallbacks) for inline images/maps.
     it. A window that gained nothing gets no bar.
   - **`SimulateKey` used to discard a global shortcut's result** and swallow the key either way. Harmless
     while every claim returned true; wrong the moment one declined, and it now honours the decline.
+- **Scrolling a pane back splits it** (`SharpMUTermApp.ScrollSplit.cs`, `ScrollSplitBarRenderer`; F7 ▸
+  SCROLLBACK ▸ `split the pane when scrolled back`, on by default; the `scrollback-up`/`scrollback-split` views).
+  History on top, a band (`── scrolled back 120 rows · End returns · ⌥F freezes ──`), the live tail below.
+  Decisions not to relitigate:
+  - **It is freeze's layout, not a third way of drawing a pane** — one more arm of `BuildTabContent`, the same
+    two-viewport grid as `BuildFrozenContent`. But the halves are the other way round: the window's *own*
+    control and its *own* `_paneScrolls[windowId]` viewport stay on top, so the scroll position, the
+    scrollback keys, the wheel, `ScrollTarget`, `RevealSearchBar`/`RevealAwayBar` and the status row's segment
+    all keep addressing the viewport they always did. The bottom (`tail:<id>`) is a *copy* of the buffer's
+    last `TailLines` (64) lines, re-fed by `RefreshScrollTail` wherever the window's control is told about a
+    change (`AppendWindowLine`, `RepaintPane`, `InsertImageRows`). It indexes nothing, so no chrome row, trim
+    or picture has a split point to move — which is why it is not built on `_freezePoints`.
+  - **Opened and closed in `SyncScrollbackState`**, where every scroll route lands: open while the window's
+    viewport is detached (`!AutoScroll`) and scrollable, closed once it re-attaches — scrolling the history down
+    to its end, ⌃End, or bare End. **Bare End is claimed only while a split is open and the command line's
+    caret is already at its end** (`CaretAtEnd`), where End has nothing left to do in the editor and where a
+    caret rests after typing; anywhere else End is the editor's and a second press returns. Also closed by ⌥F
+    (freeze takes over and splits at its freeze point, as it always does), by a frozen pane, and with the setting off.
+  - **The tail is 30% of the pane's viewport, at least 3 rows, and the history keeps at least 3**
+    (`TailRowsFor`); a pane shorter than 7 rows does not split. Fixed when the split opens (a `Cells` row),
+    not re-derived per frame.
+  - **Inside the pane rectangle, so NAWS never moves**: the band and the tail are rows of the tab's content;
+    `PaneOutputRects` is unchanged (`ScrollingBackSplitsThePane…` pins it).
+  - **A split pane is not "scrolled back" for the workspace** (`SetScrolledBack(…, !AutoScroll && !split)`):
+    its new lines are on screen in the tail, so they badge nothing and record no `NEW` boundary.
+  - **The band's count is the status row's figure** (display rows below the history viewport, capped through
+    `UnreadBadge` in a reserved field), refreshed on `PostBufferPaint` with the status row repainted beside it
+    when it moves, so the two surfaces never disagree. It says *rows*, not lines: a buffer index is not a
+    viewport row.
+- **F5 ▸ `join wraps` joins the lines a server hard-wrapped** (`ServerWrapJoiner`, Core; `WorldSession.Reflow`;
+  `WorldDefinition.JoinWrappedLines`, off by default; the `reflow` view). **A false join is worse than a missed
+  one**, so every condition is a reason not to join: the wrap column is known (third-longest of the last 128
+  non-blank lines, at least 8 seen, at least 40); neither line is a prompt, blank, rule-coloured, interactive
+  (MXP), or holds a three-space run (a column layout); the first row is *full* — within `Slack` (max(8, col/6))
+  of the column, no longer than it, and the next line's first word would not have fitted (one cell of
+  tolerance) — and ends in a letter, digit or comma (never a hyphen); the next starts unindented with a
+  lower-case letter; the style at the break is the same on both sides. Joined with one space; a paragraph
+  chains, each decision against the previous *physical* row. Decisions not to relitigate:
+  - **Ingest-time, in Core, before the triggers** — so a trigger matches the line the player reads, including
+    a phrase the server split. Like `strip incoming colour`, it changes the next line and never history.
+  - **A full row is held until the next line says whether it continues**, and released after
+    `ReflowHold` (250 ms) of quiet, by a prompt, a blank line, a parser swap or a disconnect — so nothing is
+    shown out of order and only the last full row of a burst is ever late (a paragraph's last row is short and
+    never held). The read loop and that timer share `_ingestGate`; nothing on the UI thread or in a script takes
+    it, so it cannot close a cycle with the script host's lock. Rebuilt per connection, like the parser.
 - **Every server's MSSP report is kept, and the INFO screen reads it** (`MsspCache`, Core; `mssp.json`
   beside `config.json`, keyed by `host:port`; F5 ▸ `i`). Fourth of the `save:`/`logRoot:`/`restore:`
   family with **one deliberate difference**: the constructor parameter is null by default like the
@@ -1130,7 +1175,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
-  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
+  `rail-long`, `scrollback`, `scrollback-up` (now the split opening, since split scrollback is on by default),
+  `scrollback-split` (the split doing its job: scrolled back, then more output arriving in the live tail under
+  the band while the history stays put), `reflow` (one room as a server wrapping at 78 sends it, then the same
+  rows through `ServerWrapJoiner` — ragged short of the edge at 120 columns, wrapping twice at 80),
+  `freeze-scrollback`,
   `links` (a URL too long for the pane it arrived in — a split, so the pane is narrower than the
   terminal, which is the whole defect; the frame shows one underlined span running to the pane's edge
   and continuing on the next row), `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
@@ -1211,7 +1260,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `LogFolder` or a fake sink would have passed all along. It also let a pile of per-test
   `character.Logging = new LoggingSettings()` workarounds be deleted — with them gone the suite exercises
   the gate, and an unfixed build leaks seven files a run instead of three.
-- **Four views have more output than a pane holds** — `scrollback`, `scrollback-up`,
+- **Five views have more output than a pane holds** — `scrollback`, `scrollback-up`, `scrollback-split`,
   `freeze-scrollback` and `away-scrollback`. Name them, rather than saying "the `scroll*` views": the
   prefix has now twice lagged behind the set it claimed to describe, and a reader looking for a
   long-output view goes by the list. (`away` is the shallow one and fits.) Every other view fits too,

@@ -57,6 +57,7 @@ public class TabActivityIndicatorTests
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
+        config.Text.SplitScrollback = false; // a split pane's new lines are on screen, so they badge nothing
         var app = clock is null
             ? new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(width, height))
             : new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(width, height), clock);

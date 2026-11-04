@@ -1000,6 +1000,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PublishScrollbars();
             SyncMapSizes();
             SyncPanelSizes();
+            SyncScrollSplitBars();
         };
         if (_sixel is not null)
         {
@@ -1494,6 +1495,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
                 ReArmWholeFrame();
             }
+        }
+
+        // Split scrollback (F7 ▸ SCROLLBACK): the same long buffer scrolled back with real PgUp keys, and then
+        // more output arriving — which lands in the live tail under the band while the history the reader
+        // scrolled to stays exactly where it was. `scrollback-up` shows the split opening; this one shows it
+        // doing its job.
+        if (string.Equals(view, "scrollback-split", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadLongScene(MainWindowId, ScrollbackSceneLines);
+            SettleScroll();
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SettleScroll();
+            LoadLongScene(MainWindowId, 4, first: ScrollbackSceneLines + 1);
+            SettleScroll();
+            ReArmWholeFrame();
+        }
+
+        // F5 ▸ join wraps: one room as a server wrapping at 78 sends it, then the same rows joined. In a pane
+        // wider than 80 the first block stops short of the edge; in a narrower one its rows wrap again.
+        if (string.Equals(view, "reflow", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadReflowScene();
+            SettleScroll();
+            ReArmWholeFrame();
         }
 
         // The bar marking where the reader was when they tabbed away from the terminal. Two views,
@@ -3233,6 +3259,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             control.AppendLine(Compose(buffer[^1]));
         }
+
+        RefreshScrollTail(windowId);
     }
 
     /// <summary>The most lines a pane's buffer (and so its control) is trimmed back to.</summary>
@@ -3475,6 +3503,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             FeedRange(control, buffer, 0, buffer.Count);
         }
+
+        RefreshScrollTail(windowId);
     }
 
     /// <summary>
@@ -4349,6 +4379,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 control.AppendLine(row);
             }
+
+            RefreshScrollTail(windowId);
         }
         else
         {
@@ -6194,6 +6226,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return false;
         }
 
+        if (TryEndReturnsFromSplit(e))
+        {
+            return true;
+        }
+
         Action<ScrollablePanelControl>? scroll = (key, ctrl, shift) switch
         {
             (ConsoleKey.PageUp, false, _) => panel => panel.ScrollVerticalBy(-PageRows(panel)),
@@ -6307,8 +6344,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void SyncScrollbackState(string? windowId = null)
     {
         windowId ??= ActiveWindowId();
+
+        // A split pane is not one whose new lines go unseen — they are arriving in its live tail — so it is
+        // not "scrolled back" for the unread badge or the activity bar, whatever its history viewport says.
+        SyncScrollSplit(windowId);
         if (_paneScrolls.GetValueOrDefault(windowId) is { } live
-            && _workspace.SetScrolledBack(windowId, !live.AutoScroll))
+            && _workspace.SetScrolledBack(windowId, !live.AutoScroll && !IsScrollSplit(windowId)))
         {
             RefreshTabTitles();
         }
@@ -9118,6 +9159,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var windowId = pane.ActiveTab ?? MainWindowId;
         _workspace.Layout.ToggleFreezeFocused();
 
+        // Freeze is the other split, and takes over from a scrollback one: the pane splits at the freeze
+        // point, as ⌥F always does, and the scrollback split is forgotten rather than drawn inside it.
+        CloseScrollSplit(windowId);
+
         if (pane.Frozen)
         {
             _freezePoints[windowId] = _lines.TryGetValue(windowId, out var buf) ? buf.Count : 0;
@@ -10607,6 +10652,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (pane.Frozen && pane.ActiveTab == windowId)
         {
             return BuildFrozenContent(windowId, window.Title);
+        }
+
+        if (pane.ActiveTab == windowId && _scrollSplits.ContainsKey(windowId))
+        {
+            return BuildScrollSplitContent(windowId, window.Title);
         }
 
         if (windowId == WebWindowId)
@@ -12294,6 +12344,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _paneScrolls.Remove(id);              // and its scroll position: a reopened window starts live
         _paneScrolls.Remove(FrozenRegionKey(id));
         _frozenPanes.Remove(id);
+        ForgetScrollSplit(id);
         _drafts.Forget(id);        // both bars: a closed window keeps neither of its two drafts
         _pendingGrabs.Remove(id);
         _secondBars.Forget(id);    // and a same-id window later starts from F8's default again
