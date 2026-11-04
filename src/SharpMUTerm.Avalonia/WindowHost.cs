@@ -78,5 +78,8 @@ internal static class WindowHost
         // F1 and the docked composer are a native editor: a proportional or monospace face, IME, native selection and
         // a real underline under a misspelling. The draft, the send and the keys stay the client's.
         NativeComposer = driver.Composer,
+
+        // The title bar and the taskbar entry say who is in front: Character@World — SharpMUTerm.
+        Title = driver.TitleBar,
     };
 }

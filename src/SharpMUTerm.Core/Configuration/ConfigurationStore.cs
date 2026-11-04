@@ -73,7 +73,13 @@ public static class ConfigurationStore
     /// permission problem on every settings edit would be trained away in a day.
     /// </para>
     /// </summary>
-    public static AppConfiguration Load(string path, Action<string>? report = null)
+    /// <param name="path">The configuration file.</param>
+    /// <param name="report">Called with anything worth one line in the diagnostics log.</param>
+    /// <param name="vault">
+    /// Where the passwords are: the OS credential store first and then the file (<see cref="CredentialVault"/>), or
+    /// null for the file alone. The same vault is handed to every save after this load.
+    /// </param>
+    public static AppConfiguration Load(string path, Action<string>? report = null, CredentialVault? vault = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         if (!File.Exists(path))
@@ -82,7 +88,21 @@ public static class ConfigurationStore
         }
 
         var configuration = Deserialize(File.ReadAllText(path));
-        ApplySecrets(configuration, SecretsStore.Read(SecretsStore.PathFor(path)), report);
+        var secretsPath = SecretsStore.PathFor(path);
+        var read = SecretsStore.Read(secretsPath);
+        if (vault is null)
+        {
+            ApplySecrets(configuration, read, report);
+        }
+        else
+        {
+            vault.Load(configuration, read, secretsPath, report);
+            if (read.Problem is { } problem)
+            {
+                report?.Invoke(problem);
+            }
+        }
+
         return configuration;
     }
 
@@ -142,14 +162,17 @@ public static class ConfigurationStore
     /// transaction; this is the ordering whose partial state costs less.
     /// </para>
     /// </summary>
-    public static void Save(string path, AppConfiguration configuration)
+    /// <param name="path">The configuration file.</param>
+    /// <param name="configuration">What to write.</param>
+    /// <param name="vault">The vault the configuration was loaded through, or null for the file alone.</param>
+    public static void Save(string path, AppConfiguration configuration, CredentialVault? vault = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(configuration);
         var full = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
 
-        var secrets = ReconcileSecrets(configuration);
+        var secrets = vault is null ? ReconcileSecrets(configuration) : vault.Reconcile(configuration);
         SecretsStore.Write(SecretsStore.PathFor(full), secrets);
         File.WriteAllText(full, Serialize(configuration));
     }

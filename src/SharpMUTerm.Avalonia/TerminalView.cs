@@ -93,6 +93,13 @@ internal sealed class TerminalView : Control
         pointer.MenuRequested += (_, items) => Dispatcher.UIThread.Post(() => OpenMenu(items));
     }
 
+    /// <summary>
+    /// A screen reader finds the window in front's newest lines here, as a read-only document
+    /// (<see cref="TerminalViewAutomationPeer"/>), rather than an unnamed picture of cells.
+    /// </summary>
+    protected override global::Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer() =>
+        new TerminalViewAutomationPeer(this, _driver.Announcer);
+
     /// <summary>The cell size in logical units, for placing a native view over cells (<see cref="DesktopLayer"/>).</summary>
     internal Size CellExtent => CellSize;
 

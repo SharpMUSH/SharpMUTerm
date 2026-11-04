@@ -120,6 +120,13 @@ internal sealed record ClientHost
     public required INativeComposer? NativeComposer { get; init; }
 
     /// <summary>
+    /// Where the title for what is in front goes (<c>Character@World — SharpMUTerm</c>,
+    /// <see cref="SharpMUTerm.Client.Chrome.WindowTitle"/>): the desktop window's title bar, or the terminal's own
+    /// title through OSC 2. Null in the snapshot, the tests and <c>--plain</c>, which have no title to set.
+    /// </summary>
+    public required IWindowTitle? Title { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -160,6 +167,7 @@ internal sealed record ClientHost
         Chrome = HostChrome.None,
         NativePalette = null,
         NativeComposer = null,
+        Title = new TerminalTitle(driver),
     };
 
     /// <summary>
@@ -186,6 +194,7 @@ internal sealed record ClientHost
         Chrome = HostChrome.None,
         NativePalette = null,
         NativeComposer = null,
+        Title = null,
     };
 
     /// <summary>
@@ -234,6 +243,7 @@ internal sealed record ClientHost
             FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
             Audio = null, // a test never makes a noise
             Presence = null, // nor talks to Discord
+            Title = null, // nor retitles the terminal running the suite
         };
 }
 

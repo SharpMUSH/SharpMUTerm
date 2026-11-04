@@ -8,6 +8,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // A desktop link handler's launch: the link and nothing else (ClientOptions.NarrowToLink says why).
+        args = Tui.ClientOptions.NarrowToLink(args);
         // A window has no stdin to read, and the framework reads a redirected one as piped input, behind a modal
         // "Reading input" dialog that stays up for as long as the pipe is open. Launched from anything that
         // leaves stdin a pipe, the client would open on that dialog. The terminal snapshot does the same.
@@ -24,6 +26,13 @@ internal static class Program
         if (options.RenderPng is not null)
         {
             return RenderPng.Run(options);
+        }
+
+        // A telnet:// link (the desktop runs `sharpmuterm-window %U` when one is clicked) goes to the client already
+        // running, when there is one, before any window of this launch is shown. Otherwise this launch follows it.
+        if (!options.Demo && Tui.Program.LinkArgument(options.ClientArgs) is { } link && Tui.LinkHandoff.TrySend(link))
+        {
+            return 0;
         }
 
         App.Options = options;

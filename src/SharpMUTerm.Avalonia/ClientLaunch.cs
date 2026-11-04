@@ -15,6 +15,10 @@ namespace SharpMUTerm.Avalonia;
 /// </summary>
 internal static class ClientLaunch
 {
+    // The live client's passwords: the OS credential store first, secrets.json behind it. Made by the live load and
+    // handed to the live run, whose saves need what the load learned; the demo has none and touches neither.
+    private static CredentialVault? _vault;
+
     public static AppConfiguration LoadConfiguration(WindowOptions options, List<string> notices)
     {
         if (options.Demo)
@@ -26,7 +30,8 @@ internal static class ClientLaunch
 
         // --theme is for the demo only: the live configuration is saved on the way out, and a flag given for one
         // launch must not become the user's theme.
-        return Tui.Program.LoadConfiguration(notices.Add);
+        _vault = Tui.Program.LiveVault();
+        return Tui.Program.LoadConfiguration(notices.Add, _vault);
     }
 
     /// <summary>Runs the client on <paramref name="driver"/> until it quits; blocks the calling thread.</summary>
@@ -38,7 +43,7 @@ internal static class ClientLaunch
             return app.Run([]);
         }
 
-        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard, options.Chrome));
+        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard, options.Chrome), vault: _vault);
     }
 
     /// <summary>The demo client, with its <c>--view</c> scene laid out and not yet running.</summary>
