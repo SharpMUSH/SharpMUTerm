@@ -115,7 +115,9 @@ internal sealed partial class SharpMUTermApp
     /// host has none (the terminal, the snapshot, the tests) or the section declares no fields, which keep their
     /// cell screens.
     /// </summary>
-    private bool TryOpenNativeSettings(SettingsSectionContribution? section)
+    /// <param name="section">The section to open on.</param>
+    /// <param name="item">For a list section, the item to open on (the trigger builder's new rule), or null.</param>
+    private bool TryOpenNativeSettings(SettingsSectionContribution? section, object? item = null)
     {
         if (Host.NativeSettings is not { } native || section is null || !SettingsForm.IsDeclared(section))
         {
@@ -123,9 +125,21 @@ internal sealed partial class SharpMUTermApp
         }
 
         _settings.CloseAll();
-        native.Show(NativeSettingsForm(section.Id));
+        native.Show(NativeSettingsForm(section.Id, item));
         return true;
     }
+
+    /// <summary>
+    /// What the list sections need that the configuration does not hold, read here on the client's thread: the windows a
+    /// route can name, the panes' recent output for F2's live test, and this host's own answer to which chords a key
+    /// binding can be given (<see cref="MacroKeys.Verdict"/> over <see cref="ClientHost.Keys"/>), so the window's F4 says
+    /// what is true of the window and the terminal's what is true of the terminal.
+    /// </summary>
+    private SettingsContext ListContext() => new(
+        RouteTargets(),
+        TriggerTestLines(),
+        key => MacroKeys.Verdict(Host.Keys, key) is { Fires: false } verdict ? verdict.Reason : null,
+        MacroKeys.Bindable(Host.Keys));
 
     /// <summary>
     /// The declared settings as a form a host draws natively, opening on <paramref name="initial"/>. Every change it
@@ -134,7 +148,7 @@ internal sealed partial class SharpMUTermApp
     /// meter table reads the game data of the window focused when the form opened (<see cref="SettingsGameData"/>),
     /// captured here because the store is thread-safe and the focus is not.
     /// </summary>
-    internal SettingsForm NativeSettingsForm(string initial)
+    internal SettingsForm NativeSettingsForm(string initial, object? item = null)
     {
         var edits = new ScreenEdits(SaveConfiguration);
         var data = SettingsGameData();
@@ -162,7 +176,9 @@ internal sealed partial class SharpMUTermApp
             themes,
             () => ThemePreviews.IsDark(_theme),
             world,
-            character);
+            character,
+            ListContext(),
+            item);
         return form;
     }
 

@@ -202,6 +202,38 @@ internal static class ScreenLists
     /// The row an item occupies in the flattened pane: every earlier set's items, then its own position.
     /// -1 when no set holds it.
     /// </summary>
+    /// <summary>
+    /// A list row's ⌥↑/⌥↓: moves <paramref name="item"/> one place within the set holding it and answers its new
+    /// flattened index, or null at either end of its set — a move never carries an item into the next set, which is
+    /// what <see cref="Owner{T}"/> is for.
+    /// </summary>
+    internal static Func<int, int?> Mover<T>(IReadOnlyList<TriggerSet> sets, Func<TriggerSet, List<T>> items, T item)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(sets);
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(item);
+        return delta =>
+        {
+            if (OwnerOf(sets, items, item) is not { } owner)
+            {
+                return null;
+            }
+
+            var list = items(owner);
+            var at = IndexOf(list, item);
+            var to = at + delta;
+            if (to < 0 || to >= list.Count)
+            {
+                return null;
+            }
+
+            list.RemoveAt(at);
+            list.Insert(to, item);
+            return Flattened(sets, items, item);
+        };
+    }
+
     internal static int Flattened<T>(IReadOnlyList<TriggerSet> sets, Func<TriggerSet, List<T>> items, T item)
         where T : class
     {

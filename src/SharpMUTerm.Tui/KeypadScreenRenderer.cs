@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Settings;
 using System.Globalization;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -96,9 +97,9 @@ internal static class KeypadScreenRenderer
     internal const string AddBindingLabel = "+ binding";
 
     /// <summary>What a brand-new binding is called and sends, before it is edited.</summary>
-    private const string NewBindingName = "New Binding";
+    private const string NewBindingName = BuiltInSettings.NewBindingName;
 
-    private const string NewBindingCommand = "look";
+    private const string NewBindingCommand = BuiltInSettings.NewBindingCommand;
 
     /// <summary>
     /// Longest command a numpad cell shows when the column has no width to reason from — the merged
@@ -220,6 +221,12 @@ internal static class KeypadScreenRenderer
     /// without them the screen simply offers no buttons rather than offering ones that would throw.
     /// </param>
     /// <param name="selected">Which binding the cursor has anchored, or -1 for none.</param>
+    /// <summary>F4's declared list (<see cref="BuiltInSettings.Keypad"/>), whose item fields the rows are built from.</summary>
+    internal static SettingsCollection Declared => BuiltInSettings.Keypad.Collection!;
+
+    /// <summary>The binding row's fields by declared id, in ⇥ order; <c>set</c> only when the screen knows the sets.</summary>
+    internal static IReadOnlyList<string> RowFieldOrder { get; } = ["name", "command", "key", "set"];
+
     internal static ScreenModel Model(
         HostKeys keys,
         IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets = null, int selected = -1)
@@ -238,20 +245,20 @@ internal static class KeypadScreenRenderer
     private static ScreenRow BindingRow(
         HostKeys keys, Macro macro, IReadOnlyList<Macro> macros, IReadOnlyList<TriggerSet>? sets)
     {
-        var fields = new List<ScreenField>
-        {
-            ScreenField.Name("name", () => macro.Name, v => macro.Name = v),
-            ScreenField.Text("command", () => macro.Command, v => macro.Command = v),
-            ScreenField.Key(keys, "key", () => macro.Key, v => macro.Key = v, key => AlreadyBound(macros, macro, key)),
-        };
+        var target = new SettingTarget(DeclaredFields.Over(sets ?? Array.Empty<TriggerSet>()), Item: macro);
+        var fields = RowFieldOrder
+            .Where(id => sets is not null || id != "set")
+            .Select(id => DeclaredFields.Item(
+                Declared.Field(id),
+                target,
+                SettingsContext.Empty,
+                () => ScreenLists.Owner(sets!, s => s.Macros, macro),
+                keys,
+                key => AlreadyBound(macros, macro, key)))
+            .ToArray();
 
-        if (sets is not null)
-        {
-            fields.Add(ScreenLists.Owner(sets, s => s.Macros, macro));
-        }
-
-        return ScreenRow.Of(
-            ScreenToggle.Bind(() => macro.Enabled, v => macro.Enabled = v), fields.ToArray());
+        return ScreenRow.Of(DeclaredFields.Toggle(Declared.Field(Declared.EnabledField), target), fields)
+            with { Move = sets is null ? null : ScreenLists.Mover(sets, s => s.Macros, macro) };
     }
 
     /// <summary>
@@ -487,7 +494,7 @@ internal static class KeypadScreenRenderer
 
         lines.Add(string.Empty);
         lines.AddRange(ScreenChrome.Buttons(
-            Buttons(keys, sets, selected), cursor, 0, macros.Count, width));
+            Buttons(keys, sets, selected), cursor, 0, macros.Count, width, movable: sets is not null));
         return ScreenChrome.Choices(lines, cursor.Edit, width);
     }
 

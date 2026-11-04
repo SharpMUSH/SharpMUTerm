@@ -221,11 +221,16 @@ internal enum ScreenButtonKind
 /// Puts the row's value back to its default, or null when the row is at its default or has none to go back
 /// to — so <c>r reset</c> is offered exactly where it would do something. Only declared settings carry one.
 /// </param>
+/// <param name="Move">
+/// Moves the row's item up (−1) or down (+1) within its list — ⌥↑/⌥↓ on a list screen — and answers the row it now
+/// sits at, or null when it is already at that end. Only the list screens' item rows carry one.
+/// </param>
 internal readonly record struct ScreenRow(
     ScreenToggle? Toggle = null,
     IReadOnlyList<ScreenField>? Fields = null,
     ScreenButton? Button = null,
-    Action? Reset = null)
+    Action? Reset = null,
+    Func<int, int?>? Move = null)
 {
     /// <summary>A selectable row with nothing to press and nothing to type into.</summary>
     internal static ScreenRow Stop => default;

@@ -150,13 +150,13 @@ public class SettingsWindowTests
         var harness = new Harness();
         var shown = await Run(harness, "text", window =>
         {
-            var item = window.SectionList.Items.OfType<ListBoxItem>().Single(i => Equals(i.Tag, "triggers"));
+            var item = window.SectionList.Items.OfType<ListBoxItem>().Single(i => Equals(i.Tag, "packages"));
             window.SectionList.SelectedItem = item;
             Dispatcher.UIThread.RunJobs();
             return window.ShownSection;
         });
 
-        await Assert.That(harness.Opened).IsEquivalentTo(new[] { "triggers" });
+        await Assert.That(harness.Opened).IsEquivalentTo(new[] { "packages" });
         await Assert.That(shown).IsEqualTo("text");
     }
 

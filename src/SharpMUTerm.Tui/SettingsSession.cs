@@ -208,6 +208,12 @@ internal sealed class SettingsSession
             case ConsoleKey.Enter:
                 return Activate(model);
 
+            case ConsoleKey.UpArrow when key.Modifiers == ConsoleModifiers.Alt:
+                return Reorder(model, -1);
+
+            case ConsoleKey.DownArrow when key.Modifiers == ConsoleModifiers.Alt:
+                return Reorder(model, 1);
+
             case ConsoleKey.UpArrow:
                 return Changed(Selection.MoveVertically(-1, model.Sizes, model.Layout));
 
@@ -329,6 +335,29 @@ internal sealed class SettingsSession
         }
 
         Edits.Apply(reset);
+        return ScreenAction.Redraw;
+    }
+
+    /// <summary>
+    /// ⌥↑/⌥↓ on a list screen's item moves that item one place within its set — order is meaning for a trigger,
+    /// since the first rule that stops processing wins — through <see cref="Edits"/>, and the cursor goes with it.
+    /// At either end of its set, and on a row that is not an item, the key is not ours.
+    /// </summary>
+    private ScreenAction Reorder(ScreenModel model, int delta)
+    {
+        if (model.RowAt(Selection.Pane, Selection.Index).Move is not { } move)
+        {
+            return ScreenAction.None;
+        }
+
+        // The move is made first and saved only if it happened: at the end of its set nothing changed to save.
+        if (move(delta) is not { } row)
+        {
+            return ScreenAction.None;
+        }
+
+        Edits.Apply(() => { });
+        Selection.Seed(Selection.Pane, row);
         return ScreenAction.Redraw;
     }
 

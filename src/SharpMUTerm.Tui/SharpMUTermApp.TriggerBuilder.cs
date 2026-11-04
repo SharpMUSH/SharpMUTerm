@@ -85,6 +85,13 @@ internal sealed partial class SharpMUTermApp
         set.Triggers.Add(trigger);
         SaveConfiguration();
 
+        // The declared editor in either host: the window's native list on the new rule, or the cell F2 with its pattern
+        // being typed.
+        if (TryOpenNativeSettings(Section("triggers"), trigger))
+        {
+            return true;
+        }
+
         var index = _config.TriggerSets.SelectMany(s => s.Triggers).ToList().IndexOf(trigger);
         _settings.Toggle(ConsoleKey.F2, () => TriggersScreen(editPattern: index));
         return true;

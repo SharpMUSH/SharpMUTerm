@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Theming;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -102,8 +103,21 @@ internal static class TriggersScreenRenderer
     internal const int MatchTypeField = 10;
 
     /// <summary>The words the match field offers, in the order <see cref="TriggerPatterns.Offered"/> gives.</summary>
-    internal static IReadOnlyList<string> MatchTypeNames { get; } =
-        TriggerPatterns.Offered.Select(TriggerPatterns.Describe).ToArray();
+    internal static IReadOnlyList<string> MatchTypeNames => BuiltInSettings.MatchTypeNames;
+
+    /// <summary>F2's declared list (<see cref="BuiltInSettings.Triggers"/>), whose item fields this screen's rows are built from.</summary>
+    internal static SettingsCollection Declared => BuiltInSettings.Triggers.Collection!;
+
+    /// <summary>
+    /// The rule row's fields by declared id, in ⇥ order — so position <see cref="NameField"/> holds <c>name</c>,
+    /// <see cref="MatchTypeField"/> holds <c>match</c>, and every ordinal addresses what it always did. The declaration's
+    /// own order is the window's grouping; this is the cell screen's.
+    /// </summary>
+    internal static IReadOnlyList<string> RowFieldOrder { get; } =
+        ["name", "pattern", "route", "fg", "bg", "attributes", "rewrite", "respond", "script", "set", "match"];
+
+    /// <summary>The editor pane's check boxes by declared id, in the order the pane draws them.</summary>
+    internal static IReadOnlyList<string> EditorFieldOrder { get; } = ["gag", "stop", "case"];
 
     /// <summary>
     /// How many sample rows the live test always draws, matching or not, so the rows under it do not jump
@@ -144,9 +158,9 @@ internal static class TriggersScreenRenderer
     /// matches, which is why a new trigger is left enabled while a new timer is not (a timer fires
     /// without being provoked; a trigger with nothing to do does not).
     /// </summary>
-    private const string NewTriggerName = "New Trigger";
+    private const string NewTriggerName = BuiltInSettings.NewTriggerName;
 
-    private const string NewTriggerPattern = "text to match";
+    private const string NewTriggerPattern = BuiltInSettings.NewTriggerPattern;
 
     /// <summary>The window a rule routes to, as the route field reads and writes it.</summary>
     private static string Route(Trigger trigger) => trigger.Actions.SpawnTarget ?? NoRoute;
@@ -311,49 +325,20 @@ internal static class TriggersScreenRenderer
         ArgumentNullException.ThrowIfNull(sets);
 
         var flattened = Flatten(sets);
-        var callbacks = NamedCallbacks(sets);
-        var rules = ScreenModel.Rows(flattened, entry => ScreenRow.Of(
-            ScreenToggle.Bind(() => entry.Trigger.Enabled, v => entry.Trigger.Enabled = v),
-            ScreenField.Name("name", () => entry.Trigger.Name, v => entry.Trigger.Name = v),
-            ScreenField.TriggerPattern(
-                "match pattern",
-                () => entry.Trigger.Pattern,
-                v => entry.Trigger.Pattern = v,
-                () => entry.Trigger.MatchType),
-            ScreenField.WindowName(
-                "route",
-                () => Route(entry.Trigger),
-                v => entry.Trigger.Actions.SpawnTarget = v == NoRoute ? null : v.Trim(),
-                Routes(entry.Trigger, routeTargets)),
-            ScreenField.Colour(
-                "highlight fg",
-                () => entry.Trigger.Actions.HighlightForeground,
-                v => entry.Trigger.Actions.HighlightForeground = v),
-            ScreenField.Colour(
-                "highlight bg",
-                () => entry.Trigger.Actions.HighlightBackground,
-                v => entry.Trigger.Actions.HighlightBackground = v),
-            ScreenField.Flags<TextAttributes>(
-                "attributes",
-                () => entry.Trigger.Actions.AddAttributes,
-                v => entry.Trigger.Actions.AddAttributes = v),
-            ScreenField.Template(
-                "rewrite", () => entry.Trigger.Actions.Rewrite, v => entry.Trigger.Actions.Rewrite = v),
-            ScreenField.Template(
-                "respond",
-                () => entry.Trigger.Actions.SendResponse,
-                v => entry.Trigger.Actions.SendResponse = v),
-            ScreenField.Template(
-                "script",
-                () => entry.Trigger.Actions.ScriptCallback,
-                v => entry.Trigger.Actions.ScriptCallback = v,
-                Callbacks(entry.Trigger, callbacks)),
-            ScreenLists.Owner(sets, s => s.Triggers, entry.Trigger),
-            ScreenField.Choice(
-                "match",
-                () => TriggerPatterns.Describe(entry.Trigger.MatchType),
-                v => SetMatchType(entry.Trigger, TriggerPatterns.Parse(v) ?? entry.Trigger.MatchType),
-                MatchTypeNames)))
+        var config = DeclaredFields.Over(sets);
+        var context = SettingsContext.Empty with { Windows = routeTargets ?? Array.Empty<string>() };
+        var rules = ScreenModel.Rows(flattened, entry =>
+            {
+                var target = new SettingTarget(config, Item: entry.Trigger);
+                return ScreenRow.Of(
+                    DeclaredFields.Toggle(Declared.Field(Declared.EnabledField), target),
+                    RowFieldOrder.Select(id => DeclaredFields.Item(
+                        Declared.Field(id),
+                        target,
+                        context,
+                        () => ScreenLists.Owner(sets, s => s.Triggers, entry.Trigger))).ToArray())
+                    with { Move = ScreenLists.Mover(sets, s => s.Triggers, entry.Trigger) };
+            })
             .Concat(Buttons(sets, selectedTrigger))
             .ToArray();
 
@@ -365,12 +350,10 @@ internal static class TriggersScreenRenderer
         var trigger = flattened[selectedTrigger].Trigger;
         // Appended rather than inserted: these are the pane's cursor stops, and putting the new one
         // above the two that were here would renumber rows the screen (and its tests) already address.
-        var editor = new[]
-        {
-            ScreenRow.Of(ScreenToggle.Bind(() => trigger.Actions.Gag, v => trigger.Actions.Gag = v)),
-            ScreenRow.Of(ScreenToggle.Bind(() => trigger.StopProcessing, v => trigger.StopProcessing = v)),
-            ScreenRow.Of(ScreenToggle.Bind(() => trigger.CaseSensitive, v => trigger.CaseSensitive = v)),
-        };
+        var selected = new SettingTarget(config, Item: trigger);
+        var editor = EditorFieldOrder
+            .Select(id => ScreenRow.Of(DeclaredFields.Toggle(Declared.Field(id), selected)))
+            .ToArray();
 
         return new ScreenModel(rules, editor);
     }
@@ -381,16 +364,7 @@ internal static class TriggersScreenRenderer
     /// form of what they built; moving away leaves the text as typed, because there is no plain-language
     /// reading of an arbitrary regex to convert it to.
     /// </summary>
-    internal static void SetMatchType(Trigger trigger, TriggerMatchType type)
-    {
-        ArgumentNullException.ThrowIfNull(trigger);
-        if (type == TriggerMatchType.Regex && trigger.MatchType != TriggerMatchType.Regex)
-        {
-            trigger.Pattern = TriggerPatterns.ToRegex(trigger.MatchType, trigger.Pattern);
-        }
-
-        trigger.MatchType = type;
-    }
+    internal static void SetMatchType(Trigger trigger, TriggerMatchType type) => BuiltInSettings.SetMatchType(trigger, type);
 
     /// <summary>
     /// The rule list's buttons. A rule is added to the set that owns the selection rather than to some
@@ -504,7 +478,7 @@ internal static class TriggersScreenRenderer
 
         left.Add(string.Empty);
         left.AddRange(ScreenChrome.Buttons(
-            Buttons(sets, selectedTrigger), cursor, 0, flattened.Count, width));
+            Buttons(sets, selectedTrigger), cursor, 0, flattened.Count, width, movable: true));
         left.Add(string.Empty);
         left.AddRange(FlagLegend(Selected(flattened, selectedTrigger), width));
         return left;

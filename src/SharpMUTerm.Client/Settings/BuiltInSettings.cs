@@ -15,7 +15,7 @@ namespace SharpMUTerm.Client.Settings;
 /// else written — the default is read off a fresh <see cref="AppConfiguration"/>, never restated here.
 /// </para>
 /// </summary>
-public static class BuiltInSettings
+public static partial class BuiltInSettings
 {
     /// <summary>F7's groups, in the order they are drawn. The theme: the client's own colours, picked with a preview.</summary>
     public const string ThemeGroup = "Theme";
@@ -359,18 +359,24 @@ public static class BuiltInSettings
     };
 
     /// <summary>Every section the client declares, in their order: the screens F2 to F10.</summary>
-    public static IReadOnlyList<SettingsSectionContribution> All { get; } =
+    /// <remarks>
+    /// Built on first read rather than in a field initializer: the list sections are declared in another file of this
+    /// partial class, and the order static initializers run in across files is not one to depend on.
+    /// </remarks>
+    public static IReadOnlyList<SettingsSectionContribution> All => _all ??=
     [
         World,
-        Listed("triggers", "Triggers & spawn routing", "F2", 20),
-        Listed("aliases", "Aliases", "F3", 30),
-        Listed("keypad", "Keypad & hotkeys", "F4", 40),
-        Listed("timers", "Timers", "F6", 50),
+        Triggers,
+        Aliases,
+        Keypad,
+        Timers,
         Text,
         Input,
         Character,
         Listed("packages", "Packages", "F10", 90),
     ];
+
+    private static IReadOnlyList<SettingsSectionContribution>? _all;
 
     /// <summary>Registers every built-in section.</summary>
     public static void Register(SettingsSectionList sections)

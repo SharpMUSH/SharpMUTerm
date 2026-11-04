@@ -657,8 +657,12 @@ internal static class ScreenChrome
     /// <param name="pane">Which pane these belong to.</param>
     /// <param name="firstIndex">The pane row index of the first button — i.e. the list's length.</param>
     /// <param name="width">How wide the cursor bar runs, matching the pane's other rows.</param>
+    /// <param name="movable">
+    /// Whether the list's items can be moved with ⌥↑/⌥↓; a row under the removal row then says so, naming the same
+    /// item — the key acts on the row the cursor is on, as Delete does, so it is drawn the way Delete's row is.
+    /// </param>
     internal static List<string> Buttons(
-        IReadOnlyList<ScreenRow> buttons, ScreenFocus cursor, int pane, int firstIndex, int width)
+        IReadOnlyList<ScreenRow> buttons, ScreenFocus cursor, int pane, int firstIndex, int width, bool movable = false)
     {
         ArgumentNullException.ThrowIfNull(buttons);
 
@@ -676,6 +680,11 @@ internal static class ScreenChrome
                 ScreenButtonKind.Detail => KeyHintRow(button, InfoWords),
                 _ => Cursor(AddRow(button), cursor.IsOn(pane, firstIndex + i), width),
             });
+
+            if (movable && button.Kind == ScreenButtonKind.Remove)
+            {
+                lines.Add(KeyHintRow(button with { Label = MoveKeyLabel }, MovesWord));
+            }
         }
 
         return lines;
@@ -699,6 +708,12 @@ internal static class ScreenChrome
         $"[{ScreenPalette.Accent}]{MarkupText.Escape(button.Label)}[/]"
         + $"  [{ScreenPalette.Label}]{verb}[/] "
         + $"[{ScreenPalette.Value}]{MarkupText.Escape(button.Target ?? string.Empty)}[/]";
+
+    /// <summary>The keys a list row is moved with, as its hint row names them.</summary>
+    internal const string MoveKeyLabel = "⌥↑↓";
+
+    /// <summary>The verb on the move row.</summary>
+    internal const string MovesWord = "moves";
 
     /// <summary>The verb on a removal row, between the key and what it would take.</summary>
     internal const string RemovesWord = "removes";

@@ -18,6 +18,12 @@ public enum SettingScope
 
     /// <summary>One character: a property of a <see cref="CharacterDefinition"/>.</summary>
     Character,
+
+    /// <summary>
+    /// One item of a list section (<see cref="SettingsCollection"/>): a property of a rule, an alias, a timer or a key
+    /// binding, edited on the item a surface has selected (<see cref="SettingTarget.Item"/>).
+    /// </summary>
+    Item,
 }
 
 /// <summary>
@@ -28,8 +34,9 @@ public enum SettingScope
 /// <param name="Config">The live configuration.</param>
 /// <param name="World">The world a world-scoped field edits, or null.</param>
 /// <param name="Character">The character a character-scoped field edits, or null.</param>
+/// <param name="Item">The item (a trigger, an alias, a timer, a key binding) an item-scoped field edits, or null.</param>
 public readonly record struct SettingTarget(
-    AppConfiguration Config, WorldDefinition? World = null, CharacterDefinition? Character = null)
+    AppConfiguration Config, WorldDefinition? World = null, CharacterDefinition? Character = null, object? Item = null)
 {
     /// <summary>An app-wide target over <paramref name="config"/>.</summary>
     public static implicit operator SettingTarget(AppConfiguration config) => new(config);
@@ -39,6 +46,7 @@ public readonly record struct SettingTarget(
     {
         SettingScope.World => World is not null,
         SettingScope.Character => Character is not null,
+        SettingScope.Item => Item is not null,
         _ => true,
     };
 }
@@ -95,6 +103,7 @@ public sealed class SettingBinding<T> : SettingBinding
     private readonly Func<T, string>? _format;
     private readonly Func<T, string>? _describe;
     private readonly Lazy<string> _defaultText;
+    private readonly Func<SettingTarget> _fresh = FreshTarget;
 
     /// <param name="get">Reads the value. It must not change the configuration.</param>
     /// <param name="set">Writes the value.</param>
@@ -127,9 +136,11 @@ public sealed class SettingBinding<T> : SettingBinding
         Action<SettingTarget, T> set,
         Func<T, string>? format,
         Func<T, string>? describe,
-        bool resettable)
+        bool resettable,
+        Func<SettingTarget>? fresh = null)
     {
         _scope = scope;
+        _fresh = fresh ?? FreshTarget;
         _get = get;
         _set = set;
         _format = format;
@@ -177,6 +188,37 @@ public sealed class SettingBinding<T> : SettingBinding
             resettable);
     }
 
+    /// <summary>
+    /// A field of one item of a list section — a trigger, an alias, a timer, a key binding — read and written on the
+    /// item a surface has selected, which must be a <typeparamref name="TItem"/>. Not resettable unless asked: a rule's
+    /// pattern has no default worth going back to, and an item's fields are its identity.
+    /// </summary>
+    /// <param name="get">Reads the value; the configuration is there for what a value is looked up in (the sets).</param>
+    /// <param name="set">Writes the value.</param>
+    /// <param name="fresh">A new item, which is what the default is read off.</param>
+    /// <param name="format">As for the app-wide constructor.</param>
+    /// <param name="resettable">Whether the field offers a reset.</param>
+    public static SettingBinding<T> ForItem<TItem>(
+        Func<AppConfiguration, TItem, T> get,
+        Action<AppConfiguration, TItem, T> set,
+        Func<TItem> fresh,
+        Func<T, string>? format = null,
+        bool resettable = false)
+        where TItem : class
+    {
+        ArgumentNullException.ThrowIfNull(get);
+        ArgumentNullException.ThrowIfNull(set);
+        ArgumentNullException.ThrowIfNull(fresh);
+        return new SettingBinding<T>(
+            SettingScope.Item,
+            t => get(t.Config, (TItem)t.Item!),
+            (t, v) => set(t.Config, (TItem)t.Item!, v),
+            format,
+            null,
+            resettable,
+            () => new SettingTarget(new AppConfiguration(), Item: fresh()));
+    }
+
     /// <inheritdoc />
     public override SettingScope Scope => _scope;
 
@@ -190,7 +232,10 @@ public sealed class SettingBinding<T> : SettingBinding
     /// The default, read off a fresh configuration (and a fresh world and character) each time — so a default
     /// that is a list is never one instance shared between every configuration that is reset to it.
     /// </summary>
-    public T Default => _get(new SettingTarget(new AppConfiguration(), new WorldDefinition(), new CharacterDefinition()));
+    public T Default => _get(_fresh());
+
+    private static SettingTarget FreshTarget() =>
+        new(new AppConfiguration(), new WorldDefinition(), new CharacterDefinition());
 
     /// <summary>A value as text.</summary>
     public string Format(T value) =>
@@ -219,7 +264,12 @@ public sealed class SettingBinding<T> : SettingBinding
     {
         if (!target.Reaches(_scope))
         {
-            return _scope == SettingScope.World ? "per world" : "per character";
+            return _scope switch
+            {
+                SettingScope.World => "per world",
+                SettingScope.Character => "per character",
+                _ => "per item",
+            };
         }
 
         var value = Get(target);

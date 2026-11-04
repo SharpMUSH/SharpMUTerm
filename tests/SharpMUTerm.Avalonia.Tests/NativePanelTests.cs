@@ -131,18 +131,44 @@ public class NativePanelTests
     }
 
     [Test]
-    public async Task TheEditLinkDispatchesTheF4ScreenAndNoNativePanelCoversIt()
+    public async Task TheEditLinkOpensTheDeclaredKeyEditorInTheSettingsWindow()
     {
         using var driver = new AvaloniaConsoleDriver(140, 36);
-        await using var app = InlineWindowApp(driver);
+        var settings = new RecordingSettings();
+        await using var app = new SharpMUTermApp(DemoScene.Build(), InlineHost(driver) with { NativeSettings = settings });
         app.RenderSnapshot("layout-combat");
 
         var panel = driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.QuickBar);
         await Assert.That(app.Contributions.Commands.Resolve(QuickBarModel.EditCommand)).IsNotNull();
         panel.Dispatch!(QuickBarModel.EditCommand);
         app.RenderNextFrame();
+        await Assert.That(settings.Shown.Single().Initial).IsEqualTo("keypad");
+        await Assert.That(app.OpenSettingsKey).IsNull().Because("F4 is declared, so the window draws it and no cell modal opens");
+    }
+
+    [Test]
+    public async Task WithNoSettingsWindowTheEditLinkOpensF4AndNoNativePanelCoversIt()
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        await using var app = new SharpMUTermApp(DemoScene.Build(), InlineHost(driver) with { NativeSettings = null });
+        app.RenderSnapshot("layout-combat");
+
+        var panel = driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.QuickBar);
+        panel.Dispatch!(QuickBarModel.EditCommand);
+        app.RenderNextFrame();
         await Assert.That(app.OpenSettingsKey).IsEqualTo(ConsoleKey.F4);
         await Assert.That(driver.Pointer.Panels).IsEmpty().Because("a native view would sit over the modal's cells");
+    }
+
+    private sealed class RecordingSettings : INativeSettings
+    {
+        public List<SharpMUTerm.Client.Settings.SettingsForm> Shown { get; } = [];
+
+        public void Show(SharpMUTerm.Client.Settings.SettingsForm form) => Shown.Add(form);
+
+        public void Close()
+        {
+        }
     }
 
     // ── The window's half ────────────────────────────────────────────────────────────────────────

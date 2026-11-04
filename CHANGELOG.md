@@ -9,6 +9,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Triggers, aliases, key bindings and timers (F2, F3, F4, F6) open in the desktop window's settings as a list
+  beside the selected item's fields: tick a box to switch one on or off, add, copy, delete or move it up and down,
+  and watch the trigger's live test mark the matching lines as you type its pattern. A package's sets are shown
+  read-only with *Copy to edit*. *Make a trigger from the selection* opens there on the new rule. In the terminal,
+  Alt+Up and Alt+Down move the item under the cursor within its set, and the settings search finds every one of
+  their fields.
 - A narrow terminal gives its room to the game: below 100 columns the connection rail folds to its slim strip
   on its own (in the desktop window, the sidebar does), and below 100 columns or 30 rows an empty command line
   is one row tall and grows as you type. At 80×24 a pane is now 72 columns wide instead of 60, two rows taller,

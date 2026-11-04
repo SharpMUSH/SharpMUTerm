@@ -17,7 +17,8 @@ public sealed record SettingsMatch(
     SettingsSectionContribution Section, SettingsField? Field, string Text, int Start, int Length);
 
 /// <summary>
-/// The settings search: a query matched against every declared field's label, group, help line and keywords,
+/// The settings search: a query matched against every declared field's label, group, help line and keywords —
+/// a list section's item fields included —
 /// and against every section's title — so a screen whose fields are not declared yet is still found by name.
 /// Case is ignored and the match is a plain substring, the rule ⌃R and ⌃F already follow. Pure, so the whole
 /// contract is testable without a screen.
@@ -42,7 +43,7 @@ public static class SettingsSearch
         foreach (var section in sections)
         {
             var found = 0;
-            foreach (var field in section.Fields)
+            foreach (var field in Searchable(section))
             {
                 var at = field.Label.IndexOf(q, StringComparison.OrdinalIgnoreCase);
                 if (at >= 0 || Contains(field.Group, q) || Contains(field.Help, q) || Contains(field.Keywords, q))
@@ -68,6 +69,16 @@ public static class SettingsSearch
         ArgumentNullException.ThrowIfNull(matches);
         return matches.GroupBy(m => m.Section.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// A section's searchable fields: its own, then — for a list section — every field of its items, so <c>route</c> or
+    /// <c>expansion</c> finds the screen that edits one.
+    /// </summary>
+    public static IEnumerable<SettingsField> Searchable(SettingsSectionContribution section)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        return section.Collection is { } collection ? section.Fields.Concat(collection.Fields) : section.Fields;
     }
 
     private static bool Contains(string? text, string query) =>

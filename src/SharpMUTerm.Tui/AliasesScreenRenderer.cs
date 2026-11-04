@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
 using static SharpMUTerm.Tui.MarkupText;
@@ -70,11 +71,11 @@ internal static class AliasesScreenRenderer
     /// empty expansion — so a new alias is a working placeholder rather than an empty shell that
     /// couldn't be committed. It is left enabled because an alias only acts on input the user types.
     /// </summary>
-    private const string NewAliasName = "New Alias";
+    private const string NewAliasName = BuiltInSettings.NewAliasName;
 
-    private const string NewAliasPattern = "^alias$";
+    private const string NewAliasPattern = BuiltInSettings.NewAliasPattern;
 
-    private const string NewAliasSubstitution = "look";
+    private const string NewAliasSubstitution = BuiltInSettings.NewAliasSubstitution;
 
     /// <summary>
     /// Merges every sub-block into one line list (header, alias list | editor, footer). Used by the
@@ -123,17 +124,31 @@ internal static class AliasesScreenRenderer
     /// <see cref="EditorColumn"/> draws them. Both values hang off the list row rather than becoming
     /// rows of their own, so the editor pane's cursor indices keep meaning what they meant.
     /// </summary>
+    /// <summary>F3's declared list (<see cref="BuiltInSettings.Aliases"/>), whose item fields the rows are built from.</summary>
+    internal static SettingsCollection Declared => BuiltInSettings.Aliases.Collection!;
+
+    /// <summary>The alias row's fields by declared id, in ⇥ order.</summary>
+    internal static IReadOnlyList<string> RowFieldOrder { get; } = ["name", "pattern", "expansion", "set"];
+
+    /// <summary>The editor pane's check boxes by declared id.</summary>
+    internal static IReadOnlyList<string> EditorFieldOrder { get; } = ["case"];
+
     internal static ScreenModel Model(IReadOnlyList<TriggerSet> sets, int selected)
     {
         ArgumentNullException.ThrowIfNull(sets);
 
         var entries = Flatten(sets);
-        var list = ScreenModel.Rows(entries, entry => ScreenRow.Of(
-            ScreenToggle.Bind(() => entry.Alias.Enabled, v => entry.Alias.Enabled = v),
-            ScreenField.Name("name", () => entry.Alias.Name, v => entry.Alias.Name = v),
-            ScreenField.Pattern("match pattern", () => entry.Alias.Pattern, v => entry.Alias.Pattern = v),
-            ScreenField.Lines("expansion", () => entry.Alias.Substitution, v => entry.Alias.Substitution = v),
-            ScreenLists.Owner(sets, s => s.Aliases, entry.Alias)))
+        var config = DeclaredFields.Over(sets);
+        var list = ScreenModel.Rows(entries, entry =>
+            {
+                var target = new SettingTarget(config, Item: entry.Alias);
+                return ScreenRow.Of(
+                    DeclaredFields.Toggle(Declared.Field(Declared.EnabledField), target),
+                    RowFieldOrder.Select(id => DeclaredFields.Item(
+                        Declared.Field(id), target, SettingsContext.Empty,
+                        () => ScreenLists.Owner(sets, s => s.Aliases, entry.Alias))).ToArray())
+                    with { Move = ScreenLists.Mover(sets, s => s.Aliases, entry.Alias) };
+            })
             .Concat(Buttons(sets, selected))
             .ToArray();
 
@@ -143,10 +158,10 @@ internal static class AliasesScreenRenderer
         }
 
         var alias = entries[selected].Alias;
-        var editor = new[]
-        {
-            ScreenRow.Of(ScreenToggle.Bind(() => alias.CaseSensitive, v => alias.CaseSensitive = v)),
-        };
+        var selectedTarget = new SettingTarget(config, Item: alias);
+        var editor = EditorFieldOrder
+            .Select(id => ScreenRow.Of(DeclaredFields.Toggle(Declared.Field(id), selectedTarget)))
+            .ToArray();
 
         return new ScreenModel(list, editor);
     }
@@ -260,7 +275,7 @@ internal static class AliasesScreenRenderer
         }
 
         lines.Add(string.Empty);
-        lines.AddRange(ScreenChrome.Buttons(Buttons(sets, selected), cursor, 0, entries.Count, width));
+        lines.AddRange(ScreenChrome.Buttons(Buttons(sets, selected), cursor, 0, entries.Count, width, movable: true));
         lines.Add(string.Empty);
         var picked = selected >= 0 && selected < entries.Count ? entries[selected].Alias : null;
         lines.AddRange(ScreenChrome.Legend(

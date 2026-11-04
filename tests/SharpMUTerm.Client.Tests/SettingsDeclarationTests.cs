@@ -79,9 +79,13 @@ public class SettingsDeclarationTests
         await Assert.That(byKeyword.Single().Field!.Id).IsEqualTo("transparency");
         await Assert.That(byKeyword.Single().Start).IsEqualTo(-1);
 
-        var byTitle = SettingsSearch.Find(BuiltInSettings.All, "alias");
+        // A section with no fields (F10) is found by its title.
+        var byTitle = SettingsSearch.Find(BuiltInSettings.All, "packages").Where(m => m.Section.Id == "packages").ToList();
         await Assert.That(byTitle.Single().Field).IsNull();
-        await Assert.That(byTitle.Single().Section.Id).IsEqualTo("aliases");
+
+        // A list section's item fields are searched like any other field.
+        var byItemField = SettingsSearch.Find(BuiltInSettings.All, "gag");
+        await Assert.That(byItemField.Any(m => m.Section.Id == "triggers" && m.Field?.Id == "gag")).IsTrue();
 
         await Assert.That(SettingsSearch.Find(BuiltInSettings.All, "  ")).IsEmpty();
     }

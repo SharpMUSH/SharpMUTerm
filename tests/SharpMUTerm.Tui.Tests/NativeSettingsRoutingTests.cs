@@ -59,14 +59,14 @@ public class NativeSettingsRoutingTests
     }
 
     [Test]
-    public async Task AnUndeclaredScreenStaysACellScreen()
+    public async Task AListScreenOpensTheHostsWindowToo()
     {
         var (app, native, _) = App();
 
         app.SimulateKey(F(ConsoleKey.F2));
 
-        await Assert.That(native.Shown).IsEmpty();
-        await Assert.That(app.SettingsOpenKey).IsEqualTo(ConsoleKey.F2);
+        await Assert.That(native.Shown.Single().Initial).IsEqualTo("triggers");
+        await Assert.That(app.SettingsOpenKey).IsNull();
     }
 
     [Test]

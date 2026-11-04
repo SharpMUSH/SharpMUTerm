@@ -1669,7 +1669,33 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     scroll away. A customised theme replaced by the picker is kept in `AppConfiguration.CustomThemes` (no schema
     bump), and listed. Unstyled text on a settings screen takes the scheme's ink (`ScreenChrome.Panel`/`Band`
     set `ForegroundColor`), not the window's, because the window is still the theme in force while one is previewed.
-  - Not declared yet: F2–F4, F6 and F10 are listed by title only.
+  - **F2, F3, F4 and F6 are list sections** (`SettingsCollection`/`SettingsCollection<TItem>`, `SettingsContext`,
+    `SettingsItemGroup`, Client; `BuiltInSettings.Triggers`/`Aliases`/`Keypad`/`Timers` in `BuiltInLists.cs`). A
+    list section has `Scope = SettingScope.Item` and a `Collection`: the noun, the item fields (ordinary descriptors
+    whose bindings are `SettingBinding<T>.ForItem`, reading `SettingTarget.Item`, defaults off a fresh item), and how
+    to list, make, copy, rename, add, delete, move within a set (`Move`) and move to another set (`MoveTo`, a
+    `ChoiceField` with `MovesItem`). Every list operation **replaces** the set's list rather than editing it, the
+    reads-cross-threads rule below. New kinds for item fields: `DecimalField` (timer interval), `HighlightField`
+    (`HighlightColours`, the palette F2's picker offers), `FlagsField` (`FlagWords`), `KeyField` (a chord), and
+    `TextRule` gains `RequiredPattern`, `TriggerPattern` (checked against the rule's own match kind), `Template`,
+    `Lines` and `Window`. `TextField.Suggest` gives the route its windows and the script its callbacks. Decisions:
+    - **A package's set is listed, read-only, and never written.** `SettingsForm.Groups` lists the player's sets,
+      then each installed package's (`set · Package`), and every write to one of those items is refused
+      (`ReadOnlyRefusal`); `CopyToEdit` copies the set into the player's own through the commit, F10's `c`.
+    - **What a list needs from the host is a `SettingsContext`** built on the client's thread (`ListContext`): the
+      route targets, the panes' recent lines (`TriggerTestLines`, so `SettingsForm.Preview` is the cell live test's
+      `TriggerPreview` over the same corpus), and the host's own answer to which chords a binding can have
+      (`MacroKeys.Verdict(Host.Keys, …)`, `MacroKeys.Bindable(Host.Keys)`). F4's key field is refused in the window
+      for what the *window* cannot deliver; `SetKey` also refuses a chord another binding holds.
+    - **The cell screens build their rows from the declarations** (`DeclaredFields.Item`, which maps each
+      descriptor to the cell field it always was), in the order `RowFieldOrder`/`EditorFieldOrder` name, so the
+      ordinals, ⇥ order and every frame are unchanged: F2's match kind is still field 10 on the heading row.
+      `DeclaredListScreensTests.EachCellScreenDrawsExactlyTheDeclaredFields` holds the two lists together.
+    - **⌥↑/⌥↓ move an item within its set on the cell screens** (`ScreenRow.Move`, `ScreenLists.Mover`,
+      `SettingsSession.Reorder`), saved only when it moved, the cursor following; a `⌥↑↓ moves …` hint row sits
+      under `Del removes …`. That is the one cell row this added. Order is meaning for a trigger (first stop wins).
+    - The search searches item fields too (`SettingsSearch.Searchable`). F10 is the one section left listed by
+      title only.
 - **In the window, a declared section opens a native settings window, generated from the declarations**
   (`ClientHost.NativeSettings` → `INativeSettings`; Client `SettingsForm`; Avalonia `SettingsWindow`,
   `SettingsPresenter` on the driver; `OpenSettingsScreen`/`TryOpenNativeSettings` in `SharpMUTermApp.Settings.cs`).
@@ -1704,8 +1730,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     follows the client's theme (`SettingsForm.IsDark`, read live), so a theme card clicked here flips the window's
     variant and rebuilds the page. The rest of the window stays on the Simple theme the native menu and tooltips
     were built against.
+  - **A list section is a master-detail editor** (`ListEditorView`, Avalonia; `SettingsWindow.ListEditor`): the
+    sets and their items on the left (an enable check box per item, `+ Add`/`Copy`/`Delete`/`↑`/`↓` over it, ⌥↑/⌥↓,
+    Delete and Space on the list), the item's declared fields on the right, grouped. It fills the page below the
+    title and scrolls in its two halves. A package's set is drawn read-only with *Copy to edit*. F2's pattern field
+    has the live test under it, re-run on every keystroke, each matching line with the match marked. The trigger
+    builder opens it on the rule it made (`TryOpenNativeSettings(section, item)`); with no window it opens the cell
+    F2 as before.
   - Not done: the window is not modal. Screenshots come from a real window under Xvfb, driven with XTest
-    (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`).
+    (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`, `ux-wave7/lists-*.png`).
 - **In the window, ⌃P is a native palette over the window, listing the cell palette's rows** (`ClientHost.NativePalette`
   → `INativePalette`; Client `PaletteSession`; Avalonia `PaletteOverlay`, `PalettePresenter` on the driver;
   `SharpMUTermApp.NativePalette.cs`). The terminal, the snapshot, the tests and the parity harness pass null. Decisions
@@ -2546,7 +2579,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     rows so typing never moves the rows below.
   - **The match kind is field 10, appended**, though it is drawn on the `match pattern` heading row: that
     keeps every ordinal and costs no row in a pane that already fills a 24-row screen. Switching *to* a
-    regex rewrites the pattern as the regex it meant, so the rule keeps matching what it matched.
+    regex rewrites the pattern as the regex it meant, so the rule keeps matching what it matched
+    (`BuiltInSettings.SetMatchType`, the one both surfaces call).
+  - **In the window the rule opens in the native F2** (`TryOpenNativeSettings(Section("triggers"), trigger)`), selected,
+    with its live test; elsewhere the cell F2 opens with the pattern being typed.
 - **The send group is session keys in memory** (`SendGroup`, Core; `SharpMUTermApp.SendGroup.cs`; ⌃P `group:`
   ids). It is never saved, because a saved group would be a standing order to send one line to several worlds.
   It is offered once two characters are open. Members are marked on the rail by swapping the dot for ◆/◇ in

@@ -58,6 +58,14 @@ public sealed class SettingsSectionContribution : IContribution
     /// scoped section first says which world or character it is editing; every field's binding is of this scope.
     /// </summary>
     public SettingScope Scope { get; init; } = SettingScope.App;
+
+    /// <summary>
+    /// For a list section (F2, F3, F4, F6): the items it holds, grouped by the trigger set each lives in, with each
+    /// item's fields as ordinary <see cref="SettingsField"/>s over <see cref="SettingScope.Item"/> bindings. Null for a
+    /// section of plain fields. A list section is drawn as a list with an editor beside it, and the settings search finds
+    /// its item fields like any other.
+    /// </summary>
+    public SettingsCollection? Collection { get; init; }
 }
 
 /// <summary>
@@ -96,6 +104,12 @@ public sealed record ChoiceField(string Id, string Label, IReadOnlyList<string> 
 
     /// <summary>The choices over <paramref name="config"/>.</summary>
     public IReadOnlyList<string> ChoicesIn(AppConfiguration config) => ChoicesFrom?.Invoke(config) ?? Choices;
+
+    /// <summary>
+    /// Whether choosing moves the item to another list — an item's <c>set</c>: the choices are the trigger sets, and
+    /// a surface that keeps a cursor on the item follows it there.
+    /// </summary>
+    public bool MovesItem { get; init; }
 }
 
 /// <summary>A whole number within bounds.</summary>
@@ -111,7 +125,33 @@ public sealed record TextField(string Id, string Label, int? MaxLength = null, b
 
     /// <summary>For <see cref="TextRule.Defaulted"/>: the value an unset field stands for, and is shown and opened as.</summary>
     public string? Fallback { get; init; }
+
+    /// <summary>
+    /// Values offered as suggestions — not the permitted set — over the item being edited and what the host knows
+    /// (the windows a route can name), or null for none.
+    /// </summary>
+    public Func<SettingTarget, SettingsContext, IReadOnlyList<string>>? Suggest { get; init; }
 }
+
+/// <summary>A number that may have a fraction (a timer's interval in seconds), within bounds.</summary>
+public sealed record DecimalField(string Id, string Label, double Minimum, double Maximum, string? Help = null)
+    : SettingsField(Id, Label, Help);
+
+/// <summary>
+/// A highlight colour, or none: a name from <see cref="HighlightColours.Palette"/>, or <c>#rrggbb</c> / <c>idx:N</c> for
+/// one no name covers. Its binding holds a <see cref="SharpMUTerm.Core.Text.TerminalColor"/>, null for none.
+/// </summary>
+public sealed record HighlightField(string Id, string Label, string? Help = null) : SettingsField(Id, Label, Help);
+
+/// <summary>Several independent flags, held as their words (<see cref="FlagWords"/>): <paramref name="Names"/> are the words.</summary>
+public sealed record FlagsField(string Id, string Label, IReadOnlyList<string> Names, string? Help = null)
+    : SettingsField(Id, Label, Help);
+
+/// <summary>
+/// A key binding's chord, taken from the keyboard rather than typed. Whether a chord can fire is the host's to say —
+/// <see cref="SettingsContext.KeyProblem"/> — because a window and a terminal deliver different chords.
+/// </summary>
+public sealed record KeyField(string Id, string Label, string? Help = null) : SettingsField(Id, Label, Help);
 
 /// <summary>
 /// The client's theme, picked from a list where each theme is shown as a preview (<see cref="ThemePreview"/>): a pane

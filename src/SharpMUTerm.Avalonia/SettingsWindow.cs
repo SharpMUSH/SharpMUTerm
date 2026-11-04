@@ -71,6 +71,16 @@ internal sealed class SettingsWindow : Window
         _page = new StackPanel { Margin = new Thickness(28, 4, 28, 28), Spacing = 2 };
         _scroller = new ScrollViewer { Content = _page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
+        // A list editor fills the page below its title rather than scrolling with it: its list and its detail scroll
+        // on their own, so the buttons over the list stay in reach.
+        _scroller.SizeChanged += (_, _) =>
+        {
+            if (ListEditor is { } editor)
+            {
+                editor.Height = ListEditorHeight();
+            }
+        };
+
         var dock = new DockPanel { LastChildFill = true };
         dock.Children.Add(_search);
         dock.Children.Add(_sections);
@@ -97,6 +107,12 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>The control drawn for each field on the right, by field id, for a test.</summary>
     public IReadOnlyDictionary<string, Control> FieldControls => _controls;
+
+    /// <summary>The height a list editor takes: the page's viewport less the title above it.</summary>
+    private double ListEditorHeight() => Math.Max(360, _scroller.Bounds.Height - 96);
+
+    /// <summary>The master-detail editor a list section (F2, F3, F4, F6) is drawn as, or null on any other page.</summary>
+    internal ListEditorView? ListEditor { get; private set; }
 
     /// <summary>The reset button of each field on the right, by field id, for a test.</summary>
     public IReadOnlyDictionary<string, Button> ResetButtons => _resets;
@@ -249,6 +265,7 @@ internal sealed class SettingsWindow : Window
         _meterNow.Clear();
         _themeCards.Clear();
         SubjectPicker = null;
+        ListEditor = null;
         ScreenDoor = null;
         MeterGrid = null;
         _meterRows = -1;
@@ -262,6 +279,39 @@ internal sealed class SettingsWindow : Window
         if (section.Key is { } key)
         {
             _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Opacity = 0.7, Margin = new Thickness(0, 0, 0, 6) });
+        }
+
+        if (section.Collection is not null)
+        {
+            var editor = new ListEditorView(
+                _form,
+                section,
+                f => !Searching || _matches.Any(m => ReferenceEquals(m.Field, f)),
+                Accent)
+            {
+                Height = ListEditorHeight(),
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+            ListEditor = editor;
+            _page.Children.Add(editor);
+            foreach (var (id, control) in editor.FieldControls)
+            {
+                _controls[id] = control;
+            }
+
+            _refreshers.Add(() =>
+            {
+                editor.Refresh();
+                _controls.Clear();
+                foreach (var (id, control) in editor.FieldControls)
+                {
+                    _controls[id] = control;
+                }
+
+                ShownFields = editor.ShownFields;
+            });
+            ShownFields = editor.ShownFields;
+            return;
         }
 
         if (section.Scope != SettingScope.App)

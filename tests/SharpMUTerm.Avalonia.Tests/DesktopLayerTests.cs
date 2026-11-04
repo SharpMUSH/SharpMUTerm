@@ -312,15 +312,18 @@ public class DesktopLayerTests
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    internal static SharpMUTermApp InlineWindowApp(AvaloniaConsoleDriver driver) =>
-        new(DemoScene.Build(), WindowHost.Create(driver, clipboard: null) with
+    internal static SharpMUTermApp InlineWindowApp(AvaloniaConsoleDriver driver) => new(DemoScene.Build(), InlineHost(driver));
+
+    /// <summary>The window's host as <see cref="InlineWindowApp"/> builds it, for a test that changes one member.</summary>
+    internal static ClientHost InlineHost(AvaloniaConsoleDriver driver) =>
+        WindowHost.Create(driver, clipboard: null) with
         {
             Capabilities = WindowOptions.Capabilities,
             Audio = null,
             Presence = null,
             Announcer = null,
             RunsInline = true,
-        });
+        };
 
     private static void Offer(AvaloniaConsoleDriver driver, Action<Action<MenuModel>> menu, Action<string>? dispatch = null)
     {
