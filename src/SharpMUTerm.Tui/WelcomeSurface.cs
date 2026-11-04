@@ -24,7 +24,7 @@ internal enum WelcomeAction
 }
 
 /// <summary>What the connect form asks for, read once ⏎ has checked it.</summary>
-internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? Character, bool PasswordLater, string? WorldName = null);
+internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? Character, bool PasswordLater, string? WorldName = null, string? Encoding = null);
 
 /// <summary>
 /// The first-run welcome: what it says and what a key on it means, with no window in it — the
@@ -82,18 +82,24 @@ internal sealed class WelcomeSurface
     /// <summary>The world Browse worlds filled the form in for, or null; dropped once the host is changed.</summary>
     public string? WorldName { get; private set; }
 
+    /// <summary>
+    /// The encoding the world will be saved with, from the charset mu*index names for the world Browse worlds picked
+    /// (null: auto); dropped with <see cref="WorldName"/> once the host is changed.
+    /// </summary>
+    public string? Encoding { get; private set; }
+
     /// <summary>The host Browse worlds filled in, so a changed host drops the name that went with it.</summary>
     private string? _prefilledHost;
 
     /// <summary>Everything the surface says now: what the cells draw and the window's native welcome draws.</summary>
     public WelcomeModel Model =>
-        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem, WorldName);
+        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem, WorldName, Encoding);
 
     /// <summary>
     /// The form, filled in from a world Browse worlds picked: its host, port and TLS, and its name for the world it will
     /// be saved as. Only fills it in — the player's own ⏎ there is what saves and dials, through <c>/connect</c>'s path.
     /// </summary>
-    public void Prefill(string worldName, string host, int port, bool tls)
+    public void Prefill(string worldName, string host, int port, bool tls, string? encoding = null)
     {
         InForm = true;
         Field = WelcomeField.Character;
@@ -101,6 +107,7 @@ internal sealed class WelcomeSurface
         Port = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Tls = tls;
         WorldName = worldName;
+        Encoding = encoding;
         _prefilledHost = Host;
         Problem = null;
         Request = null;
@@ -318,9 +325,10 @@ internal sealed class WelcomeSurface
         if (WorldName is not null && !string.Equals(Host, _prefilledHost, StringComparison.OrdinalIgnoreCase))
         {
             WorldName = null;
+            Encoding = null;
         }
 
-        Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater, WorldName);
+        Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater, WorldName, Encoding);
         return WelcomeAction.Connect;
     }
 

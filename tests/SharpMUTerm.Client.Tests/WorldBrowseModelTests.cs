@@ -91,7 +91,7 @@ public class WorldBrowseModelTests
     {
         var picked = new List<int>();
         var asked = new List<string>();
-        var session = new WorldBrowseSession(Ready(), true, picked.Add, asked.Add, () => { });
+        var session = new WorldBrowseSession(Ready(), true, picked.Add, asked.Add, _ => { }, () => { }, () => { });
 
         session.Pick(1);
         session.Pick(9);
@@ -100,5 +100,50 @@ public class WorldBrowseModelTests
 
         await Assert.That(string.Join(",", picked)).IsEqualTo("1");
         await Assert.That(string.Join(",", asked)).IsEqualTo("zork");
+    }
+
+    private static WorldGame Game(string? charset) => new(
+        "Aetherfall",
+        [new("a.example", 4202, true, false), new("a.example", 4201, false, false), new("a.example", 4000, false, true)],
+        charset);
+
+    [Test]
+    public async Task TheAddressChoiceSaysEachAddressItsSecurityItsStateAndTheGamesCharset()
+    {
+        var model = Ready() with { Choosing = Game("ISO-8859-1") };
+
+        await Assert.That(model.ChoiceLine).IsEqualTo("Aetherfall answers at 3 addresses — choose one");
+        await Assert.That(model.CharsetLine).IsEqualTo("charset ISO-8859-1 for the whole game (not per address) · the form sets encoding ISO-8859-1");
+        await Assert.That((Ready() with { Choosing = Game("UTF-8") }).CharsetLine).EndsWith("the world's encoding stays auto");
+        await Assert.That((Ready() with { Choosing = Game(null) }).CharsetLine).IsEqualTo("mu*index names no charset for it; the world's encoding stays auto");
+        await Assert.That(WorldBrowseModel.Endpoint(model.Choosing!.Endpoints[0])).IsEqualTo(("a.example:4202", "TLS", "active"));
+        await Assert.That(WorldBrowseModel.Endpoint(model.Choosing.Endpoints[2])).IsEqualTo(("a.example:4000", "plain", "stale · not reached lately"));
+        await Assert.That(WorldBrowseModel.Endpoint(new WorldEndpoint("2001:db8::1", 23, false, false)).Address).IsEqualTo("[2001:db8::1]:23");
+        await Assert.That(WorldBrowseModel.Endpoint(new WorldEndpoint("bad host", 4000, false, false, Connectable: false)).State).IsEqualTo("active · not connectable");
+        await Assert.That(model).IsEqualTo(Ready() with { Choosing = Game("ISO-8859-1") });
+        await Assert.That(model).IsNotEqualTo(Ready());
+    }
+
+    [Test]
+    public async Task ASessionChoosesAnAddressOnlyWhileOneIsBeingChosenAndPicksNoRowMeanwhile()
+    {
+        var picked = new List<int>();
+        var chosen = new List<int>();
+        var backs = 0;
+        var session = new WorldBrowseSession(Ready(), true, picked.Add, _ => { }, chosen.Add, () => backs++, () => { });
+
+        session.Choose(0);
+        session.Back();
+        session.Publish(Ready() with { Choosing = Game(null) });
+        session.Pick(1);
+        session.Choose(2);
+        session.Choose(3);
+        session.Publish(Ready() with { Choosing = new WorldGame("W", [new("bad host", 4000, false, false, Connectable: false), new("w.example", 23, false, false)], null) });
+        session.Choose(0);
+        session.Back();
+
+        await Assert.That(picked.Count).IsEqualTo(0);
+        await Assert.That(string.Join(",", chosen)).IsEqualTo("2");
+        await Assert.That(backs).IsEqualTo(1);
     }
 }

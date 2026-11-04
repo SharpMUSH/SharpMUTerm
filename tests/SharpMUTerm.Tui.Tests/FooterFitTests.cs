@@ -40,6 +40,7 @@ public class FooterFitTests
         ("browse-worlds", ["↑↓ pick", "Esc closes"]),
         ("browse-worlds-failed", ["↑↓ pick", "Esc closes"]),
         ("browse-worlds-picked", ["↑↓ field", "Esc back"]),
+        ("browse-worlds-endpoints", ["↑↓ pick", "Esc back"]),
         ("quit", ["⏎ stay", "Esc stays"]),
         ("search", ["↑↓ pick", "⌃F closes"]),
         ("search", ["⌥H searches older history", "lines held"]),

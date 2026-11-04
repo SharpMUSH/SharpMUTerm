@@ -523,6 +523,10 @@ public static class SurfaceCatalog
                 // saved or dialled before the player's own Enter there. A query the rows held cannot answer is asked of it.
                 new(SurfaceActionKind.Modal, "pick", "PickWorld"),
                 new(SurfaceActionKind.Modal, "ask", "AskWorldDirectory"),
+
+                // A world that answers at several addresses is chosen from first (TLS active first); Esc goes back.
+                new(SurfaceActionKind.Modal, "choose", "ChooseWorldEndpoint"),
+                new(SurfaceActionKind.Modal, "back", "LeaveWorldChoice"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.WorldBrowseSurface.Render",

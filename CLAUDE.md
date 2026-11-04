@@ -788,20 +788,32 @@ fallbacks) for inline images/maps.
 - **Browse worlds lists mu*index, and a pick only fills in the welcome's connect form** (`WorldDirectory`, Core
   `WorldIndex/`; `WorldBrowseModel`/`WorldBrowseSession`, Client; `WorldBrowseSurface`, `SharpMUTermApp.WorldBrowse.cs`,
   `DemoWorldDirectory`, Tui; `WorldBrowseView`, Avalonia; the welcome's Browse row, ⌃P ▸ *Browse worlds…*, `/browse
-  [words]`, `/browse N`; surface `browse-worlds`; the `browse-worlds`, `-failed` and `-picked` views). Decisions:
+  [words]`, `/browse N`, `/browse N M`; surface `browse-worlds`; the `browse-worlds`, `-failed`, `-picked` and `-endpoints`
+  views). Decisions:
   - **Asked only when opened**, through `worldFetch:` (the `save:` family: null in tests and snapshots, which say they asked
     nothing; `Program` passes `WorldDirectory.DownloadAsync`; the demo answers from `DemoWorldDirectory`, made-up worlds on
     `.example` hosts). https only (`AppConfiguration.WorldDirectoryUrl`, default `https://mu-index.com/api`), 2 MiB capped
-    while streaming, 15 s, 200 rows; an answer from a stale request (newer question, or closed) is dropped by generation.
-  - **The answer is server text**: names, taglines and codebases are bounded and stripped of control, format (bidi),
-    private-use and unassigned characters (`WorldDirectory.Clean`); a row with no id or name, archived, or repeated is
-    dropped and counted; a player count is shown only when the directory says `measured`, or `declared` marked `~`.
-  - **A pick asks `GET /games/{id}` for the address**: `telnet` or `tls`, `active` before `stale`, never `gone`, newest
-    `lastSeenAt`, and only what `ConnectEndpoint.Parse` takes. Then Browse closes and the welcome's form opens prefilled
-    (`WelcomeSurface.Prefill`, `WelcomeModel.WorldName`); nothing is saved or dialled until its ⏎, which goes through
-    `ConnectFromWelcome` → `ConnectCommand` and names the world as listed (dropped if the host is edited).
+    while streaming, 15 s, 200 rows, 8 addresses a game; an answer from a stale request (newer question, or closed) is
+    dropped by generation. Every list asks `unnamed=!yes` (MUIndex's facet that leaves out games listed only by host:port).
+  - **The directory is the authority on its own data; the client does not second-guess it.** Rows are shown in its order,
+    archived, repeated, unnamed or id-less included (an id-less pick says so), with its player count and its label (`~`
+    declared, `?` unlabelled); addresses in its order, leaving out only `gone` and kinds this client cannot dial (websocket,
+    http). What stays is safety: the caps above, and every text is server text, bounded and stripped of control, format
+    (bidi), private-use and unassigned characters (`WorldDirectory.Clean`).
+  - **A pick asks `GET /games/{id}`.** One address goes straight to the form; several are a choice in the same surface
+    (`WorldBrowseModel.Choosing`, a `WorldGame`): `host:port`, TLS or plain, active or stale, the first connectable one
+    selected; Esc goes back to the list (`LeaveWorldChoice`), ⏎ is `ChooseWorldEndpoint`. An address `ConnectEndpoint.Parse`
+    refuses is listed `not connectable` and refused out loud, never put in the form. Then Browse closes and the welcome's
+    form opens prefilled (`WelcomeSurface.Prefill`: host, port, TLS, `WorldName`, `Encoding`); nothing is saved or dialled
+    until its ⏎, which goes through `ConnectFromWelcome` → `ConnectCommand` and names the world as listed (name and encoding
+    dropped if the host is edited).
+  - **Charset is the game's, not an address's.** mu*index's `GameView` has no per-endpoint charset; the only one is
+    `fields.CHARSET` (the precedence winner of a game field: handshake-measured or MSSP-declared, with `source`/`measured`
+    beside it). The choice says it once, for the whole game. A world is saved with an encoding only when that names a charset
+    F5 offers that is not UTF-8 or ASCII (`WorldDirectory.EncodingFor`: ISO-8859-1, CP1252, CP437); otherwise `auto`.
   - ⏎ on a search none of the held rows match asks the directory (`AsksDirectory`). Every listing shows the CC BY 4.0
-    credit (`AttributionLine`). `--plain` says the rows as numbered lines and `/browse N` says the `/connect` line.
+    credit (`AttributionLine`). `--plain` says the rows as numbered lines; `/browse N` says the `/connect` line, or the
+    addresses numbered when there are several, and `/browse N M` says address M's.
   - *Browse packages* is unchanged; the welcome no longer leads there. The live API has not been exercised from here.
 - **The URLs a world prints as plain text are marked up by this client, because the terminal's own
   detection cannot survive a pane** (`UrlDetector`, Core; F7 ▸ `detect links in output`, default on).

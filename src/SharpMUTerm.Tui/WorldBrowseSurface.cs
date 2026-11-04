@@ -15,6 +15,9 @@ internal enum WorldBrowseAction
 
     /// <summary>Ask the directory itself for what is typed: nothing among the rows held matches it.</summary>
     Ask,
+
+    /// <summary>Open the connect form with the address chosen (<see cref="WorldBrowseSurface.Endpoint"/>) of the world being chosen for.</summary>
+    Choose,
 }
 
 /// <summary>
@@ -37,6 +40,22 @@ internal sealed class WorldBrowseSurface
 
     /// <summary>The row selected in the listed rows.</summary>
     public int Selected { get; private set; }
+
+    /// <summary>The address selected while a picked world's addresses are being chosen from (0 is the default, TLS first).</summary>
+    public int Endpoint => _choiceFor is null ? 0 : _endpoint;
+
+    private int _endpoint;
+    private WorldGame? _choiceFor;
+
+    /// <summary>Starts the address choice at its first row whenever a different world's addresses are shown.</summary>
+    private void Follow(WorldBrowseModel model)
+    {
+        if (!ReferenceEquals(model.Choosing, _choiceFor))
+        {
+            _choiceFor = model.Choosing;
+            _endpoint = Math.Max(0, model.Choosing?.FirstConnectable ?? 0);
+        }
+    }
 
     /// <summary>The index in <paramref name="model"/>'s rows of the row selected, or -1.</summary>
     public int SelectedRow(WorldBrowseModel model)
@@ -63,6 +82,25 @@ internal sealed class WorldBrowseSurface
     public WorldBrowseAction Key(WorldBrowseModel model, ConsoleKeyInfo key)
     {
         ArgumentNullException.ThrowIfNull(model);
+        Follow(model);
+        if (model.Choosing is { } game)
+        {
+            var addresses = game.Endpoints.Count;
+            switch (key.Key)
+            {
+                case ConsoleKey.UpArrow:
+                    _endpoint = (_endpoint - 1 + addresses) % addresses;
+                    break;
+                case ConsoleKey.DownArrow:
+                    _endpoint = (_endpoint + 1) % addresses;
+                    break;
+                case ConsoleKey.Enter:
+                    return WorldBrowseAction.Choose;
+            }
+
+            return WorldBrowseAction.Redraw;
+        }
+
         var count = model.View(Query, Sort).Count;
         switch (key.Key)
         {
@@ -113,18 +151,28 @@ internal sealed class WorldBrowseSurface
     }
 
     /// <summary>What the surface draws now, in <paramref name="rows"/> rows of <paramref name="width"/>.</summary>
-    public List<string> Render(WorldBrowseModel model, int width, int rows) => Render(model, Query, Sort, Selected, width, rows);
+    public List<string> Render(WorldBrowseModel model, int width, int rows)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        Follow(model);
+        return Render(model, Query, Sort, Selected, width, rows, Endpoint);
+    }
 
     /// <summary>
     /// Browse worlds for <paramref name="query"/> in <paramref name="sort"/>'s order, row <paramref name="selected"/> marked,
     /// in exactly <paramref name="rows"/> rows: the search line, the credit, the list (or what stands for it), a note and
     /// the keys.
     /// </summary>
-    internal static List<string> Render(WorldBrowseModel model, string query, WorldDirectorySort sort, int selected, int width, int rows)
+    internal static List<string> Render(WorldBrowseModel model, string query, WorldDirectorySort sort, int selected, int width, int rows, int endpoint = 0)
     {
         ArgumentNullException.ThrowIfNull(model);
         width = Math.Max(30, width);
         rows = Math.Max(9, rows);
+        if (model.Choosing is not null)
+        {
+            return RenderChoice(model, endpoint, width, rows);
+        }
+
         var lines = new List<string>
         {
             SpreadLR(
@@ -156,12 +204,66 @@ internal sealed class WorldBrowseSurface
         Pad(lines, rows - 2);
         var note = model.Opening is not null ? model.OpeningLine
             : model.State == WorldBrowseState.Ready && model.Problem is { } problem ? problem
-            : model.State == WorldBrowseState.Ready && view.Count > 0 ? (model.AnyDeclared ? WorldBrowseModel.DeclaredNote + " · " : string.Empty) + WorldBrowseModel.PickNote
+            : model.State == WorldBrowseState.Ready && view.Count > 0 ? model.MarksNote + WorldBrowseModel.PickNote
             : string.Empty;
         var noteTone = model.State == WorldBrowseState.Ready && model.Problem is not null && model.Opening is null ? ScreenPalette.Caution : ScreenPalette.Label;
         lines.Add(note.Length == 0 ? string.Empty : $"[{noteTone}]{Escape(Elide(note, width - 1))}[/]");
         lines.Add(Footer(width));
         return lines;
+    }
+
+    /// <summary>
+    /// A picked world's addresses, row <paramref name="endpoint"/> marked, in exactly <paramref name="rows"/> rows: whose
+    /// they are, what mu*index says of its charset, one row per address (<c>host:port</c>, TLS or plain, its state), a note
+    /// and the keys.
+    /// </summary>
+    private static List<string> RenderChoice(WorldBrowseModel model, int endpoint, int width, int rows)
+    {
+        var game = model.Choosing!;
+        var lines = new List<string>
+        {
+            ElideVisible($"[{ScreenPalette.Accent}]ADDRESSES[/]  [{ScreenPalette.Value}]{Escape(model.ChoiceLine)}[/]", width),
+            ElideVisible($"[{ScreenPalette.Muted}]{Escape(WorldBrowseModel.AttributionLine)}[/]", width),
+            string.Empty,
+        };
+
+        // The charset sentence on one row where it fits, else broken at its " · " so the encoding is never elided away.
+        var charset = model.CharsetLine;
+        var pieces = charset.Length <= width - 3 ? [charset] : charset.Split(" · ", 2);
+        lines.AddRange(pieces.Select(piece => $"  [{ScreenPalette.Label}]{Escape(Elide(piece, width - 3))}[/]"));
+        lines.Add(string.Empty);
+
+        var columns = game.Endpoints.Select(WorldBrowseModel.Endpoint).ToArray();
+        var addressWidth = Math.Clamp(columns.Max(c => c.Address.Length) + 2, 12, Math.Max(12, width / 2));
+        for (var i = 0; i < columns.Length && lines.Count < rows - 2; i++)
+        {
+            var (address, security, state) = columns[i];
+            var chosen = i == endpoint;
+            var mark = chosen ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
+            var weight = chosen ? "bold " : string.Empty;
+            var stateTone = game.Endpoints[i].Stale || !game.Endpoints[i].Connectable ? ScreenPalette.Caution : ScreenPalette.Label;
+            var stateText = Elide(state, Math.Max(0, width - 4 - addressWidth - 7));
+            lines.Add($"{mark} [{weight}{ScreenPalette.Value}]{Escape(Elide(address, addressWidth - 1).PadRight(addressWidth))}[/]"
+                + $"[{(game.Endpoints[i].Tls ? ScreenPalette.Accent : ScreenPalette.Label)}]{Escape(security.PadRight(7))}[/]"
+                + $"[{stateTone}]{Escape(stateText)}[/]");
+        }
+
+        Pad(lines, rows - 2);
+        var note = model.Problem ?? WorldBrowseModel.ChoiceNote;
+        lines.Add($"[{(model.Problem is null ? ScreenPalette.Label : ScreenPalette.Caution)}]{Escape(Elide(note, width - 1))}[/]");
+        lines.Add(ChoiceFooter(width));
+        return lines;
+    }
+
+    /// <summary>The address choice's key row, laddered to one row: the choice and the way back are never given up.</summary>
+    internal static string ChoiceFooter(int width)
+    {
+        var keys = WorldBrowseModel.ChoiceKeys.Select(k => k.Key switch
+        {
+            "⏎" or "Esc" => new LadderKey(k.Key, k.Label),
+            _ => new LadderKey(k.Key, k.Label, Drop: 1),
+        }).ToList();
+        return KeyLadder.Fit(keys, width - 1, k => $"[{ScreenPalette.Accent}]{Escape(k)}[/]", l => $"[{ScreenPalette.Label}]{Escape(l)}[/]", $"[{ScreenPalette.Label}] · [/]");
     }
 
     /// <summary>The key row, laddered to one row: the way out and the pick are never given up.</summary>

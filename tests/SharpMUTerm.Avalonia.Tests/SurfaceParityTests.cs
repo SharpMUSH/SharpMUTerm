@@ -264,6 +264,7 @@ public class SurfaceParityTests
             (SurfaceCatalog.Dictionary, "dictionary-offer"),
             (SurfaceCatalog.BrowseWorlds, "browse-worlds"),
             (SurfaceCatalog.BrowseWorlds, "browse-worlds-failed"),
+            (SurfaceCatalog.BrowseWorlds, "browse-worlds-endpoints"),
             (SurfaceCatalog.Import, "import-review"),
             (SurfaceCatalog.ScriptConsole, "script-console"),
             (SurfaceCatalog.Search, "search-older"),
@@ -844,6 +845,19 @@ public class SurfaceParityTests
                 // None of the demo's most played hold the word, so the cells' Enter asks the directory rather than picking.
                 app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
             });
+
+        // A world that answers at several addresses (the demo's Aetherfall): choosing the second (plain) fills in the form
+        // with it and the charset's encoding, and Esc goes back to the list — the same in both hosts.
+        await SameModal("browse worlds: choose an address", "browse-worlds-endpoints",
+            (app, m) => ((WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!).Choose(1),
+            app =>
+            {
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        await SameModal("browse worlds: back from the addresses", "browse-worlds-endpoints",
+            (app, m) => ((WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!).Back(),
+            app => app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false)));
         probed.Add(SurfaceCatalog.BrowseWorlds);
 
         // The import review: Import writes the same world, character and set as the cells' Enter; with the passwords
@@ -1194,7 +1208,8 @@ public class SurfaceParityTests
         "welcome=" + app.WelcomeIsOpen,
         "help=" + app.HelpIsOpen + "/" + app.DictionaryOfferOpen,
         "browse=" + app.WorldBrowseOpen + " " + app.WorldBrowseModelNow.State + ":" + app.WorldBrowseModelNow.AskedFor + ":" + app.WorldBrowseModelNow.Rows.Count
-            + " " + (app.Welcome is { } w ? $"{w.InForm}:{w.Host}:{w.Port}:{w.Tls}:{w.WorldName}" : "none"),
+            + ":" + (app.WorldBrowseModelNow.Choosing?.Endpoints.Count ?? 0)
+            + " " + (app.Welcome is { } w ? $"{w.InForm}:{w.Host}:{w.Port}:{w.Tls}:{w.WorldName}:{w.Encoding}" : "none"),
         "import=" + app.ImportReviewOpen + " " + string.Join(",", app.Configuration.TriggerSets.Select(s => s.Name + ":" + s.Triggers.Count))
             + " " + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters).Select(c => c.Name + (c.Password is null ? string.Empty : "*"))),
         "console=" + app.ScriptConsoleIsOpen + " " + ConsoleState(app),

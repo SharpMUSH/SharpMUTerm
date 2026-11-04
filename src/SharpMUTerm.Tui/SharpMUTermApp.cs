@@ -1964,10 +1964,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         // Browse worlds over the demo's directory (answered from memory): the list through its ⌃P entry; `-failed` with a
-        // directory that does not answer; `-picked` after a pick, so the frame is the welcome's connect form filled in.
+        // directory that does not answer; `-picked` after a pick of a world with one address (Lanternport), so the frame is
+        // the welcome's connect form filled in; `-endpoints` after a pick of Aetherfall, which answers at three addresses
+        // and names a charset, so the frame is the address choice.
         if (string.Equals(view, "browse-worlds", StringComparison.OrdinalIgnoreCase)
             || string.Equals(view, "browse-worlds-failed", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase))
+            || string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "browse-worlds-endpoints", StringComparison.OrdinalIgnoreCase))
         {
             if (string.Equals(view, "browse-worlds-failed", StringComparison.OrdinalIgnoreCase))
             {
@@ -1976,6 +1979,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
             DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.BrowseWorldsCommand);
             if (string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase))
+            {
+                PickWorld(_worldModel, 1);
+            }
+
+            if (string.Equals(view, "browse-worlds-endpoints", StringComparison.OrdinalIgnoreCase))
             {
                 PickWorld(_worldModel, 0);
             }
