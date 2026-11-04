@@ -13,6 +13,7 @@ internal sealed class WindowPointer : IPointerPresenter
     private IReadOnlyList<PaneScrollbar> _bars = [];
     private IReadOnlyList<PanelOverlay> _panels = [];
     private IReadOnlyList<HeaderAction> _actions = [];
+    private ChromeOverlay? _chrome;
 
     /// <summary>What the pointer is over, as of the client's last word.</summary>
     public PointerTarget Target => Volatile.Read(ref _target);
@@ -25,6 +26,12 @@ internal sealed class WindowPointer : IPointerPresenter
 
     /// <summary>The header buttons the client offers, said once at start.</summary>
     public IReadOnlyList<HeaderAction> Actions => Volatile.Read(ref _actions);
+
+    /// <summary>The header and the sidebar as the client last described them, or null before it has.</summary>
+    public ChromeOverlay? Chrome => Volatile.Read(ref _chrome);
+
+    /// <summary>Raised on the client's thread when <see cref="Chrome"/> changes.</summary>
+    public event Action? ChromeChanged;
 
     /// <summary>Raised on the client's thread when <see cref="Panels"/> changes.</summary>
     public event Action? PanelsChanged;
@@ -67,5 +74,11 @@ internal sealed class WindowPointer : IPointerPresenter
     {
         Volatile.Write(ref _actions, actions);
         ActionsChanged?.Invoke();
+    }
+
+    void IPointerPresenter.Chrome(ChromeOverlay chrome)
+    {
+        Volatile.Write(ref _chrome, chrome);
+        ChromeChanged?.Invoke();
     }
 }

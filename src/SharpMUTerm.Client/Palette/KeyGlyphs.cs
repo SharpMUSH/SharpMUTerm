@@ -50,4 +50,18 @@ public static class KeyGlyphs
 
         return result;
     }
+
+    /// <summary>
+    /// <paramref name="chord"/> in words, the way a desktop application labels a key: <c>⌥1</c> → <c>Alt+1</c>,
+    /// <c>⌃P</c> → <c>Ctrl+P</c>, <c>⌥⇧→</c> → <c>Alt+Shift+→</c>. The inverse of <see cref="Normalize"/> for the
+    /// modifiers; a chord with no modifier glyph is returned unchanged. For a view drawn in a UI font, where the
+    /// glyphs read smaller than the words around them.
+    /// </summary>
+    public static string Words(string chord)
+    {
+        ArgumentNullException.ThrowIfNull(chord);
+        return chord.Replace("⌃", "Ctrl+", StringComparison.Ordinal)
+            .Replace("⌥", "Alt+", StringComparison.Ordinal)
+            .Replace("⇧", "Shift+", StringComparison.Ordinal);
+    }
 }

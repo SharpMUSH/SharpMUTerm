@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using SharpMUTerm.Core.Layouts;
+using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Tui;
 using SkiaSharp;
 
@@ -37,6 +38,8 @@ internal sealed class DesktopLayer : Canvas
     private readonly Dictionary<string, HeaderButton> _buttons = new(StringComparer.Ordinal);
     private readonly Dictionary<string, VitalsGauges> _gauges = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MapCanvas> _maps = new(StringComparer.Ordinal);
+    private readonly NativeHeader _header;
+    private readonly NativeSidebar _sidebar;
 
     public DesktopLayer(TerminalView view)
     {
@@ -45,6 +48,13 @@ internal sealed class DesktopLayer : Canvas
         ClipToBounds = true;
         _pointer.ActionsChanged += () => Dispatcher.UIThread.Post(Sync);
         _pointer.PanelsChanged += () => Dispatcher.UIThread.Post(Sync);
+        _pointer.ChromeChanged += () => Dispatcher.UIThread.Post(Sync);
+
+        // The chrome first, so every panel and button is drawn over it.
+        _header = new NativeHeader(view) { IsVisible = false };
+        _sidebar = new NativeSidebar(view) { IsVisible = false };
+        Children.Add(_header);
+        Children.Add(_sidebar);
         _view.Repainted += Sync;
         Sync();
     }
@@ -64,6 +74,12 @@ internal sealed class DesktopLayer : Canvas
     /// <summary>The native maps by window id. Internal for tests.</summary>
     internal IReadOnlyDictionary<string, MapCanvas> Maps => _maps;
 
+    /// <summary>The native header. Internal for tests.</summary>
+    internal NativeHeader Header => _header;
+
+    /// <summary>The native sidebar. Internal for tests.</summary>
+    internal NativeSidebar Sidebar => _sidebar;
+
     /// <summary>The last header menu opened. Internal for tests.</summary>
     internal ContextMenu? OpenedMenu { get; private set; }
 
@@ -74,6 +90,51 @@ internal sealed class DesktopLayer : Canvas
         var cell = _view.CellExtent;
         SyncButtons(frame, cell);
         SyncPanels(frame, cell);
+        SyncChrome(frame, cell);
+    }
+
+    /// <summary>
+    /// The native header and sidebar over the cells the client says hold them, each painting the plane read off its
+    /// own cells. Neither is drawn while another of the client's windows is in front (it would paint over it), the
+    /// header not while ⌃B is armed (the cells then say what the next key does), the sidebar not while collapsed.
+    /// </summary>
+    private void SyncChrome(ScreenFrame frame, Size cell)
+    {
+        var chrome = _pointer.Chrome;
+        var ink = Colour(_view.Renderer.DefaultForeground);
+        Cover(_header, chrome, chrome is { Shown: true, HeaderModel.PrefixArmed: false } ? chrome.Header : default, frame, cell, ink, header: true);
+        Cover(_sidebar, chrome, chrome is { Shown: true, Sidebar.Collapsed: false } ? chrome.Rail : default, frame, cell, ink, header: false);
+    }
+
+    private void Cover(NativeChromeView view, ChromeOverlay? chrome, PaneRect rect, ScreenFrame frame, Size cell, Color ink, bool header)
+    {
+        var inside = rect.Width > 0 && rect.Height > 0 && rect.X >= 0 && rect.Y >= 0
+            && rect.X + rect.Width <= frame.Width && rect.Y + rect.Height <= frame.Height;
+        if (chrome is null || !inside)
+        {
+            view.IsVisible = false;
+            return;
+        }
+
+        SetLeft(view, rect.X * cell.Width);
+        SetTop(view, rect.Y * cell.Height);
+        view.Width = rect.Width * cell.Width;
+        view.Height = rect.Height * cell.Height;
+        if (view is NativeHeader nativeHeader)
+        {
+            // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above this view.
+            nativeHeader.ReserveRight = (_pointer.Actions.Count * ButtonCells * cell.Width) + WindowChrome.EdgeBand;
+        }
+        else if (view is NativeSidebar sidebar)
+        {
+            sidebar.SetCellHeight(cell.Height);
+        }
+
+        // The plane is read off the last cell of the rectangle's first row: the header's right end and the rail's
+        // margin column are blank in every state, so the colour is the band's own and not a segment's fill.
+        var plane = _view.Renderer.Background(frame[rect.X + rect.Width - 1, rect.Y]);
+        view.Show(chrome, Colour(plane), ink);
+        view.IsVisible = true;
     }
 
     private void SyncButtons(ScreenFrame frame, Size cell)
