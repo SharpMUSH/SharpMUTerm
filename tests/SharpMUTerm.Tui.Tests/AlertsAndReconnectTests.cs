@@ -216,7 +216,7 @@ public class AlertsAndReconnectTests
         rig.Wire.Receive("Rivane pages: hello?\r\n");
 
         await Assert.That(rig.Attention.Requests.Count).IsEqualTo(1);
-        await Assert.That(rig.Attention.Requests[0].Title).IsEqualTo("Corvid@Aetherfall — page");
+        await Assert.That(rig.Attention.Requests[0].Title).IsEqualTo("Corvid · Aetherfall — page");
         await Assert.That(rig.Attention.Requests[0].Body).IsEqualTo("Rivane pages: hello?");
 
         // One per interval: the next page inside it is not said again.
@@ -252,7 +252,7 @@ public class AlertsAndReconnectTests
         await using var _ = rig.App;
 
         rig.Wire.Receive("A rat attacks you!\r\n");
-        await Assert.That(rig.Attention.Requests.Select(r => r.Title)).IsEquivalentTo(["Corvid@Aetherfall — alert"]);
+        await Assert.That(rig.Attention.Requests.Select(r => r.Title)).IsEquivalentTo(["Corvid · Aetherfall — alert"]);
 
         rig.App.Configuration.Text.AlertWhenAway = false;
         rig.Time.Advance(AttentionThrottle.Interval);
@@ -313,7 +313,7 @@ public class AlertsAndReconnectTests
     [Test]
     public void TheTerminalEscapesCannotBeEndedEarlyByAGamesText()
     {
-        var request = new AttentionRequest("Corvid@Aetherfall — page", "x\u001b\\;\u0007y");
+        var request = new AttentionRequest("Corvid · Aetherfall — page", "x\u001b\\;\u0007y");
 
         var kitty = TerminalAttention.Sequence(TerminalNotify.Osc99, request, 1);
         var foot = TerminalAttention.Sequence(TerminalNotify.Osc777, request, 1);

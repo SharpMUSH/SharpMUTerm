@@ -3,7 +3,7 @@ using SharpConsoleUI.Drivers;
 
 namespace SharpMUTerm.Tui;
 
-/// <summary>An alert for the desktop: a short title (<c>Corvid@Aetherfall — page</c>) and the line that raised it.</summary>
+/// <summary>An alert for the desktop: a short title (<c>Corvid · Aetherfall — page</c>) and the line that raised it.</summary>
 internal sealed record AttentionRequest(string Title, string Body);
 
 /// <summary>

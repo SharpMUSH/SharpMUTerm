@@ -16,7 +16,7 @@ namespace SharpMUTerm.Tui;
 /// </list>
 /// <para>
 /// While a host that knows its focus is behind another window, the title carries a count of the lines that arrived
-/// (<c>(3) Corvid@Aetherfall — SharpMUTerm</c>), the passive half of the same cue; it clears when the window comes
+/// (<c>(3) Corvid · Aetherfall — SharpMUTerm</c>), the passive half of the same cue; it clears when the window comes
 /// forward.
 /// </para>
 /// </summary>
