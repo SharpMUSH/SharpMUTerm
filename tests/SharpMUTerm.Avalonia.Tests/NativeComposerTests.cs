@@ -393,6 +393,55 @@ public class NativeComposerTests
         await Assert.That(after).IsEqualTo(string.Empty).Because("the client cleared the draft, and the editor takes the client's text");
     }
 
+    /// <summary>
+    /// The docked command box (the mockup's Command field): what is typed there is the cell composer's command field, ⏎ in
+    /// it moves to the text, and ⌃S sends the command in front of the text as one line — and the command stays.
+    /// </summary>
+    [Test]
+    public async Task TheDockedCommandBoxIsTheCommandFieldAndCtrlSSendsItInFrontOfTheText()
+    {
+        var (verb, textFocused, sent, kept, boxAfter) = await Run(rig =>
+        {
+            var composer = Dock(rig);
+            var windowId = rig.Layer.Composers.Keys.Single();
+            composer.CommandBox.Focus();
+            composer.CommandBox.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "+pose", Source = composer.CommandBox });
+            Drain();
+            composer.CommandBox.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter, Source = composer.CommandBox });
+            Drain();
+            var verb = rig.App.DockedComposerIn(windowId)!.Verb;
+            var textFocused = composer.Editor.IsFocused;
+            Type(composer.Editor, "waves [twice]");
+            Press(composer.Editor, Key.S, KeyModifiers.Control);
+            rig.App.RenderNextFrame();
+            Drain();
+            return (verb, textFocused, rig.Telnet.Lines.ToList(), rig.App.DockedComposerIn(windowId)!.Verb, rig.Layer.Composers.Values.Single().CommandText);
+        });
+
+        await Assert.That(verb).IsEqualTo("+pose");
+        await Assert.That(textFocused).IsTrue().Because("⏎ in the command field moves on to the text");
+        await Assert.That(sent).IsEquivalentTo(new[] { "+pose waves [twice]" });
+        await Assert.That(kept).IsEqualTo("+pose").Because("the command stays for the next post");
+        await Assert.That(boxAfter).IsEqualTo("+pose");
+    }
+
+    [Test]
+    public async Task F1HasACommandRowAndAMooEditHasNone()
+    {
+        var (post, edit) = await Run(rig =>
+        {
+            var overlay = OpenF1(rig);
+            var post = overlay.Composer.CommandText;
+            Press(overlay.Composer.Editor, Key.Escape);
+            rig.Telnet.ReceiveMooEdit(Look);
+            Drain();
+            return (post, rig.Driver.Composer.Overlay!.Composer.CommandText);
+        });
+
+        await Assert.That(post).IsEqualTo(string.Empty).Because("a post shows its command row, empty here");
+        await Assert.That(edit).IsNull().Because("a MOO edit has no command field");
+    }
+
     [Test]
     public async Task EscReleasesToTheCellsAndAClickArmsAgain()
     {

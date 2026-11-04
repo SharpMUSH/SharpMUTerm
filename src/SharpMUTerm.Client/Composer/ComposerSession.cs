@@ -12,6 +12,12 @@ public sealed record ComposerCallbacks
     /// <summary>The writer changed the text: the whole buffer, lines broken by <c>\n</c>.</summary>
     public Action<string>? Edited { get; init; }
 
+    /// <summary>
+    /// The writer changed the command field (<see cref="ComposerModel.Verb"/>): the whole field, one line. Null where the
+    /// composer has none to change.
+    /// </summary>
+    public Action<string>? CommandEdited { get; init; }
+
     /// <summary>⌃S, with the buffer as it stands.</summary>
     public Action<string>? Send { get; init; }
 
@@ -119,6 +125,18 @@ public sealed class ComposerSession
 
     /// <summary>The host's: the writer changed the text.</summary>
     public void Edited(string body) => Pass(_callbacks.Edited, Normalise(body));
+
+    /// <summary>
+    /// The host's: the writer changed the command field. Passed on one line (a pasted break is a space); nothing for an
+    /// edit, which has no command field.
+    /// </summary>
+    public void EditedCommand(string command)
+    {
+        if (Model.HasCommandField)
+        {
+            Pass(_callbacks.CommandEdited, Normalise(command).Replace('\n', ' '));
+        }
+    }
 
     /// <summary>The host's: ⌃S.</summary>
     public void Send(string body) => Pass(_callbacks.Send, Normalise(body));

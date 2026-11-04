@@ -1776,6 +1776,17 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
   over the tail of a tab the framework drew, name or `×`, and the framework (subscribed later, inside `Run()`) would
   select or close it on the same click. The button flags are struck from the shared list, leaving a movement; the chip
   rects are a snapshot array published per frame. Both hosts go through that handler (`AClickOnTheChipDoesNotAlso…`).
+- **A post is a command field and a text, in one model** (`ComposerModel.Verb`, `HasCommandField`, `HeadingVerb`;
+  `ComposeMessage.Build(command, body, escaping)`/`Join`/`CleanCommand`, Core; Tui `ComposerCommandRow`, a one-row
+  editor F1 and `DockedComposer` place above the text; `ComposeResult.Verb`; `ComposerSession.EditedCommand`; Avalonia
+  `ComposerView`'s command box). The body is built exactly as before and the command is put in front **unescaped**, one
+  space between (none after `=` or a lone punctuation shorthand); a blank command is the old single buffer, so a text
+  starting with its verb still sends as it did. ⇥/⇧⇥ move between the fields and ⏎ in the command moves to the text
+  (`DockedComposer.InCommand`/`Focused`, which the focus pin and `HandleComposerKey` follow; where the caret is is never
+  in the model). The command survives a send (`ForgetComposeText`), so a verb-only draft is kept and the quit prompt
+  does not count it. An edit has no command field. The window's docked panel is the mockup's: Command over its box,
+  Text over the well (both shown from 232 px), summary without the chars (in its tooltip). `SurfaceParityTests` sends
+  the same post from both hosts' two fields.
 - **The composer says how long the post is as sent, and ⌥P shows it** (`ComposerModel.Characters`/`SentLength`, the
   escaped and `%r`-joined command; a MOO edit counts its text). F1 and the docked panel carry the `N chars` cell in both
   hosts; ⌥P toggles an *as sent* band under F1 (`ComposeOverlay.Preview`, run-wide, shared with the native editor via

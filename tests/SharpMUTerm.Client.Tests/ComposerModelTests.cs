@@ -84,7 +84,7 @@ public class ComposerModelTests
         await Assert.That(ComposerModel.KeysFor(ComposerPlace.Docked, false, false, true, armed: false).Select(k => k.Label))
             .IsEquivalentTo(new[] { "click here to write", "full screen" });
         await Assert.That(ComposerModel.KeysFor(ComposerPlace.Docked, false, true, true, armed: true).Select(k => k.Key))
-            .IsEquivalentTo(new[] { "⌃S", "⌥L", "⌥W", "F1", "Esc" });
+            .IsEquivalentTo(new[] { "⌃S", "⌥L", "⌥W", "F1", "Esc", "⇥" });
     }
 
     [Test]
@@ -134,5 +134,50 @@ public class ComposerModelTests
         await Assert.That(some.Suggestions("wrold")).Contains("world");
         await Assert.That(some.CanAddWords).IsTrue();
         await Assert.That(none.CanAddWords).IsFalse();
+    }
+
+    /// <summary>
+    /// The command field: what ⌃S sends is the command in front of the built text, the length cell counts that line, the
+    /// docked header names the post by the command, and two models differing only in it are different models.
+    /// </summary>
+    [Test]
+    public async Task TheCommandFieldGoesInFrontOfTheTextAndIsPartOfTheModel()
+    {
+        var model = ComposerModel.Create(ComposerPlace.Docked, "Ann", "tips his hat [x]\n\nwaits", ComposeEscaping.Literal, null, null,
+            canSend: true, armed: true, revision: 1, verb: "+pose");
+
+        await Assert.That(model.Command).IsEqualTo(ComposeMessage.Build("+pose", "tips his hat [x]\n\nwaits", ComposeEscaping.Literal));
+        await Assert.That(model.Command).StartsWith("+pose tips");
+        await Assert.That(model.Characters).IsEqualTo(model.Command!.Length);
+        await Assert.That(model.HeadingVerb).IsEqualTo("+pose");
+        await Assert.That(model.HasCommandField).IsTrue();
+        await Assert.That(model.Equals(model with { Verb = "say" })).IsFalse();
+        await Assert.That(Post("say hello").HeadingVerb).IsEqualTo("say").Because("with no command the text's first word names it");
+    }
+
+    [Test]
+    public async Task AnEditHasNoCommandField()
+    {
+        var model = ComposerModel.Create(ComposerPlace.FullScreen, "Ann", "return 1;", ComposeEscaping.AsTyped,
+            new ComposerEdit("Test:look", "moo-code"), null, canSend: true, armed: true, revision: 1, verb: "+pose");
+
+        await Assert.That(model.HasCommandField).IsFalse();
+        await Assert.That(model.Verb).IsEmpty();
+    }
+
+    [Test]
+    public async Task ASessionPassesTheCommandFieldOnOneLineAndNotForAnEdit()
+    {
+        var commands = new List<string>();
+        var post = new ComposerSession(Post(string.Empty), null, new ComposerCallbacks { CommandEdited = commands.Add });
+        post.EditedCommand("+bbpost\r\n3=");
+
+        var edit = new ComposerSession(
+            ComposerModel.Create(ComposerPlace.FullScreen, "Ann", "x", ComposeEscaping.AsTyped, new ComposerEdit("a", "moo-code"), null, true, true, 1),
+            null,
+            new ComposerCallbacks { CommandEdited = commands.Add });
+        edit.EditedCommand("say");
+
+        await Assert.That(commands).IsEquivalentTo(new[] { "+bbpost 3=" });
     }
 }

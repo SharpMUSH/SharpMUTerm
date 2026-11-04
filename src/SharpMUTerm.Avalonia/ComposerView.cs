@@ -58,6 +58,13 @@ internal sealed class ComposerView : Border
     private readonly WrapPanel _keys;
     private readonly Border _rule;
 
+    // The command field above the text (ComposerModel.Verb): a one-line box, its label, and the text's label.
+    private readonly TextBox _command;
+    private readonly Border _commandWell;
+    private readonly TextBlock _commandLabel;
+    private readonly TextBlock _textLabel;
+    private readonly Control _commandRow;
+
     // The docked panel's own parts: the editor's framed well, and the footer's summary, Preview and Send.
     private readonly Border? _well;
     private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -92,6 +99,52 @@ internal sealed class ComposerView : Border
         _editor.AddHandler(PointerPressedEvent, (_, _) => AskToArm(), RoutingStrategies.Tunnel, handledEventsToo: true);
         _editor.GotFocus += (_, _) => AskToArm();
         _editor.ContextRequested += OnContextRequested;
+        _command = new TextBox
+        {
+            AcceptsReturn = false,
+            AcceptsTab = false,
+            Background = Brushes.Transparent,
+            BorderThickness = default,
+            Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space6),
+            MinHeight = 0,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            PlaceholderText = ComposerModel.CommandPlaceholder,
+            MaxLength = 200,
+        };
+        AutomationProperties.SetName(_command, "Command");
+        ToolTip.SetTip(_command, "The command the text is sent with: +pose, say, +bbpost 3= (Tab moves to the text)");
+        _command.TextChanged += (_, _) => OnCommandChanged();
+        _command.AddHandler(KeyDownEvent, OnCommandKeyDown, RoutingStrategies.Tunnel);
+        _command.AddHandler(PointerPressedEvent, (_, _) => AskToArm(), RoutingStrategies.Tunnel, handledEventsToo: true);
+        _command.GotFocus += (_, _) => AskToArm();
+        _commandWell = new Border
+        {
+            Child = _command,
+            CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
+            ClipToBounds = true,
+        };
+        _commandLabel = new TextBlock { Text = ComposerModel.CommandLabel, VerticalAlignment = VerticalAlignment.Center };
+        _textLabel = new TextBlock { Text = ComposerModel.TextLabel };
+        if (fullScreen)
+        {
+            // F1: one row under the header, the label beside the box.
+            var row = new DockPanel { LastChildFill = true };
+            _commandLabel.Margin = new Thickness(0, 0, NativeTokens.Space10, 0);
+            DockPanel.SetDock(_commandLabel, Dock.Left);
+            row.Children.Add(_commandLabel);
+            row.Children.Add(_commandWell);
+            _commandRow = new Border { Child = row, Padding = new Thickness(NativeTokens.Space24, NativeTokens.Space8) };
+        }
+        else
+        {
+            // Docked, as the mockup's panel: Command over its box, then Text over the editor's well.
+            _commandLabel.Margin = new Thickness(PanelText.Pad, NativeTokens.Space12, PanelText.Pad, 0);
+            _commandWell.Margin = new Thickness(PanelText.Pad, NativeTokens.Space6, PanelText.Pad, 0);
+            _commandRow = new StackPanel { Children = { _commandLabel, _commandWell } };
+            _textLabel.Margin = new Thickness(PanelText.Pad, NativeTokens.Space12, PanelText.Pad, 0);
+        }
+
         _marks = new MarkLayer(_editor);
         _gutter = new LineGutter(_editor) { IsVisible = false };
 
@@ -175,7 +228,7 @@ internal sealed class ComposerView : Border
             _well = new Border
             {
                 Child = text,
-                Margin = new Thickness(PanelText.Pad, NativeTokens.Space12, PanelText.Pad, 0),
+                Margin = new Thickness(PanelText.Pad, NativeTokens.Space6, PanelText.Pad, 0),
                 CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
                 BorderThickness = new Thickness(NativeTokens.Hairline),
                 ClipToBounds = true,
@@ -188,12 +241,17 @@ internal sealed class ComposerView : Border
         body.Children.Add(_gutter);
         body.Children.Add(page);
 
-        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto") };
+        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto,Auto") };
         Grid.SetRow(_header, 0);
-        Grid.SetRow(body, 1);
-        Grid.SetRow(_preview, 2);
-        Grid.SetRow(_footer, 3);
+        Grid.SetRow(_commandRow, 1);
+        Grid.SetRow(_textLabel, 2);
+        Grid.SetRow(body, 3);
+        Grid.SetRow(_preview, 4);
+        Grid.SetRow(_footer, 5);
+        _textLabel.IsVisible = !fullScreen;
         grid.Children.Add(_header);
+        grid.Children.Add(_commandRow);
+        grid.Children.Add(_textLabel);
         grid.Children.Add(body);
         grid.Children.Add(_preview);
         grid.Children.Add(_footer);
@@ -287,6 +345,20 @@ internal sealed class ComposerView : Border
         if (model.Revision != _applied)
         {
             _applied = model.Revision;
+            if (!string.Equals(ComposeMessage.CleanCommand(_command.Text), model.Verb, StringComparison.Ordinal))
+            {
+                _applying = true;
+                try
+                {
+                    _command.Text = model.Verb;
+                    _command.CaretIndex = model.Verb.Length;
+                }
+                finally
+                {
+                    _applying = false;
+                }
+            }
+
             if (!string.Equals(_editor.Text ?? string.Empty, model.Body, StringComparison.Ordinal))
             {
                 _applying = true;
@@ -327,6 +399,7 @@ internal sealed class ComposerView : Border
         }
 
         _rule.IsVisible = !_fullScreen && model.Armed;
+
         if (_armed != model.Armed)
         {
             var was = _armed;
@@ -338,7 +411,7 @@ internal sealed class ComposerView : Border
                     Dispatcher.UIThread.Post(() => _editor.Focus(), DispatcherPriority.Input);
                 }
             }
-            else if (was == true && _editor.IsKeyboardFocusWithin)
+            else if (was == true && (_editor.IsKeyboardFocusWithin || _command.IsKeyboardFocusWithin))
             {
                 _view.Focus();
             }
@@ -347,6 +420,12 @@ internal sealed class ComposerView : Border
 
     /// <summary>The gutter of line numbers, shown for a script. Internal for tests.</summary>
     internal LineGutter Gutter => _gutter;
+
+    /// <summary>The command field. Internal for tests.</summary>
+    internal TextBox CommandBox => _command;
+
+    /// <summary>Whether the command field is shown (a post) and what it holds, for a test.</summary>
+    internal string? CommandText => _commandRow.IsVisible ? _command.Text ?? string.Empty : null;
 
     /// <summary>The header's length cell as drawn. Internal for tests.</summary>
     internal string CountText => _count.Text ?? string.Empty;
@@ -383,11 +462,23 @@ internal sealed class ComposerView : Border
         _header.BorderThickness = new Thickness(0, 0, 0, NativeTokens.Hairline);
         _footer.BorderBrush = _header.BorderBrush;
         _footer.BorderThickness = _fullScreen ? new Thickness(0, NativeTokens.Hairline, 0, 0) : default;
+        var tokens = NativeTokens.For(null, Luma(_plane) < 0.5);
         if (_well is not null)
         {
+            // The mockup's Text field: the well's ground, ringed in the focus edge, as the field the post is written in.
             _well.Background = new SolidColorBrush(Well);
-            _well.BorderBrush = new SolidColorBrush(Mix(_plane, _text, 0.2));
+            _well.BorderBrush = new SolidColorBrush(tokens.Focus);
         }
+
+        // The Command field: the same ground, ringed in the quieter edge.
+        _commandWell.Background = new SolidColorBrush(_fullScreen ? Mix(_plane, _text, 0.05) : Well);
+        _commandWell.BorderBrush = new SolidColorBrush(tokens.Edge);
+        _command.Foreground = new SolidColorBrush(_text);
+        _command.CaretBrush = new SolidColorBrush(Accent);
+        _command.SelectionBrush = new SolidColorBrush(Color.FromArgb(0x70, Accent.R, Accent.G, Accent.B));
+        _command.SelectionForegroundBrush = new SolidColorBrush(_text);
+        _commandLabel.Foreground = new SolidColorBrush(Dim);
+        _textLabel.Foreground = new SolidColorBrush(Dim);
 
         _summary.Foreground = new SolidColorBrush(Dim);
         PaintButton(_previewButton, accent: false);
@@ -422,6 +513,10 @@ internal sealed class ComposerView : Border
         _target.FontSize = _fullScreen ? ui : PanelText.Size;
         _count.FontSize = ui - 1;
         _summary.FontSize = PanelText.Size - 1;
+        _commandLabel.FontSize = _fullScreen ? ui - 1 : PanelText.Size - 1;
+        _textLabel.FontSize = PanelText.Size - 1;
+        _command.FontSize = Math.Clamp(cell * 0.8, 11, 18);
+        _command.FontFamily = NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
         foreach (var button in new[] { _previewButton, _sendButton })
         {
             if (button.Child is TextBlock words)
@@ -532,6 +627,12 @@ internal sealed class ComposerView : Border
         }
 
         _preview.IsVisible = _fullScreen && model.Preview && model.Edit is null;
+
+        // The command field and the Text label: a post's, and in a docked pane only while there is room for them over an
+        // editor worth writing in — the heading, both labels, the field, two lines of text and the footer are about 232 px.
+        var roomForCommand = _fullScreen || Bounds.Height is 0 or >= 232;
+        _commandRow.IsVisible = model.HasCommandField && roomForCommand;
+        _textLabel.IsVisible = !_fullScreen && model.HasCommandField && roomForCommand;
         SyncLength();
 
         _keys.Children.Clear();
@@ -655,18 +756,21 @@ internal sealed class ComposerView : Border
         }
 
         var text = _editor.Text ?? string.Empty;
-        _count.Text = ComposerModel.CharactersLabel(ComposerModel.SentLength(text, model.Escaping, model.Edit is not null));
+        var verb = model.HasCommandField ? _command.Text : null;
+        _count.Text = ComposerModel.CharactersLabel(ComposerModel.SentLength(verb, text, model.Escaping, model.Edit is not null));
         if (!_fullScreen)
         {
-            // 2 paragraphs · 31 words · 240 chars; before anything is written, the keys that move in and out of it.
+            // 2 paragraphs · 31 words, the mockup's footer, with the length as sent in its tooltip (the chars count would
+            // elide the words in a 380 px column); before anything is written, the keys that move in and out of it.
             var summary = ComposerModel.Summary(text);
             _summary.Text = summary.Length > 0
-                ? $"{summary} · {_count.Text}"
+                ? summary
                 : NativeKeys.Words(model.Armed ? "Esc command line · F1 full screen" : "F1 full screen");
+            ToolTip.SetTip(_summary, summary.Length > 0 ? $"{_count.Text} as sent" : null);
         }
         if (_preview.IsVisible)
         {
-            var command = ComposeMessage.Build(text.Replace("\r\n", "\n", StringComparison.Ordinal), model.Escaping);
+            var command = ComposeMessage.Build(verb, text.Replace("\r\n", "\n", StringComparison.Ordinal), model.Escaping);
             _previewText.Text = command ?? "nothing yet";
         }
     }
@@ -684,6 +788,40 @@ internal sealed class ComposerView : Border
                 session.Edited(text);
             }
         }
+    }
+
+    /// <summary>The command field changed: the length cell follows, and the client is told unless it wrote it.</summary>
+    private void OnCommandChanged()
+    {
+        SyncLength();
+        if (_session is { } session && !_applying)
+        {
+            session.EditedCommand(_command.Text ?? string.Empty);
+        }
+    }
+
+    /// <summary>
+    /// A key in the command field: ⏎ and ⇥ move on to the text (a command is one line), and every composer chord — ⌃S,
+    /// ⌥L, ⌥P, Esc, the keys a docked editor hands the client — means what it means in the text.
+    /// </summary>
+    private void OnCommandKeyDown(object? sender, KeyEventArgs e)
+    {
+        var mods = e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Shift);
+        if ((e.Key == Key.Enter && mods == KeyModifiers.None) || (e.Key == Key.Tab && mods == KeyModifiers.None))
+        {
+            e.Handled = true;
+            _editor.Focus();
+            return;
+        }
+
+        if (e.Key == Key.W && mods == KeyModifiers.Alt)
+        {
+            // ⌥W is a word of the text; in the command field it does nothing.
+            e.Handled = true;
+            return;
+        }
+
+        OnEditorKeyDown(sender, e);
     }
 
     private void AskToArm()
@@ -720,6 +858,18 @@ internal sealed class ComposerView : Border
             case (Key.S, KeyModifiers.Control):
                 e.Handled = true;
                 session.Send(text);
+                return;
+
+            case (Key.Tab, KeyModifiers.Shift) when model.HasCommandField && ReferenceEquals(sender, _editor):
+                // ⇧⇥ from the text back to the command field; ⇥ from the command field is its own handler's.
+                e.Handled = true;
+                _command.Focus();
+                return;
+
+            case (Key.Tab, KeyModifiers.None) when model.HasCommandField && ReferenceEquals(sender, _editor):
+                e.Handled = true;
+                _command.Focus();
+                _command.SelectAll();
                 return;
 
             case (Key.L, KeyModifiers.Alt):

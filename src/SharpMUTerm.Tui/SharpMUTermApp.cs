@@ -1286,13 +1286,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _composer.Preview = string.Equals(view, "compose-preview", StringComparison.OrdinalIgnoreCase);
             OpenComposer(
                 DemoScene.MainCharacterName,
-                "+bbpost 12=The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
+                "The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
                 + "short two horses. [Nobody] said what everyone was thinking.\n\n"
                 + "  -- Corvid, scribe",
                 !string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase)
                     ? ComposeEscaping.Literal
                     : ComposeEscaping.AsTyped,
-                canSend: true);
+                canSend: true,
+                verb: "+bbpost 12=");
         }
 
         // The composer holding a MOO verb to edit: the header names it and its type, and the footer offers a
@@ -5541,7 +5542,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             draft.Body,
             draft.Escaping,
             canSend: ComposerCanSend(session, key),
-            draft.Edit);
+            draft.Edit,
+            verb: draft.Verb ?? string.Empty);
+    }
+
+    /// <summary>
+    /// A post was sent: its text is forgotten and its command kept (with its escaping), so the next post from that
+    /// character starts on the same verb. A post with no command leaves no draft at all.
+    /// </summary>
+    private void ForgetComposeText(string key, ComposeEscaping escaping, string verb)
+    {
+        if (verb.Length == 0)
+        {
+            _composeDrafts.Remove(key);
+        }
+        else
+        {
+            _composeDrafts[key] = new ComposeResult(string.Empty, escaping, Verb: verb);
+        }
     }
 
     /// <summary>
@@ -5606,7 +5624,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (ComposeMessage.Build(result.Body, result.Escaping) is not { } line)
+        if (ComposeMessage.Build(result.Verb, result.Body, result.Escaping) is not { } line)
         {
             // An empty buffer is not a blank command to send: a MUSH answers a blank line, and some log
             // it. Said out loud rather than closing quietly, so ⌃S on an empty window is not mistaken
@@ -5619,7 +5637,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // before it is undone by the very act of shutting the window — the post came back next time it
         // was opened, already sent.
         CloseComposer();
-        _composeDrafts.Remove(session.SessionKey);
+        ForgetComposeText(session.SessionKey, result.Escaping, result.Verb ?? string.Empty);
         SyncDockedComposers(session.SessionKey);
         HistoryFor(BarKind(ActiveBar())).Add(line);
         _ = session.SendUserInputAsync(line);
@@ -5650,7 +5668,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (result.Body.Trim().Length == 0)
+        if (result.Body.Trim().Length == 0 && string.IsNullOrEmpty(result.Verb))
         {
             _composeDrafts.Remove(key);
         }
@@ -6084,7 +6102,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         // The armed composer, when one holds the keyboard, is what typing, paste and the caret follow instead.
-        IInteractiveControl bar = ArmedComposer()?.Editor ?? (IInteractiveControl)ActiveBar();
+        IInteractiveControl bar = ArmedComposer()?.Focused ?? (IInteractiveControl)ActiveBar();
         if (ReferenceEquals(_window.FocusManager.FocusedControl, bar))
         {
             return;
@@ -7614,7 +7632,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // and F1 that post is in both places at once: the dictionary kept it on the way out and the
         // window is holding it again. Counting both said "2 unsent drafts" for one post.
         var openKey = ComposerOpen ? ComposeDraftKey(activeId) : null;
-        var posts = _composeDrafts.Count(d => d.Key != openKey)
+        // A command kept with no text (the verb a sent post leaves behind) is no unsent post.
+        var posts = _composeDrafts.Count(d => d.Key != openKey && d.Value.Body.Trim().Length > 0)
             + (ComposerOpen && ComposerBody.Trim().Length > 0 ? 1 : 0);
         var drafts = holding.Count(w => w.Id != activeId) + bars + posts;
 

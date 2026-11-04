@@ -15,7 +15,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - In the desktop window, the header shows only the search box and your character, and the status bar reads
   "Corvid connected · UTF-8 · Log off" with a short hint on the right such as "2 new in Chat" (or the keys of the mode
   you are in). Notices still take the whole bar while they show.
-
+- The composer has a Command field above the text, in F1 and the docked panel, in the terminal and the desktop window:
+  put the verb there (`+pose`, `say`, `+bbpost 3=`) and write the post below it. ⇥ moves between the two (⏎ in the
+  command moves on to the text); the command is sent in front of the text unescaped, joined by a space (none after
+  `=` or a one-character shorthand like `:`), and it stays after a send for the next post. Leave it empty to write the
+  whole command in the text as before. The window's docked panel now reads as the design: Command and Text fields, the
+  Literal/As typed chip, `2 paragraphs · 31 words`, Preview and Send.
 - The package review keeps ⏎ install and Esc cancel on screen at 80×24: the review scrolls (↑↓ PgUp PgDn Home End)
   under its keys and stops above the command line.
 - Browse worlds: a world listed at several addresses (TLS and plain, another port, an old one) now lets you choose

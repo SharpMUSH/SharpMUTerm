@@ -307,7 +307,7 @@ internal sealed partial class SharpMUTermApp
         var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent, DescribeDocked);
         if (_composeDrafts.TryGetValue(context.SessionKey, out var draft))
         {
-            composer.Load(draft.Body, draft.Escaping);
+            composer.Load(draft.Body, draft.Escaping, draft.Verb);
         }
 
         composer.Changed += (_, _) => KeepDockedDraft(composer);
@@ -323,13 +323,13 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void KeepDockedDraft(DockedComposer composer)
     {
-        if (composer.Body.Trim().Length == 0)
+        if (composer.Body.Trim().Length == 0 && composer.Verb.Length == 0)
         {
             _composeDrafts.Remove(composer.SessionKey);
             return;
         }
 
-        _composeDrafts[composer.SessionKey] = new ComposeResult(composer.Body, composer.Escaping);
+        _composeDrafts[composer.SessionKey] = new ComposeResult(composer.Body, composer.Escaping, Verb: composer.Verb);
     }
 
     /// <summary>Puts a character's kept draft back into its docked composers, after F1 changed it.</summary>
@@ -340,7 +340,7 @@ internal sealed partial class SharpMUTermApp
             if (sessionKey is null || string.Equals(composer.SessionKey, sessionKey, StringComparison.Ordinal))
             {
                 var draft = _composeDrafts.GetValueOrDefault(composer.SessionKey);
-                composer.Load(draft.Body ?? string.Empty, draft.Body is null ? composer.Escaping : draft.Escaping);
+                composer.Load(draft.Body ?? string.Empty, draft.Body is null ? composer.Escaping : draft.Escaping, draft.Verb ?? string.Empty);
             }
         }
     }
@@ -373,7 +373,7 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>Whether the framework's focus is on a docked composer's editor.</summary>
     internal bool ComposerHasFocus =>
-        _window.FocusManager.FocusedControl is { } focused && _dockedComposers.Values.Any(c => ReferenceEquals(c.Editor, focused));
+        _window.FocusManager.FocusedControl is { } focused && _dockedComposers.Values.Any(c => c.Owns(focused));
 
     /// <summary>
     /// Paints who holds the keyboard: the armed composer's header marker, and both command lines idle while a
@@ -426,8 +426,14 @@ internal sealed partial class SharpMUTermApp
     private void ArmClickedComposer()
     {
         if (_pinningFocus || !_window.GetIsActive() || _window.FocusManager.FocusedControl is not { } focused
-            || _dockedComposers.Values.FirstOrDefault(c => ReferenceEquals(c.Editor, focused)) is not { } clicked
-            || ReferenceEquals(clicked, ArmedComposer()))
+            || _dockedComposers.Values.FirstOrDefault(c => c.Owns(focused)) is not { } clicked)
+        {
+            return;
+        }
+
+        // A click in either field puts the keyboard in that field, armed or not.
+        clicked.InCommand = ReferenceEquals(focused, clicked.CommandRow.Field);
+        if (ReferenceEquals(clicked, ArmedComposer()))
         {
             return;
         }
@@ -477,14 +483,15 @@ internal sealed partial class SharpMUTermApp
             // Never the editor's own: its ⌃C/⌃X write to the system clipboard through a helper nothing can
             // substitute. Through the app's clipboard, as the command line's are.
             e.Handled = true;
-            if (!composer.Editor.HasSelection)
+            var field = composer.Focused;
+            if (!field.HasSelection)
             {
                 CopySelection();
             }
-            else if (ToClipboard(composer.Editor.GetSelectedText(), key.Key == ConsoleKey.X ? "cut" : "copied")
+            else if (ToClipboard(field.GetSelectedText(), key.Key == ConsoleKey.X ? "cut" : "copied")
                 && key.Key == ConsoleKey.X)
             {
-                composer.Editor.ProcessKey(new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false));
+                field.ProcessKey(new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false));
             }
 
             return null;
@@ -524,13 +531,26 @@ internal sealed partial class SharpMUTermApp
             return null;
         }
 
-        e.Handled = true;
-        if (!composer.Editor.HasFocus)
+        // ⇥ / ⇧⇥ move between the command field and the text; ⏎ in the command field moves on to the text, a command
+        // being one line. F1's keys, handed here as every composer key is.
+        if ((key.Key == ConsoleKey.Tab && (key.Modifiers & ~ConsoleModifiers.Shift) == 0)
+            || (key.Key == ConsoleKey.Enter && key.Modifiers == 0 && composer.InCommand))
         {
-            _window.FocusControl(composer.Editor);
+            e.Handled = true;
+            composer.InCommand = key.Key == ConsoleKey.Tab && !composer.InCommand && key.Modifiers == 0;
+            _window.FocusControl(composer.Focused);
+            composer.Redraw();
+            return null;
         }
 
-        composer.Editor.ProcessKey(key.Key == ConsoleKey.Enter ? new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false) : key);
+        e.Handled = true;
+        var target = composer.Focused;
+        if (!target.HasFocus)
+        {
+            _window.FocusControl(target);
+        }
+
+        target.ProcessKey(key.Key == ConsoleKey.Enter ? new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false) : key);
         return null;
     }
 
@@ -569,14 +589,16 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        if (ComposeMessage.Build(composer.Body, composer.Escaping) is not { } line)
+        if (ComposeMessage.Build(composer.Verb, composer.Body, composer.Escaping) is not { } line)
         {
             RefuseCommand("nothing to send — the composer is empty");
             return;
         }
 
-        composer.Load(string.Empty, composer.Escaping);
-        _composeDrafts.Remove(composer.SessionKey);
+        // The text goes; the command stays, for the next pose.
+        var verb = composer.Verb;
+        composer.Load(string.Empty, composer.Escaping, verb);
+        ForgetComposeText(composer.SessionKey, composer.Escaping, verb);
         HistoryFor(composer.SessionKey, BarKind(_input)).Add(line);
         _ = session.SendUserInputAsync(line);
     }
@@ -588,6 +610,8 @@ internal sealed partial class SharpMUTermApp
         {
             SimulateKey(c == '\n'
                 ? new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)
+                : c == '\t'
+                ? new ConsoleKeyInfo('\t', ConsoleKey.Tab, false, false, false)
                 : new ConsoleKeyInfo(c, char.IsAsciiLetter(c) ? (ConsoleKey)char.ToUpperInvariant(c) : ConsoleKey.NoName, char.IsUpper(c), false, false));
         }
     }
@@ -788,7 +812,7 @@ internal sealed partial class SharpMUTermApp
                     RebuildPaneArea();
                     Activate(MainWindowId);
                     Activate(composer);
-                    SimulateComposerTyping("+pose Corvid sets the lantern down by the fountain\nand waits, 100% certain [someone] saw.");
+                    SimulateComposerTyping("\t+pose\tCorvid sets the lantern down by the fountain\nand waits, 100% certain [someone] saw.");
                 }
 
                 break;

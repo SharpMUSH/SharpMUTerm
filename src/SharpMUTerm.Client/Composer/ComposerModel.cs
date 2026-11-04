@@ -83,8 +83,21 @@ public sealed record ComposerModel(
     IReadOnlyList<SpellRange> Marks,
     IReadOnlyList<ComposerKey> Keys)
 {
-    /// <summary>What ⌃S sends for this draft: <see cref="ComposeMessage.Build"/>, or null for nothing (or an edit).</summary>
-    public string? Command => Edit is null ? ComposeMessage.Build(Body, Escaping) : null;
+    /// <summary>
+    /// The command field: the verb the text is sent with (<c>+pose</c>, <c>+bbpost 12=</c>), drawn above the text in both
+    /// hosts. Empty for none — then the text is the whole command, verb and all, as the single buffer always was — and
+    /// always empty for an edit, which has no command field.
+    /// </summary>
+    public string Verb { get; init; } = string.Empty;
+
+    /// <summary>Whether the composer draws a command field: a post does; a MOO or script edit is its lines alone.</summary>
+    public bool HasCommandField => Edit is null;
+
+    /// <summary>
+    /// What ⌃S sends for this draft: <see cref="ComposeMessage.Build(string?, string?, ComposeEscaping)"/> of the command and
+    /// the text, or null for nothing (or an edit).
+    /// </summary>
+    public string? Command => Edit is null ? ComposeMessage.Build(Verb, Body, Escaping) : null;
 
     /// <summary>
     /// Whether F1 shows the post as it will be sent (⌥P) — the <c>%r</c>-joined, escaped command — under the editor. The
@@ -93,7 +106,7 @@ public sealed record ComposerModel(
     public bool Preview { get; init; }
 
     /// <summary>The header's length cell for this draft: <see cref="SentLength"/>.</summary>
-    public int Characters => SentLength(Body, Escaping, Edit is not null);
+    public int Characters => SentLength(Verb, Body, Escaping, Edit is not null);
 
     /// <summary>
     /// How long a draft is as the game will get it: the length of <see cref="ComposeMessage.Build"/>'s command, with its
@@ -105,6 +118,17 @@ public sealed record ComposerModel(
         ArgumentNullException.ThrowIfNull(body);
         body = body.Replace("\r\n", "\n", StringComparison.Ordinal);
         return edit ? body.TrimEnd('\n').Length : ComposeMessage.Build(body, escaping)?.Length ?? 0;
+    }
+
+    /// <summary>
+    /// <see cref="SentLength(string, ComposeEscaping, bool)"/> of a post written as a command and its text: the length of
+    /// the one line the two fields make.
+    /// </summary>
+    public static int SentLength(string? verb, string body, ComposeEscaping escaping, bool edit)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        body = body.Replace("\r\n", "\n", StringComparison.Ordinal);
+        return edit ? body.TrimEnd('\n').Length : ComposeMessage.Build(verb, body, escaping)?.Length ?? 0;
     }
 
     /// <summary>The length cell's words: <c>1 char</c>, <c>240 chars</c>.</summary>
@@ -143,10 +167,27 @@ public sealed record ComposerModel(
     }
 
     /// <summary>
-    /// The verb the post starts with — <c>+pose</c>, <c>say</c> — for the docked header, so a reader can see what the
-    /// buffer will be sent as without reading it. Empty for an empty buffer.
+    /// What the docked header names the post by — <c>+pose</c>, <c>say</c> — so a reader can see what it will be sent as
+    /// without reading it: the command field, elided to sixteen characters, or with none the text's first word. Empty for
+    /// an empty post.
     /// </summary>
-    public string Verb => VerbOf(Body);
+    public string HeadingVerb
+    {
+        get
+        {
+            var verb = ComposeMessage.CleanCommand(Verb);
+            return verb.Length == 0 ? VerbOf(Body) : verb.Length <= 16 ? verb : verb[..15] + "…";
+        }
+    }
+
+    /// <summary>The command field's label in both hosts.</summary>
+    public const string CommandLabel = "Command";
+
+    /// <summary>The text field's label in both hosts.</summary>
+    public const string TextLabel = "Text";
+
+    /// <summary>What an empty command field says: what goes there, and that it may be left empty.</summary>
+    public const string CommandPlaceholder = "+pose, say, +bbpost 3= … or none";
 
     /// <summary>
     /// The model for a composer's state. The keys are worked out here, so the cells and the window offer the same row:
@@ -164,7 +205,8 @@ public sealed record ComposerModel(
         bool canSend,
         bool armed,
         long revision,
-        bool preview = false)
+        bool preview = false,
+        string verb = "")
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(body);
@@ -184,6 +226,7 @@ public sealed record ComposerModel(
             KeysFor(place, edit is not null, checker is not null, canSend, armed, preview, edit))
         {
             Preview = preview && place == ComposerPlace.FullScreen && edit is null,
+            Verb = edit is null ? (verb ?? string.Empty).Replace("\r\n", " ", StringComparison.Ordinal).Replace('\n', ' ') : string.Empty,
         };
     }
 
@@ -223,6 +266,9 @@ public sealed record ComposerModel(
 
             docked.Add(new("F1", "full screen", "full"));
             docked.Add(new("Esc", "command line", "back"));
+
+            // Last, so a narrow pane elides it before the way back.
+            docked.Add(new("⇥", "command ↔ text", "field"));
             return docked;
         }
 
@@ -248,6 +294,7 @@ public sealed record ComposerModel(
         var keys = new List<ComposerKey>
         {
             new("⌃S", canSend ? "send" : "send (nothing connected)"),
+            new("⇥", "command ↔ text", "field"),
             new("⌥L", "escaping"),
         };
         // With no dictionary, ⌥W is the way to one: the offer, never a download on its own.
@@ -274,6 +321,7 @@ public sealed record ComposerModel(
         && Place == other.Place
         && Target == other.Target
         && Body == other.Body
+        && Verb == other.Verb
         && Escaping == other.Escaping
         && Equals(Edit, other.Edit)
         && Dictionary == other.Dictionary

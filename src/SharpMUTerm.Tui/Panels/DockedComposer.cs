@@ -11,7 +11,8 @@ namespace SharpMUTerm.Tui.Panels;
 
 /// <summary>
 /// The composer as a pane: a header naming what is being written and how it will be escaped
-/// (<c>COMPOSE  +pose  literal</c>), the F1 composer's editor, and a key row
+/// (<c>COMPOSE  +pose  literal</c>), the command field (<see cref="ComposerCommandRow"/>), the F1 composer's editor for
+/// the text, and a key row
 /// (<c>⌃S send · ⌥L literal · F1 full screen · Esc command line</c>).
 /// <para>
 /// <b>The editor is the F1 composer's</b> — a <see cref="MultilineEditControl"/> that inserts on ⏎, wraps words
@@ -91,16 +92,32 @@ internal sealed class DockedComposer
             }
         };
 
+        CommandRow = new ComposerCommandRow(scheme, plane: null);
+        CommandRow.Field.ContentChanged += (_, _) =>
+        {
+            if (!_fromHost)
+            {
+                Revision++;
+            }
+
+            if (!_quiet)
+            {
+                Redraw();
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
+        };
+
         _header = new MarkupControl(new List<string>()) { HorizontalAlignment = HorizontalAlignment.Stretch };
         _footer = new MarkupControl(new List<string>()) { HorizontalAlignment = HorizontalAlignment.Stretch };
 
         var grid = Controls.Grid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill);
-        grid.Rows(GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
+        grid.Rows(GridLength.Cells(1), GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
         grid.Place(_header, 0, 0, 1, 1);
-        grid.Place(Editor, 1, 0, 1, 1);
-        grid.Place(_footer, 2, 0, 1, 1);
+        grid.Place(CommandRow.Control, 1, 0, 1, 1);
+        grid.Place(Editor, 2, 0, 1, 1);
+        grid.Place(_footer, 3, 0, 1, 1);
         Control = grid.Build();
         Redraw();
     }
@@ -116,6 +133,28 @@ internal sealed class DockedComposer
 
     /// <summary>The editor, which the host focuses and hands keys to while this is armed.</summary>
     internal MultilineEditControl Editor { get; }
+
+    /// <summary>The command field above the text.</summary>
+    internal ComposerCommandRow CommandRow { get; }
+
+    /// <summary>The command field's text, one line (<see cref="ComposerModel.Verb"/>).</summary>
+    internal string Verb => CommandRow.Text;
+
+    /// <summary>
+    /// Whether the keyboard is in the command field rather than the text: ⇥ moves it (<see cref="ToggleField"/>), and a
+    /// click in either field puts it there. The composer's own state, never the model's: where a caret is is not a fact
+    /// the other host draws.
+    /// </summary>
+    internal bool InCommand { get; set; }
+
+    /// <summary>The field the keyboard is in: the one the host focuses and hands keys to while this is armed.</summary>
+    internal MultilineEditControl Focused => InCommand ? CommandRow.Field : Editor;
+
+    /// <summary>Whether <paramref name="control"/> is one of this composer's two fields.</summary>
+    internal bool Owns(object? control) => ReferenceEquals(control, Editor) || ReferenceEquals(control, CommandRow.Field);
+
+    /// <summary>⇥: the keyboard to the other field.</summary>
+    internal void ToggleField() => InCommand = !InCommand;
 
     /// <summary>The escaping mode, toggled by ⌥L, as F1's is.</summary>
     internal ComposeEscaping Escaping { get; private set; } = ComposeEscaping.AsTyped;
@@ -181,6 +220,25 @@ internal sealed class DockedComposer
         }
     }
 
+    /// <summary>The command a native editor's command field now holds, written in as <see cref="SetFromHost"/> writes the text.</summary>
+    internal void SetCommandFromHost(string command)
+    {
+        if (string.Equals(Verb, ComposeMessage.CleanCommand(command), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _fromHost = true;
+        try
+        {
+            CommandRow.Set(command);
+        }
+        finally
+        {
+            _fromHost = false;
+        }
+    }
+
     /// <summary>Raised after the buffer or the mode changed by the writer's hand (never by <see cref="Load"/>).</summary>
     internal event EventHandler? Changed;
 
@@ -191,21 +249,26 @@ internal sealed class DockedComposer
     internal string FooterMarkup => _footer.Text;
 
     /// <summary>Replaces the buffer and mode with a draft kept elsewhere (F1 closing), raising nothing.</summary>
-    internal void Load(string body, ComposeEscaping escaping)
+    internal void Load(string body, ComposeEscaping escaping, string? verb = null)
     {
         Escaping = escaping;
         Revision++;
-        if (!string.Equals(Body, body, StringComparison.Ordinal))
+        _quiet = true;
+        try
         {
-            _quiet = true;
-            try
+            if (!string.Equals(Body, body, StringComparison.Ordinal))
             {
                 Editor.SetContent(body);
             }
-            finally
+
+            if (verb is not null)
             {
-                _quiet = false;
+                CommandRow.Set(verb);
             }
+        }
+        finally
+        {
+            _quiet = false;
         }
 
         Redraw();
@@ -222,7 +285,7 @@ internal sealed class DockedComposer
     /// <summary>Sizes the editor to the pane's box, less the header and key rows.</summary>
     internal void Fit(int width, int height)
     {
-        var rows = Math.Max(1, height - 2);
+        var rows = Math.Max(1, height - 3);
         if (Editor.ViewportHeight != rows)
         {
             Editor.ViewportHeight = rows;
@@ -237,12 +300,6 @@ internal sealed class DockedComposer
 
     /// <summary>The pane's width, which picks the key row's long or short form.</summary>
     private int _width;
-
-    /// <summary>
-    /// The verb the post starts with — <c>+pose</c>, <c>say</c> — for the header, so a reader can see what the
-    /// buffer will be sent as without reading it. Empty for an empty buffer.
-    /// </summary>
-    internal static string Verb(string body) => ComposerModel.VerbOf(body);
 
     /// <summary>Re-describes the composer and draws the model.</summary>
     internal void Redraw()
@@ -259,7 +316,7 @@ internal sealed class DockedComposer
     /// </summary>
     internal void Render(ComposerModel model)
     {
-        var verb = model.Verb;
+        var verb = model.HeadingVerb;
         var mode = model.Escaping == ComposeEscaping.Literal ? $"[{_accent}]literal[/]" : "[dim]as typed[/]";
         var marker = model.Armed ? $"[{_accent}]▌[/]" : " ";
         var title = $"{marker}[bold {_accent}]COMPOSE[/]" + (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {mode}";

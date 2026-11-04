@@ -692,6 +692,30 @@ public class SurfaceParityTests
             await Assert.That(native.Outcome).IsEqualTo(cells.Outcome);
         }
 
+        // The command field: written in the window's command box and in the cells' (⇥ there and back), the same one
+        // line goes out — the command unescaped in front of the escaped text — and a close keeps it with the draft.
+        foreach (var (verb, draft, literal) in new[]
+        {
+            ("+pose", "waves [twice]\nand sits", true),
+            ("+bbpost 3=", "Title\n\n50% done", false),
+            (":", "grins.", false),
+        })
+        {
+            var native = await ComposeOnTheWire(native: true, draft, literal, send: true, verb);
+            var cells = await ComposeOnTheWire(native: false, draft, literal, send: true, verb);
+            await Assert.That(native.Sent).IsEquivalentTo(new[] { ComposeMessage.Build(verb, draft, literal ? ComposeEscaping.Literal : ComposeEscaping.AsTyped)! });
+            await Assert.That(native.Sent).IsEquivalentTo(cells.Sent).Because($"compose: send '{verb}' + '{draft}'");
+            await Assert.That(native.Outcome).IsEqualTo(cells.Outcome).Because("compose: the command is kept after a send");
+            await Assert.That(native.Outcome).Contains($"verb={verb}");
+        }
+
+        {
+            var native = await ComposeOnTheWire(native: false, "half a post", literal: false, send: false, "say");
+            var cells = await ComposeOnTheWire(native: true, "half a post", literal: false, send: false, "say");
+            await Assert.That(native.Outcome).IsEqualTo(cells.Outcome).Because("compose: close keeps the command with the draft");
+            await Assert.That(native.Outcome).Contains("draft=half a post as typed verb=say");
+        }
+
         {
             var native = await ComposeOnTheWire(native: true, "half a post", literal: true, send: false);
             var cells = await ComposeOnTheWire(native: false, "half a post", literal: true, send: false);
@@ -710,6 +734,14 @@ public class SurfaceParityTests
             await Assert.That(native.Sent).IsEquivalentTo(new[] { "+pose waves%rand sits" });
             await Assert.That(native.Sent).IsEquivalentTo(cells.Sent).Because("composer: send");
             await Assert.That(native.Outcome).IsEqualTo(cells.Outcome).Because("composer: release");
+
+            // The same post written in the two fields goes out as the same one line, and the command stays for the next.
+            var nativeSplit = await DockedOnTheWire(native: true, split: true);
+            var cellsSplit = await DockedOnTheWire(native: false, split: true);
+            await Assert.That(nativeSplit.Sent).IsEquivalentTo(new[] { "+pose waves%rand sits" });
+            await Assert.That(nativeSplit.Sent).IsEquivalentTo(cellsSplit.Sent).Because("composer: send from the two fields");
+            await Assert.That(nativeSplit.Outcome).IsEqualTo(cellsSplit.Outcome).Because("composer: the command is kept");
+            await Assert.That(nativeSplit.Outcome).Contains("verb=+pose");
             probed.Add(PanelIds.Composer);
         }
 
@@ -1088,7 +1120,7 @@ public class SurfaceParityTests
     /// A connected client writes <paramref name="draft"/> in F1 — the window's editor through its session, or the cell
     /// window through its keys — and sends it with ⌃S or closes it with Esc. What reached the wire, and the state left.
     /// </summary>
-    private static async Task<(IReadOnlyList<string> Sent, string Outcome)> ComposeOnTheWire(bool native, string draft, bool literal, bool send)
+    private static async Task<(IReadOnlyList<string> Sent, string Outcome)> ComposeOnTheWire(bool native, string draft, bool literal, bool send, string verb = "")
     {
         using var driver = new AvaloniaConsoleDriver(140, 36);
         var composer = native ? new FakeComposer() : null;
@@ -1098,6 +1130,11 @@ public class SurfaceParityTests
         if (composer is not null)
         {
             var session = composer.Session!;
+            if (verb.Length > 0)
+            {
+                session.EditedCommand(verb);
+            }
+
             session.Edited(draft);
             if (literal)
             {
@@ -1115,6 +1152,14 @@ public class SurfaceParityTests
         }
         else
         {
+            if (verb.Length > 0)
+            {
+                // ⇥ to the command field, the command, ⇥ back to the text.
+                app.Composer.SimulateKey(new ConsoleKeyInfo('\t', ConsoleKey.Tab, false, false, false));
+                app.Composer.SimulateTyping(verb);
+                app.Composer.SimulateKey(new ConsoleKeyInfo('\t', ConsoleKey.Tab, false, false, false));
+            }
+
             app.Composer.SimulateTyping(draft);
             if (literal)
             {
@@ -1129,8 +1174,8 @@ public class SurfaceParityTests
         // Where the draft went: reopened, F1 says what it holds and in which mode.
         app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
         var held = composer is not null
-            ? $"{composer.Session!.Model.Body} {(composer.Session.Model.Escaping == ComposeEscaping.Literal ? "literal" : "as typed")}"
-            : $"{app.Composer.Body} {(app.Composer.HeaderMarkup.Contains("literal", StringComparison.Ordinal) ? "literal" : "as typed")}";
+            ? $"{composer.Session!.Model.Body} {(composer.Session.Model.Escaping == ComposeEscaping.Literal ? "literal" : "as typed")} verb={composer.Session.Model.Verb}"
+            : $"{app.Composer.Body} {(app.Composer.HeaderMarkup.Contains("literal", StringComparison.Ordinal) ? "literal" : "as typed")} verb={app.Composer.Verb}";
         return (telnet.Lines.ToList(), Outcome(app) + " | draft=" + held);
     }
 
@@ -1138,7 +1183,7 @@ public class SurfaceParityTests
     /// A connected client docks its composer, types into it — the window's editor through its session, or the cells
     /// through the composer's keys — sends with ⌃S, types again and releases with Esc.
     /// </summary>
-    private static async Task<(IReadOnlyList<string> Sent, string Outcome)> DockedOnTheWire(bool native)
+    private static async Task<(IReadOnlyList<string> Sent, string Outcome)> DockedOnTheWire(bool native, bool split = false)
     {
         using var driver = new AvaloniaConsoleDriver(140, 36);
         var (app, telnet) = await Connected(driver, native ? new FakeComposer() : null);
@@ -1147,7 +1192,15 @@ public class SurfaceParityTests
         app.RenderNextFrame();
         var windowId = TerminalPanels.WindowId(PanelIds.Composer, "Quiet.Ann");
         var session = native ? driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.Composer).ComposerSession! : null;
-        if (session is not null)
+        if (session is not null && split)
+        {
+            session.EditedCommand("+pose");
+            session.Edited("waves\nand sits");
+            session.Send("waves\nand sits");
+            session.Edited("next");
+            session.Release();
+        }
+        else if (session is not null)
         {
             session.Edited("+pose waves\nand sits");
             session.Send("+pose waves\nand sits");
@@ -1156,13 +1209,14 @@ public class SurfaceParityTests
         }
         else
         {
-            app.SimulateComposerTyping("+pose waves\nand sits");
+            app.SimulateComposerTyping(split ? "\t+pose\twaves\nand sits" : "+pose waves\nand sits");
             app.SimulateKey(new ConsoleKeyInfo('\x13', ConsoleKey.S, false, false, true));
             app.SimulateComposerTyping("next");
             app.SimulateKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
         }
 
-        return (telnet.Lines.ToList(), $"{Outcome(app)} | armed={app.ComposerArmed} | docked={app.DockedComposerIn(windowId)!.Body}");
+        var docked = app.DockedComposerIn(windowId)!;
+        return (telnet.Lines.ToList(), $"{Outcome(app)} | armed={app.ComposerArmed} | docked={docked.Body} verb={docked.Verb}");
     }
 
     /// <summary>A connected client docks its composer, types a draft and asks for the preview; the F1 it opens, read back.</summary>

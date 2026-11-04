@@ -15,7 +15,8 @@ namespace SharpMUTerm.Tui;
 /// <param name="Escaping">The window's escaping mode when it happened.</param>
 /// <param name="Edit">The MOO buffer this is an edit of, or null for a post.</param>
 /// <param name="Script">The script file this is an edit of, or null.</param>
-internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping, MooEdit? Edit = null, ScriptEdit? Script = null);
+/// <param name="Verb">The command field (<see cref="ComposerModel.Verb"/>): empty for none, and for an edit.</param>
+internal readonly record struct ComposeResult(string Body, ComposeEscaping Escaping, MooEdit? Edit = null, ScriptEdit? Script = null, string Verb = "");
 
 /// <summary>
 /// A script file open in the composer: its name under the scripts folder (or <c>package:&lt;id&gt;/&lt;file&gt;</c>), whose
@@ -74,6 +75,10 @@ internal sealed class ComposeOverlay
 
     private Window? _window;
     private MultilineEditControl? _editor;
+    private Panels.ComposerCommandRow? _command;
+
+    /// <summary>Whether the keyboard is in the command field (⇥ moves it); only while a post is open.</summary>
+    private bool _inCommand;
     private ComposeEscaping _escaping;
     private string _target = string.Empty;
     private bool _canSend;
@@ -139,6 +144,12 @@ internal sealed class ComposeOverlay
     /// </summary>
     internal string Body => _editor?.GetContent().Replace("\r\n", "\n", StringComparison.Ordinal) ?? string.Empty;
 
+    /// <summary>The command field as it stands, one line; empty when shut, and for an edit, which has none.</summary>
+    internal string Verb => _command?.Text ?? string.Empty;
+
+    /// <summary>Whether the keyboard is in the command field, for the tests.</summary>
+    internal bool InCommand => _command is not null && _inCommand;
+
     /// <summary>The escaping mode as it stands — the window's own toggle, not a saved setting.</summary>
     internal ComposeEscaping Escaping => _escaping;
 
@@ -171,7 +182,7 @@ internal sealed class ComposeOverlay
     /// What the window draws, as the shared model a native composer draws: the target, the buffer as it stands, the
     /// mode, the edit, the dictionary and its marks, and the key row.
     /// </summary>
-    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend, Preview, _script);
+    internal ComposerModel Model => ModelFor(_target, Body, _escaping, _edit, Spelling, _canSend, Preview, _script, Verb);
 
     /// <summary>
     /// Whether F1 shows the post as it will be sent (⌥P), under the editor. One fact for the run in both hosts — the
@@ -187,7 +198,7 @@ internal sealed class ComposeOverlay
     /// it, so the two say the same thing for the same draft. Revision 1: F1 opens on a draft and nothing replaces it
     /// while it is open.
     /// </summary>
-    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend, bool preview = false, ScriptEdit? script = null) =>
+    internal static ComposerModel ModelFor(string target, string body, ComposeEscaping escaping, MooEdit? edit, SpellChecker? spelling, bool canSend, bool preview = false, ScriptEdit? script = null, string verb = "") =>
         ComposerModel.Create(
             ComposerPlace.FullScreen,
             target,
@@ -198,7 +209,8 @@ internal sealed class ComposeOverlay
             canSend,
             armed: true,
             revision: 1,
-            preview: preview);
+            preview: preview,
+            verb: verb);
 
     /// <summary>
     /// Opens the composer on <paramref name="draft"/>, or closes it when it is already open — the same
@@ -214,7 +226,8 @@ internal sealed class ComposeOverlay
     /// </param>
     /// <param name="edit">The MOO buffer this opens on, or null for a post.</param>
     /// <param name="script">The script file this opens on, or null.</param>
-    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null, ScriptEdit? script = null)
+    /// <param name="verb">The command field the draft was left with; a post only.</param>
+    internal void Toggle(string target, string draft, ComposeEscaping escaping, bool canSend, MooEdit? edit = null, ScriptEdit? script = null, string verb = "")
     {
         if (_window is not null)
         {
@@ -285,6 +298,15 @@ internal sealed class ComposeOverlay
         }
 
         _editor.SetContent(draft);
+        _inCommand = false;
+        _command = null;
+        if (edit is null && script is null)
+        {
+            // A post has a command field above its text; an edit is its lines alone.
+            _command = new Panels.ComposerCommandRow(_scheme, ScreenPalette.FooterBg);
+            _command.Set(verb);
+            _command.Field.ContentChanged += (_, _) => RefreshBands();
+        }
         if (script is { Line: > 0 } at)
         {
             _editor.GoToLine(at.Line);
@@ -300,8 +322,13 @@ internal sealed class ComposeOverlay
             .Maximized()
             .Frameless()
             .WithColors(_scheme.Colour(ScreenPalette.PanelFg), _scheme.Colour(ScreenPalette.PanelBg))
-            .AddControl(HeaderBand())
-            .AddControl(_editor);
+            .AddControl(HeaderBand());
+        if (CommandControl() is { } row)
+        {
+            builder.AddControl(row);
+        }
+
+        builder.AddControl(_editor);
         if (Model.Preview)
         {
             builder.AddControl(PreviewBand());
@@ -318,7 +345,36 @@ internal sealed class ComposeOverlay
 
         // Nothing focuses a control for you in this framework, and an unfocused editor takes no
         // keystrokes at all — the window would open looking right and swallow everything typed into it.
-        _window.FocusManager.SetFocus(_editor, FocusReason.Programmatic);
+        _window.FocusManager.SetFocus(FocusedField, FocusReason.Programmatic);
+    }
+
+    /// <summary>The field the keyboard is in: the command field after ⇥, else the text.</summary>
+    private MultilineEditControl FocusedField => _inCommand && _command is not null ? _command.Field : _editor!;
+
+    /// <summary>The command row, sticky under the header, or null for an edit.</summary>
+    private IWindowControl? CommandControl()
+    {
+        if (_command is null)
+        {
+            return null;
+        }
+
+        _command.Control.StickyPosition = StickyPosition.Top;
+
+        return _command.Control;
+    }
+
+    /// <summary>⇥ / ⇧⇥ / ⏎ in the command field: the keyboard to the other field.</summary>
+    private void SwitchField(bool toCommand)
+    {
+        if (_window is null || _command is null)
+        {
+            return;
+        }
+
+        _inCommand = toCommand;
+        _window.FocusManager.SetFocus(FocusedField, FocusReason.Programmatic);
+        _window.Invalidate(redrawAll: true);
     }
 
     /// <summary>
@@ -361,7 +417,7 @@ internal sealed class ComposeOverlay
         return args.Handled;
     }
 
-    /// <summary>Types text into the editor, the way the framework's own key path would.</summary>
+    /// <summary>Types text into the field the keyboard is in, the way the framework's own key path would.</summary>
     internal void SimulateTyping(string text)
     {
         if (_editor is null)
@@ -369,7 +425,8 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        _editor.SetContent(_editor.GetContent() + text);
+        var field = FocusedField;
+        field.SetContent(field.GetContent() + text);
         RefreshBands();
     }
 
@@ -454,6 +511,16 @@ internal sealed class ComposeOverlay
             return;
         }
 
+        // ⇥ and ⇧⇥ move between the command field and the text, and ⏎ in the command field moves on to the text: a
+        // command is one line, and a post's text has no use for a tab. An edit has one field and keeps its ⇥ (indent).
+        if (_command is not null && !ctrl && !alt
+            && (key.Key == ConsoleKey.Tab || (key.Key == ConsoleKey.Enter && _inCommand)))
+        {
+            e.Handled = true;
+            SwitchField(key.Key == ConsoleKey.Tab && !_inCommand && !key.Modifiers.HasFlag(ConsoleModifiers.Shift));
+            return;
+        }
+
         if (key.Key == ConsoleKey.Escape && !ctrl && !alt)
         {
             e.Handled = true;
@@ -498,7 +565,7 @@ internal sealed class ComposeOverlay
         // the close so the handler sees the buffer rather than an empty window — and Closed still
         // follows, so a send the host refuses (no connection) keeps the post rather than dropping it on
         // the floor.
-        Send?.Invoke(this, new ComposeResult(Body, _escaping, _edit, _script));
+        Send?.Invoke(this, new ComposeResult(Body, _escaping, _edit, _script, Verb));
     }
 
     /// <summary>Shuts the window, handing the buffer back for the host to keep.</summary>
@@ -509,7 +576,7 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        var result = new ComposeResult(Body, _escaping, _edit, _script);
+        var result = new ComposeResult(Body, _escaping, _edit, _script, Verb);
         _system.CloseModalWindow(window);
         Closed?.Invoke(this, result);
     }
@@ -528,6 +595,11 @@ internal sealed class ComposeOverlay
 
         window.ClearControls();
         window.AddControl(HeaderBand());
+        if (CommandControl() is { } row)
+        {
+            window.AddControl(row);
+        }
+
         window.AddControl(_editor);
         if (Model.Preview)
         {
@@ -541,7 +613,7 @@ internal sealed class ComposeOverlay
         window.AddControl(FooterBand());
         FitEditor();
         window.Invalidate(redrawAll: true);
-        window.FocusManager.SetFocus(_editor, FocusReason.Programmatic);
+        window.FocusManager.SetFocus(FocusedField, FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -737,7 +809,7 @@ internal sealed class ComposeOverlay
             return;
         }
 
-        _editor.ViewportHeight = Math.Max(1, _system.ConsoleDriver.ScreenSize.Height - ChromeRows - (Model.Preview ? PreviewRows : 0));
+        _editor.ViewportHeight = Math.Max(1, _system.ConsoleDriver.ScreenSize.Height - ChromeRows - (_command is null ? 0 : 1) - (Model.Preview ? PreviewRows : 0));
     }
 
     /// <summary>The header and footer bands, which the editor's height is whatever is left over from.</summary>
@@ -762,6 +834,8 @@ internal sealed class ComposeOverlay
         _system.ConsoleDriver.ScreenResized -= OnScreenResized;
         _window = null;
         _editor = null;
+        _command = null;
+        _inCommand = false;
         _edit = null;
         _script = null;
         _headerBand = null;
