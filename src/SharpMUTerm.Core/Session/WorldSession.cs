@@ -330,9 +330,13 @@ public sealed class WorldSession : IAsyncDisposable
             return;
         }
 
-        if (_parser.Flush() is { } tail)
+        lock (_ingestGate)
         {
-            ProcessOutputLine(tail);
+            ReleaseHeldLine();
+            if (_parser.Flush() is { } tail)
+            {
+                ProcessOutputLine(tail);
+            }
         }
 
         _parser = NewParser(format);
@@ -595,6 +599,11 @@ public sealed class WorldSession : IAsyncDisposable
         // negotiated again to take it back off ANSI.
         _parser = NewParser(World.ContentFormat);
 
+        // No lock: the old connection's read loop has ended (its transport is disposed above), and a release
+        // timer still pending checks it is releasing for this joiner before it does anything.
+        _reflowRelease?.Dispose();
+        _wrapJoiner = new ServerWrapJoiner();
+
         // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
         _emoji = NewEmoji(World.Emoji);
 
@@ -675,8 +684,96 @@ public sealed class WorldSession : IAsyncDisposable
 
     private void OnOutputReceived(object? sender, TelnetOutputEventArgs e)
     {
+        lock (_ingestGate)
+        {
+            IngestOutput(e);
+        }
+    }
+
+    /// <summary>
+    /// The joiner for <see cref="WorldDefinition.JoinWrappedLines"/>, rebuilt per connection like the parser:
+    /// the wrap column it has learnt and any line it holds belong to one stream.
+    /// </summary>
+    private ServerWrapJoiner _wrapJoiner = new();
+
+    /// <summary>
+    /// Serialises the read loop (output, a parser swap, the disconnect) against the timer that releases a held
+    /// line (<see cref="ReflowHold"/>). Nothing on the UI thread or in a script takes it, so it cannot close a
+    /// cycle with the script host's lock, which a trigger script takes from inside it.
+    /// </summary>
+    private readonly object _ingestGate = new();
+
+    /// <summary>The pending release of a held line, or null when nothing is held.</summary>
+    private IDisposable? _reflowRelease;
+
+    /// <summary>
+    /// How long a line that might continue waits for the next before it is shown as it is. Short, because the
+    /// only line ever held is a <em>full</em> row at the end of a burst — the rows of a paragraph arrive in
+    /// one write, and its last row is short and is never held.
+    /// </summary>
+    public TimeSpan ReflowHold { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Hands a completed line on, through the joiner when this world joins the server's wraps. Every
+    /// ordinary line of output goes through here; a prompt, a deliberate blank line and a parser swap release
+    /// what is held first (<see cref="ReleaseHeldLine"/>), so nothing is ever shown out of order.
+    /// </summary>
+    private void Reflow(StyledLine line)
+    {
+        if (!World.JoinWrappedLines)
+        {
+            ReleaseHeldLine();
+            ProcessOutputLine(line);
+            return;
+        }
+
+        foreach (var ready in _wrapJoiner.Push(line))
+        {
+            ProcessOutputLine(ready);
+        }
+
+        if (_wrapJoiner.Holding)
+        {
+            CancelReflowHold();
+            var joiner = _wrapJoiner;
+            _reflowRelease = Scheduler.After(ReflowHold, () =>
+            {
+                lock (_ingestGate)
+                {
+                    if (ReferenceEquals(joiner, _wrapJoiner))
+                    {
+                        ReleaseHeldLine();
+                    }
+                }
+            }, "reflow-hold");
+        }
+        else
+        {
+            CancelReflowHold();
+        }
+    }
+
+    /// <summary>Shows the line the joiner is holding, unjoined, if it is holding one. Call under <see cref="_ingestGate"/>.</summary>
+    private void ReleaseHeldLine()
+    {
+        CancelReflowHold();
+        if (_wrapJoiner.Flush() is { } held)
+        {
+            ProcessOutputLine(held);
+        }
+    }
+
+    private void CancelReflowHold()
+    {
+        _reflowRelease?.Dispose();
+        _reflowRelease = null;
+    }
+
+    private void IngestOutput(TelnetOutputEventArgs e)
+    {
         if (e.IsPrompt)
         {
+            ReleaseHeldLine();
             _parser.Feed(e.Text);
             var flushed = _parser.Flush();
             var raw = flushed ?? StyledLine.Empty;
@@ -703,18 +800,19 @@ public sealed class WorldSession : IAsyncDisposable
         var emitted = false;
         foreach (var completed in _parser.Feed(e.Text))
         {
-            ProcessOutputLine(completed);
+            Reflow(completed);
             emitted = true;
         }
 
         var tail = _parser.Flush();
         if (tail is not null)
         {
-            ProcessOutputLine(tail);
+            Reflow(tail);
             emitted = true;
         }
         else if (!emitted && _parser is not MxpParser { LineSwallowed: true })
         {
+            ReleaseHeldLine();
             ProcessOutputLine(StyledLine.Empty);
         }
     }
@@ -1235,6 +1333,11 @@ public sealed class WorldSession : IAsyncDisposable
 
     private void OnDisconnected(object? sender, SessionDisconnectedEventArgs e)
     {
+        lock (_ingestGate)
+        {
+            ReleaseHeldLine();
+        }
+
         CancelGmcpLogin();
         StopTimers();
         ClearPrompt();

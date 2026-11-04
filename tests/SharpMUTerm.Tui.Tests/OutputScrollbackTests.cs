@@ -42,11 +42,23 @@ public class OutputScrollbackTests
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
+    /// <summary>
+    /// The demo configuration with split scrollback off. This file is about the one viewport a pane scrolls
+    /// as a whole — what every pane does with the setting off, and the viewport a split keeps on top — so
+    /// the split, which shows the newest line on purpose, is <see cref="ScrollSplitTests"/>' to test.
+    /// </summary>
+    private static AppConfiguration WholePane()
+    {
+        var config = DemoScene.Build();
+        config.Text.SplitScrollback = false;
+        return config;
+    }
+
     private static SharpMUTermApp App()
     {
         // The window system reads the console for input even headless; a null reader returns EOF.
         Console.SetIn(TextReader.Null);
-        return new SharpMUTermApp(DemoScene.Build(), Headless, new HeadlessConsoleDriver(Width, Height));
+        return new SharpMUTermApp(WholePane(), Headless, new HeadlessConsoleDriver(Width, Height));
     }
 
     /// <summary>
@@ -58,7 +70,7 @@ public class OutputScrollbackTests
     private static (SharpMUTermApp App, WorldSession Session) Bound()
     {
         Console.SetIn(TextReader.Null);
-        var config = DemoScene.Build();
+        var config = WholePane();
 
         var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
         var session = app.BindWorldWithoutConnecting(config.Worlds[0]);
@@ -301,7 +313,7 @@ public class OutputScrollbackTests
     private static SharpMUTermApp CappedApp(int paneLines)
     {
         Console.SetIn(TextReader.Null);
-        var config = DemoScene.Build();
+        var config = WholePane();
         config.PaneLines = paneLines;
         return new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
     }
@@ -516,7 +528,7 @@ public class OutputScrollbackTests
     {
         Console.SetIn(TextReader.Null);
         var driver = new HeadlessConsoleDriver(Width, Height);
-        var app = new SharpMUTermApp(DemoScene.Build(), Headless, driver);
+        var app = new SharpMUTermApp(WholePane(), Headless, driver);
         app.RenderSnapshot("scrollback");
         var bottom = app.ScrollbackOf(Main)!.Value;
 

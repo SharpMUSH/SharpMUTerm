@@ -182,6 +182,14 @@ public sealed class WorldDefinition
     public string? GrabPrefix { get; set; }
 
     /// <summary>
+    /// Whether lines this world hard-wrapped at its own column are joined back together, so a paragraph
+    /// reflows to the pane it is read in (F5 ▸ <c>join wraps</c>). Off by default. Read per line at ingest,
+    /// so it changes the next line and never the ones already shown; triggers see the joined line. The rule
+    /// is <see cref="Text.ServerWrapJoiner"/>'s, and it is deliberately conservative.
+    /// </summary>
+    public bool JoinWrappedLines { get; set; }
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
@@ -231,6 +239,7 @@ public sealed class WorldDefinition
         Map = Map.Clone(),
         DownloadMedia = DownloadMedia,
         GrabPrefix = GrabPrefix,
+        JoinWrappedLines = JoinWrappedLines,
         GmcpLogin = GmcpLogin,
         DiscordPresence = DiscordPresence,
         Layout = Layout,

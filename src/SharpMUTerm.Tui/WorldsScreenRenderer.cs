@@ -99,6 +99,12 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
     internal const int WorldLayoutField = 15;
 
+    /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
+    internal const int JoinWrapsField = 16;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.JoinWrappedLines"/>: off shows rows as the server sent them.</summary>
+    internal static readonly string[] JoinWrapChoices = ["off", "join"];
+
     /// <summary>What a world with no layout of its own reads as: the suggestion it accepted, else Roleplay.</summary>
     internal const string WorldLayoutDefault = "(suggested)";
 
@@ -512,7 +518,12 @@ internal static class WorldsScreenRenderer
                 "layout",
                 () => LayoutName(all, w.Layout) ?? WorldLayoutDefault,
                 v => w.Layout = LayoutId(all, v),
-                LayoutChoices(all, WorldLayoutDefault))))
+                LayoutChoices(all, WorldLayoutDefault)),
+            ScreenField.Choice(
+                "join wraps",
+                () => w.JoinWrappedLines ? JoinWrapChoices[1] : JoinWrapChoices[0],
+                v => w.JoinWrappedLines = v == JoinWrapChoices[1],
+                JoinWrapChoices)))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -1074,6 +1085,13 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 WorldLayoutField)),
+            WorldField("join wraps", Field(
+                world.JoinWrappedLines
+                    ? $"[{Value}]{JoinWrapChoices[1]} lines the server wrapped[/]"
+                    : $"[{Label}]{JoinWrapChoices[0]} · rows as the server sent them[/]",
+                cursor,
+                selectedWorld,
+                JoinWrapsField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

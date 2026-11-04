@@ -17,6 +17,16 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   them side by side.
 - Desktop window: the map is drawn as a canvas of rooms and exits. The wheel zooms, a drag pans, a
   double-click re-centres on you, and a click on a room walks there. Hovering a room shows its name.
+- Scrolling a pane back splits it: the history you are reading stays on top, a band says how far back you
+  are (`scrolled back 120 rows · End returns · ⌥F freezes`), and the newest lines keep arriving underneath.
+  End (with the cursor at the end of the command line), Ctrl+End, or scrolling the history back down to its end
+  closes it; ⌥F turns it into a freeze. The split is inside the pane, so the game is not told a new window
+  size. Text & display (F7) ▸ *split the pane when scrolled back* turns it off.
+- Worlds & Characters (F5) has a `join wraps` row on each world: on, lines the game broke at its own width
+  (usually 78 or 80 columns) are joined back together, so a paragraph fills a wide pane and does not wrap twice
+  in a narrow one. It is careful — it joins only a full row that ends mid-sentence onto a row that carries on in
+  lower case, in the same colour — and triggers see the joined line. It applies to lines that arrive after you
+  turn it on.
 - Ctrl+P matches as you type by initials and fragments, not only by prefix: `trig sel` finds *Make a trigger
   from the selection*, and the letters it matched are highlighted. The commands you last ran from it are
   listed first under RECENT, followed by what the moment suggests (copy while something is selected, back to

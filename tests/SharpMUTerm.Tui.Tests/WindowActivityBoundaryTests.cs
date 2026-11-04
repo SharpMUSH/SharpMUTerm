@@ -95,12 +95,14 @@ public class WindowActivityBoundaryTests
     /// <summary>
     /// A window the reader is looking at but has scrolled back off is exactly as blind as one they are
     /// not looking at — <c>OnLine</c>'s reasoning for the badge, one field over — so it accrues, and the
-    /// bar is there when they come back down to the tail.
+    /// bar is there when they come back down to the tail. With split scrollback off: a split pane's new
+    /// lines land in its live tail, on screen, and <see cref="ScrollSplitTests"/> pins that they are not missed.
     /// </summary>
     [Test]
     public async Task AVisibleWindowScrolledBackAccruesAndTheBarIsThereOnTheWayBackDown()
     {
         var (app, session) = Bound();
+        app.Configuration.Text.SplitScrollback = false;
         for (var i = 1; i <= 80; i++)
         {
             session.PrintSystem($"*** line {i}");

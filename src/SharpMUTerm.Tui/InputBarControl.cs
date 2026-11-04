@@ -237,7 +237,7 @@ internal sealed class InputBarControl : MultilineEditControl,
     }
 
     /// <summary>Whether the caret is after the last character, which is the only place ⇥ completes.</summary>
-    private bool CaretAtEnd()
+    internal bool CaretAtEnd()
     {
         var text = Text;
         var last = text.LastIndexOf('\n');
