@@ -70,8 +70,8 @@ internal sealed class PaletteOverlay : Panel
         {
             PlaceholderText = Placeholder,
             FontSize = NativeTokens.Title,
-            Margin = new Thickness(14, 14, 14, 8),
-            Padding = new Thickness(8, 10, 12, 10),
+            Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space14, NativeTokens.Space14, NativeTokens.Space8),
+            Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space10, NativeTokens.Space12, NativeTokens.Space10),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
         ModalParts.Sunk(_search, _colours);
@@ -83,12 +83,12 @@ internal sealed class PaletteOverlay : Panel
         {
             FontSize = NativeTokens.Body,
             Foreground = new SolidColorBrush(_colours.Dim),
-            Margin = new Thickness(22, 0, 22, 8),
+            Margin = new Thickness(NativeTokens.Space24, 0, NativeTokens.Space24, NativeTokens.Space8),
         };
         DockPanel.SetDock(_status, Dock.Top);
 
         // The keys as caps on the card's foot band, the mockup's footer.
-        var keys = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right };
+        var keys = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, HorizontalAlignment = HorizontalAlignment.Right };
         foreach (var (cap, does) in new[] { ("↑↓", "move"), ("Enter", "run"), ("Esc", "close") })
         {
             keys.Children.Add(ModalParts.Chip(cap, _colours));
@@ -97,7 +97,7 @@ internal sealed class PaletteOverlay : Panel
                 Text = does,
                 FontSize = NativeTokens.Small,
                 Foreground = new SolidColorBrush(_colours.Dim),
-                Margin = new Thickness(0, 0, 8, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space8, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             });
         }
@@ -105,12 +105,12 @@ internal sealed class PaletteOverlay : Panel
         var footer = new Border
         {
             Background = new SolidColorBrush(_colours.Well),
-            Padding = new Thickness(20, 8, 12, 8),
+            Padding = new Thickness(NativeTokens.Space20, NativeTokens.Space8, NativeTokens.Space12, NativeTokens.Space8),
             Child = keys,
         };
         DockPanel.SetDock(footer, Dock.Bottom);
 
-        _list = new StackPanel { Margin = new Thickness(8, 0, 8, 4) };
+        _list = new StackPanel { Margin = new Thickness(NativeTokens.Space8, 0, NativeTokens.Space8, NativeTokens.Space4) };
         _scroller = new ScrollViewer
         {
             Content = _list,
@@ -125,7 +125,7 @@ internal sealed class PaletteOverlay : Panel
         dock.Children.Add(new Border
         {
             BorderBrush = new SolidColorBrush(_colours.Edge),
-            BorderThickness = new Thickness(0, 1, 0, 1),
+            BorderThickness = new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Hairline),
             Child = _scroller,
         });
 
@@ -133,7 +133,7 @@ internal sealed class PaletteOverlay : Panel
         {
             Background = new SolidColorBrush(_colours.Card),
             BorderBrush = new SolidColorBrush(_colours.Edge),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
             CornerRadius = new CornerRadius(NativeTokens.RadiusL),
             BoxShadow = NativeTokens.Shadow,
             ClipToBounds = true,
@@ -147,7 +147,7 @@ internal sealed class PaletteOverlay : Panel
             RequestedThemeVariant = session.IsDark ? ThemeVariant.Dark : ThemeVariant.Light,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(16, CardTop, 16, 16),
+            Margin = new Thickness(NativeTokens.Space16, CardTop, NativeTokens.Space16, NativeTokens.Space16),
             Child = _card,
         };
         scope.Styles.Add(new FluentTheme());
@@ -253,7 +253,7 @@ internal sealed class PaletteOverlay : Panel
                         FontWeight = FontWeight.SemiBold,
                         LetterSpacing = 0.8,
                         Foreground = new SolidColorBrush(_colours.Header),
-                        Margin = new Thickness(12, first ? 8 : 14, 12, 4),
+                        Margin = new Thickness(NativeTokens.Space12, first ? NativeTokens.Space8 : NativeTokens.Space14, NativeTokens.Space12, NativeTokens.Space4),
                     });
                     break;
                 case PaletteEntry entry:
@@ -275,7 +275,7 @@ internal sealed class PaletteOverlay : Panel
             {
                 Text = "No matching commands",
                 Foreground = new SolidColorBrush(_colours.Dim),
-                Margin = new Thickness(12, 14),
+                Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space14),
             });
         }
 
@@ -307,7 +307,7 @@ internal sealed class PaletteOverlay : Panel
                 Text = NativeKeys.Words(detail),
                 FontSize = NativeTokens.Body,
                 Foreground = new SolidColorBrush(_colours.Dim),
-                Margin = new Thickness(12, 0, 0, 0),
+                Margin = new Thickness(NativeTokens.Space12, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
@@ -325,7 +325,7 @@ internal sealed class PaletteOverlay : Panel
         if (key is not null)
         {
             // A sequence (⌃B |) is a chip per key, so the second key does not read as a caret in the first.
-            var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(16, 0, 0, 0) };
+            var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space4, Margin = new Thickness(NativeTokens.Space16, 0, 0, 0) };
             foreach (var part in key.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
                 chips.Children.Add(ModalParts.Chip(part, _colours));
@@ -338,7 +338,7 @@ internal sealed class PaletteOverlay : Panel
         var row = new Border
         {
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(12 - NativeTokens.MarkWidth, 7, 12, 7),
+            Padding = new Thickness(NativeTokens.Space12 - NativeTokens.MarkWidth, NativeTokens.Space8, NativeTokens.Space12, NativeTokens.Space8),
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(NativeTokens.MarkWidth, 0, 0, 0),

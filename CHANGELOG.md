@@ -386,6 +386,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The desktop window lines up: one spacing scale for every native view, the header at the mockup's 44 px, output
+  starting about 20 px in from its pane's edges with a row of space under the tab strip, the sidebar's names, the brand
+  and every panel's heading, rows and buttons on one 16 px edge, the "+ Add a world or connect" button left-aligned,
+  equal-height buttons and fields, and every panel heading the same height. Rules and borders are one crisp pixel at
+  125% and 150% display scaling instead of a blurred two.
+
 - In the desktop window, the line between two panes is a hairline where the panes meet instead of a grey band, and
   lights up wider while you hover or drag it. In the command line, what you type starts right after the prompt.
   The docked composer's "Click to write a post" is in the interface font.

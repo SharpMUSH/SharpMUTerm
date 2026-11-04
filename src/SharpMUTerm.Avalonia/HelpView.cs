@@ -59,7 +59,7 @@ internal sealed class HelpView : DockPanel, IModalView
         frame.MinHeight = 160;
         panel.Children.Add(frame);
 
-        _pageText = new StackPanel { Margin = new Thickness(22, 4, 22, 12), Spacing = 8 };
+        _pageText = new StackPanel { Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space4, NativeTokens.Space24, NativeTokens.Space12), Spacing = NativeTokens.Space8 };
         _page = new ScrollViewer { Content = _pageText, IsVisible = false, MinHeight = 160 };
         panel.Children.Add(_page);
         Children.Add(panel);
@@ -210,7 +210,7 @@ internal sealed class HelpView : DockPanel, IModalView
                     FontSize = NativeTokens.Title,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = _colours.Brush(_colours.Header),
-                    Margin = new Thickness(0, previous is null ? 4 : 8, 0, -4),
+                    Margin = new Thickness(0, previous is null ? NativeTokens.Space4 : NativeTokens.Space8, 0, -NativeTokens.Space4),
                 });
             }
 
@@ -220,8 +220,8 @@ internal sealed class HelpView : DockPanel, IModalView
                 Foreground = _colours.Brush(_colours.Text),
                 TextWrapping = block.Preformatted ? TextWrapping.NoWrap : TextWrapping.Wrap,
                 LineHeight = (NativeTokens.Body + 1) * 1.45,
-                Margin = block.Preformatted && previous is { Preformatted: true } ? new Thickness(12, -6, 0, 0)
-                    : block.Preformatted ? new Thickness(12, 0, 0, 0) : default,
+                Margin = block.Preformatted && previous is { Preformatted: true } ? new Thickness(NativeTokens.Space12, -NativeTokens.Space6, 0, 0)
+                    : block.Preformatted ? new Thickness(NativeTokens.Space12, 0, 0, 0) : default,
             };
             if (block.Preformatted)
             {
@@ -247,7 +247,7 @@ internal sealed class HelpView : DockPanel, IModalView
 
         var back = ModalParts.Button("Back to help", "Esc", _colours, Back);
         back.HorizontalAlignment = HorizontalAlignment.Left;
-        back.Margin = new Thickness(0, 10, 0, 0);
+        back.Margin = new Thickness(0, NativeTokens.Space10, 0, 0);
         _pageText.Children.Add(back);
         _page.Offset = default;
         _footer.Text = "Up and Down scroll · Esc back to the list";
@@ -272,7 +272,7 @@ internal sealed class HelpView : DockPanel, IModalView
             {
                 Text = NativeKeys.Words(HelpModel.NoMatches),
                 Foreground = _colours.Brush(_colours.Dim),
-                Margin = new Thickness(12, 10),
+                Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space10),
                 TextWrapping = TextWrapping.Wrap,
             });
             return;
@@ -293,7 +293,7 @@ internal sealed class HelpView : DockPanel, IModalView
             if (entry.Key.Length > 0)
             {
                 var chip = ModalParts.Key(entry.Key, _colours);
-                chip.Margin = new Thickness(10, 0, 0, 0);
+                chip.Margin = new Thickness(NativeTokens.Space10, 0, 0, 0);
                 SetDock(chip, Dock.Right);
                 line.Children.Add(chip);
             }
@@ -304,7 +304,7 @@ internal sealed class HelpView : DockPanel, IModalView
                 Foreground = _colours.Brush(_colours.Text),
                 FontSize = NativeTokens.Title,
                 Width = 240,
-                Margin = new Thickness(0, 0, 14, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space14, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };

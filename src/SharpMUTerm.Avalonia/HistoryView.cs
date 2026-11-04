@@ -38,7 +38,7 @@ internal sealed class HistoryView : DockPanel, IModalView
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 
-        var header = new DockPanel { Margin = new Thickness(20, 0, 20, 6) };
+        var header = new DockPanel { Margin = new Thickness(NativeTokens.Space20, 0, NativeTokens.Space20, NativeTokens.Space6) };
         var whose = new TextBlock { Text = model.BarLabel, FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim) };
         _count = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right };
         SetDock(whose, Dock.Left);
@@ -112,7 +112,7 @@ internal sealed class HistoryView : DockPanel, IModalView
             {
                 Text = model.Entries.Count == 0 ? HistoryModel.NothingEntered : HistoryModel.NoMatches,
                 Foreground = _colours.Brush(_colours.Dim),
-                Margin = new Thickness(12, 10),
+                Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space10),
                 TextWrapping = TextWrapping.Wrap,
             });
             return;

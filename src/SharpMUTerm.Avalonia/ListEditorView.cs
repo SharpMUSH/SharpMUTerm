@@ -41,7 +41,7 @@ internal sealed class ListEditorView : Grid
     private readonly Dictionary<string, Control> _controls = new(StringComparer.Ordinal);
     private readonly List<(object Item, ListBoxItem Row, CheckBox Enabled)> _rows = [];
     private readonly List<Button> _copyButtons = [];
-    private readonly StackPanel _preview = new() { Spacing = 3 };
+    private readonly StackPanel _preview = new() { Spacing = NativeTokens.Space4 };
     private object? _shownItem;
     private bool _syncing;
     private bool _choosing;
@@ -55,7 +55,7 @@ internal sealed class ListEditorView : Grid
         _tokens = tokens;
         _accent = tokens.Brush(tokens.Accent);
         ColumnDefinitions = new ColumnDefinitions("316,*");
-        Margin = new Thickness(0, 10, 0, 0);
+        Margin = new Thickness(0, NativeTokens.Space10, 0, 0);
 
         AddButton = ToolButton("+ Add", $"Add a {_collection.Noun} to the selected set");
         DuplicateButton = ToolButton("Copy", $"Copy the selected {_collection.Noun}");
@@ -69,10 +69,10 @@ internal sealed class ListEditorView : Grid
         DownButton.Click += (_, _) => Act(item => _form.Move(_section, item, 1) ? item : item);
         DuplicateButton.IsVisible = _collection.CanDuplicate;
 
-        var tools = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        var tools = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, NativeTokens.Space6) };
         foreach (var button in new[] { AddButton, DuplicateButton, DeleteButton, UpButton, DownButton })
         {
-            button.Margin = new Thickness(0, 0, 4, 4);
+            button.Margin = new Thickness(0, 0, NativeTokens.Space4, NativeTokens.Space4);
             tools.Children.Add(button);
         }
 
@@ -86,13 +86,13 @@ internal sealed class ListEditorView : Grid
         var page = tokens.Page;
         var left = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(tools, Dock.Top);
-        tools.Margin = new Thickness(10, 10, 10, 4);
+        tools.Margin = new Thickness(NativeTokens.Space10, NativeTokens.Space10, NativeTokens.Space10, NativeTokens.Space4);
         left.Children.Add(tools);
-        _list.Margin = new Thickness(4, 0, 4, 6);
+        _list.Margin = new Thickness(NativeTokens.Space4, 0, NativeTokens.Space4, NativeTokens.Space6);
         left.Children.Add(_list);
-        Children.Add(PageCard(left, page, new Thickness(0), new Thickness(0, 0, 16, 0)));
+        Children.Add(PageCard(left, page, new Thickness(0), new Thickness(0, 0, NativeTokens.Space16, 0)));
 
-        _detail = new StackPanel { Spacing = 2, Margin = new Thickness(20, 16, 20, 18) };
+        _detail = new StackPanel { Spacing = NativeTokens.Space2, Margin = new Thickness(NativeTokens.Space20, NativeTokens.Space16, NativeTokens.Space20, NativeTokens.Space16) };
         var scroller = new ScrollViewer { Content = _detail, HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         var detailCard = PageCard(scroller, page, new Thickness(0), new Thickness(0));
         SetColumn(detailCard, 1);
@@ -204,7 +204,7 @@ internal sealed class ListEditorView : Grid
         Child = child,
         Background = page.Brush(page.Card),
         BorderBrush = page.Brush(page.Rule),
-        BorderThickness = new Thickness(1),
+        BorderThickness = new Thickness(NativeTokens.Hairline),
         CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
         Padding = padding,
         Margin = margin,
@@ -216,7 +216,7 @@ internal sealed class ListEditorView : Grid
 
     private static Button ToolButton(string text, string tip)
     {
-        var button = new Button { Content = text, Padding = new Thickness(10, 4), MinWidth = 32, FontSize = NativeTokens.Label, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var button = new Button { Content = text, Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space4), MinWidth = 32, FontSize = NativeTokens.Label, HorizontalContentAlignment = HorizontalAlignment.Center };
         ToolTip.SetTip(button, NativeKeys.Words(tip));
         AutomationProperties.SetName(button, tip);
         return button;
@@ -249,7 +249,7 @@ internal sealed class ListEditorView : Grid
                 {
                     Content = new TextBlock { Text = $"no {_collection.Plural}", Foreground = DimInk, FontStyle = FontStyle.Italic },
                     IsEnabled = false,
-                    Padding = new Thickness(30, 2),
+                    Padding = new Thickness(NativeTokens.Space32, NativeTokens.Space2),
                 });
             }
 
@@ -280,7 +280,7 @@ internal sealed class ListEditorView : Grid
         var row = new DockPanel { LastChildFill = true };
         if (group.ReadOnly)
         {
-            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(8, 1), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
+            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(NativeTokens.Space8, NativeTokens.Hairline), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
             ToolTip.SetTip(copy, "A package's set is replaced when the package updates; copy it into your own sets to change it");
             AutomationProperties.SetName(copy, $"Copy {group.Set.Name} to edit");
             var set = group.Set;
@@ -298,7 +298,7 @@ internal sealed class ListEditorView : Grid
         }
 
         row.Children.Add(words);
-        return new ListBoxItem { Content = row, Focusable = false, IsHitTestVisible = group.ReadOnly, Padding = new Thickness(8, 8, 8, 2) };
+        return new ListBoxItem { Content = row, Focusable = false, IsHitTestVisible = group.ReadOnly, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space8, NativeTokens.Space8, NativeTokens.Space2) };
     }
 
     private ListBoxItem ItemRow(SettingsItemGroup group, object item)
@@ -309,7 +309,7 @@ internal sealed class ListEditorView : Grid
             IsEnabled = !group.ReadOnly,
             VerticalAlignment = VerticalAlignment.Center,
             MinWidth = 0,
-            Margin = new Thickness(0, 0, 4, 0),
+            Margin = new Thickness(0, 0, NativeTokens.Space4, 0),
         };
         AutomationProperties.SetName(enabled, $"Enable {_collection.TitleOf(item)}");
         enabled.IsCheckedChanged += (_, _) =>
@@ -339,7 +339,7 @@ internal sealed class ListEditorView : Grid
         DockPanel.SetDock(enabled, Dock.Left);
         row.Children.Add(enabled);
         row.Children.Add(words);
-        var listItem = new ListBoxItem { Content = row, Tag = item, Padding = new Thickness(14, 4, 8, 4) };
+        var listItem = new ListBoxItem { Content = row, Tag = item, Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space4, NativeTokens.Space8, NativeTokens.Space4) };
         if (group.ReadOnly)
         {
             listItem.Opacity = 0.8;
@@ -461,8 +461,8 @@ internal sealed class ListEditorView : Grid
         _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), FontSize = NativeTokens.PageTitle - 2, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         if (group.ReadOnly)
         {
-            var banner = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 4) };
-            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(10, 3) };
+            var banner = new DockPanel { LastChildFill = true, Margin = new Thickness(0, NativeTokens.Space6, 0, NativeTokens.Space4) };
+            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space4) };
             var set = group.Set;
             copy.Click += (_, _) => _form.CopyToEdit(set);
             DockPanel.SetDock(copy, Dock.Right);
@@ -473,13 +473,13 @@ internal sealed class ListEditorView : Grid
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.8,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 10, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space10, 0),
             });
             _detail.Children.Add(banner);
         }
         else
         {
-            _detail.Children.Add(new TextBlock { Text = $"in {group.Label}", Foreground = DimInk, Margin = new Thickness(0, 0, 0, 4) });
+            _detail.Children.Add(new TextBlock { Text = $"in {group.Label}", Foreground = DimInk, Margin = new Thickness(0, 0, 0, NativeTokens.Space4) });
         }
 
         var shown = new List<string>();
@@ -503,7 +503,7 @@ internal sealed class ListEditorView : Grid
             if (field.Group is { } g && !string.Equals(g, heading, StringComparison.Ordinal))
             {
                 heading = g;
-                _detail.Children.Add(new TextBlock { Text = g.ToUpperInvariant(), FontSize = NativeTokens.Small, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.8, Foreground = _tokens.Brush(_tokens.Header), Margin = new Thickness(0, 16, 0, 4) });
+                _detail.Children.Add(new TextBlock { Text = g.ToUpperInvariant(), FontSize = NativeTokens.Small, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.8, Foreground = _tokens.Brush(_tokens.Header), Margin = new Thickness(0, NativeTokens.Space16, 0, NativeTokens.Space4) });
             }
 
             var control = ControlFor(field);
@@ -517,11 +517,11 @@ internal sealed class ListEditorView : Grid
                 _detail.Children.Add(new Border
                 {
                     Child = _preview,
-                    BorderThickness = new Thickness(1),
+                    BorderThickness = new Thickness(NativeTokens.Hairline),
                     BorderBrush = Hairline,
                     CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-                    Padding = new Thickness(10, 6),
-                    Margin = new Thickness(0, 2, 0, 6),
+                    Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space6),
+                    Margin = new Thickness(0, NativeTokens.Space2, 0, NativeTokens.Space6),
                 });
                 ShowPreview(null);
             }
@@ -532,8 +532,8 @@ internal sealed class ListEditorView : Grid
 
     private static Grid Row(SettingsField field, Control control)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), Margin = new Thickness(0, 3), MinHeight = 34 };
-        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), Margin = new Thickness(0, NativeTokens.Space4), MinHeight = 34 };
+        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, NativeTokens.Space12, 0) };
         words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Label, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
         if (field.Help is { } help)
         {
@@ -701,7 +701,7 @@ internal sealed class ListEditorView : Grid
                 var boxes = new List<CheckBox>();
                 foreach (var name in flags.Names)
                 {
-                    var box = new CheckBox { Content = name, Margin = new Thickness(0, 0, 14, 0), IsChecked = FlagWords.IsListed(_form.Get(words), name) };
+                    var box = new CheckBox { Content = name, Margin = new Thickness(0, 0, NativeTokens.Space14, 0), IsChecked = FlagWords.IsListed(_form.Get(words), name) };
                     box.IsCheckedChanged += (_, _) =>
                     {
                         if (_syncing)
@@ -864,7 +864,7 @@ internal sealed class ListEditorView : Grid
     private Control KeyCapture(KeyField field, SettingBinding<string> chord)
     {
         var button = new Button { Content = NativeKeys.Words(_form.Get(chord)), MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, HorizontalContentAlignment = HorizontalAlignment.Left };
-        var note = new TextBlock { FontSize = NativeTokens.Small, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+        var note = new TextBlock { FontSize = NativeTokens.Small, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, NativeTokens.Space2, 0, 0) };
         var capturing = false;
         void Show()
         {
@@ -923,7 +923,7 @@ internal sealed class ListEditorView : Grid
 
     private static StackPanel Swatch(string name)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Tag = name };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8, Tag = name };
         var hex = HighlightColours.TryParse(name, out var colour) ? HighlightColours.Hex(colour) : null;
         panel.Children.Add(new Border
         {
@@ -932,7 +932,7 @@ internal sealed class ListEditorView : Grid
             CornerRadius = new CornerRadius(NativeTokens.RadiusS),
             Background = hex is null ? Brushes.Transparent : new SolidColorBrush(Color.Parse(hex)),
             BorderBrush = Brushes.Gray,
-            BorderThickness = new Thickness(hex is null ? 1 : 0),
+            BorderThickness = new Thickness(hex is null ? NativeTokens.Hairline : 0),
         });
         panel.Children.Add(new TextBlock { Text = name });
         return panel;

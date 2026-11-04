@@ -1070,9 +1070,11 @@ internal sealed class TerminalView : Control
     /// </summary>
     internal static SKRect FieldRect(InputBand band, int cw, int ch, int columns, float scale)
     {
-        var inset = Math.Max(4 * scale, (band.Pad * cw) - (float)(NativeLayout.FieldInsetX * scale));
-        var top = (band.Top * ch) + (float)(NativeLayout.FieldOuter * scale);
-        var bottom = ((band.Top + band.Rows) * ch) + (float)((NativeLayout.FieldTop + NativeLayout.FieldInner) * scale);
+        // The mockup's 20 px from the grid's edge, as far as the padding columns leave the field its inner padding; every
+        // edge on a whole device pixel, so the field's 1 px border is one crisp pixel at 125% and 150%.
+        var inset = MathF.Round(Math.Max(4 * scale, Math.Min((float)(NativeLayout.FieldSide * scale), (band.Pad * cw) - (float)(NativeTokens.Space8 * scale))));
+        var top = (band.Top * ch) + MathF.Round((float)(NativeLayout.FieldOuter * scale));
+        var bottom = ((band.Top + band.Rows) * ch) + MathF.Round((float)((NativeLayout.FieldTop + NativeLayout.FieldInner) * scale));
         return new SKRect(inset, top, (columns * cw) - inset, bottom);
     }
 

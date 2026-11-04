@@ -52,7 +52,7 @@ public class NativePanelTests
         var panel = driver.Pointer.Panels.SingleOrDefault(p => p.PanelId == PanelIds.WhoHere);
         await Assert.That(panel).IsNotNull();
         var pane = app.PaneOutputRects().Single(r => app.PaneWindows().GetValueOrDefault(r.Key) == panel!.WindowId);
-        await Assert.That(panel!.Rect).IsEqualTo(pane.Value with { X = pane.Value.X - 1, Width = pane.Value.Width + 2 }).Because("a panel lies over its pane's output and the gutter either side");
+        await Assert.That(panel!.Rect).IsEqualTo(pane.Value with { X = pane.Value.X - 2, Width = pane.Value.Width + 4 }).Because("a panel lies over its pane's output and the two-column gutter either side");
         await Assert.That(panel.WhoHere).IsEqualTo(app.ReadWhoHere(DemoScene.ActiveSessionKey));
         await Assert.That(panel.WhoHere!.Rows.Count).IsGreaterThan(0);
         await Assert.That(panel.Pick).IsNotNull();
@@ -76,7 +76,7 @@ public class NativePanelTests
         var panel = driver.Pointer.Panels.SingleOrDefault(p => p.PanelId == PanelIds.QuickBar);
         await Assert.That(panel).IsNotNull();
         var pane = app.PaneOutputRects().Single(r => app.PaneWindows().GetValueOrDefault(r.Key) == panel!.WindowId);
-        await Assert.That(panel!.Rect).IsEqualTo(pane.Value with { X = pane.Value.X - 1, Width = pane.Value.Width + 2 }).Because("a panel lies over its pane's output and the gutter either side");
+        await Assert.That(panel!.Rect).IsEqualTo(pane.Value with { X = pane.Value.X - 2, Width = pane.Value.Width + 4 }).Because("a panel lies over its pane's output and the two-column gutter either side");
         await Assert.That(panel.QuickBar).IsEqualTo(app.QuickBarEntries(DemoScene.ActiveSessionKey));
         await Assert.That(panel.QuickBar!.Items.Select(i => i.Key).Take(2)).IsEquivalentTo(new[] { "F11", "F12" });
 

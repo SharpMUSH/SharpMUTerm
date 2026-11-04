@@ -102,13 +102,13 @@ internal sealed class WhoHereList : Control
 
     private double HeaderHeight => PanelText.HeadingHeight(_cellHeight);
 
-    private double RowHeight => Math.Max(24, _cellHeight * 1.6);
+    private double RowHeight => Math.Round(Math.Max(NativeTokens.Space24, _cellHeight * 1.6));
 
     /// <summary>The footnote's line, under the rows when there is room left for it.</summary>
     private double NoteHeight => Math.Max(20, _cellHeight * 1.3);
 
     /// <summary>How far the rows' hover plates are set in from the edges; the text inside sits on the heading's padding.</summary>
-    private const double Pad = 8;
+    private const double Pad = NativeTokens.Space8;
 
     /// <summary>Which rows fit, and where, for a size. Every row is the same height, so it is arithmetic.</summary>
     private void Layout(Size size)
@@ -128,7 +128,7 @@ internal sealed class WhoHereList : Control
             return;
         }
 
-        var top = HeaderHeight + 4;
+        var top = HeaderHeight + NativeTokens.Space8;
         var room = Math.Max(0, (int)((size.Height - top - 4) / RowHeight));
         var fits = count <= room ? count : Math.Max(0, room - 1);
         for (var i = 0; i < fits; i++)
@@ -259,7 +259,7 @@ internal sealed class WhoHereList : Control
         var right = bounds.Width - PanelText.Pad;
 
         // Here  The Grand Plaza · 4, kept clear of the pop-out button in the corner.
-        var top = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: 20);
+        var top = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this));
         if (!_model.Known)
         {
             PanelText.Draw(context, WhoHereModel.UnknownText, left, top + (RowHeight / 2), size, dim, false, right - left);
@@ -280,7 +280,7 @@ internal sealed class WhoHereList : Control
             if (index == _hovered || index == _pressed)
             {
                 var plate = PanelText.Mix(_plane, _text, index == _pressed ? 0.16 : 0.08);
-                context.DrawRectangle(new SolidColorBrush(plate), null, rect, NativeTokens.RadiusS + 2, NativeTokens.RadiusS + 2);
+                context.DrawRectangle(new SolidColorBrush(plate), null, rect, NativeTokens.RadiusControl, NativeTokens.RadiusControl);
             }
 
             // The dot says what the game says: a creature grey, an idle player in the warning ink, an active one in the

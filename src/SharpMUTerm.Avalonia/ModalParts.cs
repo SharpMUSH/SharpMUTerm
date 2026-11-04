@@ -17,7 +17,7 @@ internal static class ModalParts
         FontSize = NativeTokens.Heading,
         FontWeight = FontWeight.SemiBold,
         Foreground = colours.Brush(colours.Text),
-        Margin = new Thickness(20, 18, 20, 4),
+        Margin = new Thickness(NativeTokens.Space20, NativeTokens.Space16, NativeTokens.Space20, NativeTokens.Space4),
         TextWrapping = TextWrapping.Wrap,
     };
 
@@ -27,7 +27,7 @@ internal static class ModalParts
         Text = NativeKeys.Words(text),
         FontSize = NativeTokens.Body,
         Foreground = colours.Brush(colours.Dim),
-        Margin = margin ?? new Thickness(20, 0, 20, 6),
+        Margin = margin ?? new Thickness(NativeTokens.Space20, 0, NativeTokens.Space20, NativeTokens.Space6),
         TextWrapping = TextWrapping.Wrap,
     };
 
@@ -41,8 +41,8 @@ internal static class ModalParts
         FontSize = NativeTokens.Small,
         Foreground = colours.Brush(colours.Dim),
         Background = colours.Brush(colours.Well),
-        Padding = new Thickness(20, 9, 20, 10),
-        Margin = new Thickness(0, 10, 0, 0),
+        Padding = new Thickness(NativeTokens.Space20, NativeTokens.Space8, NativeTokens.Space20, NativeTokens.Space10),
+        Margin = new Thickness(0, NativeTokens.Space10, 0, 0),
         HorizontalAlignment = HorizontalAlignment.Stretch,
         TextAlignment = TextAlignment.Right,
         TextWrapping = TextWrapping.Wrap,
@@ -56,7 +56,7 @@ internal static class ModalParts
         FontWeight = FontWeight.SemiBold,
         LetterSpacing = 0.8,
         Foreground = colours.Brush(colours.Header),
-        Margin = new Thickness(12, first ? 8 : 14, 12, 4),
+        Margin = new Thickness(NativeTokens.Space12, first ? NativeTokens.Space8 : NativeTokens.Space14, NativeTokens.Space12, NativeTokens.Space4),
     };
 
     /// <summary>
@@ -69,8 +69,8 @@ internal static class ModalParts
         {
             PlaceholderText = placeholder,
             FontSize = NativeTokens.Title,
-            Margin = new Thickness(14, 14, 14, 8),
-            Padding = new Thickness(8, 9, 12, 9),
+            Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space14, NativeTokens.Space14, NativeTokens.Space8),
+            Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space8, NativeTokens.Space12, NativeTokens.Space8),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
         };
         if (colours is not null)
@@ -98,7 +98,7 @@ internal static class ModalParts
         box.Resources["TextControlBorderBrush"] = colours.Brush(colours.Edge);
         box.Resources["TextControlBorderBrushPointerOver"] = colours.Brush(colours.Focus);
         box.Resources["TextControlBorderBrushFocused"] = colours.Brush(colours.Focus);
-        box.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(1);
+        box.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(NativeTokens.Hairline);
         if (magnifier)
         {
             box.InnerLeftContent = Magnifier(colours);
@@ -115,7 +115,7 @@ internal static class ModalParts
         Width = 15,
         Height = 15,
         Stretch = Stretch.None,
-        Margin = new Thickness(12, 0, 2, 0),
+        Margin = new Thickness(NativeTokens.Space12, 0, NativeTokens.Space2, 0),
         VerticalAlignment = VerticalAlignment.Center,
         IsHitTestVisible = false,
     };
@@ -123,7 +123,7 @@ internal static class ModalParts
     /// <summary>A list of rows that scrolls, ruled above and below.</summary>
     public static (Border Frame, StackPanel List, ScrollViewer Scroller) List(NativeTokens colours)
     {
-        var list = new StackPanel { Margin = new Thickness(8, 4, 8, 4) };
+        var list = new StackPanel { Margin = new Thickness(NativeTokens.Space8, NativeTokens.Space4, NativeTokens.Space8, NativeTokens.Space4) };
         var scroller = new ScrollViewer
         {
             Content = list,
@@ -133,7 +133,7 @@ internal static class ModalParts
         var frame = new Border
         {
             BorderBrush = colours.Brush(colours.Rule),
-            BorderThickness = new Thickness(0, 1, 0, 1),
+            BorderThickness = new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Hairline),
             Child = scroller,
         };
         return (frame, list, scroller);
@@ -145,7 +145,7 @@ internal static class ModalParts
         var row = new Border
         {
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(12 - NativeTokens.MarkWidth, 7, 12, 7),
+            Padding = new Thickness(NativeTokens.Space12 - NativeTokens.MarkWidth, NativeTokens.Space8, NativeTokens.Space12, NativeTokens.Space8),
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(NativeTokens.MarkWidth, 0, 0, 0),
@@ -194,7 +194,7 @@ internal static class ModalParts
     }
 
     /// <summary>A key chip, as the palette draws a key.</summary>
-    public static Border Key(string key, NativeTokens colours) => Chip(NativeKeys.Words(key), colours, new Thickness(6, 0, 0, 0));
+    public static Border Key(string key, NativeTokens colours) => Chip(NativeKeys.Words(key), colours, new Thickness(NativeTokens.Space6, 0, 0, 0));
 
     /// <summary>
     /// One key cap: the raised plane, a rule for its edge, the key in the cells' mono at the small size — the mockup's
@@ -204,9 +204,9 @@ internal static class ModalParts
     {
         Background = colours.Brush(colours.KeyFill),
         BorderBrush = colours.Brush(colours.Edge),
-        BorderThickness = new Thickness(1),
+        BorderThickness = new Thickness(NativeTokens.Hairline),
         CornerRadius = new CornerRadius(NativeTokens.RadiusS),
-        Padding = new Thickness(6, 1, 6, 2),
+        Padding = new Thickness(NativeTokens.Space6, NativeTokens.Hairline, NativeTokens.Space6, NativeTokens.Space2),
         Margin = margin,
         MinWidth = 22,
         VerticalAlignment = VerticalAlignment.Center,
@@ -244,7 +244,7 @@ internal static class ModalParts
                 Text = NativeKeys.Words(key),
                 FontSize = NativeTokens.Small,
                 Opacity = 0.7,
-                Margin = new Thickness(8, 0, 0, 0),
+                Margin = new Thickness(NativeTokens.Space8, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             });
         }
@@ -252,8 +252,9 @@ internal static class ModalParts
         var button = new Button
         {
             Content = content,
-            Padding = new Thickness(14, 7),
-            MinHeight = 32,
+            Padding = new Thickness(NativeTokens.Space14, 0),
+            MinHeight = NativeTokens.ControlHeight,
+            VerticalContentAlignment = VerticalAlignment.Center,
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             FontWeight = accent ? FontWeight.SemiBold : FontWeight.Normal,
         };

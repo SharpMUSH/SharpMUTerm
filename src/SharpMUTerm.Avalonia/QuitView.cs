@@ -34,11 +34,11 @@ internal sealed class QuitView : DockPanel, IModalView
         var model = session.Model;
 
         var heading = ModalParts.Heading("Quit SharpMUTerm?", colours);
-        heading.Margin = new Thickness(22, 18, 22, 8);
+        heading.Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space16, NativeTokens.Space24, NativeTokens.Space8);
         SetDock(heading, Dock.Top);
         Children.Add(heading);
 
-        var facts = new StackPanel { Margin = new Thickness(22, 2, 22, 4), Spacing = 6 };
+        var facts = new StackPanel { Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space2, NativeTokens.Space24, NativeTokens.Space4), Spacing = NativeTokens.Space6 };
         if (model.Consequences.Count == 0)
         {
             facts.Children.Add(new TextBlock { Text = QuitModel.NothingAtStake, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap });
@@ -47,7 +47,7 @@ internal sealed class QuitView : DockPanel, IModalView
         foreach (var consequence in model.Consequences)
         {
             var line = new DockPanel();
-            var dot = new TextBlock { Text = "●", Foreground = colours.Brush(colours.Accent), Margin = new Thickness(0, 0, 10, 0), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
+            var dot = new TextBlock { Text = "●", Foreground = colours.Brush(colours.Accent), Margin = new Thickness(0, 0, NativeTokens.Space10, 0), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
             SetDock(dot, Dock.Left);
             line.Children.Add(dot);
             line.Children.Add(new TextBlock { Text = NativeKeys.Words(consequence), Foreground = colours.Brush(colours.Text), TextWrapping = TextWrapping.Wrap, FontSize = NativeTokens.Title });
@@ -69,8 +69,8 @@ internal sealed class QuitView : DockPanel, IModalView
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(22, 14, 22, 0),
+            Spacing = NativeTokens.Space10,
+            Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space14, NativeTokens.Space24, 0),
         };
         buttons.Children.Add(_quit);
         buttons.Children.Add(_stay);

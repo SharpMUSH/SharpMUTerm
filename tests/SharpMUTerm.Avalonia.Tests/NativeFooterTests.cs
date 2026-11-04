@@ -84,8 +84,14 @@ public class NativeFooterTests
         var band = new InputBand(20, 2, InputLayout.HostFieldPad, [new InputPrompt(20, "Corvid ›")], "⏎ sends");
         var rect = TerminalView.FieldRect(band, 10, 20, 80, 1f);
 
-        await Assert.That((double)rect.Left).IsEqualTo((3 * 10) - NativeLayout.FieldInsetX);
-        await Assert.That((double)rect.Right).IsEqualTo(800 - ((3 * 10) - NativeLayout.FieldInsetX));
+        // The mockup's 20 px from the grid's edge, leaving the field its 8 px inner padding before the prompt's column.
+        await Assert.That((double)rect.Left).IsEqualTo(NativeLayout.FieldSide);
+        await Assert.That((double)rect.Right).IsEqualTo(800 - NativeLayout.FieldSide);
+        var tight = TerminalView.FieldRect(band, 8, 20, 80, 1f);
+        await Assert.That((double)tight.Left).IsEqualTo((3 * 8) - NativeTokens.Space8).Because("narrow cells keep the inner padding");
+        var scaled = TerminalView.FieldRect(band, 13, 25, 80, 1.25f);
+        await Assert.That(scaled.Left % 1).IsEqualTo(0f).Because("a field edge on a whole device pixel at 125%");
+        await Assert.That(scaled.Top % 1).IsEqualTo(0f);
         await Assert.That((double)rect.Top).IsEqualTo((20 * 20) + NativeLayout.FieldOuter);
         await Assert.That((double)rect.Bottom).IsEqualTo((22 * 20) + NativeLayout.FieldTop + NativeLayout.FieldInner);
 

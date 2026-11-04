@@ -49,9 +49,9 @@ internal static class NativeMenu
             Background = tokens.Brush(tokens.Card),
             Foreground = tokens.Brush(tokens.Text),
             BorderBrush = tokens.Brush(tokens.Edge),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(6),
+            Padding = new Thickness(NativeTokens.Space6),
             FontSize = NativeTokens.Body,
         };
         tokens.ApplySimple(menu.Resources);
@@ -75,7 +75,7 @@ internal static class NativeMenu
         {
             if (item is not { } entry)
             {
-                menu.Items.Add(new Separator { Background = tokens.Brush(tokens.Rule), Margin = new Thickness(8, 4) });
+                menu.Items.Add(new Separator { Background = tokens.Brush(tokens.Rule), Margin = new Thickness(NativeTokens.Space8, NativeTokens.Space4) });
                 continue;
             }
 
@@ -84,7 +84,7 @@ internal static class NativeMenu
             {
                 Header = Header(entry.Label, entry.Hint, tokens),
                 IsEnabled = entry.Enabled,
-                MinHeight = 30,
+                MinHeight = NativeTokens.ControlHeightSmall,
             };
             if (entry.Checked)
             {
@@ -117,7 +117,7 @@ internal static class NativeMenu
                 FontFamily = NativeTokens.KeyFace,
                 FontSize = NativeTokens.Small,
                 Foreground = tokens.Brush(tokens.Dim),
-                Margin = new Thickness(32, 0, 0, 0),
+                Margin = new Thickness(NativeTokens.Space32, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             Grid.SetColumn(text, 1);

@@ -63,6 +63,74 @@ public class NativeTokenTests
         await Assert.That(offenders).IsEmpty().Because(string.Join("\n", offenders));
     }
 
+    /// <summary>
+    /// Files allowed a literal margin, padding or spacing, and why. Everything else takes its insets from the scale
+    /// (<c>NativeTokens.Space*</c>, <c>PanelInset</c>, <c>ModalInset</c>), so the native views share one set of insets.
+    /// </summary>
+    private static readonly Dictionary<string, string> SpacingAllowed = new(StringComparer.Ordinal)
+    {
+        ["NativeTokens.cs"] = "the tokens themselves",
+        ["NativeTokens.Page.cs"] = "the tokens themselves",
+        ["NativeTokens.Spacing.cs"] = "the scale itself",
+        ["TerminalView.cs"] = "the cells' own view: its few insets are the grid's and the field's (NativeLayout), not a view's",
+        ["NativeFooter.cs"] = "the status footer, laid out from NativeLayout's footer constants in its own pass",
+        ["NoticeToasts.cs"] = "the toasts, laid out from their own card constants in their own pass",
+    };
+
+    [Test]
+    public async Task NoViewWritesALiteralMarginPaddingOrSpacing()
+    {
+        var root = Path.Combine(RepositoryRoot(), "src", "SharpMUTerm.Avalonia");
+        var thickness = new Regex(@"new Thickness\(([^()]*)\)", RegexOptions.Compiled);
+        var literal = new Regex(@"(?<![\w.])[1-9][0-9]*(\.[0-9]+)?(?![\w.])", RegexOptions.Compiled);
+        var spacing = new Regex(@"(?<!const double )\bSpacing\s*=\s*[1-9]", RegexOptions.Compiled);
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(root, "*.cs", SearchOption.TopDirectoryOnly))
+        {
+            if (SpacingAllowed.ContainsKey(Path.GetFileName(file)))
+            {
+                continue;
+            }
+
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (line.StartsWith("//", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (spacing.IsMatch(line) || thickness.Matches(line).Any(m => literal.IsMatch(m.Groups[1].Value)))
+                {
+                    offenders.Add($"{Path.GetFileName(file)}:{i + 1}: {line}");
+                }
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty().Because(string.Join("\n", offenders));
+    }
+
+    [Test]
+    public async Task TheSpacingScaleAndTheChromeSizesAreWholeDevicePixelsAtWindowsScales()
+    {
+        // 4 logical pixels are whole device pixels at 100, 125, 150 and 200%, so a chrome size on that grid puts the cells
+        // on a device pixel at every scale Windows offers, and nothing placed from a cell origin lands on a blended row.
+        double[] chrome = [NativeLayout.HeaderHeight, NativeLayout.SidebarWidth, NativeLayout.SidebarSlim, NativeLayout.SidebarGutter,
+            NativeLayout.StatusHeight, NativeLayout.FieldStrip];
+        foreach (var size in chrome)
+        {
+            await Assert.That(size % 4).IsEqualTo(0).Because($"{size} must be a multiple of 4");
+        }
+
+        double[] scale = [NativeTokens.Space2, NativeTokens.Space4, NativeTokens.Space6, NativeTokens.Space8, NativeTokens.Space10,
+            NativeTokens.Space12, NativeTokens.Space14, NativeTokens.Space16, NativeTokens.Space20, NativeTokens.Space24];
+        foreach (var step in scale)
+        {
+            await Assert.That(step % 2).IsEqualTo(0).Because("no odd step: an odd logical pixel is half a device pixel at 150%");
+        }
+    }
+
     [Test]
     public async Task TheDarkAndLightThemesResolveToThePalettesOwnCards()
     {

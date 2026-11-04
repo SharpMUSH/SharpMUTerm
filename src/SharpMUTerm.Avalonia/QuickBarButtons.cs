@@ -43,10 +43,13 @@ internal sealed class QuickBarButtons : Control
     /// <summary>The widest a binding's name is drawn before it is trimmed.</summary>
     internal const double MaxTitleWidth = 150;
 
-    private const double Gap = 8, PadX = 12;
+    private const double Gap = NativeTokens.Space8, PadX = NativeTokens.Space12;
+
+    /// <summary>The first button's left edge: the chrome's one text inset, as every panel's heading and the output are.</summary>
+    private const double Lead = NativeTokens.PanelInset;
 
     /// <summary>The pane's top-right corner, where the pop-out button sits: the bar ends short of it.</summary>
-    private const double EndRoom = 22;
+    private const double EndRoom = NativeTokens.Space24;
 
     private readonly TerminalView _view;
 
@@ -163,7 +166,7 @@ internal sealed class QuickBarButtons : Control
         var widths = items.Select(ItemWidth).ToList();
         foreach (var withEdit in new[] { true, false })
         {
-            var room = size.Width - EndRoom - (Gap * 2) - (withEdit ? EditWidth + Gap : 0);
+            var room = size.Width - EndRoom - Lead - Gap - (withEdit ? EditWidth + Gap : 0);
             for (var take = items.Count; take >= 0 && room >= 0; take--)
             {
                 var hidden = items.Count - take;
@@ -174,7 +177,7 @@ internal sealed class QuickBarButtons : Control
                     continue;
                 }
 
-                var x = Gap;
+                var x = Lead;
                 for (var i = 0; i < take; i++)
                 {
                     _slots.Add(new Slot(SlotKind.Item, i, new Rect(x, top, widths[i], height)));
@@ -340,7 +343,7 @@ internal sealed class QuickBarButtons : Control
         if (_model.Items.Count == 0)
         {
             var editLeft = _slots.FirstOrDefault(s => s.Kind == SlotKind.Edit).Rect.Left;
-            PanelText.Draw(context, QuickBarModel.EmptyText, Gap + 2, middle, size, dim, false, (editLeft > 0 ? editLeft : bounds.Width) - Gap - 8);
+            PanelText.Draw(context, QuickBarModel.EmptyText, Lead, middle, size, dim, false, (editLeft > 0 ? editLeft : bounds.Width) - Lead - Gap);
         }
 
         foreach (var slot in _slots)
@@ -386,9 +389,9 @@ internal sealed class QuickBarButtons : Control
         var fill = dashed && !hot && !down ? _plane : PanelText.Mix(_plane, _text, down ? 0.2 : hot ? 0.13 : 0.07);
         var edge = new Pen(
             new SolidColorBrush(PanelText.Mix(_plane, _text, dashed ? 0.3 : 0.18)),
-            1,
+            NativeTokens.DevicePixel(this),
             dashed ? new DashStyle([4, 3], 0) : null);
         var radius = Math.Min(NativeTokens.RadiusM, rect.Height / 2);
-        context.DrawRectangle(new SolidColorBrush(fill), edge, rect.Deflate(0.5), radius, radius);
+        context.DrawRectangle(new SolidColorBrush(fill), edge, NativeTokens.StrokeRect(this, rect), radius, radius);
     }
 }

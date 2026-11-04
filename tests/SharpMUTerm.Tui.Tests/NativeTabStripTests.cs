@@ -55,15 +55,16 @@ public class NativeTabStripTests
     }
 
     [Test]
-    public async Task TheStripTakesTwoRowsAndTheGutterAColumnEachSideAndThePanesSayso()
+    public async Task TheStripTakesTwoRowsAndTheGutterTwoColumnsEachSideAndARowAndThePanesSayso()
     {
         // The same arrangement with the strips and the gutter left to the cells: a native strip is two rows where a cell
-        // strip is one, and the gutter is a column either side, and the output rectangles (NAWS) lose exactly those.
+        // strip is one, and the gutter is two columns either side and a row above output, and the output rectangles
+        // (NAWS) lose exactly those.
         await using var cells = App(HostChrome.Native with { Tabs = false, PaneGutter = false }, out _, "split");
         await using var native = App(HostChrome.Native, out _, "split");
 
         var expected = cells.PaneOutputRects().ToDictionary(
-            p => p.Key, p => new PaneRect(p.Value.X + 1, p.Value.Y + 1, p.Value.Width - 2, p.Value.Height - 1));
+            p => p.Key, p => new PaneRect(p.Value.X + 2, p.Value.Y + 2, p.Value.Width - 4, p.Value.Height - 2));
         await Assert.That(native.PaneOutputRects()).IsEquivalentTo(expected);
         await Assert.That(native.PaneChromePublished?.Strips.All(s => s.Row.Height == 2) ?? true).IsTrue();
     }

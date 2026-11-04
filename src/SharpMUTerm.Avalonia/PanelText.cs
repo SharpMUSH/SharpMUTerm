@@ -62,13 +62,20 @@ internal static class PanelText
     // ── The panel heading: one row every docked panel draws over its content ────────────────────────────────────
 
     /// <summary>The panels' side padding, and the heading's.</summary>
-    public const double Pad = 16;
+    public const double Pad = NativeTokens.PanelInset;
 
     /// <summary>The panels' text size: the window's body size, one step up, which is what the mockups' side column reads at.</summary>
     public const double Size = NativeTokens.Body + 1;
 
-    /// <summary>How tall the heading is, its rule included, for the cell height the panel sits on: 42 px at a 20 px cell.</summary>
-    public static double HeadingHeight(double cellHeight) => Math.Clamp(cellHeight * 2.1, 32, 44);
+    /// <summary>
+    /// How tall a panel's heading is, its rule included: the mockup's 44 (12 px above and below a 19 px line, and the
+    /// rule), the same for every panel and the docked composer, so their headings and rules line up across the side
+    /// column, and a multiple of 4, so the rule lands on a device pixel at 125% and 150%. The cell height no longer moves it.
+    /// </summary>
+    public const double PanelHeadingHeight = NativeTokens.Space24 + NativeTokens.Space20;
+
+    /// <summary>The heading's height for a panel on cells of <paramref name="cellHeight"/>: <see cref="PanelHeadingHeight"/>.</summary>
+    public static double HeadingHeight(double cellHeight) => PanelHeadingHeight;
 
     /// <summary>The secondary ink: <paramref name="text"/> mixed toward <paramref name="plane"/>, opaque so it can be floor-checked.</summary>
     public static Color Dim(Color text, Color plane) => Mix(text, plane, 0.38);
@@ -87,11 +94,11 @@ internal static class PanelText
     /// a rule under both — and returns the height it took (<see cref="HeadingHeight"/>). <paramref name="right"/> is the
     /// room kept clear at the right edge (a chip, the pop-out button).
     /// </summary>
-    public static double Heading(DrawingContext context, SharpMUTerm.Client.Panels.PanelHeading heading, double width, double cellHeight, Color plane, Color text, double right = 0)
+    public static double Heading(DrawingContext context, SharpMUTerm.Client.Panels.PanelHeading heading, double width, double cellHeight, Color plane, Color text, double right = 0, double rule = NativeTokens.Hairline)
     {
         var height = HeadingHeight(cellHeight);
         context.FillRectangle(new SolidColorBrush(plane), new Rect(0, 0, width, height));
-        var middle = (height - 1) / 2;
+        var middle = (height - rule) / 2;
         var limit = width - Pad - right;
         var x = Pad;
         x += Draw(context, heading.Title, x, middle, Size, text, true, limit - x) + 8;
@@ -100,7 +107,8 @@ internal static class PanelText
             Draw(context, words, x, middle, Size, Dim(text, plane), false, limit - x);
         }
 
-        context.FillRectangle(new SolidColorBrush(Rule(text, plane)), new Rect(0, height - 1, width, 1));
+        // One device pixel (the caller's NativeTokens.DevicePixel), the heading's last, so it is crisp at any scale.
+        context.FillRectangle(new SolidColorBrush(Rule(text, plane)), new Rect(0, height - rule, width, rule));
         return height;
     }
 }

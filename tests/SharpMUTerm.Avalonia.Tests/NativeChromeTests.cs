@@ -400,7 +400,7 @@ public class NativeChromeTests
         await Assert.That(Enumerable.Range(0, 32).Any(y => driver.Frame.RowText(y).Contains("muterm", StringComparison.Ordinal))).IsFalse()
             .Because("the cell header is not drawn when the window draws its own");
         var rects = window.PaneOutputRects();
-        await Assert.That(rects.Values.Min(r => r.X)).IsEqualTo(1).Because("no rail column comes before the panes, only the pane's one-column gutter");
+        await Assert.That(rects.Values.Min(r => r.X)).IsEqualTo(2).Because("no rail column comes before the panes, only the pane's two-column gutter");
         await Assert.That(rects.OrderBy(r => r.Key).ToArray()).IsEquivalentTo(terminal.PaneOutputRects().OrderBy(r => r.Key).ToArray());
     }
 

@@ -326,9 +326,10 @@ internal sealed record ClientHost
 /// host has the depth a desktop tab wants; the pane rectangles, and so NAWS, are the panes less those two rows.
 /// </param>
 /// <param name="PaneGutter">
-/// The client leaves one blank column of the pane's own plane either side of every pane's content (the tab control's
-/// margin), so output does not run flush against the pane's edge. The columns are cells the pane really loses: the
-/// output rectangles, and so NAWS, are the narrower ones.
+/// The client leaves two blank columns of the pane's own plane either side of every pane's content (the tab control's
+/// margin) and a blank row above an output window's first line (not above a panel or a map, which the host draws over
+/// the whole pane), so output starts the mockup's ~20 px in from the pane's edges. The cells are ones the pane really
+/// loses: the output rectangles, and so NAWS, are the smaller ones.
 /// </param>
 internal sealed record HostChrome(bool Header, bool Rail, bool Status = false, bool Input = false, bool Tabs = false, bool PaneGutter = false)
 {

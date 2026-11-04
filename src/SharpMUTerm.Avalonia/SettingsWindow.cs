@@ -31,6 +31,9 @@ namespace SharpMUTerm.Avalonia;
 /// </summary>
 internal sealed class SettingsWindow : Window
 {
+    /// <summary>How far the meter table's received-paths box sits in: under the path columns, past the label column.</summary>
+    private const double MeterPathsIndent = 128;
+
     private readonly TextBox _search;
     private readonly ListBox _sections;
     private readonly StackPanel _page;
@@ -94,8 +97,8 @@ internal sealed class SettingsWindow : Window
         CloseButton = new Button
         {
             Content = "✕",
-            Padding = new Thickness(10, 4),
-            Margin = new Thickness(12, 0, 0, 0),
+            Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space4),
+            Margin = new Thickness(NativeTokens.Space12, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
@@ -108,7 +111,7 @@ internal sealed class SettingsWindow : Window
         {
             PlaceholderText = "Search settings",
             FontSize = NativeTokens.Label,
-            Padding = new Thickness(0, 2),
+            Padding = new Thickness(0, NativeTokens.Space2),
             MinHeight = 0,
             BorderThickness = new Thickness(0),
             Background = Brushes.Transparent,
@@ -125,7 +128,7 @@ internal sealed class SettingsWindow : Window
 
         AutomationProperties.SetName(_search, "Search settings");
         _search.TextChanged += (_, _) => OnQuery();
-        _searchCount = new TextBlock { FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        _searchCount = new TextBlock { FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space8, 0, 0, 0) };
         _searchGlass = new global::Avalonia.Controls.Shapes.Path
         {
             Data = Geometry.Parse("M6,0 A6,6 0 1 1 6,12 A6,6 0 1 1 6,0 M10.5,10.5 L14,14"),
@@ -134,7 +137,7 @@ internal sealed class SettingsWindow : Window
             Height = 14,
             Stretch = Stretch.Uniform,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(0, 0, NativeTokens.Space8, 0),
         };
         var searchRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         searchRow.Children.Add(_searchGlass);
@@ -145,17 +148,17 @@ internal sealed class SettingsWindow : Window
         _searchFrame = new Border
         {
             Child = searchRow,
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(12, 6),
+            Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space6),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Center,
             Cursor = new Cursor(StandardCursorType.Ibeam),
         };
         _searchFrame.PointerPressed += (_, _) => _search.Focus();
 
-        _scope = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
-        var header = new Grid { ColumnDefinitions = [new ColumnDefinition(GridLength.Auto), new ColumnDefinition(3, GridUnitType.Star) { MaxWidth = 480 }, new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto)], Margin = new Thickness(20, 0, 8, 0), Background = Brushes.Transparent };
+        _scope = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space16, 0, 0, 0) };
+        var header = new Grid { ColumnDefinitions = [new ColumnDefinition(GridLength.Auto), new ColumnDefinition(3, GridUnitType.Star) { MaxWidth = 480 }, new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto)], Margin = new Thickness(NativeTokens.Space20, 0, NativeTokens.Space8, 0), Background = Brushes.Transparent };
         header.Children.Add(_title);
         Grid.SetColumn(_searchFrame, 1);
         header.Children.Add(_searchFrame);
@@ -163,7 +166,7 @@ internal sealed class SettingsWindow : Window
         header.Children.Add(_scope);
         Grid.SetColumn(CloseButton, 4);
         header.Children.Add(CloseButton);
-        _bar = new Border { Height = 56, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
+        _bar = new Border { Height = 56, BorderThickness = new Thickness(0, 0, 0, NativeTokens.Hairline), Child = header };
         _bar.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(_bar).Properties.IsLeftButtonPressed
@@ -177,11 +180,11 @@ internal sealed class SettingsWindow : Window
         // ── the footer ──
         _footerLeft = new TextBlock { Text = "Changes apply to connected sessions as you make them.", FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
         _footerRight = new TextBlock { Text = "Ctrl+F searches · Esc closes", FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
-        var footerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(20, 0) };
+        var footerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(NativeTokens.Space20, 0) };
         footerRow.Children.Add(_footerLeft);
         Grid.SetColumn(_footerRight, 1);
         footerRow.Children.Add(_footerRight);
-        _footer = new Border { Height = 36, BorderThickness = new Thickness(0, 1, 0, 0), Child = footerRow };
+        _footer = new Border { Height = 36, BorderThickness = new Thickness(0, NativeTokens.Hairline, 0, 0), Child = footerRow };
         DockPanel.SetDock(_footer, Dock.Bottom);
 
         // ── the section navigation ──
@@ -193,17 +196,17 @@ internal sealed class SettingsWindow : Window
             FontSize = NativeTokens.Body,
             LineHeight = 18,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(10, 8, 10, 4),
+            Margin = new Thickness(NativeTokens.Space10, NativeTokens.Space8, NativeTokens.Space10, NativeTokens.Space4),
         };
         var navDock = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_navNote, Dock.Bottom);
         navDock.Children.Add(_navNote);
         navDock.Children.Add(_sections);
-        _nav = new Border { Width = 232, BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(10, 12), Child = navDock };
+        _nav = new Border { Width = 232, BorderThickness = new Thickness(0, 0, NativeTokens.Hairline, 0), Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space12), Child = navDock };
         DockPanel.SetDock(_nav, Dock.Left);
 
         // ── the page ──
-        _page = new StackPanel { Margin = new Thickness(40, 24, 40, 28), Spacing = 20 };
+        _page = new StackPanel { Margin = new Thickness(NativeTokens.PageInset, NativeTokens.Space24, NativeTokens.PageInset, NativeTokens.Space28), Spacing = NativeTokens.Space20 };
         _scroller = new ScrollViewer { Content = _page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
         // A list editor fills the page below its title rather than scrolling with it: its list and its detail scroll
@@ -226,7 +229,7 @@ internal sealed class SettingsWindow : Window
         dock.Children.Add(_footer);
         dock.Children.Add(_nav);
         dock.Children.Add(_scroller);
-        _frame = new Border { BorderThickness = new Thickness(1), Child = dock };
+        _frame = new Border { BorderThickness = new Thickness(NativeTokens.Hairline), Child = dock };
 
         // The frame is ours, so the resize border is too: a band along each edge, as the borderless main window has.
         CanResize = true;
@@ -391,7 +394,7 @@ internal sealed class SettingsWindow : Window
         foreach (var section in _form.Sections)
         {
             var title = new TextBlock { Text = section.Title, FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-            var badge = new TextBlock { FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            var badge = new TextBlock { FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space8, 0, 0, 0) };
             _badges[section.Id] = badge;
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             row.Children.Add(title);
@@ -401,8 +404,8 @@ internal sealed class SettingsWindow : Window
             {
                 Content = row,
                 Tag = section.Id,
-                Padding = new Thickness(10, 8),
-                Margin = new Thickness(0, 0, 0, 2),
+                Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space8),
+                Margin = new Thickness(0, 0, 0, NativeTokens.Space2),
                 MinHeight = 0,
                 CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
             };
@@ -547,7 +550,7 @@ internal sealed class SettingsWindow : Window
         {
             if (_form.Packages is not { } manager)
             {
-                _page.Children.Add(new TextBlock { Text = "This client offers no packages.", Foreground = DimInk, Margin = new Thickness(0, 16, 0, 0) });
+                _page.Children.Add(new TextBlock { Text = "This client offers no packages.", Foreground = DimInk, Margin = new Thickness(0, NativeTokens.Space16, 0, 0) });
                 ShownFields = [];
                 return;
             }
@@ -574,7 +577,7 @@ internal sealed class SettingsWindow : Window
                 _tokens)
             {
                 Height = ListEditorHeight(),
-                Margin = new Thickness(0, 8, 0, 0),
+                Margin = new Thickness(0, NativeTokens.Space8, 0, 0),
             };
             ListEditor = editor;
             _page.Children.Add(editor);
@@ -611,7 +614,7 @@ internal sealed class SettingsWindow : Window
             : section.Fields.ToList();
         if (visible.Count == 0)
         {
-            _page.Children.Add(new TextBlock { Text = "No setting here matches the search.", Foreground = DimInk, Margin = new Thickness(0, 16, 0, 0) });
+            _page.Children.Add(new TextBlock { Text = "No setting here matches the search.", Foreground = DimInk, Margin = new Thickness(0, NativeTokens.Space16, 0, 0) });
         }
 
         // A card per group, as the mockup draws its sections: the group's name heads it and its fields are rows inside,
@@ -631,7 +634,7 @@ internal sealed class SettingsWindow : Window
                         Text = heading,
                         FontSize = NativeTokens.CardTitle,
                         FontWeight = FontWeight.SemiBold,
-                        Margin = new Thickness(0, 12, 0, 0),
+                        Margin = new Thickness(0, NativeTokens.Space12, 0, 0),
                     });
                 }
 
@@ -639,7 +642,7 @@ internal sealed class SettingsWindow : Window
             }
             else
             {
-                body.Children.Add(new Border { Height = 1, Background = _tokens.Page.Brush(_tokens.Page.Rule) });
+                body.Children.Add(new Border { Height = NativeTokens.Hairline, Background = _tokens.Page.Brush(_tokens.Page.Rule) });
             }
 
             body.Children.Add(field switch
@@ -660,7 +663,7 @@ internal sealed class SettingsWindow : Window
     /// </summary>
     private StackPanel PageHead(SettingsSectionContribution section)
     {
-        var head = new StackPanel { Spacing = 6 };
+        var head = new StackPanel { Spacing = NativeTokens.Space6 };
         head.Children.Add(new TextBlock { Text = section.Title, FontSize = NativeTokens.PageTitle, FontWeight = FontWeight.SemiBold });
         var line = new WrapPanel { Orientation = Orientation.Horizontal };
         if (Searching)
@@ -680,7 +683,7 @@ internal sealed class SettingsWindow : Window
         if (section.Scope is SettingScope.World or SettingScope.Character && section.Key is { } screen)
         {
             var door = LinkButton($"Open the {screen} screen ↗");
-            door.Margin = new Thickness(line.Children.Count > 0 ? 12 : 0, 0, 0, 0);
+            door.Margin = new Thickness(line.Children.Count > 0 ? NativeTokens.Space12 : 0, 0, 0, 0);
             ToolTip.SetTip(door, section.Scope == SettingScope.World
                 ? "Adding and deleting worlds, their characters and trigger sets are on the cell screen"
                 : "Adding and deleting characters is on the cell screen");
@@ -705,9 +708,9 @@ internal sealed class SettingsWindow : Window
         Child = body,
         Background = _tokens.Page.Brush(_tokens.Page.Card),
         BorderBrush = _tokens.Page.Brush(_tokens.Page.Rule),
-        BorderThickness = new Thickness(1),
+        BorderThickness = new Thickness(NativeTokens.Hairline),
         CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
-        Padding = new Thickness(20, 6),
+        Padding = new Thickness(NativeTokens.Space20, NativeTokens.Space6),
     };
 
     /// <summary>A button drawn as a link in the accent, underlined, as the mockup's "Reset to default" and "Show all".</summary>
@@ -743,7 +746,7 @@ internal sealed class SettingsWindow : Window
     /// </summary>
     private Control SubjectRow(SettingsSectionContribution section)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
         var subjects = _form.Subjects(section.Scope);
         var noun = section.Scope == SettingScope.World ? "world" : "character";
         if (subjects.Count == 0)
@@ -776,7 +779,7 @@ internal sealed class SettingsWindow : Window
     /// <summary>The theme field: a card per theme, its preview drawn from the client's model; a click uses it.</summary>
     private StackPanel ThemePicker(ThemeField field)
     {
-        var outer = new StackPanel { Spacing = 6, Margin = new Thickness(0, 12, 0, 4) };
+        var outer = new StackPanel { Spacing = NativeTokens.Space6, Margin = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space4) };
         var words = new StackPanel();
         words.Children.Add(LabelBlock(field.Label));
         if (field.Help is { } help)
@@ -786,7 +789,7 @@ internal sealed class SettingsWindow : Window
 
         outer.Children.Add(words);
 
-        var wrap = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        var wrap = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space6, 0, 0) };
         var inUse = CurrentTheme(field);
         foreach (var card in _form.Themes())
         {
@@ -876,7 +879,7 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>A field's help line under its label: quiet, wrapped.</summary>
     private TextBlock HelpBlock(string help) =>
-        new() { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+        new() { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, NativeTokens.Space2, 0, 0) };
 
     /// <summary>
     /// One field, as a row of its group's card: the label (with the changed mark beside it) and its help on the left;
@@ -884,9 +887,9 @@ internal sealed class SettingsWindow : Window
     /// </summary>
     private Grid FieldRow(SettingsField field)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 12), MinHeight = 32 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, NativeTokens.Space12), MinHeight = 32 };
 
-        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
+        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, NativeTokens.Space16, 0) };
         var (changed, reset) = ChangedMark(field);
         var top = new WrapPanel { Orientation = Orientation.Horizontal };
         top.Children.Add(LabelBlock(field.Label));
@@ -899,7 +902,7 @@ internal sealed class SettingsWindow : Window
 
         // The note the cell F5 draws beside the value (join wraps' recommendation), from the same sentence, in the
         // cells' caution amber; gone once the field has been changed.
-        var note = new TextBlock { FontSize = NativeTokens.Body, Foreground = _tokens.Brush(_tokens.Notice), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+        var note = new TextBlock { FontSize = NativeTokens.Body, Foreground = _tokens.Brush(_tokens.Notice), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, NativeTokens.Space2, 0, 0) };
         void ShowNote()
         {
             var text = _form.Note(field);
@@ -914,7 +917,7 @@ internal sealed class SettingsWindow : Window
 
         grid.Children.Add(words);
 
-        reset.Margin = new Thickness(0, 0, 16, 0);
+        reset.Margin = new Thickness(0, 0, NativeTokens.Space16, 0);
         Grid.SetColumn(reset, 1);
         grid.Children.Add(reset);
 
@@ -933,7 +936,7 @@ internal sealed class SettingsWindow : Window
     /// </summary>
     private (Control Changed, Button Reset) ChangedMark(SettingsField field)
     {
-        var mark = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var mark = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, Margin = new Thickness(NativeTokens.Space10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         mark.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = Accent, VerticalAlignment = VerticalAlignment.Center });
         mark.Children.Add(new TextBlock { Text = "Changed", FontSize = NativeTokens.Body, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
         ToolTip.SetTip(mark, "Changed from its default");
@@ -1091,7 +1094,7 @@ internal sealed class SettingsWindow : Window
 
     private static StackPanel Swatch(string name)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Tag = name };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8, Tag = name };
         if (Color.TryParse(name, out var colour))
         {
             panel.Children.Add(new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(NativeTokens.RadiusS), Background = new SolidColorBrush(colour) });
@@ -1105,7 +1108,7 @@ internal sealed class SettingsWindow : Window
 
     private StackPanel MeterTable(ListField field)
     {
-        var outer = new StackPanel { Spacing = 10, Margin = new Thickness(0, 12, 0, 4) };
+        var outer = new StackPanel { Spacing = NativeTokens.Space10, Margin = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space4) };
         var page = _tokens.Page;
 
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -1170,7 +1173,7 @@ internal sealed class SettingsWindow : Window
             var remove = new Button
             {
                 Content = "✕",
-                Padding = new Thickness(8, 3),
+                Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space4),
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Foreground = DimInk,
@@ -1199,10 +1202,10 @@ internal sealed class SettingsWindow : Window
         // What this connection has received, to pick a path from: a click puts it in the path box last used. Drawn as the
         // mockup's drop-down panel, under the path columns.
         var box = new StackPanel();
-        box.Children.Add(new TextBlock { Text = "Paths this connection has received", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(12, 4, 12, 4) });
+        box.Children.Add(new TextBlock { Text = "Paths this connection has received", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4, NativeTokens.Space12, NativeTokens.Space4) });
         if (received.Count == 0)
         {
-            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(12, 4, 12, 6) });
+            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4, NativeTokens.Space12, NativeTokens.Space6) });
         }
 
         foreach (var item in received.Take(40))
@@ -1216,7 +1219,7 @@ internal sealed class SettingsWindow : Window
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(0),
-                Padding = new Thickness(12, 6),
+                Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space6),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
             };
@@ -1236,16 +1239,16 @@ internal sealed class SettingsWindow : Window
         {
             Child = box,
             Background = page.Brush(page.Popup),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
             BorderBrush = page.Brush(page.FocusEdge),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(0, 8),
-            Margin = new Thickness(128, 0, 0, 0),
+            Padding = new Thickness(0, NativeTokens.Space8),
+            Margin = new Thickness(MeterPathsIndent, 0, 0, 0),
             MaxWidth = 420,
             HorizontalAlignment = HorizontalAlignment.Left,
         });
 
-        var add = new Button { Content = "+ Add a meter", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(12, 6), FontSize = NativeTokens.Label };
+        var add = new Button { Content = "+ Add a meter", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space6), FontSize = NativeTokens.Label };
         AutomationProperties.SetName(add, "Add a meter");
         add.Click += (_, _) =>
         {

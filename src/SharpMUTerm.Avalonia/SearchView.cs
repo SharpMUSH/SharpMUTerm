@@ -48,11 +48,11 @@ internal sealed class SearchView : DockPanel, IModalView
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 
-        var toggles = new DockPanel { Margin = new Thickness(16, 0, 16, 6) };
+        var toggles = new DockPanel { Margin = new Thickness(NativeTokens.Space16, 0, NativeTokens.Space16, NativeTokens.Space6) };
         _regex = Toggle("Regex", "Alt+E", _model.Regex);
         _all = Toggle("All windows", "Alt+A", _model.AllWindows);
         _older = Toggle("Older history", "Alt+H", _model.Older);
-        var switches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var switches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
         switches.Children.Add(_regex);
         switches.Children.Add(_all);
         switches.Children.Add(_older);
@@ -69,11 +69,11 @@ internal sealed class SearchView : DockPanel, IModalView
         SetDock(toggles, Dock.Top);
         Children.Add(toggles);
 
-        _state = ModalParts.Dim(string.Empty, colours, new Thickness(20, 0, 20, 6));
+        _state = ModalParts.Dim(string.Empty, colours, new Thickness(NativeTokens.Space20, 0, NativeTokens.Space20, NativeTokens.Space6));
         SetDock(_state, Dock.Top);
         Children.Add(_state);
 
-        _note = ModalParts.Dim(string.Empty, colours, new Thickness(20, 0, 20, 6));
+        _note = ModalParts.Dim(string.Empty, colours, new Thickness(NativeTokens.Space20, 0, NativeTokens.Space20, NativeTokens.Space6));
 
         // While the pane cap trimmed what was searched, the note is the ⌥H offer, and a click on it is ⌥H.
         _note.PointerPressed += (_, e) =>
@@ -175,12 +175,12 @@ internal sealed class SearchView : DockPanel, IModalView
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal };
         content.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
-        content.Children.Add(new TextBlock { Text = NativeKeys.Words(key), FontSize = NativeTokens.Small, Opacity = 0.7, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = NativeKeys.Words(key), FontSize = NativeTokens.Small, Opacity = 0.7, Margin = new Thickness(NativeTokens.Space6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         var toggle = new ToggleButton
         {
             Content = content,
             IsChecked = on,
-            Padding = new Thickness(10, 4),
+            Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space4),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Focusable = false,
         };
@@ -248,7 +248,7 @@ internal sealed class SearchView : DockPanel, IModalView
             {
                 Text = empty,
                 Foreground = _colours.Brush(_model.Error is null ? _colours.Dim : _colours.Warn),
-                Margin = new Thickness(12, 10),
+                Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space10),
                 TextWrapping = TextWrapping.Wrap,
             });
             return;
@@ -273,7 +273,7 @@ internal sealed class SearchView : DockPanel, IModalView
                     Foreground = _colours.Brush(_colours.Header),
                     FontSize = NativeTokens.Body,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 10, 0),
+                    Margin = new Thickness(0, 0, NativeTokens.Space10, 0),
                 };
                 SetDock(window, Dock.Left);
                 line.Children.Add(window);

@@ -56,7 +56,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 
-        var bar = _bar = new DockPanel { Margin = new Thickness(20, 0, 14, 4) };
+        var bar = _bar = new DockPanel { Margin = new Thickness(NativeTokens.Space20, 0, NativeTokens.Space14, NativeTokens.Space4) };
         _sort = ModalParts.Button(SortLabel(), "Tab", colours, ToggleSort);
         SetDock(_sort, Dock.Right);
         bar.Children.Add(_sort);
@@ -70,7 +70,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
-        _note = ModalParts.Dim(string.Empty, colours, new Thickness(20, 6, 20, 0));
+        _note = ModalParts.Dim(string.Empty, colours, new Thickness(NativeTokens.Space20, NativeTokens.Space6, NativeTokens.Space20, 0));
         SetDock(_note, Dock.Bottom);
         Children.Add(_note);
 
@@ -208,7 +208,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
             Foreground = _colours.Brush(_colours.Text),
             FontSize = NativeTokens.Title,
             FontWeight = FontWeight.SemiBold,
-            Margin = new Thickness(12, 8, 12, 2),
+            Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space8, NativeTokens.Space12, NativeTokens.Space2),
             TextWrapping = TextWrapping.Wrap,
         });
         _list.Children.Add(new TextBlock
@@ -216,7 +216,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
             Text = _model.CharsetLine,
             Foreground = _colours.Brush(_colours.Dim),
             FontSize = NativeTokens.Body,
-            Margin = new Thickness(12, 0, 12, 8),
+            Margin = new Thickness(NativeTokens.Space12, 0, NativeTokens.Space12, NativeTokens.Space8),
             TextWrapping = TextWrapping.Wrap,
         });
         _selected = Math.Clamp(_selected, 0, game.Endpoints.Count - 1);
@@ -232,7 +232,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
                 Foreground = _colours.Brush(_colours.Text),
                 FontSize = NativeTokens.Title,
                 Width = 300,
-                Margin = new Thickness(0, 0, 12, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space12, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -298,7 +298,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
                 Text = NativeKeys.Words(empty),
                 Foreground = _colours.Brush(_model.State is WorldBrowseState.Failed or WorldBrowseState.Unavailable ? _colours.Warn : _colours.Dim),
                 FontSize = NativeTokens.Body,
-                Margin = new Thickness(12, 10),
+                Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space10),
                 TextWrapping = TextWrapping.Wrap,
             });
             return;
@@ -317,7 +317,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
                 FontWeight = FontWeight.SemiBold,
                 Width = 48,
                 TextAlignment = TextAlignment.Right,
-                Margin = new Thickness(0, 0, 14, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space14, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             SetDock(players, Dock.Left);
@@ -329,7 +329,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
                 Foreground = _colours.Brush(_colours.Text),
                 FontSize = NativeTokens.Title,
                 Width = 220,
-                Margin = new Thickness(0, 0, 12, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space12, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -342,7 +342,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
                 Foreground = _colours.Brush(_colours.Dim),
                 FontSize = NativeTokens.Small,
                 Width = 96,
-                Margin = new Thickness(0, 0, 12, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space12, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };

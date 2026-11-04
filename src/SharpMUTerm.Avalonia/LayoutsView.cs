@@ -49,8 +49,8 @@ internal sealed class LayoutsView : DockPanel, IModalView
 
         _rename = new TextBox
         {
-            Margin = new Thickness(14, 4, 14, 4),
-            Padding = new Thickness(10, 6),
+            Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space4, NativeTokens.Space14, NativeTokens.Space4),
+            Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space6),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             IsVisible = false,
             PlaceholderText = "New name",
@@ -61,11 +61,11 @@ internal sealed class LayoutsView : DockPanel, IModalView
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
-        _buttons = new WrapPanel { Margin = new Thickness(14, 8, 14, 0), HorizontalAlignment = HorizontalAlignment.Right };
+        _buttons = new WrapPanel { Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space8, NativeTokens.Space14, 0), HorizontalAlignment = HorizontalAlignment.Right };
         SetDock(_buttons, Dock.Bottom);
         Children.Add(_buttons);
 
-        _status = ModalParts.Dim(string.Empty, colours, new Thickness(20, 8, 20, 0));
+        _status = ModalParts.Dim(string.Empty, colours, new Thickness(NativeTokens.Space20, NativeTokens.Space8, NativeTokens.Space20, 0));
         SetDock(_status, Dock.Bottom);
         Children.Add(_status);
 
@@ -159,7 +159,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
 
         if (own == 0)
         {
-            _list.Children.Add(ModalParts.Dim("None yet — Save as new keeps the panes as they are now.", _colours, new Thickness(12, 2, 12, 6)));
+            _list.Children.Add(ModalParts.Dim("None yet — Save as new keeps the panes as they are now.", _colours, new Thickness(NativeTokens.Space12, NativeTokens.Space2, NativeTokens.Space12, NativeTokens.Space6)));
         }
 
         _status.Text = _confirming && _model.Current is { } doomed
@@ -176,7 +176,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
     {
         var layout = _model.Rows[index];
         var line = new DockPanel();
-        var tags = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        var tags = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, VerticalAlignment = VerticalAlignment.Center };
         if (layout.InUse)
         {
             tags.Children.Add(Chip("in use"));
@@ -213,7 +213,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
     {
         Background = _colours.Brush(_colours.Selected),
         CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-        Padding = new Thickness(8, 1),
+        Padding = new Thickness(NativeTokens.Space8, NativeTokens.Hairline),
         Child = new TextBlock { Text = text, FontSize = NativeTokens.Small, Foreground = _colours.Brush(_colours.Accent) },
     };
 
@@ -228,7 +228,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
         void Add(string label, string key, Action click, bool accent = false)
         {
             var button = ModalParts.Button(label, key, _colours, click, accent);
-            button.Margin = new Thickness(6, 0, 0, 6);
+            button.Margin = new Thickness(NativeTokens.Space6, 0, 0, NativeTokens.Space6);
             button.Focusable = false;
             _buttons.Children.Add(button);
         }

@@ -28,14 +28,14 @@ internal sealed class ThemeCardView : Button
         Background = Brushes.Transparent;
         BorderThickness = new Thickness(0);
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        Margin = new Thickness(0, 0, 14, 14);
+        Margin = new Thickness(0, 0, NativeTokens.Space14, NativeTokens.Space14);
         Width = 264;
         AutomationProperties.SetName(this, $"Use the {card.Name} theme");
         ToolTip.SetTip(this, $"Use {card.Name}");
 
         var name = new TextBlock { Text = card.Name, FontSize = NativeTokens.Title, FontWeight = FontWeight.SemiBold };
         _state = new TextBlock { FontSize = NativeTokens.Body };
-        var words = new StackPanel { Margin = new Thickness(10, 8, 10, 8), Spacing = 1 };
+        var words = new StackPanel { Margin = new Thickness(NativeTokens.Space10, NativeTokens.Space8, NativeTokens.Space10, NativeTokens.Space8), Spacing = NativeTokens.Hairline };
         words.Children.Add(name);
         words.Children.Add(_state);
 
@@ -48,7 +48,7 @@ internal sealed class ThemeCardView : Button
             Child = body,
             CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
             ClipToBounds = true,
-            BorderThickness = new Thickness(2),
+            BorderThickness = new Thickness(NativeTokens.BorderStrong),
         };
         Content = _frame;
         SetInUse(inUse, tokens);
@@ -90,23 +90,23 @@ internal sealed class ThemeCardView : Button
         }
 
         var line = preview.CommandLine;
-        var command = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, Padding = new Thickness(4, 2), TextTrimming = TextTrimming.CharacterEllipsis };
+        var command = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, Padding = new Thickness(NativeTokens.Space4, NativeTokens.Space2), TextTrimming = TextTrimming.CharacterEllipsis };
         command.Inlines!.Add(new Run(line.Prompt + " ") { Foreground = Brush(line.PromptInk), FontWeight = FontWeight.Bold });
         command.Inlines.Add(new Run(line.Text) { Foreground = Brush(line.Ink) });
 
-        var stack = new StackPanel { Spacing = 3 };
+        var stack = new StackPanel { Spacing = NativeTokens.Space4 };
         stack.Children.Add(panes);
         stack.Children.Add(new Border { Background = Brush(line.Band), Child = command });
 
-        return new Border { Background = Brush(preview.Backdrop), Padding = new Thickness(3), Child = stack };
+        return new Border { Background = Brush(preview.Backdrop), Padding = new Thickness(NativeTokens.Space4), Child = stack };
     }
 
     private static Border Pane(PreviewPane pane)
     {
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Hairline };
         foreach (var tab in pane.Tabs)
         {
-            var title = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, Padding = new Thickness(3, 1) };
+            var title = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, Padding = new Thickness(NativeTokens.Space4, NativeTokens.Hairline) };
             title.Inlines!.Add(new Run(tab.Title) { Foreground = Brush(tab.Ink), FontWeight = tab.Selected ? FontWeight.Bold : FontWeight.Normal });
             if (tab.Badge is { } badge)
             {
@@ -116,7 +116,7 @@ internal sealed class ThemeCardView : Button
             tabs.Children.Add(new Border { Background = Brush(tab.Chip), Child = title });
         }
 
-        var lines = new StackPanel { Margin = new Thickness(4, 3, 4, 4) };
+        var lines = new StackPanel { Margin = new Thickness(NativeTokens.Space4, NativeTokens.Space4, NativeTokens.Space4, NativeTokens.Space4) };
         foreach (var runs in pane.Lines)
         {
             var text = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Miniature, TextTrimming = TextTrimming.CharacterEllipsis };

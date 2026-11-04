@@ -30,7 +30,7 @@ internal sealed class ComposerEditor : TextBox
         TextWrapping = TextWrapping.Wrap;
         NewLine = "\n";
         BorderThickness = new Thickness(0);
-        Padding = new Thickness(12, 10);
+        Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space10);
         MinHeight = 0;
         ClipToBounds = true;
     }

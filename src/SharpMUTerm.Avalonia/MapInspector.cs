@@ -24,7 +24,7 @@ internal sealed class MapInspector : Border
     private readonly TextBlock _title = new() { FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _where = new() { Opacity = 0.75 };
     private readonly TextBlock _pending = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false };
-    private readonly StackPanel _exits = new() { Spacing = 2 };
+    private readonly StackPanel _exits = new() { Spacing = NativeTokens.Space2 };
     private readonly TextBlock _mine = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.85, IsVisible = false };
     private readonly Button _undo;
     private readonly Button _delete;
@@ -38,10 +38,10 @@ internal sealed class MapInspector : Border
         HorizontalAlignment = HorizontalAlignment.Right;
         VerticalAlignment = VerticalAlignment.Top;
         Width = CardWidth;
-        Margin = new Thickness(0, 30, 8, 8);
-        Padding = new Thickness(10, 8);
+        Margin = new Thickness(0, NativeTokens.Space32, NativeTokens.Space8, NativeTokens.Space8);
+        Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space8);
         CornerRadius = new CornerRadius(NativeTokens.RadiusM);
-        BorderThickness = new Thickness(1);
+        BorderThickness = new Thickness(NativeTokens.Hairline);
         IsVisible = false;
         AutomationProperties.SetName(this, "Room inspector");
 
@@ -146,7 +146,7 @@ internal sealed class MapInspector : Border
 
         Child = new StackPanel
         {
-            Spacing = 6,
+            Spacing = NativeTokens.Space6,
             Children =
             {
                 _title,
@@ -336,14 +336,14 @@ internal sealed class MapInspector : Border
 
     private static TextBox Field(string name)
     {
-        var box = new TextBox { MinHeight = 24, Padding = new Thickness(6, 2), FontSize = NativeTokens.Body, MaxLength = 200 };
+        var box = new TextBox { MinHeight = 24, Padding = new Thickness(NativeTokens.Space6, NativeTokens.Space2), FontSize = NativeTokens.Body, MaxLength = 200 };
         AutomationProperties.SetName(box, name);
         return box;
     }
 
     private static Button Small(string label, Action run)
     {
-        var button = new Button { Content = label, Padding = new Thickness(8, 2), Margin = new Thickness(0, 0, 4, 4), FontSize = NativeTokens.Body, Focusable = false };
+        var button = new Button { Content = label, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space2), Margin = new Thickness(0, 0, NativeTokens.Space4, NativeTokens.Space4), FontSize = NativeTokens.Body, Focusable = false };
         button.Click += (_, _) => run();
         return button;
     }

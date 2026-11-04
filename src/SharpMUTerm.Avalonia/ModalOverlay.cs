@@ -59,7 +59,7 @@ internal sealed class ModalOverlay : Panel
         {
             Background = new SolidColorBrush(Colours.Card),
             BorderBrush = new SolidColorBrush(Colours.Edge),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
             CornerRadius = new CornerRadius(NativeTokens.RadiusL),
             BoxShadow = NativeTokens.Shadow,
             ClipToBounds = true,
@@ -71,7 +71,7 @@ internal sealed class ModalOverlay : Panel
             RequestedThemeVariant = session.IsDark ? ThemeVariant.Dark : ThemeVariant.Light,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = _view.Centred ? VerticalAlignment.Center : VerticalAlignment.Top,
-            Margin = new Thickness(16, _view.Centred ? 16 : 56, 16, 16),
+            Margin = new Thickness(NativeTokens.Space16, _view.Centred ? NativeTokens.Space16 : NativeLayout.HeaderHeight + NativeTokens.Space12, NativeTokens.Space16, NativeTokens.Space16),
             Child = _card,
         };
         scope.Styles.Add(new FluentTheme());

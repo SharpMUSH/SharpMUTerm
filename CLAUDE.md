@@ -1394,8 +1394,10 @@ fallbacks) for inline images/maps.
     and the native strip lies on them. **Under `Tabs` a strip is two rows** (`TabHeaderStyle.Separator`, `TabStripRows`),
     the mockup's ~40 px with 14 px labels centred in the tabs; `PaneOutputRects` reads `TabHeaderHeight`, so NAWS is the
     pane less two rows, never a native view over a row of output. The band needs no blanking: its cells stay under it.
-  - **`HostChrome.PaneGutter` (the window) gives every pane a blank column either side** (`tabs.Margin`,
-    `PaneGutterColumns`), in the pane's plane (the surface grid behind it), so output is not flush with the pane's edge.
+  - **`HostChrome.PaneGutter` (the window) gives every pane two blank columns either side** (`tabs.Margin`,
+    `PaneGutterColumns`) **and a blank row above an output window's first line** (the content's `Margin`,
+    `PaneGutterRowsFor`; none for a panel or a map, drawn natively over the whole pane), in the pane's plane, so output
+    starts the mockup's ~20 px in from the pane's edges rather than one cell's 8.
     The columns are lost by the pane: `PaneOutputRects` subtracts the margin and NAWS follows. A native panel is
     published over its output rectangle *and* the gutter (`PublishPanels`), since those cells hold nothing and the panel
     pads itself. The terminal has no gutter. `NativeTabStripTests.TheStripTakesTwoRows…` pins both against the cells.
@@ -2390,6 +2392,28 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     marked, `● Changed`, help under it; *Reset to default* link and the control on the right). A group whose name is its
     only field's label draws no heading. List and package pages put both halves in cards. Still generated from the
     declarations; nothing is placed by hand. Fonts are inherited (the window sets no UI family).
+- **The window lays out on one spacing scale and on device pixels** (`NativeTokens.Spacing.cs`; wave 21B). Insets are
+  `Space2…Space32` (a 4 px grid plus the mockups' 6/10/14 control half-steps; nothing odd, an odd logical pixel is half a
+  device pixel at 150%), `PanelInset` (16: the header's brand, the sidebar's title, world names and foot button, every
+  panel's heading, rows and footer, the quick bar's first button), `ModalInset`, `PageInset`; heights `ControlHeight` 32,
+  `ControlHeightSmall` 28, `FieldHeight` 38 (the command line's field and the welcome's inputs and Connect). Decisions:
+  - **Chrome sizes are multiples of 4** (`NativeLayout`: header 44, sidebar 232 + 8, footer 28, the field's strip 40 +
+    rows), because 4 logical pixels are whole device pixels at 100/125/150/200%: the cells start on a device pixel at
+    every Windows scale, so a view placed from `CellOrigin` meets them with no blended row. The old 42 px header put
+    every rule below it on a half pixel at 125%.
+  - **A drawn hairline is one device pixel, filled**: `NativeTokens.HorizontalRule`/`VerticalRule`/`StrokeRect`/
+    `HairlinePen` read the visual's `RenderScaling`; the header's rule, the tab strips, the scroll band, panel headings
+    (`PanelText.Heading(rule:)`), the search box, key caps and the quick bar's plates use them. `Border` hairlines are
+    already rounded by layout rounding (on by default) and need nothing.
+  - **Every panel heading is 44 px** (`PanelText.PanelHeadingHeight`, the docked composer's `Border` too), whatever the
+    cell height, so the side column's rules line up. Only the character in front wears the sidebar's selected plate;
+    its window in front is the accent mark. The field sits `NativeLayout.FieldSide` (20) in from the grid as far as the
+    prompt's padding columns allow (`FieldRect`, edges rounded to device pixels).
+  - `NativeTokenTests.NoViewWritesALiteralMarginPaddingOrSpacing` fails on a number in a `new Thickness(…)` or a
+    `Spacing =` outside the tokens (allow-list: the tokens, `TerminalView`, the footer, the toasts, with reasons);
+    `TheSpacingScaleAndTheChromeSizesAreWholeDevicePixels…` pins the multiples of 4. Not done: the quick bar is still one
+    cell row (the mockup's is a 56 px strip of 34 px buttons), and panel internals' font sizes are not on the scale.
+
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

@@ -293,9 +293,9 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
         var bounds = new Rect(Bounds.Size);
         var strip = Parse(overlay.StripPlane, Tokens.Card);
         context.FillRectangle(new SolidColorBrush(strip), bounds);
-        var rule = new Pen(new SolidColorBrush(Tokens.Rule), 1);
-        var bottom = Math.Floor(bounds.Height) - 0.5;
-        context.DrawLine(rule, new Point(0, bottom), new Point(bounds.Width, bottom));
+        // The strip's last device pixel is its rule, filled rather than stroked, so it is one crisp row at 125% and 150%.
+        var px = NativeTokens.DevicePixel(this);
+        context.FillRectangle(new SolidColorBrush(Tokens.Rule), NativeTokens.HorizontalRule(this, bounds.Height - px, 0, bounds.Width));
 
         var size = Size;
 
@@ -314,24 +314,25 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
                 var r = Math.Min(NativeTokens.RadiusM, area.Height / 2);
                 var card = CardGeometry(area, r, bounds.Height);
                 context.DrawGeometry(new SolidColorBrush(plane), null, card);
-                context.DrawGeometry(null, new Pen(new SolidColorBrush(Tokens.Rule), 1), CardOutline(area, r, bounds.Height));
+                context.DrawGeometry(null, NativeTokens.HairlinePen(this, Tokens.Rule), CardOutline(NativeTokens.StrokeRect(this, area), r, bounds.Height));
 
                 // The focused pane's front tab carries the focus cue: an accent bar along its top, between the corners.
                 if (overlay.Model.Focused)
                 {
-                    context.DrawRectangle(new SolidColorBrush(Tokens.Accent), null, new Rect(area.X + r, area.Y, Math.Max(0, area.Width - (2 * r)), 2), 1, 1);
+                    context.DrawRectangle(new SolidColorBrush(Tokens.Accent), null,
+                        new Rect(area.X + r, NativeTokens.Snap(this, area.Y), Math.Max(0, area.Width - (2 * r)), NativeTokens.Snap(this, NativeTokens.BorderStrong)), 1, 1);
                 }
             }
             else
             {
                 if (plane != strip)
                 {
-                    context.DrawRectangle(new SolidColorBrush(plane), null, area.Deflate(new Thickness(0, 1, 0, 3)), NativeTokens.RadiusS, NativeTokens.RadiusS);
+                    context.DrawRectangle(new SolidColorBrush(plane), null, area.Deflate(new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Space4)), NativeTokens.RadiusS, NativeTokens.RadiusS);
                 }
 
                 if (hovered && Interactive)
                 {
-                    context.DrawRectangle(new SolidColorBrush(PanelText.Alpha(Tokens.Text, 0x14)), null, area.Deflate(new Thickness(0, 1, 0, 3)), NativeTokens.RadiusS, NativeTokens.RadiusS);
+                    context.DrawRectangle(new SolidColorBrush(PanelText.Alpha(Tokens.Text, 0x14)), null, area.Deflate(new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Space4)), NativeTokens.RadiusS, NativeTokens.RadiusS);
                 }
             }
 
@@ -399,9 +400,10 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     {
         var g = new StreamGeometry();
         using var c = g.Open();
-        var left = area.X + 0.5;
-        var right = area.Right - 0.5;
-        var top = area.Y + 0.5;
+        // Already moved onto the device pixels' centres by the caller (NativeTokens.StrokeRect).
+        var left = area.X;
+        var right = area.Right;
+        var top = area.Y;
         c.BeginFigure(new Point(left, height), false);
         c.LineTo(new Point(left, top + r));
         c.ArcTo(new Point(left + r, top), new Size(r, r), 0, false, SweepDirection.Clockwise);
@@ -528,9 +530,9 @@ internal sealed class ScrollBandView : Control, ICustomHitTest
         var bounds = new Rect(Bounds.Size);
         var plane = Tokens.Raised;
         context.FillRectangle(new SolidColorBrush(plane), bounds);
-        var rule = new Pen(new SolidColorBrush(Tokens.Rule), 1);
-        context.DrawLine(rule, new Point(0, 0.5), new Point(bounds.Width, 0.5));
-        context.DrawLine(rule, new Point(0, Math.Floor(bounds.Height) - 0.5), new Point(bounds.Width, Math.Floor(bounds.Height) - 0.5));
+        var rule = new SolidColorBrush(Tokens.Rule);
+        context.FillRectangle(rule, NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
+        context.FillRectangle(rule, NativeTokens.HorizontalRule(this, bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
 
         var size = Size;
         var middle = bounds.Height / 2;

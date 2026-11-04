@@ -119,7 +119,7 @@ internal sealed class VitalsGauges : Control
         var barHeight = BarHeight(_cellHeight);
         var size = Math.Min(PanelText.Size - 1, Math.Max(10, _cellHeight * 0.68));
         var top = HeadedFor(bounds.Height, _model)
-            ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: 20) + 12
+            ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this)) + 12
             : 8;
         var inner = new Rect(PanelText.Pad, top, Math.Max(1, bounds.Width - (PanelText.Pad * 2)), Math.Max(1, bounds.Height - top));
         var dim = PanelText.Dim(_text, _plane);
@@ -158,7 +158,7 @@ internal sealed class VitalsGauges : Control
     {
         var size = Math.Clamp(_cellHeight * 0.62, 9, 14);
         var barHeight = Math.Clamp(bounds.Height * 0.32, 4, 9);
-        var inner = bounds.Deflate(new Thickness(10, 0, 30, 0));
+        var inner = bounds.Deflate(new Thickness(PanelText.Pad, 0, NativeTokens.Space32, 0));
         var gap = 18.0;
         var shares = _model.Meters.Count + (_model.Target is null ? 0 : 1.4);
         var unit = (inner.Width - (gap * Math.Max(0, Math.Ceiling(shares) - 1))) / shares;

@@ -52,7 +52,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(14, 8, 14, 0), HorizontalAlignment = HorizontalAlignment.Right };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8, Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space8, NativeTokens.Space14, 0), HorizontalAlignment = HorizontalAlignment.Right };
         _delete = ModalParts.Button("Delete key", "Del", colours, DeleteSelected);
         buttons.Children.Add(_delete);
         if (_session.CanEdit)
@@ -68,8 +68,8 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
         {
             FontFamily = _mono,
             FontSize = NativeTokens.Title,
-            Margin = new Thickness(14, 8, 14, 0),
-            Padding = new Thickness(10, 6),
+            Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space8, NativeTokens.Space14, 0),
+            Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space6),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             MaxLength = ScriptConsoleModel.MaxInput,
             PlaceholderText = "Lua — try 1 + 1 or print(world.name)",
@@ -79,16 +79,16 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
                 FontFamily = _mono,
                 Foreground = colours.Brush(colours.Accent),
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
+                Margin = new Thickness(0, 0, NativeTokens.Space8, 0),
             },
         };
         global::Avalonia.Automation.AutomationProperties.SetName(_prompt, "Lua prompt");
         SetDock(_prompt, Dock.Bottom);
         Children.Add(_prompt);
 
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,240"), MinHeight = 260, Margin = new Thickness(0, 4, 0, 0) };
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,240"), MinHeight = 260, Margin = new Thickness(0, NativeTokens.Space4, 0, 0) };
 
-        _output = new StackPanel { Margin = new Thickness(14, 6, 8, 6) };
+        _output = new StackPanel { Margin = new Thickness(NativeTokens.Space14, NativeTokens.Space6, NativeTokens.Space8, NativeTokens.Space6) };
         _outputScroller = new ScrollViewer
         {
             Content = _output,
@@ -98,7 +98,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
         var outputFrame = new Border
         {
             BorderBrush = colours.Brush(colours.Rule),
-            BorderThickness = new Thickness(0, 1, 1, 1),
+            BorderThickness = new Thickness(0, NativeTokens.Hairline, NativeTokens.Hairline, NativeTokens.Hairline),
             Child = _outputScroller,
         };
         Grid.SetColumn(outputFrame, 0);
@@ -222,7 +222,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
         _storeRows.Clear();
         if (_model.Store.Count == 0)
         {
-            _store.Children.Add(ModalParts.Dim(_model.CanRun ? "nothing stored" : string.Empty, _colours, new Thickness(12, 8)));
+            _store.Children.Add(ModalParts.Dim(_model.CanRun ? "nothing stored" : string.Empty, _colours, new Thickness(NativeTokens.Space12, NativeTokens.Space8)));
         }
 
         for (var i = 0; i < _model.Store.Count; i++)
@@ -256,7 +256,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
     /// <summary>An error row naming a script line: underlined, a hand under the pointer, and a click opens that line.</summary>
     private Control ErrorLink(string text, Color colour, (string File, int Line) at, Action open)
     {
-        var row = new DockPanel { Margin = new Thickness(0, 1), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand) };
+        var row = new DockPanel { Margin = new Thickness(0, NativeTokens.Hairline), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand) };
         var gutter = new TextBlock { Text = ScriptConsoleModel.Mark(ScriptConsoleKind.Error), Width = 18, FontFamily = _mono, Foreground = _colours.Brush(colour), FontSize = NativeTokens.Body };
         SetDock(gutter, Dock.Left);
         row.Children.Add(gutter);
@@ -284,7 +284,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
 
     private Control Line(string text, Color colour, string mark)
     {
-        var row = new DockPanel { Margin = new Thickness(0, 1) };
+        var row = new DockPanel { Margin = new Thickness(0, NativeTokens.Hairline) };
         var gutter = new TextBlock { Text = mark, Width = 18, FontFamily = _mono, Foreground = _colours.Brush(colour), FontSize = NativeTokens.Body };
         SetDock(gutter, Dock.Left);
         row.Children.Add(gutter);

@@ -84,7 +84,7 @@ internal sealed class ComposerView : Border
         _editor = new ComposerEditor
         {
             Background = Brushes.Transparent,
-            Padding = fullScreen ? new Thickness(22, 14) : new Thickness(10, 8),
+            Padding = fullScreen ? new Thickness(NativeTokens.Space24, NativeTokens.Space14) : new Thickness(NativeTokens.Space10, NativeTokens.Space8),
         };
         AutomationProperties.SetName(_editor, fullScreen ? "Compose a post" : "Docked composer");
         _editor.TextChanged += (_, _) => OnTextChanged();
@@ -95,10 +95,10 @@ internal sealed class ComposerView : Border
         _marks = new MarkLayer(_editor);
         _gutter = new LineGutter(_editor) { IsVisible = false };
 
-        _title = new TextBlock { FontWeight = fullScreen ? FontWeight.Bold : FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, fullScreen ? 10 : 8, 0) };
+        _title = new TextBlock { FontWeight = fullScreen ? FontWeight.Bold : FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, fullScreen ? NativeTokens.Space10 : NativeTokens.Space8, 0) };
         _target = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-        _chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        _count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+        _chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, VerticalAlignment = VerticalAlignment.Center };
+        _count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space10, 0, 0, 0) };
         var headerRow = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_title, Dock.Left);
         DockPanel.SetDock(_count, Dock.Right);
@@ -109,7 +109,13 @@ internal sealed class ComposerView : Border
         headerRow.Children.Add(_target);
         // The docked panel's heading is every panel's (PanelText.Heading): 16 px in, a rule under it, the pop-out button
         // clear at the right.
-        _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(22, 10) : new Thickness(PanelText.Pad, 10, 30, 10) };
+        _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(NativeTokens.Space24, NativeTokens.Space10) : new Thickness(PanelText.Pad, 0, NativeTokens.Space32, 0) };
+        if (!fullScreen)
+        {
+            // Every panel's heading height, so the composer's rule meets the one beside it (who is here, the map).
+            _header.Height = PanelText.PanelHeadingHeight;
+            headerRow.VerticalAlignment = VerticalAlignment.Center;
+        }
 
         _keys = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
@@ -121,29 +127,29 @@ internal sealed class ComposerView : Border
         var dockedFooter = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_sendButton, Dock.Right);
         DockPanel.SetDock(_previewButton, Dock.Right);
-        _previewButton.Margin = new Thickness(8, 0, 8, 0);
+        _previewButton.Margin = new Thickness(NativeTokens.Space8, 0, NativeTokens.Space8, 0);
         dockedFooter.Children.Add(_sendButton);
         dockedFooter.Children.Add(_previewButton);
         dockedFooter.Children.Add(_summary);
         _footer = new Border
         {
             Child = fullScreen ? _keys : dockedFooter,
-            Padding = fullScreen ? new Thickness(22, 8) : new Thickness(PanelText.Pad, 10, PanelText.Pad, 12),
+            Padding = fullScreen ? new Thickness(NativeTokens.Space24, NativeTokens.Space8) : new Thickness(PanelText.Pad, NativeTokens.Space10, PanelText.Pad, NativeTokens.Space14),
         };
 
         // F1's as-sent preview (⌥P): the one command ⌃S sends, in the editor's face, under the editor.
-        _previewHeading = new TextBlock { Text = "AS SENT", FontWeight = FontWeight.Bold, Margin = new Thickness(0, 0, 0, 4) };
+        _previewHeading = new TextBlock { Text = "AS SENT", FontWeight = FontWeight.Bold, Margin = new Thickness(0, 0, 0, NativeTokens.Space4) };
         _previewText = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxLines = 4, TextTrimming = TextTrimming.CharacterEllipsis };
         _preview = new Border
         {
             Child = new StackPanel { Children = { _previewHeading, _previewText } },
-            Padding = new Thickness(22, 8),
+            Padding = new Thickness(NativeTokens.Space24, NativeTokens.Space8),
             IsVisible = false,
         };
         AutomationProperties.SetName(_preview, "As sent");
 
         // The armed rule down the docked editor's left edge: the cell composer's ▌ marker, in the accent.
-        _rule = new Border { Width = 3, HorizontalAlignment = HorizontalAlignment.Left };
+        _rule = new Border { Width = NativeTokens.MarkWidth, HorizontalAlignment = HorizontalAlignment.Left };
 
         _placeholder = new TextBlock
         {
@@ -151,7 +157,7 @@ internal sealed class ComposerView : Border
             FontFamily = NativeTokens.UiFont,
             IsHitTestVisible = false,
             IsVisible = false,
-            Margin = _editor.Padding + new Thickness(1),
+            Margin = _editor.Padding + new Thickness(NativeTokens.Hairline),
         };
 
         var text = new Panel();
@@ -169,9 +175,9 @@ internal sealed class ComposerView : Border
             _well = new Border
             {
                 Child = text,
-                Margin = new Thickness(PanelText.Pad, 12, PanelText.Pad, 0),
-                CornerRadius = new CornerRadius(NativeTokens.RadiusS + 2),
-                BorderThickness = new Thickness(1),
+                Margin = new Thickness(PanelText.Pad, NativeTokens.Space12, PanelText.Pad, 0),
+                CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+                BorderThickness = new Thickness(NativeTokens.Hairline),
                 ClipToBounds = true,
             };
             page = _well;
@@ -374,9 +380,9 @@ internal sealed class ComposerView : Border
         _header.Background = new SolidColorBrush(_fullScreen ? Band : _plane);
         _footer.Background = new SolidColorBrush(_fullScreen ? Band : _plane);
         _header.BorderBrush = new SolidColorBrush(_fullScreen ? Mix(_plane, _text, 0.12) : PanelText.Rule(_text, _plane));
-        _header.BorderThickness = new Thickness(0, 0, 0, 1);
+        _header.BorderThickness = new Thickness(0, 0, 0, NativeTokens.Hairline);
         _footer.BorderBrush = _header.BorderBrush;
-        _footer.BorderThickness = _fullScreen ? new Thickness(0, 1, 0, 0) : default;
+        _footer.BorderThickness = _fullScreen ? new Thickness(0, NativeTokens.Hairline, 0, 0) : default;
         if (_well is not null)
         {
             _well.Background = new SolidColorBrush(Well);
@@ -402,7 +408,7 @@ internal sealed class ComposerView : Border
         _count.Foreground = new SolidColorBrush(Dim);
         _preview.Background = new SolidColorBrush(Band);
         _preview.BorderBrush = _header.BorderBrush;
-        _preview.BorderThickness = new Thickness(0, 1, 0, 0);
+        _preview.BorderThickness = new Thickness(0, NativeTokens.Hairline, 0, 0);
         _previewHeading.Foreground = new SolidColorBrush(Accent);
         _previewText.Foreground = new SolidColorBrush(_text);
         _marks.InvalidateVisual();
@@ -549,7 +555,7 @@ internal sealed class ComposerView : Border
                 continue;
             }
 
-            var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 1, 14, 1) };
+            var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space4, Margin = new Thickness(0, NativeTokens.Hairline, NativeTokens.Space14, NativeTokens.Hairline) };
             if (key.Key.Length > 0)
             {
                 item.Children.Add(Chip(NativeKeys.Words(key.Key), Accent, ui - 1.5));
@@ -588,9 +594,9 @@ internal sealed class ComposerView : Border
     {
         Background = new SolidColorBrush(Mix(_plane, ink, 0.14)),
         BorderBrush = new SolidColorBrush(Mix(_plane, ink, 0.32)),
-        BorderThickness = new Thickness(1),
+        BorderThickness = new Thickness(NativeTokens.Hairline),
         CornerRadius = new CornerRadius(NativeTokens.RadiusS),
-        Padding = new Thickness(6, 0, 6, 1),
+        Padding = new Thickness(NativeTokens.Space6, 0, NativeTokens.Space6, NativeTokens.Hairline),
         VerticalAlignment = VerticalAlignment.Center,
         Child = new TextBlock { Text = words, FontSize = Math.Max(9, size), Foreground = new SolidColorBrush(ink) },
     };
@@ -932,9 +938,10 @@ internal sealed class ComposerView : Border
         var button = new Border
         {
             Child = new TextBlock { Text = words, VerticalAlignment = VerticalAlignment.Center },
-            Padding = new Thickness(10, 5),
-            CornerRadius = new CornerRadius(NativeTokens.RadiusS + 2),
-            BorderThickness = new Thickness(1),
+            Padding = new Thickness(NativeTokens.Space10, 0),
+            Height = NativeTokens.ControlHeightSmall,
+            CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
             Cursor = new Cursor(StandardCursorType.Hand),
             VerticalAlignment = VerticalAlignment.Center,
         };

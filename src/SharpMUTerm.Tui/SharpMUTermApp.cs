@@ -11574,8 +11574,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private int TabStripRows => Host.Chrome.Tabs ? 2 : 1;
 
-    /// <summary>The blank columns either side of a pane's content where the host asks for a gutter (<see cref="HostChrome.PaneGutter"/>).</summary>
-    private const int PaneGutterColumns = 1;
+    /// <summary>
+    /// The blank columns either side of a pane's content where the host asks for a gutter (<see cref="HostChrome.PaneGutter"/>):
+    /// two, so output starts the mockup's ~20 px in from the pane's edge rather than one cell's 8.
+    /// </summary>
+    private const int PaneGutterColumns = 2;
+
+    /// <summary>
+    /// The blank row above an output window's first line where the host asks for a gutter: the mockup's padding under the
+    /// tab strip. None for a layout panel or a map, which the host draws natively over the whole pane.
+    /// </summary>
+    private int PaneGutterRowsFor(string? windowId) =>
+        Host.Chrome.PaneGutter && windowId is not null && PanelIdOfWindow(windowId) is null && !IsMapWindow(windowId) ? 1 : 0;
 
     /// <summary>The layout panel a window draws, or null for an ordinary window.</summary>
     private static string? PanelIdOfWindow(string windowId) =>
@@ -11639,7 +11649,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         for (var i = 0; i < strip.Tabs.Count; i++)
         {
             var windowId = strip.Tabs[i].WindowId;
-            builder.AddTab(titles[i], BuildTabContent(pane, windowId, _workspace.FindWindow(windowId)!));
+            var content = BuildTabContent(pane, windowId, _workspace.FindWindow(windowId)!);
+            if (Host.Chrome.PaneGutter)
+            {
+                // The gutter's row under the strip, for output only: a panel or a map is drawn natively over its pane and
+                // pads itself. Set every time, because a window's control is kept and re-parented across rebuilds.
+                content.Margin = new Margin(0, PaneGutterRowsFor(windowId), 0, 0);
+            }
+
+            builder.AddTab(titles[i], content);
             ids.Add(windowId);
         }
 
@@ -13208,7 +13226,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         foreach (var (paneId, tabs, rect) in RealisedPanes())
         {
             var margin = tabs.Margin;
-            var top = margin.Top + tabs.TabHeaderHeight;
+            var top = margin.Top + tabs.TabHeaderHeight + PaneGutterRowsFor(_workspace.Layout.FindPane(paneId)?.ActiveTab);
             rects[paneId] = new PaneRect(
                 rect.X + margin.Left,
                 rect.Y + top,

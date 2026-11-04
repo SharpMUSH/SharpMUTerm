@@ -753,8 +753,11 @@ internal sealed class HeaderButton : Control
 /// </summary>
 internal static class NativeLayout
 {
-    /// <summary>The header band's height.</summary>
-    public const double HeaderHeight = 42;
+    /// <summary>
+    /// The header band's height: the mockup's 44, a multiple of 4 like every chrome size here, so the cells below it
+    /// start on a whole device pixel at 125% and 150% (<see cref="NativeTokens"/>' spacing scale).
+    /// </summary>
+    public const double HeaderHeight = 44;
 
     /// <summary>The sidebar's width, open.</summary>
     public const double SidebarWidth = 232;
@@ -766,34 +769,43 @@ internal static class NativeLayout
     /// The sidebar's breathing room before the panes: its own plane carried a few pixels on, so a pane's first column
     /// of text does not sit hard against the sidebar's edge. Part of the sidebar, never of a pane, so it costs no cell.
     /// </summary>
-    public const double SidebarGutter = 8;
+    public const double SidebarGutter = NativeTokens.Space8;
 
     /// <summary>The status footer's height (<see cref="HostChrome.Status"/>).</summary>
     public const double StatusHeight = 28;
 
     /// <summary>The footer's text inset from the window's edges.</summary>
-    public const double FooterPadX = 16;
+    public const double FooterPadX = NativeTokens.PanelInset;
 
     /// <summary>The command line's strip: the padding above the field and below it (<see cref="HostChrome.Input"/>).</summary>
-    public const double FieldOuter = 10;
+    public const double FieldOuter = NativeTokens.Space10;
 
-    /// <summary>The field's own padding above its first row and below its last.</summary>
-    public const double FieldInner = 9;
+    /// <summary>The field's own padding above its first row and below its last: the mockup's 9 px and its border.</summary>
+    public const double FieldInner = NativeTokens.Space10;
 
     /// <summary>How far the field's edge sits outside the client's padding columns, horizontally.</summary>
-    public const double FieldInsetX = 12;
+    public const double FieldInsetX = NativeTokens.Space12;
+
+    /// <summary>
+    /// The field's edge from the grid's left and right edges: the mockup's 20 px, as far as the client's padding columns
+    /// leave room for the field's own inner padding (<see cref="NativeTokens.Space8"/> at least) before the prompt.
+    /// </summary>
+    public const double FieldSide = NativeTokens.Space20;
+
+    /// <summary>The pixels the strip adds around its rows: its padding and the field's, above and below.</summary>
+    public const double FieldStrip = 2 * (FieldOuter + FieldInner);
 
     /// <summary>How much lower the bars' rows are drawn than their cells: the strip's padding and the field's.</summary>
     public const double FieldTop = FieldOuter + FieldInner;
 
     /// <summary>The vertical pixels the field adds around the rows it frames, which the grid gives up.</summary>
-    public const double FieldReserve = 2 * FieldTop;
+    public const double FieldReserve = FieldStrip;
 
     /// <summary>A header button's side.</summary>
-    public const double ButtonSize = 30;
+    public const double ButtonSize = NativeTokens.ControlHeightSmall;
 
     /// <summary>The gap between two header buttons.</summary>
-    public const double ButtonGap = 6;
+    public const double ButtonGap = NativeTokens.Space8;
 
     /// <summary>The cells' margin in the window: the space the native header and sidebar take.</summary>
     public static Thickness Insets(HostChrome chrome, bool collapsed) => new(

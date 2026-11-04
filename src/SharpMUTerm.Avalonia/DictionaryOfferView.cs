@@ -27,11 +27,11 @@ internal sealed class DictionaryOfferView : DockPanel, IModalView
         var model = session.Model;
 
         var heading = ModalParts.Heading(model.Question, colours);
-        heading.Margin = new Thickness(22, 18, 22, 8);
+        heading.Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space16, NativeTokens.Space24, NativeTokens.Space8);
         SetDock(heading, Dock.Top);
         Children.Add(heading);
 
-        var facts = new StackPanel { Margin = new Thickness(22, 2, 22, 4), Spacing = 6 };
+        var facts = new StackPanel { Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space2, NativeTokens.Space24, NativeTokens.Space4), Spacing = NativeTokens.Space6 };
         foreach (var line in model.Lines)
         {
             facts.Children.Add(new TextBlock
@@ -56,8 +56,8 @@ internal sealed class DictionaryOfferView : DockPanel, IModalView
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(22, 14, 22, 0),
+            Spacing = NativeTokens.Space10,
+            Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space14, NativeTokens.Space24, 0),
         };
         buttons.Children.Add(_download);
         buttons.Children.Add(_later);

@@ -756,7 +756,7 @@ internal sealed class MapCanvas : Control
 
         // What and where: the panel heading (Map, the area and level) with the area's colour as a mark before its name's
         // line, then the room the character is in, or a walk under way, under it.
-        var heading = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, CellHeight, _plane, _text, right: 20);
+        var heading = PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, CellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this));
         if (_model.AreaColour is { } areaHex)
         {
             context.DrawRectangle(new SolidColorBrush(Parse(areaHex)), null, new Rect(PanelText.Pad - 9, (heading / 2) - 5, 3, 10), 1.5, 1.5);

@@ -33,7 +33,7 @@ internal sealed class ScrollbackView : DockPanel, IModalView
         _model = session.Model;
         Focusable = true;
 
-        var header = new DockPanel { Margin = new Thickness(20, 14, 20, 8) };
+        var header = new DockPanel { Margin = new Thickness(NativeTokens.Space20, NativeTokens.Space14, NativeTokens.Space20, NativeTokens.Space8) };
         _title = ModalParts.Heading(string.Empty, colours);
         _position = new TextBlock
         {
@@ -52,11 +52,11 @@ internal sealed class ScrollbackView : DockPanel, IModalView
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
-        _list = new StackPanel { Margin = new Thickness(8, 4, 8, 4) };
+        _list = new StackPanel { Margin = new Thickness(NativeTokens.Space8, NativeTokens.Space4, NativeTokens.Space8, NativeTokens.Space4) };
         var frame = new Border
         {
             BorderBrush = colours.Brush(colours.Rule),
-            BorderThickness = new Thickness(0, 1, 0, 1),
+            BorderThickness = new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Hairline),
             Child = _list,
         };
         Children.Add(frame);
@@ -114,17 +114,17 @@ internal sealed class ScrollbackView : DockPanel, IModalView
             _list.Children.Add(new Border
             {
                 CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-                Padding = new Thickness(12, 2),
+                Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space2),
                 Background = marked ? _colours.Brush(_colours.Selected) : Brushes.Transparent,
                 BorderBrush = role == ScrollbackLineRole.Context ? _colours.Brush(_colours.Rule) : null,
-                BorderThickness = new Thickness(role == ScrollbackLineRole.Context ? 2 : 0, 0, 0, 0),
+                BorderThickness = new Thickness(role == ScrollbackLineRole.Context ? NativeTokens.BorderStrong : 0, 0, 0, 0),
                 Child = text,
             });
         }
 
         for (var i = _model.Lines.Count; i < _model.PageRows; i++)
         {
-            _list.Children.Add(new TextBlock { Text = " ", FontFamily = mono, FontSize = NativeTokens.Body, Margin = new Thickness(12, 2) });
+            _list.Children.Add(new TextBlock { Text = " ", FontFamily = mono, FontSize = NativeTokens.Body, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space2) });
         }
     }
 

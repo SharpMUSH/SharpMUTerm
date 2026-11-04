@@ -32,12 +32,12 @@ internal sealed class PackagePageView : Grid
     private readonly NativeTokens _tokens;
     private readonly TabControl _tabs;
     private readonly ListBox _installed = new() { Background = Brushes.Transparent };
-    private readonly StackPanel _detail = new() { Spacing = 2, Margin = new Thickness(4, 0, 4, 16) };
+    private readonly StackPanel _detail = new() { Spacing = NativeTokens.Space2, Margin = new Thickness(NativeTokens.Space4, 0, NativeTokens.Space4, NativeTokens.Space16) };
     private readonly ListBox _browse = new() { Background = Brushes.Transparent };
-    private readonly StackPanel _browseDetail = new() { Spacing = 6, Margin = new Thickness(4, 0, 4, 16) };
+    private readonly StackPanel _browseDetail = new() { Spacing = NativeTokens.Space6, Margin = new Thickness(NativeTokens.Space4, 0, NativeTokens.Space4, NativeTokens.Space16) };
     private readonly ContentControl _browseBody = new();
     private readonly Border _reviewLayer;
-    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, NativeTokens.Space8, 0, 0) };
     private readonly Dictionary<string, TextBlock> _values = new(StringComparer.Ordinal);
     private readonly List<(PackageItem Item, ToggleSwitch Switch)> _rows = [];
     private string? _selected;
@@ -57,7 +57,7 @@ internal sealed class PackagePageView : Grid
         _accent = tokens.Brush(tokens.Accent);
         _dark = tokens.IsDark;
         RowDefinitions = new RowDefinitions("*,Auto");
-        Margin = new Thickness(0, 6, 0, 0);
+        Margin = new Thickness(0, NativeTokens.Space6, 0, 0);
 
         _installed.SelectionChanged += (_, _) =>
         {
@@ -186,11 +186,11 @@ internal sealed class PackagePageView : Grid
 
     private Grid MasterDetail(Control list, Control detail)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("260,*"), Margin = new Thickness(0, 12, 0, 0) };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("260,*"), Margin = new Thickness(0, NativeTokens.Space12, 0, 0) };
         var page = _tokens.Page;
-        grid.Children.Add(ListEditorView.PageCard(list, page, new Thickness(4, 6), new Thickness(0, 0, 16, 0)));
+        grid.Children.Add(ListEditorView.PageCard(list, page, new Thickness(NativeTokens.Space4, NativeTokens.Space6), new Thickness(0, 0, NativeTokens.Space16, 0)));
         var scroller = new ScrollViewer { Content = detail, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        var card = ListEditorView.PageCard(scroller, page, new Thickness(16, 12, 4, 0), new Thickness(0));
+        var card = ListEditorView.PageCard(scroller, page, new Thickness(NativeTokens.Space16, NativeTokens.Space12, NativeTokens.Space4, 0), new Thickness(0));
         SetColumn(card, 1);
         grid.Children.Add(card);
         return grid;
@@ -233,7 +233,7 @@ internal sealed class PackagePageView : Grid
                 };
                 _rows.Add((item, toggle));
 
-                var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+                var words = new StackPanel { Spacing = NativeTokens.Hairline, VerticalAlignment = VerticalAlignment.Center };
                 words.Children.Add(new TextBlock { Text = Text("name", item), FontSize = NativeTokens.Title, TextTrimming = TextTrimming.CharacterEllipsis });
                 var tail = string.Join(" · ", _declaration.RowFields.Skip(1).Select(id => Text(id, item)));
                 words.Children.Add(new TextBlock { Text = tail, FontSize = NativeTokens.Body, Foreground = DimInk, TextTrimming = TextTrimming.CharacterEllipsis });
@@ -245,9 +245,9 @@ internal sealed class PackagePageView : Grid
                 var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
                 row.Children.Add(toggle);
                 SetColumn(words, 1);
-                words.Margin = new Thickness(6, 0, 0, 0);
+                words.Margin = new Thickness(NativeTokens.Space6, 0, 0, 0);
                 row.Children.Add(words);
-                rows.Add(new ListBoxItem { Content = row, Tag = item.Id, Padding = new Thickness(8, 6) });
+                rows.Add(new ListBoxItem { Content = row, Tag = item.Id, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6) });
             }
 
             _installed.ItemsSource = rows;
@@ -284,7 +284,7 @@ internal sealed class PackagePageView : Grid
                 Text = "No package is installed. Browse the index, or use Ctrl+P ▸ Install package… with a file or an https link.",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.75,
-                Margin = new Thickness(0, 8, 0, 8),
+                Margin = new Thickness(0, NativeTokens.Space8, 0, NativeTokens.Space8),
             });
             _detail.Children.Add(BrowseDoor());
             return;
@@ -294,7 +294,7 @@ internal sealed class PackagePageView : Grid
         shown.AddRange(_declaration.RowFields);
         _detail.Children.Add(new TextBlock { Text = Text("name", item), FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold });
         var subtitle = string.Join(" · ", _declaration.RowFields.Skip(1).Select(id => Text(id, item)));
-        _detail.Children.Add(new TextBlock { Text = subtitle, Foreground = DimInk, Margin = new Thickness(0, 0, 0, 6) });
+        _detail.Children.Add(new TextBlock { Text = subtitle, Foreground = DimInk, Margin = new Thickness(0, 0, 0, NativeTokens.Space6) });
 
         string? group = null;
         foreach (var field in _declaration.DetailFields.Where(_visible))
@@ -307,12 +307,12 @@ internal sealed class PackagePageView : Grid
                     Text = heading,
                     FontSize = NativeTokens.Title,
                     FontWeight = FontWeight.SemiBold,
-                    Margin = new Thickness(0, 14, 0, 4),
+                    Margin = new Thickness(0, NativeTokens.Space14, 0, NativeTokens.Space4),
                     Foreground = _accent,
                 });
             }
 
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*"), Margin = new Thickness(0, 3) };
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*"), Margin = new Thickness(0, NativeTokens.Space4) };
             var label = new TextBlock { Text = Capitalise(field.Label), Foreground = DimInk };
             if (field.Help is { } help)
             {
@@ -336,7 +336,7 @@ internal sealed class PackagePageView : Grid
 
         ShownFields = shown;
 
-        var actions = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 18, 0, 0) };
+        var actions = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space16, 0, 0) };
         var copy = ActionButton(PackageCollection.CopySets, "Copy sets to edit");
         copy.IsEnabled = item.Package.Sets.Count > 0;
         copy.Click += (_, _) => _manager.CopySets(item);
@@ -372,7 +372,7 @@ internal sealed class PackagePageView : Grid
             {
                 Text = "Click again to remove it; its sets stop applying and its folder is deleted.",
                 Foreground = Warning,
-                Margin = new Thickness(0, 6, 0, 0),
+                Margin = new Thickness(0, NativeTokens.Space6, 0, 0),
                 TextWrapping = TextWrapping.Wrap,
             });
         }
@@ -390,7 +390,7 @@ internal sealed class PackagePageView : Grid
 
     private Button ActionButton(string action, string text)
     {
-        var button = new Button { Content = text, Margin = new Thickness(0, 0, 8, 6), Padding = new Thickness(12, 5) };
+        var button = new Button { Content = text, Margin = new Thickness(0, 0, NativeTokens.Space8, NativeTokens.Space6), Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space4) };
         var declared = _declaration.Action(action);
         ToolTip.SetTip(button, NativeKeys.Words($"{Capitalise(declared.Help)} ({declared.Key} on the cell screen)"));
         AutomationProperties.SetName(button, text);
@@ -407,7 +407,7 @@ internal sealed class PackagePageView : Grid
         InstallButton = null;
         if (_manager.BrowseModel is not { } model)
         {
-            var empty = new StackPanel { Spacing = 10, Margin = new Thickness(4, 24, 4, 0), MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
+            var empty = new StackPanel { Spacing = NativeTokens.Space10, Margin = new Thickness(NativeTokens.Space4, NativeTokens.Space24, NativeTokens.Space4, 0), MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
             empty.Children.Add(new TextBlock { Text = "The package index", FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold });
             empty.Children.Add(new TextBlock
             {
@@ -420,13 +420,13 @@ internal sealed class PackagePageView : Grid
                 empty.Children.Add(new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 10,
+                    Spacing = NativeTokens.Space10,
                     Children = { new ProgressBar { IsIndeterminate = true, Width = 120 }, new TextBlock { Text = "Fetching the index…", VerticalAlignment = VerticalAlignment.Center } },
                 });
             }
             else
             {
-                var fetch = new Button { Content = "Fetch the index", Padding = new Thickness(14, 6), Classes = { "accent" } };
+                var fetch = new Button { Content = "Fetch the index", Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space6), Classes = { "accent" } };
                 AutomationProperties.SetName(fetch, "Fetch the package index");
                 fetch.Click += (_, _) => _manager.Browse();
                 FetchButton = fetch;
@@ -437,7 +437,7 @@ internal sealed class PackagePageView : Grid
             return;
         }
 
-        var head = new StackPanel { Spacing = 2, Margin = new Thickness(0, 10, 0, 0) };
+        var head = new StackPanel { Spacing = NativeTokens.Space2, Margin = new Thickness(0, NativeTokens.Space10, 0, 0) };
         head.Children.Add(new TextBlock
         {
             Text = PackageCollection.Of(model.Rows.Count, "package") + (model.World is { } world ? $" · {world}'s first" : string.Empty),
@@ -456,8 +456,8 @@ internal sealed class PackagePageView : Grid
         var rows = new List<ListBoxItem>();
         foreach (var row in model.Rows)
         {
-            var words = new StackPanel { Spacing = 1 };
-            var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var words = new StackPanel { Spacing = NativeTokens.Hairline };
+            var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
             title.Children.Add(new TextBlock { Text = row.Entry.Name, FontSize = NativeTokens.Title });
             if (row.ForWorld)
             {
@@ -477,7 +477,7 @@ internal sealed class PackagePageView : Grid
                 Opacity = 0.7,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
-            rows.Add(new ListBoxItem { Content = words, Padding = new Thickness(8, 6) });
+            rows.Add(new ListBoxItem { Content = words, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6) });
         }
 
         _browse.ItemsSource = rows;
@@ -497,9 +497,9 @@ internal sealed class PackagePageView : Grid
     {
         Child = new TextBlock { Text = text, FontSize = NativeTokens.Small, Foreground = brush },
         BorderBrush = brush,
-        BorderThickness = new Thickness(1),
+        BorderThickness = new Thickness(NativeTokens.Hairline),
         CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-        Padding = new Thickness(6, 0),
+        Padding = new Thickness(NativeTokens.Space6, 0),
         VerticalAlignment = VerticalAlignment.Center,
     };
 
@@ -541,8 +541,8 @@ internal sealed class PackagePageView : Grid
                 PackageBrowseState.Installed => "Review and reinstall…",
                 _ => "Review and install…",
             },
-            Padding = new Thickness(14, 6),
-            Margin = new Thickness(0, 12, 0, 0),
+            Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space6),
+            Margin = new Thickness(0, NativeTokens.Space12, 0, 0),
             Classes = { "accent" },
         };
         ToolTip.SetTip(install, "Downloads it, checks it against the index's SHA-256, and shows what it adds — nothing is installed until you agree");
@@ -577,7 +577,7 @@ internal sealed class PackagePageView : Grid
         }
 
         var lines = new List<string>();
-        var header = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 4) };
+        var header = new StackPanel { Spacing = NativeTokens.Space2, Margin = new Thickness(0, 0, 0, NativeTokens.Space4) };
         header.Children.Add(new TextBlock { Text = review.Title, FontSize = NativeTokens.Title, Foreground = DimInk });
         header.Children.Add(new TextBlock
         {
@@ -596,7 +596,7 @@ internal sealed class PackagePageView : Grid
             header.Children.Add(new TextBlock { Text = byline, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
         }
 
-        var card = new StackPanel { Spacing = 4 };
+        var card = new StackPanel { Spacing = NativeTokens.Space4 };
         if (review.Description is { } description)
         {
             card.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap });
@@ -606,14 +606,14 @@ internal sealed class PackagePageView : Grid
         {
             lines.Add(section.Heading);
             var acts = section.Heading == PackageReviewModel.ActsHeading;
-            var box = new StackPanel { Spacing = 3 };
+            var box = new StackPanel { Spacing = NativeTokens.Space4 };
             box.Children.Add(new TextBlock
             {
                 Text = Capitalise(section.Heading.ToLowerInvariant()),
                 FontWeight = FontWeight.SemiBold,
                 FontSize = NativeTokens.Title,
                 Foreground = acts && review.Acts ? Warning : _accent,
-                Margin = new Thickness(0, 0, 0, 2),
+                Margin = new Thickness(0, 0, 0, NativeTokens.Space2),
             });
             foreach (var row in section.Rows)
             {
@@ -651,16 +651,16 @@ internal sealed class PackagePageView : Grid
             card.Children.Add(new Border
             {
                 Child = box,
-                Padding = new Thickness(12, 10),
-                Margin = new Thickness(0, 8, 0, 0),
+                Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space10),
+                Margin = new Thickness(0, NativeTokens.Space8, 0, 0),
                 CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-                BorderThickness = new Thickness(acts && review.Acts ? 1 : 0),
+                BorderThickness = new Thickness(acts && review.Acts ? NativeTokens.Hairline : 0),
                 BorderBrush = Warning,
                 Background = _tokens.Brush(_tokens.Raised),
             });
         }
 
-        var footer = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
+        var footer = new DockPanel { Margin = new Thickness(0, NativeTokens.Space12, 0, 0) };
         var consent = new TextBlock
         {
             Text = Capitalise(PackageReviewModel.Consent) + ".",
@@ -668,18 +668,18 @@ internal sealed class PackagePageView : Grid
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         };
-        var accept = new Button { Content = review.Replaces is null ? "Install" : "Update", Padding = new Thickness(18, 6), Classes = { "accent" } };
+        var accept = new Button { Content = review.Replaces is null ? "Install" : "Update", Padding = new Thickness(NativeTokens.Space16, NativeTokens.Space6), Classes = { "accent" } };
         AutomationProperties.SetName(accept, "Install the package");
         accept.Click += (_, _) => _manager.Accept();
-        var cancel = new Button { Content = "Cancel", Padding = new Thickness(18, 6) };
+        var cancel = new Button { Content = "Cancel", Padding = new Thickness(NativeTokens.Space16, NativeTokens.Space6) };
         cancel.Click += (_, _) => _manager.Cancel();
         AcceptButton = accept;
         CancelButton = cancel;
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Margin = new Thickness(12, 0, 0, 0),
+            Spacing = NativeTokens.Space8,
+            Margin = new Thickness(NativeTokens.Space12, 0, 0, 0),
             Children = { cancel, accept },
         };
         DockPanel.SetDock(buttons, Dock.Right);
@@ -700,9 +700,9 @@ internal sealed class PackagePageView : Grid
             Child = layout,
             Background = _tokens.Brush(_tokens.Card),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(22, 16),
+            Padding = new Thickness(NativeTokens.Space24, NativeTokens.Space16),
             MaxWidth = 620,
-            Margin = new Thickness(16),
+            Margin = new Thickness(NativeTokens.Space16),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             BoxShadow = BoxShadows.Parse("0 8 32 0 #66000000"),

@@ -20,7 +20,7 @@ internal sealed class ImportReviewView : DockPanel, IModalView
     private readonly ImportReviewSession _session;
     private readonly NativeTokens _colours;
     private readonly Action _done;
-    private readonly StackPanel _body = new() { Spacing = 4, Margin = new Thickness(20, 2, 20, 4) };
+    private readonly StackPanel _body = new() { Spacing = NativeTokens.Space4, Margin = new Thickness(NativeTokens.Space20, NativeTokens.Space2, NativeTokens.Space20, NativeTokens.Space4) };
     private readonly Button _import;
     private readonly Button _cancel;
     private readonly CheckBox _passwords;
@@ -64,10 +64,10 @@ internal sealed class ImportReviewView : DockPanel, IModalView
             }
         };
 
-        var buttons = new DockPanel { Margin = new Thickness(20, 12, 20, 0), LastChildFill = false };
+        var buttons = new DockPanel { Margin = new Thickness(NativeTokens.Space20, NativeTokens.Space12, NativeTokens.Space20, 0), LastChildFill = false };
         DockPanel.SetDock(_passwords, Dock.Left);
         buttons.Children.Add(_passwords);
-        var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space10 };
         right.Children.Add(_import);
         right.Children.Add(_cancel);
         DockPanel.SetDock(right, Dock.Right);
@@ -182,7 +182,7 @@ internal sealed class ImportReviewView : DockPanel, IModalView
         if (_model.PasswordLine is { } passwords)
         {
             var line = Line(passwords, _model.StorePasswords ? _colours.Text : _colours.Warn);
-            line.Margin = new Thickness(12, 12, 12, 0);
+            line.Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space12, NativeTokens.Space12, 0);
             _body.Children.Add(line);
         }
     }
@@ -193,7 +193,7 @@ internal sealed class ImportReviewView : DockPanel, IModalView
         Foreground = _colours.Brush(colour),
         FontSize = NativeTokens.Body,
         TextWrapping = TextWrapping.Wrap,
-        Margin = new Thickness(12, 1, 12, 1),
+        Margin = new Thickness(NativeTokens.Space12, NativeTokens.Hairline, NativeTokens.Space12, NativeTokens.Hairline),
     };
 
     private TextBlock Row(ImportReviewRow row, Color detail)
@@ -202,7 +202,7 @@ internal sealed class ImportReviewView : DockPanel, IModalView
         {
             FontSize = NativeTokens.Body,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(12, 2, 12, 2),
+            Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space2, NativeTokens.Space12, NativeTokens.Space2),
         };
         block.Inlines ??= new global::Avalonia.Controls.Documents.InlineCollection();
         block.Inlines.Add(new global::Avalonia.Controls.Documents.Run(row.Kind + "  ") { Foreground = _colours.Brush(_colours.Accent) });

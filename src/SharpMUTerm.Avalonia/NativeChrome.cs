@@ -385,14 +385,14 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var h = Height;
         var plateHeight = Math.Min(PlateHeight, Math.Max(4, h - 6));
         var plateTop = Math.Round((h - plateHeight) / 2);
-        const double pad = 12;
+        const double pad = NativeTokens.Space12;
 
         // The brand is the name in plain text, as a desktop app's title reads (the mockup's): still the palette's door,
         // shown by a plate only under the pointer. The ribbon's filled segment is the cells' way of saying it.
-        _brand = new Rect(8, plateTop, Measure("SharpMUTerm", size + 2, bold: true) + 16, plateHeight);
+        _brand = new Rect(NativeTokens.PanelInset - NativeTokens.Space8, plateTop, Measure("SharpMUTerm", size + 2, bold: true) + (2 * NativeTokens.Space8), plateHeight);
         hits.Add((_brand, HeaderModel.PaletteTarget, $"Commands ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
 
-        var right = Width - ReserveRight - 8;
+        var right = Width - ReserveRight - NativeTokens.Space8;
         if (model.Character is { } character && model.World is { } world)
         {
             var name = Measure(character.Name, size, bold: true);
@@ -473,8 +473,9 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var bounds = new Rect(Bounds.Size);
         context.DrawRectangle(new SolidColorBrush(Plane), null, bounds);
 
-        // A hairline under the band, where a desktop app's toolbar meets its content.
-        context.DrawRectangle(new SolidColorBrush(Faint(0x24)), null, new Rect(0, bounds.Height - 1, bounds.Width, 1));
+        // A hairline under the band, where a desktop app's toolbar meets its content: one device pixel, the band's last.
+        context.DrawRectangle(new SolidColorBrush(Faint(0x24)), null,
+            NativeTokens.HorizontalRule(this, bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
         if (Overlay is not { } overlay)
         {
             return;
@@ -483,7 +484,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var model = overlay.HeaderModel;
         const double size = FontSize;
         var middle = Bounds.Height / 2;
-        const double radius = 7;
+        const double radius = NativeTokens.RadiusM;
 
         // The brand: the name in the header's own ink, a plate under it only while it is pointed at or pressed.
         if (Pressing(_brand) || Hovered(_brand))
@@ -491,7 +492,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
             context.DrawRectangle(new SolidColorBrush(Pressing(_brand) ? Raised(0.13) : Raised(0.08)), null, _brand, radius, radius);
         }
 
-        Text(context, "SharpMUTerm", _brand.X + 8, middle, size + 2, Ink, bold: true);
+        Text(context, "SharpMUTerm", NativeTokens.PanelInset, middle, size + 2, Ink, bold: true);
 
         if (_search.Width > 0)
         {
@@ -532,7 +533,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
     {
         const double size = FontSize;
         var fill = Hovered(_search) ? Raised(0.13) : Raised(0.07);
-        context.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Faint(0x30)), 1), _search.Deflate(0.5), radius, radius);
+        context.DrawRectangle(new SolidColorBrush(fill), NativeTokens.HairlinePen(this, Faint(0x30)), NativeTokens.StrokeRect(this, _search), radius, radius);
 
         // A magnifier: a ring and its handle.
         const double ring = 5;
@@ -544,7 +545,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         var key = KeyGlyphs.Words(HeaderModel.PaletteKey);
         var keyWidth = Measure(key, size - 1.5) + 12;
         var cap = new Rect(_search.Right - 8 - keyWidth, middle - 10, keyWidth, 20);
-        context.DrawRectangle(null, new Pen(new SolidColorBrush(Faint(0x50)), 1), cap.Deflate(0.5), 4, 4);
+        context.DrawRectangle(null, NativeTokens.HairlinePen(this, Faint(0x50)), NativeTokens.StrokeRect(this, cap), NativeTokens.RadiusS, NativeTokens.RadiusS);
         Text(context, key, cap.X + 6, middle, size - 1.5, Dim);
         var textLeft = centre.X + (ring * 2) + 8;
         Text(context, SearchText, textLeft, middle, size, Dim, maxWidth: Math.Max(1, cap.Left - 10 - textLeft));
@@ -557,7 +558,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         if (_prefix.Width > 0)
         {
             var plate = Color.FromArgb(0x2A, notice.R, notice.G, notice.B);
-            context.DrawRectangle(new SolidColorBrush(plate), new Pen(new SolidColorBrush(Color.FromArgb(0x90, notice.R, notice.G, notice.B)), 1), _prefix.Deflate(0.5), 7, 7);
+            context.DrawRectangle(new SolidColorBrush(plate), NativeTokens.HairlinePen(this, Color.FromArgb(0x90, notice.R, notice.G, notice.B)), NativeTokens.StrokeRect(this, _prefix), NativeTokens.RadiusM, NativeTokens.RadiusM);
             var x = _prefix.X + 12;
             x += Text(context, KeyGlyphs.Words(HeaderPrefix.Chord), x, middle, size, notice, bold: true) + 8;
             Text(context, PrefixWord, x, middle, size - 1, Ink, maxWidth: Math.Max(1, _prefix.Right - 10 - x));
@@ -566,7 +567,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         foreach (var (area, key) in _keys)
         {
             var colour = key.Available ? Ink : Faint(0x60);
-            context.DrawRectangle(new SolidColorBrush(Raised(key.Available ? 0.12 : 0.04)), new Pen(new SolidColorBrush(Faint(key.Available ? (byte)0x40 : (byte)0x20)), 1), area.Deflate(0.5), 5, 5);
+            context.DrawRectangle(new SolidColorBrush(Raised(key.Available ? 0.12 : 0.04)), NativeTokens.HairlinePen(this, Faint(key.Available ? (byte)0x40 : (byte)0x20)), NativeTokens.StrokeRect(this, area), NativeTokens.RadiusControl, NativeTokens.RadiusControl);
             Text(context, NativeKeys.Words(key.Keys), area.X + 8, middle, size, colour, bold: true);
         }
 
@@ -632,6 +633,18 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
     private const double RowHeight = 28;
 
+    /// <summary>
+    /// A row's own left edge: half the chrome's inset, so a row's plate starts there and its text — a world's name, the
+    /// title, the foot button's words — on <see cref="NativeTokens.PanelInset"/>, the header brand's edge.
+    /// </summary>
+    private const double RowInset = NativeTokens.PanelInset - NativeTokens.Space8;
+
+    /// <summary>A character row's name: the mockup's indent under its world, past the presence dot.</summary>
+    private const double CharacterIndent = NativeTokens.Space32;
+
+    /// <summary>A window row's name, indented under its character's (the mockup's 46 px from the sidebar's edge).</summary>
+    private const double WindowIndent = CharacterIndent + NativeTokens.Space4;
+
     private const double TitleHeight = 40;
 
     private bool Folded => Overlay?.Sidebar.Collapsed ?? false;
@@ -646,8 +659,10 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
         hits.Add((_fold, SidebarModel.CollapseTarget, folded ? UnfoldTip : FoldTip));
 
         var row = folded ? 32 : RowHeight;
-        _add = folded ? new Rect((width - 32) / 2, Height - 32 - 10, 32, 32) : new Rect(10, Height - row - 12, Math.Max(0, width - 20), row + 2);
-        var bottom = _add.Top - 6;
+        _add = folded
+            ? new Rect((width - 32) / 2, Height - 32 - NativeTokens.Space12, 32, 32)
+            : new Rect(RowInset, Height - NativeTokens.ControlHeight - NativeTokens.Space12, Math.Max(0, width - (2 * RowInset)), NativeTokens.ControlHeight);
+        var bottom = _add.Top - NativeTokens.Space8;
         _list = new Rect(0, TitleHeight, width, Math.Max(0, bottom - TitleHeight));
         var y = TitleHeight;
 
@@ -662,12 +677,12 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             if (folded)
             {
                 // The world's accent mark, one short rule: where its characters begin.
-                Add(new Row(RailRowKind.World, new Rect(6, y, width - 12, 10), world), SidebarModel.TargetOf(world), world.Name);
+                Add(new Row(RailRowKind.World, new Rect(RowInset, y, width - (2 * RowInset), 10), world), SidebarModel.TargetOf(world), world.Name);
                 y += 10;
             }
             else
             {
-                Add(new Row(RailRowKind.World, new Rect(6, y, width - 12, row), world), SidebarModel.TargetOf(world), $"{world.Name} — {world.Host}:{world.Port}");
+                Add(new Row(RailRowKind.World, new Rect(RowInset, y, width - (2 * RowInset), row), world), SidebarModel.TargetOf(world), $"{world.Name} — {world.Host}:{world.Port}");
                 y += row;
             }
 
@@ -675,7 +690,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             {
                 if (!folded)
                 {
-                    Add(new Row(RailRowKind.Empty, new Rect(6, y, width - 12, row), world), SidebarModel.TargetOf(world), $"{world.Name} has no characters yet");
+                    Add(new Row(RailRowKind.Empty, new Rect(RowInset, y, width - (2 * RowInset), row), world), SidebarModel.TargetOf(world), $"{world.Name} has no characters yet");
                     y += row;
                 }
 
@@ -684,7 +699,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
             foreach (var character in world.Characters)
             {
-                var area = folded ? new Rect((width - 36) / 2, y, 36, row) : new Rect(6, y, width - 12, row);
+                var area = folded ? new Rect((width - 36) / 2, y, 36, row) : new Rect(RowInset, y, width - (2 * RowInset), row);
                 var tip = folded
                     ? $"{character.Name} on {world.Name}{(character.Connected ? string.Empty : " (offline)")}{(character.Unread > 0 ? $", {UnreadText(character.Unread)} unread" : string.Empty)}"
                     : $"Switch to {character.Name}";
@@ -697,7 +712,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
                 foreach (var window in character.Windows)
                 {
-                    Add(new Row(RailRowKind.Window, new Rect(6, y, width - 12, row), world, character, window), SidebarModel.TargetOf(window), window.Closed ? $"{window.Title} is closed" : $"Go to {window.Title}");
+                    Add(new Row(RailRowKind.Window, new Rect(RowInset, y, width - (2 * RowInset), row), world, character, window), SidebarModel.TargetOf(window), window.Closed ? $"{window.Title} is closed" : $"Go to {window.Title}");
                     y += row;
                 }
             }
@@ -930,7 +945,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
         Chevron(context, _fold, left: !Folded, Dim);
         if (!Folded)
         {
-            Text(context, "CONNECTIONS", 16, _fold.Center.Y, size - 2.5, Dim, bold: true);
+            Text(context, "CONNECTIONS", NativeTokens.PanelInset, _fold.Center.Y, size - 2.5, Dim, bold: true);
         }
 
         using (context.PushClip(_list))
@@ -961,7 +976,9 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
             var middle = r.Area.Center.Y;
             var hovered = Hovered(r.Area.Intersect(_list));
-            var selected = r.Window is { } w && overlay.Sidebar.IsSelected(w) || r.Kind == RailRowKind.Character && r.Character!.Active;
+            // Only the character in front wears the selected plate: its window in front is said by the accent mark beside
+            // the window's name, so the two rows do not read as two selections.
+            var selected = r.Kind == RailRowKind.Character && r.Character!.Active;
             if (focused)
             {
                 context.DrawRectangle(new SolidColorBrush(Raised(0.14)), null, r.Area, 6, 6);
@@ -976,12 +993,12 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             switch (r.Kind)
             {
                 case RailRowKind.World:
-                    context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X + 6, middle - 7, 3, 14), 1.5, 1.5);
-                    Text(context, r.World.Name, r.Area.X + 18, middle, size, Ink, bold: true, maxWidth: right - r.Area.X - 18);
+                    context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X, middle - 7, NativeTokens.MarkWidth, 14), 1.5, 1.5);
+                    Text(context, r.World.Name, NativeTokens.PanelInset, middle, size, Ink, bold: true, maxWidth: right - NativeTokens.PanelInset);
                     break;
 
                 case RailRowKind.Empty:
-                    Text(context, "no characters", r.Area.X + 28, middle, size - 1, Dim, maxWidth: right - r.Area.X - 28);
+                    Text(context, "no characters", RowInset + CharacterIndent, middle, size - 1, Dim, maxWidth: right - RowInset - CharacterIndent);
                     break;
 
                 case RailRowKind.Character:
@@ -999,7 +1016,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
         if (_add.Width > 0)
         {
             var fill = Hovered(_add) ? Raised(0.12) : Raised(0.05);
-            context.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Faint(0x40)), 1), _add.Deflate(0.5), 7, 7);
+            context.DrawRectangle(new SolidColorBrush(fill), NativeTokens.HairlinePen(this, Faint(0x40)), NativeTokens.StrokeRect(this, _add), NativeTokens.RadiusM, NativeTokens.RadiusM);
             if (Folded)
             {
                 var pen = new Pen(new SolidColorBrush(Ink), 1.6, lineCap: PenLineCap.Round);
@@ -1009,7 +1026,9 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             }
             else
             {
-                Text(context, AddGameText, _add.Center.X - (Math.Min(Measure(AddGameText, size), _add.Width - 12) / 2), _add.Center.Y, size, Ink, maxWidth: _add.Width - 12);
+                // Left-aligned on the sidebar's text edge, as the mockup's button reads, not centred.
+                var x = NativeTokens.PanelInset;
+                Text(context, AddGameText, x, _add.Center.Y, size, Ink, maxWidth: Math.Max(1, _add.Right - NativeTokens.Space8 - x));
             }
         }
     }
@@ -1058,7 +1077,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
     private void DrawCharacter(DrawingContext context, Row r, RailCharacter character, Color accent, double middle, double right, double size)
     {
-        var centre = new Point(r.Area.X + 24, middle);
+        var centre = new Point(r.Area.X + CharacterIndent - NativeTokens.Space12, middle);
         var colour = character.Connected ? accent : Dim;
         Dot(context, centre, 4.5, colour, character.Connected, diamond: character.InGroup);
 
@@ -1077,16 +1096,16 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
             right -= Text(context, KeyGlyphs.Words(chord), right, middle, size - 1.5, Dim, alignRight: true) + 6;
         }
 
-        var x = centre.X + 12;
+        var x = r.Area.X + CharacterIndent;
         Text(context, character.Name, x, middle, size, character.Connected ? Ink : Dim, bold: character.Active, maxWidth: Math.Max(1, right - x));
     }
 
     private void DrawWindow(DrawingContext context, Row r, RailWindow window, Color accent, bool selected, double middle, double right, double size)
     {
-        var x = r.Area.X + 40;
+        var x = r.Area.X + WindowIndent;
         if (selected)
         {
-            context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X + 31, middle - 7, 3, 14), 1.5, 1.5);
+            context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(x - NativeTokens.Space8 - NativeTokens.MarkWidth, middle - 7, NativeTokens.MarkWidth, 14), 1.5, 1.5);
         }
 
         if (window.Unread > 0)
