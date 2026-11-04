@@ -210,6 +210,29 @@ fallbacks) for inline images/maps.
     the review opens, so the review is never shown for bytes the index did not name. The focused window's
     world (its session's, else its owner's, never `_active`) sorts its own packages first; a `*` package does
     not count as the world's own. The default index repository does not exist yet.
+- **Worlds and automation can be imported from MUSHclient, Mudlet and TinTin++** (`Core/Import`: `ClientImport`,
+  `MushclientImport`, `MudletImport`, `TinTinImport`, `ImportPlan`; Client `ImportReviewModel`/`ImportReviewSession`;
+  Tui `SharpMUTermApp.Import.cs`, `ImportReview`; Avalonia `ImportReviewView`; `/import <path>`, ⌃P ▸ *Import from another
+  client…*, the welcome's last row; the `import-review` view). Formats: a MUSHclient `.mcl`, a Mudlet XML package or
+  profile save, a Mudlet profile folder (newest `current/*.xml` plus its `url`/`port`/`login`/`password` files), a
+  `.mpackage`/`.zip` (read in memory, never extracted), and a TinTin++ script. Decisions not to relitigate:
+  - **The file is untrusted text meeting the configuration.** Read by sniffing content, not the extension; XML with no
+    DTD and no resolver; bounded (16 MiB, 5,000 rules, 100 worlds, 4 KiB a field, 512 zip entries, depth 32). A rule
+    that cannot be carried over exactly is skipped and listed with its reason (`ImportSkip`), never approximated: script
+    code (Lua, VBScript, a MUSHclient `script=`, a Mudlet chain or colour trigger, a TinTin `#` command in a body) is
+    listed as left out and never executed; a rule whose command survives keeps it and lists its script as a `part`.
+  - **Nothing is written before ⏎, and nothing is overwritten.** `ImportPlan.For` decides on the client's thread what
+    is new: a world at an existing endpoint gains only characters it lacks, a clashing name gets ` (2)`, and the rules go
+    into one new set `Imported from <client>` (suffixed if taken), listed on the *new* characters only. `Apply` re-plans
+    and refuses if the configuration moved since the review. Saved through `SaveConfiguration`.
+  - **Passwords are off unless asked.** The review says how many the file holds; `p` (the window's check box) stores
+    them on the new characters, which the vault then takes. They never appear in a model, a notice or a log.
+  - **The review is the package review's shape**: `WHAT CAN ACT AS YOU` first, then `WHAT IT ADDS`, then `LEFT OUT (n)`;
+    one model drawn by `ImportReview.Render` (cells, a `ListOverlay`) and the native card (`SurfaceCatalog.Import`).
+  - **`ClientHost.FilePicker` (`IFilePicker?`, required)** is the window's native open dialog; null in the terminal and
+    headless, where ⌃P puts `/import ` on the command line instead. `--plain` answers with `/import yes|no|passwords`.
+  - Not done: Potato and BeipMU (formats not verified), MUSHclient time-of-day timers and colour-changing triggers,
+    Mudlet multi-line/colour/chain triggers, TinTin `#regex`/`#if` blocks.
 - **The shared client shell** (`SharpMUTerm.Client`; `ContributionRegistry`). UI-agnostic, references Core only
   (`ClientAssemblyTests` fails on a SharpConsoleUI or Avalonia reference). The registry holds six kinds —
   commands, panels, settings sections (field descriptors only), status cells (reserved width, drop order),
@@ -1355,7 +1378,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M, the welcome, help and the dictionary offer itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M, the welcome, help and the dictionary offer itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), whether it has a native file picker (`IFilePicker`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until

@@ -94,6 +94,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's alerts while it is behind another (<see cref="WindowAttention"/>).</summary>
     public WindowAttention Attention { get; } = new();
 
+    /// <summary>The desktop's file picker, for an import from another client (<see cref="WindowFilePicker"/>).</summary>
+    public WindowFilePicker FilePicker { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

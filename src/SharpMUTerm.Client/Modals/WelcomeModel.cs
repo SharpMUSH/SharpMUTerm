@@ -11,6 +11,9 @@ public enum WelcomeChoice
 
     /// <summary>F5, to add a world by hand.</summary>
     Settings,
+
+    /// <summary>Import worlds and automation from another client.</summary>
+    Import,
 }
 
 /// <summary>
@@ -121,6 +124,7 @@ public sealed record WelcomeModel(
     {
         WelcomeChoice.Connect => ("Connect to a world", "Type a host and port"),
         WelcomeChoice.Browse => ("Browse worlds", IndexProblem is null ? "From the package index" : "No package index set"),
+        WelcomeChoice.Import => ("Import", "From MUSHclient, Mudlet or TinTin++"),
         _ => ("Open settings", "F5, add a world by hand"),
     };
 

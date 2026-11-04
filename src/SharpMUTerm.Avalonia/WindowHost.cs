@@ -92,5 +92,8 @@ internal static class WindowHost
 
         // A page while the window is behind another: a desktop notification and the taskbar's attention state.
         Attention = driver.Attention,
+
+        // An import from another client starts at the desktop's own file picker.
+        FilePicker = driver.FilePicker,
     };
 }

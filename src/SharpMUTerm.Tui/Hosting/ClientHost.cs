@@ -155,6 +155,12 @@ internal sealed record ClientHost
     public required IAttention? Attention { get; init; }
 
     /// <summary>
+    /// The desktop's file picker, for an import from another client (<see cref="IFilePicker"/>), or null where there is
+    /// none: the terminal (a path is typed after <c>/import</c>), the snapshot, the tests and <c>--plain</c>.
+    /// </summary>
+    public required IFilePicker? FilePicker { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -199,6 +205,7 @@ internal sealed record ClientHost
         Title = new TerminalTitle(driver),
         FloatingPanels = null,
         Attention = new TerminalAttention(driver, TerminalAttention.Detect()),
+        FilePicker = null,
     };
 
     /// <summary>
@@ -229,6 +236,7 @@ internal sealed record ClientHost
         Title = null,
         FloatingPanels = null,
         Attention = null,
+        FilePicker = null,
     };
 
     /// <summary>

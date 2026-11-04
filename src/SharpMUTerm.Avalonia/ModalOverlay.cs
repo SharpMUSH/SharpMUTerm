@@ -47,6 +47,7 @@ internal sealed class ModalOverlay : Panel
             WelcomeSession welcome => new WelcomeView(welcome, Colours, Done),
             HelpSession help => new HelpView(help, Colours, Done),
             DictionaryOfferSession offer => new DictionaryOfferView(offer, Colours, Done),
+            ImportReviewSession import => new ImportReviewView(import, Colours, Done),
             _ => throw new ArgumentException($"no native view for {session.GetType().Name}", nameof(session)),
         };
         AutomationProperties.SetName(this, _view.Title);

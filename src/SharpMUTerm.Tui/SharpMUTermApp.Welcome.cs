@@ -160,6 +160,11 @@ internal sealed partial class SharpMUTermApp
 
                 return false;
 
+            case WelcomeAction.Import:
+                CloseWelcome();
+                StartImport();
+                return false;
+
             case WelcomeAction.Connect when welcome.Request is { } request:
                 CloseWelcome();
                 ConnectFromWelcome(request);

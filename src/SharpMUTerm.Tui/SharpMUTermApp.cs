@@ -1895,6 +1895,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.DictionaryCommand);
         }
 
+        // The review of an import from another client, over a MUSHclient world file the demo carries: what can act as
+        // the player, what it adds, what it leaves out (a script function, a plugin, a time-of-day timer), and the
+        // password it holds, not stored.
+        if (string.Equals(view, "import-review", StringComparison.OrdinalIgnoreCase))
+        {
+            ReviewImport(SharpMUTerm.Core.Import.ClientImport.Parse(DemoImport.Mushclient, DemoImport.MushclientName).Result!);
+        }
+
         // A pane narrower than its game wraps, recorded through the writer the live size report uses: ⌃P suggests
         // joining the world's wraps; `join-wraps-f5` is F5 recommending it beside the setting.
         if (string.Equals(view, "join-wraps", StringComparison.OrdinalIgnoreCase)
@@ -5164,6 +5172,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // `/import <path>` reads another client's setup and opens its review; nothing is written before ⏎.
+        if (command.StartsWith("/import", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 7 || command[7] == ' '))
+        {
+            ImportCommand(command[7..]);
+            return;
+        }
+
         // `/package` opens the Packages screen; `/package install …` reads one for review.
         if (command.StartsWith("/package", StringComparison.OrdinalIgnoreCase)
             && (command.Length == 8 || command[8] == ' '))
@@ -5750,7 +5766,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
         : _welcomeView.IsOpen ? "the welcome"
-        : _helpView.IsOpen ? (_helpView.Mode == "dictionary" ? "the dictionary offer" : "help")
+        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", _ => "help" })
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -8885,6 +8901,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:welcome":
                 ShowWelcome();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.ImportCommand:
+                StartImport();
                 return true;
             case "term:tour":
                 ToggleKeyTour();

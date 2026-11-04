@@ -186,6 +186,9 @@ public static class SurfaceCatalog
     /// <summary>The spelling dictionary offer: the consent step before anything is downloaded.</summary>
     public const string Dictionary = "dictionary";
 
+    /// <summary>The review of an import from another client: the consent step before anything is written.</summary>
+    public const string Import = "import";
+
     /// <summary>
     /// The <c>+3 ▾</c> chip a tab strip carries when its tabs do not fit even at their floors, and the list of the tabs
     /// past its edges it opens: a cell list in a terminal, a native menu in the window (the chip itself is cells in both).
@@ -209,7 +212,7 @@ public static class SurfaceCatalog
     private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
 
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
-    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary];
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, Import];
 
     /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
     private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
@@ -483,6 +486,17 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.DictionaryOffer.Render",
             ModalViews("DictionaryOfferView")),
+        new(
+            Import,
+            typeof(ImportReviewModel),
+            [
+                // Import writes through the one method the cells' Enter ends in; the passwords toggle republishes.
+                new(SurfaceActionKind.Modal, "accept", "AcceptImport"),
+                new(SurfaceActionKind.Modal, "passwords", "ToggleImportPasswords"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.ImportReview.Render",
+            ModalViews("ImportReviewView")),
         new(
             TabOverflow,
             typeof(MenuModel),

@@ -108,6 +108,7 @@ internal sealed class MainWindow : Window
 
         // Panels popped out into windows of their own, owned by this one so they stay above it and go with it.
         _driver.Floating.Attach(this, _view);
+        _driver.FilePicker.Attach(this);
         Closed += (_, _) => _driver.Floating.Detach();
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");

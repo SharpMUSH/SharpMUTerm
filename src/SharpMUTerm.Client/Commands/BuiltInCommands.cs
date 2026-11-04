@@ -20,6 +20,9 @@ public static class BuiltInCommands
     /// <summary>Help: keys, slash commands and how-tos (<c>/help</c>).</summary>
     public const string HelpCommand = "term:help";
 
+    /// <summary>Import from another client: a file picker in a host that has one, else <c>/import </c> on the command line.</summary>
+    public const string ImportCommand = "term:import";
+
     /// <summary>The spelling dictionary offer.</summary>
     public const string DictionaryCommand = "term:get-dictionary";
 
@@ -191,6 +194,7 @@ public static class BuiltInCommands
         // the one-line tour of the keys worth knowing that follows the first connect. The tour entry is one
         // toggle, so it can always be offered and always says what it will do: show it, or hide it.
         Add("term:welcome", CommandGroup.Terminal, "Welcome", detail: "connect to a world, browse worlds, pick a layout");
+        Add(ImportCommand, CommandGroup.Terminal, "Import from another client…", detail: "MUSHclient, Mudlet, TinTin++ · reviewed before anything is written");
         Add("term:tour", CommandGroup.Terminal, "Key tour", detail: "the keys worth knowing · again to hide it");
 
         // Help: the slash commands, every key named here, and short how-to pages, searchable. F1 is the composer, so

@@ -250,4 +250,37 @@ public class NativeModalTests
         await Assert.That(afterTab).IsEqualTo(QuitChoice.Quit);
         await Assert.That(exited).IsTrue();
     }
+
+    /// <summary>
+    /// The import review in the window: the card shows what can act as the player, the check box stores the file's
+    /// password through the client, and Import writes the world, character and set — nothing before it.
+    /// </summary>
+    [Test]
+    public async Task TheImportReviewWritesNothingUntilImport_AndItsCheckBoxStoresThePassword()
+    {
+        var (body, boxShown, worldsBefore, stored, worlds, focused) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("import-review");
+            DesktopLayerTests.Drain();
+            var view = (ImportReviewView)rig.Driver.Modals.Modal!.View;
+            var before = rig.App.Configuration.Worlds.Count;
+            var body = view.BodyText.ToArray();
+            var focused = view.ImportButton.IsFocused;
+            view.PasswordsBox.IsChecked = true;
+            DesktopLayerTests.Drain();
+            var stored = rig.App.PendingImport!.StorePasswords;
+            view.ImportButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            DesktopLayerTests.Drain();
+            var wren = rig.App.Configuration.Worlds.SelectMany(w => w.Characters).Single(c => c.Name == "Wren");
+            return (body, view.PasswordsBox.IsVisible, before, stored && wren.Password == "not-a-real-one", rig.App.Configuration.Worlds.Count - before, focused);
+        });
+
+        await Assert.That(body).Contains(t => t.StartsWith("WHAT CAN ACT AS YOU", StringComparison.OrdinalIgnoreCase));
+        await Assert.That(body).Contains(t => t.Contains("Northwind", StringComparison.Ordinal));
+        await Assert.That(boxShown).IsTrue();
+        await Assert.That(focused).IsTrue();
+        await Assert.That(stored).IsTrue();
+        await Assert.That(worlds).IsEqualTo(1);
+        await Assert.That(worldsBefore).IsGreaterThan(0).Because("the demo has worlds of its own, which the import leaves alone");
+    }
 }

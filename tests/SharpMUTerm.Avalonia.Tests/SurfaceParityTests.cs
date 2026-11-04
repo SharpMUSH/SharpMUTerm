@@ -258,6 +258,7 @@ public class SurfaceParityTests
             (SurfaceCatalog.Welcome, "welcome-connect"),
             (SurfaceCatalog.Help, "help"),
             (SurfaceCatalog.Dictionary, "dictionary-offer"),
+            (SurfaceCatalog.Import, "import-review"),
         })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
@@ -713,6 +714,25 @@ public class SurfaceParityTests
             app => app.SimulateHelpKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
         probed.Add(SurfaceCatalog.Dictionary);
 
+        // The import review: Import writes the same world, character and set as the cells' Enter; with the passwords
+        // switched on first (the window's check box, the cells' p), the password is stored on the character in both.
+        await SameModal("import: accept", "import-review",
+            (app, m) => ((ImportReviewSession)m.Open(SurfaceCatalog.Import)!).Accept(),
+            app => app.SimulateImportKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+        await SameModal("import: passwords, then accept", "import-review",
+            (app, m) =>
+            {
+                var review = (ImportReviewSession)m.Open(SurfaceCatalog.Import)!;
+                review.TogglePasswords();
+                review.Accept();
+            },
+            app =>
+            {
+                app.SimulateImportKey(new ConsoleKeyInfo('p', ConsoleKey.P, false, false, false));
+                app.SimulateImportKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        probed.Add(SurfaceCatalog.Import);
+
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         // The tab overflow chip: an entry chosen from the window's menu and the same digit in the cell list bring the same
         // hidden tab forward.
@@ -962,6 +982,7 @@ public class SurfaceParityTests
         WelcomeSession welcome => welcome.Model,
         HelpSession help => help.Model,
         DictionaryOfferSession offer => offer.Model,
+        ImportReviewSession import => import.Model,
         _ => throw new ArgumentException(session.GetType().Name),
     };
 
@@ -983,6 +1004,8 @@ public class SurfaceParityTests
         "layout=" + app.LiveLayoutId,
         "welcome=" + app.WelcomeIsOpen,
         "help=" + app.HelpIsOpen + "/" + app.DictionaryOfferOpen,
+        "import=" + app.ImportReviewOpen + " " + string.Join(",", app.Configuration.TriggerSets.Select(s => s.Name + ":" + s.Triggers.Count))
+            + " " + string.Join(",", app.Configuration.Worlds.SelectMany(w => w.Characters).Select(c => c.Name + (c.Password is null ? string.Empty : "*"))),
         "quick=" + app.LastQuickMacro,
         "walk=" + app.WalkState,
         "rail=" + (app.BuildChromeOverlay().Sidebar.Collapsed ? "folded" : "open"),

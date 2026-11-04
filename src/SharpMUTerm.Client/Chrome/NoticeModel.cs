@@ -51,6 +51,9 @@ public sealed record NoticeModel(string Text, NoticeSeverity Severity, string? K
 
         /// <summary>Spelling dictionary downloads.</summary>
         public const string Spelling = "Spelling";
+
+        /// <summary>Imports from another client.</summary>
+        public const string Import = "Import";
     }
 
     /// <summary>How long a notice holds the status row, and how long a toast stays before it fades.</summary>

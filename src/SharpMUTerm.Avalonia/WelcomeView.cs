@@ -18,7 +18,7 @@ namespace SharpMUTerm.Avalonia;
 /// </summary>
 internal sealed class WelcomeView : DockPanel, IModalView
 {
-    private static readonly WelcomeChoice[] Choices = [WelcomeChoice.Connect, WelcomeChoice.Browse, WelcomeChoice.Settings];
+    private static readonly WelcomeChoice[] Choices = [WelcomeChoice.Connect, WelcomeChoice.Browse, WelcomeChoice.Settings, WelcomeChoice.Import];
     private static readonly WelcomeLayout[] Layouts = [WelcomeLayout.Suggested, WelcomeLayout.Roleplay, WelcomeLayout.Combat];
 
     private readonly WelcomeSession _session;

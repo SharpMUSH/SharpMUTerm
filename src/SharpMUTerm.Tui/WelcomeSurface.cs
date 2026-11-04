@@ -18,6 +18,9 @@ internal enum WelcomeAction
 
     /// <summary>Close, and open F5.</summary>
     Settings,
+
+    /// <summary>Close, and start an import from another client.</summary>
+    Import,
 }
 
 /// <summary>What the connect form asks for, read once ⏎ has checked it.</summary>
@@ -162,7 +165,7 @@ internal sealed class WelcomeSurface
                 Problem = null;
                 return WelcomeAction.Redraw;
             case ConsoleKey.DownArrow:
-                Selected = (WelcomeChoice)Math.Min((int)WelcomeChoice.Settings, (int)Selected + 1);
+                Selected = (WelcomeChoice)Math.Min((int)WelcomeChoice.Import, (int)Selected + 1);
                 Problem = null;
                 return WelcomeAction.Redraw;
             case ConsoleKey.LeftArrow:
@@ -184,6 +187,8 @@ internal sealed class WelcomeSurface
                         return WelcomeAction.Redraw;
                     case WelcomeChoice.Browse:
                         return WelcomeAction.Browse;
+                    case WelcomeChoice.Import:
+                        return WelcomeAction.Import;
                     default:
                         return WelcomeAction.Settings;
                 }
@@ -432,6 +437,7 @@ internal sealed class WelcomeSurface
         indexProblem is null
             ? "To browse worlds from the package index, type /package browse"
             : "Browsing worlds is not available: " + indexProblem,
+        "To import worlds and automation from MUSHclient, Mudlet or TinTin++, type /import and the path to the file",
         "Starting layout: " + (layout == WelcomeLayout.Suggested ? "suggested from what the game sends" : layout.ToString())
             + ". Type /welcome layout roleplay, combat or suggested to change it.",
         "Type /welcome to hear this again.",

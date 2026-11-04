@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Import worlds, characters, triggers, aliases, timers and keys from MUSHclient (.mcl), Mudlet (a profile folder,
+  an XML package or a .mpackage) and TinTin++ with `/import <file>`, Ctrl+P ▸ Import from another client… or the welcome
+  screen. A review shows what can act as you, what will be added and what was left out (scripts are never imported or
+  run) before anything is written; nothing you already have is replaced, and passwords are stored only if you say so.
 - A world can reconnect by itself after its connection drops (F5 ▸ reconnect). It waits 5, 15, 30, 60 and 60
   seconds between tries, counts down on the status row, and stops after five; Alt+R dials at once, and Disconnect or
   Ctrl+P ▸ Stop reconnecting cancels. Your own Disconnect, quitting, or the game closing right after you typed a
