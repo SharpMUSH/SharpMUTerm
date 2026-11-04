@@ -290,6 +290,7 @@ internal sealed class SettingsWindow : Window
         _tokens = tokens;
         RequestedThemeVariant = tokens.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         tokens.Apply(Resources);
+        tokens.ApplyFocusRing(this);
         var page = tokens.Page;
         page.Apply(Resources);
         foreach (var key in new[] { "SystemControlHighlightListAccentLowBrush", "SystemControlHighlightListAccentMediumBrush", "SystemControlHighlightListAccentHighBrush" })
@@ -415,6 +416,7 @@ internal sealed class SettingsWindow : Window
                 MinHeight = 0,
                 CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
             };
+            AutomationProperties.SetName(item, section.Title);
             ToolTip.SetTip(item, SettingsForm.IsDeclared(section) ? section.Key : $"Opens the {section.Key} screen");
             items.Add(item);
         }

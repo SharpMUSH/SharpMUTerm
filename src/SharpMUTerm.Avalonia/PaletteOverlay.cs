@@ -64,6 +64,9 @@ internal sealed class PaletteOverlay : Panel
 
         Background = new SolidColorBrush(_colours.Scrim);
         Focusable = false;
+
+        // Tab goes round the surface and never out of it to the cells behind it.
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
         AutomationProperties.SetName(this, "Command palette");
 
         _search = new TextBox
@@ -152,6 +155,7 @@ internal sealed class PaletteOverlay : Panel
         };
         scope.Styles.Add(new FluentTheme());
         _colours.Apply(scope.Resources);
+        _colours.ApplyFocusRing(scope);
         Children.Add(scope);
 
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
@@ -419,6 +423,11 @@ internal sealed class PaletteOverlay : Panel
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Down:

@@ -130,6 +130,11 @@ internal sealed class ScrollbackView : DockPanel, IModalView
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         if (ModalParts.Console(e) is not { } key)
         {
             return;

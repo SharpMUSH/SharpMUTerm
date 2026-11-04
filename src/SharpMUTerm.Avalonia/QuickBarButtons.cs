@@ -77,6 +77,8 @@ internal sealed class QuickBarButtons : Control
 
     public QuickBarButtons(TerminalView view)
     {
+        // Never focusable (the keyboard stays on the command line), but named for a screen reader exploring the window.
+        global::Avalonia.Automation.AutomationProperties.SetName(this, "Quick bar");
         _view = view;
         ClipToBounds = true;
         Focusable = false;

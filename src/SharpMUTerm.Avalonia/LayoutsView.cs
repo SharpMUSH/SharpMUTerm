@@ -39,6 +39,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
         _done = done;
         _model = session.Model;
         _selected = _model.Selected;
+        global::Avalonia.Automation.AutomationProperties.SetName(this, "Layouts");
 
         var heading = ModalParts.Heading("Layouts", colours);
         SetDock(heading, Dock.Top);
@@ -318,6 +319,11 @@ internal sealed class LayoutsView : DockPanel, IModalView
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         if (_renaming)
         {
             if (e.Key == Key.Enter)

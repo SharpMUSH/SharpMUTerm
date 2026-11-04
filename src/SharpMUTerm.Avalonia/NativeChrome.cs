@@ -31,9 +31,12 @@ internal abstract class NativeChromeView : Control
     private string? _pressed;
     private Rect? _hover;
 
-    protected NativeChromeView(TerminalView view)
+    protected NativeChromeView(TerminalView view, string name)
     {
         View = view;
+
+        // Never focusable (⌥C is the keyboard's way into the sidebar, ⌃P the header's), but named for a screen reader.
+        global::Avalonia.Automation.AutomationProperties.SetName(this, name);
         Focusable = false;
         ClipToBounds = true;
     }
@@ -377,7 +380,7 @@ internal abstract class NativeChromeView : Control
 /// double-click maximises (<see cref="TerminalView.WindowGestureFromChrome"/>).
 /// </para>
 /// </summary>
-internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
+internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "Header")
 {
     /// <summary>What the search box says. ⌃P lists commands, characters and windows, and settings screens.</summary>
     internal const string SearchText = CommandPalette.Title;
@@ -605,7 +608,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 /// scrolled into view. The keys themselves are the client's: nothing here is focusable.
 /// </para>
 /// </summary>
-internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
+internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, "Connections")
 {
     /// <summary>What the button at the foot says.</summary>
     internal const string AddGameText = "+ Add a world or connect";

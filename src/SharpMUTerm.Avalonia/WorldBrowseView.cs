@@ -59,6 +59,10 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         var bar = _bar = new DockPanel { Margin = new Thickness(NativeTokens.Space20, 0, NativeTokens.Space14, NativeTokens.Space4) };
         _sort = ModalParts.Button(SortLabel(), "Tab", colours, ToggleSort);
         SetDock(_sort, Dock.Right);
+
+        // Tab is the sort key here, as in the cells (the button's own chip says so), so the button is not a Tab stop:
+        // pressing Tab anywhere in the list is pressing it.
+        _sort.IsTabStop = false;
         bar.Children.Add(_sort);
         _count = ModalParts.Dim(string.Empty, colours, new Thickness(0));
         _count.VerticalAlignment = VerticalAlignment.Center;
@@ -390,6 +394,11 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         if (e.KeyModifiers != KeyModifiers.None)
         {
             return;

@@ -340,6 +340,7 @@ internal sealed class ListEditorView : Grid
         row.Children.Add(enabled);
         row.Children.Add(words);
         var listItem = new ListBoxItem { Content = row, Tag = item, Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space4, NativeTokens.Space8, NativeTokens.Space4) };
+        AutomationProperties.SetName(listItem, _collection.TitleOf(item));
         if (group.ReadOnly)
         {
             listItem.Opacity = 0.8;

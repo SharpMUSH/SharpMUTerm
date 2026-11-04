@@ -117,6 +117,16 @@ internal sealed class ModalPresenter : INativeModals
         if (_quit is null || ReferenceEquals(_quit, overlay))
         {
             overlay.FocusFirst();
+
+            // A view whose first field is not laid out yet refuses the focus, which then stays on the cells and every key
+            // goes to the command line under the modal; once it is laid out, it takes the keyboard if nothing in it has.
+            Dispatcher.UIThread.Post(() =>
+            {
+                if ((ReferenceEquals(_quit, overlay) || (_quit is null && ReferenceEquals(_modal, overlay))) && !overlay.IsKeyboardFocusWithin)
+                {
+                    overlay.FocusFirst();
+                }
+            }, DispatcherPriority.Loaded);
         }
 
         return overlay;

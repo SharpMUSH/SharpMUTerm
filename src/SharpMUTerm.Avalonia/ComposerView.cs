@@ -463,6 +463,7 @@ internal sealed class ComposerView : Border
         _footer.BorderBrush = _header.BorderBrush;
         _footer.BorderThickness = _fullScreen ? new Thickness(0, NativeTokens.Hairline, 0, 0) : default;
         var tokens = NativeTokens.For(null, Luma(_plane) < 0.5);
+        tokens.ApplyFocusRing(this);
         if (_well is not null)
         {
             // The mockup's Text field: the well's ground, ringed in the focus edge, as the field the post is written in.

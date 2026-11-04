@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window every button, field and list on the settings window, the command palette, the dialogs, the
+  welcome page and the composer can be reached with Tab, shows one rounded focus ring in the theme's colours when the
+  keyboard reaches it, and has a name a screen reader can say. Tab stays inside an open dialog, and Enter or Space on a
+  focused button presses that button.
+
 - In the desktop window a tab can be dragged: along its own strip to change its place, onto another pane's middle to
   join its tabs, or near a pane's edge to split it there. While you drag, the window shades where it would land and
   says what the drop will do, as the terminal's drag preview does; Esc or a right click cancels.
@@ -579,6 +584,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The desktop window's welcome page now takes the keyboard when it opens; typing used to land on the command line
+  hidden under it.
 - In the desktop window the command line no longer shrinks to a sliver under a narrow output pane: when the output's
   column is under 54 cells (three panes side by side, say), the bar goes under the widest column around it that fits,
   or across the whole window, and moves back when the window is widened again.

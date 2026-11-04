@@ -350,6 +350,11 @@ internal sealed class HelpView : DockPanel, IModalView
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         if (e.KeyModifiers != KeyModifiers.None)
         {
             return;

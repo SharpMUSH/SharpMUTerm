@@ -289,4 +289,14 @@ internal static class ModalParts
 
         return null;
     }
+
+    /// <summary>
+    /// True when Enter or Space belongs to the button the keyboard is on rather than to the modal: a surface's own Enter
+    /// (go to the hit, run the row) is its default, and Tab having reached a button means the player chose that button.
+    /// Every native modal asks this first, so Enter and Space mean the same on every surface's buttons.
+    /// </summary>
+    public static bool FocusedButtonTakes(global::Avalonia.Input.KeyEventArgs e) =>
+        e.KeyModifiers == global::Avalonia.Input.KeyModifiers.None
+        && e.Key is global::Avalonia.Input.Key.Enter or global::Avalonia.Input.Key.Space
+        && e.Source is global::Avalonia.Controls.Button or global::Avalonia.Controls.Primitives.ToggleButton;
 }

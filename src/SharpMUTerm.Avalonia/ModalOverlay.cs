@@ -38,6 +38,9 @@ internal sealed class ModalOverlay : Panel
         Background = new SolidColorBrush(Colours.Scrim);
         Focusable = false;
 
+        // Tab goes round the surface and never out of it to the cells behind it.
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
+
         _view = session switch
         {
             QuitSession quit => new QuitView(quit, Colours, Done),
@@ -81,6 +84,7 @@ internal sealed class ModalOverlay : Panel
         };
         scope.Styles.Add(new FluentTheme());
         Colours.Apply(scope.Resources);
+        Colours.ApplyFocusRing(scope);
         Children.Add(scope);
 
         AddHandler(KeyDownEvent, (_, e) =>

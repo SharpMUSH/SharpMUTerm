@@ -82,6 +82,8 @@ internal sealed class MapCanvas : Control
 
     public MapCanvas(TerminalView view)
     {
+        // Never focusable (the keyboard stays on the command line), but named for a screen reader exploring the window.
+        global::Avalonia.Automation.AutomationProperties.SetName(this, "Map");
         _view = view;
         ClipToBounds = true;
         Focusable = false;

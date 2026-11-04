@@ -216,6 +216,7 @@ internal sealed class MapInspector : Border
             BorderBrush = tokens.Brush(tokens.Edge);
             SetValue(global::Avalonia.Controls.Documents.TextElement.ForegroundProperty, tokens.Brush(tokens.Text));
             tokens.ApplySimple(Resources);
+            tokens.ApplyFocusRing(this);
         }
 
         _title.Text = $"#{room.Id.ToString(CultureInfo.InvariantCulture)} {room.Name}";

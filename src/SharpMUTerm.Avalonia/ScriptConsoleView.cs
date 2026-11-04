@@ -311,6 +311,11 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Escape:

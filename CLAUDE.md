@@ -2568,6 +2568,28 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   screen. `NativeKeySpellingTests` reads every native surface at run time and scans the Avalonia sources for a glyph
   literal outside `NativeKeys`. **The cells keep their glyphs**, the window's cell status row included: parity
   compares cells, so that row says `⌥9` beside a toast saying `Alt+9`.
+- **Every focusable native control is named, ringed and reached by Tab** (`NativeTokens.Focus.cs`: `FocusRing`,
+  `FocusRingStyle`, `NamedParts`; `NativeFocusAuditTests`). Decisions not to relitigate:
+  - **One ring, from the tokens**: `ApplyFocusRing(scope)` (called wherever `Apply` is: palette, modals, settings window,
+    composer, map inspector) gives every control in the scope `FocusAdorner` = `FocusRing`: `Focus` held to
+    `FocusRingFloor` 3:1 (WCAG non-text) on every plane (`FocusRingInk`), 2 px, with a card hairline inside so it reads on
+    the accent too, rounded as the control. Avalonia shows it only for keyboard focus. **It is drawn inside the control's
+    edge**: the adorner layer clips an adorner to what is visible of its control, so a ring outside was never seen.
+  - **Overlays cycle** (`KeyboardNavigationMode.Cycle` on `ModalOverlay`, `PaletteOverlay`, `ComposerOverlay`): Tab
+    never leaves for the cells behind. A list or tab strip is entered once and walked with arrows.
+  - **A part takes its control's name** (`NamedParts`, a `TemplateApplied` class handler: a number box's text field and
+    spinner, `Increase …`/`Decrease …`, an editable combo's text): the keyboard lands on the part. List rows are named
+    from the model (section title, item title, package name).
+  - **Enter and Space on a focused button are the button's** (`ModalParts.FocusedButtonTakes`, first in every modal's
+    tunnel key handler); a surface's own Enter (go, run, connect) applies everywhere else. Browse worlds' sort button is
+    no Tab stop, because Tab is its key. The quit prompt's ←→/Tab move the focus with the ring.
+  - **A modal re-takes the keyboard once laid out** (`ModalPresenter`, posted at `Loaded`): the welcome's first field
+    refused the focus before layout, so its keys went to the command line underneath.
+  - The views that never take the keyboard (header, sidebar, tab strips, toasts, panels) are still named for a screen
+    reader (`Tabs: Corvid (in front), Chat`). `NativeFocusAuditTests` opens ⌃P, F1, the docked composer, ⌃F, ⌃R, ⌥M,
+    help, welcome, browse, the dictionary offer, quit and F7/F2/F5/F10 in Dark and Light and fails on a focusable control
+    with no name (a type name counts as none) or no ring, a Tab stop real Tab presses never reach, Tab leaving the
+    surface, or no ring drawn. Not tried with a real screen reader.
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on

@@ -28,7 +28,8 @@ namespace SharpMUTerm.Avalonia.Tests;
 public class SurfaceParityTests
 {
     /// <summary>Controls of the window that are the window itself rather than a surface of the client's.</summary>
-    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow)];
+    // The focus ring is an adorner drawing one rule round whatever control has the keyboard: it carries no model and says nothing.
+    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing)];
 
     private static readonly Assembly Window = typeof(DesktopLayer).Assembly;
 

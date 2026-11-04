@@ -80,6 +80,10 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     public void Show(TabStripOverlay overlay, NativeTokens tokens, bool interactive, TabDragModel? drag = null)
     {
         Overlay = overlay;
+
+        // Named from the model's own words, so a screen reader exploring the window says which windows the pane holds.
+        global::Avalonia.Automation.AutomationProperties.SetName(this,
+            "Tabs: " + string.Join(", ", overlay.Model.Tabs.Select(t => t.Selected ? $"{t.Title} (in front)" : t.Title)));
         _drag = drag is not null && drag.SourcePaneId == overlay.Model.PaneId ? drag : null;
         Tokens = tokens;
         Interactive = interactive;

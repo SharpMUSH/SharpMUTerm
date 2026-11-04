@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using SharpMUTerm.Client.Composer;
@@ -25,6 +26,9 @@ internal sealed class ComposerOverlay : Border
         _session = session;
         _ink = ink;
         Focusable = false;
+
+        // Tab goes round the surface and never out of it to the cells behind it.
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
         Margin = view.Margin;
         _composer = new ComposerView(view, fullScreen: true);
         Child = _composer;

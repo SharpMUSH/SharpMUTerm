@@ -126,6 +126,11 @@ internal sealed class QuitView : DockPanel, IModalView
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
+        if (ModalParts.FocusedButtonTakes(e))
+        {
+            return;
+        }
+
         if (ModalParts.Console(e) is not { } key)
         {
             return;
@@ -144,7 +149,9 @@ internal sealed class QuitView : DockPanel, IModalView
                 break;
             case QuitAction.Redraw:
                 Select(decision.Selection);
-                FocusFirst();
+
+                // The keyboard moved the choice, so the focus ring goes with it.
+                (_selected == QuitChoice.Quit ? _quit : _stay).Focus(NavigationMethod.Tab);
                 break;
         }
     }

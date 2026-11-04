@@ -247,7 +247,9 @@ internal sealed class PackagePageView : Grid
                 SetColumn(words, 1);
                 words.Margin = new Thickness(NativeTokens.Space6, 0, 0, 0);
                 row.Children.Add(words);
-                rows.Add(new ListBoxItem { Content = row, Tag = item.Id, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6) });
+                var listed = new ListBoxItem { Content = row, Tag = item.Id, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6) };
+                AutomationProperties.SetName(listed, item.Package.Manifest.Name);
+                rows.Add(listed);
             }
 
             _installed.ItemsSource = rows;
@@ -477,7 +479,9 @@ internal sealed class PackagePageView : Grid
                 Opacity = 0.7,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
-            rows.Add(new ListBoxItem { Content = words, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6) });
+            var offered = new ListBoxItem { Content = words, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6) };
+            AutomationProperties.SetName(offered, row.Entry.Name);
+            rows.Add(offered);
         }
 
         _browse.ItemsSource = rows;

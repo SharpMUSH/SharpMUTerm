@@ -29,6 +29,8 @@ internal sealed class VitalsGauges : Control
 
     public VitalsGauges()
     {
+        // Never focusable (the keyboard stays on the command line), but named for a screen reader exploring the window.
+        global::Avalonia.Automation.AutomationProperties.SetName(this, "Vitals");
         IsHitTestVisible = false;
         ClipToBounds = true;
     }
