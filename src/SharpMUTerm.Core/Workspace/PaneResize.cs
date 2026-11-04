@@ -17,6 +17,12 @@ public enum PaneResizeOutcome
 
     /// <summary>No rectangles for the panes involved — nothing has been laid out yet.</summary>
     NotMeasured,
+
+    /// <summary>
+    /// The border is against a pane whose height is fixed (<see cref="PaneNode.FixedRows"/>): a strip is as tall as
+    /// its content, so neither this pane nor the one beyond it can give or take rows across it.
+    /// </summary>
+    FixedSize,
 }
 
 /// <summary>The outcome of one resize, and the cells the border actually moved by (signed, 0 when it did not).</summary>
@@ -144,17 +150,27 @@ public static class PaneResize
         var delta = direction is PaneDirection.Right or PaneDirection.Up ? step : -step;
 
         // Nearest first: the path runs root → pane, so walking it backwards is walking up from the pane.
+        // A split whose border is held by a fixed-height strip is passed over for the next one up, so the output
+        // under a vitals strip still grows by taking from a pane further out that can give.
         var path = Ancestry(layout.Root, layout.FocusedPaneId);
+        var blockedByFixed = false;
         for (var depth = path.Count - 1; depth >= 0; depth--)
         {
             var (split, index) = path[depth];
             if (split.Direction == axis)
             {
-                return MoveBorder(split, index, horizontal, delta, rects);
+                var result = MoveBorder(split, index, horizontal, delta, rects);
+                if (result.Outcome != PaneResizeOutcome.FixedSize)
+                {
+                    return result;
+                }
+
+                blockedByFixed = true;
             }
         }
 
-        return new PaneResizeResult(PaneResizeOutcome.NoSplitInThatAxis, 0);
+        return new PaneResizeResult(
+            blockedByFixed ? PaneResizeOutcome.FixedSize : PaneResizeOutcome.NoSplitInThatAxis, 0);
     }
 
     /// <summary>
@@ -183,6 +199,11 @@ public static class PaneResize
         }
 
         var horizontal = split.Direction == SplitDirection.Row;
+        if (!horizontal && (IsFixed(split.Children[index]) || IsFixed(split.Children[index + 1])))
+        {
+            return new PaneResizeResult(PaneResizeOutcome.FixedSize, 0);
+        }
+
         var extents = new int[split.Children.Count];
         var start = 0;
         for (var i = 0; i < extents.Length; i++)
@@ -247,7 +268,10 @@ public static class PaneResize
 
         if (node is not SplitNode split)
         {
-            return horizontal ? MinimumPaneColumns : MinimumPaneRows;
+            var pane = (PaneNode)node;
+            return horizontal
+                ? MinimumPaneColumns
+                : PaneExtent.FixedRows(pane) ?? Math.Max(MinimumPaneRows, pane.MinRows ?? 0);
         }
 
         if ((split.Direction == SplitDirection.Row) != horizontal)
@@ -284,6 +308,7 @@ public static class PaneResize
             PaneResizeOutcome.Resized => string.Empty,
             PaneResizeOutcome.Zoomed => "this pane is zoomed — ⌃B z shows the others",
             PaneResizeOutcome.NotMeasured => "the panes have not been drawn yet",
+            PaneResizeOutcome.FixedSize => "a strip panel keeps the height of what it shows",
             PaneResizeOutcome.NoSplitInThatAxis when horizontal =>
                 "nothing divides this pane's columns — ⌃B | splits it side by side",
             PaneResizeOutcome.NoSplitInThatAxis =>
@@ -324,8 +349,28 @@ public static class PaneResize
         }
 
         // The sibling on the side the border is: the next child, or the previous one at the far end.
-        // A SplitNode always has at least two children, so one of the two always exists.
+        // A SplitNode always has at least two children, so one of the two always exists. Rows are never
+        // taken from (or given to) a fixed-height strip: the pane on its other side pays instead, and with
+        // none the border cannot move.
         var donor = index + 1 < extents.Length ? index + 1 : index - 1;
+        if (!horizontal)
+        {
+            if (IsFixed(split.Children[index]))
+            {
+                return new PaneResizeResult(PaneResizeOutcome.FixedSize, 0);
+            }
+
+            if (IsFixed(split.Children[donor]))
+            {
+                var other = donor == index + 1 ? index - 1 : index + 1;
+                if (other < 0 || other >= extents.Length || IsFixed(split.Children[other]))
+                {
+                    return new PaneResizeResult(PaneResizeOutcome.FixedSize, 0);
+                }
+
+                donor = other;
+            }
+        }
 
         // How far the border can travel before either side is at its floor. A pane already under its
         // floor — a workspace on a terminal too small for the split it holds — inverts these, and is the
@@ -348,6 +393,9 @@ public static class PaneResize
         split.SetSizes(extents.Select(cells => (double)cells / total).ToList());
         return new PaneResizeResult(PaneResizeOutcome.Resized, moved);
     }
+
+    /// <summary>Whether a subtree's height is fixed, so no border may move rows into or out of it.</summary>
+    private static bool IsFixed(LayoutNode node) => PaneExtent.FixedRows(node) is not null;
 
     /// <summary>
     /// A subtree's extent along one axis, in cells: its panes' rectangles unioned. Null when any of them

@@ -96,6 +96,7 @@ public sealed class Workspace
     public IReadOnlyList<WorkspaceWindow> WindowsFor(string? sessionKey) =>
         _windows.Values
             .Where(w => Layout.FindWindow(w.Id) is not null)
+            .Where(w => w.Kind != WindowKind.Panel)
             .Where(w => w.SessionKey is null || string.Equals(w.SessionKey, sessionKey, StringComparison.Ordinal))
             .OrderBy(w => w.Sequence)
             .ToList();

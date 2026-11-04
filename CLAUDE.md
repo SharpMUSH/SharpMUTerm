@@ -926,13 +926,31 @@ fallbacks) for inline images/maps.
 
 - **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
   `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
-  `TerminalPanels.cs`; ⌥M / ⌃P ▸ *Layouts*; F5 `layout` rows; the `layouts` and `layout-combat` views). The layout's
+  `TerminalPanels.cs`; ⌥M / ⌃P ▸ *Layouts*; F5 `layout` rows; the `layouts`, `layout-combat` and `layout-roleplay` views). The layout's
   name is shown nowhere on the main screen. Decisions not to relitigate:
   - **A panel is a window.** `output` is the session's window, `chat` its spawn windows, `map` `map:<key>`, and
     every other panel a window `panel:<panelId>:<key>` (`TerminalPanels.WindowId`) whose control comes from the
     factory registered for that id (`Panels.Register(id, ctx => control)`, from `partial void
-    RegisterTerminalPanels()`), built once and re-parented like the map's. So panels get tabs, the rail, focus,
-    `Activate`/`SendTarget` (a panel window is owned by its session) and persistence for nothing. An id with no
+    RegisterTerminalPanels()`), built once and re-parented like the map's. So panels get tabs, focus,
+    `Activate`/`SendTarget` (a panel window is owned by its session) and persistence for nothing.
+  - **A panel window is furniture, not a destination** (`WindowKind.Panel`). `Workspace.WindowsFor` leaves it out,
+    so it has no `⌥N` and pushes no map or capture window to a later digit; `BuildRailWindows` lists no row for it;
+    ⌃P has no `Go to …` entry for it, because each panel's own entry (*Show vitals*, *Dock the composer*) goes to it.
+    ⌃O, the ⌃arrows and a click still reach it — it is a pane like any other.
+  - **A strip is as tall as its content** (`PanelSizing`, `PaneExtent`; `PaneNode.FixedRows`/`MinRows`). Vitals and
+    the quick bar are one row; the composer has a floor (`PanelSizing.ComposerMinRows` plus its tab strip). Region
+    shares are proportional, so the height is a pane property instead: `BuildWorkspaceRow` derives it from each
+    pane's tabs on every rebuild (never persisted — a strip handed an ordinary window stops being one), the grid
+    gives a fixed child `GridLength.Cells` and a floored one `Star(min:)`, and `LayoutSolver` shares rows the same
+    way (`PaneExtent.DistributeRows`; if every child is fixed the last shares, in both). A one-tab strip draws **no
+    tab strip** (`TabControl.ShowTabHeader`, which `PaneOutputRects` already reads) and offers no drag handle. Only
+    rows: a strip's width is a share. The divider beside a fixed pane is not registered with the pointer, a drag
+    on it returns `PaneResizeOutcome.FixedSize`, and ⌥⇧↑/↓ take rows from a sharing pane beyond the strip or
+    pass to the next split up, refusing out loud when only a strip could pay.
+  - **The status row leaves its meters out while the vitals strip shows them** (`VitalsStripShowing`: the status
+    row's character's vitals window is the front tab of a drawn pane, zoom included). `SyncStatusMeters` repaints
+    the row only when that flips (on a rebuild or an activation), so a notice is not displaced for nothing. The
+    rest of the row's width rules are untouched: the meters were already the optional part. An id with no
     factory counts as having no data (`DrawableAvailability`), so an unbuilt panel is *Waiting* and costs no cell.
   - **Applying never closes a window.** Windows no panel places stay in the pane they were in if its id survives,
     else in the output pane; a collapsed panel's windows are background tabs of the first pane in its region.
@@ -946,6 +964,11 @@ fallbacks) for inline images/maps.
     tree's shape (`TreeShape`: pane ids and nesting) is not the one it applied: the player split, closed or
     moved a pane and the arrangement is theirs. A divider dragged is not a shape change and is reset by the next
     re-fold. A new spawn window goes into the live layout's chat pane, not the focused one.
+  - **⌥M renames (`r`) and deletes (`d`, then `y`) saved layouts** through `LayoutLibrary.Rename`/`Delete`; both
+    are refused for a built-in and the footer names them only over a layout of the player's own. The name is typed
+    in the list itself; Esc leaves the rename or the question before it closes anything (`ListOverlay`'s `escape:`
+    hook). Every footer row is always emitted, blank when idle, because the modal is sized once when it opens.
+    Deleting the live layout hands the panes to the player (`_liveLayout = null`) rather than re-folding them.
   - **Saving captures geometry, not intent.** `LayoutCapture` reads regions off the solved rectangles (above the
     output = top strip, right of it = side, below = bottom); panels not on screen keep their old placement.
     Saving changes to a built-in saves a copy and points the character (or the world using it) at the copy.
@@ -1173,9 +1196,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `tabs-many` (**more tabs than the strip can hold** — five of one character's captures in a split pane,
   which is the state every other tab view is too small to reach. Without eliding, that pane draws two
   tabs and half of a third and says nothing about the rest), plus the
-  `layouts` (the ⌥M list over the demo, through the registered shortcut) and `layout-combat` (the Combat layout
-  applied over the demo's game data and recorded streets: the map beside the output with Chat as a tab under it,
-  and no pane for the panels nothing draws yet), `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer`
+  `layouts` (the ⌥M list over the demo, through the registered shortcut), `layout-combat` (the Combat layout
+  applied over the demo's game data and recorded streets: a one-row vitals strip across the top, the map beside
+  the output with Chat as a tab under it, a one-row quick bar under the output, and no meters on the status row)
+  and `layout-roleplay` (the Roleplay layout over the demo's room roster: who is here beside the output with Chat
+  behind it, and the composer under the output at its floor), `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer`
   (each panel in a pane of its own over the demo's game data; the composer over who-here, armed, with a draft
   typed through its real key path), plus the
   default workspace
@@ -1448,7 +1473,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     (`WindowNumberingTests.AWindowOpenedIntoAClosedOnesSlotStillTakesTheLastNumber` is the pin, and it
     took a four-window fixture to expose: with fewer, both orders agree).
     Only **placed** windows are numbered — one no pane holds is drawn `closed` and a digit for it would
-    name nowhere to go.
+    name nowhere to go — and never a layout panel (`WindowKind.Panel`), which is furniture and has no rail row.
   - **⌃B 1–⌃B 9 go to a pane.** It was ⌥N until windows took that; it is on the prefix because that is
     where the rest of the pane keymap lives, and it is kept rather than dropped because the pane
     numbering does not go away with the chord — move mode badges each pane with it, the move and drag

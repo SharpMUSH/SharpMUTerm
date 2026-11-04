@@ -19,7 +19,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   Ctrl+P lists *Key clashes (N)* while there are any.
 - Layouts. Alt+M (or Ctrl+P ▸ *Layouts*) lists the built-in Roleplay and Combat layouts and the ones you save:
   ⏎ applies one to the panes, `s` saves the panes as they are into the selected layout, `n` saves them as a
-  new one, `w` makes it the world's default and `c` this character's. Worlds & Characters (F5) has a `layout`
+  new one, `w` makes it the world's default and `c` this character's; `r` renames one of your own and `d`
+  deletes it, after asking. Worlds & Characters (F5) has a `layout`
   row on each world and each character. A panel appears only once the game sends what it shows, so a MUSH
   never gets an empty map pane, and the first time you connect to a world the client picks Combat or Roleplay
   from what the game sends and says which in a notice. A workspace you arranged yourself is still what comes
@@ -33,6 +34,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   with values, a warning colour when low, and what you are fighting), *Show quick bar* (your function-key
   macros as `F11 kick`; click one to run it) and *Dock the composer* (the F1 editor as a pane that shares F1's
   draft: ⌃S sends, ⌥L switches escaping, F1 opens it full screen, Esc goes back to the command line).
+  The vitals strip and the quick bar are exactly one row tall, with no tab over them, and the docked composer
+  never shrinks below a few rows. While the vitals strip is on screen the status row leaves its meters out
+  rather than showing them twice. Panels are part of the layout, not places you go: they take no row in the
+  sidebar and no Alt+number, so your map and capture windows keep theirs.
 - Make a trigger without writing a regex: select a line of output and choose Ctrl+P ▸ *Make a trigger from
   the selection* (also on the right-click menu). Triggers (F2) opens on a new rule whose pattern is the line
   with its numbers, quoted speech and known player names turned into `*`, and shows the regex behind it.

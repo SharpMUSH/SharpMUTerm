@@ -11,6 +11,13 @@ public enum WindowKind
 
     /// <summary>An arbitrary auxiliary window (web view, map, notes…).</summary>
     Auxiliary,
+
+    /// <summary>
+    /// A layout panel drawn by a control of its own (who is here, vitals, the quick bar, the docked composer): fixed
+    /// furniture of a layout rather than a place to go, so it has no <c>⌥N</c> and no row on the rail
+    /// (<see cref="Workspace.WindowsFor"/>). It is still a tab, focusable, and reached by its own ⌃P entry.
+    /// </summary>
+    Panel,
 }
 
 /// <summary>
