@@ -44,6 +44,11 @@ namespace SharpMUTerm.Tui;
 /// chrome's, applied at the last moment before markup (see <c>ScreenChrome.Field</c>), so the plaintext
 /// never exists in a rendered frame that a snapshot, a screenshot or a shoulder could read.
 /// </param>
+/// <param name="ChoiceNotes">
+/// A dim note drawn beside a choice in the dropdown, by choice — what a game-data path holds right now, on
+/// F7's meter editor. The note is never part of the value: ↑↓ still put only the choice in the buffer.
+/// </param>
+/// <param name="ChoiceCaption">What the dropdown is called in place of <c>suggestions</c>, or null.</param>
 internal readonly record struct ScreenFieldEdit(
     int Field,
     string Text,
@@ -53,7 +58,9 @@ internal readonly record struct ScreenFieldEdit(
     IReadOnlyList<string>? Choices = null,
     bool ClosedChoices = false,
     bool Capture = false,
-    bool Masked = false)
+    bool Masked = false,
+    IReadOnlyDictionary<string, string>? ChoiceNotes = null,
+    string? ChoiceCaption = null)
 {
     /// <summary>Whether the open field knows any values at all, whatever the buffer currently is.</summary>
     internal bool HasChoices => Choices is { Count: > 0 };
@@ -129,7 +136,9 @@ internal readonly record struct ScreenField(
     bool ClosedChoices = false,
     bool Capture = false,
     bool Masked = false,
-    Func<int>? Follow = null)
+    Func<int>? Follow = null,
+    IReadOnlyDictionary<string, string>? ChoiceNotes = null,
+    string? ChoiceCaption = null)
 {
     /// <summary>Longest rejection message kept; regex parser errors run to several lines otherwise.</summary>
     private const int MaxErrorLength = 44;

@@ -6,7 +6,7 @@ using SharpConsoleUI.Layout;
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// Composes an options screen (F7 Text &amp; ANSI, F8 Input &amp; spellcheck) from real
+/// Composes an options screen (F7 Text &amp; display, F8 Input) from real
 /// panels rather than one merged markup blob: a header band carrying the keyboard hints, the options
 /// list on a single full-width elevated card, and a Cancel/Save action bar pinned to the last row.
 /// These screens are one list, not two panes, so there is no column split and no vertical rule — the
@@ -22,8 +22,17 @@ internal static class OptionsScreenView
     /// <summary>Columns the list is inset by: two of padding on each side of the card.</summary>
     private const int CardInset = 4;
 
+    /// <param name="height">
+    /// The screen's height, or 0 for none. With one, a list taller than the body is windowed around the
+    /// cursor (<see cref="ScreenChrome.Window"/>) rather than run off the bottom — F7 with its meter table and
+    /// SOUND group is taller than a 24-row terminal.
+    /// </param>
     public static IWindowControl Build(
-        OptionsScreenRenderer.OptionsScreen screen, int width, ScreenTheme scheme, ScreenFocus? focus = null)
+        OptionsScreenRenderer.OptionsScreen screen,
+        int width,
+        ScreenTheme scheme,
+        ScreenFocus? focus = null,
+        int height = 0)
     {
         var header = ScreenChrome.Band(
             OptionsScreenRenderer.HeaderLine(
@@ -33,6 +42,12 @@ internal static class OptionsScreenView
             OptionsScreenRenderer.FooterLine(screen.Rows, width, focus), ScreenPalette.FooterBg, scheme);
 
         var rows = OptionsScreenRenderer.BodyColumn(screen.Rows, focus, Math.Max(0, width - CardInset));
+        if (height > 0)
+        {
+            // The header, the footer, the card's pad row above the list and one row of backdrop below it.
+            rows = ScreenChrome.Window(rows, Math.Max(1, height - 2 - CardPadding));
+        }
+
         var card = Card(rows, scheme);
 
         // Header on the first row, footer on the last, the card hugging its content directly beneath the

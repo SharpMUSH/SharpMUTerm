@@ -50,6 +50,28 @@ internal sealed class SettingsOverlay
     private readonly Stack<ScreenBinding> _behind = new();
 
     /// <summary>
+    /// The settings search, while it is up over a screen (<c>/</c>), or null. It is drawn in the screen's own
+    /// window in place of the screen — content-swapping, for <see cref="_behind"/>'s reason — and Esc puts the
+    /// screen back exactly as it was, because the screen's session is never touched while it is up.
+    /// </summary>
+    private SettingsSearchState? _search;
+
+    /// <summary>
+    /// What the search reads and how it takes a reader to a match. Set by the app; with none, <c>/</c> is not
+    /// ours and the header would be wrong to name it, which is why every screen is opened by an app that sets it.
+    /// </summary>
+    internal SettingsSearchHost? SearchHost { get; set; }
+
+    /// <summary>Whether the settings search is up.</summary>
+    internal bool IsSearching => _search is not null;
+
+    /// <summary>The search's query, for a test.</summary>
+    internal string? SearchQuery => _search?.Query;
+
+    /// <summary>Where the open screen's cursor is, for a test.</summary>
+    internal ScreenFocus? Focus => _binding?.Session.Focus();
+
+    /// <summary>
     /// The overlay no longer takes a save action. Persistence moved to the point of change: each screen's
     /// <see cref="ScreenEdits"/> writes the configuration out as it accepts one, so there is no moment on
     /// the way out at which the host would have anything left to save. See <see cref="ScreenEdits"/>.
@@ -101,6 +123,45 @@ internal sealed class SettingsOverlay
         }
 
         Open(key, binding());
+    }
+
+    /// <summary>
+    /// Puts a screen up in place of whatever is showing — the settings search's ⏎. Over an open screen it
+    /// swaps the content of the same window, so going to a field on the screen the search was opened from does
+    /// not close and reopen it; a screen holding deletions is closed through its review first, as a change of
+    /// F-key would.
+    /// </summary>
+    public void Show(ConsoleKey key, ScreenBinding binding)
+    {
+        _search = null;
+        if (_window is null)
+        {
+            Open(key, binding);
+            return;
+        }
+
+        var edits = (_behind.Count > 0 ? _behind.Last() : _binding)?.Session.Edits;
+        if (edits is { HasDeletions: true })
+        {
+            CloseAndReview();
+            Open(key, binding);
+            return;
+        }
+
+        _behind.Clear();
+        _openKey = key;
+        _binding = binding;
+        Refresh();
+    }
+
+    /// <summary>Closes the overlay altogether, keeping everything, as Esc on a screen does.</summary>
+    public void CloseAll()
+    {
+        _search = null;
+        if (_window is not null)
+        {
+            CloseAndReview();
+        }
     }
 
     /// <summary>Renders a screen into a headless frame (used by snapshots).</summary>
@@ -193,6 +254,13 @@ internal sealed class SettingsOverlay
             return;
         }
 
+        if (_search is { } search)
+        {
+            search.Type(text);
+            Refresh();
+            return;
+        }
+
         Apply(binding, binding.Session.Paste(text));
     }
 
@@ -200,6 +268,25 @@ internal sealed class SettingsOverlay
     {
         if (_window is null || _binding is not { } binding)
         {
+            return;
+        }
+
+        if (_search is { } search)
+        {
+            e.Handled = ApplySearch(search, search.Handle(e.KeyInfo));
+            return;
+        }
+
+        // `/` opens the search over any screen — but only while the screen is navigating: inside an open
+        // field it is a character being typed, and the field has the whole keyboard (SettingsSession's rule).
+        if (e.KeyInfo.KeyChar == '/'
+            && (e.KeyInfo.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0
+            && !binding.Session.IsEditing
+            && SearchHost is { } host)
+        {
+            _search = new SettingsSearchState(host, TitleOf(_openKey, host));
+            Refresh();
+            e.Handled = true;
             return;
         }
 
@@ -221,6 +308,39 @@ internal sealed class SettingsOverlay
 
         e.Handled = Apply(binding, binding.Session.Handle(e.KeyInfo));
     }
+
+    /// <summary>What the search answered a key with, acted on.</summary>
+    private bool ApplySearch(SettingsSearchState search, SettingsSearchAction action)
+    {
+        switch (action)
+        {
+            case SettingsSearchAction.Close:
+                _search = null;
+                Refresh();
+                return true;
+
+            case SettingsSearchAction.Go when search.Current is { } match && SearchHost is { } host:
+                // The host puts the screen up (Show), which takes the search down with it. A host that
+                // could not leaves the search where it is.
+                if (!host.Go(match))
+                {
+                    Refresh();
+                }
+
+                return true;
+
+            case SettingsSearchAction.None:
+                return false;
+
+            default:
+                Refresh();
+                return true;
+        }
+    }
+
+    /// <summary>The title of the section a key opens, for the search's "Esc goes back to …" line.</summary>
+    private static string? TitleOf(ConsoleKey key, SettingsSearchHost host) =>
+        host.Sections().FirstOrDefault(s => string.Equals(s.Key, key.ToString(), StringComparison.Ordinal))?.Title;
 
     /// <summary>
     /// Acts on what a screen said an input meant, and reports whether the input was consumed. Shared by
@@ -268,7 +388,10 @@ internal sealed class SettingsOverlay
         }
 
         window.ClearControls();
-        window.AddControl(binding.Control());
+        window.AddControl(_search is { } search
+            ? SettingsSearchView.Build(
+                search, _system.DesktopDimensions.Width, _system.DesktopDimensions.Height, Scheme)
+            : binding.Control());
         window.Invalidate(redrawAll: true);
     }
 
@@ -329,6 +452,7 @@ internal sealed class SettingsOverlay
         _system.ConsoleDriver.Paste -= OnPaste;
         _window = null;
         _binding = null;
+        _search = null;
         _behind.Clear();
     }
 }

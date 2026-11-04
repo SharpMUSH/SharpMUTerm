@@ -112,11 +112,10 @@ public class ScreenCursorTests
     [Test]
     public async Task Options_BarsTheFocusedOptionAndNeverASectionHeader()
     {
-        // Navigable row 6 is "emoji substitution" — the three section headers and the two spacers are
-        // skipped, five colour rows come first, and "tab width (spaces)" sits at 5 between them and this
-        // one.
+        // Navigable row 5 is "emoji substitution" — the headings and spacers are skipped, the four
+        // COLOUR & LEGIBILITY rows come first, and "tab width (spaces)" sits at 4 above it in TEXT.
         var screen = OptionsScreenRenderer.TextAnsiScreen();
-        var lines = OptionsScreenRenderer.BodyColumn(screen.Rows, new ScreenFocus(0, 6));
+        var lines = OptionsScreenRenderer.BodyColumn(screen.Rows, new ScreenFocus(0, 5));
 
         await Assert.That(Barred(lines)).IsEqualTo(1);
         await Assert.That(lines.Single(l => l.Contains(Bar, StringComparison.Ordinal))).Contains("emoji substitution");

@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Client.Contributions;
@@ -26,8 +27,10 @@ public sealed class PanelContribution : IContribution
 }
 
 /// <summary>
-/// <b>Settings sections</b> are groups of fields on a settings screen. This slice carries the descriptors only;
-/// nothing renders them yet. Sections are read in <see cref="Order"/>, ties in registration order.
+/// <b>Settings sections</b> are the settings screens, each with the fields it declares. A section with fields
+/// is drawn from them (F7 and F8 are; see <see cref="BuiltInSettings"/>); a section with none is still listed,
+/// by its title, wherever the screens are listed — the settings search names it and opens it. Sections are read
+/// in <see cref="Order"/>, ties in registration order.
 /// </summary>
 public sealed class SettingsSectionContribution : IContribution
 {
@@ -45,10 +48,31 @@ public sealed class SettingsSectionContribution : IContribution
 
     /// <summary>Its fields, in the order they are shown.</summary>
     public IReadOnlyList<SettingsField> Fields { get; init; } = Array.Empty<SettingsField>();
+
+    /// <summary>The key that opens its screen (<c>F7</c>), or null for a section no key opens.</summary>
+    public string? Key { get; init; }
 }
 
-/// <summary>One field of a settings section: its id within the section, its label and an optional line of help.</summary>
-public abstract record SettingsField(string Id, string Label, string? Help = null);
+/// <summary>
+/// One field of a settings section: its id within the section, its label and an optional line of help.
+/// <para>
+/// <see cref="Group"/> is the heading it is drawn under — consecutive fields with the same group share one
+/// heading, so a group is a heading and never a screen of its own. <see cref="Binding"/> is where the value
+/// lives in the configuration; a field with one can say whether it differs from its default and be reset.
+/// <see cref="Keywords"/> are further words the settings search finds the field by.
+/// </para>
+/// </summary>
+public abstract record SettingsField(string Id, string Label, string? Help = null)
+{
+    /// <summary>The heading the field is drawn under, or null for none.</summary>
+    public string? Group { get; init; }
+
+    /// <summary>Where its value lives, or null for a field that only describes.</summary>
+    public SettingBinding? Binding { get; init; }
+
+    /// <summary>Further words the search finds it by, space-separated.</summary>
+    public string? Keywords { get; init; }
+}
 
 /// <summary>A tick box.</summary>
 public sealed record BoolField(string Id, string Label, string? Help = null) : SettingsField(Id, Label, Help);

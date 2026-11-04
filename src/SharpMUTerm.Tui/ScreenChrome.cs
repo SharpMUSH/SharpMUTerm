@@ -30,7 +30,8 @@ internal static class ScreenChrome
         bool editable = false,
         ScreenFocus? focus = null,
         bool removable = false,
-        bool detailed = false)
+        bool detailed = false,
+        bool resettable = false)
     {
         if (focus?.Edit is { } edit)
         {
@@ -56,8 +57,10 @@ internal static class ScreenChrome
         // one that survives — and because the INFO key's drawn row (`i  info on Aetherfall`) is on the
         // screen either way, while a key that removes a world has only this line and its own row.
         var all = (editable ? verbs + EditHint : verbs)
+            + (resettable ? ResetHint : string.Empty)
             + (removable ? DeleteHint : string.Empty)
-            + (detailed ? DetailHint : string.Empty);
+            + (detailed ? DetailHint : string.Empty)
+            + SearchHint;
         return $"[{ScreenPalette.Label}]{all} · [/][{ScreenPalette.Accent}]{fkey}[/][{ScreenPalette.Label}]/[/]"
             + $"[{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close [/]";
     }
@@ -92,6 +95,18 @@ internal static class ScreenChrome
     /// feature, and one claiming it without answering looks broken.
     /// </summary>
     internal const string DetailHint = " · i info";
+
+    /// <summary>
+    /// What a screen adds while the focused row is a declared setting that differs from its default — and
+    /// only then, since <c>r</c> does nothing on a row at its default.
+    /// </summary>
+    internal const string ResetHint = " · r reset";
+
+    /// <summary>
+    /// The settings search, which <c>/</c> opens on every settings screen (<see cref="SettingsOverlay"/>).
+    /// Last of the verbs, so a narrow header gives it up before anything the screen itself does.
+    /// </summary>
+    internal const string SearchHint = " · / search";
 
     /// <summary>The hints that replace a screen's own while a field edit is open.</summary>
     internal const string EditingHints = "⏎ commit · Esc revert";
@@ -365,6 +380,9 @@ internal static class ScreenChrome
     /// </summary>
     internal const int MaxChoiceRows = 6;
 
+    /// <summary>The longest note drawn beside a choice (<see cref="ScreenFieldEdit.ChoiceNotes"/>).</summary>
+    internal const int MaxNoteLength = 16;
+
     /// <summary>What the dropdown calls itself when the field will take values outside the list.</summary>
     internal const string OpenChoicesCaption = "suggestions";
 
@@ -474,7 +492,7 @@ internal static class ScreenChrome
     {
         var all = open.Choices!;
         var visible = open.VisibleChoices;
-        var caption = open.ClosedChoices ? ClosedChoicesCaption : OpenChoicesCaption;
+        var caption = open.ChoiceCaption ?? (open.ClosedChoices ? ClosedChoicesCaption : OpenChoicesCaption);
         var entries = new List<(string, string)>();
 
         if (visible.Count == 0)
@@ -491,6 +509,12 @@ internal static class ScreenChrome
         for (var i = first; i < first + take; i++)
         {
             var name = MarkupText.Escape(visible[i]);
+            if (open.ChoiceNotes is { } notes && notes.TryGetValue(visible[i], out var note))
+            {
+                var shortNote = note.Length > MaxNoteLength ? note[..(MaxNoteLength - 1)] + "…" : note;
+                name += $"  [{ScreenPalette.Muted}]{MarkupText.Escape(shortNote)}[/]";
+            }
+
             entries.Add(i == marked
                 ? ($"[{ScreenPalette.Accent}]▸[/] [{ScreenPalette.Value}]{name}[/]", ScreenPalette.MenuSelectedBg)
                 : ($"  [{ScreenPalette.Label}]{name}[/]", ScreenPalette.MenuBg));

@@ -1,7 +1,7 @@
 namespace SharpMUTerm.Core.Configuration;
 
 /// <summary>
-/// Application-wide text rendering preferences — the settings the F7 "Text &amp; ANSI" screen edits.
+/// Application-wide text rendering preferences — the settings the F7 "Text &amp; display" screen edits.
 /// These are global rather than per world: they describe how *this terminal* draws what any world
 /// sends, so a world's own <see cref="WorldDefinition.Encoding"/> and
 /// <see cref="WorldDefinition.ContentFormat"/> stay where they are.

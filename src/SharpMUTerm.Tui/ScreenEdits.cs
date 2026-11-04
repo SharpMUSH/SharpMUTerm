@@ -78,6 +78,17 @@ internal sealed class ScreenEdits
     internal IReadOnlyList<string> Deletions => _deletions.ConvertAll(d => d.What);
 
     /// <summary>Flips a checkbox and writes it out. Committed on the spot; nothing to review.</summary>
+    /// <summary>
+    /// Puts a declared setting back to its default — the same funnel as every other change, so a reset is
+    /// saved, and reaches a connected session, exactly as typing the default in would.
+    /// </summary>
+    internal void Apply(Action reset)
+    {
+        ArgumentNullException.ThrowIfNull(reset);
+        reset();
+        _persist?.Invoke();
+    }
+
     internal void Apply(ScreenToggle toggle)
     {
         toggle.Flip();

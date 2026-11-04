@@ -149,7 +149,9 @@ internal sealed class SettingsSession
                 field?.Choices,
                 field?.ClosedChoices ?? false,
                 field?.Capture ?? false,
-                field?.Masked ?? false)
+                field?.Masked ?? false,
+                field?.ChoiceNotes,
+                field?.ChoiceCaption)
             : (ScreenFieldEdit?)null;
 
         return new ScreenFocus(Selection.Pane, Selection.Index, edit, Enter(model));
@@ -235,6 +237,9 @@ internal sealed class SettingsSession
             case ConsoleKey.I when key.Modifiers == 0:
                 return Detail(model);
 
+            case ConsoleKey.R when key.Modifiers == 0:
+                return Reset(model);
+
             case ConsoleKey.Spacebar:
                 return Toggle(model);
 
@@ -308,6 +313,23 @@ internal sealed class SettingsSession
 
         button.Run();
         return ScreenAction.Consumed;
+    }
+
+    /// <summary>
+    /// <c>r</c> on a declared setting that differs from its default puts the default back, through
+    /// <see cref="Edits"/> like any other change. A row at its default has no reset and the key is not ours
+    /// there, which is also why the header names <c>r reset</c> only on such a row. A plain letter is safe
+    /// for <see cref="Detail"/>'s reason: an open field edit has taken the whole keyboard long before this.
+    /// </summary>
+    private ScreenAction Reset(ScreenModel model)
+    {
+        if (model.ResetAt(Selection.Pane, Selection.Index) is not { } reset)
+        {
+            return ScreenAction.None;
+        }
+
+        Edits.Apply(reset);
+        return ScreenAction.Redraw;
     }
 
     private ScreenAction Toggle(ScreenModel model)

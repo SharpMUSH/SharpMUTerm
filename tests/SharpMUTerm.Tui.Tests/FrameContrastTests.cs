@@ -61,6 +61,10 @@ public class FrameContrastTests
         "aliases", "timers", "textansi", "input", "set", "password", "deletions", "route", "triggers-edit",
         "keypad-edit", "worlds-edit", "mssp-none", "compose-literal",
 
+        // The settings search marks its matches in the accent and the changed marks wear it too; the meter
+        // editor's dropdown carries the received values as muted notes beside each path.
+        "settings-search", "settings-meters", "settings-meters-pick", "settings-changed",
+
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band
         // instead of the reading plane. A band nothing renders in a test is a band nobody checks.
