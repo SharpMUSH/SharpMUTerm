@@ -63,6 +63,7 @@ internal static class MapRenderer
         Blank,
         Line,
         Stub,
+        Label,
         Room,
         Current,
         Path,
@@ -181,13 +182,15 @@ internal static class MapRenderer
             return lines;
         }
 
-        // Names go beside the grid when the map is wide, else under it: in edit mode the room and the keys that edit it,
-        // otherwise (in a tall pane) what each exit of your room leads to. Edit mode spends the legend's row on them.
-        var side = SideWidth(width);
+        // In edit mode the room being edited goes beside the grid when the map is wide, else under it, and the keys that
+        // edit it are one laddered row at the foot (edit mode spends the legend's row on them). Otherwise what each exit
+        // of your room leads to is always under the grid, above the legend — one place, whatever the pane's shape.
+        var side = view.Editing ? SideWidth(width) : 0;
         var gridWidth = side > 0 ? width - side - 2 : width;
         var legend = !view.Editing && height >= LegendMinHeight;
         var under = side > 0 ? [] : UnderLines(view, width, height, ink, keysHeld);
-        var rows = Math.Max(0, height - 1 - (legend ? 1 : 0) - under.Count);
+        var footer = side > 0 && height >= 4 ? KeysLine(width, ink, keysHeld) : null;
+        var rows = Math.Max(0, height - 1 - (legend ? 1 : 0) - under.Count - (footer is null ? 0 : 1));
         var grid = new Cell[rows, gridWidth];
         var ahead_ = ahead.ToHashSet();
         var byId = view.Rooms.ToDictionary(r => r.Id);
@@ -197,18 +200,21 @@ internal static class MapRenderer
         // edited would then fall outside it, when that room is the centre instead.
         var originCol = gridWidth / 2 - 1;
         var originRow = rows / 2;
-        if (view.Selected is { } picked && map.Room(picked.Id) is { } chosen
-            && (Math.Abs(chosen.X - centre.X) * CellWidth > originCol - 1 || Math.Abs(chosen.Y - centre.Y) * CellHeight > originRow))
-        {
-            centre = chosen;
-        }
-
-        (int Col, int Row) At(MapRoom room) =>
-            (originCol + (room.X - centre.X) * CellWidth, originRow + (room.Y - centre.Y) * CellHeight);
-
         var level = map.Rooms.Values
             .Where(r => r.Z == centre.Z && r.AreaId == centre.AreaId)
             .ToList();
+        var (label, cellWidth, labelledOrigin) = Labelling(level, centre, gridWidth, originCol);
+        originCol = labelledOrigin;
+        if (view.Selected is { } picked && map.Room(picked.Id) is { } chosen
+            && (originCol + ((chosen.X - centre.X) * cellWidth) is var pickedCol && (pickedCol < 1 || pickedCol + 3 > gridWidth)
+                || Math.Abs(chosen.Y - centre.Y) * CellHeight > originRow))
+        {
+            centre = chosen;
+            originCol = gridWidth / 2 - 1;
+        }
+
+        (int Col, int Row) At(MapRoom room) =>
+            (originCol + (room.X - centre.X) * cellWidth, originRow + (room.Y - centre.Y) * CellHeight);
 
         void Put(int col, int row, char glyph, Kind kind, long? room = null, string? colour = null)
         {
@@ -234,6 +240,7 @@ internal static class MapRenderer
         foreach (var room in level)
         {
             var (col, row) = At(room);
+            var named = label > 0 ? Math.Min(NameOf(room).Length, label) : 0;
             foreach (var (_, key, to) in room.AllExits())
             {
                 // A way into another area is drawn in that area's colour, which is the view's.
@@ -241,14 +248,14 @@ internal static class MapRenderer
                     && map.Areas.TryGetValue(areaId, out var area)
                         ? AreaInk(view.ColourOf(area.Name), ink)
                         : null;
-                Connect(col, row, key, Kind.Line, into);
+                Connect(col, row, key, Kind.Line, into, named);
             }
 
             foreach (var stub in room.Stubs)
             {
                 if (MapDirections.Normalise(stub) is { } direction)
                 {
-                    Connect(col, row, direction, Kind.Stub, null);
+                    Connect(col, row, direction, Kind.Stub, null, named);
                 }
             }
         }
@@ -267,13 +274,34 @@ internal static class MapRenderer
             Put(col + 2, row, ']', kind, room.Id, colour);
         }
 
-        var column = side > 0 ? SideLines(view, side, rows + (legend ? 1 : 0), ink, keysHeld) : [];
+        if (label > 0)
+        {
+            // The name after the room, one cell clear of it and elided to the room the grid leaves; a link to the room,
+            // like the room itself. The room you are in is named in its own ink.
+            foreach (var room in level)
+            {
+                var (col, row) = At(room);
+                var name = NameOf(room);
+                name = name.Length <= label ? name : name[..(label - 1)].TrimEnd() + "…";
+                var labelColour = room.Id == current ? ink.Current : null;
+                for (var i = 0; i < name.Length; i++)
+                {
+                    Put(col + 4 + i, row, name[i], Kind.Label, room.Id, labelColour);
+                }
+            }
+        }
+
+        var column = side > 0 ? SideLines(view, side, rows, ink) : [];
         for (var row = 0; row < rows; row++)
         {
             lines.Add(WithSide(Row(grid, row, gridWidth, ink), column, row, gridWidth));
         }
 
         lines.AddRange(under);
+        if (footer is not null)
+        {
+            lines.Add(footer);
+        }
 
         if (legend)
         {
@@ -282,12 +310,27 @@ internal static class MapRenderer
 
         return lines;
 
-        void Connect(int col, int row, string direction, Kind kind, string? colour)
+        // A room's name as the grid draws it: the view's, else the map's, else its number.
+        string NameOf(MapRoom room) =>
+            byId.GetValueOrDefault(room.Id)?.Name is { Length: > 0 } seen ? seen
+            : room.Name.Length > 0 ? room.Name
+            : "#" + room.Id.ToString(CultureInfo.InvariantCulture);
+
+        void Connect(int col, int row, string direction, Kind kind, string? colour, int named = 0)
         {
             switch (direction)
             {
                 case "east":
-                    Put(col + 3, row, '─', kind, colour: colour);
+                    // With names on the grid the way east starts one cell past the name and runs to the next room.
+                    for (var c = named > 0 ? col + 5 + named : col + 3; c <= col + cellWidth - 1; c++)
+                    {
+                        Put(c, row, '─', kind, colour: colour);
+                        if (label == 0)
+                        {
+                            break;
+                        }
+                    }
+
                     break;
                 case "west":
                     Put(col - 1, row, '─', kind, colour: colour);
@@ -312,6 +355,41 @@ internal static class MapRenderer
                     break;
             }
         }
+    }
+
+    /// <summary>The narrowest grid that names its rooms.</summary>
+    internal const int LabelFromWidth = 48;
+
+    /// <summary>The longest and shortest room name drawn on the grid.</summary>
+    internal const int LabelMax = 16, LabelMin = 6;
+
+    /// <summary>
+    /// How long a room's name on the grid may be, the grid's column step (<c>[ ] name──</c>, so a step is the name plus
+    /// six), and the column the centre room is drawn at. The longest name (up to <see cref="LabelMax"/>) at which the
+    /// whole level fits the grid, which is then centred as a block rather than on the centre room, so the names have
+    /// the width there is; failing that, on a grid of 100 columns or more, eight, centred on the room as before (rooms
+    /// past the edge are cut, as they always were); otherwise none, and the step is the plain <see cref="CellWidth"/>.
+    /// </summary>
+    internal static (int Label, int CellWidth, int OriginCol) Labelling(IReadOnlyList<MapRoom> level, MapRoom centre, int gridWidth, int originCol)
+    {
+        if (gridWidth < LabelFromWidth || level.Count == 0)
+        {
+            return (0, CellWidth, originCol);
+        }
+
+        var west = Math.Max(0, centre.X - level.Min(r => r.X));
+        var east = Math.Max(0, level.Max(r => r.X) - centre.X);
+        for (var label = LabelMax; label >= LabelMin; label--)
+        {
+            var step = label + 6;
+            var span = ((west + east) * step) + 4 + label;
+            if (span <= gridWidth)
+            {
+                return (label, step, ((gridWidth - span) / 2) + (west * step));
+            }
+        }
+
+        return gridWidth >= 100 ? (8, 14, originCol) : (0, CellWidth, originCol);
     }
 
     /// <summary>
@@ -469,34 +547,13 @@ internal static class MapRenderer
     /// The side column, beside a wide grid: the room being edited and the keys that edit it, or else where you are and
     /// what each exit leads to. Every line is cut to <paramref name="width"/> and there are at most <paramref name="rows"/>.
     /// </summary>
-    private static List<string> SideLines(MapViewModel view, int width, int rows, Ink ink, bool keysHeld)
+    private static List<string> SideLines(MapViewModel view, int width, int rows, Ink ink)
     {
         var lines = new List<string>();
         if (view.Selected is { } room)
         {
             lines.AddRange(DetailLines(view, width, ink));
-            foreach (var exit in room.Exits.Take(Math.Max(0, rows - lines.Count - MapEditing.Keys.Count - 1)))
-            {
-                lines.Add(ExitLine(exit, width));
-            }
-
-            lines.Add(string.Empty);
-            if (!keysHeld)
-            {
-                lines.AddRange(KeysLines(width, ink, keysHeld, 3));
-            }
-            else
-            {
-                foreach (var (key, word) in MapEditing.Keys.Take(Math.Max(0, rows - lines.Count)))
-                {
-                    lines.Add(Fit($"[bold {ink.Current}]{MarkupText.Escape(key.PadRight(6))}[/][dim]{word}[/]", width));
-                }
-            }
-        }
-        else if (view.Current is { } here)
-        {
-            lines.Add(Fit($"[bold {ink.Current}]@[/] [bold]{MarkupText.Escape(Elide(here.Name, width - 2))}[/]", width));
-            foreach (var exit in view.Nearby.Take(Math.Max(0, rows - 1)))
+            foreach (var exit in room.Exits.Take(Math.Max(0, rows - lines.Count)))
             {
                 lines.Add(ExitLine(exit, width));
             }
@@ -514,8 +571,8 @@ internal static class MapRenderer
         if (view.Editing)
         {
             return height >= UnderFromHeight
-                ? [string.Empty, .. DetailLines(view, width, ink), .. KeysLines(width, ink, keysHeld, 5)]
-                : height >= 4 ? [RoomLine(view, width, ink), .. KeysLines(width, ink, keysHeld, 1)] : [];
+                ? [string.Empty, .. DetailLines(view, width, ink), KeysLine(width, ink, keysHeld)]
+                : height >= 4 ? [RoomLine(view, width, ink), KeysLine(width, ink, keysHeld)] : [];
         }
 
         if (height < UnderFromHeight || view.Nearby.Count == 0 || view.Viewing)
@@ -616,49 +673,49 @@ internal static class MapRenderer
     }
 
     /// <summary>
-    /// Edit mode's keys over at most <paramref name="max"/> lines, in <see cref="MapEditing.Keys"/>' order, with
-    /// <c>Esc done</c> always the last; while a <c>/map</c> command waits on the command line, how to finish it instead.
+    /// Edit mode's keys as one row (<see cref="KeyLadder"/>): in <see cref="MapEditing.Keys"/>' order, the least used given
+    /// up first (<see cref="KeyDrop"/>), <c>? all keys</c> and <c>Esc done</c> never — <c>?</c> opens the help page that
+    /// lists every one. One row and not a block: at 80×24 the block took half the pane and still cut keys. While a
+    /// <c>/map</c> command waits on the command line, how to finish it instead.
     /// </summary>
-    internal static List<string> KeysLines(int width, Ink ink, bool keysHeld, int max)
+    internal static string KeysLine(int width, Ink ink, bool keysHeld)
     {
         if (!keysHeld)
         {
-            return [Fit("[dim]finish the /map command on the command line · ⏎ applies it · ⌃P ▸ Edit map takes the keys back[/]", width)];
+            return Fit("[dim]finish the /map command on the command line · ⏎ applies it · ⌃P ▸ Edit map takes the keys back[/]", width);
         }
 
-        string Item((string Key, string Word) k) => $"[bold {ink.Current}]{MarkupText.Escape(k.Key)}[/] [dim]{k.Word}[/]";
-        static int Cost((string Key, string Word) k) => k.Key.Length + 1 + k.Word.Length;
-        var last = MapEditing.Keys[^1];
-        var lines = new List<List<(string Key, string Word)>> { new() };
-        var used = 0;
-        foreach (var key in MapEditing.Keys.Take(MapEditing.Keys.Count - 1))
-        {
-            var cost = (lines[^1].Count == 0 ? 0 : 3) + Cost(key);
-            var reserve = lines.Count == max ? 3 + Cost(last) : 0;
-            if (used + cost + reserve > width)
-            {
-                if (lines.Count == max)
-                {
-                    break;
-                }
-
-                lines.Add(new());
-                used = 0;
-                cost = Cost(key);
-            }
-
-            lines[^1].Add(key);
-            used += cost;
-        }
-
-        if (used + 3 + Cost(last) > width && lines.Count < max)
-        {
-            lines.Add(new());
-        }
-
-        lines[^1].Add(last);
-        return lines.Select(l => Fit(string.Join(" [dim]·[/] ", l.Select(Item)), width)).ToList();
+        var keys = MapEditing.Keys.Select(k => new LadderKey(k.Key, k.Word, Drop: KeyDrop(k.Key))).ToList();
+        return KeyLadder.Fit(
+            keys,
+            width,
+            k => $"[bold {ink.Current}]{MarkupText.Escape(k)}[/]",
+            w => $"[dim]{MarkupText.Escape(w)}[/]",
+            " [dim]·[/] ");
     }
+
+    /// <summary>Which edit key a short footer gives up first: lowest first; the ones a newcomer reaches for last.</summary>
+    internal static int KeyDrop(string key) => key switch
+    {
+        "?" or "Esc" => LadderKey.Keep,
+        "←↑→↓" => 17,
+        "⏎" => 16,
+        "r" => 15,
+        "u" => 14,
+        "⇧←↑→↓" => 13,
+        "Del" => 12,
+        "x" => 11,
+        "n" => 10,
+        "l" => 9,
+        "PgUp PgDn" => 8,
+        "v" => 7,
+        "h" => 6,
+        "a" => 5,
+        "w" => 4,
+        "-" => 3,
+        "s" => 2,
+        _ => 1,
+    };
 
     private static string Elide(string text, int width) =>
         width <= 0 ? string.Empty : text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
@@ -704,6 +761,7 @@ internal static class MapRenderer
                 Kind.Blank => escaped,
                 Kind.Line or Kind.Room => cell.Colour is { } colour ? $"[{colour}]{escaped}[/]" : escaped,
                 Kind.Stub => $"[dim]{escaped}[/]",
+                Kind.Label => cell.Colour is { } named ? $"[{named}]{escaped}[/]" : escaped,
                 Kind.Current => $"[bold {ink.Current}]{escaped}[/]",
                 Kind.Path => $"[{ink.Path}]{escaped}[/]",
                 Kind.Locked => $"[{ink.Locked}]{escaped}[/]",

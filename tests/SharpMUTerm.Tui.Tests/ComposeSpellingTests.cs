@@ -93,8 +93,9 @@ public class ComposeSpellingTests
         await Assert.That(app.Composer.HeaderMarkup).Contains("no dictionary");
         var rows = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
         await Assert.That(rows.Any(r => r.Contains("⌥W", StringComparison.Ordinal) && r.Contains("get a dictionary", StringComparison.Ordinal))).IsTrue();
-        await Assert.That(rows.Any(r => r.Contains("no dictionary · ⌥W gets one", StringComparison.Ordinal)))
-            .IsTrue().Because("the header names the key beside the state it gets you out of");
+        await Assert.That(rows.Count(r => r.Contains("⌥W", StringComparison.Ordinal))).IsEqualTo(1)
+            .Because("the key row names ⌥W, so the header does not name it a second time and is not cut for it");
+        await Assert.That(app.Composer.HeaderMarkup).DoesNotContain("⌥W");
         await Assert.That(app.Composer.SimulateKey(Key(ConsoleKey.W, ConsoleModifiers.Alt))).IsTrue();
         await Assert.That(app.DictionaryOfferOpen).IsTrue().Because("⌥W with no dictionary offers one, and fetches nothing");
     }

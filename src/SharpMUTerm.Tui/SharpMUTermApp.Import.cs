@@ -182,7 +182,9 @@ internal sealed partial class SharpMUTermApp
                 return true;
             },
             width: ImportReview.PreferredWidth,
-            closed: () => _pendingImport = null);
+            closed: () => _pendingImport = null,
+            footer: width => ImportReview.Footer(_pendingImport?.Model ?? model, width),
+            scrollKeys: true);
     }
 
     /// <summary>

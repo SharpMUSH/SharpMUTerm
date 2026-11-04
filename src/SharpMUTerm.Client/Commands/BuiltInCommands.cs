@@ -167,7 +167,7 @@ public static class BuiltInCommands
 
         // Editing the map: the room you are in selected, the map holding the keys (its footer names them). Listed
         // unconditionally beside Show map; it refuses out loud where there is no map.
-        Add("map:edit", CommandGroup.Terminal, "Edit map", detail: "rename, area, lock, weight, exits, notes · /map rename …");
+        Add("map:edit", CommandGroup.Terminal, "Edit map", detail: "rename, area, lock, weight, exits, notes · ? lists the keys · /map rename …");
         Add("map:undo", CommandGroup.Terminal, "Undo map edit", detail: "takes back the last change to the map", when: c => c.State.MapUndo is not null);
 
         // Looking at another level or area of the map, and back; offered only where the map has one to look at.

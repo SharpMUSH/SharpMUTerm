@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using SharpConsoleUI;
 using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Help;
 using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Mapping;
@@ -278,6 +279,7 @@ internal sealed partial class SharpMUTermApp
             '-' => Words(MapEditing.UnexitVerb),
             'n' => Words(MapEditing.NoteVerb),
             's' => Words(MapEditing.SymbolVerb),
+            '?' => AllKeys(),
             _ => false,
         })
         {
@@ -295,6 +297,13 @@ internal sealed partial class SharpMUTermApp
         bool Edit(MapEdit edit)
         {
             ApplyMapEdit(windowId, edit);
+            return true;
+        }
+
+        bool AllKeys()
+        {
+            // The footer names the keys it has room for; the help page names every one. The map keeps the keys.
+            ShowHelp(topic: HelpTopics.MapTopic);
             return true;
         }
 

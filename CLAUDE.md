@@ -130,6 +130,12 @@ fallbacks) for inline images/maps.
     `CommandSent` carries player commands only — never the login line or on-connect commands.
   - Maps are written on disconnect, session removal and exit, not per room (`IsDirty`). MXP room tags wait
     for `<!ELEMENT>` (Phase 5a).
+  - **The cell map names rooms on the grid when the level fits** (`MapRenderer.Labelling`): the column step becomes
+    name + 6 (`[ ] name──[ ]`), the longest name up to 16 at which the whole level fits, the block centred rather than the
+    room; else 8 on a grid ≥100 wide; else the plain `[ ]` grid (every test map is narrower than `LabelFromWidth`). The
+    exits list is always under the grid, above the legend; the side column is edit mode's inspector only. Edit mode's
+    keys are one laddered row at the foot (`KeysLine`, `KeyDrop`); `?` (in `MapEditing.Keys`) opens `/help` ▸ Maps
+    (`HelpTopics.MapTopic`), which lists every key.
   - **The map window is a window, not a pane control** (`map:<SessionKey>`, `WindowKind.Auxiliary`, owned by
     the session; `MapRenderer`, Tui). It is drawn from the recorder on `Changed` and whenever its pane's box
     changes (`SyncMapSizes` on `PostBufferPaint`), never fed from a line buffer, so its control lives in
@@ -232,6 +238,10 @@ fallbacks) for inline images/maps.
     `MarkupControl.MeasureDOM` at the modal's inner width), not as its line count: F10's header wraps at 80 columns,
     and counting lines made the modal a row short, so it scrolled its close key out of sight at 80×24. F10 always
     emits its two confirm rows (blank when idle), so the modal sized once at open still fits a confirmation.
+  - **A consent screen's keys are pinned, not scrolled** (`ListOverlay.Open(footer:, scrollKeys:)`): the body goes in a
+    `ScrollablePanelControl` and the footer rows are a sticky-bottom control, so a body taller than 80×24 scrolls under
+    them (↑↓ PgUp PgDn Home End, answered before the caller's key handler). The import review uses it (`ImportReview.Footer`:
+    passwords question + keys); `Lines` is body then footer.
   - **The index** (`PackageIndex`; ⌃P ▸ *Browse packages*, `b` on F10) is `{"packages":[…]}`, each entry a
     manifest plus an https `url` and a `sha256`, at `AppConfiguration.PackageIndexUrl`. **It is fetched only
     when the player opens it, never at start.** An entry that breaks a rule is dropped and counted, not
@@ -630,6 +640,12 @@ fallbacks) for inline images/maps.
     reflection). The editor scrolls to keep the caret on a row the viewport does not have yet and never scrolls back
     when the viewport grows, so a newline in a one-row bar drew the new row and a blank. The three-row floor had hidden
     it; `NewlineKeyTests` caught it.
+- **A cell key row never wraps; it ladders** (`KeyLadder`, `LadderKey`, Tui). Rungs: full labels, parentheticals cut,
+  `Short` labels, then keys dropped lowest `Drop` first (reading order is not drop order); `LadderKey.Keep` (the way
+  out, the accept) is never dropped. F1 (`ComposeOverlay.FooterKeys`; the header no longer repeats the `⌥W` chip), the
+  script console (per state: Del is named only on the store list), the map's edit row, the import review and F10's
+  header use it. `FooterFitTests` renders every cell modal/footer view at 80×24 and fails unless its first and last
+  hints share one painted row — add a view there when it gains a key row.
 - **The status row names the keys of the mode you are in** (`ModeHints`/`StatusMode`, Client;
   `SharpMUTermApp.ModeHints.cs`). Composer armed > search bar in the focused window > frozen > split > scrolled back;
   while one holds, its hints replace `FocusHints` (`End returns · ⌥F freezes`, `⌥F thaws`, `⌥G next hit · ⌃F searches

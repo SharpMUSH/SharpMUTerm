@@ -17,7 +17,11 @@ internal sealed class ListOverlay
 
     private Window? _window;
     private MarkupControl? _content;
+    private MarkupControl? _footerControl;
+    private ScrollablePanelControl? _body;
     private Func<int, List<string>>? _render;
+    private Func<int, List<string>>? _footer;
+    private bool _scrollKeys;
     private Func<ConsoleKeyInfo, bool>? _key;
     private Func<bool>? _escape;
     private Action? _closed;
@@ -39,7 +43,14 @@ internal sealed class ListOverlay
     public string? Mode { get; private set; }
 
     /// <summary>What the surface shows now, for a test to read.</summary>
-    internal IReadOnlyList<string> Lines => _render?.Invoke(Width()) ?? [];
+    internal IReadOnlyList<string> Lines =>
+        _render is null ? [] : [.. _render(Width()), .. _footer?.Invoke(Width()) ?? []];
+
+    /// <summary>The pinned footer's lines alone (empty for a surface with none), for a test.</summary>
+    internal IReadOnlyList<string> FooterLines => _footer?.Invoke(Width()) ?? [];
+
+    /// <summary>The body's scroll offset in rows (0 for a surface with no pinned footer), for a test.</summary>
+    internal int BodyScroll => _body?.VerticalScrollOffset ?? 0;
 
     /// <summary>
     /// Opens a surface. <paramref name="render"/> draws it at a width; <paramref name="key"/> answers a key
@@ -51,6 +62,12 @@ internal sealed class ListOverlay
     /// typed, a delete awaiting its answer) and stays open; with none, or false, Esc closes.
     /// </param>
     /// <param name="closed">Told once when this surface closes, however it does (not when a later one replaces it).</param>
+    /// <param name="footer">
+    /// Rows pinned to the modal's bottom edge, outside the scrolling body: a consent screen's keys and the question that
+    /// goes with them. A body taller than the screen scrolls under them, so the way to accept or decline is never
+    /// scrolled away (the import review at 80×24 lost both). Each row is one line, never wrapped: fit it to the width.
+    /// </param>
+    /// <param name="scrollKeys">Whether ↑↓ PgUp PgDn Home End scroll the body before the key handler sees them.</param>
     public void Open(
         string mode,
         string title,
@@ -58,7 +75,9 @@ internal sealed class ListOverlay
         Func<ConsoleKeyInfo, bool> key,
         int? width = null,
         Func<bool>? escape = null,
-        Action? closed = null)
+        Action? closed = null,
+        Func<int, List<string>>? footer = null,
+        bool scrollKeys = false)
     {
         if (_window is not null)
         {
@@ -69,12 +88,36 @@ internal sealed class ListOverlay
         _key = key;
         _escape = escape;
         _closed = closed;
+        _footer = footer;
+        _scrollKeys = scrollKeys && footer is not null;
         var desktop = _system.DesktopDimensions;
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
         var lines = render(outer - 4);
-        var height = Math.Clamp(Rows(lines, outer - 3) + 2, 8, Math.Max(8, desktop.Height - 2));
+        var footerLines = footer?.Invoke(outer - 4) ?? [];
+        var height = Math.Clamp(Rows(lines, outer - 3) + footerLines.Count + 2, 8, Math.Max(8, desktop.Height - 2));
         _content = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
+        IWindowControl body = _content;
+        if (footer is not null)
+        {
+            _content.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _body = new ScrollablePanelControl
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Fill,
+                VerticalScrollMode = ScrollMode.Scroll,
+                HorizontalScrollMode = ScrollMode.None,
+                ShowScrollbar = true,
+                AutoScroll = false,
+            };
+            _body.AddControl(_content);
+            body = _body;
+            _footerControl = new MarkupControl(_scheme.Lines(footerLines, ScreenPalette.MenuBg))
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                StickyPosition = StickyPosition.Bottom,
+            };
+        }
 
         // Centered() after WithSize(), for CommandPalette's reason.
         Window? built = null;
@@ -87,7 +130,7 @@ internal sealed class ListOverlay
             .Resizable(false)
             .WithSize(outer, height)
             .Centered()
-            .AddControl(_content)
+            .AddControl(body)
             .OnClosed((_, _) =>
             {
                 // A window closed because the next surface replaced it must not clear the next one's state.
@@ -101,6 +144,10 @@ internal sealed class ListOverlay
             .Build();
         _window = built;
         _scheme.Frame(_window);
+        if (_footerControl is not null)
+        {
+            _window.AddControl(_footerControl);
+        }
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -132,6 +179,11 @@ internal sealed class ListOverlay
         if (_render is not null && _content is not null)
         {
             _content.SetContent(_scheme.Lines(_render(Width()), ScreenPalette.MenuBg));
+            if (_footer is not null)
+            {
+                _footerControl?.SetContent(_scheme.Lines(_footer(Width()), ScreenPalette.MenuBg));
+            }
+
             _window?.Invalidate(redrawAll: true);
         }
     }
@@ -170,6 +222,25 @@ internal sealed class ListOverlay
             return;
         }
 
+        if (_scrollKeys && _body is { } body && e.KeyInfo.Modifiers == 0 && ScrollBy(body, e.KeyInfo.Key) is { } rows)
+        {
+            if (rows == int.MinValue)
+            {
+                body.ScrollToTop();
+            }
+            else if (rows == int.MaxValue)
+            {
+                body.ScrollToBottom();
+            }
+            else
+            {
+                body.ScrollVerticalBy(rows);
+            }
+
+            _window.Invalidate(redrawAll: true);
+            return;
+        }
+
         if (e.KeyInfo.Key == ConsoleKey.Escape || !_key(e.KeyInfo))
         {
             if (_window == window)
@@ -183,10 +254,30 @@ internal sealed class ListOverlay
         Repaint();
     }
 
+    /// <summary>The rows a scroll key moves the body: a line, a page less one, or either end (<see cref="int.MinValue"/>, <see cref="int.MaxValue"/>).</summary>
+    private static int? ScrollBy(ScrollablePanelControl body, ConsoleKey key)
+    {
+        var page = Math.Max(1, body.ActualHeight - 1);
+        return key switch
+        {
+            ConsoleKey.UpArrow => -1,
+            ConsoleKey.DownArrow => 1,
+            ConsoleKey.PageUp => -page,
+            ConsoleKey.PageDown => page,
+            ConsoleKey.Home => int.MinValue,
+            ConsoleKey.End => int.MaxValue,
+            _ => null,
+        };
+    }
+
     private void Reset()
     {
         _window = null;
         _content = null;
+        _footerControl = null;
+        _body = null;
+        _footer = null;
+        _scrollKeys = false;
         _render = null;
         _key = null;
         _escape = null;

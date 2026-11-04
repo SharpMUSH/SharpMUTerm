@@ -79,10 +79,19 @@ internal static class PackageScreen
         int width,
         List<string>? drawn = null)
     {
-        var keys = string.Join(" · ", declaration.Actions.Select(a => $"{a.Key} {a.Label}"));
+        // One row, never wrapped: a ladder after the count (↑↓ goes first, then the copy and browse keys).
+        var count = $"{Count(packages.Count)} installed · ";
+        var ladder = new List<LadderKey> { new("↑↓", "select", Drop: 1) };
+        ladder.AddRange(declaration.Actions.Select(a => new LadderKey(
+            a.Key,
+            a.Label,
+            a.Label.Contains(' ', StringComparison.Ordinal) ? a.Label[..a.Label.IndexOf(' ', StringComparison.Ordinal)] : null,
+            a.Key switch { "c" => 2, "b" => 3, _ => LadderKey.Keep })));
+        ladder.Add(new("Esc", "close"));
+        var keys = KeyLadder.Fit(ladder, Math.Max(20, width - count.Length - 1), Escape, Escape, " · ");
         var lines = new List<string>
         {
-            $"[{ScreenPalette.Label}]{Count(packages.Count)} installed · ↑↓ select · {Escape(keys)} · Esc close[/]",
+            $"[{ScreenPalette.Label}]{count}{keys}[/]",
             string.Empty,
         };
 
