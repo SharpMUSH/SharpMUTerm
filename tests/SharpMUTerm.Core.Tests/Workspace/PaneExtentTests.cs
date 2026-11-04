@@ -291,6 +291,18 @@ public class PaneExtentTests
     }
 
     [Test]
+    public async Task AGaugeCardHoldsTheTargetsRowsOnlyWhileThereIsOneAndTheHostsRuleSizesTheCard()
+    {
+        await Assert.That(PanelSizing.VitalsGaugeCardRows(3, target: false)).IsEqualTo(10);
+        await Assert.That(PanelSizing.VitalsGaugeCardRows(3, target: true)).IsEqualTo(12);
+
+        var side = new PaneNode("side", ["panel:vitals:W.C"]);
+        var root = new SplitNode(SplitDirection.Row, [new PaneNode("output", ["main"]), side], [0.7, 0.3]);
+        PanelSizing.ApplyAll(root, PanelOf, tabStripRows: 1, _ => 3, cardRowsOf: _ => 9);
+        await Assert.That(side.FixedRows).IsEqualTo(9);
+    }
+
+    [Test]
     public async Task AStripHandedAnOrdinaryWindowStopsBeingAStrip()
     {
         var pane = new PaneNode("p", ["panel:vitals:W.C"]) { FixedRows = 1 };

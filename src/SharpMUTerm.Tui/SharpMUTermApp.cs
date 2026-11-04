@@ -10976,8 +10976,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // A vitals pane in a side column is a card, its height from the character's meters.
         Core.Layouts.PanelSizing.ApplyAll(
             _workspace.Layout.Root, PanelIdOfWindow, TabStripRows, VitalsMetersOfWindow,
-            Host.Chrome.Strips ? Core.Layouts.PanelSizing.QuickBarStripRows : 1);
+            Host.Chrome.Strips ? Core.Layouts.PanelSizing.QuickBarStripRows : 1,
+            VitalsCardRowsRule());
         ApplyCollapsedBars();
+        ApplyLoneMapPanes();
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;

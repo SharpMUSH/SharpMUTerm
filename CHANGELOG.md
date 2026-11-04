@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window, Combat's map uses its pane: rooms are drawn at full size, every room's name is written out in
+  full where it fits without covering another room or name (shortened only where it truly cannot fit), the map pane no
+  longer repeats a lone "Map" tab above its own heading, and the vitals card is only as tall as its gauges, so the map
+  gets the rows that used to stay empty under Movement.
 - In the desktop window, the map is drawn the way the mockups draw it: dark rooms outlined in a rule, exits as thin lines,
   your room ringed in the accent with an `@`, Up/Down/Areas as proper buttons, and the legend in a strip at the foot with
   "Click a room to walk there" under it, so it never covers a room.

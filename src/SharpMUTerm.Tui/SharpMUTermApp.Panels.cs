@@ -192,8 +192,16 @@ internal sealed partial class SharpMUTermApp
 
         if (context.Session is { } session)
         {
-            session.GameData.Changed += (_, _) => OnUiThread(view.Refresh);
-            session.MxpMetersChanged += (_, _) => OnUiThread(view.Refresh);
+            session.GameData.Changed += (_, _) => OnUiThread(() =>
+            {
+                view.Refresh();
+                ResizeVitalsCard(context.WindowId);
+            });
+            session.MxpMetersChanged += (_, _) => OnUiThread(() =>
+            {
+                view.Refresh();
+                ResizeVitalsCard(context.WindowId);
+            });
         }
 
         return view.Control;

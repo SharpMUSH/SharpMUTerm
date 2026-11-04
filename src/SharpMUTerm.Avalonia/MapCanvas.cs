@@ -42,7 +42,7 @@ internal sealed class MapCanvas : Control
     private const double MinZoom = 0.35, MaxZoom = 3, DragThreshold = 4;
 
     /// <summary>The most the fit zooms in: past it a small area's rooms are boxes the size of buttons.</summary>
-    internal const double FitMaxZoom = 2.4;
+    internal const double FitMaxZoom = 90 / Spacing;
 
     /// <summary>How many grid steps from the character's room the fit takes in; a larger area is fitted around them.</summary>
     internal const int FitRadius = 6;
@@ -183,11 +183,22 @@ internal sealed class MapCanvas : Control
         }
     }
 
+    /// <summary>The side the mockup draws a room at (32 px, its rooms 90 px apart).</summary>
+    internal const double RoomTarget = 32;
+
     /// <summary>
-    /// A room's side: about half the step between rooms (the mockup draws 32 px rooms 90 px apart; names under them need the room), so the exits read
-    /// as lines between boxes rather than boxes touching.
+    /// A room's side: the mockup's <see cref="RoomTarget"/> wherever the step leaves an exit between boxes (a little over half the
+    /// step at most), growing past it only once the player zooms in far, so the exits read as lines between boxes rather than
+    /// boxes touching. Internal for tests.
     /// </summary>
-    private double RoomSize => Math.Max(5, Spacing * Zoom * 0.48);
+    internal double RoomSize
+    {
+        get
+        {
+            var step = Spacing * Zoom;
+            return Math.Max(5, Math.Min(step * 0.56, Math.Max(step * 0.35, RoomTarget)));
+        }
+    }
 
     /// <summary>
     /// Fits the area to the canvas: the rooms within <see cref="FitRadius"/> steps of the character's, centred in the open
@@ -227,11 +238,13 @@ internal sealed class MapCanvas : Control
         // them (the legend and the hint), so neither ever covers a room of the fitted view.
         var top = TopReserve();
         var bottom = BottomReserve(Bounds.Size);
-        var across = Math.Max(1, open - 24) / ((maxX - minX + 1.6) * Spacing);
-        var down = Math.Max(1, Bounds.Height - top - bottom) / ((maxY - minY + 1.6) * Spacing);
+        // Down, the span of rows plus a room (up to 0.56 of a step) and a name under the lowest; across, the span plus a
+        // room and room for the outer names (labels.Fit keeps any name that would leave the canvas inside it).
+        var across = Math.Max(1, open - 24) / ((maxX - minX + 1.3) * Spacing);
+        var down = Math.Max(1, Bounds.Height - top - bottom - NameRow) / ((maxY - minY + 0.6) * Spacing);
         _zoom = Math.Clamp(Math.Min(across, down), MinZoom, FitMaxZoom);
         var step = Spacing * _zoom;
-        _fit = new Vector(-(minX + maxX) / 2.0 * step, ((top - bottom) / 2) - ((minY + maxY) / 2.0 * step));
+        _fit = new Vector(-(minX + maxX) / 2.0 * step, ((top - bottom - NameRow) / 2) - ((minY + maxY) / 2.0 * step));
     }
 
     /// <summary>The player took the view: the fit stops following, and stays where it was.</summary>
@@ -726,7 +739,6 @@ internal sealed class MapCanvas : Control
         var accent = Parse(_ink.Bar);
         var path = Parse(_ink.Low);
         var radius = size * 0.19;
-        var names = NamesShown;
         var edge = new Pen(new SolidColorBrush(rule), Math.Clamp(size / 22, 1, 1.5));
         foreach (var room in _model.Rooms)
         {
@@ -789,9 +801,15 @@ internal sealed class MapCanvas : Control
                 context.DrawRectangle(null, ring, rect.Inflate(size * 0.3), radius * 2, radius * 2);
             }
 
-            if ((names || room.Current) && room.Id != _hovered)
+        }
+
+        // Names after every room, where the layout found them a place that covers no room and no other name.
+        foreach (var label in Labels(bounds))
+        {
+            if (label.Room != _hovered)
             {
-                DrawName(context, room.Name, c, size, plate: false);
+                context.DrawRectangle(new SolidColorBrush(_plane), null, label.Rect.Inflate(new Thickness(NativeTokens.Space2, 0)), 2, 2);
+                context.DrawText(label.Text, label.Rect.TopLeft);
             }
         }
 
@@ -891,6 +909,192 @@ internal sealed class MapCanvas : Control
         g.LineTo(c);
         g.EndFigure(isClosed: true);
         return geometry;
+    }
+
+    // ── Names: wider than the room, placed so that no two collide ──────────────────────────────────
+
+    /// <summary>A room's name where the layout put it: the room, the box it takes, the words as drawn (elided only when cut).</summary>
+    internal sealed record PlacedName(long Room, Rect Rect, FormattedText Text, bool Elided);
+
+    /// <summary>The height a name row takes under a room, its gap included: what the fit leaves under the lowest row.</summary>
+    private const double NameRow = NativeTokens.Space4 + 15;
+
+    /// <summary>The widest a name is drawn before it is elided even with the room for it.</summary>
+    internal const double NameMaxWidth = 168;
+
+    /// <summary>The narrowest an elided name is drawn: below it the name is left to the hover.</summary>
+    private const double NameMinWidth = 34;
+
+    private (MapViewModel Model, double Zoom, Vector Offset, Size Size, Color Plane, Color Text)? _labelsFor;
+    private List<PlacedName> _labels = [];
+
+    /// <summary>
+    /// Where each room's name is drawn at the view shown. The character's room is placed first, then the others nearest it
+    /// first. A name goes where it covers no room and no name already placed, on the canvas: under its room, over it or
+    /// beside it with every exit line clear; else straight under or over it across a line; else pulled to one side, clear
+    /// of lines if it can be, else crossing fewest. Only a name that fits nowhere is elided, to the room
+    /// under or over its room; one that has not <see cref="NameMinWidth"/> even then is left to the hover's plate. Below
+    /// <see cref="NamesFromStep"/> only the character's room is named. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<PlacedName> Labels(Rect bounds)
+    {
+        Fit();
+        var key = (_model, _zoom, _fit + _pan, bounds.Size, _plane, _text);
+        if (_labelsFor is { } was && ReferenceEquals(was.Model, key._model) && was.Zoom == key._zoom && was.Offset == key.Item3
+            && was.Size == key.Size && was.Plane == key._plane && was.Text == key._text)
+        {
+            return _labels;
+        }
+
+        _labelsFor = (key._model, key._zoom, key.Item3, key.Size, key._plane, key._text);
+        _labels = LayOutNames(bounds);
+        return _labels;
+    }
+
+    private List<PlacedName> LayOutNames(Rect bounds)
+    {
+        var placed = new List<PlacedName>();
+        if (_model.Rooms.Count == 0)
+        {
+            return placed;
+        }
+
+        var size = RoomSize;
+        // Between what is drawn above the rooms (the heading and the look buttons) and below them (the legend and the hint).
+        var top = TopReserve() - NativeTokens.Space4;
+        var bottom = bounds.Height - BottomReserve(bounds.Size) + NativeTokens.Space8;
+        var area = new Rect(bounds.X + 2, bounds.Y + top, Math.Max(0, bounds.Width - 4), Math.Max(0, bottom - top));
+        var visible = _model.Rooms
+            .Select(r => (Room: r, Centre: CentreOf(r)))
+            .Where(r => bounds.Inflate(size).Contains(r.Centre))
+            .ToList();
+        var boxes = visible.Select(r => new Rect(r.Centre.X - (size / 2) - 2, r.Centre.Y - (size / 2) - 2, size + 4, size + 4)).ToList();
+        var byId = visible.ToDictionary(r => r.Room.Id, r => r.Centre);
+        var lines = _model.Exits
+            .Where(e => byId.ContainsKey(e.From) && byId.ContainsKey(e.To))
+            .Select(e => (byId[e.From], byId[e.To]))
+            .ToList();
+
+        var anchor = _model.Current ?? _model.Rooms[0];
+        var order = visible
+            .Where(r => NamesShown || r.Room.Current)
+            .OrderBy(r => r.Room.Current ? 0 : 1)
+            .ThenBy(r => Math.Abs(r.Room.X - anchor.X) + Math.Abs(r.Room.Y - anchor.Y))
+            .ThenBy(r => r.Room.Y)
+            .ThenBy(r => r.Room.X);
+        foreach (var (room, c) in order)
+        {
+            var full = PanelText.Format(room.Name, NativeTokens.Small, DimInk, bold: false, NameMaxWidth);
+            var w = full.Width;
+            var h = full.Height;
+            bool Free(Rect r, bool exits) =>
+                area.Contains(r)
+                && !boxes.Any(b => b.Intersects(r))
+                && !placed.Any(p => p.Rect.Inflate(new Thickness(NativeTokens.Space4, NativeTokens.Space2)).Intersects(r))
+                && (!exits || !lines.Any(l => Crosses(l.Item1, l.Item2, r)));
+
+            var below = c.Y + (size / 2) + NativeTokens.Space4;
+            var above = c.Y - (size / 2) - NativeTokens.Space4 - h;
+            var middle = c.Y - (h / 2);
+            Rect[] Places(double width) =>
+            [
+                new(c.X - (width / 2), below, width, h),
+                new(c.X - (width / 2), above, width, h),
+                new(c.X + (size / 2) + 6, middle, width, h),
+                new(c.X - (size / 2) - 6 - width, middle, width, h),
+                new(c.X - (size / 2), below, width, h),
+                new(c.X + (size / 2) - width, below, width, h),
+                new(c.X - (size / 2), above, width, h),
+                new(c.X + (size / 2) - width, above, width, h),
+
+                // Clear of a line straight down or up out of the room: just to one side of its middle.
+                new(c.X + NativeTokens.Space4, below, width, h),
+                new(c.X - NativeTokens.Space4 - width, below, width, h),
+                new(c.X + NativeTokens.Space4, above, width, h),
+                new(c.X - NativeTokens.Space4 - width, above, width, h),
+            ];
+
+            var places = Places(w).Select(r => Inside(r, area)).ToArray();
+            // Under, over or beside the room with every line clear; else straight under or over it across a line (its plate
+            // breaks the line, and the name still reads as the room's); only then pulled to one side.
+            var spot = places.Take(4).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value, exits: true))
+                ?? places.Take(2).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value, exits: false))
+                ?? places.Skip(4).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value, exits: true))
+                ?? places.Where(r => Free(r, exits: false))
+                    .Select(r => (Rect?)r)
+                    .OrderBy(r => lines.Count(l => Crosses(l.Item1, l.Item2, r!.Value)))
+                    .FirstOrDefault();
+            if (spot is { } found)
+            {
+                placed.Add(new PlacedName(room.Id, Snap(found), full, Elided: false));
+                continue;
+            }
+
+            // Nowhere whole: the widest elision that fits under or over the room, centred on it.
+            for (var width = Math.Floor(w) - 6; width >= NameMinWidth; width -= 6)
+            {
+                var cut = PanelText.Format(room.Name, NativeTokens.Small, DimInk, bold: false, width);
+                var fits = new[] { new Rect(c.X - (cut.Width / 2), below, cut.Width, h), new Rect(c.X - (cut.Width / 2), above, cut.Width, h) }
+                    .Select(r => Inside(r, area))
+                    .Cast<Rect?>()
+                    .FirstOrDefault(r => Free(r!.Value, exits: false));
+                if (fits is { } at)
+                {
+                    placed.Add(new PlacedName(room.Id, Snap(at), cut, Elided: true));
+                    break;
+                }
+            }
+        }
+
+        return placed;
+    }
+
+    /// <summary><paramref name="r"/> moved the least distance that puts it inside <paramref name="area"/> across (rows stay).</summary>
+    private static Rect Inside(Rect r, Rect area)
+    {
+        var x = Math.Min(Math.Max(r.X, area.X), Math.Max(area.X, area.Right - r.Width));
+        return new Rect(x, r.Y, r.Width, r.Height);
+    }
+
+    private static Rect Snap(Rect r) => new(Math.Round(r.X), Math.Round(r.Y), r.Width, r.Height);
+
+    /// <summary>Whether the segment from <paramref name="a"/> to <paramref name="b"/> passes through <paramref name="r"/> (Liang–Barsky).</summary>
+    internal static bool Crosses(Point a, Point b, Rect r)
+    {
+        double t0 = 0, t1 = 1;
+        var dx = b.X - a.X;
+        var dy = b.Y - a.Y;
+        bool Clip(double p, double q)
+        {
+            if (Math.Abs(p) < 1e-9)
+            {
+                return q >= 0;
+            }
+
+            var t = q / p;
+            if (p < 0)
+            {
+                if (t > t1)
+                {
+                    return false;
+                }
+
+                t0 = Math.Max(t0, t);
+            }
+            else
+            {
+                if (t < t0)
+                {
+                    return false;
+                }
+
+                t1 = Math.Min(t1, t);
+            }
+
+            return true;
+        }
+
+        return Clip(-dx, a.X - r.Left) && Clip(dx, r.Right - a.X) && Clip(-dy, a.Y - r.Top) && Clip(dy, r.Bottom - a.Y) && t0 <= t1;
     }
 
     /// <summary>A room's name centred under it; on a plate of the pane's own colour when <paramref name="plate"/>.</summary>

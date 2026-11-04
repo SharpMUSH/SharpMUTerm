@@ -165,10 +165,14 @@ fallbacks) for inline images/maps.
     carries `Up`/`Down` (an up/down exit or stub, or an exit to a room on another level) and `Elsewhere` (the
     other area an exit leads to). The cells draw a one-line legend on the last row from 6 rows up — words go
     first, then names shorten, then areas are counted (`+2`); it never wraps. The window opens fitted (`MapCanvas.Fit`: the
-    rooms within 6 steps of the character's, up to zoom 2.4) and refits on a new model until the player zooms or pans
-    (`Fitted`; a double-click or another level or area fits again); it names rooms whenever a step is 40 px or more
+    rooms within 6 steps of the character's, up to a 90 px step, the mockup's) and refits on a new model until the player zooms or pans
+    (`Fitted`; a double-click or another level or area fits again); rooms are the mockup's 32 px (`RoomTarget`) wherever the
+    step leaves a line between boxes (`RoomSize`: at most 0.56 of a step). It names rooms whenever a step is 40 px or more
     (`NamesFromStep`), the current room always, plus the hovered name on a plate, stairs triangles, a halo on the
-    current room and a legend plate.
+    current room and a legend plate. **Names are laid out, not centred blindly** (`Labels`/`LayOutNames`, cached per view):
+    the character's room first, then nearest first, each whole (up to `NameMaxWidth`) at the first place covering no room,
+    no placed name and staying between the look buttons and the legend — under, over or beside with every exit clear, else
+    straight under/over across a line, else pulled aside — and elided only where none fits (under `NameMinWidth`: hover only).
   - **A speedwalk sends one step and waits for the map to say it arrived** (`Speedwalk`); it goes through
     `SendCommandAsync`, so the recorder sees the step. It stops off the path, on the world's
     `WalkFailurePattern`, after `StepTimeout` with no room, and on disconnect.
@@ -1456,6 +1460,12 @@ fallbacks) for inline images/maps.
     (no tab strip, above), the cells draw name and numbers over a full-width bar (`VitalsStripRenderer.RenderCard`, chosen by box
     height ≥ 3), and at 20 px rows the window's gauges stack in it, headed. Decided from the tree on every rebuild, so a
     player's own layout gets it too; the terminal mockup's top strip is the narrow arrangement, not the wide one.
+    **Where the host draws strips (`HostChrome.Strips`, the window) the card is as tall as its gauges**
+    (`VitalsGaugeCardRows` = 2 a meter + 4, + 2 only while a target is named; `SharpMUTermApp.MapColumn.cs`), so the map
+    gets the rows; a target arriving or a meter appearing re-lays the pane area (`ResizeVitalsCard`, on the panel's game
+    data change, only when the rows differ). The column is beside the output, so no NAWS moves. The terminal keeps the
+    reserved card. **There too a pane holding the map window alone draws no tab strip** (`ApplyLoneMapPanes`, under
+    `HostChrome.Tabs`): the native map's heading names it. The terminal keeps its strip (the cell map's drag handle and ×).
   - **The status row leaves its meters out while the vitals strip shows them** (`VitalsStripShowing`: the status
     row's character's vitals window is the front tab of a drawn pane, zoom included). `SyncStatusMeters` repaints
     the row only when that flips (on a rebuild or an activation), so a notice is not displaced for nothing. The

@@ -30,6 +30,14 @@ public static class PanelSizing
     public static int VitalsCardRows(int meters) => (2 * Math.Max(0, meters)) + 6;
 
     /// <summary>
+    /// The rows a vitals card takes where the host draws it as stacked gauges (<c>HostChrome.Strips</c>, the window): the
+    /// heading, two twenty-pixel rows a meter, and the target's two only while the game names one, so the card is as tall
+    /// as what it shows and the map under it has the rest. A target arriving re-lays the side column there, which costs
+    /// no output cell (the column is beside the output) and so no NAWS.
+    /// </summary>
+    public static int VitalsGaugeCardRows(int meters, bool target) => (2 * Math.Max(0, meters)) + (target ? 6 : 4);
+
+    /// <summary>
     /// The rows a quick bar takes where the host draws it as a strip of buttons (<c>HostChrome.Strips</c>, the window):
     /// three twenty-pixel rows hold the mockups' 34-pixel buttons with their padding. Everywhere else it is one row.
     /// </summary>
@@ -116,7 +124,13 @@ public static class PanelSizing
     /// meters the character behind a vitals window has, by window id.
     /// </summary>
     /// <param name="quickBarRows">The rows a quick bar takes (see <see cref="Apply"/>).</param>
-    public static void ApplyAll(LayoutNode root, Func<string, string?> panelOf, int tabStripRows, Func<string, int> vitalsMetersOf, int quickBarRows = 1)
+    /// <param name="cardRowsOf">
+    /// The rows a vitals card takes, by window id, where the host says (<see cref="VitalsGaugeCardRows"/>); null for
+    /// <see cref="VitalsCardRows"/> of <paramref name="vitalsMetersOf"/>.
+    /// </param>
+    public static void ApplyAll(
+        LayoutNode root, Func<string, string?> panelOf, int tabStripRows, Func<string, int> vitalsMetersOf, int quickBarRows = 1,
+        Func<string, int>? cardRowsOf = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(vitalsMetersOf);
@@ -126,7 +140,7 @@ public static class PanelSizing
             if (share < CardBelowWidthShare
                 && pane.Tabs.FirstOrDefault(t => string.Equals(panelOf(t), PanelIds.Vitals, StringComparison.Ordinal)) is { } vitals)
             {
-                card = VitalsCardRows(vitalsMetersOf(vitals));
+                card = cardRowsOf is not null ? cardRowsOf(vitals) : VitalsCardRows(vitalsMetersOf(vitals));
             }
 
             Apply(pane, panelOf, tabStripRows, card, quickBarRows);
