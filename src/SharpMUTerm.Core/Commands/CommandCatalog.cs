@@ -44,6 +44,7 @@ public sealed record CharacterRef(
 /// <param name="Announced">
 /// Null where the host has no screen reader to tell; otherwise whether the active window's output is read aloud.
 /// </param>
+/// <param name="OutputSelected">Whether some pane's output is selected, so a trigger can be made from it.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -55,7 +56,8 @@ public sealed record CommandContext(
     bool ScriptsOn = false,
     bool Walking = false,
     bool? Sound = null,
-    bool? Announced = null);
+    bool? Announced = null,
+    bool OutputSelected = false);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host

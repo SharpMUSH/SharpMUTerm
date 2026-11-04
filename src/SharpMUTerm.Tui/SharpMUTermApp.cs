@@ -1401,6 +1401,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ReArmWholeFrame();
         }
 
+        // The trigger builder: a real drag across a line of output, then the real ⌃P entry, so the frame is
+        // F2 opened on the rule it made — the suggested pattern being typed, the regex behind it, and the
+        // live test counting the lines it already matches.
+        if (string.Equals(view, "trigger-builder", StringComparison.OrdinalIgnoreCase))
+        {
+            StageTriggerBuilder();
+        }
+
         // A selection in the command line: the same band on the bar the panes use, made by a real drag
         // through the bar's own mouse handler across part of the demo's draft. In FrameContrastTests'
         // list for "selection"'s reason, and because here the band sits on a tinted input row instead.
@@ -7117,11 +7125,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// buttons, and the cursor has to leave the list to press one. The selection is what the editor
     /// pane and the <c>[[- del]]</c> row are about, and it stays on the rule the user was looking at.
     /// </summary>
-    private ScreenBinding TriggersScreen()
+    private ScreenBinding TriggersScreen() => TriggersScreen(editPattern: null);
+
+    /// <param name="editPattern">
+    /// A rule to open with its pattern field already being typed into — the trigger builder's landing —
+    /// as its index in the flattened list, or null to open the screen as F2 does.
+    /// </param>
+    private ScreenBinding TriggersScreen(int? editPattern)
     {
         var session = new SettingsSession(selection =>
             TriggersScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0), RouteTargets()),
             SaveConfiguration);
+        if (editPattern is { } rule)
+        {
+            session.Selection.Seed(0, rule);
+            session.OpenField(TriggersScreenRenderer.PatternField);
+        }
 
         return new ScreenBinding(session, () => TriggersScreenView.Build(
             _config.TriggerSets,
@@ -7130,7 +7149,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _system.DesktopDimensions.Width,
             session.Focus(),
             _system.DesktopDimensions.Height,
-            _theme));
+            _theme,
+            TriggerTestLines()));
     }
 
     /// <summary>Opens the F3 Aliases screen: the alias list, then the alias's toggles.</summary>
@@ -7709,7 +7729,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ScriptsOn: _scriptsRoot is not null,
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
             Sound: CanPlaySound ? !_muted : null,
-            Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()));
+            Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
+            OutputSelected: HasOutputSelection);
     }
 
     /// <summary>
@@ -8100,6 +8121,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:copy":
                 return CopySelection();
+            case "term:trigger-from-selection":
+                return MakeTriggerFromSelection();
             case "term:messages":
                 if (!ComposerIsInTheWay("the client messages"))
                 {

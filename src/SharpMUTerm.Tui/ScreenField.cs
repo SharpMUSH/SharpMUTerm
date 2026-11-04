@@ -572,6 +572,27 @@ internal readonly record struct ScreenField(
         return new ScreenField(label, get, ValidatePattern, set);
     }
 
+    /// <summary>
+    /// A trigger's pattern, refused unless it can be used as the kind the rule reads it as — only a regex
+    /// can fail to parse, and the plain kinds refuse only the patterns that would match every line
+    /// (<see cref="TriggerPatterns.Validate"/>).
+    /// </summary>
+    internal static ScreenField TriggerPattern(
+        string label, Func<string> get, Action<string> set, Func<TriggerMatchType> type)
+    {
+        ArgumentNullException.ThrowIfNull(get);
+        ArgumentNullException.ThrowIfNull(set);
+        ArgumentNullException.ThrowIfNull(type);
+
+        return new ScreenField(
+            label,
+            get,
+            value => TriggerPatterns.Validate(type(), value) is { } reason
+                ? (reason.Length > MaxErrorLength ? string.Concat(reason.AsSpan(0, MaxErrorLength - 1), "…") : reason)
+                : null,
+            set);
+    }
+
     /// <summary>A <see cref="Pattern"/> that may be blank, held as null when it is: a pattern a world need not have.</summary>
     internal static ScreenField OptionalPattern(string label, Func<string?> get, Action<string?> set)
     {

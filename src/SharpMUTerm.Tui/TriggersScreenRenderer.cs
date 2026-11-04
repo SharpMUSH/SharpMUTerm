@@ -95,6 +95,23 @@ internal static class TriggersScreenRenderer
     internal const int SetField = 9;
 
     /// <summary>
+    /// How the pattern is read — <see cref="Trigger.MatchType"/>, offered in plain words. Appended for the
+    /// reason <see cref="SetField"/> was, though the editor draws it <em>above</em> the pattern: a player
+    /// should meet "contains the text" before they meet a regex.
+    /// </summary>
+    internal const int MatchTypeField = 10;
+
+    /// <summary>The words the match field offers, in the order <see cref="TriggerPatterns.Offered"/> gives.</summary>
+    internal static IReadOnlyList<string> MatchTypeNames { get; } =
+        TriggerPatterns.Offered.Select(TriggerPatterns.Describe).ToArray();
+
+    /// <summary>
+    /// How many sample rows the live test always draws, matching or not, so the rows under it do not jump
+    /// as a pattern being typed gains and loses matches.
+    /// </summary>
+    internal const int TestSampleRows = TriggerPreview.DefaultSamples;
+
+    /// <summary>
     /// How wide the <c>fg</c> / <c>bg</c> / <c>attrs</c> and <c>rewrite</c> / <c>respond</c> /
     /// <c>script</c> labels are padded, so the field wells in each section start in the same column.
     /// </summary>
@@ -298,8 +315,11 @@ internal static class TriggersScreenRenderer
         var rules = ScreenModel.Rows(flattened, entry => ScreenRow.Of(
             ScreenToggle.Bind(() => entry.Trigger.Enabled, v => entry.Trigger.Enabled = v),
             ScreenField.Name("name", () => entry.Trigger.Name, v => entry.Trigger.Name = v),
-            ScreenField.Pattern(
-                "match pattern", () => entry.Trigger.Pattern, v => entry.Trigger.Pattern = v),
+            ScreenField.TriggerPattern(
+                "match pattern",
+                () => entry.Trigger.Pattern,
+                v => entry.Trigger.Pattern = v,
+                () => entry.Trigger.MatchType),
             ScreenField.WindowName(
                 "route",
                 () => Route(entry.Trigger),
@@ -328,7 +348,12 @@ internal static class TriggersScreenRenderer
                 () => entry.Trigger.Actions.ScriptCallback,
                 v => entry.Trigger.Actions.ScriptCallback = v,
                 Callbacks(entry.Trigger, callbacks)),
-            ScreenLists.Owner(sets, s => s.Triggers, entry.Trigger)))
+            ScreenLists.Owner(sets, s => s.Triggers, entry.Trigger),
+            ScreenField.Choice(
+                "match",
+                () => TriggerPatterns.Describe(entry.Trigger.MatchType),
+                v => SetMatchType(entry.Trigger, TriggerPatterns.Parse(v) ?? entry.Trigger.MatchType),
+                MatchTypeNames)))
             .Concat(Buttons(sets, selectedTrigger))
             .ToArray();
 
@@ -348,6 +373,23 @@ internal static class TriggersScreenRenderer
         };
 
         return new ScreenModel(rules, editor);
+    }
+
+    /// <summary>
+    /// Changes how a rule's pattern is read. Moving <em>to</em> a regex rewrites the pattern as the regex
+    /// it already meant, so the rule goes on matching exactly what it matched and the player sees the raw
+    /// form of what they built; moving away leaves the text as typed, because there is no plain-language
+    /// reading of an arbitrary regex to convert it to.
+    /// </summary>
+    internal static void SetMatchType(Trigger trigger, TriggerMatchType type)
+    {
+        ArgumentNullException.ThrowIfNull(trigger);
+        if (type == TriggerMatchType.Regex && trigger.MatchType != TriggerMatchType.Regex)
+        {
+            trigger.Pattern = TriggerPatterns.ToRegex(trigger.MatchType, trigger.Pattern);
+        }
+
+        trigger.MatchType = type;
     }
 
     /// <summary>
@@ -454,7 +496,7 @@ internal static class TriggersScreenRenderer
             foreach (var trigger in set.Triggers)
             {
                 left.Add(ScreenChrome.Cursor(
-                    RuleRow(row, selectedTrigger, trigger), cursor.IsOn(0, row), width));
+                    RuleRow(row, selectedTrigger, trigger, width), cursor.IsOn(0, row), width));
                 left.Add(RuleSub(set.Name, trigger.Actions));
                 row++;
             }
@@ -541,7 +583,8 @@ internal static class TriggersScreenRenderer
         ScreenFocus? focus = null,
         int width = ColumnWidth,
         int height = 0,
-        Theme? theme = null)
+        Theme? theme = null,
+        IReadOnlyList<string>? recent = null)
     {
         ArgumentNullException.ThrowIfNull(sets);
         ArgumentNullException.ThrowIfNull(routeTargets);
@@ -557,7 +600,8 @@ internal static class TriggersScreenRenderer
                 selectedTrigger,
                 width,
                 height,
-                theme is null ? null : WorkspacePalette.ReadingPlane(theme))
+                theme is null ? null : WorkspacePalette.ReadingPlane(theme),
+                recent)
             : new List<string>();
     }
 
@@ -576,7 +620,7 @@ internal static class TriggersScreenRenderer
         return flattened;
     }
 
-    private static string RuleRow(int index, int selectedTrigger, Trigger trigger)
+    private static string RuleRow(int index, int selectedTrigger, Trigger trigger, int width = 0)
     {
         var marker = index == selectedTrigger ? "[bold]▸[/]" : " ";
         var box = trigger.Enabled ? $"[{Accent}]✓[/]" : "[dim]·[/]";
@@ -585,7 +629,18 @@ internal static class TriggersScreenRenderer
         // window, the list would have gone on calling it `main` — the two surfaces disagreeing about one
         // rule, which is the shape of the confusion the rename exists to remove.
         var target = Route(trigger);
-        return $"{marker} {box} [bold]{Escape(trigger.Name)}[/] [dim]{Escape(trigger.Pattern)}[/] [dim]→ {Escape(target)}[/]";
+
+        // The pattern gives way first when the row is wider than its column: a row that wrapped put its
+        // route at the start of the next row, where it read as part of the rule under it. A rule made from
+        // a selection is the usual cause — its name and pattern are both a line of output long.
+        var pattern = trigger.Pattern;
+        if (width > 0)
+        {
+            var room = width - 1 - (4 + trigger.Name.Length + 1 + 3 + target.Length);
+            pattern = Fit(pattern, Math.Max(1, room));
+        }
+
+        return $"{marker} {box} [bold]{Escape(trigger.Name)}[/] [dim]{Escape(pattern)}[/] [dim]→ {Escape(target)}[/]";
     }
 
     private static string RuleSub(string owningSet, TriggerActions actions) =>
@@ -640,7 +695,8 @@ internal static class TriggersScreenRenderer
         int index,
         int width = ColumnWidth,
         int height = 0,
-        Rgb? plane = null)
+        Rgb? plane = null,
+        IReadOnlyList<string>? recent = null)
     {
         var name = cursor.EditOn(0, index, NameField);
         var set = cursor.EditOn(0, index, SetField);
@@ -652,6 +708,14 @@ internal static class TriggersScreenRenderer
         var rewrite = cursor.EditOn(0, index, RewriteField);
         var response = cursor.EditOn(0, index, ResponseField);
         var script = cursor.EditOn(0, index, ScriptField);
+        var match = cursor.EditOn(0, index, MatchTypeField);
+
+        // What the live test and the regex line read: the buffers while they are open, so both follow the
+        // keystroke rather than the last commit.
+        var matchType = match is { } typing && TriggerPatterns.Parse(typing.Text) is { } typed
+            ? typed
+            : trigger.MatchType;
+        var patternText = pattern?.Text ?? trigger.Pattern;
 
         // While the route field is open the radios follow the *buffer*, not config, so ↑↓ visibly move
         // the dot before anything is committed — the buffer is what ⏎ would write.
@@ -672,8 +736,27 @@ internal static class TriggersScreenRenderer
             "[dim]set[/]",
             $"  {ScreenChrome.Field($"[{Value}]{Escape(setName)}[/]", set)}",
             string.Empty,
-            "[dim]match pattern (regex)[/]",
+
+            // How the pattern is read, in plain words, on the heading row itself and so before the pattern
+            // — a player who has never written a regex meets the three kinds they can use first. It costs
+            // no row: this pane already runs to the height of a 24-row terminal. The raw regex is still
+            // drawn, under a plain pattern, so nothing that was visible before is hidden now.
+            $"[dim]match pattern[/]  {ScreenChrome.Field($"[{Value}]{Escape(TriggerPatterns.Describe(trigger.MatchType))}[/]", match)}",
             $"  {ScreenChrome.Field(Escape(trigger.Pattern), pattern)}",
+        };
+
+        if (matchType != TriggerMatchType.Regex)
+        {
+            lines.Add(RegexRow(matchType, patternText, width));
+        }
+
+        if (recent is not null)
+        {
+            lines.AddRange(TestRows(recent, matchType, patternText, trigger.CaseSensitive, width));
+        }
+
+        lines.AddRange(new[]
+        {
             string.Empty,
             // The caption is here as well as over the actions section because the route expands captures
             // too: "Channel $1" against ^<(.+?)> is one rule feeding a pane per channel, and a reader who
@@ -689,7 +772,7 @@ internal static class TriggersScreenRenderer
             // field is open (ScreenChrome.Choices, applied to this whole column at the end) — which is
             // what a radio group was really offering, without pretending the set is closed.
             $"  {ScreenChrome.Field(Escape(currentRoute), route)}",
-        };
+        });
 
         var fg = trigger.Actions.HighlightForeground;
         var bg = trigger.Actions.HighlightBackground;
@@ -737,6 +820,98 @@ internal static class TriggersScreenRenderer
         // and the script callback — and all four get the same drawn list, over the rows beside them.
         return ScreenChrome.Choices(lines, cursor.Edit, width);
     }
+
+    /// <summary>
+    /// The regex a plain-language pattern compiles to, drawn under it: it is what the engine will run, and
+    /// a player outgrowing the plain kinds learns the syntax from the rules they already wrote.
+    /// </summary>
+    private static string RegexRow(TriggerMatchType type, string pattern, int width)
+    {
+        const string Label = "  regex ";
+        var regex = TriggerPatterns.ToRegex(type, pattern);
+        return $"[dim]{Label}[/]{ScreenChrome.ReadOnly(Fit(regex, width - Label.Length - 2))}";
+    }
+
+    /// <summary>
+    /// The live test: how many of the recent lines the pattern matches, and the newest few of them with the
+    /// match marked. It is always <see cref="TestSampleRows"/> + 1 rows, whatever the pattern does, so typing
+    /// never moves the rows below it — and a pattern that does not parse yet is a state written in the
+    /// muted ink, not a warning: a regex is unparseable most of the time it is being typed.
+    /// </summary>
+    internal static List<string> TestRows(
+        IReadOnlyList<string> recent, TriggerMatchType type, string pattern, bool caseSensitive, int width)
+    {
+        ArgumentNullException.ThrowIfNull(recent);
+
+        var result = TriggerPreview.Run(recent, type, pattern, caseSensitive);
+        var room = Math.Max(8, width - 8);
+        string caption;
+        if (result.Problem is { } problem)
+        {
+            caption = "· not a pattern yet: " + problem;
+        }
+        else if (result.Tested == 0)
+        {
+            caption = "· no output held yet to try it on";
+        }
+        else
+        {
+            var held = result.Tested.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+            var count = result.Matched.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+            caption = result.Matched == 0
+                ? $"· none of the last {held} lines match"
+                : $"· {count} of the last {held} lines match";
+        }
+
+        var rows = new List<string> { $"[dim]test[/]  {ScreenChrome.ReadOnly(Fit(caption, room))}" };
+        foreach (var sample in result.Samples)
+        {
+            rows.Add("  " + Sample(sample.Text, sample.MatchStart, sample.MatchLength, Math.Max(8, width - 4)));
+        }
+
+        while (rows.Count < TestSampleRows + 1)
+        {
+            // A space, not empty: ScreenChrome.Compact drops empty rows, and these are reserved.
+            rows.Add(" ");
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// One matching line, cut to <paramref name="width"/> around its match so the match is always on
+    /// screen, with the matched run in the accent — the search surface's way of saying why a row is listed.
+    /// </summary>
+    internal static string Sample(string text, int start, int length, int width)
+    {
+        const string Ellipsis = "…";
+        var from = 0;
+        if (text.Length > width)
+        {
+            // Lead in with a few cells of context before the match, and never leave slack at the end.
+            from = Math.Clamp(start - 6, 0, Math.Max(0, text.Length - width + Ellipsis.Length));
+        }
+
+        var head = from > 0 ? Ellipsis : string.Empty;
+        var room = width - head.Length;
+        var take = Math.Min(text.Length - from, room);
+        var tail = string.Empty;
+        if (from + take < text.Length)
+        {
+            take = Math.Max(0, room - Ellipsis.Length);
+            tail = Ellipsis;
+        }
+
+        var shown = text.Substring(from, take);
+        var hitStart = Math.Clamp(start - from, 0, shown.Length);
+        var hitEnd = Math.Clamp(start + length - from, hitStart, shown.Length);
+        return $"[dim]{head}[/]{Escape(shown[..hitStart])}[bold {Accent}]{Escape(shown[hitStart..hitEnd])}[/]"
+            + $"{Escape(shown[hitEnd..])}[dim]{tail}[/]";
+    }
+
+    /// <summary>Text cut to <paramref name="width"/> cells with an ellipsis.</summary>
+    private static string Fit(string text, int width) =>
+        width <= 1 || text.Length <= width ? text : string.Concat(text.AsSpan(0, width - 1), "…");
 
     /// <summary>A checkbox row in the editor pane, checked in the accent and unchecked dim.</summary>
     private static string Checkbox(string label, bool value) =>

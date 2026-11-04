@@ -21,7 +21,7 @@ internal static class SnapshotViews
         "compose", "compose-literal", "moo-edit", "mssp", "mssp-none", "mssp-never", "web",
         "rail-long", "scrollback", "scrollback-up", "links", "away", "away-scrollback",
         "search", "search-regex", "search-all", "search-landed", "activity-bar",
-        "mxp-image", "mxp-figure", "input-selection", "selection",
+        "mxp-image", "mxp-figure", "input-selection", "selection", "trigger-builder",
         "prefix", "prefix-panel", "focus", "focus-moved", "tabs", "tabs-many",
         "collapsed", "timestamps", "timestamps-toggled", "prompt", "meters", "gamedata", "map", "map-walking", "map-split",
         "packages", "package-review", "package-browse", "send-menu",

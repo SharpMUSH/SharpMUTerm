@@ -58,7 +58,7 @@ public static class OutputSearch
     /// over every line of every window — so a pattern that backtracks catastrophically has to come back
     /// as an error rather than wedge the client.
     /// </summary>
-    private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
+    internal static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// The lines of <paramref name="lines"/> matching <paramref name="query"/>, in the order they were

@@ -547,9 +547,16 @@ public class TriggerSetManagementTests
         }
 
         session.Handle(Key(ConsoleKey.DownArrow));
-        session.Handle(Key(ConsoleKey.Tab)); // commits the move and wraps to field 0
+        session.Handle(Key(ConsoleKey.Tab)); // commits the move and steps to the field after the set
 
+        // The match kind follows the set now (it was appended after it), and it belongs to the moved
+        // rule: a regex rule reads "regular expression".
         var edit = session.Focus().Edit!.Value;
+        await Assert.That(edit.Field).IsEqualTo(TriggersScreenRenderer.MatchTypeField);
+        await Assert.That(edit.Text).IsEqualTo("regular expression");
+
+        session.Handle(Key(ConsoleKey.Tab)); // and wraps to field 0 of the same rule
+        edit = session.Focus().Edit!.Value;
         await Assert.That(edit.Field).IsEqualTo(TriggersScreenRenderer.NameField);
         await Assert.That(edit.Text).IsEqualTo("Spam");
     }

@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Make a trigger without writing a regex: select a line of output and choose Ctrl+P ▸ *Make a trigger from
+  the selection* (also on the right-click menu). Triggers (F2) opens on a new rule whose pattern is the line
+  with its numbers, quoted speech and known player names turned into `*`, and shows the regex behind it.
+  While you edit a pattern, F2 shows how many recent lines it matches and the newest few, and a rule can now
+  match "contains the text", "starts with" or "matches with * wildcards" as well as a regular expression.
 - `/connect <host> [port] [tls]` adds a world and connects to it, and `/connect <name>` opens a configured
   one. It is the way to add a world in `--plain`, where the settings screens cannot be used.
 - The desktop window bundles JetBrains Mono and the Nerd Font symbols, so its icons draw on a machine with no

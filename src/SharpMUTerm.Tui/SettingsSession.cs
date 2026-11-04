@@ -371,6 +371,17 @@ internal sealed class SettingsSession
         return ScreenAction.Redraw;
     }
 
+    /// <summary>
+    /// Opens a field of the focused row as though ⏎ and ⇥ had reached it — how a screen opened <em>for</em>
+    /// something (F2 from a selection) lands in the field that something is about.
+    /// </summary>
+    internal void OpenField(int field)
+    {
+        var model = _model(Selection);
+        Selection.Clamp(model.Sizes);
+        Open(model, field);
+    }
+
     /// <summary>Opens a field of the focused row, seeding the buffer with its current value.</summary>
     private void Open(ScreenModel model, int field)
     {

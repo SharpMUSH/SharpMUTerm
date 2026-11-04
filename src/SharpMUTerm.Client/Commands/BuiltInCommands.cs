@@ -106,6 +106,10 @@ public static class BuiltInCommands
         Add("term:copy", CommandGroup.Terminal, "Copy the selection", "⌃C",
             "drag across a pane or the command line, or ⇧← ⇧→ there");
 
+        // The trigger builder's way in, only with output selected: the entry is "this line, as a rule".
+        Add("term:trigger-from-selection", CommandGroup.Terminal, "Make a trigger from the selection",
+            detail: "opens F2 with the rule ready", when: c => c.State.OutputSelected);
+
         // The client's own messages — the status-line notices that dismiss themselves — kept out of the
         // output window (and so out of the session log) and readable here instead.
         Add("term:messages", CommandGroup.Terminal, "Show client messages", detail: "status-line notices");

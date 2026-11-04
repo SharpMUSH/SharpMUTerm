@@ -1035,6 +1035,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   own hit test rather than a highlight posed by hand — the only frame carrying `WorkspacePalette.SelectionBand`,
   which is why it is in `FrameContrastTests`' list: the band is the one plane this client invents rather
   than derives from a pane, and its ink replaces the world's own on every selected cell),
+  `trigger-builder` (a real drag across a line of output and the real ⌃P *Make a trigger from the
+  selection*, so F2 opens on the suggested wildcard rule with its regex and the live test counting),
   `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
@@ -1958,6 +1960,27 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `DiscordIpc.Show` never blocks: a worker sends only the newest value, reads and discards each reply (bounded
   in size and time), and on a failed connect does not retry until the next update. The application id is the
   game's; this client registers none. The snapshot and every test host have `Presence = null`.
+- **The trigger builder makes a plain-language rule from selected output** (`TriggerMatchType`,
+  `TriggerPatterns`, `TriggerSuggestion`, `TriggerPreview`, Core; `SharpMUTermApp.TriggerBuilder.cs`; ⌃P
+  `term:trigger-from-selection`; the `trigger-builder` view). Decisions not to relitigate:
+  - **Every match kind compiles to one regex** (`TriggerPatterns.ToRegex`), so the engine, captures and the
+    timeout are unchanged. `Regex` is the enum's first member and so the default: a rule with no `matchType`
+    means what it always meant, and the schema version did not move. A `*` wildcard is a capture (lazy, the
+    last one greedy) and matches anywhere in the line, like *contains*; `\*` is a literal asterisk.
+  - **The suggestion guesses three things and nothing else**: numbers, the inside of double quotes, and the
+    GMCP player names `CompletionIndex.Names()` holds, as whole words. A line with nothing variable, or only
+    variable, becomes *contains the text*, never a pattern of bare `*`.
+  - **The rule is made at once, then F2 opens on it with the pattern field open** (`SettingsSession.OpenField`).
+    It has no actions, so it changes nothing until given one. It goes in the selection window's character's
+    first listed set, else the first set, else a new `My triggers` set listed on that character. Package
+    sets are never written to.
+  - **The live test is `OutputSearch`'s corpus and safeguards**: every window a pane holds (focused window
+    last, so its lines count as newest), the newest 2,000, a 100 ms match timeout, and an invalid pattern as a
+    muted state. Unlike ⌃F a zero-width match counts, because the engine fires on one. It always draws four
+    rows so typing never moves the rows below.
+  - **The match kind is field 10, appended**, though it is drawn on the `match pattern` heading row: that
+    keeps every ordinal and costs no row in a pane that already fills a 24-row screen. Switching *to* a
+    regex rewrites the pattern as the regex it meant, so the rule keeps matching what it matched.
 - **The send group is session keys in memory** (`SendGroup`, Core; `SharpMUTermApp.SendGroup.cs`; ⌃P `group:`
   ids). It is never saved, because a saved group would be a standing order to send one line to several worlds.
   It is offered once two characters are open. Members are marked on the rail by swapping the dot for ◆/◇ in

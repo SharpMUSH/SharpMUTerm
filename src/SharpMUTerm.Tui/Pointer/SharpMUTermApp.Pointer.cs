@@ -450,7 +450,7 @@ internal sealed partial class SharpMUTermApp
 
                 AddCommands(
                     items,
-                    "term:copy", null,
+                    "term:copy", "term:trigger-from-selection", null,
                     "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close", null,
                     "term:freeze", "term:unfreeze", "term:scroll-live", "term:clear", "term:timestamps-on", "term:timestamps-off");
                 break;

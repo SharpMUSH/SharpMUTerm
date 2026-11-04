@@ -23,7 +23,8 @@ internal static class TriggersScreenView
         int width,
         ScreenFocus? focus = null,
         int height = 0,
-        Theme? theme = null)
+        Theme? theme = null,
+        IReadOnlyList<string>? recent = null)
     {
         var header = ScreenChrome.Band(
             TriggersScreenRenderer.HeaderLine(
@@ -42,7 +43,7 @@ internal static class TriggersScreenView
             // One column at a time: the rule list, or the editor once the keyboard has moved into it or
             // ⏎ has opened one of the rule's fields, which are drawn in the editor and nowhere else.
             var only = focus is { } f && (f.InPane(1) || f.IsEditing)
-                ? TriggersScreenRenderer.EditorColumn(sets, selectedTrigger, routeTargets, focus, width, body, theme)
+                ? TriggersScreenRenderer.EditorColumn(sets, selectedTrigger, routeTargets, focus, width, body, theme, recent)
                 : TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, width);
             return ScreenChrome.Single(
                 header, footer, ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(only, body))),
@@ -57,7 +58,7 @@ internal static class TriggersScreenView
         var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules);
         var right = TriggersScreenRenderer.EditorColumn(
             sets, selectedTrigger, routeTargets, focus,
-            width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme);
+            width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme, recent);
 
         var rulesCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, body)));
         var editorCol = ScreenChrome.Stretch(new MarkupControl(
