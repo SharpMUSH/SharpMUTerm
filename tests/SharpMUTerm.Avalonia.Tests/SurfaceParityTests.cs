@@ -202,6 +202,14 @@ public class SurfaceParityTests
             await Assert.That(app.NoticeMarkup(said[^1].Notice)).IsEqualTo(app.LastNotice);
             await Assert.That(said[0].Notice.Action).IsNotNull().Because("the first offers its action");
             covered.Add(SurfaceCatalog.Notice);
+
+            // The footer: what the window was last told is the row the cells' renderer was handed in the same frame, and
+            // it carries the notice's action as a run a click hands back.
+            var status = driver.Pointer.Status;
+            await Assert.That(status).IsNotNull();
+            await Assert.That((object)status!.Model).IsEqualTo(app.DrawnModel(SurfaceCatalog.Status)).Because("status");
+            await Assert.That((object)status.Model).IsEqualTo(app.BuildStatusModel()).Because("status: now");
+            covered.Add(SurfaceCatalog.Status);
         }
 
         // F1: the window's editor is handed the model the cell window draws for the same draft, in each mode and for a
@@ -620,6 +628,30 @@ public class SurfaceParityTests
                 app.DispatchCommand(openF5.Command);
             });
         probed.Add(SurfaceCatalog.Notice);
+
+        // Status footer: the palette hint opens ⌃P as ⌃P does; a notice's action on the footer runs its command as the
+        // ⌃P entry does.
+        await Same("status: palette", "layout-combat",
+            (app, d) => app.ActivateStatusTarget(HeaderModel.PaletteTarget),
+            (app, _) => app.SimulateHeaderLink(HeaderModel.PaletteTarget));
+        await Same("status: notice action", "layout-combat",
+            (app, d) =>
+            {
+                app.SimulateNotice("a set is missing", SharpMUTerm.Core.Diagnostics.MessageSeverity.Warning, "⌃P", openF5);
+                app.RenderNextFrame();
+                if (!d.Pointer.Status!.Model.Targets().Contains(openF5.Command))
+                {
+                    throw new InvalidOperationException("the footer did not offer the notice's action");
+                }
+
+                app.ActivateStatusTarget(openF5.Command);
+            },
+            (app, _) =>
+            {
+                app.SimulateNotice("a set is missing", SharpMUTerm.Core.Diagnostics.MessageSeverity.Warning, "⌃P", openF5);
+                app.DispatchCommand(openF5.Command);
+            });
+        probed.Add(SurfaceCatalog.Status);
 
         // F1: ⌃S in the window's editor and ⌃S in the cell window send the same command for the same draft — as typed and
         // literal, one line and several paragraphs. Esc keeps the draft, and its mode, in both.

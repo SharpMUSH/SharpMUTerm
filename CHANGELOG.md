@@ -9,6 +9,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The desktop window's status line is now a footer under the whole window, in the window's own type, with keys in words.
+  Clicking "Ctrl+P palette" opens the palette, and clicking a notice's action (Reconnect, Open F5…) runs it.
+- The desktop window draws the command line as a rounded field with the prompt in its own type and a hint at the right
+  ("Enter sends · Ctrl+Enter new line") that steps aside when your typing reaches it. Typing, history, completion and
+  selection work exactly as before.
+- The desktop window ships the Inter typeface for its menus, panels and dialogs, and uses the bundled JetBrains Mono for
+  the text unless `--font` names another, so it looks the same on every computer. `--line-height` spaces the rows
+  (1–2, default 1.12).
+
 - A script error in the script console that names a file and line is now a link: click it to open that script with the
   caret on the line and the line marked. Closing the editor goes back to the console.
 - The script editor numbers its lines in the desktop window too, and after a save whose reload fails, the line the

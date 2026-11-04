@@ -117,7 +117,14 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
 
     public void Flush()
     {
-        Volatile.Write(ref _frame, _grid.Snapshot(_caret));
+        // The band the client said while this frame was painted (PostBufferPaint runs before the flush, on this thread).
+        var frame = _grid.Snapshot(_caret);
+        if (Pointer.Band is { } band && band.Top + band.Rows <= frame.Height)
+        {
+            frame = frame.WithBand(band);
+        }
+
+        Volatile.Write(ref _frame, frame);
         Interlocked.Increment(ref _frames);
         FrameReady?.Invoke();
     }

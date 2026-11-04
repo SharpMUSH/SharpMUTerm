@@ -343,11 +343,11 @@ internal sealed class ComposerView : Border
         _count.FontSize = ui - 1;
         _previewHeading.FontSize = ui - 1.5;
         _previewText.FontSize = Math.Clamp(cell * 0.72, 11, 16);
-        _previewText.FontFamily = new FontFamily($"{_view.Renderer.Fonts.FamilyName}, {CellFonts.BundledFamily}, DejaVu Sans Mono, Liberation Mono, Consolas, Menlo, monospace");
+        _previewText.FontFamily = NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
         _editor.FontSize = Proportional ? Math.Clamp(cell * 0.86, 12, 19) : Math.Clamp(cell * 0.8, 11, 18);
         _editor.FontFamily = Proportional
-            ? FontFamily.Default
-            : new FontFamily($"{_view.Renderer.Fonts.FamilyName}, {CellFonts.BundledFamily}, DejaVu Sans Mono, Liberation Mono, Consolas, Menlo, monospace");
+            ? NativeTokens.UiFont
+            : NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
         if (_model is { } model)
         {
             Label(model);

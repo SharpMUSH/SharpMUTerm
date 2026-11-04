@@ -62,6 +62,30 @@ internal sealed record NativeTokens(
     /// </summary>
     public const double Miniature = 9;
 
+    /// <summary>
+    /// The UI face of every native view: the bundled Inter (<see cref="BundledFonts"/>), with the platform's own
+    /// sans as a fallback for a glyph Inter lacks. It is also the app's default family, so a view naming none gets it.
+    /// </summary>
+    public static FontFamily UiFont { get; } = new($"{BundledFonts.Ui}, Segoe UI, Cantarell, Helvetica Neue, sans-serif");
+
+    /// <summary>
+    /// The face game text and code are drawn in natively (the composer, ⌃F's lines, the history, the script console):
+    /// the bundled JetBrains Mono, the cells' own default, with installed monospace faces as fallbacks for what it lacks.
+    /// </summary>
+    public static FontFamily MonoFont { get; } = new($"{BundledFonts.Mono}, DejaVu Sans Mono, Consolas, Menlo, monospace");
+
+    /// <summary>
+    /// The cells' own face for a native view that must match them (the composer): the bundled face when the cells use
+    /// it, else the installed family the cells were given, with the bundle behind it.
+    /// </summary>
+    public static FontFamily CellFace(string cellFamily) =>
+        string.Equals(cellFamily, CellFonts.BundledFamily, StringComparison.OrdinalIgnoreCase)
+            ? MonoFont
+            : new FontFamily($"{cellFamily}, {BundledFonts.Mono}, monospace");
+
+    /// <summary>The native command line's prompt and the status footer's size (the mockup's 13 px UI line).</summary>
+    public const double Input = 13;
+
     /// <summary>Corner radius of a key cap, a chip, a check.</summary>
     public const double RadiusS = 4;
 
@@ -155,6 +179,7 @@ internal sealed record NativeTokens(
     public void Apply(IResourceDictionary resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
+        resources["ContentControlThemeFontFamily"] = UiFont;
         foreach (var key in new[]
         {
             "SystemAccentColor", "SystemAccentColorDark1", "SystemAccentColorDark2", "SystemAccentColorDark3",

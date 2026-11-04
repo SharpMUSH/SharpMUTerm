@@ -75,7 +75,7 @@ internal static class WindowHost
 
         // The header band and the connections sidebar are the window's own controls, beside the cell grid rather
         // than over it (MainWindow, DesktopLayer): the client draws neither.
-        Chrome = chrome ?? HostChrome.HeaderAndRail,
+        Chrome = chrome ?? HostChrome.Desktop,
         // ⌃P is a native palette over the window, listing the same rows as the cell one.
         NativePalette = driver.Palette,
 

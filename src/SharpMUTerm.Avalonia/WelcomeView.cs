@@ -182,7 +182,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         example.Inlines.Add(new global::Avalonia.Controls.Documents.Run(WelcomeModel.ExampleCommand)
         {
             Foreground = _colours.Brush(_colours.Accent),
-            FontFamily = new FontFamily("JetBrains Mono, DejaVu Sans Mono, Consolas, Menlo, monospace"),
+            FontFamily = NativeTokens.MonoFont,
         });
         _body.Children.Add(example);
 

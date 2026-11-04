@@ -176,6 +176,23 @@ internal interface IPointerPresenter
     void Notice(NoticeOverlay notice)
     {
     }
+
+    /// <summary>
+    /// The status row, as data, whenever what it says changes — only to a host that draws it
+    /// (<see cref="HostChrome.Status"/>), which the client leaves no cell for. A host that draws none ignores this.
+    /// </summary>
+    void Status(StatusOverlay status)
+    {
+    }
+
+    /// <summary>
+    /// Where the command line's rows are, or null when there is no field to draw (another of the client's windows is in
+    /// front) — only to a host that draws the field (<see cref="HostChrome.Input"/>). Said on the client's thread while
+    /// the main window paints, before the frame it describes is flushed, so a host may keep it with that frame.
+    /// </summary>
+    void InputBand(InputBand? band)
+    {
+    }
 }
 
 /// <summary>

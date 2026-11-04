@@ -171,7 +171,7 @@ internal sealed class HelpView : DockPanel, IModalView
     }
 
     /// <summary>The face a help page's table rows (the map's keys) are set in, so their columns line up.</summary>
-    private static FontFamily TableFace { get; } = new($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
+    private static FontFamily TableFace { get; } = NativeTokens.MonoFont;
 
     private void ShowPage(HelpTopic topic)
     {

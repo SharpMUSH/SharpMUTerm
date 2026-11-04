@@ -16,19 +16,18 @@ namespace SharpMUTerm.Avalonia;
 internal sealed class CellFonts : IDisposable
 {
     /// <summary>
-    /// Families tried in order when none is named. Nerd Font builds first, because the client's chrome is drawn
-    /// in Nerd Font icons and a face that has them needs no fallback for a single cell of the header.
+    /// Installed Nerd Font families, asked by name for an icon in the Private Use Area the bundled symbols lack. No
+    /// longer the text face: the bundled JetBrains Mono is the default on every OS, so the window looks the same on
+    /// Windows, Linux and macOS; an installed face draws text only when <c>--font</c> names it.
     /// </summary>
     public static readonly string[] PreferredFamilies =
     [
         "CaskaydiaMono Nerd Font", "CaskaydiaCove Nerd Font Mono", "CaskaydiaCove Nerd Font",
         "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "FiraCode Nerd Font Mono",
-        "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Consolas", "SF Mono", "Menlo",
     ];
 
     /// <summary>
-    /// Installed faces tried after the bundled JetBrains Mono: they are on most machines, so they used to be
-    /// what a window without a preferred face drew in, and none of them is a face anybody picked.
+    /// Installed faces tried only when the bundled JetBrains Mono is missing from the build (a packaging slip).
     /// </summary>
     private static readonly string[] LastResortFamilies =
     [
@@ -51,7 +50,14 @@ internal sealed class CellFonts : IDisposable
     private readonly SKTypeface _italic;
     private readonly SKTypeface _boldItalic;
 
-    public CellFonts(float sizePixels, string? family = null)
+    /// <param name="sizePixels">The text size, in device pixels.</param>
+    /// <param name="family">An installed family <c>--font</c> named, or null for the bundled face.</param>
+    /// <param name="lineHeight">
+    /// The row height as a multiple of the face's own ascent-to-descent height (<c>--line-height</c>, at least 1). The
+    /// extra is split above and below the text, so a box or a picture still meets the row above and below it: the
+    /// cell is taller, never gapped.
+    /// </param>
+    public CellFonts(float sizePixels, string? family = null, float lineHeight = 1f)
     {
         Size = sizePixels;
         _regular = Match(family, SKFontStyle.Normal) ?? SKTypeface.Default;
@@ -64,8 +70,9 @@ internal sealed class CellFonts : IDisposable
         CellWidth = Math.Max(1, (int)Math.Ceiling(probe.MeasureText("M")));
         // Ascent to descent, without the face's line gap: a terminal's rows sit flush, and a box or a picture
         // drawn down a column of cells must not be striped by the gap between them.
-        CellHeight = Math.Max(1, (int)Math.Ceiling(metrics.Descent - metrics.Ascent));
-        Baseline = (float)Math.Round(-metrics.Ascent);
+        var text = metrics.Descent - metrics.Ascent;
+        CellHeight = Math.Max(1, (int)Math.Ceiling(text * Math.Max(1f, lineHeight)));
+        Baseline = (float)Math.Round(-metrics.Ascent + ((CellHeight - text) / 2f));
         UnderlineOffset = metrics.UnderlinePosition is { } u and > 0 ? u : sizePixels / 10f;
         StrokeWidth = Math.Max(1f, metrics.UnderlineThickness is { } t and > 0 ? t : sizePixels / 14f);
     }
@@ -150,6 +157,12 @@ internal sealed class CellFonts : IDisposable
             return null;
         }
 
+        // The bundled symbols first, so every OS draws the same icon; an installed Nerd Font only for one they lack.
+        if (BundledSymbols.Value is { } bundled && bundled.ContainsGlyph(codePoint))
+        {
+            return bundled;
+        }
+
         foreach (var name in SymbolFamilies)
         {
             var face = SKFontManager.Default.MatchFamily(name);
@@ -159,7 +172,7 @@ internal sealed class CellFonts : IDisposable
             }
         }
 
-        return BundledSymbols.Value is { } bundled && bundled.ContainsGlyph(codePoint) ? bundled : null;
+        return null;
     }
 
     /// <summary>Whether the bundled faces are in this build, for a test to hold the packaging to.</summary>
@@ -187,20 +200,21 @@ internal sealed class CellFonts : IDisposable
 
     private static readonly string[] SymbolFamilies =
     [
-        "Symbols Nerd Font Mono", "Symbols Nerd Font", .. PreferredFamilies.Where(f => f.Contains("Nerd Font", StringComparison.Ordinal)),
+        "Symbols Nerd Font Mono", "Symbols Nerd Font", .. PreferredFamilies,
     ];
 
     private static SKTypeface? Match(string? family, SKFontStyle style)
     {
-        foreach (var name in family is null ? PreferredFamilies : [family, .. PreferredFamilies])
+        // A family --font named, if it is installed and is not the bundled face itself.
+        if (family is not null && !string.Equals(family, BundledFamily, StringComparison.OrdinalIgnoreCase))
         {
-            var face = SKFontManager.Default.MatchFamily(name, style);
-            if (face is not null && string.Equals(face.FamilyName, name, StringComparison.OrdinalIgnoreCase))
+            var named = SKFontManager.Default.MatchFamily(family, style);
+            if (named is not null && string.Equals(named.FamilyName, family, StringComparison.OrdinalIgnoreCase))
             {
-                return face;
+                return named;
             }
 
-            face?.Dispose();
+            named?.Dispose();
         }
 
         // The bundled face is asked for by its own name, so a family that resolves to it (the regular face's,

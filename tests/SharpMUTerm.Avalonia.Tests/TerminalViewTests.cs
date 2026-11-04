@@ -321,7 +321,7 @@ public sealed class TestApp : Application
     public override void Initialize() => Styles.Add(new SimpleTheme());
 
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<TestApp>()
+        BundledFonts.Use(AppBuilder.Configure<TestApp>()
             .UseSkia()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }));
 }

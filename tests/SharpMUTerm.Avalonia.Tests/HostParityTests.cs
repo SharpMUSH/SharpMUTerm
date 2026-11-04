@@ -27,17 +27,23 @@ public partial class HostParityTests
     public static IEnumerable<string> Views() => SnapshotViews.All.Select(v => v ?? "(default)");
 
     /// <summary>
-    /// Every view under both chrome arrangements: the client's chrome in cells (the terminal's, and the window's with
-    /// <c>--cell-chrome</c>), and the header and rail drawn by the host (the window as a person runs it). Both hosts
-    /// are told the same arrangement each time, so the comparison is still of drivers and nothing else, over every
-    /// cell either one draws.
+    /// Every view under each chrome arrangement: the client's chrome in cells (the terminal's, and the window's with
+    /// <c>--cell-chrome</c>), the header and rail drawn by the host, and the window as a person runs it — header, rail,
+    /// status footer and the command line's field drawn by the host (<see cref="HostChrome.Desktop"/>). Both hosts are
+    /// told the same arrangement each time, so the comparison is still of drivers and nothing else, over every cell
+    /// either one draws.
     /// </summary>
-    public static IEnumerable<(string View, bool HostChrome)> ViewsUnderBothChromes() =>
+    public static IEnumerable<(string View, string HostChrome)> ViewsUnderBothChromes() =>
         from view in Views()
-        from native in new[] { false, true }
-        select (view, native);
+        from chrome in new[] { "none", "header-rail", "desktop" }
+        select (view, chrome);
 
-    private static HostChrome ChromeFor(bool native) => native ? HostChrome.HeaderAndRail : HostChrome.None;
+    private static HostChrome ChromeFor(string chrome) => chrome switch
+    {
+        "header-rail" => HostChrome.HeaderAndRail,
+        "desktop" => HostChrome.Desktop,
+        _ => HostChrome.None,
+    };
 
     /// <summary>
     /// A view drawn in the window is the view drawn in the terminal, cell for cell. What this catches is the
@@ -46,7 +52,7 @@ public partial class HostParityTests
     /// </summary>
     [Test]
     [MethodDataSource(nameof(ViewsUnderBothChromes))]
-    public async Task EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal(string name, bool hostChrome)
+    public async Task EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal(string name, string hostChrome)
     {
         var view = name == "(default)" ? null : name;
         var chrome = ChromeFor(hostChrome);
@@ -83,7 +89,7 @@ public partial class HostParityTests
     [MethodDataSource(nameof(Views))]
     public async Task EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning(string name)
     {
-        var chrome = HostChrome.HeaderAndRail;
+        var chrome = HostChrome.Desktop;
         var view = name == "(default)" ? null : name;
         if (view is "timestamps" or "timestamps-toggled")
         {

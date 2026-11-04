@@ -72,7 +72,7 @@ internal sealed class ThemeCardView : Button
         _frame.BorderBrush = tokens.Brush(inUse ? tokens.Accent : tokens.Edge);
     }
 
-    private static readonly FontFamily Mono = FontFamily.Parse("monospace");
+    private static readonly FontFamily Mono = NativeTokens.MonoFont;
 
     private static IBrush Brush(Rgb colour) => new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
 

@@ -336,7 +336,7 @@ internal sealed class ListEditorView : Grid
         return listItem;
     }
 
-    private static FontFamily Mono => FontFamily.Parse("JetBrains Mono, Cascadia Mono, DejaVu Sans Mono, monospace");
+    private static FontFamily Mono => NativeTokens.MonoFont;
 
     private void SelectRow(object? item)
     {

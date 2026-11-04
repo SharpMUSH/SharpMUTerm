@@ -267,6 +267,12 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
     /// plane handed to the terminal's background (F7's transparency fallback), which a window has no
     /// translucency behind to show — so it is the default background too.
     /// </summary>
+    /// <summary>A cell's background colour as drawn, for a native view laid over the cells (the command line's field).</summary>
+    public SKColor Background(Color colour) => Resolve(colour, DefaultBackground);
+
+    /// <summary>A cell's ink as drawn, before any dimming.</summary>
+    public SKColor Foreground(Color colour) => Resolve(colour, DefaultForeground);
+
     private static SKColor Resolve(Color colour, SKColor fallback) =>
         colour.IsDefault || colour.A == 0 ? fallback : new SKColor(colour.R, colour.G, colour.B);
 }

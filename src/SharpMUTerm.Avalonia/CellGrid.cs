@@ -33,7 +33,16 @@ internal sealed class ScreenFrame(int width, int height, GridCell[] cells, Caret
 
     public CaretState Caret { get; } = caret;
 
+    /// <summary>
+    /// The command line's rows as the client said they were when this frame was painted, or null with no field to draw
+    /// (<see cref="HostChrome.Input"/>). Carried by the frame so the field never sits around rows of another frame.
+    /// </summary>
+    public SharpMUTerm.Tui.InputBand? Band { get; init; }
+
     public GridCell this[int x, int y] => cells[(y * Width) + x];
+
+    /// <summary>This frame carrying <paramref name="band"/>: the same cells, not copied.</summary>
+    public ScreenFrame WithBand(SharpMUTerm.Tui.InputBand band) => new(Width, Height, cells, Caret) { Band = band };
 
     public static ScreenFrame Empty(int width, int height) =>
         new(width, height, Enumerable.Repeat(GridCell.Blank, width * height).ToArray(), default);

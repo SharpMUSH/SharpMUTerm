@@ -28,7 +28,7 @@ internal sealed class ScriptConsoleView : DockPanel, IModalView
     private readonly TextBlock _storeHeading;
     private readonly Button _delete;
     private readonly List<Border> _storeRows = [];
-    private readonly FontFamily _mono = new($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
+    private readonly FontFamily _mono = NativeTokens.MonoFont;
     private ScriptConsoleModel _model;
     private int _selectedKey = -1;
     private int _historyAt = -1;

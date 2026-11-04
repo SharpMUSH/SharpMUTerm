@@ -18,7 +18,7 @@ internal static class PanelText
             text,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface(FontFamily.Default, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
+            new Typeface(NativeTokens.UiFont, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
             size,
             new SolidColorBrush(colour))
         {

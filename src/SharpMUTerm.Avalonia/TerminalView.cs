@@ -32,6 +32,7 @@ internal sealed class TerminalView : Control
     private readonly DispatcherTimer _repeat;
     private readonly float _fontPoints;
     private readonly string? _family;
+    private readonly float _lineHeight;
     private CellRenderer _renderer;
     private double _scale = 1;
     private int _invalidatePending;
@@ -50,12 +51,13 @@ internal sealed class TerminalView : Control
     private readonly TextBlock _tipText;
     private readonly DispatcherTimer _tipTimer;
 
-    public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family)
+    public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family, float lineHeight = 1f)
     {
         _driver = driver;
         _fontPoints = fontPoints;
         _family = family;
-        _renderer = new CellRenderer(new CellFonts(fontPoints, family), foreground, background);
+        _lineHeight = lineHeight;
+        _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
         Focusable = true;
         ClipToBounds = true;
         Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -118,6 +120,26 @@ internal sealed class TerminalView : Control
     internal bool CellsHoldHeader { get; set; } = true;
 
     /// <summary>
+    /// Whether this view draws the command line's field around the bars' rows (<see cref="HostChrome.Input"/>): the
+    /// grid is then <see cref="NativeLayout.FieldReserve"/> shorter, and a frame carrying a band
+    /// (<see cref="ScreenFrame.Band"/>) draws its rows that much lower inside a padded, rounded field.
+    /// </summary>
+    internal bool DrawsInputField { get; set; }
+
+    /// <summary>The plane the field's strip is painted on: the backdrop the status row and the sidebar sit on.</summary>
+    internal SKColor? FooterPlane { get; set; }
+
+    /// <summary>The vertical pixels the field takes beside the rows it frames: none unless the view draws it.</summary>
+    private double FieldReserve => DrawsInputField ? NativeLayout.FieldReserve : 0;
+
+    /// <summary>The top of screen row <paramref name="row"/> in logical units: rows of a band sit lower by the field's top padding.</summary>
+    internal double RowTop(int row)
+    {
+        var top = row * CellSize.Height;
+        return DrawsInputField && _driver.Frame.Band is { } band && row >= band.Top ? top + NativeLayout.FieldTop : top;
+    }
+
+    /// <summary>
     /// Raised on the window's thread after a new frame is taken for painting, and when the cell size or the view's
     /// size changes: when anything placed over cells may need to move.
     /// </summary>
@@ -128,10 +150,10 @@ internal sealed class TerminalView : Control
 
     /// <summary>The grid a window of <paramref name="size"/> holds, in whole cells.</summary>
     public (int Columns, int Rows) GridFor(Size size) =>
-        (Math.Max(20, (int)(size.Width / CellSize.Width)), Math.Max(8, (int)(size.Height / CellSize.Height)));
+        (Math.Max(20, (int)(size.Width / CellSize.Width)), Math.Max(8, (int)((size.Height - FieldReserve) / CellSize.Height)));
 
     /// <summary>The window size that holds a grid of <paramref name="columns"/> × <paramref name="rows"/>.</summary>
-    public Size SizeFor(int columns, int rows) => new(columns * CellSize.Width, rows * CellSize.Height);
+    public Size SizeFor(int columns, int rows) => new(columns * CellSize.Width, (rows * CellSize.Height) + FieldReserve);
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -156,7 +178,14 @@ internal sealed class TerminalView : Control
 
     public override void Render(DrawingContext context)
     {
-        context.Custom(new FrameDraw(new Rect(Bounds.Size), _driver.Frame, _driver.Pictures, _renderer, _scale));
+        var frame = _driver.Frame;
+        var band = DrawsInputField ? frame.Band : null;
+        context.Custom(new FrameDraw(new Rect(Bounds.Size), frame, _driver.Pictures, _renderer, _scale, band, FooterPlane ?? Darker(_renderer.DefaultBackground)));
+        if (band is not null)
+        {
+            DrawFieldText(context, frame, band);
+        }
+
         DrawHover(context);
         DrawScrollbars(context);
     }
@@ -174,7 +203,7 @@ internal sealed class TerminalView : Control
 
         var cell = CellSize;
         var area = _target.Area;
-        var rect = new Rect(area.X * cell.Width, area.Y * cell.Height, area.Width * cell.Width, area.Height * cell.Height);
+        var rect = new Rect(area.X * cell.Width, RowTop(area.Y), area.Width * cell.Width, area.Height * cell.Height);
         context.DrawRectangle(Brush(_renderer.DefaultForeground, 0x24), null, rect.Inflate(new Thickness(1, 0)), 2, 2);
     }
 
@@ -184,7 +213,7 @@ internal sealed class TerminalView : Control
         // with them. A change of display scale is rare enough that one set of leaked fonts is the cheaper fix.
         _scale = scale;
         _renderer = new CellRenderer(
-            new CellFonts((float)(_fontPoints * scale), _family),
+            new CellFonts((float)(_fontPoints * scale), _family, _lineHeight),
             _renderer.DefaultForeground,
             _renderer.DefaultBackground);
         Repainted?.Invoke();
@@ -710,6 +739,14 @@ internal sealed class TerminalView : Control
         var frame = _driver.Frame;
         var x = Math.Clamp((int)(position.X / size.Width), 0, Math.Max(0, frame.Width - 1));
         var y = Math.Clamp((int)(position.Y / size.Height), 0, Math.Max(0, frame.Height - 1));
+
+        // Below the panes, the field: its padding is the band's first and last rows, and its rows sit lower.
+        if (DrawsInputField && frame.Band is { } band && position.Y >= band.Top * size.Height)
+        {
+            var inside = (position.Y - (band.Top * size.Height) - NativeLayout.FieldTop) / size.Height;
+            y = Math.Clamp(band.Top + (int)Math.Floor(inside), band.Top, Math.Min(frame.Height, band.Top + band.Rows) - 1);
+        }
+
         return new System.Drawing.Point(x, y);
     }
 
@@ -719,7 +756,7 @@ internal sealed class TerminalView : Control
         | ((keys & KeyModifiers.Control) != 0 ? PointerModifiers.Ctrl : 0);
 
     /// <summary>One frame, drawn straight onto the compositor's Skia canvas.</summary>
-    private sealed class FrameDraw(Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale)
+    private sealed class FrameDraw(Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale, InputBand? band, SKColor plane)
         : ICustomDrawOperation
     {
         public Rect Bounds { get; } = bounds;
@@ -727,7 +764,9 @@ internal sealed class TerminalView : Control
         public bool HitTest(Point p) => Bounds.Contains(p);
 
         public bool Equals(ICustomDrawOperation? other) =>
-            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds;
+            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane;
+
+        private SKColor Plane => plane;
 
         private ScreenFrame Frame => frame;
 
@@ -743,12 +782,159 @@ internal sealed class TerminalView : Control
             canvas.Save();
             canvas.ClipRect(new SKRect(0, 0, (float)Bounds.Width, (float)Bounds.Height));
             canvas.Scale((float)(1 / scale));
+            if (band is null)
+            {
+                renderer.Render(canvas, frame, pictures);
+            }
+            else
+            {
+                RenderWithField(canvas, band);
+            }
+
+            canvas.Restore();
+        }
+
+        /// <summary>
+        /// The panes as they are, then the field: the strip across the bottom on the backdrop, the rounded field in the
+        /// bars' own band colour (read off the cells, so armed, idle and a character's tint are the cells' own), the
+        /// bars' rows drawn inside it lower by its top padding, and a one-pixel edge. Device pixels throughout.
+        /// </summary>
+        private void RenderWithField(SKCanvas canvas, InputBand band)
+        {
+            var ch = renderer.Fonts.CellHeight;
+            var cw = renderer.Fonts.CellWidth;
+            var s = (float)scale;
+            var width = (float)(Bounds.Width * scale);
+            var height = (float)(Bounds.Height * scale);
+            var top = band.Top * ch;
+
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, 0, width, top));
             renderer.Render(canvas, frame, pictures);
             canvas.Restore();
+
+            var field = FieldRect(band, cw, ch, frame.Width, s);
+            var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.Pad), band.Top].Background);
+            using var paint = new SKPaint { IsAntialias = true };
+            paint.Color = plane;
+            canvas.DrawRect(0, top, width, height - top, paint);
+            paint.Color = Mix(plane, renderer.DefaultForeground, 0.10f);
+            canvas.DrawRect(0, top, width, Math.Max(1, s), paint);
+
+            var radius = (float)(NativeTokens.RadiusM * scale);
+            var rounded = new SKRoundRect(field, radius);
+            paint.Color = fill;
+            canvas.DrawRoundRect(rounded, paint);
+
+            canvas.Save();
+            canvas.ClipRoundRect(rounded, SKClipOperation.Intersect, true);
+            canvas.Translate(0, (float)(NativeLayout.FieldTop * scale));
+
+            // The bars' rows only, and not the client's right padding, whose colour is the margin's rather than the band's.
+            canvas.ClipRect(new SKRect(0, top, (frame.Width - band.Pad) * cw, (band.Top + band.Rows) * ch));
+            renderer.Render(canvas, frame, pictures);
+            canvas.Restore();
+
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = Math.Max(1, s);
+            paint.Color = Mix(fill, renderer.DefaultForeground, 0.22f);
+            var edge = rounded;
+            edge.Deflate(paint.StrokeWidth / 2, paint.StrokeWidth / 2);
+            canvas.DrawRoundRect(edge, paint);
         }
 
         public void Dispose()
         {
         }
     }
+
+    /// <summary>
+    /// The field's rectangle in device pixels: inset from the grid's edges so the client's band-coloured padding columns
+    /// are its inner padding, from the strip's top padding to below the last row.
+    /// </summary>
+    internal static SKRect FieldRect(InputBand band, int cw, int ch, int columns, float scale)
+    {
+        var inset = Math.Max(4 * scale, (band.Pad * cw) - (float)(NativeLayout.FieldInsetX * scale));
+        var top = (band.Top * ch) + (float)(NativeLayout.FieldOuter * scale);
+        var bottom = ((band.Top + band.Rows) * ch) + (float)((NativeLayout.FieldTop + NativeLayout.FieldInner) * scale);
+        return new SKRect(inset, top, (columns * cw) - inset, bottom);
+    }
+
+    /// <summary>
+    /// The prompt in the UI face, semibold, over the prompt's own cells; and the newline hint at the right of the first
+    /// row while the cells under it are blank — it stands down the moment the typed text reaches it.
+    /// </summary>
+    private void DrawFieldText(DrawingContext context, ScreenFrame frame, InputBand band)
+    {
+        var cell = CellSize;
+        foreach (var prompt in band.Prompts)
+        {
+            var text = prompt.Text.TrimEnd();
+            if (text.Length == 0 || prompt.Row < 0 || prompt.Row >= frame.Height || band.Pad >= frame.Width)
+            {
+                continue;
+            }
+
+            var first = frame[band.Pad, prompt.Row];
+            var ink = Ink(frame, band.Pad, prompt.Row, text.Length);
+            var plate = new Rect(band.Pad * cell.Width, RowTop(prompt.Row), Math.Min(text.Length, frame.Width - band.Pad) * cell.Width, cell.Height);
+            context.FillRectangle(Brush(_renderer.Background(first.Background)), plate);
+            var formatted = new FormattedText(
+                text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                new Typeface(NativeTokens.UiFont, FontStyle.Normal, FontWeight.SemiBold), NativeTokens.Input, Brush(ink))
+            {
+                MaxTextWidth = plate.Width + (2 * cell.Width),
+                MaxLineCount = 1,
+                Trimming = TextTrimming.CharacterEllipsis,
+            };
+            // Against the text, not the field's edge: the UI face is narrower than the cells it covers, and a prompt
+            // that kept to the left would leave a gap between itself and the line being typed.
+            var left = Math.Max(plate.X, plate.Right - formatted.Width);
+            context.DrawText(formatted, new Point(Math.Round(left), plate.Y + ((cell.Height - formatted.Height) / 2)));
+        }
+
+        if (band.Hint.Length == 0 || band.Top >= frame.Height)
+        {
+            return;
+        }
+
+        var hint = new FormattedText(
+            NativeKeys.Words(band.Hint), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(NativeTokens.UiFont), NativeTokens.Small, Brush(SKColors.White));
+        var right = (frame.Width - band.Pad) * cell.Width;
+        var from = Math.Max(0, (int)Math.Floor((right - hint.Width) / cell.Width) - 2);
+        var promptEnd = band.Pad + (band.Prompts.FirstOrDefault(p => p.Row == band.Top)?.Text.Length ?? 0);
+        if (from <= promptEnd || frame.Caret is { Visible: true } caret && caret.Y == band.Top && caret.X >= from)
+        {
+            return;
+        }
+
+        for (var x = from; x < frame.Width - band.Pad; x++)
+        {
+            if (frame[x, band.Top].Rune.Value != ' ')
+            {
+                return;
+            }
+        }
+
+        var bandColour = _renderer.Background(frame[band.Pad, band.Top].Background);
+        hint.SetForegroundBrush(Brush(Mix(bandColour, _renderer.DefaultForeground, 0.6f)));
+        context.DrawText(hint, new Point(right - hint.Width, RowTop(band.Top) + ((cell.Height - hint.Height) / 2)));
+    }
+
+    /// <summary>The ink of the first non-blank cell of a run, the run's own colour.</summary>
+    private SKColor Ink(ScreenFrame frame, int x, int y, int length)
+    {
+        for (var i = x; i < Math.Min(frame.Width, x + length); i++)
+        {
+            if (frame[i, y].Rune.Value != ' ')
+            {
+                return _renderer.Foreground(frame[i, y].Foreground);
+            }
+        }
+
+        return _renderer.DefaultForeground;
+    }
+
+    private static SKColor Darker(SKColor colour) => Mix(colour, SKColors.Black, 0.25f);
 }

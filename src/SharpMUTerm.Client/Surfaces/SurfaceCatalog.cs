@@ -165,6 +165,12 @@ public static class SurfaceCatalog
     /// <summary>A notice: the status row's message in cells, and in the window a toast over them as well.</summary>
     public const string Notice = "notice";
 
+    /// <summary>
+    /// The status row: the last row of cells in a terminal; in the window (<c>HostChrome.Status</c>) a native footer
+    /// under the cells and the sidebar, which then leave the row out.
+    /// </summary>
+    public const string Status = "status";
+
     /// <summary>F1, the full-screen composer: a cell modal in a terminal, the window's native editor in its place.</summary>
     public const string Compose = "compose";
 
@@ -398,6 +404,18 @@ public static class SurfaceCatalog
             CellsUnderNative,
             "SharpMUTerm.Tui.SharpMUTermApp.NoticeMarkup",
             ["SharpMUTerm.Avalonia.NoticeToasts"]),
+        new(
+            Status,
+            typeof(StatusModel),
+            [
+                // The palette hint opens ⌃P, the header search box's path; a showing notice's action runs as the toast's
+                // click does. In cells the row is not a button: ⌃P itself, and the notice's command on ⌃P.
+                new(SurfaceActionKind.Target, HeaderModel.PaletteTarget, "ToggleMenu", CellsVia: Header),
+                new(SurfaceActionKind.Target, "notice action", "RunNoticeAction", CellsVia: "term:messages"),
+            ],
+            NativeChrome,
+            "SharpMUTerm.Tui.SharpMUTermApp.StatusRowMarkup",
+            ["SharpMUTerm.Avalonia.NativeFooter"]),
         new(
             Compose,
             typeof(ComposerModel),

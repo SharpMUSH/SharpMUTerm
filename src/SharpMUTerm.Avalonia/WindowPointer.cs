@@ -119,6 +119,29 @@ internal sealed class WindowPointer : IPointerPresenter
     /// <summary>Raised on the client's thread with each notice the client says.</summary>
     public event Action<NoticeOverlay>? NoticeSaid;
 
+    private StatusOverlay? _status;
+    private InputBand? _band;
+
+    /// <summary>The status row as the client last described it, or null before it has (<see cref="HostChrome.Status"/>).</summary>
+    public StatusOverlay? Status => Volatile.Read(ref _status);
+
+    /// <summary>
+    /// Where the command line's rows are, as of the client's last word (<see cref="HostChrome.Input"/>): read by the
+    /// driver when it flushes a frame, so each frame carries the band it was painted with.
+    /// </summary>
+    public InputBand? Band => Volatile.Read(ref _band);
+
+    /// <summary>Raised on the client's thread when <see cref="Status"/> changes.</summary>
+    public event Action? StatusChanged;
+
+    void IPointerPresenter.Status(StatusOverlay status)
+    {
+        Volatile.Write(ref _status, status);
+        StatusChanged?.Invoke();
+    }
+
+    void IPointerPresenter.InputBand(InputBand? band) => Volatile.Write(ref _band, band);
+
     void IPointerPresenter.Notice(NoticeOverlay notice)
     {
         var next = Notices.Append(notice).TakeLast(NoticesKept).ToList();
