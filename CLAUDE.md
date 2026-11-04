@@ -2307,7 +2307,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
 - **The window has one design language: `NativeTokens`** (Avalonia). Planes (card, raised, selected, scrim), edge
   and rule, inks (text, dim, header, accent, warn, notice, accent and key inks), radii `RadiusS/M/L` 4/8/12 and
   the type ramp `Small/Body/Title/Heading` 11/12/14/18 (`Miniature` 9 only for a theme card's preview). Derived
-  from the client's `Theme` the `ScreenTheme` way: a canonical Dark (`#1e1e25` card) and Light (white) set, the
+  from the client's `Theme` the `ScreenTheme` way: a canonical Dark (the mockup's: `#171b24` card) and Light (white) set, the
   theme background's hue shift added, every ink held to `TextFloor` 4.5:1 on each plane it is drawn on; the
   accent is the client's teal, never Fluent's blue. `Apply` sets the Fluent keys on a scope and `ApplySimple`
   the Simple theme's (menus). The settings window, list editor, package page, theme cards, menus, palette and
@@ -2315,6 +2315,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `SettingsForm.Theme`). `NativeTokenTests.NoViewWritesALiteralFontSizeOrColour` fails on a literal
   `FontSize =` number or `Color.Parse("#` anywhere in the window's assembly outside `NativeTokens.cs`; widen its
   allow-list only with a reason. A quiet line is the `Dim` ink, never an opacity (an opacity is not floor-checked).
+  - **The floating surfaces are the mockup's cards** (wave 19, `ux-mockups/Main.dc.html`). Dark's canon is the mockup's
+    palette: card `#171b24`, raised `#1d2333`, `Well` `#10131a` (the ground an input sits in), `Edge` `#2c3447`, `Focus`
+    `#3a4f73`, selected `#1f3a3a`, ink `#d7deec`/`#9aa4b8`, `#0f1620` on the accent. Every ⌃P and modal search box is sunk
+    (`ModalParts.Sunk`: the well, a rule turning to `Focus`, a magnifier); a key is a cap in the cells' mono
+    (`ModalParts.Chip`, `NativeTokens.KeyFace`); a selected row is the selected plane plus a `MarkWidth` accent bar on its
+    left (`ModalParts.Mark`); a modal's key line is a band on the card's foot in the well (`ModalParts.Footer`). Toasts are
+    rounded on `ShadowSmall` with the severity as an inset bar, still on the client's `NoticePalette` plane; menus take
+    the palette's row height, keys in the mono and the dim ink, and the popup's own window shows the card's plane in the
+    rounded corners where it cannot be transparent.
   - **The settings window is the palette's modal**: undecorated with its own title bar (title, ✕, Esc, drag to
     move), the tokens' card and edge, and a scrim over the main window (`SettingsPresenter.Scrim`; a press on it
     closes). Opened from the trigger builder (`SettingsForm.BesideOutput`) it is docked to the main window's right

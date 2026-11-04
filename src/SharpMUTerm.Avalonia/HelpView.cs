@@ -39,7 +39,7 @@ internal sealed class HelpView : DockPanel, IModalView
         _colours = colours;
         _done = done;
 
-        _box = ModalParts.SearchBox("Search help: keys, slash commands, how-tos…", "Search help");
+        _box = ModalParts.SearchBox("Search help: keys, slash commands, how-tos…", "Search help", colours);
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 
@@ -339,7 +339,7 @@ internal sealed class HelpView : DockPanel, IModalView
     {
         for (var i = 0; i < _rows.Count; i++)
         {
-            _rows[i].Background = i == _selected ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
+            ModalParts.Mark(_rows[i], i == _selected, _colours);
         }
 
         if (_selected < _rows.Count)

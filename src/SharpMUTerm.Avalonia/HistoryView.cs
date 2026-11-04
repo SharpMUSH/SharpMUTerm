@@ -34,7 +34,7 @@ internal sealed class HistoryView : DockPanel, IModalView
         _done = done;
         var model = session.Model;
 
-        _box = ModalParts.SearchBox("Filter the history…", "Filter the history");
+        _box = ModalParts.SearchBox("Filter the history…", "Filter the history", colours);
         SetDock(_box, Dock.Top);
         Children.Add(_box);
 
@@ -152,7 +152,7 @@ internal sealed class HistoryView : DockPanel, IModalView
     {
         for (var i = 0; i < _rows.Count; i++)
         {
-            _rows[i].Background = i == _selected ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
+            ModalParts.Mark(_rows[i], i == _selected, _colours);
         }
 
         if (_selected < _rows.Count)

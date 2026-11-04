@@ -308,7 +308,7 @@ internal sealed class LayoutsView : DockPanel, IModalView
         for (var i = 0; i < _rows.Count; i++)
         {
             var mine = _rowIndex[i] == _selected;
-            _rows[i].Background = mine ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
+            ModalParts.Mark(_rows[i], mine, _colours);
             if (mine)
             {
                 _rows[i].BringIntoView();
