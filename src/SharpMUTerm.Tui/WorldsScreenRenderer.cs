@@ -113,6 +113,15 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
     internal const int AlertOnField = 19;
 
+    /// <summary><see cref="WorldDefinition.CaptureChannels"/>, as one of <see cref="ChannelCaptureChoices"/>.</summary>
+    internal const int CaptureChannelsField = 20;
+
+    /// <summary><see cref="WorldDefinition.HighlightNames"/>: <c>Name=colour, …</c>.</summary>
+    internal const int HighlightNamesField = 21;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.CaptureChannels"/>.</summary>
+    internal static readonly IReadOnlyList<string> ChannelCaptureChoices = WorldFieldValues.ChannelCaptureChoices;
+
     /// <summary>F5's words for <see cref="WorldDefinition.AutoReconnect"/>.</summary>
     internal static readonly IReadOnlyList<string> ReconnectChoices = WorldFieldValues.ReconnectChoices;
 
@@ -771,7 +780,7 @@ internal static class WorldsScreenRenderer
     [
         "name", "host", "port", "encoding", "keepalive", "gmcp-modules", "content", "emoji", "map-room", "map-exits",
         "walk-fail", "sounds", "edit-grab", "gmcp-login", "discord", "layout", "join-wraps", "reconnect", "stacking",
-        "alert-on",
+        "alert-on", "capture-channels", "highlight-names",
     ];
 
     /// <summary>The world's two security checkboxes, drawn in the WORLD block (<see cref="SecurityPane"/>), by declared id.</summary>
@@ -1090,6 +1099,23 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 AlertOnField)),
+            WorldField("channels", Field(
+                world.CaptureChannels switch
+                {
+                    SharpMUTerm.Core.Protocols.ChannelCaptureMode.Copy => $"[{Value}]{ChannelCaptureChoices[1]} · a window per GMCP channel[/]",
+                    SharpMUTerm.Core.Protocols.ChannelCaptureMode.Move => $"[{Value}]{ChannelCaptureChoices[2]} · out of the main window[/]",
+                    _ => $"[{Label}]{ChannelCaptureChoices[0]} · channels stay in the main window[/]",
+                },
+                cursor,
+                selectedWorld,
+                CaptureChannelsField)),
+            WorldField("names", Field(
+                SharpMUTerm.Core.Automation.NameHighlights.Format(world.HighlightNames) is { } names
+                    ? $"[{Value}]{Escape(names)}[/]"
+                    : $"[{Label}]none · e.g. Ashlyn=gold, Merrow=red[/]",
+                cursor,
+                selectedWorld,
+                HighlightNamesField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

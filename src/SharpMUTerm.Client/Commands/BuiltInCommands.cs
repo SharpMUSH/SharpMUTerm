@@ -20,6 +20,15 @@ public static class BuiltInCommands
     /// <summary>Help: keys, slash commands and how-tos (<c>/help</c>).</summary>
     public const string HelpCommand = "term:help";
 
+    /// <summary>⌃P ▸ Script console.</summary>
+    public const string ScriptConsoleCommand = "world:script-console";
+
+    /// <summary>⌃P ▸ Start scene log.</summary>
+    public const string SceneStartCommand = "term:scene-on";
+
+    /// <summary>⌃P ▸ Stop scene log.</summary>
+    public const string SceneStopCommand = "term:scene-off";
+
     /// <summary>The spelling dictionary offer.</summary>
     public const string DictionaryCommand = "term:get-dictionary";
 
@@ -96,6 +105,8 @@ public static class BuiltInCommands
         Family("world:join-wraps", JoinWrapsPrefix, JoinWrapsEntries);
         Add("world:reload-scripts", CommandGroup.World, "Reload scripts",
             detail: "re-reads this character's Lua files", when: c => c.State.ScriptsOn);
+        Add(ScriptConsoleCommand, CommandGroup.World, "Script console",
+            detail: "run Lua as this character, see what scripts print and keep");
 
         // Only where the host has a screen reader to tell: the window's live region, or --plain.
         Add("a11y:toggle-window", CommandGroup.Terminal, "Read this window aloud",
@@ -105,6 +116,9 @@ public static class BuiltInCommands
         // OUTPUT (CommandGroup.Terminal) — stateful labels.
         Add("term:log-off", CommandGroup.Terminal, "Pause logging", when: c => c.State.LoggingOn);
         Add("term:log-on", CommandGroup.Terminal, "Start logging", when: c => !c.State.LoggingOn);
+        Add(SceneStopCommand, CommandGroup.Terminal, "Stop scene log", detail: "closes the file", when: c => c.State.SceneLogging);
+        Add(SceneStartCommand, CommandGroup.Terminal, "Start scene log",
+            detail: "record this window's poses to a file of their own", when: c => !c.State.SceneLogging);
         Add("term:unfreeze", CommandGroup.Terminal, "Resume scrollback", when: c => c.State.Frozen);
         Add("term:freeze", CommandGroup.Terminal, "Freeze pane", when: c => !c.State.Frozen);
         Add("term:clear", CommandGroup.Terminal, "Clear window");

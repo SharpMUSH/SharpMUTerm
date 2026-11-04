@@ -2993,6 +2993,31 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   so a late offer cannot log in twice. The on-connect commands go after whichever login was sent. The password
   goes only to `SendGmcpAsync`; `Char.Login.Result` is printed, bounded to one line. Not done: a server that
   never negotiates GMCP still costs the five seconds, because `TelnetSession` raises nothing on a refusal.
+- **The script console is one per character, and a line runs on the UI thread** (`ScriptHost.EvaluateConsole`,
+  Scripting; `ScriptConsoleModel`/`ScriptConsoleLog`/`ScriptConsoleSession`, Client; `ScriptConsoleSurface`,
+  `SharpMUTermApp.ScriptConsole.cs`, Tui; `ScriptConsoleView`, Avalonia; ⌃P `world:script-console`; the `script-console`
+  view). A line is tried as `return <line>` first, then as a statement, in a coroutine under the host's `_gate` with an
+  instruction budget (2,000,000) and a time budget (500 ms), so a loop typed there cannot hang the screen; a Lua function
+  called *inside* a library call cannot be preempted. Files load under their own chunk name, so an error says
+  `main.lua:(3,…)`. Lines and history are in memory for the run (`SessionScripts.Printed`, `ReportScript`), never saved.
+  The prompt exists only with a scripts root whose folder exists and a window with a character; otherwise the model's
+  `Unavailable` says which. Every gesture ends in `RunConsoleLine`/`DeleteStoreKey`/`ReloadConsoleScripts` (surface
+  `script-console`, parity-probed). The demo scene has its own sandbox (`_demoScripts`), so the snapshot's prompt runs.
+- **GMCP channels go to a window per channel through `SpawnLine`** (`ChannelCapture`, Core;
+  `WorldDefinition.CaptureChannels`, F5 ▸ `channels`: off/copy/move, off by default). `Comm.Channel.Text`'s `channel`
+  names the window (letters, digits, space, `-`, `_`, 24 at most); its `text` is parsed through `AnsiParser`. `move`
+  gags the main-window echo by exact text, only when it arrives within 3 s of the GMCP (32 pending at most), so an echo
+  that arrives *before* the GMCP is not taken out.
+- **Highlighted names are an ingest-time restyle** (`NameHighlights`, Core; `WorldDefinition.HighlightNames`, F5 ▸
+  `names`, `TextRule.NameHighlights`). `Name=colour` from `HighlightColours`, gold by default, 64 names; one whole-word,
+  case-insensitive regex with a 50 ms timeout, applied before emoji and links and to captured channel lines. Only the
+  foreground is set, so the formatter's floor still applies. Like `join wraps`, it changes the next line, never history.
+- **A scene log is the focused window's lines into a file of its own** (`SceneLog`/`ScenePoses`, Core;
+  `SharpMUTermApp.SceneLog.cs`; ⌃P `term:scene-on`/`term:scene-off`; F7 ▸ Scene log: HTML or plain, poses or every line).
+  Under `<logRoot>/scenes/`, `scene-<window title>-<stamp>`, never overwriting, through `HtmlLogSink`/`PlainTextLogSink`. Fed at
+  `OnLine`/`OnSpawnLine`, the restore log's seam, so chrome is never recorded. A pose is a line that starts with a
+  present name or has the say-shape; present is the room roster plus the character, named in the header. **No log root,
+  no scene log**: refused out loud, the `logRoot` gate.
 - **Lua's `store.*` is one JSON file per character** (`ScriptStore`, Scripting; `script-data/<session key>.json`
   beside `config.json`, `0600`). The `scriptStoreRoot:` constructor parameter is null by default, the
   `save:`/`logRoot:` family, but the host's store never is: with no folder it is memory-only by construction, the

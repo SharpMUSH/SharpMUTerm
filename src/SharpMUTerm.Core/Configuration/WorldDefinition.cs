@@ -165,6 +165,18 @@ public sealed class WorldDefinition
     /// </summary>
     public bool DiscordPresence { get; set; }
 
+    /// <summary>
+    /// What GMCP <c>Comm.Channel.Text</c> does (F5 ▸ <c>capture channels</c>): nothing (the default), a copy in a window
+    /// per channel, or the line moved there and kept out of the main window (<see cref="Protocols.ChannelCapture"/>).
+    /// </summary>
+    public Protocols.ChannelCaptureMode CaptureChannels { get; set; }
+
+    /// <summary>
+    /// Names drawn in a colour wherever they appear as whole words in this world's output (F5 ▸ <c>highlight names</c>),
+    /// in the order they were listed. Empty by default (<see cref="Automation.NameHighlights"/>).
+    /// </summary>
+    public List<Automation.NameHighlight> HighlightNames { get; set; } = new();
+
     /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
     public MapSettings Map { get; set; } = new();
 
@@ -271,6 +283,8 @@ public sealed class WorldDefinition
         AlertOnName = AlertOnName,
         GmcpLogin = GmcpLogin,
         DiscordPresence = DiscordPresence,
+        CaptureChannels = CaptureChannels,
+        HighlightNames = HighlightNames.ToList(),
         Layout = Layout,
         AcceptedLayoutSuggestion = AcceptedLayoutSuggestion,
         Characters = Characters.Select(c => c.Clone()).ToList(),

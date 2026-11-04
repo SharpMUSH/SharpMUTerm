@@ -374,9 +374,10 @@ public class ScreenModelTests
         // The THEME group on top adds thirteen rows and three stops: its heading and spacer, a row per built-in
         // theme, and the preview's caption and seven rows, which are drawn and never a stop.
         // ALERTS adds three rows and one stop: its heading, its spacer and `alert when away`.
-        await Assert.That(screen.Rows.Count).IsEqualTo(42);
+        // SCENE LOG adds four rows and two stops: its heading, its spacer, the format and what is recorded.
+        await Assert.That(screen.Rows.Count).IsEqualTo(46);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(18);
+        await Assert.That(model.Sizes[0]).IsEqualTo(20);
     }
 
     /// <summary>

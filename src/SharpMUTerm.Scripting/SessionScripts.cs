@@ -88,6 +88,19 @@ public sealed class SessionScripts : IDisposable
     /// <summary>The live host, or null before the first <see cref="Reload"/>.</summary>
     public ScriptHost? Host => _host;
 
+    /// <summary>
+    /// Raised for every line a script prints, on the script's thread (the read loop, the UI thread, a timer), after it
+    /// has reached the session's window. The script console keeps its own copy from here.
+    /// </summary>
+    public event Action<string>? Printed;
+
+    /// <summary>
+    /// The script console's line, run in this character's sandbox under the host's lock and time-limited
+    /// (<see cref="ScriptHost.EvaluateConsole"/>). Before the first <see cref="Reload"/> there is no host to run it in.
+    /// </summary>
+    public ConsoleResult Evaluate(string line) =>
+        _host is { } host ? host.EvaluateConsole(line) : new ConsoleResult(null, "the scripts have not been loaded yet");
+
     /// <summary>Whether the loaded scripts define a global function by this (possibly dotted) name.</summary>
     public bool Defines(string name) => _host?.Defines(name) ?? false;
 
@@ -118,7 +131,7 @@ public sealed class SessionScripts : IDisposable
         _session.Aliases.ClearRuntime();
 
         _files = _session.ScriptFiles.ToArray();
-        _bridge = new WorldSessionScriptBridge(_session, _sendTo);
+        _bridge = new WorldSessionScriptBridge(_session, _sendTo) { Printed = text => Printed?.Invoke(text) };
         _host = new ScriptHost(_bridge, _store);
         _bridge.Attach(_host);
         _host.Error += OnScriptError;

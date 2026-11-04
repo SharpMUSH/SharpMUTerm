@@ -9,6 +9,16 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Ctrl+P ▸ Script console: one per character, it shows what your Lua scripts printed and the errors they raised
+  (with the file and line), runs a line of Lua as that character (a runaway loop is stopped after half a second),
+  remembers what you typed, lists the character's `store` keys with Delete, and reloads the scripts. Without a
+  scripts folder it says what to create.
+- F5 ▸ channels puts each GMCP channel (`Comm.Channel.Text`) in a window of its own: `copy` keeps the line in the
+  main window too, `move` takes it out. Off by default.
+- F5 ▸ names highlights the names you list (`Ashlyn, Merrow=red`) in a colour of your choice, as whole words,
+  wherever they appear.
+- Ctrl+P ▸ Start scene log records the window in front to a file of its own under the log folder, HTML or plain text,
+  poses only or every line (F7 ▸ Scene log), with a header naming who was in the room; Stop scene log closes it.
 - A world can reconnect by itself after its connection drops (F5 ▸ reconnect). It waits 5, 15, 30, 60 and 60
   seconds between tries, counts down on the status row, and stops after five; Alt+R dials at once, and Disconnect or
   Ctrl+P ▸ Stop reconnecting cancels. Your own Disconnect, quitting, or the game closing right after you typed a

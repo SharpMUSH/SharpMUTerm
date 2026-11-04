@@ -186,6 +186,9 @@ public static class SurfaceCatalog
     /// <summary>The spelling dictionary offer: the consent step before anything is downloaded.</summary>
     public const string Dictionary = "dictionary";
 
+    /// <summary>A character's script console: its scripts' output and errors, a Lua prompt, and its <c>store.*</c>.</summary>
+    public const string ScriptConsole = "script-console";
+
     /// <summary>
     /// The <c>+3 ▾</c> chip a tab strip carries when its tabs do not fit even at their floors, and the list of the tabs
     /// past its edges it opens: a cell list in a terminal, a native menu in the window (the chip itself is cells in both).
@@ -209,7 +212,7 @@ public static class SurfaceCatalog
     private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
 
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
-    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary];
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, ScriptConsole];
 
     /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
     private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
@@ -483,6 +486,18 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.DictionaryOffer.Render",
             ModalViews("DictionaryOfferView")),
+        new(
+            ScriptConsole,
+            typeof(ScriptConsoleModel),
+            [
+                // A line at the prompt runs in the character's sandbox; a store key is deleted; the scripts are reloaded.
+                new(SurfaceActionKind.Modal, "run", "RunConsoleLine"),
+                new(SurfaceActionKind.Modal, "delete key", "DeleteStoreKey"),
+                new(SurfaceActionKind.Modal, "reload", "ReloadConsoleScripts"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.ScriptConsoleSurface.Render",
+            ModalViews("ScriptConsoleView")),
         new(
             TabOverflow,
             typeof(MenuModel),

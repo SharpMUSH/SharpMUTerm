@@ -89,6 +89,9 @@ public sealed class AppConfiguration
     /// <summary>Game sound: on or off, the player's levels, captions (F7 ▸ SOUND).</summary>
     public SoundSettings Sound { get; set; } = new();
 
+    /// <summary>How a scene log (⌃P ▸ Start scene log) is written: HTML or plain text, poses or every line (F7 ▸ Scene log).</summary>
+    public SceneLogSettings SceneLog { get; set; } = new();
+
     /// <summary>How the command line behaves — the F8 "Input &amp; spellcheck" screen's settings.</summary>
     public InputSettings Input { get; set; } = new();
 
@@ -185,4 +188,14 @@ public sealed class AppConfiguration
 
         return resolved;
     }
+}
+
+/// <summary>How a scene log is written (<see cref="Logging.SceneLog"/>).</summary>
+public sealed class SceneLogSettings
+{
+    /// <summary>HTML (the default, keeping the game's colours) or plain text.</summary>
+    public bool Html { get; set; } = true;
+
+    /// <summary>Poses only (the default) or every line the window shows.</summary>
+    public Logging.SceneLogContent Content { get; set; }
 }
