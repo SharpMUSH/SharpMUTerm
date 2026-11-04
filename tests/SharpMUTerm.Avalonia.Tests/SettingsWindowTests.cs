@@ -304,6 +304,59 @@ public class SettingsWindowTests
         await Assert.That(section.SettingsOpenKey).IsNull().Because("no cell screen opens under it");
     }
 
+    /// <summary>
+    /// F7 in the window takes the keyboard: the settings window's search box has focus, so typing goes there and not
+    /// into the command line behind it, where ⏎ would send it. Closing gives the keyboard back to the cells.
+    /// </summary>
+    [Test]
+    public async Task TheSettingsWindowTakesTheKeyboardAndGivesItBack()
+    {
+        var (searchFocused, typed, line, viewFocused) = await Session.Dispatch(() =>
+        {
+            using var driver = new AvaloniaConsoleDriver(120, 34);
+            var view = new TerminalView(driver, SkiaSharp.SKColors.White, new SkiaSharp.SKColor(0x1e, 0x1e, 0x24), 14, null);
+            var main = new Window { Content = view, Width = 1000, Height = 700 };
+            driver.Settings.Owner = main;
+            driver.Settings.Refocus = () => view.Focus();
+            main.Show();
+            view.Focus();
+            var app = new SharpMUTermApp(DemoScene.Build(), WindowHost.Create(driver, clipboard: null) with
+            {
+                Capabilities = WindowOptions.Capabilities,
+                Audio = null,
+                Presence = null,
+                Announcer = null,
+                RunsInline = true,
+            });
+            driver.KeyPressed += (_, key) => app.SimulateKey(key);
+            try
+            {
+                var before = app.ArmedInputText;
+                app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F7, false, false, false));
+                Dispatcher.UIThread.RunJobs();
+                var window = driver.Settings.Window!;
+                var focused = window.SearchBox.IsFocused;
+                window.KeyTextInput("theme");
+                Dispatcher.UIThread.RunJobs();
+                var typed = window.SearchBox.Text;
+                var line = app.ArmedInputText == before ? string.Empty : app.ArmedInputText;
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+                return (focused, typed, line, view.IsFocused);
+            }
+            finally
+            {
+                app.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                main.Close();
+            }
+        }, CancellationToken.None);
+
+        await Assert.That(searchFocused).IsTrue();
+        await Assert.That(typed).IsEqualTo("theme").Because("what is typed after F7 goes into the settings window");
+        await Assert.That(line).IsEmpty().Because("nothing reached the command line behind it");
+        await Assert.That(viewFocused).IsTrue().Because("closing gives the keyboard back to the cells, and so the command line");
+    }
+
     private static Task<T> Run<T>(Harness harness, string initial, Func<SettingsWindow, T> body) =>
         Session.Dispatch(() =>
         {

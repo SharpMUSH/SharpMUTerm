@@ -222,8 +222,8 @@ public class NativePaletteTests
             return (index < 0 ? null : overlay.KeyTexts[index], overlay.KeyTexts.Where(k => k is not null).ToArray());
         });
 
-        await Assert.That(newline).IsEqualTo("Ctrl+⏎");
-        await Assert.That(any).DoesNotContain("Alt+⏎");
+        await Assert.That(newline).IsEqualTo("Ctrl+Enter");
+        await Assert.That(any).DoesNotContain("Alt+Enter");
         await Assert.That(any.Any(k => k!.Contains('⌃') || k.Contains('⌥'))).IsFalse().Because("the window's UI font reads keys in words");
     }
 

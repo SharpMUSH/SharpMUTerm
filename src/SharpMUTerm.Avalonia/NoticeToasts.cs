@@ -18,7 +18,11 @@ namespace SharpMUTerm.Avalonia;
 /// message log stays the history: a toast fades after <see cref="NoticeModel.Duration"/> and is not kept.
 /// <para>
 /// <b>Input.</b> Only a toast is hit: the control paints nothing between its toasts, and Avalonia hits only what was
-/// painted, so everywhere else in the control the pointer goes through to the cells. While the pointer is over a toast it stays, and for a moment after it leaves. A left click on
+/// painted, so everywhere else in the control the pointer goes through to the cells. While the pointer is over a toast it stays, and for a moment after it leaves.
+/// And while the pointer is over any toast the stack does not move: every toast keeps the place it had when the pointer
+/// arrived (<see cref="Frozen"/>), so an older one fading out leaves a gap instead of letting the stack fall and carry the
+/// hovered toast out from under the pointer; a notice arriving meanwhile goes above the stack. The stack closes up once
+/// the pointer leaves. A left click on
 /// a toast with an action runs it — through <see cref="NoticeOverlay.Run"/>, the registry, never a command the window
 /// built — and a click without one, or a right click, dismisses it. Nothing here is focusable, so a toast never takes
 /// the keyboard from the command line.
@@ -42,6 +46,11 @@ internal sealed class NoticeToasts : Control
     private readonly DispatcherTimer _timer;
     private Point? _pointer;
 
+    // Where each toast was when the pointer came onto the stack, and the bounds that was measured in; null while the
+    // pointer is off it. While set, the stack holds still under the pointer.
+    private Dictionary<Toast, Placed>? _frozen;
+    private Rect _frozenBounds;
+
     public NoticeToasts()
     {
         Focusable = false;
@@ -57,6 +66,28 @@ internal sealed class NoticeToasts : Control
     /// <summary>The bottom of the stack, in this control's coordinates: just above the pane area's last row.</summary>
     internal double Bottom { get; set; }
 
+    /// <summary>
+    /// What a toast must not cover, in this control's coordinates — the native map's legend. A toast that would land on
+    /// one is lifted to sit above it, and the rest of the stack goes up with it.
+    /// </summary>
+    internal IReadOnlyList<Rect> Avoid
+    {
+        get => _avoid;
+        set
+        {
+            if (!_avoid.SequenceEqual(value))
+            {
+                _avoid = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private IReadOnlyList<Rect> _avoid = [];
+
+    /// <summary>Whether the stack is holding still because the pointer is over a toast. Internal for tests.</summary>
+    internal bool Frozen => _frozen is not null;
+
     /// <summary>Shows a notice the client said. A toast for the same notice (by sequence) is not shown twice.</summary>
     public void Show(NoticeOverlay overlay)
     {
@@ -67,9 +98,11 @@ internal sealed class NoticeToasts : Control
         }
 
         _toasts.Add(new Toast(overlay, _clock.Elapsed));
+        var hovered = HoveredToast();
         while (_toasts.Count > MaxShown)
         {
-            _toasts.RemoveAt(0);
+            // The oldest goes, unless the pointer is on it: then the next oldest.
+            _toasts.Remove(_toasts.First(t => t != hovered));
         }
 
         _timer.Start();
@@ -109,12 +142,24 @@ internal sealed class NoticeToasts : Control
         Tick();
     }
 
+    /// <summary>The words each toast draws — its key chip, its text and its action — oldest first. Internal for tests.</summary>
+    internal IReadOnlyList<string> DrawnText() =>
+        Layout().SelectMany(l => new[] { ChipText(l.Toast), BodyText(l.Toast), ActionText(l.Toast) }).OfType<string>().ToList();
+
+    // What a toast says, in the window's words (NativeKeys): the key chip, the text, the action line.
+    private static string? ChipText(Toast toast) => toast.Overlay.Notice.Key is { } key ? NativeKeys.Words(key) : null;
+
+    private static string BodyText(Toast toast) => NativeKeys.Words(toast.Overlay.Notice.Text);
+
+    private static string? ActionText(Toast toast) => toast.Overlay.Notice.Action is { } a ? $"{NativeKeys.Words(a.Label)}  ›" : null;
+
     /// <summary>Where each toast is drawn, oldest first, in this control's coordinates. Internal for tests.</summary>
     internal IReadOnlyList<Rect> Rects() => Layout().Select(l => l.Rect).ToList();
 
     private void Tick()
     {
         var now = _clock.Elapsed;
+        SyncFreeze();
         var hovered = HoveredToast();
         foreach (var toast in _toasts)
         {
@@ -150,12 +195,40 @@ internal sealed class NoticeToasts : Control
     private Toast? HoveredToast() =>
         _pointer is { } at ? Layout().LastOrDefault(l => l.Rect.Contains(at)).Toast : null;
 
+    /// <summary>
+    /// Freezes the stack where it is when the pointer comes onto a toast, and lets it close up when the pointer leaves
+    /// every toast (or the control is resized, which re-measures everything anyway).
+    /// </summary>
+    private void SyncFreeze()
+    {
+        if (_frozen is not null && (_pointer is null || _frozenBounds != Bounds || HoveredToast() is null))
+        {
+            _frozen = null;
+            InvalidateVisual();
+        }
+
+        if (_frozen is null && _pointer is { } at)
+        {
+            var placed = Layout();
+            if (placed.Any(l => l.Rect.Contains(at)))
+            {
+                _frozen = placed.ToDictionary(l => l.Toast);
+                _frozenBounds = Bounds;
+            }
+        }
+    }
+
     // ── Layout ───────────────────────────────────────────────────────────────────────────────
 
     private readonly record struct Placed(Toast Toast, Rect Rect, FormattedText Text, FormattedText? Chip, FormattedText? Action);
 
     private List<Placed> Layout()
     {
+        if (_frozen is not null)
+        {
+            return FrozenLayout(_frozen);
+        }
+
         var placed = new List<Placed>();
         var width = Math.Min(CardWidth, Bounds.Width - (2 * Inset));
         if (width < 120 || _toasts.Count == 0)
@@ -164,31 +237,72 @@ internal sealed class NoticeToasts : Control
         }
 
         var bottom = (Bottom > 0 ? Math.Min(Bottom, Bounds.Height) : Bounds.Height) - Gap;
-        var x = Bounds.Width - Inset - width;
 
         // Newest at the bottom: lay out from the newest upwards, then hand them back oldest first.
         for (var i = _toasts.Count - 1; i >= 0; i--)
         {
-            var toast = _toasts[i];
-            var palette = toast.Overlay.Palette;
-            var ink = PanelText.Parse(palette.Text);
-            var inner = width - EdgeWidth - (2 * Padding);
-            var chip = toast.Overlay.Notice.Key is { } key ? Format(key, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
-            var textWidth = inner - (chip is null ? 0 : chip.Width + 8);
-            var text = Format(toast.Overlay.Notice.Text, TextSize, ink, bold: false, Math.Max(40, textWidth), lines: 3);
-            var action = toast.Overlay.Notice.Action is { } a ? Format($"{a.Label}  ›", ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
-            var height = (2 * Padding) + text.Height + (action is null ? 0 : action.Height + 6);
-            var top = bottom - height;
-            if (top < Inset)
+            var one = Measure(_toasts[i], width, bottom);
+            while (one is { } landed && _avoid.FirstOrDefault(a => a.Intersects(landed.Rect.Inflate(Gap / 2))) is { Height: > 0 } obstacle)
+            {
+                one = Measure(_toasts[i], width, obstacle.Top - Gap);
+            }
+
+            if (one is null)
             {
                 break;
             }
 
-            placed.Insert(0, new Placed(toast, new Rect(x, top, width, height), text, chip, action));
-            bottom = top - Gap;
+            placed.Insert(0, one.Value);
+            bottom = one.Value.Rect.Top - Gap;
         }
 
         return placed;
+    }
+
+    /// <summary>
+    /// The stack while the pointer is on it: every toast that was there keeps its place (a gap where one has gone), and a
+    /// toast that has arrived since is stacked above the topmost, newest nearest the stack, while there is room.
+    /// </summary>
+    private List<Placed> FrozenLayout(Dictionary<Toast, Placed> frozen)
+    {
+        var kept = _toasts.Where(frozen.ContainsKey).Select(t => frozen[t]).ToList();
+        var arrived = _toasts.Where(t => !frozen.ContainsKey(t)).ToList();
+        if (arrived.Count == 0)
+        {
+            return kept;
+        }
+
+        var top = frozen.Values.Min(p => p.Rect.Top) - Gap;
+        var above = new List<Placed>();
+        for (var i = arrived.Count - 1; i >= 0; i--)
+        {
+            if (Measure(arrived[i], frozen.Values.First().Rect.Width, top) is not { } placed)
+            {
+                break;
+            }
+
+            above.Insert(0, placed);
+            top = placed.Rect.Top - Gap;
+        }
+
+        // Oldest first, as the open layout hands them back: everything above the frozen block is newer than it.
+        return [.. kept, .. above];
+    }
+
+    /// <summary>One toast placed with its bottom at <paramref name="bottom"/>, or null when it would not fit below the inset.</summary>
+    private Placed? Measure(Toast toast, double width, double bottom)
+    {
+        var x = Bounds.Width - Inset - width;
+        var palette = toast.Overlay.Palette;
+        var ink = PanelText.Parse(palette.Text);
+        var inner = width - EdgeWidth - (2 * Padding);
+        var chip = ChipText(toast) is { } key ? Format(key, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var textWidth = inner - (chip is null ? 0 : chip.Width + 8);
+        var text = Format(BodyText(toast), TextSize, ink, bold: false, Math.Max(40, textWidth), lines: 3);
+        var action = ActionText(toast) is { } a ? Format(a, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var height = (2 * Padding) + text.Height + (action is null ? 0 : action.Height + 6);
+        var top = bottom - height;
+        return top < Inset ? null : new Placed(toast, new Rect(x, top, width, height), text, chip, action);
     }
 
     private static FormattedText Format(string text, double size, Color colour, bool bold, double maxWidth, int lines = 1) =>
@@ -208,9 +322,10 @@ internal sealed class NoticeToasts : Control
     {
         base.OnPointerMoved(e);
         _pointer = e.GetPosition(this);
+        SyncFreeze();
         var over = HoveredToast();
         Cursor = new Cursor(over?.Overlay.Notice.Action is not null ? StandardCursorType.Hand : StandardCursorType.Arrow);
-        ToolTip.SetTip(this, over?.Overlay.Notice.Action is { } action ? $"{action.Label} — click" : over is null ? null : "Click to dismiss");
+        ToolTip.SetTip(this, over?.Overlay.Notice.Action is { } action ? $"{NativeKeys.Words(action.Label)} — click" : over is null ? null : "Click to dismiss");
         e.Handled = true;
         Tick();
     }
@@ -219,6 +334,7 @@ internal sealed class NoticeToasts : Control
     {
         base.OnPointerExited(e);
         _pointer = null;
+        SyncFreeze();
         ToolTip.SetTip(this, null);
     }
 

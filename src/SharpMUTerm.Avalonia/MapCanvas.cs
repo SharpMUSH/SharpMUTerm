@@ -389,19 +389,36 @@ internal sealed class MapCanvas : Control
     /// The legend, in the bottom-left corner on a plate: you, the stairs, a walk, and each area in its colour. Drawn only
     /// where it fits, and it never takes the pointer from a room under it (the canvas hit-tests rooms only).
     /// </summary>
+    private const double LegendSize = 11, LegendRow = 16, LegendPad = 8, LegendSwatch = 9;
+
+    /// <summary>
+    /// Where the legend's plate is drawn in a canvas of <paramref name="size"/>, in the canvas's coordinates; null when
+    /// none is drawn (no rooms, or it would not fit). The window keeps its toasts off it (<see cref="NoticeToasts.Avoid"/>).
+    /// </summary>
+    internal Rect? LegendRect(Size size)
+    {
+        if (_model.Rooms.Count == 0)
+        {
+            return null;
+        }
+
+        var entries = LegendEntries();
+        var widest = entries.Max(e => PanelText.Measure(e.Label, LegendSize, bold: false));
+        var width = LegendPad + LegendSwatch + 6 + widest + LegendPad;
+        var height = (LegendPad * 2) + (entries.Count * LegendRow) - (LegendRow - LegendSize - 3);
+        return width > size.Width * 0.6 || height > size.Height * 0.6 ? null : new Rect(10, size.Height - height - 10, width, height);
+    }
+
     private void DrawLegend(DrawingContext context, Rect bounds)
     {
-        var entries = LegendEntries();
-        const double size = 11, row = 16, pad = 8, swatch = 9;
-        var widest = entries.Max(e => PanelText.Measure(e.Label, size, bold: false));
-        var width = pad + swatch + 6 + widest + pad;
-        var height = (pad * 2) + (entries.Count * row) - (row - size - 3);
-        if (width > bounds.Width * 0.6 || height > bounds.Height * 0.6)
+        if (LegendRect(bounds.Size) is not { } plate)
         {
             return;
         }
 
-        var plate = new Rect(10, bounds.Height - height - 10, width, height);
+        var entries = LegendEntries();
+        const double size = LegendSize, row = LegendRow, pad = LegendPad, swatch = LegendSwatch;
+        var widest = entries.Max(e => PanelText.Measure(e.Label, size, bold: false));
         context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE6, _plane.R, _plane.G, _plane.B)), new Pen(new SolidColorBrush(Faded(0.25)), 1), plate, 5, 5);
         var y = plate.Y + pad;
         foreach (var (label, colour) in entries)

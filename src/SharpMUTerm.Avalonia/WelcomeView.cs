@@ -165,8 +165,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
             var index = i;
             var (title, detail) = _model.Describe(choice);
             var words = new StackPanel();
-            words.Children.Add(new TextBlock { Text = title, FontSize = 14.5, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
-            words.Children.Add(new TextBlock { Text = detail, FontSize = 12, Foreground = _colours.Brush(_colours.Dim) });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(title), FontSize = 14.5, FontWeight = FontWeight.Medium, Foreground = _colours.Brush(_colours.Text) });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(detail), FontSize = 12, Foreground = _colours.Brush(_colours.Dim) });
             var row = ModalParts.Row(words, title, () => SelectChoice(index), () => Choose(choice));
             row.Padding = new Thickness(12, 8);
             _choiceRows.Add(row);
@@ -268,7 +268,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
     {
         if (_body.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "Problem") is { } problem)
         {
-            problem.Text = _model.Problem ?? string.Empty;
+            problem.Text = NativeKeys.Words(_model.Problem);
             problem.IsVisible = _model.Problem is not null;
         }
     }

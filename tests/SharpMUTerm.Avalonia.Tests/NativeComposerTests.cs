@@ -126,7 +126,7 @@ public class NativeComposerTests
         await Assert.That(focused).IsTrue();
         await Assert.That(cellOpen).IsFalse();
         await Assert.That(header).Contains("COMPOSE").And.Contains("to Ann").And.Contains("as typed").And.Contains("no dictionary");
-        await Assert.That(footer).Contains("⌃S send").And.Contains("⌥L escaping").And.Contains("Esc close (keeps the draft)");
+        await Assert.That(footer).Contains("Ctrl+S send").And.Contains("Alt+L escaping").And.Contains("Esc close (keeps the draft)");
         await Assert.That(below).IsTrue().Because("under the layer, so a toast is drawn over it");
         await Assert.That(margin).IsTrue().Because("over the cells, clear of the native header and sidebar");
     }
@@ -291,7 +291,7 @@ public class NativeComposerTests
         });
 
         await Assert.That(header).Contains("EDIT").And.Contains("Test:look").And.DoesNotContain("as typed");
-        await Assert.That(footer).Contains("⌃S save").And.DoesNotContain("⌥L");
+        await Assert.That(footer).Contains("Ctrl+S save").And.DoesNotContain("Alt+L");
         await Assert.That(saved).IsEquivalentTo(new[] { "player:tell(\"Hi.\");", "return 1;", "// 100% [sure]; done" });
         await Assert.That(sent).IsEmpty();
     }
@@ -321,7 +321,7 @@ public class NativeComposerTests
         await Assert.That(armed).IsTrue();
         await Assert.That(focused).IsTrue();
         await Assert.That(header).Contains("COMPOSE").And.Contains("to Ann");
-        await Assert.That(footer).Contains("⌃S").And.Contains("Esc");
+        await Assert.That(footer).Contains("Ctrl+S").And.Contains("Esc");
         await Assert.That(width).IsGreaterThan(0);
     }
 

@@ -309,6 +309,26 @@ public sealed class SettingsForm
     public void Select(object? item) => _item = item;
 
     /// <summary>
+    /// The item each list section last had selected, by section id, for the run: the host's, so it outlives this form
+    /// and a list opened again (or a section switched back to) lands where it was left. Null keeps nothing. Read and
+    /// written on the window's thread only.
+    /// </summary>
+    public IDictionary<string, object>? Selections { get; init; }
+
+    /// <summary>The item <paramref name="sectionId"/> last had selected, or null.</summary>
+    public object? Recall(string sectionId) =>
+        Selections is { } kept && kept.TryGetValue(sectionId, out var item) ? item : null;
+
+    /// <summary>Keeps <paramref name="item"/> as <paramref name="sectionId"/>'s selection for the run.</summary>
+    public void Remember(string sectionId, object? item)
+    {
+        if (Selections is { } kept && item is not null)
+        {
+            kept[sectionId] = item;
+        }
+    }
+
+    /// <summary>
     /// <paramref name="section"/>'s items, by set: the player's own sets in order, then every installed package's sets,
     /// read-only. Each set's items are a snapshot of its list now.
     /// </summary>

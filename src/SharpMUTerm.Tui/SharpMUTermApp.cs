@@ -1659,11 +1659,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
             // In a host that draws ⌃F itself, the same query through the native surface's session (the window's
             // screenshots); the parity harness and the terminal have none and take the cell path below.
-            if (!string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase) && TryOpenNativeSearch())
+            // `search-landed` goes there too: ↓ then ⏎ on the native list is the second hit's row handed to
+            // GoToSearchHit, the method the cell ⏎ ends in, so the frame left behind is the cells' landing.
+            if (TryOpenNativeSearch())
             {
                 var all = string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase);
                 var regex = string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase);
                 NativeSearch!.Search(regex ? @"gobl\w+ (corpse|for)" : "goblin", regex, all);
+                if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase) && NativeSearch is { } landing && landing.Model.Rows.Count > 0)
+                {
+                    var hits = landing.Model;
+                    CloseNativeModal(landing);
+                    GoToSearchHit(hits, Math.Min(1, hits.Rows.Count - 1));
+                    SettleScroll();
+                }
             }
             else
             {
@@ -1779,13 +1788,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // seeded here on purpose: the frame is where "the password is not in the list" is visible.
             HistoryFor(InputBar.Primary).Add("connect Corvid hunter2");
 
-            // A host that draws ⌃R itself filters in its own box, so only the list is handed over there.
-            if (!TryOpenNativeHistory())
+            // A host that draws ⌃R itself filters in its own box, so there the query is handed over as the box's
+            // opening text — `menu-fuzzy`'s way with the native palette — and the frame is filtered in both hosts.
+            var filter = view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase) ? "north" : string.Empty;
+            if (!TryOpenNativeHistory(filter))
             {
                 _historySearch.OpenForSnapshot();
-                if (view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase))
+                if (filter.Length > 0)
                 {
-                    _historySearch.SimulateTyping("north");
+                    _historySearch.SimulateTyping(filter);
                 }
             }
         }
@@ -2752,6 +2763,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(startup);
 
+        // A launch has one startup pass. The window's demo lays its scene out on the loop's first tick and the
+        // welcome scene runs this pass itself, and then Run schedules its own — which raised the empty
+        // configuration's notice twice, two identical toasts stacked in the window. The second is the one ignored.
+        if (_startupRan)
+        {
+            return;
+        }
+
+        _startupRan = true;
+
         if (startup.Count == 0)
         {
             // Two different states, and telling them apart is the whole value of the message: nothing
@@ -2800,6 +2821,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// the welcome leaves behind when it is closed, so it names the welcome's way back as well as the two ways
     /// in; and it is short enough for an 80-column status row, which a longer one wrapped onto a second row.
     /// </summary>
+    /// <summary>Set by the first <see cref="StartAsync"/>; a launch runs its startup pass once.</summary>
+    private bool _startupRan;
+
     internal const string NoWorldsNotice =
         "No world configured · /connect <host> <port> · F5 adds one · /welcome";
 

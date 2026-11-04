@@ -96,6 +96,87 @@ public class NoticeToastTests
         await Assert.That(gone).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// A hovered toast is held past its time, so the newer toasts under it fade first. The stack used to close up as they
+    /// went and carry the hovered toast out from under the pointer; it now holds still while the pointer is on it, and a
+    /// notice arriving meanwhile goes above it. Once the pointer leaves, the stack closes up.
+    /// </summary>
+    [Test]
+    public async Task AHoveredToastKeepsItsPlaceWhileTheToastsUnderItFade()
+    {
+        var (before, during, frozen, shown, arrivedAbove, after, closedUp) = await Run((window, view, layer, driver) =>
+        {
+            var notices = (IPointerPresenter)driver.Pointer;
+            notices.Notice(Overlay(1, "first", null, _ => { }));
+            notices.Notice(Overlay(2, "second", null, _ => { }));
+            Drain();
+            window.UpdateLayout();
+            var toasts = layer.Toasts;
+            var before = toasts.Rects()[0];
+            window.MouseMove(toasts.TranslatePoint(before.Center, window)!.Value);
+
+            // The newer toast's time and fade run out while the pointer holds the older one.
+            toasts.Advance(NoticeModel.Duration + NoticeToasts.FadeTime + TimeSpan.FromSeconds(1));
+            var shown = toasts.Shown.Select(n => n.Sequence).ToList();
+            var during = toasts.Rects()[0];
+            var frozen = toasts.Frozen;
+
+            notices.Notice(Overlay(3, "third", null, _ => { }));
+            Drain();
+            var rects = toasts.Rects();
+            var arrivedAbove = rects.Count == 2 && rects[0] == during && rects[1].Bottom < during.Top;
+
+            // The pointer leaves: the stack closes up again.
+            window.MouseMove(toasts.TranslatePoint(new Point(2, 2), window)!.Value);
+            var after = toasts.Rects();
+            return (before, during, frozen, shown, arrivedAbove, after, !toasts.Frozen);
+        }, columns: 80, rows: 16);
+
+        await Assert.That(shown).IsEquivalentTo(new long[] { 1 }).Because("the toast under the hovered one has gone");
+        await Assert.That(frozen).IsTrue();
+        await Assert.That(during).IsEqualTo(before).Because("the hovered toast stays under the pointer");
+        await Assert.That(arrivedAbove).IsTrue().Because("a notice arriving while the stack is held goes above it");
+        await Assert.That(closedUp).IsTrue();
+        await Assert.That(after[^1].Bottom).IsGreaterThan(before.Bottom).Because("off the stack, it closes up to the bottom");
+    }
+
+    /// <summary>
+    /// In the combat layout the map sits right of the output, down to the command line, and its legend is in its bottom-left
+    /// corner — under the toasts' column. A toast is stacked above the legend rather than over it.
+    /// </summary>
+    [Test]
+    public async Task AToastIsStackedClearOfTheMapsLegend()
+    {
+        var (legend, rects) = await Run((window, view, layer, driver) =>
+        {
+            var model = new MapViewModel(
+                "Town",
+                0,
+                [
+                    new MapViewRoom(1, "Plaza", 0, 0, Current: true, Ahead: false, Locked: false),
+                    new MapViewRoom(2, "North Road", 0, -1, Current: false, Ahead: false, Locked: false),
+                ],
+                [new MapViewExit(1, 2)],
+                null);
+            var notices = (IPointerPresenter)driver.Pointer;
+            notices.Panels(
+                [new PanelOverlay(PanelIds.Map, "map:demo", new PaneRect(44, 1, 36, 17), new PanelInk("#33ccff", "#ffaa33", "#555555"), null, model, _ => { })]);
+            notices.Notice(Overlay(1, "Using the Combat layout: the game sends vitals.", new NoticeAction("layout:layouts", "Change layout"), _ => { }, aboveRow: 18));
+            Drain();
+            window.UpdateLayout();
+            driver.Flush();
+            Drain();
+            var canvas = layer.Maps.Values.Single();
+            var plate = canvas.LegendRect(canvas.Bounds.Size)!.Value;
+            var topLeft = canvas.TranslatePoint(plate.TopLeft, layer.Toasts)!.Value;
+            return (new Rect(topLeft, plate.Size), layer.Toasts.Rects());
+        }, columns: 80, rows: 20);
+
+        await Assert.That(rects).IsNotEmpty();
+        await Assert.That(rects.Any(r => r.Intersects(legend))).IsFalse().Because("no toast covers the map's legend");
+        await Assert.That(rects[^1].Bottom).IsLessThanOrEqualTo(legend.Top).Because("the stack sits above the legend");
+    }
+
     [Test]
     public async Task TheNativeMapDrawsItsAreasInTheModelsColours()
     {

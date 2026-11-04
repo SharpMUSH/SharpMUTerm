@@ -68,6 +68,8 @@ internal sealed partial class SharpMUTermApp
             ?? rows[0];
         _railCursor = SidebarModel.KeyOf(start);
         RefreshRail();
+        SyncComposerBands(); // the command line goes idle: ⏎ goes to a row now, not to the game
+        UpdateInputChrome(); // and its prompt with it, which is painted to match the band
         Notice("sidebar: ↑↓ walk · ⏎ goes · Esc returns", MessageSeverity.Info, "⌥C");
     }
 
@@ -81,6 +83,8 @@ internal sealed partial class SharpMUTermApp
 
         _railCursor = null;
         RefreshRail();
+        SyncComposerBands();
+        UpdateInputChrome();
     }
 
     /// <summary>

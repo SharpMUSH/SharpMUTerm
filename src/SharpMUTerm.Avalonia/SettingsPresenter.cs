@@ -16,6 +16,9 @@ internal sealed class SettingsPresenter : INativeSettings
     /// <summary>The window the settings window belongs to, set once the main window exists.</summary>
     public Window? Owner { get; set; }
 
+    /// <summary>Gives the keyboard back to the client's command line (or an armed docked composer) once the window closes.</summary>
+    public Action? Refocus { get; set; }
+
     /// <summary>The open settings window, for a test; read on the window's thread.</summary>
     public SettingsWindow? Window => _window;
 
@@ -29,7 +32,7 @@ internal sealed class SettingsPresenter : INativeSettings
         if (_window is { } open)
         {
             open.Load(form);
-            open.Activate();
+            open.FocusFirst();
             return open;
         }
 
@@ -43,6 +46,7 @@ internal sealed class SettingsPresenter : INativeSettings
 
             // The keyboard goes back to the client, as it does when a cell screen closes.
             Owner?.Activate();
+            Refocus?.Invoke();
         };
         _window = window;
         if (Owner is { IsVisible: true } owner)

@@ -281,6 +281,19 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Desktop window: the "no world configured" notice at first start shows once, not as two identical toasts.
+- Desktop window: a notice you point at stays where it is while the others fade, and notices no longer cover the
+  map's legend.
+- Desktop window: every key is written in words everywhere in the window — the menus, notices, Ctrl+P, the composer,
+  dialogs and settings now all say Ctrl+P, Alt+M and Enter rather than mixing them with ⌃P, ⌥M and ⏎.
+- Desktop window: the settings window takes the keyboard when it opens, so you can type in its search straight away,
+  and gives it back to the command line when it closes.
+- Desktop window: the composer's proportional or monospace font is remembered for each character, and kept after a
+  restart.
+- Desktop window: the trigger, alias, timer and key lists in settings remember which item you had selected when you
+  switch section or reopen the window.
+- Packages (F10) fit an 80×24 terminal: the list no longer scrolls to hide its last rows or the close key.
+- While Alt+C has the keyboard in the sidebar, the command line is drawn idle, since Enter goes to the sidebar row.
 - Desktop window: the Keys screen (F4) and the quick bar now describe the window's keys rather than a
   terminal's. Ctrl+digit, Ctrl+Shift+letter, Ctrl+Tab and Alt+O are shown as working keys you can bind, and
   Alt+Enter is marked as taken because it maximises the window.

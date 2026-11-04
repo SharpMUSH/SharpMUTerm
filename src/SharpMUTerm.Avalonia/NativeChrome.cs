@@ -63,6 +63,12 @@ internal abstract class NativeChromeView : Control
         if (overlay is not null && !double.IsNaN(Width) && !double.IsNaN(Height))
         {
             Layout(overlay, _hits);
+
+            // Every tooltip in the window's words, whatever the client's model said it in.
+            for (var i = 0; i < _hits.Count; i++)
+            {
+                _hits[i] = _hits[i] with { Tip = NativeKeys.Words(_hits[i].Tip) };
+            }
         }
 
         InvalidateVisual();
@@ -415,12 +421,12 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         _prefix = new Rect(start, plateTop, Math.Min(lead, Math.Max(0, right - start)), plateHeight);
         hits.Add((_prefix, string.Empty, $"{KeyGlyphs.Words(HeaderPrefix.Chord)} is armed: the next key acts on the workspace. {prefix.Exit}."));
 
-        var exitWidth = Measure(prefix.Exit, size - 1) + 8;
+        var exitWidth = Measure(NativeKeys.Words(prefix.Exit), size - 1) + 8;
         var x = _prefix.Right + 12;
         var limit = right - exitWidth - 12;
         foreach (var key in prefix.Keys)
         {
-            var width = Measure(key.Keys, size, bold: true) + 16;
+            var width = Measure(NativeKeys.Words(key.Keys), size, bold: true) + 16;
             if (x + width > limit)
             {
                 break;
@@ -552,12 +558,12 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         {
             var colour = key.Available ? Ink : Faint(0x60);
             context.DrawRectangle(new SolidColorBrush(Raised(key.Available ? 0.12 : 0.04)), new Pen(new SolidColorBrush(Faint(key.Available ? (byte)0x40 : (byte)0x20)), 1), area.Deflate(0.5), 5, 5);
-            Text(context, key.Keys, area.X + 8, middle, size, colour, bold: true);
+            Text(context, NativeKeys.Words(key.Keys), area.X + 8, middle, size, colour, bold: true);
         }
 
         if (_exit.Width > 0)
         {
-            Text(context, prefix.Exit, _exit.Right, middle, size - 1, Dim, alignRight: true);
+            Text(context, NativeKeys.Words(prefix.Exit), _exit.Right, middle, size - 1, Dim, alignRight: true);
         }
     }
 }
@@ -587,7 +593,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
     internal const string AddGameText = "+ Add a game or connect";
 
     /// <summary>The fold button's tooltip, open and folded.</summary>
-    internal const string FoldTip = "Fold the sidebar (⌃B b)", UnfoldTip = "Open the sidebar (⌃B b)";
+    internal const string FoldTip = "Fold the sidebar (Ctrl+B b)", UnfoldTip = "Open the sidebar (Ctrl+B b)";
 
     /// <summary>One drawn row: what it is, where, and its node.</summary>
     internal sealed record Row(RailRowKind Kind, Rect Area, RailWorld World, RailCharacter? Character = null, RailWindow? Window = null);

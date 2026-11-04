@@ -90,6 +90,25 @@ public class WelcomeTests
         await Assert.That(run.App.StatusMarkup).Contains("No world configured");
     }
 
+    /// <summary>
+    /// The window's demo lays the <c>welcome</c> scene out (which runs the startup pass) and then its loop's
+    /// <c>Run</c> schedules the startup pass again. That raised the notice twice — two identical toasts in the
+    /// window. A launch has one startup pass.
+    /// </summary>
+    [Test]
+    public async Task TheWelcomeSceneThenTheLoopsStartupRaiseTheNoticeOnce()
+    {
+        Console.SetIn(TextReader.Null);
+        await using var app = new SharpMUTermApp(DemoScene.Build(), ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 32), null, null, null));
+
+        app.RenderSnapshot("welcome");
+        app.ScheduleStartup([]);
+
+        var raised = app.Messages.Entries.Count(e => e.Text.Contains("No world configured", StringComparison.Ordinal));
+        await Assert.That(raised).IsEqualTo(1);
+        await Assert.That(app.WelcomeIsOpen).IsTrue();
+    }
+
     [Test]
     public async Task AClientWithWorldsDoesNotOpenIt()
     {

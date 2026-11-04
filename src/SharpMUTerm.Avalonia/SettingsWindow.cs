@@ -93,7 +93,11 @@ internal sealed class SettingsWindow : Window
         Content = dock;
 
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());
-        Opened += (_, _) => _clock.Start();
+        Opened += (_, _) =>
+        {
+            _clock.Start();
+            FocusFirst();
+        };
         Closed += (_, _) =>
         {
             _clock.Stop();
@@ -106,6 +110,18 @@ internal sealed class SettingsWindow : Window
         KeyDown += OnKey;
 
         Load(form);
+    }
+
+    /// <summary>
+    /// Takes the keyboard: the window comes forward and the search box has focus, as the palette's does. Without it a
+    /// window manager that does not activate a new window (or none, under Xvfb) left the keys in the main window, where
+    /// the focus pin put them on the command line — so what the player typed into "the settings" went into a line ⏎
+    /// would send to the game.
+    /// </summary>
+    public void FocusFirst()
+    {
+        Activate();
+        _search.Focus();
     }
 
     /// <summary>The section on the right, by id.</summary>
@@ -461,10 +477,10 @@ internal sealed class SettingsWindow : Window
     {
         var outer = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
         var words = new StackPanel { Spacing = 1 };
-        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 14 });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 14 });
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = Capitalise(help), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
         }
 
         outer.Children.Add(words);
@@ -510,10 +526,10 @@ internal sealed class SettingsWindow : Window
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 4), MinHeight = 44 };
 
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1, Margin = new Thickness(0, 0, 16, 0) };
-        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 14, TextWrapping = TextWrapping.Wrap });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 14, TextWrapping = TextWrapping.Wrap });
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = Capitalise(help), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
         }
 
         grid.Children.Add(words);
@@ -711,10 +727,10 @@ internal sealed class SettingsWindow : Window
 
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var words = new StackPanel { Spacing = 1 };
-        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 14 });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 14 });
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = Capitalise(help), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap });
         }
 
         top.Children.Add(words);

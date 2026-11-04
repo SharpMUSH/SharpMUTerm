@@ -65,16 +65,16 @@ internal static class NativeMenu
         return menu;
     }
 
-    /// <summary>An entry's label with its key after it, the keys lined up in a column of their own.</summary>
+    /// <summary>An entry's label with its key after it, the keys lined up in a column of their own, both in the window's words.</summary>
     private static Control Header(string label, string? hint)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "label" });
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "hint" });
-        grid.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        grid.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
         if (hint is { } key)
         {
-            var text = new TextBlock { Text = key, Opacity = 0.6, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            var text = new TextBlock { Text = NativeKeys.Words(key), Opacity = 0.6, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(text, 1);
             grid.Children.Add(text);
         }

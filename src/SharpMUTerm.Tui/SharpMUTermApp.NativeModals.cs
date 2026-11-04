@@ -147,8 +147,8 @@ internal sealed partial class SharpMUTermApp
         return true;
     }
 
-    /// <summary>Opens ⌃R in the host's controls; false when the host has none.</summary>
-    private bool TryOpenNativeHistory()
+    /// <summary>Opens ⌃R in the host's controls, <paramref name="query"/> typed into its filter; false when the host has none.</summary>
+    private bool TryOpenNativeHistory(string query = "")
     {
         if (NativeModalsHost is not { } native)
         {
@@ -160,7 +160,10 @@ internal sealed partial class SharpMUTermApp
             new HistoryModel(HistoryFor(BarKind(ActiveBar())).Entries.ToArray(), HistoryBarLabel()),
             ThemeIsDark(),
             index => OnUiThread(() => InsertHistoryEntry(index)),
-            () => OnUiThread(() => NativeModalClosed(session!)));
+            () => OnUiThread(() => NativeModalClosed(session!)))
+        {
+            InitialQuery = query,
+        };
         ShowNativeModal(native, session);
         return true;
     }

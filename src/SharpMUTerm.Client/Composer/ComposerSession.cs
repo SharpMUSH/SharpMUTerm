@@ -29,6 +29,15 @@ public sealed record ComposerCallbacks
 
     /// <summary>Esc (or F1) in F1: the window closes, with the buffer to keep.</summary>
     public Action<string>? Closed { get; init; }
+
+    /// <summary>
+    /// Whether the composer's character writes in a proportional face — read by the host on its own thread, so it reads
+    /// the character's saved choice live and every composer of that character follows a change. Null: monospace.
+    /// </summary>
+    public Func<bool>? Proportional { get; init; }
+
+    /// <summary>The editor's menu chose a face (true for proportional), for the character to keep.</summary>
+    public Action<bool>? ChooseFace { get; init; }
 }
 
 /// <summary>
@@ -141,6 +150,18 @@ public sealed class ComposerSession
         if (!IsEnded)
         {
             _callbacks.Arm?.Invoke();
+        }
+    }
+
+    /// <summary>Whether this composer's character writes in a proportional face; false (monospace) with nobody to ask.</summary>
+    public bool Proportional => _callbacks.Proportional?.Invoke() ?? false;
+
+    /// <summary>The host's: the editor's menu chose a face.</summary>
+    public void ChooseFace(bool proportional)
+    {
+        if (!IsEnded)
+        {
+            _callbacks.ChooseFace?.Invoke(proportional);
         }
     }
 

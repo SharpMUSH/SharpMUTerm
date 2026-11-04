@@ -274,24 +274,50 @@ public class SurfaceParityTests
             covered.Add(surface);
         }
 
-        // ⌃R filtered: the native list's rows for a query are the cell list's rows for it.
+        // ⌃R filtered: the view hands its query to the native box, and the native list's rows for it are the cell list's.
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
             var modals = new FakeModals();
             await using var native = App(nativeDriver, DemoScene.Build(), modals: modals);
-            native.RenderSnapshot("history-search");
+            native.RenderSnapshot("history-search-filter");
 
             using var cellDriver = new AvaloniaConsoleDriver(140, 36);
             await using var cells = App(cellDriver, DemoScene.Build());
             cells.RenderSnapshot("history-search-filter");
 
-            var rows = ((HistorySession)modals.Open(SurfaceCatalog.History)!).Model.View("north").Select(m => m.Text).ToArray();
+            var history = (HistorySession)modals.Open(SurfaceCatalog.History)!;
+            await Assert.That(history.InitialQuery).IsEqualTo("north").Because("the filter view types its query into the native box");
+            var rows = history.Model.View(history.InitialQuery).Select(m => m.Text).ToArray();
             await Assert.That(rows).IsNotEmpty();
             await Assert.That(rows).IsEquivalentTo(cells.HistorySearchRows, TUnit.Assertions.Enums.CollectionOrdering.Matching);
         }
 
         var drawnNatively = SurfaceCatalog.All.Where(s => s.On(SurfaceHosts.Window).HasFlag(SurfaceDrawing.Native)).Select(s => s.Id);
         await Assert.That(covered).IsEquivalentTo(drawnNatively).Because("every surface the window draws natively has its model compared here");
+    }
+
+    /// <summary>
+    /// <c>search-landed</c> goes through the window's native ⌃F: the query is searched there, and ⏎ on the second row
+    /// ends in the cell ⏎'s method, so the native search has closed and the bar sits where the cell landing puts it.
+    /// </summary>
+    [Test]
+    public async Task TheLandedSearchViewLandsThroughTheNativeSearchWhereTheCellsLand()
+    {
+        using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
+        var modals = new FakeModals();
+        await using var native = App(nativeDriver, DemoScene.Build(), modals: modals);
+        native.RenderSnapshot("search-landed");
+
+        using var cellDriver = new AvaloniaConsoleDriver(140, 36);
+        await using var cells = App(cellDriver, DemoScene.Build());
+        cells.RenderSnapshot("search-landed");
+
+        await Assert.That(modals.Shown.Any(s => s.Surface == SurfaceCatalog.Search)).IsTrue().Because("the search ran in the window's controls");
+        await Assert.That(modals.Open(SurfaceCatalog.Search)).IsNull().Because("⏎ closed it");
+        await Assert.That(native.SearchIsOpen).IsFalse().Because("no cell search was opened either");
+        var bar = native.SearchBarIndex(native.ActiveWindowId());
+        await Assert.That(bar).IsNotNull();
+        await Assert.That(bar).IsEqualTo(cells.SearchBarIndex(cells.ActiveWindowId()));
     }
 
     private static string[] Rows(PaletteView view) =>

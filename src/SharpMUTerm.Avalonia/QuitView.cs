@@ -50,7 +50,7 @@ internal sealed class QuitView : DockPanel, IModalView
             var dot = new TextBlock { Text = "●", Foreground = colours.Brush(colours.Accent), Margin = new Thickness(0, 0, 10, 0), FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
             SetDock(dot, Dock.Left);
             line.Children.Add(dot);
-            line.Children.Add(new TextBlock { Text = consequence, Foreground = colours.Brush(colours.Text), TextWrapping = TextWrapping.Wrap, FontSize = 14 });
+            line.Children.Add(new TextBlock { Text = NativeKeys.Words(consequence), Foreground = colours.Brush(colours.Text), TextWrapping = TextWrapping.Wrap, FontSize = 14 });
             facts.Children.Add(line);
         }
 

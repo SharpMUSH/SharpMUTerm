@@ -199,6 +199,10 @@ fallbacks) for inline images/maps.
   - One folder per package (`packages/<id>/`, beside `config.json`), swapped in through a `.id.new` staging
     folder; a snapshot's store has no folder and writes nothing. F10 is claimed (`opens Packages`); GNOME
     Terminal may take it for its menu, so ⌃P ▸ *Packages* is the way in that always works.
+  - **A `ListOverlay` is as tall as its lines *wrapped*** (`ListOverlay.Rows`, measured by the framework's own
+    `MarkupControl.MeasureDOM` at the modal's inner width), not as its line count: F10's header wraps at 80 columns,
+    and counting lines made the modal a row short, so it scrolled its close key out of sight at 80×24. F10 always
+    emits its two confirm rows (blank when idle), so the modal sized once at open still fits a confirmation.
   - **The index** (`PackageIndex`; ⌃P ▸ *Browse packages*, `b` on F10) is `{"packages":[…]}`, each entry a
     manifest plus an https `url` and a `sha256`, at `AppConfiguration.PackageIndexUrl`. **It is fetched only
     when the player opens it, never at start.** An entry that breaks a rule is dropped and counted, not
@@ -627,7 +631,9 @@ fallbacks) for inline images/maps.
   in that order and then dials them **concurrently**: focus is taken by the first before any packet
   leaves, so several auto-connects always land you in the same place, and a black-holed host cannot hold
   the other worlds' windows hostage. `ConnectAtStartup` is *not* `AutoLogin` — one opens the socket, the
-  other sends the connect line once one is open, and either is useful alone.
+  other sends the connect line once one is open, and either is useful alone. **`StartAsync` runs once per app**
+  (`_startupRan`): the window's demo lays out a scene that may itself start up (the welcome does) before `Run` schedules
+  startup, and running it twice said every startup notice twice — two identical toasts.
 - **A client with no worlds opens on a welcome, and the first connect of a new configuration leaves a key tour**
   (`WelcomeSurface`, `SharpMUTermApp.Welcome.cs`; `/welcome`, ⌃P ▸ *Welcome* / *Key tour*). The welcome is a
   `ListOverlay` over a pure model (the `QuitPrompt` split): *Connect to a host* (a form: host, port 4000, TLS, an
@@ -1168,7 +1174,9 @@ fallbacks) for inline images/maps.
     the armed band padded to the rail's widest row (no cell spent; inks re-held to the floor on the band,
     `RailRenderer.OnBand`); the native sidebar draws an accent ring and scrolls the row into view. ⌥C because it
     is `ESC c` (one Alt chord in a terminal), C names CONNECTIONS, and nothing claimed it — not `AppShortcuts`, the
-    bar's table, nor the window's `HostKeys.Reserved`.
+    bar's table, nor the window's `HostKeys.Reserved`. **While the sidebar holds the keys both command lines wear the
+    idle band** (`SyncComposerBands` reads `_railCursor`, and `UpdateInputChrome` repaints the prompt to match): ⏎ goes
+    to a row, not to the game. The window's command line is cells, so it follows with nothing of its own.
   - **A right click on a sidebar row opens the client's menu for that row** (`SidebarRowMenu`, `RunSidebarMenuEntry`;
     `ChromeOverlay.RowMenu`/`RunRowMenu`; the cell rail's pointer menu reads the same method). Entries are registry
     commands with their keys (switch, connect/disconnect, edit in F5/F9, go to, close, clear), each offered only if
@@ -1324,6 +1332,10 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     the window's, a press beside the stack goes to the cells. The stack is bottom-right inside the cell area,
     ending above the row the pane area ends at (`NoticeOverlay.AboveRow`), newest at the bottom, four at most.
     It fades after `NoticeModel.Duration`, held while hovered (plus a 2 s grace). Right click dismisses.
+    **While the pointer is on a toast the stack is frozen** (`NoticeToasts.Frozen`): every toast keeps its place as the
+    ones around it fade, so the card under the pointer never slides out from under it; a toast arriving meanwhile
+    stacks above, and the freeze ends when the pointer leaves or the window resizes. **The stack is lifted clear of
+    the map's legend** (`NoticeToasts.Avoid`, from `MapCanvas.LegendRect`), which sits in the same corner.
   - **An action is a registry command the client offered**: a click runs `NoticeOverlay.Run` →
     `RunNoticeAction`, which refuses a command no recent notice carried, then `DispatchCommand`. The cells' way to
     the same door is ⌃P (`CellsVia: term:messages`). Three notices carry one so far: the layout suggestion
@@ -1758,7 +1770,12 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     title and scrolls in its two halves. A package's set is drawn read-only with *Copy to edit*. F2's pattern field
     has the live test under it, re-run on every keystroke, each matching line with the match marked. The trigger
     builder opens it on the rule it made (`TryOpenNativeSettings(section, item)`); with no window it opens the cell
-    F2 as before.
+    F2 as before. **Each list keeps its selection for the run** (`SettingsForm.Selections`, the app's
+    `_listSelections`, by section id; never saved): switching section and back, or closing and reopening the window,
+    lands on the item last chosen while it still exists. An item the form was opened on wins.
+  - **The window takes the keyboard when it opens and gives it back when it closes** (`SettingsWindow.FocusFirst`
+    on `Opened` and when an open window is reused; `SettingsPresenter.Refocus` → `DesktopLayer.FocusArmedComposer`
+    after `Owner.Activate()`), as a cell screen does.
   - **F10 is a package manager page** (`PackagePageView`, Avalonia; Client `PackageCollection`, `PackageManager`,
     `PackageReviewModel`, `PackageBrowseModel`; `SharpMUTermApp.Packages.cs`). F10 is declared as a list of
     installed packages (`SettingsSectionContribution.Packages`): one `BoolField` (`enabled`, whose binding replaces
@@ -1803,8 +1820,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     native chrome. A scrim covers the rest; a press on it closes. Closing gives the keyboard back to `TerminalView`,
     which is the client's command line by the focus pin. Fluent is applied to the card alone (`ThemeVariantScope`),
     in the client's variant.
-  - **Keys are words** (`KeyGlyphs.Words`, as the native chrome does): the UI font draws `Ctrl+⏎` better than `⌃⏎`,
-    and the window's catalog already carries the window's newline. A sequence (`⌃B |`) is one chip per key.
+  - **Keys are words** (`NativeKeys.Words`, the rule every native surface follows — see below). A sequence (`⌃B |`)
+    is one chip per key.
   - **Hover selects on movement only** (`PointerMoved`, not `PointerEntered`), so the row that opens under a resting
     pointer is not chosen. ↑↓ wrap as in the cells; PgUp/PgDn stop at the ends.
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave5/native-palette-*.png`).
@@ -1853,8 +1870,12 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     native session puts the same command on a `RecordingTelnetSession` as the cell keys do, as typed and literal, one
     line and several paragraphs. `NativeComposerRoutingTests` (Tui) and `NativeComposerTests` (Avalonia, headless)
     drive the routing and the editor.
+  - **The face is the character's** (`CharacterDefinition.ComposerProportional`, false by default with no migration):
+    the right-click menu's choice goes `ComposerSession.ChooseFace` → `ChooseComposerFace`, which saves through
+    `PersistConfiguration` (a view preference; `SaveConfiguration` would re-periodise timers), and each composer reads
+    it live (`ComposerCallbacks.Proportional`), so F1 and the docked panel of one character agree.
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave7/composer-*.png`). `--demo-config` in the
-    window opens the installed dictionary read-only. Not done: no per-character face choice saved, no find bar, and
+    window opens the installed dictionary read-only. Not done: no find bar, and
     the window's ⌥W adds to the run's dictionary in the demo only (a live client writes `user-words.txt` as F1 does).
 - **In the window, the quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals** (`ClientHost.NativeModals` →
   `INativeModals`; Client `Modals/`: `ModalSession`, `QuitModel`/`QuitSession`, `SearchModel`/`SearchSession`,
@@ -1888,9 +1909,17 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     search ⏎ / ⌥A / ⌥E, history ⏎, layouts apply / save as new / rename / delete, and the welcome's connect and
     layout+settings end in the same `Outcome` as the cell keys. `NativeModalRoutingTests` (Tui) and `NativeModalTests`
     (Avalonia, headless) drive the routing, the stacking and the views. The `search*` and `history-search` snapshot
-    views open the native surface when there is one (that is how the window's screenshots are taken).
-  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`). Not done: the native ⌃R
-    filters in its own box, so the `history-search-filter` view shows its list unfiltered in the window.
+    views open the native surface when there is one (that is how the window's screenshots are taken):
+    `history-search-filter` opens ⌃R with its query typed (`HistorySession.InitialQuery`), and `search-landed` lands
+    through the native search's own close and `GoToSearchHit`, so the cells it leaves match the terminal's.
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`).
+- **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus `⏎` → `Enter`):
+  `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them
+  well; whatever it hands a native view — menu keys, a toast's chip and text, palette details and chips, the
+  composer's key row, modal footers and sentences, settings help, tooltips — goes through `Words` on the way to the
+  screen. `NativeKeySpellingTests` reads every native surface at run time and scans the Avalonia sources for a glyph
+  literal outside `NativeKeys`. **The cells keep their glyphs**, the window's cell status row included: parity
+  compares cells, so that row says `⌥9` beside a toast saying `Alt+9`.
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on

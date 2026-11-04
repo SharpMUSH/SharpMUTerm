@@ -96,9 +96,15 @@ internal sealed class ListEditorView : Grid
         SetColumn(scroller, 1);
         Children.Add(scroller);
 
-        if (_form.Item is not { } chosen || !_collection.IsItem(chosen))
+        // The item this section had selected last (switched away from, or the window closed) wins over the first —
+        // unless the form opened on an item of this list (the trigger builder's new rule).
+        if (_form.Item is not { } chosen || !_collection.IsItem(chosen) || FindGroup(chosen) is null)
         {
-            _form.Select(FirstItem());
+            Select(_form.Recall(_section.Id) is { } kept && _collection.IsItem(kept) && FindGroup(kept) is not null ? kept : FirstItem());
+        }
+        else
+        {
+            _form.Remember(_section.Id, chosen);
         }
 
         BuildList();
@@ -144,7 +150,7 @@ internal sealed class ListEditorView : Grid
     /// <summary>Selects <paramref name="item"/> and shows its fields.</summary>
     public void Choose(object? item)
     {
-        _form.Select(item);
+        Select(item);
         SelectRow(item);
         BuildDetail();
     }
@@ -155,7 +161,12 @@ internal sealed class ListEditorView : Grid
         if (_form.Item is { } item && FindGroup(item) is null)
         {
             // The selected item went (deleted, or moved by another surface): take the first there is.
-            _form.Select(FirstItem());
+            Select(FirstItem());
+        }
+        else
+        {
+            // An add or a duplicate selected its new item through the form.
+            _form.Remember(_section.Id, _form.Item);
         }
 
         BuildList();
@@ -188,9 +199,16 @@ internal sealed class ListEditorView : Grid
     private static Button ToolButton(string text, string tip)
     {
         var button = new Button { Content = text, Padding = new Thickness(8, 3), MinWidth = 32, HorizontalContentAlignment = HorizontalAlignment.Center };
-        ToolTip.SetTip(button, tip);
+        ToolTip.SetTip(button, NativeKeys.Words(tip));
         AutomationProperties.SetName(button, tip);
         return button;
+    }
+
+    // Every selection goes through here, so the section remembers it for the run.
+    private void Select(object? item)
+    {
+        _form.Select(item);
+        _form.Remember(_section.Id, item);
     }
 
     private object? FirstItem() => _form.Groups(_section).SelectMany(g => g.Items).FirstOrDefault();
@@ -286,7 +304,7 @@ internal sealed class ListEditorView : Grid
 
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var title = _collection.TitleOf(item);
-        words.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : title, TextTrimming = TextTrimming.CharacterEllipsis });
+        words.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), TextTrimming = TextTrimming.CharacterEllipsis });
         if (_collection.DetailOf(item) is { Length: > 0 } detail)
         {
             words.Children.Add(new TextBlock
@@ -329,7 +347,7 @@ internal sealed class ListEditorView : Grid
             return;
         }
 
-        _form.Select(item);
+        Select(item);
         BuildDetail();
     }
 
@@ -422,7 +440,7 @@ internal sealed class ListEditorView : Grid
         }
 
         var title = _collection.TitleOf(item);
-        _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : title, FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         if (group.ReadOnly)
         {
             var banner = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 4) };
@@ -498,11 +516,11 @@ internal sealed class ListEditorView : Grid
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), Margin = new Thickness(0, 3), MinHeight = 34 };
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-        words.Children.Add(new TextBlock { Text = Capitalise(field.Label), FontSize = 13, TextWrapping = TextWrapping.Wrap });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = 13, TextWrapping = TextWrapping.Wrap });
         if (field.Help is { } help)
         {
-            ToolTip.SetTip(words, Capitalise(help));
-            ToolTip.SetTip(control, Capitalise(help));
+            ToolTip.SetTip(words, NativeKeys.Words(Capitalise(help)));
+            ToolTip.SetTip(control, NativeKeys.Words(Capitalise(help)));
         }
 
         grid.Children.Add(words);
@@ -766,7 +784,7 @@ internal sealed class ListEditorView : Grid
             }
             else
             {
-                ToolTip.SetTip(control, text.Help);
+                ToolTip.SetTip(control, NativeKeys.Words(text.Help));
             }
         }
 
@@ -811,15 +829,15 @@ internal sealed class ListEditorView : Grid
     /// </summary>
     private Control KeyCapture(KeyField field, SettingBinding<string> chord)
     {
-        var button = new Button { Content = _form.Get(chord), MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, HorizontalContentAlignment = HorizontalAlignment.Left };
+        var button = new Button { Content = NativeKeys.Words(_form.Get(chord)), MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, HorizontalContentAlignment = HorizontalAlignment.Left };
         var note = new TextBlock { FontSize = 11, Opacity = 0.75, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
         var capturing = false;
         void Show()
         {
-            button.Content = capturing ? "Press a key… (Esc cancels)" : _form.Get(chord);
+            button.Content = capturing ? "Press a key… (Esc cancels)" : NativeKeys.Words(_form.Get(chord));
             if (!capturing)
             {
-                note.Text = _form.Context.KeyProblem(_form.Get(chord)) is { } problem ? $"▲ {problem}" : string.Empty;
+                note.Text = _form.Context.KeyProblem(_form.Get(chord)) is { } problem ? $"▲ {NativeKeys.Words(problem)}" : string.Empty;
             }
         }
 
@@ -858,7 +876,7 @@ internal sealed class ListEditorView : Grid
             Show();
             if (refused is not null)
             {
-                note.Text = $"{descriptor}: {refused}";
+                note.Text = NativeKeys.Words($"{descriptor}: {refused}");
             }
         };
         Show();

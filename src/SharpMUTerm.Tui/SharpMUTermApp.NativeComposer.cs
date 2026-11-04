@@ -110,6 +110,8 @@ internal sealed partial class SharpMUTermApp
                     }
                 }),
                 AddWord = word => OnUiThread(() => AddComposerWord(word)),
+                Proportional = ComposerFaceOf(ComposeDraftKey(ActiveWindowId())),
+                ChooseFace = ChooseComposerFace(ComposeDraftKey(ActiveWindowId())),
                 Closed = body => OnUiThread(() =>
                 {
                     if (ReferenceEquals(_nativeCompose, open))
@@ -124,6 +126,31 @@ internal sealed partial class SharpMUTermApp
         PublishPanels();
         PublishHostChrome();
     }
+
+    /// <summary>
+    /// The face a character's native composer writes in, read on the host's thread: the character's saved choice
+    /// (<see cref="CharacterDefinition.ComposerProportional"/>), looked up afresh each time so a change made in one of its
+    /// composers reaches the other. A composer that belongs to nobody writes in monospace.
+    /// </summary>
+    private Func<bool> ComposerFaceOf(string? sessionKey)
+    {
+        var character = sessionKey is null ? null : CharacterFor(sessionKey);
+        return () => character?.ComposerProportional ?? false;
+    }
+
+    /// <summary>
+    /// Keeps a face chosen in a character's native composer as that character's, on disk. Through
+    /// <see cref="PersistConfiguration"/> — a view preference, which must not go through <c>SaveConfiguration</c>, whose
+    /// automation reload re-periodises every running timer.
+    /// </summary>
+    private Action<bool> ChooseComposerFace(string? sessionKey) => proportional => OnUiThread(() =>
+    {
+        if (sessionKey is not null && CharacterFor(sessionKey) is { } character && character.ComposerProportional != proportional)
+        {
+            character.ComposerProportional = proportional;
+            PersistConfiguration();
+        }
+    });
 
     /// <summary>
     /// A host editor's colours: the accent its title and keys wear, and the settings screens' warning for the line under
@@ -242,6 +269,8 @@ internal sealed partial class SharpMUTermApp
                     }
                 }),
                 Arm = () => OnUiThread(() => ArmComposer(composer)),
+                Proportional = ComposerFaceOf(composer.SessionKey),
+                ChooseFace = ChooseComposerFace(composer.SessionKey),
             });
         _dockedSessions[composer.WindowId] = session;
         return session;

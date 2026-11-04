@@ -152,6 +152,12 @@ internal sealed partial class SharpMUTermApp
     /// meter table reads the game data of the window focused when the form opened (<see cref="SettingsGameData"/>),
     /// captured here because the store is thread-safe and the focus is not.
     /// </summary>
+    /// <summary>
+    /// Each native list section's last selected item, by section id, for the run — never saved (which rule was being
+    /// looked at is not configuration). Touched only on the window's thread, through the form.
+    /// </summary>
+    private readonly Dictionary<string, object> _listSelections = new(StringComparer.Ordinal);
+
     internal SettingsForm NativeSettingsForm(string initial, object? item = null)
     {
         var edits = new ScreenEdits(SaveConfiguration);
@@ -185,6 +191,7 @@ internal sealed partial class SharpMUTermApp
             item)
         {
             Packages = PackageManager,
+            Selections = _listSelections,
         };
         return form;
     }

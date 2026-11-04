@@ -13,7 +13,7 @@ internal static class ModalParts
     /// <summary>The modal's title line.</summary>
     public static TextBlock Heading(string text, ModalColours colours) => new()
     {
-        Text = text,
+        Text = NativeKeys.Words(text),
         FontSize = 18,
         FontWeight = FontWeight.SemiBold,
         Foreground = colours.Brush(colours.Text),
@@ -24,7 +24,7 @@ internal static class ModalParts
     /// <summary>A quiet line: a count, a scope, an explanation.</summary>
     public static TextBlock Dim(string text, ModalColours colours, Thickness? margin = null) => new()
     {
-        Text = text,
+        Text = NativeKeys.Words(text),
         FontSize = 12.5,
         Foreground = colours.Brush(colours.Dim),
         Margin = margin ?? new Thickness(20, 0, 20, 6),
@@ -34,7 +34,7 @@ internal static class ModalParts
     /// <summary>The keys the modal answers, right-aligned under it, in the window's words.</summary>
     public static TextBlock Footer(string text, ModalColours colours) => new()
     {
-        Text = text,
+        Text = NativeKeys.Words(text),
         FontSize = 11.5,
         Foreground = colours.Brush(colours.Dim),
         Margin = new Thickness(20, 8, 20, 12),
@@ -149,19 +149,19 @@ internal static class ModalParts
         Padding = new Thickness(6, 0),
         Margin = new Thickness(6, 0, 0, 0),
         VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = key, FontSize = 11.5, Foreground = colours.Brush(colours.KeyInk) },
+        Child = new TextBlock { Text = NativeKeys.Words(key), FontSize = 11.5, Foreground = colours.Brush(colours.KeyInk) },
     };
 
     /// <summary>A button whose label is followed by the key that presses it.</summary>
     public static Button Button(string label, string? key, ModalColours colours, Action click, bool accent = false)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        content.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = NativeKeys.Words(label), VerticalAlignment = VerticalAlignment.Center });
         if (key is not null)
         {
             content.Children.Add(new TextBlock
             {
-                Text = key,
+                Text = NativeKeys.Words(key),
                 FontSize = 11.5,
                 Opacity = 0.7,
                 Margin = new Thickness(8, 0, 0, 0),

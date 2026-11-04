@@ -176,7 +176,7 @@ internal sealed class PackagePageView : Grid
             BuildReview();
         }
 
-        _status.Text = _manager.Status ?? string.Empty;
+        _status.Text = NativeKeys.Words(_manager.Status);
         _status.IsVisible = _manager.Status is not null;
     }
 
@@ -222,7 +222,7 @@ internal sealed class PackagePageView : Grid
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 AutomationProperties.SetName(toggle, $"{item.Package.Manifest.Name} on");
-                ToolTip.SetTip(toggle, _declaration.Action(PackageCollection.Toggle).Help);
+                ToolTip.SetTip(toggle, NativeKeys.Words(_declaration.Action(PackageCollection.Toggle).Help));
                 var captured = item;
                 toggle.IsCheckedChanged += (_, _) =>
                 {
@@ -281,7 +281,7 @@ internal sealed class PackagePageView : Grid
             ShownFields = [];
             _detail.Children.Add(new TextBlock
             {
-                Text = "No package is installed. Browse the index, or use ⌃P ▸ Install package… with a file or an https link.",
+                Text = "No package is installed. Browse the index, or use Ctrl+P ▸ Install package… with a file or an https link.",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.75,
                 Margin = new Thickness(0, 8, 0, 8),
@@ -316,7 +316,7 @@ internal sealed class PackagePageView : Grid
             var label = new TextBlock { Text = Capitalise(field.Label), Opacity = 0.75 };
             if (field.Help is { } help)
             {
-                ToolTip.SetTip(label, Capitalise(help));
+                ToolTip.SetTip(label, NativeKeys.Words(Capitalise(help)));
             }
 
             var value = new TextBlock { Text = Text(field.Id, item), TextWrapping = TextWrapping.Wrap };
@@ -392,7 +392,7 @@ internal sealed class PackagePageView : Grid
     {
         var button = new Button { Content = text, Margin = new Thickness(0, 0, 8, 6), Padding = new Thickness(12, 5) };
         var declared = _declaration.Action(action);
-        ToolTip.SetTip(button, $"{Capitalise(declared.Help)} ({declared.Key} on the cell screen)");
+        ToolTip.SetTip(button, NativeKeys.Words($"{Capitalise(declared.Help)} ({declared.Key} on the cell screen)"));
         AutomationProperties.SetName(button, text);
         return button;
     }

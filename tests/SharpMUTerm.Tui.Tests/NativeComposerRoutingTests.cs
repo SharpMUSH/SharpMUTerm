@@ -110,6 +110,47 @@ public class NativeComposerRoutingTests
 
     // ── F1 ───────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The window's editor writes in monospace or a proportional face, chosen from its menu. The choice is the
+    /// character's and is kept on disk through the write-only save (<c>PersistConfiguration</c>) — not the settings
+    /// funnel, which would re-periodise the timers — so F1 opened again, or next run, writes in the same face.
+    /// </summary>
+    [Test]
+    public async Task TheComposersFaceIsTheCharactersAndIsSaved()
+    {
+        Console.SetIn(TextReader.Null);
+        var config = new AppConfiguration();
+        var world = new WorldDefinition { Name = "Quiet", Host = "quiet.example.org", Port = 4000 };
+        var ann = new CharacterDefinition { Name = "Ann", Logging = new LoggingSettings() };
+        world.Characters.Add(ann);
+        config.Worlds.Add(world);
+        var fake = new FakeComposer();
+        var saved = new List<bool>();
+        var host = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 32), null, null, null) with { NativeComposer = fake };
+        await using var app = new SharpMUTermApp(config, host, save: c => saved.Add(c.Worlds[0].Characters[0].ComposerProportional));
+        app.TelnetFactory = _ => new RecordingTelnetSession();
+        var session = app.BindWorldWithoutConnecting(world);
+        await session.ConnectAsync();
+        app.RenderNextFrame();
+
+        app.SimulateKey(Key(ConsoleKey.F1));
+        var first = fake.Last!;
+        await Assert.That(first.Proportional).IsFalse().Because("monospace by default");
+
+        first.ChooseFace(true);
+        await Assert.That(ann.ComposerProportional).IsTrue();
+        await Assert.That(saved).IsEquivalentTo(new[] { true }).Because("saved once, with the choice in it");
+        await Assert.That(first.Proportional).IsTrue();
+
+        first.Close(string.Empty);
+        app.SimulateKey(Key(ConsoleKey.F1));
+        await Assert.That(fake.Last).IsNotSameReferenceAs(first);
+        await Assert.That(fake.Last!.Proportional).IsTrue().Because("F1 opened again writes in the character's face");
+
+        fake.Last.ChooseFace(true);
+        await Assert.That(saved.Count).IsEqualTo(1).Because("choosing the face it already has writes nothing");
+    }
+
     [Test]
     public async Task F1OpensTheHostsEditorAndNotTheCellModal()
     {
