@@ -99,7 +99,7 @@ internal sealed partial class SharpMUTermApp
         {
             var model = Drawing(PanelIds.WhoHere, context.WindowId, ReadWhoHere(context.SessionKey));
             drawn = model.Rows;
-            return WhoHereRenderer.Render(model, width, height, new WhoHereRenderer.Ink(_ink.Accent));
+            return WhoHereRenderer.Render(model, width, height, new WhoHereRenderer.Ink(_ink.Accent, HeadingBand.For(_theme, _ink.Accent)));
         });
         view.Click = url =>
         {
@@ -238,7 +238,7 @@ internal sealed partial class SharpMUTermApp
     /// meaning, so they are lifted like text; the empty part of a bar is a grey that still reads as a track.
     /// </summary>
     private VitalsStripRenderer.Ink VitalsInk() =>
-        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)));
+        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)), HeadingBand.For(_theme, _ink.Accent));
 
     /// <summary>The low cue's ink on <paramref name="plane"/> (<see cref="WorkspacePalette.Low"/>), as markup.</summary>
     private string LowInk(Rgb plane) => WorkspacePalette.Low(_theme, ParseHex(_ink.Notice), plane).ToHex();
@@ -318,7 +318,7 @@ internal sealed partial class SharpMUTermApp
 
     private IWindowControl NewDockedComposer(TerminalPanelContext context)
     {
-        var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent, DescribeDocked);
+        var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent, DescribeDocked, HeadingBand.For(_theme, _ink.Accent));
         if (_composeDrafts.TryGetValue(context.SessionKey, out var draft))
         {
             composer.Load(draft.Body, draft.Escaping, draft.Verb);

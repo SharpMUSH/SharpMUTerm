@@ -13,17 +13,22 @@ internal static class ScrollSplitBarRenderer
     /// (<see cref="UnreadBadge"/>), so the label does not move as output arrives; the hints are dropped, last
     /// first, when the pane is too narrow for them, and the rule takes whatever is left.
     /// </summary>
-    public static string Bar(SharpMUTerm.Client.Chrome.ScrollBandModel band, int width, string accentHex)
+    /// <param name="fill">
+    /// The band it is drawn on (<see cref="Panels.HeadingBand"/>'s inks: the label in the fill's accent, the rest in its
+    /// text). It is a divider between two viewports rather than a row of either, so the terminal mockup fills it; null
+    /// draws the bare rule the other boundary bars draw.
+    /// </param>
+    public static string Bar(SharpMUTerm.Client.Chrome.ScrollBandModel band, int width, string accentHex, Panels.HeadingBand.Ink? fill = null)
     {
         ArgumentNullException.ThrowIfNull(band);
-        return Bar(band.RowsBack, width, accentHex);
+        return Bar(band.RowsBack, width, accentHex, fill);
     }
 
     /// <summary>The count a band shows for <paramref name="rowsBack"/>: capped, as the status row caps it.</summary>
     public static string Count(int rowsBack) => UnreadBadge.Format(Math.Max(1, rowsBack));
 
     /// <summary>The bar for a count, as <see cref="Bar(SharpMUTerm.Client.Chrome.ScrollBandModel, int, string)"/> draws it.</summary>
-    public static string Bar(int rowsBack, int width, string accentHex)
+    public static string Bar(int rowsBack, int width, string accentHex, Panels.HeadingBand.Ink? fill = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
@@ -39,7 +44,9 @@ internal static class ScrollSplitBarRenderer
             if (used + 2 <= width || keep == 0)
             {
                 var rule = new string('─', Math.Max(0, width - used));
-                return $"[dim]{lead}[/][{accentHex}]{MarkupText.Escape(label)}[/][dim]{MarkupText.Escape(hint)} {rule}[/]";
+                return fill is { } band
+                    ? $"[{band.Text} on {band.Band}]{lead}[{band.Accent}]{MarkupText.Escape(label)}[/]{MarkupText.Escape(hint)} {rule}[/]"
+                    : $"[dim]{lead}[/][{accentHex}]{MarkupText.Escape(label)}[/][dim]{MarkupText.Escape(hint)} {rule}[/]";
             }
         }
 

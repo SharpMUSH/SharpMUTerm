@@ -42,6 +42,7 @@ internal sealed class DockedComposer
     private readonly MarkupControl _header;
     private readonly MarkupControl _footer;
     private readonly string _accent;
+    private readonly HeadingBand.Ink? _heading;
     private readonly Func<DockedComposer, ComposerModel> _describe;
     private bool _armed;
     private bool _quiet;
@@ -50,11 +51,13 @@ internal sealed class DockedComposer
     /// <param name="describe">
     /// The model for this composer's state, which the host also records as drawn and hands a native editor.
     /// </param>
-    internal DockedComposer(string windowId, string sessionKey, ScreenTheme scheme, string accent, Func<DockedComposer, ComposerModel> describe)
+    /// <param name="heading">The heading's band (<see cref="HeadingBand"/>); null draws the bare accent label.</param>
+    internal DockedComposer(string windowId, string sessionKey, ScreenTheme scheme, string accent, Func<DockedComposer, ComposerModel> describe, HeadingBand.Ink? heading = null)
     {
         WindowId = windowId;
         SessionKey = sessionKey;
         _accent = accent;
+        _heading = heading;
         _describe = describe;
         Editor = new MultilineEditControl
         {
@@ -317,6 +320,17 @@ internal sealed class DockedComposer
     internal void Render(ComposerModel model)
     {
         var verb = model.HeadingVerb;
+        if (_heading is { } band)
+        {
+            var bandMode = model.Escaping == ComposeEscaping.Literal ? $"[{band.Accent}]literal[/]" : "as typed";
+            var rest = (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {bandMode}";
+            var lead = model.Armed ? $"[{band.Accent}]▌[/]" : null;
+            var chars = ComposerModel.CharactersLabel(model.Characters);
+            _header.SetContent(new List<string> { HeadingBand.Row("COMPOSE", rest, chars, _width > 0 ? _width : VisibleLength(rest) + 9, band, lead) });
+            RenderFooter(model);
+            return;
+        }
+
         var mode = model.Escaping == ComposeEscaping.Literal ? $"[{_accent}]literal[/]" : "[dim]as typed[/]";
         var marker = model.Armed ? $"[{_accent}]▌[/]" : " ";
         var title = $"{marker}[bold {_accent}]COMPOSE[/]" + (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {mode}";
@@ -331,6 +345,12 @@ internal sealed class DockedComposer
                 : ElideVisible(title, _width),
         });
 
+        RenderFooter(model);
+    }
+
+    /// <summary>The key row under the editor, in the long form or the short one when the pane is too narrow for it.</summary>
+    private void RenderFooter(ComposerModel model)
+    {
         var footer = KeyRow(model.Keys, shortForm: false);
         if (_width > 0 && VisibleLength(footer) > _width)
         {

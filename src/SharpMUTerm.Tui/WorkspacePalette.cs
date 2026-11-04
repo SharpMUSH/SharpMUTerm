@@ -318,20 +318,27 @@ internal static class WorkspacePalette
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);
 
     /// <summary>
+    /// The band a docked panel's heading is drawn on (<c>HERE</c>, <c>COMPOSE</c>, <c>VITALS</c>), the terminal mockups'
+    /// heading bar, and the scrolled-back band between a split pane's two viewports: the rule leaned toward
+    /// <see cref="Theme.Prompt"/>, so it is past every pane plane, the focused one included (a step above on a dark theme,
+    /// below on a light one), and a hue apart from the divider rule it may sit beside.
+    /// </summary>
+    internal static Rgb HeadingBand(Theme theme) => Mix(Rule(theme), theme.Prompt, HeadingLean);
+
+    /// <summary>How far <see cref="HeadingBand"/> leans from the rule toward the prompt colour.</summary>
+    private const double HeadingLean = 0.2;
+
+    /// <summary>A heading's words: the theme's text, held to body-text contrast (4.5:1) on <see cref="HeadingBand"/>.</summary>
+    internal static Rgb HeadingInk(Theme theme) => Contrast.Legible(theme.Foreground, HeadingBand(theme), HeadingFloor);
+
+    /// <summary>The floor a heading's words and accent are held to: small text, the status row's 4.5:1.</summary>
+    internal const double HeadingFloor = 4.5;
+
+    /// <summary>
     /// A divider under the pointer, or being dragged: the hairline leaned toward the prompt colour, the anchor
     /// the armed command line leans to. Enough to say "this moves" without reading as a second focus cue.
     /// </summary>
     internal static Rgb RuleHover(Theme theme) => Mix(Rule(theme), theme.Prompt, RuleHoverLean);
-
-    /// <summary>
-    /// The chrome the header ribbon's character segment sits on — the chrome band lifted toward its own
-    /// foreground, so the segment reads as a chip against the band it ends on.
-    /// </summary>
-    internal static Rgb HeaderChip(Theme theme)
-    {
-        ArgumentNullException.ThrowIfNull(theme);
-        return Mix(theme.StatusBackground, theme.Foreground, ChipLift);
-    }
 
     /// <summary>
     /// The floor the header's text is held to — WCAG AA for body text. The header is the one row every frame carries,
@@ -402,12 +409,6 @@ internal static class WorkspacePalette
 
     /// <summary>How far the header's quiet text leans from its band toward its ink before the floor is applied.</summary>
     private const double MutedLean = 0.55;
-
-    /// <summary>
-    /// How far the header chip is lifted toward the theme's ink: enough that the wedge between the two
-    /// reads as a shape, no further, since this is a background for a name and not a highlight.
-    /// </summary>
-    private const double ChipLift = 0.22;
 
     /// <summary>
     /// Every plane a pane's output can be painted on — the untinted surface and all ten tints, each

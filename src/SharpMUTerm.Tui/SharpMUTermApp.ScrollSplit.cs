@@ -220,7 +220,7 @@ internal sealed partial class SharpMUTermApp
         var width = panel.ViewportWidth > 0 ? panel.ViewportWidth : 80;
         var below = panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset;
         var band = Drawing(SurfaceCatalog.ScrollBand, windowId, new ScrollBandModel(windowId, below));
-        var markup = ScrollSplitBarRenderer.Bar(band, width, _ink.Notice);
+        var markup = ScrollSplitBarRenderer.Bar(band, width, _ink.Notice, SharpMUTerm.Tui.Panels.HeadingBand.For(_theme, _ink.Notice));
         if (!string.Equals(_scrollSplitBarText.GetValueOrDefault(windowId), markup, StringComparison.Ordinal))
         {
             _scrollSplitBarText[windowId] = markup;

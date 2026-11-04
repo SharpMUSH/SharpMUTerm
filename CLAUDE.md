@@ -1105,7 +1105,8 @@ fallbacks) for inline images/maps.
     that happens to be `#00f5b7`); a foreground that is no role (a world's accent) is held to the floor on
     the plane it lands on, except on Dark, which stays as it was.
   - A bordered modal's title, border and unstyled text are the framework's cyan and `#eeeeee`, 1.4:1 on a
-    light backdrop; `ScreenTheme.Frame` recolours them off Dark. **The workspace popups follow it too** (⌃P, quit, ⌃B panel,
+    light backdrop; `ScreenTheme.Frame` recolours them off Dark, and on Dark gives the border and title the label/value
+    inks (the terminal mockups' grey frame, wave 23) while the text stays the framework's. **The workspace popups follow it too** (⌃P, quit, ⌃B panel,
     search, game data, message log, history): each has a `Scheme` the app sets in `SchemePopups()` (on
     `ApplyTheme`), paints its plane with `Scheme.Colour(MenuBg)`, its lines with `Scheme.Lines` and its frame
     with `Scheme.Frame`; ⌃P's prompt well takes `EditBg` off Dark. Dark is byte for byte unchanged.
@@ -1587,6 +1588,14 @@ fallbacks) for inline images/maps.
   `CollapsedBarRows` (1 under `Input`, else 2), no tab strip, its windows marked scrolled back so the unread reads `N new`. A click,
   or `Activate` of a window in it, is `ExpandCollapsedBar` (for the run; an explicit apply clears it). `DesktopLayer.BelowGrid`
   stretches a native view at the foot of a column over the field reserve where the band does not reach.
+- **Wave 23 terminal (cells only; the window's native views are unchanged).** A docked panel's heading is a band
+  across the panel (`HeadingBand.Row`, Tui `Panels/`; `WorkspacePalette.HeadingBand` = the rule leaned 0.2 toward
+  `Theme.Prompt`, `HeadingInk` and the accent held to 4.5:1 on it): `HERE`, `COMPOSE` (the armed `▌` in the band's first
+  cell) and the vitals card's `VITALS`. The renderers take the band as an optional `Ink` member, so a renderer test with
+  none still gets the bare accent label. The scrolled-back band is filled with the same band (`ScrollSplitBarRenderer.Bar(…,
+  fill)`): it divides two viewports rather than sitting in a buffer, unlike the freeze/away/NEW bars, which stay rules.
+  The header's character is ` ● Corvid` in the world's colour on the band, no chip (`HeaderChip` is gone). The vitals
+  card draws its rule only above a target. The welcome's `/connect` example is in the accent.
 - **Wave 19 panels and welcome (window only; the cells are unchanged).** Each docked native panel draws a heading from
   its model (`PanelHeading.For`, Client; `PanelText.Heading`); `VitalsModel.Source` names where the meters came from
   (`SourceOf`, set in `ReadVitals`), a mixture names nothing. The docked composer's footer (summary, Preview, Send) ends
