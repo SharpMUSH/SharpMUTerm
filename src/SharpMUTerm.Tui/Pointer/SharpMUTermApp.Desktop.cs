@@ -243,7 +243,8 @@ internal sealed partial class SharpMUTermApp
                 : _mapWalkers[windowId] = room => OnUiThread(() => WalkFromMap(windowId, room));
             return new PanelOverlay(
                 PanelIds.Map, windowId, rect, new PanelInk(_ink.Accent, _ink.Draft, _ink.Lift(new Rgb(0x6a, 0x6a, 0x72))), null, view, walker,
-                PopOut: popOut, SelectRoom: MapSelectorFor(windowId), EditMap: MapEditorFor(windowId));
+                PopOut: popOut, SelectRoom: MapSelectorFor(windowId), EditMap: MapEditorFor(windowId),
+                LookMap: MapLookerFor(windowId));
         }
 
         if (!TerminalPanels.TryParseWindowId(windowId, out var panelId, out var key))

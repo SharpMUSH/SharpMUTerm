@@ -72,6 +72,34 @@ internal static class MapRenderer
 
     private readonly record struct Cell(char Glyph, Kind Kind, long? Room, string? Colour = null);
 
+    /// <summary>The payload prefix of a look link: the title's level arrows and way back, and the legend's areas.</summary>
+    internal const string LookPrefix = LinkPrefix + "look:";
+
+    /// <summary>
+    /// The look a map link asks for, or null for anything else: <c>up</c>, <c>down</c>, <c>here</c>, or <c>area:N</c>, the
+    /// Nth of <paramref name="view"/>'s <see cref="MapViewModel.Areas"/> (an index, never a name: an area's name is the
+    /// game's text).
+    /// </summary>
+    internal static MapLook? ParseLook(string url, MapViewModel view)
+    {
+        if (!url.StartsWith(LookPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var what = url[LookPrefix.Length..];
+        return what switch
+        {
+            "up" => MapLook.Up,
+            "down" => MapLook.Down,
+            "here" => MapLook.Here,
+            _ when what.StartsWith("area:", StringComparison.Ordinal)
+                && int.TryParse(what.AsSpan(5), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+                && index < view.Areas.Count => MapLook.ToArea(view.Areas[index].Name),
+            _ => null,
+        };
+    }
+
     /// <summary>The room number a map link names, or null for anything else.</summary>
     internal static long? ParseLink(string url) =>
         url.StartsWith(LinkPrefix, StringComparison.Ordinal)
@@ -126,7 +154,7 @@ internal static class MapRenderer
         var ahead = view.Rooms.Where(r => r.Ahead).Select(r => r.Id);
         // The room you are in leads the title: the one name a reader wants from a map at a glance, and the one a grid
         // of [ ] cannot say. With no current room the map is a map of somewhere else, and says so.
-        var title = new StringBuilder(view.Current is { } here ? here.Name : "Map");
+        var title = new StringBuilder(view.Current is { } here ? here.Name : view.Viewing ? "Viewing" : "Map");
         if (!string.IsNullOrWhiteSpace(view.Area))
         {
             title.Append(" · ").Append(view.Area);
@@ -138,7 +166,16 @@ internal static class MapRenderer
             title.Append(" · ").Append(walking);
         }
 
-        lines.Add(Title(title.ToString(), width, ink));
+        // The ways to look elsewhere and back, after the title: links the map's own handler answers.
+        var (controls, controlsWidth) = LookControls(view, ink);
+        if (controlsWidth > 0 && controlsWidth + 8 <= width)
+        {
+            lines.Add(Title(title.ToString(), width - controlsWidth, ink) + controls);
+        }
+        else
+        {
+            lines.Add(Title(title.ToString(), width, ink));
+        }
         if (height == 1)
         {
             return lines;
@@ -333,11 +370,13 @@ internal static class MapRenderer
             return marks;
         }
 
+        // Another area's entry is a link: a click shows that area (its index, never its name, is the payload).
         List<(string Markup, int Length)> Areas(int cap) => view.Areas
-            .Select(a =>
+            .Select((a, i) =>
             {
                 var name = a.Name.Length <= cap ? a.Name : a.Name[..(cap - 1)] + "…";
-                return (Markup: $"[{AreaInk(a.Colour, ink)}]■[/] [dim]{MarkupText.Escape(name)}[/]", Length: 2 + name.Length);
+                var markup = $"[{AreaInk(a.Colour, ink)}]■[/] [dim]{MarkupText.Escape(name)}[/]";
+                return (Markup: a.Drawn ? markup : $"[link={LookPrefix}area:{i.ToString(CultureInfo.InvariantCulture)}]{markup}[/]", Length: 2 + name.Length);
             })
             .ToList();
 
@@ -363,6 +402,33 @@ internal static class MapRenderer
         }
 
         return Fit(string.Join(" [dim]·[/] ", Marks(words: false).Select(p => p.Markup)), width);
+    }
+
+    /// <summary>
+    /// The title's look links and their width: <c>▲ ▼</c> while the drawn area has more than one level (an arrow with no
+    /// level that way is dim and not a link), and <c>⌂ here</c> while the view is somewhere the player asked to look.
+    /// Empty when there is nothing to offer, so a one-level map's title is as it always was.
+    /// </summary>
+    internal static (string Markup, int Width) LookControls(MapViewModel view, Ink ink)
+    {
+        var parts = new List<(string Markup, int Width)>();
+        if (view.Levels.Count > 1)
+        {
+            parts.Add((Arrow("▲", "up", view.LevelAbove), 1));
+            parts.Add((Arrow("▼", "down", view.LevelBelow), 1));
+        }
+
+        if (view.Viewing)
+        {
+            parts.Add(($"[link={LookPrefix}here][bold {ink.Current}]⌂ here[/][/]", 6));
+        }
+
+        return parts.Count == 0
+            ? (string.Empty, 0)
+            : ("  " + string.Join(" ", parts.Select(p => p.Markup)), 2 + parts.Sum(p => p.Width) + parts.Count - 1);
+
+        string Arrow(string glyph, string way, bool open) =>
+            open ? $"[link={LookPrefix}{way}][bold {ink.Title}]{glyph}[/][/]" : $"[dim]{glyph}[/]";
     }
 
     /// <summary>The lengths an area name is shortened through, longest first, before an area is counted instead.</summary>
@@ -452,7 +518,7 @@ internal static class MapRenderer
                 : height >= 4 ? [RoomLine(view, width, ink), .. KeysLines(width, ink, keysHeld, 1)] : [];
         }
 
-        if (height < UnderFromHeight || view.Nearby.Count == 0)
+        if (height < UnderFromHeight || view.Nearby.Count == 0 || view.Viewing)
         {
             return [];
         }
@@ -481,6 +547,12 @@ internal static class MapRenderer
         if (room.Note is { } note)
         {
             lines.Add(Fit($"[dim]note  [/]{Name(note, width - 6)}", width));
+        }
+
+        if (room.HandEdited.Count > 0)
+        {
+            // What the server's next report will leave alone, and the key that gives it back.
+            lines.Add(Fit($"[dim]mine  [/]{MarkupText.Escape(string.Join(", ", room.HandEdited))} [dim]· R resets[/]", width));
         }
 
         if (view.Pending is { } pending)
@@ -528,6 +600,11 @@ internal static class MapRenderer
         if (room.Note is { } note)
         {
             parts.Add("note: " + note);
+        }
+
+        if (room.HandEdited.Count > 0)
+        {
+            parts.Add("mine: " + string.Join(", ", room.HandEdited));
         }
 
         if (view.Pending is { } pending)

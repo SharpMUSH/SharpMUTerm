@@ -228,6 +228,10 @@ internal interface IPointerPresenter
 /// client checks it; the window only builds a <see cref="SharpMUTerm.Client.Panels.MapEdit"/> from its inspector. Safe to
 /// call from any thread; one instance per window.
 /// </param>
+/// <param name="LookMap">
+/// For the map, looks at another level or area, or back at the character (<c>LookMap</c>), the funnel the cell map's look
+/// keys and links end in. Safe to call from any thread; one instance per window.
+/// </param>
 internal sealed record PanelOverlay(
     string PanelId,
     string WindowId,
@@ -244,7 +248,8 @@ internal sealed record PanelOverlay(
     SharpMUTerm.Client.Composer.ComposerSession? ComposerSession = null,
     Action? PopOut = null,
     Action<long?>? SelectRoom = null,
-    Action<SharpMUTerm.Client.Panels.MapEdit>? EditMap = null);
+    Action<SharpMUTerm.Client.Panels.MapEdit>? EditMap = null,
+    Action<SharpMUTerm.Client.Panels.MapLook>? LookMap = null);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);

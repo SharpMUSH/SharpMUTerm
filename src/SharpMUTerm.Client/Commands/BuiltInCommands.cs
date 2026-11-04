@@ -169,6 +169,13 @@ public static class BuiltInCommands
         // unconditionally beside Show map; it refuses out loud where there is no map.
         Add("map:edit", CommandGroup.Terminal, "Edit map", detail: "rename, area, lock, weight, exits, notes · /map rename …");
         Add("map:undo", CommandGroup.Terminal, "Undo map edit", detail: "takes back the last change to the map", when: c => c.State.MapUndo is not null);
+
+        // Looking at another level or area of the map, and back; offered only where the map has one to look at.
+        Add("map:level-up", CommandGroup.Terminal, "Map: level up", detail: "shows the next level up · /map level up", when: c => c.State.MapLevels > 1);
+        Add("map:level-down", CommandGroup.Terminal, "Map: level down", detail: "shows the next level down · /map level down", when: c => c.State.MapLevels > 1);
+        Add("map:next-area", CommandGroup.Terminal, "Map: next area", detail: "shows another area · /map view <area>", when: c => c.State.MapAreas > 1);
+        Add("map:here", CommandGroup.Terminal, "Map: back to where I am", detail: "the map follows you again · /map here", when: c => c.State.MapViewing);
+        Add("map:find", CommandGroup.Terminal, "Find room…", detail: "rooms by name or area · /map find <text>", when: c => c.State.MapLevels > 0);
         // The panels a layout places, openable one at a time as tabs: each draws the focused character's own data
         // and says so when there is none yet, so they are listed unconditionally, like the map.
         Add("panel:who-here", CommandGroup.Terminal, "Show who is here", detail: "players and creatures in the room · click a name to look");

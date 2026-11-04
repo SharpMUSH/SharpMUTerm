@@ -304,6 +304,10 @@ public static class SurfaceCatalog
                 // while editing), and every edit — cell key, /map command, native menu or inspector — through one funnel.
                 new(SurfaceActionKind.Pick, "select room", "SelectMapRoom"),
                 new(SurfaceActionKind.MapEdit, "edit", "ApplyMapEdit"),
+
+                // Another level or area, and back: the cell title's arrows, its legend's areas and the edit keys; the
+                // window's level buttons, wheel and area menu.
+                new(SurfaceActionKind.Pick, "look", "LookMap"),
                 PopOut,
             ],
             CellsUnderNative,

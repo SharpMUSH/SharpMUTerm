@@ -17,8 +17,16 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - Maps can be edited by hand: Ctrl+P ▸ Edit map in the terminal (arrow keys select, Shift+arrows move, r, a, l, w, x,
   n, s, Del and u edit), or right-click a room in the desktop window for its menu and inspector. Rename a room, set
   its area, lock it, weight it, add or remove an exit (or link one to the next room you walk into), move it, delete it,
-  or give it a note or a symbol; the last ten edits can be undone. A game that reports rooms over GMCP may overwrite
-  a room's name, area and exits the next time it describes it.
+  or give it a note or a symbol; the last ten edits can be undone. What you changed by hand (a name, an area, exits,
+  a position) is kept when the game describes the room again; Reset to server (R, or the inspector's button) gives it
+  back to the game.
+- The map can show another level or area and come back: the ▲ ▼ and "here" in the map's title and the area names in
+  its legend in the terminal, the Up, Down, Areas and "Back to where I am" buttons (or Shift+wheel) in the desktop
+  window, PgUp/PgDn, v and h while editing, Ctrl+P ▸ Map: level up / level down / next area / back to where I am, and
+  `/map level up|down`, `/map view <area>` and `/map here`. Walking still goes from where you are.
+- In the desktop window, drag a room while editing the map to move it; it snaps to the grid.
+- Ctrl+P ▸ Find room… and `/map find <text>` list the rooms whose name or area matches, with the `/walk` for each,
+  and show the first on the map.
 - Ctrl+P ▸ Script console: one per character, it shows what your Lua scripts printed and the errors they raised
   (with the file and line), runs a line of Lua as that character (a runaway loop is stopped after half a second),
   remembers what you typed, lists the character's `store` keys with Delete, and reloads the scripts. Without a

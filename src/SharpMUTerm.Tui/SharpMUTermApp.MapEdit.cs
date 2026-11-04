@@ -54,7 +54,8 @@ internal sealed partial class SharpMUTermApp
         var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
         long? selected = _mapSelection.TryGetValue(windowId, out var room) && map.Map.Room(room) is not null ? room : null;
         return MapViewModel.From(
-            map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking, MapPalette(), selected, map.Recorder.PendingLink, map.Recorder.UndoLabel);
+            map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, walking, MapPalette(), selected, map.Recorder.PendingLink, map.Recorder.UndoLabel,
+            MapLookOf(windowId));
     }
 
     /// <summary>
@@ -165,7 +166,7 @@ internal sealed partial class SharpMUTermApp
         var result = MapEditing.Apply(map.Recorder, edit);
         if (_mapSelection.TryGetValue(windowId, out var selected) && map.Map.Room(selected) is null)
         {
-            var next = map.Recorder.CurrentRoomId ?? MapViewModel.From(map.Map, null, [], null).AnchorId;
+            var next = MapViewModel.From(map.Map, map.Recorder.CurrentRoomId, [], null, look: MapLookOf(windowId)).AnchorId;
             if (next is { } room)
             {
                 _mapSelection[windowId] = room;
@@ -248,6 +249,10 @@ internal sealed partial class SharpMUTermApp
         {
             ApplyMapEdit(windowId, MapEdit.Delete(room));
         }
+        else if (key.Key is ConsoleKey.PageUp or ConsoleKey.PageDown && bare)
+        {
+            LookMap(windowId, key.Key == ConsoleKey.PageUp ? MapLook.Up : MapLook.Down);
+        }
         else if (key.Key == ConsoleKey.Escape)
         {
             LeaveMapEdit(windowId);
@@ -263,6 +268,9 @@ internal sealed partial class SharpMUTermApp
         {
             'l' => Edit(MapEdit.Lock(room, map.Map.Room(room)?.Locked != true)),
             'u' => Edit(MapEdit.Undo),
+            'R' => Edit(MapEdit.ResetToServer(room)),
+            'v' => Look(MapLook.NextArea),
+            'h' => Look(MapLook.Here),
             'r' => Words(MapEditing.RenameVerb),
             'a' => Words(MapEditing.AreaVerb),
             'w' => Words(MapEditing.WeightVerb),
@@ -287,6 +295,12 @@ internal sealed partial class SharpMUTermApp
         bool Edit(MapEdit edit)
         {
             ApplyMapEdit(windowId, edit);
+            return true;
+        }
+
+        bool Look(MapLook look)
+        {
+            LookMap(windowId, look);
             return true;
         }
 
@@ -350,7 +364,7 @@ internal sealed partial class SharpMUTermApp
                     var area = room.AreaId is { } a && map.Map.Areas.TryGetValue(a, out var named) ? named.Name : "-";
                     text.Append(CultureInfo.InvariantCulture, $"{room.Id}:{room.Name}@{area}({room.X},{room.Y},{room.Z})w{room.Weight}")
                         .Append(room.Locked ? "L" : string.Empty)
-                        .Append(CultureInfo.InvariantCulture, $"[{room.Symbol}|{room.Note}]{{")
+                        .Append(CultureInfo.InvariantCulture, $"[{room.Symbol}|{room.Note}|{string.Join('+', room.HandEdited.Order(StringComparer.Ordinal))}]{{")
                         .AppendJoin(',', room.AllExits().Select(e => $"{e.Key}>{e.To}").Order(StringComparer.Ordinal))
                         .Append('/')
                         .AppendJoin(',', room.Stubs.Order(StringComparer.Ordinal))
@@ -364,6 +378,11 @@ internal sealed partial class SharpMUTermApp
         foreach (var (window, room) in _mapSelection.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             text.Append(CultureInfo.InvariantCulture, $"selected {window}={room} ");
+        }
+
+        foreach (var (window, look) in _mapLooks.OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            text.Append(CultureInfo.InvariantCulture, $"look {window}={look.AreaId}/{look.Level} ");
         }
 
         return text.Append("keys=").Append(_mapKeys).ToString();

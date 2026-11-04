@@ -26,6 +26,9 @@ public enum MapEditKind
 
     /// <summary>The last edit taken back.</summary>
     Undo,
+
+    /// <summary>The room's hand-edited fields given back to the server (<see cref="MapRecorder.ResetToServer"/>).</summary>
+    ResetToServer,
 }
 
 /// <summary>
@@ -66,6 +69,8 @@ public sealed record MapEdit(MapEditKind Kind, long Room, string? Text = null, i
     public static MapEdit Symbol(long room, string? symbol) => new(MapEditKind.Symbol, room, symbol);
 
     public static MapEdit Undo { get; } = new(MapEditKind.Undo, 0);
+
+    public static MapEdit ResetToServer(long room) => new(MapEditKind.ResetToServer, room);
 }
 
 /// <summary>What an edit did: whether the map changed, and a sentence for the player either way.</summary>
@@ -80,7 +85,7 @@ public static class MapEditing
     /// <summary>A room menu entry's verbs (<see cref="MenuEntry.Command"/>). A verb that needs words opens the inspector at that field.</summary>
     public const string WalkVerb = "walk", RenameVerb = "rename", AreaVerb = "area", NoteVerb = "note", SymbolVerb = "symbol",
         WeightVerb = "weight", ExitVerb = "exit", UnexitVerb = "unexit", LockVerb = "lock", UnlockVerb = "unlock", DeleteVerb = "delete",
-        UndoVerb = "undo";
+        UndoVerb = "undo", ResetVerb = "reset";
 
     /// <summary>The verbs that need words, which a host asks for in its inspector before an edit is made.</summary>
     public static IReadOnlyList<string> TextVerbs { get; } = [RenameVerb, AreaVerb, NoteVerb, SymbolVerb, WeightVerb, ExitVerb];
@@ -93,6 +98,9 @@ public static class MapEditing
     [
         ("←↑→↓", "select"),
         ("⇧←↑→↓", "move"),
+        ("PgUp PgDn", "level"),
+        ("v", "next area"),
+        ("h", "here"),
         ("r", "rename"),
         ("a", "area"),
         ("l", "lock"),
@@ -102,6 +110,7 @@ public static class MapEditing
         ("n", "note"),
         ("s", "symbol"),
         ("Del", "delete"),
+        ("R", "reset to server"),
         ("u", "undo"),
         ("⏎", "walk"),
         ("Esc", "done"),
@@ -146,6 +155,14 @@ public static class MapEditing
                 return new(false, "a symbol is one printable character");
             case MapEditKind.Delete when recorder.CurrentRoomId == id:
                 return new(false, "you are in that room — walk out of it first");
+        }
+
+        if (edit.Kind == MapEditKind.ResetToServer)
+        {
+            var reported = recorder.HasServerReport(id);
+            return recorder.ResetToServer(id, $"reset {name} to server")
+                ? new(true, reported ? $"{name} is as the server last said" : $"{name} takes the server's next report")
+                : new(false, $"nothing on {name} was edited by hand");
         }
 
         if (edit.Kind == MapEditKind.LinkNext)
@@ -194,7 +211,7 @@ public static class MapEditing
 
     /// <summary>The <c>/map</c> verbs that edit, which <see cref="Parse"/> reads.</summary>
     public static IReadOnlyList<string> CommandVerbs { get; } =
-        ["rename", "area", "lock", "unlock", "weight", "exit", "unexit", "move", "delete", "note", "symbol", "undo"];
+        ["rename", "area", "lock", "unlock", "weight", "exit", "unexit", "move", "delete", "note", "symbol", "undo", "reset"];
 
     /// <summary>
     /// A <c>/map</c> command's words after <c>/map</c>, as an edit: <c>rename 12 The Hall</c>, <c>area 12 Keep</c>,
@@ -233,11 +250,12 @@ public static class MapEditing
             "delete" => "/map delete <room>",
             "note" => "/map note <room> [text]",
             "symbol" => "/map symbol <room> [character]",
+            "reset" => "/map reset <room>",
             _ => null,
         };
         if (usage is null)
         {
-            return (null, "use /map lock|unlock [room], rename, area, weight, exit, unexit, move, delete, note, symbol or undo");
+            return (null, "use /map lock|unlock [room], rename, area, weight, exit, unexit, move, delete, note, symbol, reset or undo");
         }
 
         space = rest.IndexOf(' ');
@@ -260,6 +278,8 @@ public static class MapEditing
                 return (MapEdit.Symbol(room, tail), null);
             case "delete":
                 return (MapEdit.Delete(room), null);
+            case "reset":
+                return (MapEdit.ResetToServer(room), null);
             case "weight":
                 return int.TryParse(tail, NumberStyles.None, CultureInfo.InvariantCulture, out var weight)
                     ? (MapEdit.Weight(room, weight), null)
@@ -349,6 +369,11 @@ public static class MapEditing
             MenuEntry.Separator,
             new("Delete room", "Del", here ? null : DeleteVerb, Enabled: !here),
         };
+        if (room.HandEdited)
+        {
+            entries.Add(new("Reset to server", "R", ResetVerb));
+        }
+
         if (undo is not null)
         {
             entries.Add(new($"Undo {Snippet(undo)}", "u", UndoVerb));
@@ -364,6 +389,7 @@ public static class MapEditing
         UnlockVerb => MapEdit.Lock(room, false),
         DeleteVerb => MapEdit.Delete(room),
         UndoVerb => MapEdit.Undo,
+        ResetVerb => MapEdit.ResetToServer(room),
         _ => null,
     };
 

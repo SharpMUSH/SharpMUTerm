@@ -63,6 +63,9 @@ public sealed record CharacterRef(
 /// Whether the client's own dictionaries folder holds none, so <c>Get a spelling dictionary</c> is offered.
 /// </param>
 /// <param name="MapUndo">What the focused character's last map edit was, so <c>Undo map edit</c> is offered only with one.</param>
+/// <param name="MapLevels">How many levels the area the focused character's map shows has (0 with no map).</param>
+/// <param name="MapAreas">How many named areas that map has.</param>
+/// <param name="MapViewing">Whether that map shows somewhere other than where the character is.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -82,7 +85,10 @@ public sealed record CommandContext(
     IReadOnlyList<RaggedWrap>? RaggedWraps = null,
     bool NoDictionary = false,
     string? MapUndo = null,
-    bool SceneLogging = false);
+    bool SceneLogging = false,
+    int MapLevels = 0,
+    int MapAreas = 0,
+    bool MapViewing = false);
 
 /// <summary>A world whose pane is narrower than its server's wrap column.</summary>
 /// <param name="World">The world's name.</param>

@@ -340,7 +340,7 @@ internal sealed class DesktopLayer : Canvas
             () => new MapCanvas(_view),
             frame,
             cell,
-            (map, panel, plane) => map.Show(panel.Map!, panel.Ink, plane, text, panel.WalkTo, panel.SelectRoom, panel.EditMap));
+            (map, panel, plane) => map.Show(panel.Map!, panel.Ink, plane, text, panel.WalkTo, panel.SelectRoom, panel.EditMap, panel.LookMap));
         Place(
             _whoHere,
             _pointer.Panels.Where(p => p.PanelId == PanelIds.WhoHere && p.WhoHere is not null),

@@ -25,6 +25,7 @@ internal sealed class MapInspector : Border
     private readonly TextBlock _where = new() { Opacity = 0.75 };
     private readonly TextBlock _pending = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false };
     private readonly StackPanel _exits = new() { Spacing = 2 };
+    private readonly TextBlock _mine = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.85, IsVisible = false };
     private readonly Button _undo;
     private readonly Button _delete;
     private MapViewModel _model = new(null, 0, [], [], null);
@@ -89,6 +90,14 @@ internal sealed class MapInspector : Border
             }
         });
         var done = Small("Done", () => _select?.Invoke(null));
+        ResetButton = Small("Reset to server", () =>
+        {
+            if (_model.Selected is { } room)
+            {
+                _edit?.Invoke(MapEdit.ResetToServer(room.Id));
+            }
+        });
+        ToolTip.SetTip(ResetButton, "Let the server's room reports set the fields you edited by hand again (R on the cell map)");
 
         var nudge = new WrapPanel();
         foreach (var (label, dx, dy, dz) in new[] { ("West", -1, 0, 0), ("North", 0, -1, 0), ("South", 0, 1, 0), ("East", 1, 0, 0), ("Level up", 0, 0, 1), ("Level down", 0, 0, -1) })
@@ -132,6 +141,7 @@ internal sealed class MapInspector : Border
         var buttons = new WrapPanel();
         buttons.Children.Add(_undo);
         buttons.Children.Add(_delete);
+        buttons.Children.Add(ResetButton);
         buttons.Children.Add(done);
 
         Child = new StackPanel
@@ -142,6 +152,7 @@ internal sealed class MapInspector : Border
                 _title,
                 _where,
                 grid,
+                _mine,
                 LockBox,
                 new TextBlock { Text = "Exits", Opacity = 0.75 },
                 _exits,
@@ -174,6 +185,12 @@ internal sealed class MapInspector : Border
     internal TextBox TargetBox { get; }
 
     internal CheckBox LockBox { get; }
+
+    /// <summary>Gives the room's hand-edited fields back to the server; enabled only while it has some.</summary>
+    internal Button ResetButton { get; }
+
+    /// <summary>What the card says about the fields edited by hand, or empty. Internal for tests.</summary>
+    internal string HandEditedText => _mine.IsVisible ? _mine.Text ?? string.Empty : string.Empty;
 
     /// <summary>The room it shows, or null. Internal for tests.</summary>
     internal MapRoomDetails? Room => _model.Selected;
@@ -238,6 +255,9 @@ internal sealed class MapInspector : Border
 
         _pending.Text = model.Pending ?? string.Empty;
         _pending.IsVisible = model.Pending is not null;
+        _mine.Text = room.HandEdited.Count == 0 ? string.Empty : $"Edited by hand, kept from the server: {string.Join(", ", room.HandEdited)}";
+        _mine.IsVisible = room.HandEdited.Count > 0;
+        ResetButton.IsEnabled = room.HandEdited.Count > 0;
         _undo.IsEnabled = model.UndoLabel is not null;
         ToolTip.SetTip(_undo, model.UndoLabel is { } undo ? $"Undo {undo}" : "Nothing to undo");
         _delete.IsEnabled = model.Current?.Id != room.Id;

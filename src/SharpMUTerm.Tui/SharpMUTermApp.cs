@@ -1996,10 +1996,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
         // starts a walk to the docks through the real `/walk`, so the path ahead is marked; `map-split` puts
         // the map beside the output, the way it is meant to be read.
-        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split" or "map-edit")
+        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split" or "map-edit" or "map-level" or "map-area" or "map-find" or "map-mine")
         {
             LoadDemoMap();
-            var split = view.ToLowerInvariant() is "map-split" or "map-edit";
+            var split = view.ToLowerInvariant() is not ("map" or "map-walking");
             if (split)
             {
                 // Split first, so the map opens in front in the right-hand pane, then hand the focus back to
@@ -2032,6 +2032,29 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 SimulateMapKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, false));
                 MapCommand(MainWindowId, "map", "note 4210 Spice traders gather here at dawn");
                 SimulateMapKey(new ConsoleKeyInfo('l', ConsoleKey.L, false, false, false));
+            }
+
+            // `map-level`: the real ⌃P ▸ Map: level up, so the frame shows the bell tower's floor with the way back offered.
+            // `map-area`: the legend's link to the docks clicked, so the frame shows the other area drawn in its colour.
+            // `map-find`: `/map find temple` typed, listing the rooms and pointing the map at the first.
+            // `map-mine`: the market renamed by hand, then edited, so the side column says what the server will leave alone.
+            var mapWindow = MapWindowId(DemoScene.ActiveSessionKey);
+            switch (view.ToLowerInvariant())
+            {
+                case "map-level":
+                    DispatchCommand("map:level-up");
+                    break;
+                case "map-area" when _mapViews.TryGetValue(mapWindow, out var drawn):
+                    OnMapLinkClicked(mapWindow, MapRenderer.LookPrefix + "area:" + drawn.Model.Areas.ToList().FindIndex(a => !a.Drawn));
+                    break;
+                case "map-find":
+                    MapCommand(MainWindowId, "map", "find temple");
+                    break;
+                case "map-mine":
+                    MapCommand(MainWindowId, "map", "rename 4210 Market Row of Lanterns");
+                    DispatchCommand("map:edit");
+                    SimulateMapKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, false));
+                    break;
             }
         }
 
@@ -8445,6 +8468,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The stateful flags the catalog's labels read, as they stand now.</summary>
     private CommandContext CommandState()
     {
+        var mapState = MapCommandState();
         return new CommandContext(
             LoggingOn: _active?.IsLogging == true,
             Zoomed: _workspace.Layout.ZoomedPaneId is not null,
@@ -8456,6 +8480,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ScriptsOn: _scriptsRoot is not null,
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
             MapUndo: MapOf(SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey)?.Recorder.UndoLabel,
+            MapLevels: mapState.Levels,
+            MapAreas: mapState.Areas,
+            MapViewing: mapState.Viewing,
             Reconnecting: _reconnects.Values.Any(r => r.IsActive),
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
@@ -8906,6 +8933,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "map:edit":
                 ToggleMapEdit();
                 return true;
+            case "map:level-up":
+            case "map:level-down":
+            case "map:next-area":
+            case "map:here":
+            case "map:find":
+                RunMapViewCommand(id);
+                return true;
             case "map:undo":
                 if ((SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey) is { } undoKey && MapOf(undoKey) is not null)
                 {
@@ -9274,6 +9308,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnMapLinkClicked(string windowId, string url)
     {
+        // The title's level arrows and "here", and the legend's areas: a look, by index into the view last drawn.
+        if (_mapViews.TryGetValue(windowId, out var drawn) && MapRenderer.ParseLook(url, drawn.Model) is { } look)
+        {
+            LookMap(windowId, look);
+            return;
+        }
+
         if (MapRenderer.ParseLink(url) is not { } room)
         {
             return;
@@ -9418,6 +9459,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         else if (argument.Trim().Equals("edit", StringComparison.OrdinalIgnoreCase))
         {
             ToggleMapEdit();
+            return;
+        }
+        else if ((WindowSession(windowId)?.SessionKey ?? _workspace.FindWindow(windowId)?.SessionKey) is { } viewer
+            && argument.Split(' ', 2)[0].ToLowerInvariant() is "level" or "view" or "here" or "find")
+        {
+            MapViewCommand(windowId, map, viewer, argument);
             return;
         }
         else

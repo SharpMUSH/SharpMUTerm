@@ -454,6 +454,57 @@ public class SurfaceParityTests
                 MapKeys(app, MapKey(ConsoleKey.X, 'x'));
                 TypeLine(app, "climb next");
             });
+
+        // Another level or area, and back: the canvas's buttons and menu, and the cell title's and legend's links and keys.
+        await Same("map: look up a level", "layout-combat",
+            (app, d) => Panel(d, PanelIds.Map).LookMap!(MapLook.Up),
+            (app, d) => app.SimulateMapClick(Panel(d, PanelIds.Map).WindowId, MapRenderer.LookPrefix + "up"));
+        await Same("map: look at another area", "layout-combat",
+            (app, d) => Panel(d, PanelIds.Map).LookMap!(MapLook.ToArea(Panel(d, PanelIds.Map).Map!.Areas.First(a => !a.Drawn).Name)),
+            (app, d) =>
+            {
+                var map = Panel(d, PanelIds.Map).Map!;
+                var index = map.Areas.ToList().FindIndex(a => !a.Drawn);
+                app.SimulateMapClick(Panel(d, PanelIds.Map).WindowId, MapRenderer.LookPrefix + "area:" + index);
+            });
+        await Same("map: back to where I am", "layout-combat",
+            (app, d) =>
+            {
+                Panel(d, PanelIds.Map).LookMap!(MapLook.Up);
+                Panel(d, PanelIds.Map).LookMap!(MapLook.Here);
+            },
+            (app, d) =>
+            {
+                app.SimulateMapClick(Panel(d, PanelIds.Map).WindowId, MapRenderer.LookPrefix + "up");
+                app.SimulateMapClick(Panel(d, PanelIds.Map).WindowId, MapRenderer.LookPrefix + "here");
+            });
+        await Same("map: next area while editing", "layout-combat",
+            (app, d) =>
+            {
+                Panel(d, PanelIds.Map).SelectRoom!(OtherRoom(Panel(d, PanelIds.Map).Map!));
+                Panel(d, PanelIds.Map).LookMap!(MapLook.NextArea);
+            },
+            (app, d) => { CellSelect(app, d); MapKeys(app, MapKey(ConsoleKey.V, 'v')); });
+
+        // A hand edit given back to the server: the inspector's Reset button, and R on the cell map.
+        await Same("map: reset to server", "layout-combat",
+            (app, d) =>
+            {
+                NativeEdit(d, room => MapEdit.Rename(room, "Spice Yard"));
+                Panel(d, PanelIds.Map).EditMap!(MapEdit.ResetToServer(OtherRoom(Panel(d, PanelIds.Map).Map!)));
+            },
+            (app, d) =>
+            {
+                CellSelect(app, d);
+                MapKeys(app, MapKey(ConsoleKey.R, 'r'));
+                while (app.PrimaryInputText.Count(c => c == ' ') > 3 || !app.PrimaryInputText.EndsWith(' '))
+                {
+                    MapKeys(app, MapKey(ConsoleKey.Backspace, '\b'));
+                }
+
+                TypeLine(app, "Spice Yard");
+                MapKeys(app, new ConsoleKeyInfo('R', ConsoleKey.R, true, false, false));
+            });
         probed.Add(PanelIds.Map);
 
         // Vitals: the pop-out button, and ⌃P's entry for the same window.

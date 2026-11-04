@@ -19,9 +19,10 @@ namespace SharpMUTerm.Client.Panels;
 /// <param name="Selected">Whether it is the room being edited (<see cref="MapViewModel.Selected"/>).</param>
 /// <param name="Symbol">The one character the player marked it with, or null.</param>
 /// <param name="Noted">Whether the player wrote a note on it.</param>
+/// <param name="HandEdited">Whether a field the server reports was changed by hand (<see cref="MapRoom.HandEdited"/>).</param>
 public sealed record MapViewRoom(
     long Id, string Name, int X, int Y, bool Current, bool Ahead, bool Locked, bool Up = false, bool Down = false, string? Elsewhere = null,
-    bool Selected = false, string? Symbol = null, bool Noted = false);
+    bool Selected = false, string? Symbol = null, bool Noted = false, bool HandEdited = false);
 
 /// <summary>An exit as a view names it: the direction or command, and the room it leads to, or none for a stub.</summary>
 /// <param name="Exit">A direction's short command (<c>n</c>, <c>up</c>) or a special exit's command.</param>
@@ -36,10 +37,17 @@ public sealed record MapViewExitName(string Exit, long? To, string? Name);
 public sealed record MapRoomDetails(
     long Id, string Name, string? Area, int X, int Y, int Z, int Weight, bool Locked, string? Symbol, string? Note, IReadOnlyList<MapViewExitName> Exits)
 {
+    /// <summary>
+    /// The fields changed by hand (<see cref="MapFields"/>, in that order), which the server's next report leaves alone
+    /// until the room is reset to the server.
+    /// </summary>
+    public IReadOnlyList<string> HandEdited { get; init; } = [];
+
     /// <summary>Value equality over the exits too, which a record's list member does not give.</summary>
     public bool Equals(MapRoomDetails? other) =>
         other is not null && Id == other.Id && Name == other.Name && Area == other.Area && (X, Y, Z) == (other.X, other.Y, other.Z)
-        && Weight == other.Weight && Locked == other.Locked && Symbol == other.Symbol && Note == other.Note && Exits.SequenceEqual(other.Exits);
+        && Weight == other.Weight && Locked == other.Locked && Symbol == other.Symbol && Note == other.Note && Exits.SequenceEqual(other.Exits)
+        && HandEdited.SequenceEqual(other.HandEdited);
 
     public override int GetHashCode() => HashCode.Combine(Id, Name, Area, X, Y, Z, Weight, Exits.Count);
 }
@@ -68,6 +76,30 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
 
     /// <summary>The longest room or area name a view is given.</summary>
     public const int MaxNameLength = 80;
+
+    /// <summary>The most areas <see cref="AreaChoices"/> lists.</summary>
+    public const int MaxAreaChoices = 64;
+
+    /// <summary>
+    /// Whether the view is somewhere the player asked to look (<see cref="MapViewpoint"/>) rather than where the
+    /// character is: both hosts then offer the way back.
+    /// </summary>
+    public bool Viewing { get; init; }
+
+    /// <summary>The levels the drawn area has rooms on, lowest first: what the level buttons and keys step through.</summary>
+    public IReadOnlyList<int> Levels { get; init; } = [];
+
+    /// <summary>Whether the drawn area has a level above the one drawn.</summary>
+    public bool LevelAbove => Levels.Any(z => z > Level);
+
+    /// <summary>Whether the drawn area has a level below the one drawn.</summary>
+    public bool LevelBelow => Levels.Any(z => z < Level);
+
+    /// <summary>
+    /// Every named area of the map that holds a room, by name, each in its colour and <see cref="MapViewArea.Drawn"/> for
+    /// the one drawn: what the window's area menu lists and the cell map's area key cycles through.
+    /// </summary>
+    public IReadOnlyList<MapViewArea> AreaChoices { get; init; } = [];
 
     /// <summary>
     /// The room the view is drawn around: the character's, or with no current room the most recently recorded one.
@@ -125,16 +157,30 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     /// </param>
     /// <param name="pending">An exit waiting for the next room walked into (<see cref="MapRecorder.PendingLink"/>).</param>
     /// <param name="undo">What an undo would take back (<see cref="MapRecorder.UndoLabel"/>).</param>
+    /// <param name="look">
+    /// Another area or level to draw (<see cref="MapLooking.Resolve"/>), or null to draw where the character is. A viewpoint
+    /// with no rooms is ignored. The view is then drawn around the room of that set nearest the character's place.
+    /// </param>
     public static MapViewModel From(
         WorldMap map, long? currentRoomId, IEnumerable<long> ahead, string? walking, MapAreaPalette? palette = null,
-        long? selected = null, (long From, string Exit)? pending = null, string? undo = null)
+        long? selected = null, (long From, string Exit)? pending = null, string? undo = null, MapViewpoint? look = null)
     {
         ArgumentNullException.ThrowIfNull(map);
         palette ??= MapAreaPalette.Dark;
         var anchor = currentRoomId is { } id ? map.Room(id) : null;
         anchor ??= map.Rooms.Values.LastOrDefault();
+        var home = anchor;
+        var viewing = false;
+        if (look is { } v && home is not null && (v.AreaId != home.AreaId || v.Level != home.Z)
+            && map.Rooms.Values.Where(r => r.Z == v.Level && r.AreaId == v.AreaId)
+                .OrderBy(r => Math.Abs(r.X - home.X) + Math.Abs(r.Y - home.Y)).ThenBy(r => r.Id).FirstOrDefault() is { } there)
+        {
+            anchor = there;
+            viewing = true;
+        }
+
         var chosen = selected is { } pick ? map.Room(pick) : null;
-        if (chosen is not null && (anchor is null || chosen.Z != anchor.Z || chosen.AreaId != anchor.AreaId))
+        if (!viewing && chosen is not null && (anchor is null || chosen.Z != anchor.Z || chosen.AreaId != anchor.AreaId))
         {
             anchor = chosen;
         }
@@ -166,7 +212,8 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
                 Elsewhere(map, r),
                 r.Id == chosen?.Id,
                 ValidSymbol(r.Symbol),
-                r.Note is not null))
+                r.Note is not null,
+                r.HandEdited.Count > 0))
             .ToList();
         var ids = rooms.Select(r => r.Id).ToHashSet();
         var exits = new List<MapViewExit>();
@@ -204,10 +251,16 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
         }
 
         var here = currentRoomId is { } at ? map.Room(at) : null;
+        var choices = MapLooking.Choices(map)
+            .Select(a => new MapViewArea(Bounded(a.Name), palette.Colour(Bounded(a.Name)), Drawn: a.Id == anchor.AreaId))
+            .ToList();
         return new MapViewModel(area, anchor.Z, rooms, exits, walking)
         {
             AnchorId = anchor.Id,
             Areas = areas,
+            Viewing = viewing,
+            Levels = map.Rooms.Values.Where(r => r.AreaId == anchor.AreaId).Select(r => r.Z).Distinct().Order().ToList(),
+            AreaChoices = choices,
             Nearby = here is null ? [] : ExitsOf(map, here),
             Selected = chosen is null ? null : DetailsOf(map, chosen),
             Pending = pendingText,
@@ -255,7 +308,13 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
         room.Locked,
         ValidSymbol(room.Symbol),
         room.Note is { } note ? Bounded(note) : null,
-        ExitsOf(map, room));
+        ExitsOf(map, room))
+    {
+        HandEdited = MapFields.All.Where(room.HandEdited.Contains).ToList(),
+    };
+
+    /// <summary>A name as a view is given it: at most <see cref="MaxNameLength"/> characters.</summary>
+    public static string Bound(string name) => Bounded(name);
 
     /// <summary>A symbol a view may draw: its first character when that is one a cell can hold, else null.</summary>
     private static string? ValidSymbol(string? symbol) =>
@@ -309,7 +368,8 @@ public sealed record MapViewModel(string? Area, int Level, IReadOnlyList<MapView
     public bool Equals(MapViewModel? other) =>
         other is not null && Area == other.Area && Level == other.Level && Walking == other.Walking && AnchorId == other.AnchorId
         && Rooms.SequenceEqual(other.Rooms) && Exits.SequenceEqual(other.Exits) && Areas.SequenceEqual(other.Areas)
-        && Nearby.SequenceEqual(other.Nearby) && Equals(Selected, other.Selected) && Pending == other.Pending && UndoLabel == other.UndoLabel;
+        && Nearby.SequenceEqual(other.Nearby) && Equals(Selected, other.Selected) && Pending == other.Pending && UndoLabel == other.UndoLabel
+        && Viewing == other.Viewing && Levels.SequenceEqual(other.Levels) && AreaChoices.SequenceEqual(other.AreaChoices);
 
     public override int GetHashCode() => HashCode.Combine(Area, Level, Walking, Rooms.Count, Exits.Count, Areas.Count);
 }

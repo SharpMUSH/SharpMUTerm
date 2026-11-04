@@ -24,7 +24,14 @@ namespace SharpMUTerm.Avalonia;
 /// <b>Editing.</b> A right click on a room selects it for editing (<see cref="PanelOverlay.SelectRoom"/>) and opens the
 /// client's room menu (<see cref="MapEditing.Menu"/>); while a room is selected a click selects instead of walking, and the
 /// <see cref="MapInspector"/> card in the top right corner edits it. Every edit is a <see cref="MapEdit"/> handed to the
-/// client (<see cref="PanelOverlay.EditMap"/>), the funnel the cell map's keys end in.
+/// client (<see cref="PanelOverlay.EditMap"/>), the funnel the cell map's keys end in. While editing, a room dragged to
+/// another grid cell is moved there on the drop: one <see cref="MapEdit.Move"/>, so one undo, the cell map's ⇧arrows' edit.
+/// </para>
+/// <para>
+/// <b>Other levels and areas.</b> Buttons under the corner label step a level up or down and open the area menu
+/// (<see cref="MapLooking.AreaMenu"/>); ⇧ with the wheel steps levels; a click on another area in the legend shows it; and
+/// while the view is elsewhere a button goes back to where the character is. Each is a <see cref="MapLook"/> handed to the
+/// client (<see cref="PanelOverlay.LookMap"/>), which redraws both hosts from the one model.
 /// </para>
 /// </summary>
 internal sealed class MapCanvas : Control
@@ -48,6 +55,9 @@ internal sealed class MapCanvas : Control
     private Action<long>? _walkTo;
     private Action<long?>? _select;
     private Action<MapEdit>? _edit;
+    private Action<MapLook>? _look;
+    private MapViewRoom? _dragRoom;
+    private Vector _dragBy;
     private readonly MapInspector _inspector = new();
     private Vector _pan;
     private Point? _pressAt;
@@ -93,15 +103,24 @@ internal sealed class MapCanvas : Control
     /// <summary>What it is showing. Internal for tests.</summary>
     internal MapViewModel Model => _model;
 
-    public void Show(MapViewModel model, PanelInk ink, Color plane, Color text, Action<long>? walkTo, Action<long?>? select = null, Action<MapEdit>? edit = null)
+    public void Show(
+        MapViewModel model, PanelInk ink, Color plane, Color text, Action<long>? walkTo, Action<long?>? select = null, Action<MapEdit>? edit = null,
+        Action<MapLook>? look = null)
     {
         _walkTo = walkTo;
         _select = select;
         _edit = edit;
+        _look = look;
         _inspector.Show(model, plane, text, edit, select);
         if (model.Equals(_model) && ink == _ink && plane == _plane && text == _text)
         {
             return;
+        }
+
+        // Another level or area is another picture: the pan from the old one means nothing on it.
+        if (model.Level != _model.Level || model.Area != _model.Area || model.Viewing != _model.Viewing)
+        {
+            _pan = default;
         }
 
         _model = model;
@@ -185,6 +204,22 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (LookButtonAt(point.Position) is { } button)
+        {
+            if (button.Enabled)
+            {
+                PressLookButton(button.Id);
+            }
+
+            return;
+        }
+
+        if (LegendAreaAt(point.Position) is { } area)
+        {
+            _look?.Invoke(MapLook.ToArea(area));
+            return;
+        }
+
         if (e.ClickCount == 2)
         {
             _pan = default;
@@ -195,6 +230,8 @@ internal sealed class MapCanvas : Control
         _pressAt = point.Position;
         _panAtPress = _pan;
         _dragging = false;
+        _dragBy = default;
+        _dragRoom = _model.Editing && _edit is not null ? RoomAt(point.Position) : null;
         e.Pointer.Capture(this);
     }
 
@@ -214,7 +251,15 @@ internal sealed class MapCanvas : Control
             if (_dragging || Math.Abs(moved.X) + Math.Abs(moved.Y) > DragThreshold)
             {
                 _dragging = true;
-                _pan = _panAtPress + moved;
+                if (_dragRoom is not null)
+                {
+                    _dragBy = moved; // a room being moved: drawn at the cell it would land in, the map stays put
+                }
+                else
+                {
+                    _pan = _panAtPress + moved;
+                }
+
                 Cursor = new Cursor(StandardCursorType.SizeAll);
                 InvalidateVisual();
             }
@@ -245,10 +290,21 @@ internal sealed class MapCanvas : Control
         }
 
         var wasDrag = _dragging;
+        var dragged = _dragRoom;
+        var by = _dragBy;
         _pressAt = null;
         _dragging = false;
+        _dragRoom = null;
+        _dragBy = default;
         e.Pointer.Capture(null);
         Cursor = new Cursor(StandardCursorType.Arrow);
+        if (wasDrag && dragged is not null)
+        {
+            DropRoom(dragged, by);
+            InvalidateVisual();
+            return;
+        }
+
         if (wasDrag || e.InitialPressMouseButton != MouseButton.Left || RoomAt(e.GetPosition(this)) is not { } room)
         {
             return;
@@ -274,7 +330,157 @@ internal sealed class MapCanvas : Control
         }
 
         e.Handled = true;
+        if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
+        {
+            // ⇧ with the wheel steps levels; some platforms turn ⇧-wheel into a sideways scroll, so either axis counts.
+            var notches = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
+            if (notches > 0 && _model.LevelAbove)
+            {
+                _look?.Invoke(MapLook.Up);
+            }
+            else if (notches < 0 && _model.LevelBelow)
+            {
+                _look?.Invoke(MapLook.Down);
+            }
+
+            return;
+        }
+
         ZoomAbout(e.GetPosition(this), e.Delta.Y);
+    }
+
+    /// <summary>The grid cells a drag of <paramref name="moved"/> pixels comes to, at the zoom shown.</summary>
+    internal (int Dx, int Dy) SnapOf(Vector moved)
+    {
+        var step = Spacing * Zoom;
+        return ((int)Math.Round(moved.X / step), (int)Math.Round(moved.Y / step));
+    }
+
+    /// <summary>
+    /// A room dropped <paramref name="by"/> pixels from where it was picked up: selected, and moved to the grid cell it came
+    /// to as one edit (none when it came back to its own cell, which is a click that selects it). Internal for tests,
+    /// which drop a room the way a release does.
+    /// </summary>
+    internal void DropRoom(MapViewRoom room, Vector by)
+    {
+        _select?.Invoke(room.Id);
+        var (dx, dy) = SnapOf(by);
+        if ((dx, dy) != (0, 0))
+        {
+            _edit?.Invoke(MapEdit.Move(room.Id, dx, dy));
+        }
+    }
+
+    // ── The look buttons: a level up or down, the area menu, and back to where the character is ──────────────
+
+    /// <summary>A look button: what it is, where it is drawn, its words, and whether it does anything now.</summary>
+    internal sealed record LookButton(string Id, Rect Rect, string Label, bool Enabled);
+
+    internal const string UpButton = "up", DownButton = "down", AreasButton = "areas", HereButton = "here";
+
+    /// <summary>
+    /// The look buttons the view offers, left to right under the corner label: ▲ ▼ while the area has more than one level,
+    /// Areas ▾ while the map has more than one area, and Back to where I am while the view is elsewhere. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<LookButton> LookButtons()
+    {
+        var buttons = new List<LookButton>();
+        if (_look is null || _model.Rooms.Count == 0)
+        {
+            return buttons;
+        }
+
+        var x = 10.0;
+        var y = _model.Walking is not null || _model.Current is not null ? 46.0 : 28.0;
+        void Add(string id, string label, bool enabled)
+        {
+            var width = PanelText.Measure(label, ButtonSize, bold: false) + 14;
+            buttons.Add(new LookButton(id, new Rect(x, y, width, 20), label, enabled));
+            x += width + 4;
+        }
+
+        if (_model.Levels.Count > 1)
+        {
+            Add(UpButton, "▲ Up", _model.LevelAbove);
+            Add(DownButton, "▼ Down", _model.LevelBelow);
+        }
+
+        if (_model.AreaChoices.Count > 1)
+        {
+            Add(AreasButton, "Areas ▾", true);
+        }
+
+        if (_model.Viewing)
+        {
+            Add(HereButton, "Back to where I am", true);
+        }
+
+        return buttons;
+    }
+
+    private const double ButtonSize = 11;
+
+    private LookButton? LookButtonAt(Point point) => LookButtons().FirstOrDefault(b => b.Rect.Contains(point));
+
+    /// <summary>What a look button does. Internal for tests, which press one the way a click does.</summary>
+    internal void PressLookButton(string id)
+    {
+        switch (id)
+        {
+            case UpButton:
+                _look?.Invoke(MapLook.Up);
+                break;
+            case DownButton:
+                _look?.Invoke(MapLook.Down);
+                break;
+            case HereButton:
+                _look?.Invoke(MapLook.Here);
+                break;
+            case AreasButton:
+                OpenAreaMenu();
+                break;
+        }
+    }
+
+    /// <summary>The last area menu the canvas opened. Internal for tests.</summary>
+    internal MenuModel? OpenedAreaMenu { get; private set; }
+
+    /// <summary>Opens the client's area menu: each area the map has, and the way back while the view is elsewhere.</summary>
+    internal void OpenAreaMenu()
+    {
+        var model = MapLooking.AreaMenu(_model);
+        OpenedAreaMenu = model;
+        var view = _model;
+        var menu = NativeMenu.Build(model, verb => RunAreaVerb(view, verb), global::Avalonia.Controls.PlacementMode.Pointer, this);
+        menu.Open(this);
+    }
+
+    /// <summary>What an area menu entry does. Internal for tests, which choose an entry the way a click on it would.</summary>
+    internal void RunAreaVerb(MapViewModel view, string verb)
+    {
+        if (MapLooking.LookFor(verb, view) is { } look)
+        {
+            _look?.Invoke(look);
+        }
+    }
+
+    /// <summary>The other area whose legend row is under a point, or null: a click there shows that area.</summary>
+    internal string? LegendAreaAt(Point point)
+    {
+        if (_look is null || LegendRect(Bounds.Size) is not { } plate || !plate.Contains(point))
+        {
+            return null;
+        }
+
+        var entries = LegendEntries();
+        var row = (int)Math.Floor((point.Y - plate.Y - LegendPad) / LegendRow);
+        if (row < 0 || row >= entries.Count)
+        {
+            return null;
+        }
+
+        var first = entries.Count - _model.Areas.Count;
+        return row >= first && !_model.Areas[row - first].Drawn ? _model.Areas[row - first].Name : null;
     }
 
     /// <summary>
@@ -457,7 +663,8 @@ internal sealed class MapCanvas : Control
         }
 
         // What and where, in the corner: the area and level, and a walk under way.
-        var label = _model.Area is { Length: > 0 } areaName ? $"{areaName} · level {_model.Level}" : $"level {_model.Level}";
+        var label = (_model.Viewing ? "Viewing " : string.Empty)
+            + (_model.Area is { Length: > 0 } areaName ? $"{areaName} · level {_model.Level}" : $"level {_model.Level}");
         DrawText(context, label, new Point(10, 8), 12, _model.AreaColour is { } areaHex ? Parse(areaHex) : Faded(0.75));
         if (_model.Walking is { } walking)
         {
@@ -468,7 +675,36 @@ internal sealed class MapCanvas : Control
             DrawText(context, here.Name, new Point(10, 26), 12, accent);
         }
 
+        if (_dragRoom is { } moving && byId.TryGetValue(moving.Id, out var shown))
+        {
+            // Where the room would land: an outline on the grid cell the drag has come to, joined to where it is now.
+            var (dx, dy) = SnapOf(_dragBy);
+            var from = CentreOf(shown);
+            var step = Spacing * Zoom;
+            var to = new Point(from.X + (dx * step), from.Y + (dy * step));
+            var ghost = new Pen(new SolidColorBrush(path), 2, new DashStyle([3, 2], 0));
+            context.DrawLine(new Pen(new SolidColorBrush(Faded(0.5)), 1, new DashStyle([2, 2], 0)), from, to);
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x40, path.R, path.G, path.B)), ghost, new Rect(to.X - (size / 2), to.Y - (size / 2), size, size), radius, radius);
+        }
+
+        DrawLookButtons(context);
         DrawLegend(context, bounds);
+    }
+
+    private void DrawLookButtons(DrawingContext context)
+    {
+        foreach (var button in LookButtons())
+        {
+            var alpha = button.Enabled ? 1.0 : 0.4;
+            context.DrawRectangle(
+                new SolidColorBrush(Mix(_plane, _text, 0.1)),
+                new Pen(new SolidColorBrush(Faded(0.35 * alpha)), 1),
+                button.Rect,
+                4,
+                4);
+            var label = PanelText.Format(button.Label, ButtonSize, Faded(0.9 * alpha), bold: false, button.Rect.Width);
+            context.DrawText(label, new Point(button.Rect.X + 7, button.Rect.Y + ((button.Rect.Height - label.Height) / 2)));
+        }
     }
 
     /// <summary>Up and down marks: a small triangle at the top of the room for a way up, at the bottom for a way down.</summary>

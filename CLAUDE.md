@@ -154,7 +154,8 @@ fallbacks) for inline images/maps.
     the script host's lock). A change a script asks for (`map.walk`, a lock) is posted to the UI thread.
   - **The map names rooms, and is edited by hand in both hosts** (`WorldMap.Rename`/`SetArea`/`SetExit`/`Remove`/…, Core;
     `MapRecorder.Edit(label, touched, change)`, `LinkNext`, `Undo`; Client `MapEditing`, `MapEdit`; Tui
-    `SharpMUTermApp.MapEdit.cs`; Avalonia `MapInspector`; the `map-edit` view). The cell title is the current room's name,
+    `SharpMUTermApp.MapEdit.cs`; Avalonia `MapInspector`; the `map-edit` view; `map-level`, `map-area`, `map-find` and `map-mine` show looking up a level, another area, a find and
+    a hand-renamed room in edit mode). The cell title is the current room's name,
     and `MapViewModel.Nearby` (each exit and where it leads) fills a side column from 64 cells or the rows under the grid
     from 18. Every edit is a `MapEdit` through `ApplyMapEdit` → `MapEditing.Apply` → `MapRecorder.Edit`, on the UI thread
     under `SyncRoot`, dirty and saved like a recorded room; undo snapshots the rooms an edit touches (10 deep, areas it
@@ -162,8 +163,24 @@ fallbacks) for inline images/maps.
     map, a cell click while editing, the canvas's right-click menu or click), so `SurfaceParityTests` compares
     `MapDigest()`. Cell keys are `MapEditing.Keys`; the ones that need words put a `/map …` command on the command line
     and put back what was being typed once it runs. "Next" on an exit links it to the next room walked into, never its
-    own. Deleting the room you are in is refused. **On a GMCP world the server's next report of a room overwrites a hand
-    edit to its name, area, exits and place**; locks, weights, notes and symbols survive.
+    own. Deleting the room you are in is refused.
+  - **A hand edit is kept from the server** (`MapRoom.HandEdited`, `MapFields`: name, area, exits, position). Each edit
+    marks the fields it changed; `MapRecorder` skips those fields on every later report (the rest still follow the
+    server), and keeps each room's last report this run (`_served`). **Reset to server** (`MapEdit.ResetToServer`;
+    inspector button, menu entry, cell `R`, `/map reset`) clears the marks through `Edit`, so it undoes, and re-applies
+    that report at once if there is one; otherwise the next report wins. Undo restores the marks with the room.
+    `MapStore` is format 2 (`handEdited` per room); a version-1 file migrates on read, and unknown field names are dropped.
+  - **A map window can look at another level or area** (Client `MapLooking`, `MapViewpoint`, `MapLook`; Tui
+    `SharpMUTermApp.MapView.cs`; `LookMap`, a `PanelOverlay` callback and a surface action). The look is client state per
+    window (`_mapLooks`), handed to `MapViewModel.From(…, look)`, which anchors on the room there nearest the current
+    room's x/y and sets `Viewing`, `Levels`, `LevelAbove`/`Below` and `AreaChoices` (64 at most). Looking where you are
+    clears it. Walking still targets the real room. Ways in: cell title `▲ ▼ ⌂ here` and legend area links
+    (`MapRenderer.LookPrefix`), edit keys PgUp/PgDn/`v`/`h`, the canvas's Up/Down/Areas/Back buttons and ⇧wheel,
+    ⌃P `map:level-up`/`-down`/`next-area`/`here`, and `/map level|view|here`. Nearby is hidden while viewing.
+  - **A room is dragged on the canvas while editing**: snapped to the grid, one `MapEdit.Move` per drop (the cells'
+    ⇧arrows' edit), ghost outline while held; a drag outside editing still pans.
+  - **`/map find <text>`** (⌃P ▸ *Find room…* puts it on the command line) lists up to 20 rooms by name, then area, as
+    chrome lines in the session window with `/walk <id>`, and points the map at the first.
 - **Sound** (`Core/Media`: `MediaCommand`, `MediaQueue`, `MediaCache`, `IAudioOutput`). MCMP's
   `Client.Media.*` is read with TNC.Gmcp's typed records into `MediaCommand`s (`WorldSession.MediaReceived`),
   and one `MediaQueue` per connection applies the specification's rules — priority halts and refuses lower,

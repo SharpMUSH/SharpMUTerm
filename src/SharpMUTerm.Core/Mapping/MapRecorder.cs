@@ -217,6 +217,58 @@ public sealed class MapRecorder : IDisposable
         return true;
     }
 
+    /// <summary>The last report of each room, this run: what <see cref="ResetToServer"/> puts back.</summary>
+    private readonly Dictionary<long, RoomObservation> _served = new();
+
+    /// <summary>
+    /// Gives a room back to the server: forgets which of its fields were edited by hand (<see cref="MapRoom.HandEdited"/>)
+    /// and, when the server has reported the room this run, puts back its name, area, exits and place at once; otherwise
+    /// the next report does. Undoable like any edit. False when nothing was edited by hand.
+    /// </summary>
+    public bool ResetToServer(long id, string label) => Edit(label, [id], map =>
+    {
+        if (map.Room(id) is not { } room || room.HandEdited.Count == 0)
+        {
+            return false;
+        }
+
+        var edited = room.HandEdited.ToList();
+        room.HandEdited.Clear();
+        if (_served.TryGetValue(id, out var seen))
+        {
+            if (edited.Contains(MapFields.Name) && seen.Name.Length > 0)
+            {
+                room.Name = seen.Name;
+            }
+
+            if (edited.Contains(MapFields.Area) && !string.IsNullOrWhiteSpace(seen.Area))
+            {
+                room.AreaId = map.AreaNamed(seen.Area).Id;
+            }
+
+            if (edited.Contains(MapFields.Exits))
+            {
+                SetExits(room, seen.Exits);
+            }
+
+            if (edited.Contains(MapFields.Position) && seen.Coordinates is { } at)
+            {
+                (room.X, room.Y, room.Z) = at;
+            }
+        }
+
+        return true;
+    });
+
+    /// <summary>Whether the server has reported this room this run, so a reset can put its values back at once.</summary>
+    public bool HasServerReport(long id)
+    {
+        lock (SyncRoot)
+        {
+            return _served.ContainsKey(id);
+        }
+    }
+
     /// <summary>Takes back the last edit. Returns what it took back, or null when there was nothing to.</summary>
     public string? Undo()
     {
@@ -299,7 +351,16 @@ public sealed class MapRecorder : IDisposable
         {
             if (Map.Room(observation.Id ?? CurrentRoomId ?? long.MinValue) is { } here)
             {
-                SetExits(here, observation.Exits);
+                if (_served.TryGetValue(here.Id, out var seen))
+                {
+                    _served[here.Id] = seen with { Exits = observation.Exits };
+                }
+
+                if (!here.HandEdited.Contains(MapFields.Exits))
+                {
+                    SetExits(here, observation.Exits);
+                }
+
                 Touch();
             }
 
@@ -314,13 +375,20 @@ public sealed class MapRecorder : IDisposable
         var room = Map.Room(id);
         var created = room is null;
         room ??= Map.Add(new MapRoom { Id = id });
+        _served[room.Id] = observation;
 
-        if (observation.Name.Length > 0)
+        // A field the player edited by hand is theirs: the report leaves it alone until "reset to server".
+        var mine = room.HandEdited;
+        if (observation.Name.Length > 0 && !mine.Contains(MapFields.Name))
         {
             room.Name = observation.Name;
         }
 
-        if (!string.IsNullOrWhiteSpace(observation.Area))
+        if (mine.Contains(MapFields.Area))
+        {
+            // kept as the player set it
+        }
+        else if (!string.IsNullOrWhiteSpace(observation.Area))
         {
             room.AreaId = Map.AreaNamed(observation.Area).Id;
         }
@@ -330,11 +398,17 @@ public sealed class MapRecorder : IDisposable
         }
 
         room.Environment = observation.Environment ?? room.Environment;
-        SetExits(room, observation.Exits);
+        if (!mine.Contains(MapFields.Exits))
+        {
+            SetExits(room, observation.Exits);
+        }
 
         if (observation.Coordinates is { } at)
         {
-            (room.X, room.Y, room.Z) = at;
+            if (!mine.Contains(MapFields.Position))
+            {
+                (room.X, room.Y, room.Z) = at;
+            }
         }
         else if (created)
         {

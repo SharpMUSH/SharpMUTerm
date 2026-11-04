@@ -62,6 +62,12 @@ public sealed class MapRoom
     /// <summary>Anything a script wants to keep on the room.</summary>
     public Dictionary<string, string> UserData { get; set; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The fields the player changed by hand (<see cref="MapFields"/>): a room report from the server leaves these alone,
+    /// so a GMCP world does not undo a rename, an area, an exit or a move on the next visit. Kept with the map.
+    /// </summary>
+    public HashSet<string> HandEdited { get; set; } = new(StringComparer.Ordinal);
+
     /// <summary>A deep copy, for an edit's undo.</summary>
     public MapRoom Clone() => new()
     {
@@ -83,6 +89,7 @@ public sealed class MapRoom
         Color = Color,
         Note = Note,
         UserData = new(UserData, StringComparer.Ordinal),
+        HandEdited = new(HandEdited, StringComparer.Ordinal),
     };
 
     /// <summary>Every exit, direction and special alike, as the command that takes it and where it leads.</summary>
@@ -98,6 +105,15 @@ public sealed class MapRoom
             yield return (command, command, to);
         }
     }
+}
+
+/// <summary>The fields of a room a hand edit protects from the server's next report (<see cref="MapRoom.HandEdited"/>).</summary>
+public static class MapFields
+{
+    public const string Name = "name", Area = "area", Exits = "exits", Position = "position";
+
+    /// <summary>Every field, in the order a view lists them.</summary>
+    public static IReadOnlyList<string> All { get; } = [Name, Area, Exits, Position];
 }
 
 /// <summary>A named area rooms belong to.</summary>
@@ -162,6 +178,7 @@ public sealed class WorldMap
         }
 
         room.Name = text;
+        room.HandEdited.Add(MapFields.Name);
         return true;
     }
 
@@ -181,6 +198,7 @@ public sealed class WorldMap
         }
 
         room.AreaId = next;
+        room.HandEdited.Add(MapFields.Area);
         return true;
     }
 
@@ -225,6 +243,11 @@ public sealed class WorldMap
         var changed = !exits.TryGetValue(key, out var was) || was != to;
         exits[key] = to;
         changed |= room.Stubs.Remove(key);
+        if (changed)
+        {
+            room.HandEdited.Add(MapFields.Exits);
+        }
+
         return changed;
     }
 
@@ -240,6 +263,11 @@ public sealed class WorldMap
         var removed = room.Exits.Remove(key) | room.SpecialExits.Remove(key) | room.Stubs.Remove(key);
         room.ExitWeights.Remove(key);
         room.LockedExits.Remove(key);
+        if (removed)
+        {
+            room.HandEdited.Add(MapFields.Exits);
+        }
+
         return removed;
     }
 
@@ -252,6 +280,19 @@ public sealed class WorldMap
         }
 
         (room.X, room.Y, room.Z) = (room.X + dx, room.Y + dy, room.Z + dz);
+        room.HandEdited.Add(MapFields.Position);
+        return true;
+    }
+
+    /// <summary>Forgets which fields of a room were edited by hand, so the server's reports set them again.</summary>
+    public bool ClearHandEdits(long id)
+    {
+        if (Room(id) is not { } room || room.HandEdited.Count == 0)
+        {
+            return false;
+        }
+
+        room.HandEdited.Clear();
         return true;
     }
 
