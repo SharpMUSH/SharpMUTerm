@@ -156,6 +156,27 @@ public class NativeTabStripTests
     }
 
     [Test]
+    public async Task TheWindowsBandIsTwoRowsAcrossTheGutterAndTheHistoryPlaneReachesThePanesEdges()
+    {
+        var pointer = new PanePresenter();
+        await using var app = App(HostChrome.Native, out _, "scrollback-split", pointer);
+        var frame = app.RenderWholeFrame();
+        var band = pointer.Published.Last().Bands.Single();
+        var output = app.PaneOutputRects().Values.Single(r => band.Row.Y >= r.Y && band.Row.Y < r.Y + r.Height);
+
+        await Assert.That(band.Row.Height).IsEqualTo(2);
+        await Assert.That(band.Inset).IsEqualTo(2);
+        await Assert.That(band.Row.X).IsEqualTo(output.X - 2);
+        await Assert.That(band.Row.Width).IsEqualTo(output.Width + 4);
+
+        // The gutter beside the history wears the history's plane, so the history is one plane edge to edge.
+        var cells = FrameGrid.Cells(frame, Width, Height);
+        var row = band.Row.Y - 2;
+        await Assert.That(cells[(row, output.X - 1)].Background).IsEqualTo(cells[(row, output.X + output.Width - 2)].Background);
+        await Assert.That(cells[(row, output.X - 1)].Background).IsNotEqualTo(cells[(band.Row.Y + 3, output.X - 1)].Background);
+    }
+
+    [Test]
     public async Task TheBandIsHandedToAHostThatDrawsNoStripsToo()
     {
         var pointer = new PanePresenter();

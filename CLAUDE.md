@@ -664,9 +664,19 @@ fallbacks) for inline images/maps.
     caret is already at its end** (`CaretAtEnd`), where End has nothing left to do in the editor and where a
     caret rests after typing; anywhere else End is the editor's and a second press returns. Also closed by ⌥F
     (freeze takes over and splits at its freeze point, as it always does), by a frozen pane, and with the setting off.
-  - **The tail is 30% of the pane's viewport, at least 3 rows, and the history keeps at least 3**
-    (`TailRowsFor`); a pane shorter than 7 rows does not split. Fixed when the split opens (a `Cells` row),
-    not re-derived per frame.
+  - **The tail is half of what the band leaves, the odd row to it, at least 3 rows, and the history keeps at least 3**
+    (`TailRowsFor(rows, band)`; wave 25, after both mockups, which give the arriving rows at least the history's room;
+    it was 30%); a pane shorter than 7 rows does not split. Fixed when the split opens (a `Cells` row), not re-derived
+    per frame.
+  - **The history is a plane of its own** (`WorkspacePalette.History`: ×0.87 on a dark plane, toward white on a light
+    one, so it only widens the contrast `ReadingPlane` guarantees; the terminal mockup's `#1a1a20` over `#1e1e24`). The
+    history viewport is wrapped in a grid wearing it (`_scrollHistorySurfaces`, re-coloured in `RefreshPaneFocus`); the
+    tail keeps the pane's plane. Where the host keeps a gutter, `PaintScrollHistoryGutters` paints the blank gutter and
+    pad-row cells beside it after the frame, and the window's overlay scrollbar runs beside the history alone.
+  - **The window's band is two rows** (`ScrollBandRows`: 2 under `HostChrome.Tabs`, else 1; the second row is blank band),
+    published across the gutter with `ScrollBandOverlay.Inset`, so `ScrollBandView` lines its words up with the output
+    and keeps its button as far from the right edge — the mockup's 40 px band with a real button. Still `rows`, not the
+    mockup's `lines`: a buffer index is not a viewport row.
   - **Inside the pane rectangle, so NAWS never moves**: the band and the tail are rows of the tab's content;
     `PaneOutputRects` is unchanged (`ScrollingBackSplitsThePane…` pins it).
   - **A split pane is not "scrolled back" for the workspace** (`SetScrolledBack(…, !AutoScroll && !split)`):

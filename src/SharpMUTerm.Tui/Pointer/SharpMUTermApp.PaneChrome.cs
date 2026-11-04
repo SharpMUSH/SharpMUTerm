@@ -105,8 +105,14 @@ internal sealed partial class SharpMUTermApp
                     && _scrollSplitBars.TryGetValue(windowId, out var bar) && BoundsOf(bar) is { Width: > 0 } row
                     && DrawnModel(SurfaceCatalog.ScrollBand, windowId) is ScrollBandModel band)
                 {
+                    // Across the pane's gutter too, edge to edge as the mockup draws it, its words starting where the output's do.
+                    var gutter = Host.Chrome.PaneGutter ? PaneGutterColumns : 0;
                     bands.Add(new ScrollBandOverlay(
-                        new PaneRect(row.X, row.Y, row.Width, 1), band, ScrollSplitBarRenderer.Count(band.RowsBack), _bandJump));
+                        new PaneRect(row.X - gutter, row.Y, row.Width + (2 * gutter), ScrollBandRows),
+                        band,
+                        ScrollSplitBarRenderer.Count(band.RowsBack),
+                        _bandJump,
+                        gutter));
                 }
             }
         }
@@ -365,4 +371,6 @@ internal sealed record TabStripOverlay(
 /// <param name="Model">The band as the cells drew it.</param>
 /// <param name="Count">The count as the cells show it, capped.</param>
 /// <param name="Jump">Takes the window back to its live tail, by window id; any thread.</param>
-internal sealed record ScrollBandOverlay(PaneRect Row, ScrollBandModel Model, string Count, Action<string> Jump);
+/// <param name="Inset">Columns from the band's left edge to where the pane's output starts (its gutter): the host lines
+/// the band's words up with the output's, and keeps the button as far from the right edge.</param>
+internal sealed record ScrollBandOverlay(PaneRect Row, ScrollBandModel Model, string Count, Action<string> Jump, int Inset = 0);

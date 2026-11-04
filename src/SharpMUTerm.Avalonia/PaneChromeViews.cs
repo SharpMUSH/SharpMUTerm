@@ -463,13 +463,28 @@ internal sealed class ScrollBandView : Control, ICustomHitTest
         Lay();
     }
 
+    /// <summary>
+    /// The margin either side, in pixels: the output's own inset (the pane's gutter, <see cref="ScrollBandOverlay.Inset"/>)
+    /// so the band's words start in the output's column, and at least 12.
+    /// </summary>
+    private double TextInset
+    {
+        get
+        {
+            var width = double.IsNaN(Width) ? Bounds.Width : Width;
+            var columns = Overlay?.Row.Width ?? 0;
+            var inset = columns > 0 && Overlay!.Inset > 0 ? width / columns * Overlay.Inset : 0;
+            return Math.Max(12, inset);
+        }
+    }
+
     private void Lay()
     {
         var width = double.IsNaN(Width) ? Bounds.Width : Width;
         var height = double.IsNaN(Height) ? Bounds.Height : Height;
         var w = PanelText.Measure(ButtonText, Size, bold: true) + 20;
         var h = Math.Max(4, Math.Min(height - 4, 24));
-        _button = new Rect(Math.Max(0, width - w - 12), (height - h) / 2, w, h);
+        _button = new Rect(Math.Max(0, width - w - TextInset), Math.Round((height - h) / 2), w, h);
     }
 
     public bool HitTest(Point point) => Interactive && _button.Contains(point);
@@ -536,7 +551,7 @@ internal sealed class ScrollBandView : Control, ICustomHitTest
 
         var size = Size;
         var middle = bounds.Height / 2;
-        var x = 12.0;
+        var x = TextInset;
         var room = _button.X - 12;
         x += PanelText.Draw(context, band.Model.Lead(band.Count), x, middle, size, NativeTabStrip.Held(Tokens.Text, plane), true, room - x);
         if (room - x > 40)

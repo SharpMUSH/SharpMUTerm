@@ -311,6 +311,23 @@ internal static class WorkspacePalette
     internal static Rgb Recessed(Rgb plane) =>
         Scale(plane, Contrast.RelativeLuminance(plane) < LightPlaneLuminance ? BackdropScale : LightRecessScale);
 
+    /// <summary>
+    /// The plane the history half of a pane split by scrolling back is drawn on (the terminal mockup's <c>#1a1a20</c> over a
+    /// <c>#1e1e24</c> live tail): one small step <em>away from the text</em> off the pane's own plane — deeper on a dark
+    /// plane, toward white on a light one — so the rows being read and the rows still arriving are two planes, and the
+    /// step can only widen the contrast <see cref="ReadingPlane"/> already guarantees.
+    /// </summary>
+    internal static Rgb History(Rgb plane) =>
+        Contrast.RelativeLuminance(plane) < LightPlaneLuminance
+            ? Scale(plane, HistoryScale)
+            : Mix(plane, new Rgb(0xff, 0xff, 0xff), HistoryLift);
+
+    /// <summary>The history's step on a dark plane: the terminal mockup's ratio.</summary>
+    private const double HistoryScale = 0.87;
+
+    /// <summary>The history's step toward white on a light plane.</summary>
+    private const double HistoryLift = 0.6;
+
     /// <summary>The recess as a fraction of a light plane: about L* 87 under Light's L* 96 panes.</summary>
     private const double LightRecessScale = 0.90;
 

@@ -855,8 +855,12 @@ internal sealed partial class SharpMUTermApp
                 continue;
             }
 
+            // A pane split by scrolling back scrolls only its history, so its bar runs beside the history alone.
+            var span = _scrollHistorySurfaces.GetValueOrDefault(windowId) is { } history && BoundsOf(history) is { Height: > 0 } h
+                ? new PaneRect(rect.X, h.Y, rect.Width, h.Height)
+                : rect;
             bars.Add(new PaneScrollbar(
-                windowId, rect, panel.TotalContentHeight, panel.ViewportHeight, panel.VerticalScrollOffset,
+                windowId, span, panel.TotalContentHeight, panel.ViewportHeight, panel.VerticalScrollOffset,
                 offset => OnUiThread(() =>
                 {
                     if (_paneScrolls.GetValueOrDefault(windowId) is { } live && live.VerticalScrollOffset != offset)

@@ -1063,6 +1063,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PaintHeaderDividers(buffer);
             PaintTabOverflow(buffer);
             BlankNativeTabStrips(buffer);
+            PaintScrollHistoryGutters(buffer);
             DrawSixelOverlay(buffer);
             PublishScrollbars();
             PublishPanels();
@@ -10986,6 +10987,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _paneSurfaces.Clear();
+        _scrollHistorySurfaces.Clear();
         _dividers.Clear();
 
 
@@ -11457,6 +11459,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // GridControl's setter invalidates for repaint, so this is the whole update.
             surface.BackgroundColor = PaneBodyColor(paneId);
         }
+
+        RefreshScrollHistoryPlanes();
 
         lock (_paneTabsLock)
         {

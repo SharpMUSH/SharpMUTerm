@@ -183,14 +183,42 @@ public class ScrollSplitTests
     }
 
     [Test]
-    [Arguments(30, 9)]
-    [Arguments(20, 6)]
-    [Arguments(10, 3)]
-    [Arguments(7, 3)]
-    [Arguments(6, 0)]
-    public async Task TheLiveTailIsThirtyPercentOfThePaneAndAtLeastThreeRows(int pane, int tail)
+    public async Task TheHistoryIsDrawnOnAPlaneOfItsOwnAndTheTailOnThePanes()
     {
-        await Assert.That(SharpMUTermApp.TailRowsFor(pane)).IsEqualTo(tail);
+        var app = App();
+        var unsplit = app.RenderWholeFrame();
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        app.RenderWholeFrame();
+        var frame = app.RenderWholeFrame();
+
+        var rows = FrameGrid.Decode(frame, 120, 32);
+        var cells = FrameGrid.Cells(frame, 120, 32);
+        var before = FrameGrid.Cells(unsplit, 120, 32);
+        var newest = rows.ToList().FindIndex(r => r.Contains(Line(SharpMUTermApp.ScrollbackSceneLines), StringComparison.Ordinal));
+        var band = rows.ToList().FindIndex(r => r.Contains("scrolled back", StringComparison.Ordinal));
+        await Assert.That(band).IsGreaterThan(0);
+        await Assert.That(newest).IsGreaterThan(band);
+
+        var column = rows[newest].IndexOf("line", StringComparison.Ordinal);
+        var history = cells[(band - 1, column)].Background;
+        var tail = cells[(newest, column)].Background;
+        await Assert.That(history).IsNotEqualTo(tail);
+        await Assert.That(tail).IsEqualTo(before[(newest, column)].Background).Because("the live tail stays on the pane's own plane");
+    }
+
+    [Test]
+    [Arguments(30, 1, 15)]
+    [Arguments(20, 1, 10)]
+    [Arguments(10, 1, 5)]
+    [Arguments(7, 1, 3)]
+    [Arguments(6, 1, 0)]
+    [Arguments(30, 2, 14)]
+    [Arguments(8, 2, 3)]
+    [Arguments(7, 2, 0)]
+    public async Task TheLiveTailIsHalfWhatTheBandLeavesAndAtLeastThreeRows(int pane, int band, int tail)
+    {
+        await Assert.That(SharpMUTermApp.TailRowsFor(pane, band)).IsEqualTo(tail);
     }
 
     [Test]

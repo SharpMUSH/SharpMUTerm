@@ -4,6 +4,7 @@ using SharpMUTerm.Client.Surfaces;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Builders;
+using SColor = SharpConsoleUI.Color;
 
 namespace SharpMUTerm.Tui;
 
@@ -37,8 +38,8 @@ internal sealed partial class SharpMUTermApp
     /// <summary>What each band last said, so an unchanged count costs no repaint.</summary>
     private readonly Dictionary<string, string> _scrollSplitBarText = new(StringComparer.Ordinal);
 
-    /// <summary>The share of a pane the live tail takes when a split opens.</summary>
-    internal const double TailShare = 0.3;
+    /// <summary>Each split window's history half, wrapped so it can wear <see cref="WorkspacePalette.History"/>.</summary>
+    private readonly Dictionary<string, GridControl> _scrollHistorySurfaces = new(StringComparer.Ordinal);
 
     /// <summary>The fewest rows a live tail is given, and the fewest the history above it keeps.</summary>
     internal const int MinimumSplitRows = 3;
@@ -50,14 +51,23 @@ internal sealed partial class SharpMUTermApp
     internal const int TailLines = 64;
 
     /// <summary>
-    /// The rows a live tail gets in a pane whose viewport is <paramref name="paneRows"/> tall, or zero when the
-    /// pane is too short to split: 30% of it, at least <see cref="MinimumSplitRows"/>, leaving the history and
-    /// the band at least that many and one.
+    /// How many rows the band takes: two where the host draws the pane chrome natively (<see cref="HostChrome.Tabs"/>,
+    /// the window), so its band has the mockup's height with a real button in it; one in the cells. Inside the pane
+    /// either way, so the pane rectangle — and NAWS — never moves.
     /// </summary>
-    internal static int TailRowsFor(int paneRows)
+    internal int ScrollBandRows => Host.Chrome.Tabs ? 2 : 1;
+
+    /// <summary>
+    /// The rows a live tail gets in a pane whose viewport is <paramref name="paneRows"/> tall, or zero when the
+    /// pane is too short to split: half of what the band leaves, the odd row to the tail (both mockups give the
+    /// rows still arriving at least as much room as the rows being read), at least <see cref="MinimumSplitRows"/>,
+    /// leaving the history at least that many.
+    /// </summary>
+    internal static int TailRowsFor(int paneRows, int bandRows = 1)
     {
-        var tail = Math.Max(MinimumSplitRows, (int)Math.Round(paneRows * TailShare));
-        return paneRows - 1 - tail >= MinimumSplitRows ? tail : 0;
+        var left = paneRows - bandRows;
+        var tail = Math.Max(MinimumSplitRows, (left + 1) / 2);
+        return left - tail >= MinimumSplitRows ? tail : 0;
     }
 
     /// <summary>Whether the workspace counts a window as scrolled back, which is what unread badging reads.</summary>
@@ -94,7 +104,7 @@ internal sealed partial class SharpMUTermApp
 
         if (!open && wanted)
         {
-            var tail = TailRowsFor(live!.ViewportHeight);
+            var tail = TailRowsFor(live!.ViewportHeight, ScrollBandRows);
             if (tail == 0)
             {
                 return;
@@ -126,6 +136,7 @@ internal sealed partial class SharpMUTermApp
     private void ForgetScrollSplit(string windowId)
     {
         _scrollSplits.Remove(windowId);
+        _scrollHistorySurfaces.Remove(windowId);
         _scrollTails.Remove(windowId);
         _scrollSplitBars.Remove(windowId);
         _scrollSplitBarText.Remove(windowId);
@@ -150,9 +161,17 @@ internal sealed partial class SharpMUTermApp
         var grid = Controls.Grid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill);
-        grid.Rows(GridLength.Star(1), GridLength.Cells(1), GridLength.Cells(_scrollSplits[windowId]))
+        grid.Rows(GridLength.Star(1), GridLength.Cells(ScrollBandRows), GridLength.Cells(_scrollSplits[windowId]))
             .Columns(GridLength.Star(1));
-        grid.Place(ScrollViewFor(windowId, live), 0, 0, 1, 1);
+        var history = Controls.Grid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill);
+        history.Rows(GridLength.Star(1)).Columns(GridLength.Star(1));
+        history.Place(ScrollViewFor(windowId, live), 0, 0, 1, 1);
+        var surface = history.Build();
+        surface.BackgroundColor = HistoryPlaneColor(windowId);
+        _scrollHistorySurfaces[windowId] = surface;
+        grid.Place(surface, 0, 0, 1, 1);
         grid.Place(bar, 1, 0, 1, 1);
         grid.Place(ScrollViewFor(TailRegionKey(windowId), tail), 2, 0, 1, 1);
         return grid.Build();
@@ -220,15 +239,90 @@ internal sealed partial class SharpMUTermApp
         var width = panel.ViewportWidth > 0 ? panel.ViewportWidth : 80;
         var below = panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset;
         var band = Drawing(SurfaceCatalog.ScrollBand, windowId, new ScrollBandModel(windowId, below));
-        var markup = ScrollSplitBarRenderer.Bar(band, width, _ink.Notice, SharpMUTerm.Tui.Panels.HeadingBand.For(_theme, _ink.Notice));
+        var fill = SharpMUTerm.Tui.Panels.HeadingBand.For(_theme, _ink.Notice);
+        var markup = ScrollSplitBarRenderer.Bar(band, width, _ink.Notice, fill);
         if (!string.Equals(_scrollSplitBarText.GetValueOrDefault(windowId), markup, StringComparison.Ordinal))
         {
             _scrollSplitBarText[windowId] = markup;
-            bar.SetContent(new List<string> { markup });
+            var rows = new List<string> { markup };
+            for (var i = 1; i < ScrollBandRows; i++)
+            {
+                rows.Add($"[{fill.Text} on {fill.Band}]{new string(' ', width)}[/]");
+            }
+
+            bar.SetContent(rows);
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The history half's plane: <see cref="WorkspacePalette.History"/> off the plane of the pane holding the window, or
+    /// the terminal's own background where the pane body is handed to it (F7's transparency).
+    /// </summary>
+    private SColor HistoryPlaneColor(string windowId)
+    {
+        var paneId = _workspace.Layout.FindWindow(windowId)?.Id;
+        var body = PaneBodyColor(paneId);
+        return body == SColor.Transparent ? body : ToColor(WorkspacePalette.History(PaneSurfaceTone(paneId)));
+    }
+
+    /// <summary>Re-colours every split's history half after the pane planes moved (a focus move, a theme).</summary>
+    private void RefreshScrollHistoryPlanes()
+    {
+        foreach (var (windowId, surface) in _scrollHistorySurfaces)
+        {
+            surface.BackgroundColor = HistoryPlaneColor(windowId);
+        }
+    }
+
+    /// <summary>
+    /// Paints the blank cells around each split's history — the pane's gutter columns (<see cref="HostChrome.PaneGutter"/>)
+    /// and any padding row between the tab strip and the history — in the history's plane, after the frame, so the history
+    /// reads as one plane edge to edge rather than an inset box. Only where the host keeps a gutter (the window); only cells
+    /// holding a blank, so nothing drawn is painted over.
+    /// </summary>
+    private void PaintScrollHistoryGutters(SharpConsoleUI.Layout.CharacterBuffer buffer)
+    {
+        if (!Host.Chrome.PaneGutter || _scrollHistorySurfaces.Count == 0)
+        {
+            return;
+        }
+
+        var top = _window.Top + _system.DesktopUpperLeft.Y;
+        foreach (var (windowId, surface) in _scrollHistorySurfaces)
+        {
+            if (BoundsOf(surface) is not { Width: > 0, Height: > 0 } box)
+            {
+                continue;
+            }
+
+            var first = box.Y;
+            if (_workspace.Layout.FindWindow(windowId)?.Id is { } paneId && _paneTabs.GetValueOrDefault(paneId) is { } tabs
+                && BoundsOf(tabs) is { Width: > 0 } pane)
+            {
+                first = Math.Min(first, pane.Y + (tabs.ShowTabHeader ? tabs.TabHeaderHeight : 0));
+            }
+
+            var plane = HistoryPlaneColor(windowId);
+            for (var y = first; y < box.Y + box.Height; y++)
+            {
+                var by = y - top;
+                for (var x = box.X - PaneGutterColumns; x < box.X + box.Width + PaneGutterColumns; x++)
+                {
+                    var bx = x - _window.Left;
+                    if ((y >= box.Y && x >= box.X && x < box.X + box.Width)
+                        || bx < 0 || by < 0 || bx >= buffer.Width || by >= buffer.Height
+                        || buffer.GetCell(bx, by).Character.Value != ' ')
+                    {
+                        continue;
+                    }
+
+                    buffer.SetCell(bx, by, new SharpConsoleUI.Layout.Cell(' ', plane, plane));
+                }
+            }
+        }
     }
 
     /// <summary>
