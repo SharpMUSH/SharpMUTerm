@@ -1705,7 +1705,7 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     what the markup-first row wrote; there is no markup parser. The palette hint and a notice's action hints carry targets. `IPointerPresenter.Status`, published from `PaintStatus` and `PostBufferPaint`, only on change.
     A click is `ActivateStatusTarget`: refused unless offered, the palette through `OpenMenu`, an action through
     `RunNoticeAction`. With `Status` the row is `Visible = false` and `ChromeRows` counts none. Toasts sit above it.
-  - **The command line stays the cell editor; the host draws the field around it.** The bars get `HostFieldPad` (3)
+  - **The command line stays the cell editor; the host draws the field around it.** The bars get `HostFieldPad` (4)
     band-coloured columns either side (`InputBarControl.LeadingPad` + right margin), the client publishes an `InputBand`
     (rows, pad, prompts, hint) on `PostBufferPaint`, `Flush` snapshots it into the `ScreenFrame` it belongs to, and
     `TerminalView` draws the rows above it, the strip, a rounded field filled with the band colour read off the cells (so
@@ -1717,6 +1717,17 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     narrower than its cells, so each bar's text is drawn `Shift` px left (to one mono space after the measured prompt), the
     caret with it, and `Cell` maps a press there back to the cell under it; the right padding the shift uncovers is the
     field's fill. The gutter, the caret's cell and every key are unchanged, so parity needs nothing.
+  - **In the window the command line is a row of the output's column** (`HostChrome.InputInColumn`, on in `Desktop`;
+    `InputColumn.Target`/`Anchor`, Core; `WithInputBars`/`DetachInputBars`). The prompt row and both bars leave the window's
+    sticky band and become Auto rows of a grid wrapped round one node of the pane tree, so the side column runs to the
+    status row as in the mockups. The node: from the root, into the anchor's child of a side-by-side split unless another
+    child holds a character's own window (two characters share the bars), into a stacked split only through its last child,
+    else that split (the output and its quick bar). The anchor is the live layout's output pane, else the first pane holding
+    a `Main` window — **never focus**, so moving the selection moves no pane (`InputColumnLayoutTests`). A rebuild takes the
+    bars out of the old grid before it is disposed. `InputBand` carries `Left`/`Columns`; the view draws the strip, the
+    field, the row shift and the press mapping only in those columns, and carries the panes and dividers beside it down
+    through the `FieldReserve` pixels. NAWS is the arranged rectangles. The terminal keeps the full-width band (`None`),
+    so its frames and the parity harness (which tells both hosts the same chrome) are unchanged.
 - **The window draws pane dividers as the panes meeting at a hairline** (`IPointerPresenter.Dividers`,
   `PaneDividerOverlay`, `DividersNow`; `ScreenFrame.Dividers`; `TerminalView.FrameDraw.DrawDividers`). The client publishes
   each divider control's cells and whether it is lit (never a tab strip standing in for one, nothing under a modal) on

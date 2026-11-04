@@ -869,9 +869,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The pane area renders the workspace's split tree (one TabControl per leaf pane). It's built
         // from the model and rebuilt whenever the layout changes; the initial row goes into the window.
         // A narrow terminal starts with the rail folded (SyncNarrowLayout), so the first row is built that way.
-        SyncNarrowLayout();
-        _workspaceRow = BuildWorkspaceRow();
-
         // The input area is one or two bars pinned above the status line. Each paints its own full-width
         // band (see InputBarControl), so the row reads as solid from the prompt to the right edge with
         // no gap where a label ends. Draft-safe history is ours (InputHistory) and per bar.
@@ -879,18 +876,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         SetUpBar(_second, InputBar.Secondary);
         _second.Visible = false;
 
-        _statusBar = Controls.Markup("[dim]not connected[/]").StickyBottom().Build();
-
-        // A host that draws the status row itself (the window's footer) gets no cell for it: a hidden sticky band takes
-        // no row, and ChromeRows counts none, so the bars and the panes have the row.
-        _statusBar.Visible = !host.Chrome.Status;
-
         // Sticky-bottom, added ahead of the bars so it sits above them, and hidden until a prompt
         // arrives: most sessions never see one, and a permanently blank row would cost every pane a
         // row for nothing.
         _promptRow = Controls.Markup(PromptRowRenderer.Empty).StickyBottom().Build();
         _promptRow.HorizontalAlignment = HorizontalAlignment.Stretch;
         _promptRow.Visible = false;
+
+        // A host that puts the command line in the output's column (the window) gets the prompt row and the bars as rows
+        // of the pane area instead (see WithInputBars), so they are built before it.
+        if (host.Chrome.InputInColumn)
+        {
+            _promptRow.StickyPosition = StickyPosition.None;
+        }
+
+        SyncNarrowLayout();
+        _workspaceRow = BuildWorkspaceRow();
+
+        _statusBar = Controls.Markup("[dim]not connected[/]").StickyBottom().Build();
+
+        // A host that draws the status row itself (the window's footer) gets no cell for it: a hidden sticky band takes
+        // no row, and ChromeRows counts none, so the bars and the panes have the row.
+        _statusBar.Visible = !host.Chrome.Status;
 
         // The window paints the backdrop, not the text background: everything that is not a pane — the
         // connection rail, the status line, the gaps a split leaves — sits on it, so the panes read as
@@ -920,11 +927,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             .WithColors(fg, bg)
             .AddControl(_header)
             .AddControl(_workspaceRow)
-            .AddControl(_promptRow)
-            .AddControl(_input)
-            .AddControl(_second)
-            .AddControl(_statusBar)
             .Build();
+
+        // The bars are the window's sticky band across every pane, unless the host puts them in the output's column, where
+        // the pane area holds them (WithInputBars). The status row is sticky either way.
+        if (!host.Chrome.InputInColumn)
+        {
+            _window.AddControl(_promptRow);
+            _window.AddControl(_input);
+            _window.AddControl(_second);
+        }
+
+        _window.AddControl(_statusBar);
 
         // Nothing in this window scrolls as a window — every pane scrolls inside its own viewport — and a
         // frameless scrollable window reserves a scrollbar column whenever its content is taller than it is.
@@ -6002,7 +6016,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void SetUpBar(InputBarControl bar, InputBar kind)
     {
-        bar.StickyPosition = StickyPosition.Bottom;
+        // A row of the output's column where the host puts the bars there (WithInputBars), else the window's sticky band.
+        bar.StickyPosition = Host.Chrome.InputInColumn ? StickyPosition.None : StickyPosition.Bottom;
         bar.HorizontalAlignment = HorizontalAlignment.Stretch;
         // Both bands come from the theme through WorkspacePalette, so the armed bar is lit by the very
         // same tone as the focused pane and the idle one sits on the same recessed plane as the rest of
@@ -10943,8 +10958,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
+        DetachInputBars();
+        _inputTarget = Host.Chrome.InputInColumn
+            ? zoomed ?? InputColumn.Target(_workspace.Layout.Root, InputAnchorPane(), HoldsOutput)
+            : null;
         var paneArea = zoomed is not null
-            ? OnSurface(BuildPaneTabs(zoomed), zoomed.Id)
+            ? WithInputBars(OnSurface(BuildPaneTabs(zoomed), zoomed.Id), zoomed)
             : BuildLayoutNode(_workspace.Layout.Root);
         PublishHeaderDividers();
 
@@ -11494,7 +11513,80 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <see cref="SplitNode"/> becomes a proportional grid (columns for a row split, rows for a
     /// column split) with a draggable splitter between children.
     /// </summary>
-    private IWindowControl BuildLayoutNode(SharpMUTerm.Core.Workspaces.LayoutNode node)
+    private IWindowControl BuildLayoutNode(SharpMUTerm.Core.Workspaces.LayoutNode node) =>
+        WithInputBars(BuildLayoutNodeAlone(node), node);
+
+    /// <summary>
+    /// The node the command line sits under, for a host that puts it in the output's column
+    /// (<see cref="HostChrome.InputInColumn"/>); null for one that keeps it across the window. Set on every rebuild.
+    /// </summary>
+    private SharpMUTerm.Core.Workspaces.LayoutNode? _inputTarget;
+
+    /// <summary>The grid holding the bars under <see cref="_inputTarget"/>, so a rebuild can take them out before it is disposed.</summary>
+    private GridControl? _inputColumn;
+
+    /// <summary>
+    /// The pane the output is in: the live layout's output pane while it owns the panes, else the first pane holding a
+    /// character's own window. Read by <see cref="InputColumn.Target"/>, never focus, so moving the selection moves no pane.
+    /// </summary>
+    private string? InputAnchorPane() =>
+        InputColumn.Anchor(
+            _workspace.Layout,
+            _liveLayout?.PanelPanes.GetValueOrDefault(SharpMUTerm.Core.Layouts.PanelIds.Output),
+            HoldsOutput);
+
+    /// <summary>Whether a pane holds a character's own window: output, as opposed to a panel, the map or a capture.</summary>
+    private bool HoldsOutput(PaneNode pane) =>
+        pane.Tabs.Any(id => _workspace.FindWindow(id) is { Kind: WindowKind.Main });
+
+    /// <summary>
+    /// <paramref name="control"/>, with the prompt row and the command lines as rows under it when <paramref name="node"/>
+    /// is <see cref="_inputTarget"/>: the output's column ends in the bars, and every pane beside it runs down to the
+    /// status row. The rows are the bars' own measure (Auto), so a bar growing as it wraps takes rows from this column
+    /// only, and the pane rectangles — and so NAWS — are what is arranged.
+    /// </summary>
+    private IWindowControl WithInputBars(IWindowControl control, SharpMUTerm.Core.Workspaces.LayoutNode node)
+    {
+        if (_inputTarget is null || !ReferenceEquals(node, _inputTarget))
+        {
+            return control;
+        }
+
+        var grid = Controls.Grid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Rows(GridLength.Star(1), GridLength.Auto(), GridLength.Auto(), GridLength.Auto())
+            .Columns(GridLength.Star(1));
+        grid.Place(control, 0, 0, 1, 1);
+        grid.Place(_promptRow, 1, 0, 1, 1);
+        grid.Place(_input, 2, 0, 1, 1);
+        grid.Place(_second, 3, 0, 1, 1);
+        var built = grid.Build();
+        built.BackgroundColor = BackdropColor();
+        _inputColumn = built;
+        return built;
+    }
+
+    /// <summary>
+    /// Takes the prompt row and the bars out of the grid that held them, ahead of a rebuild: the old pane area is disposed
+    /// once it is swapped out, and the bars live for the life of the app.
+    /// </summary>
+    private void DetachInputBars()
+    {
+        if (_inputColumn is not { } grid)
+        {
+            return;
+        }
+
+        foreach (var control in new IWindowControl[] { _promptRow, _input, _second })
+        {
+            grid.RemoveControl(control);
+        }
+
+        _inputColumn = null;
+    }
+
+    private IWindowControl BuildLayoutNodeAlone(SharpMUTerm.Core.Workspaces.LayoutNode node)
     {
         if (node is PaneNode pane)
         {

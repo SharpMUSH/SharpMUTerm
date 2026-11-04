@@ -193,6 +193,14 @@ internal sealed partial class SharpMUTermApp
 
         var rows = _input.ActualHeight + (_second.Visible ? _second.ActualHeight : 0);
         var top = _system.ConsoleDriver.ScreenSize.Height - rows - (_statusBar.Visible ? Math.Max(0, _statusBar.ActualHeight) : 0);
+        int? left = null, columns = null;
+
+        // In the output's column (HostChrome.InputInColumn) the bars are where they were arranged, not across the bottom.
+        if (Host.Chrome.InputInColumn && BoundsOf(_input) is { } box)
+        {
+            (top, left, columns) = (box.Y, box.X, box.Width);
+        }
+
         if (top <= 0)
         {
             return null;
@@ -204,7 +212,11 @@ internal sealed partial class SharpMUTermApp
             prompts.Add(new InputPrompt(top + _input.ActualHeight, MarkupParser.Remove(_second.Prompt)));
         }
 
-        return new InputBand(top, rows, InputLayout.HostFieldPad, prompts, $"⏎ sends · {KeyGlyphs.Normalize(Host.Keys.Newline.Glyph)} new line");
+        return new InputBand(top, rows, InputLayout.HostFieldPad, prompts, $"⏎ sends · {KeyGlyphs.Normalize(Host.Keys.Newline.Glyph)} new line")
+        {
+            Left = left,
+            Columns = columns,
+        };
     }
 
 }
@@ -229,10 +241,28 @@ internal sealed record InputPrompt(int Row, string Text);
 /// <param name="Hint">The newline hint, in the cells' glyphs, for the host to draw where the first row is blank.</param>
 internal sealed record InputBand(int Top, int Rows, int Pad, IReadOnlyList<InputPrompt> Prompts, string Hint)
 {
+    /// <summary>
+    /// The first column of the bars, when they are a row of the output's column (<see cref="HostChrome.InputInColumn"/>);
+    /// null when they span the grid from column 0.
+    /// </summary>
+    public int? Left { get; init; }
+
+    /// <summary>How many columns the bars span, or null for the whole grid's width.</summary>
+    public int? Columns { get; init; }
+
+    /// <summary>The first column of the bars.</summary>
+    public int From => Left ?? 0;
+
+    /// <summary>One past the bars' last column, in a grid <paramref name="width"/> wide.</summary>
+    public int To(int width) => Columns is { } columns ? Math.Min(width, From + columns) : width;
+
+    /// <summary>Whether column <paramref name="x"/> is under the bars: from <see cref="Top"/> down, the rows are theirs there.</summary>
+    public bool Spans(int x, int width) => x >= From && x < To(width);
+
     /// <inheritdoc/>
     public bool Equals(InputBand? other) =>
         other is not null && Top == other.Top && Rows == other.Rows && Pad == other.Pad && Hint == other.Hint
-        && Prompts.SequenceEqual(other.Prompts);
+        && Left == other.Left && Columns == other.Columns && Prompts.SequenceEqual(other.Prompts);
 
     /// <inheritdoc/>
     public override int GetHashCode() => HashCode.Combine(Top, Rows, Pad, Hint);

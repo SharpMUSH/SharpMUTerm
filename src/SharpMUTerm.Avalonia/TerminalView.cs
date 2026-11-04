@@ -138,11 +138,17 @@ internal sealed class TerminalView : Control
     /// <summary>The vertical pixels the field takes beside the rows it frames: none unless the view draws it.</summary>
     private double FieldReserve => DrawsInputField ? NativeLayout.FieldReserve : 0;
 
-    /// <summary>The top of screen row <paramref name="row"/> in logical units: rows of a band sit lower by the field's top padding.</summary>
-    internal double RowTop(int row)
+    /// <summary>
+    /// The top of screen row <paramref name="row"/> at <paramref name="column"/> in logical units: rows of a band sit lower
+    /// by the field's top padding, in the columns the band spans (all of them, unless the bars are in the output's column).
+    /// </summary>
+    internal double RowTop(int row, int column)
     {
         var top = row * CellSize.Height;
-        return DrawsInputField && _driver.Frame.Band is { } band && row >= band.Top ? top + NativeLayout.FieldTop : top;
+        var frame = _driver.Frame;
+        return DrawsInputField && frame.Band is { } band && row >= band.Top && band.Spans(column, frame.Width)
+            ? top + NativeLayout.FieldTop
+            : top;
     }
 
     /// <summary>
@@ -249,10 +255,10 @@ internal sealed class TerminalView : Control
         {
             var prompt = prompts[i];
             var to = i + 1 < prompts.Count ? prompts[i + 1].Row : end;
-            var start = Math.Min(frame.Width, band.Pad + prompt.Text.Length);
+            var start = Math.Min(frame.Width, band.From + band.Pad + prompt.Text.Length);
             var trimmed = prompt.Text.TrimEnd();
             var width = trimmed.Length == 0 ? 0 : PromptWidth(trimmed);
-            var room = (start - band.Pad) * cell.Width;
+            var room = (start - band.From - band.Pad) * cell.Width;
             var shift = trimmed.Length == 0 ? 0 : Math.Max(0, room - width - cell.Width);
 
             // Whole device pixels, so the glyphs land on the pixel grid the unshifted ones would.
@@ -276,7 +282,7 @@ internal sealed class TerminalView : Control
 
         var cell = CellSize;
         var area = _target.Area;
-        var rect = new Rect(area.X * cell.Width, RowTop(area.Y), area.Width * cell.Width, area.Height * cell.Height);
+        var rect = new Rect(area.X * cell.Width, RowTop(area.Y, area.X), area.Width * cell.Width, area.Height * cell.Height);
         context.DrawRectangle(Brush(_renderer.DefaultForeground, 0x24), null, rect.Inflate(new Thickness(1, 0)), 2, 2);
     }
 
@@ -831,7 +837,7 @@ internal sealed class TerminalView : Control
         var y = Math.Clamp((int)(position.Y / size.Height), 0, Math.Max(0, frame.Height - 1));
 
         // Below the panes, the field: its padding is the band's first and last rows, and its rows sit lower.
-        if (DrawsInputField && frame.Band is { } band && position.Y >= band.Top * size.Height)
+        if (DrawsInputField && frame.Band is { } band && position.Y >= band.Top * size.Height && band.Spans(x, frame.Width))
         {
             var inside = (position.Y - (band.Top * size.Height) - NativeLayout.FieldTop) / size.Height;
             y = Math.Clamp(band.Top + (int)Math.Floor(inside), band.Top, Math.Min(frame.Height, band.Top + band.Rows) - 1);
@@ -926,7 +932,7 @@ internal sealed class TerminalView : Control
                 var y0 = Math.Max(0, divider.Area.Y);
                 var x1 = Math.Min(frame.Width, divider.Area.X + divider.Area.Width);
                 var y1 = Math.Min(frame.Height, divider.Area.Y + divider.Area.Height);
-                if (band is { } field)
+                if (band is { } field && field.Spans(x0, frame.Width))
                 {
                     y1 = Math.Min(y1, field.Top);
                 }
@@ -942,16 +948,26 @@ internal sealed class TerminalView : Control
                 {
                     float left = x0 * cw, right = x1 * cw;
                     var at = MathF.Round(left + ((right - left - w) / 2));
+                    // Beside a band in the output's column the panes run on under the grid, through the field's padding.
+                    var tail = band is { Columns: not null } inColumn && y1 == frame.Height && !inColumn.Spans(x0, frame.Width)
+                        ? Math.Max(0, (float)(Bounds.Height * scale) - (y1 * ch))
+                        : 0;
                     for (var y = y0; y < y1; y++)
                     {
-                        paint.Color = PlaneBeside(x0 - 1, y, -1, 0);
-                        canvas.DrawRect(left, y * ch, at - left, ch, paint);
-                        paint.Color = PlaneBeside(x1, y, 1, 0);
-                        canvas.DrawRect(at + w, y * ch, right - at - w, ch, paint);
+                        var h = y == y1 - 1 ? ch + tail : ch;
+                        // A band's rows beside the divider are the field's strip, not the bar cells under it.
+                        paint.Color = band is { } beside && y >= beside.Top && beside.Spans(x0 - 1, frame.Width)
+                            ? plane
+                            : PlaneBeside(x0 - 1, y, -1, 0);
+                        canvas.DrawRect(left, y * ch, at - left, h, paint);
+                        paint.Color = band is { } after && y >= after.Top && after.Spans(x1, frame.Width)
+                            ? plane
+                            : PlaneBeside(x1, y, 1, 0);
+                        canvas.DrawRect(at + w, y * ch, right - at - w, h, paint);
                     }
 
                     paint.Color = colour;
-                    canvas.DrawRect(at, y0 * ch, w, (y1 - y0) * ch, paint);
+                    canvas.DrawRect(at, y0 * ch, w, ((y1 - y0) * ch) + tail, paint);
                 }
                 else
                 {
@@ -1015,18 +1031,38 @@ internal sealed class TerminalView : Control
             var height = (float)(Bounds.Height * scale);
             var top = band.Top * ch;
 
+            // The band's columns: the whole grid, or the output's column when the bars are a row of it
+            // (HostChrome.InputInColumn), and then every pane beside it runs on down to the footer.
+            var left = band.From * cw;
+            var right = band.Columns is null ? width : band.To(frame.Width) * cw;
+
             canvas.Save();
-            canvas.ClipRect(new SKRect(0, 0, width, top));
+            canvas.ClipRect(new SKRect(0, 0, width, height));
+            canvas.ClipRect(new SKRect(left, top, right, height), SKClipOperation.Difference);
             renderer.Render(canvas, frame, pictures);
             canvas.Restore();
 
-            var field = FieldRect(band, cw, ch, frame.Width, s);
-            var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.Pad), band.Top].Background);
             using var paint = new SKPaint { IsAntialias = true };
+            if (band.Columns is not null && frame.Height > 0)
+            {
+                // Under the grid beside the band, the pixels the field's padding takes: the last row's own planes, carried down.
+                var gridBottom = frame.Height * ch;
+                for (var x = 0; x < frame.Width && gridBottom < height; x++)
+                {
+                    if (!band.Spans(x, frame.Width))
+                    {
+                        paint.Color = renderer.Background(frame[x, frame.Height - 1].Background);
+                        canvas.DrawRect(x * cw, gridBottom, x == frame.Width - 1 ? width - (x * cw) : cw, height - gridBottom, paint);
+                    }
+                }
+            }
+
+            var field = FieldRect(band, cw, ch, frame.Width, s);
+            var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.From + band.Pad), band.Top].Background);
             paint.Color = plane;
-            canvas.DrawRect(0, top, width, height - top, paint);
+            canvas.DrawRect(left, top, right - left, height - top, paint);
             paint.Color = Mix(plane, renderer.DefaultForeground, 0.10f);
-            canvas.DrawRect(0, top, width, Math.Max(1, s), paint);
+            canvas.DrawRect(left, top, right - left, Math.Max(1, s), paint);
 
             var radius = (float)(NativeTokens.RadiusM * scale);
             var rounded = new SKRoundRect(field, radius);
@@ -1038,10 +1074,10 @@ internal sealed class TerminalView : Control
             canvas.Translate(0, (float)(NativeLayout.FieldTop * scale));
 
             // The bars' rows only, and not the client's right padding, whose colour is the margin's rather than the band's.
-            var textRight = (frame.Width - band.Pad) * cw;
+            var textRight = (band.To(frame.Width) - band.Pad) * cw;
             if (bars.Count == 0)
             {
-                canvas.ClipRect(new SKRect(0, top, textRight, (band.Top + band.Rows) * ch));
+                canvas.ClipRect(new SKRect(left, top, textRight, (band.Top + band.Rows) * ch));
                 renderer.Render(canvas, frame, pictures);
             }
             else
@@ -1053,7 +1089,7 @@ internal sealed class TerminalView : Control
                     var shift = (float)(bar.Shift * scale);
                     var meet = (bar.TextStart * cw) - shift;
                     canvas.Save();
-                    canvas.ClipRect(new SKRect(0, bar.Top * ch, meet, bar.End * ch));
+                    canvas.ClipRect(new SKRect(left, bar.Top * ch, meet, bar.End * ch));
                     renderer.Render(canvas, frame, pictures);
                     canvas.Restore();
 
@@ -1082,7 +1118,7 @@ internal sealed class TerminalView : Control
     }
 
     /// <summary>
-    /// The field's rectangle in device pixels: inset from the grid's edges so the client's band-coloured padding columns
+    /// The field's rectangle in device pixels: inset from the band's edges so the client's band-coloured padding columns
     /// are its inner padding, from the strip's top padding to below the last row.
     /// </summary>
     internal static SKRect FieldRect(InputBand band, int cw, int ch, int columns, float scale)
@@ -1092,7 +1128,7 @@ internal sealed class TerminalView : Control
         var inset = MathF.Round(Math.Max(4 * scale, Math.Min((float)(NativeLayout.FieldSide * scale), (band.Pad * cw) - (float)(NativeTokens.Space8 * scale))));
         var top = (band.Top * ch) + MathF.Round((float)(NativeLayout.FieldOuter * scale));
         var bottom = ((band.Top + band.Rows) * ch) + MathF.Round((float)((NativeLayout.FieldTop + NativeLayout.FieldInner) * scale));
-        return new SKRect(inset, top, (columns * cw) - inset, bottom);
+        return new SKRect((band.From * cw) + inset, top, (band.To(columns) * cw) - inset, bottom);
     }
 
     /// <summary>
@@ -1102,21 +1138,25 @@ internal sealed class TerminalView : Control
     private void DrawFieldText(DrawingContext context, ScreenFrame frame, InputBand band, IReadOnlyList<FieldBar> bars)
     {
         var cell = CellSize;
+
+        // The band's first column inside its padding, and one past its last: the whole grid, or the output's column.
+        var at = band.From + band.Pad;
+        var end = band.To(frame.Width);
         foreach (var prompt in band.Prompts)
         {
             var text = prompt.Text.TrimEnd();
-            if (text.Length == 0 || prompt.Row < 0 || prompt.Row >= frame.Height || band.Pad >= frame.Width)
+            if (text.Length == 0 || prompt.Row < 0 || prompt.Row >= frame.Height || at >= end)
             {
                 continue;
             }
 
-            var first = frame[band.Pad, prompt.Row];
-            var ink = Ink(frame, band.Pad, prompt.Row, text.Length);
+            var first = frame[at, prompt.Row];
+            var ink = Ink(frame, at, prompt.Row, text.Length);
             // The plate hides the prompt's mono cells up to where the shifted text begins (BarsOf), never over that text.
-            var cells = Math.Min(text.Length, frame.Width - band.Pad) * cell.Width;
-            var room = Math.Min(prompt.Text.Length, frame.Width - band.Pad) * cell.Width;
+            var cells = Math.Min(text.Length, end - at) * cell.Width;
+            var room = Math.Min(prompt.Text.Length, end - at) * cell.Width;
             var shift = bars.FirstOrDefault(b => b.Top == prompt.Row).Shift;
-            var plate = new Rect(band.Pad * cell.Width, RowTop(prompt.Row), Math.Max(0, room - shift), cell.Height);
+            var plate = new Rect(at * cell.Width, RowTop(prompt.Row, at), Math.Max(0, room - shift), cell.Height);
             context.FillRectangle(Brush(_renderer.Background(first.Background)), plate);
             var formatted = PromptText(text, ink, cells + (2 * cell.Width));
 
@@ -1124,7 +1164,7 @@ internal sealed class TerminalView : Control
             context.DrawText(formatted, new Point(Math.Round(plate.X), plate.Y + ((cell.Height - formatted.Height) / 2)));
         }
 
-        if (band.Hint.Length == 0 || band.Top >= frame.Height)
+        if (band.Hint.Length == 0 || band.Top >= frame.Height || at >= end)
         {
             return;
         }
@@ -1132,15 +1172,15 @@ internal sealed class TerminalView : Control
         var hint = new FormattedText(
             NativeKeys.Words(band.Hint), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
             new Typeface(NativeTokens.UiFont), NativeTokens.Small, Brush(SKColors.White));
-        var right = (frame.Width - band.Pad) * cell.Width;
+        var right = (end - band.Pad) * cell.Width;
         var from = Math.Max(0, (int)Math.Floor((right - hint.Width) / cell.Width) - 2);
-        var promptEnd = band.Pad + (band.Prompts.FirstOrDefault(p => p.Row == band.Top)?.Text.Length ?? 0);
+        var promptEnd = at + (band.Prompts.FirstOrDefault(p => p.Row == band.Top)?.Text.Length ?? 0);
         if (from <= promptEnd || frame.Caret is { Visible: true } caret && caret.Y == band.Top && caret.X >= from)
         {
             return;
         }
 
-        for (var x = from; x < frame.Width - band.Pad; x++)
+        for (var x = from; x < end - band.Pad; x++)
         {
             if (frame[x, band.Top].Rune.Value != ' ')
             {
@@ -1148,9 +1188,9 @@ internal sealed class TerminalView : Control
             }
         }
 
-        var bandColour = _renderer.Background(frame[band.Pad, band.Top].Background);
+        var bandColour = _renderer.Background(frame[at, band.Top].Background);
         hint.SetForegroundBrush(Brush(Mix(bandColour, _renderer.DefaultForeground, 0.6f)));
-        context.DrawText(hint, new Point(right - hint.Width, RowTop(band.Top) + ((cell.Height - hint.Height) / 2)));
+        context.DrawText(hint, new Point(right - hint.Width, RowTop(band.Top, at) + ((cell.Height - hint.Height) / 2)));
     }
 
     /// <summary>The ink of the first non-blank cell of a run, the run's own colour.</summary>

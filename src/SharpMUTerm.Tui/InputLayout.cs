@@ -32,7 +32,7 @@ internal static class InputLayout
     /// The band-coloured columns a command line leaves at each end of its rows when the host draws its field
     /// (<see cref="HostChrome.Input"/>): the field's inner padding, inside the frame the host draws.
     /// </summary>
-    internal const int HostFieldPad = 3;
+    internal const int HostFieldPad = 4;
 
     /// <summary>
     /// Breaks <paramref name="text"/> into the rows it occupies at <paramref name="width"/> columns.

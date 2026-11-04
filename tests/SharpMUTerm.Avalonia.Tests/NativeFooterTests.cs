@@ -79,6 +79,19 @@ public class NativeFooterTests
     }
 
     [Test]
+    public async Task InTheOutputsColumnTheFieldIsAsWideAsTheColumn()
+    {
+        var band = new InputBand(20, 1, InputLayout.HostFieldPad, [new InputPrompt(20, "Corvid ›")], "⏎ sends") { Left = 10, Columns = 50 };
+        var rect = TerminalView.FieldRect(band, 10, 20, 80, 1f);
+
+        await Assert.That((double)rect.Left).IsEqualTo(100 + NativeLayout.FieldSide);
+        await Assert.That((double)rect.Right).IsEqualTo(600 - NativeLayout.FieldSide);
+        await Assert.That(band.Spans(9, 80)).IsFalse();
+        await Assert.That(band.Spans(10, 80)).IsTrue();
+        await Assert.That(band.Spans(60, 80)).IsFalse();
+    }
+
+    [Test]
     public async Task TheFieldIsInsetFromTheGridAndFramesTheBarsRows()
     {
         var band = new InputBand(20, 2, InputLayout.HostFieldPad, [new InputPrompt(20, "Corvid ›")], "⏎ sends");
@@ -87,8 +100,8 @@ public class NativeFooterTests
         // The mockup's 20 px from the grid's edge, leaving the field its 8 px inner padding before the prompt's column.
         await Assert.That((double)rect.Left).IsEqualTo(NativeLayout.FieldSide);
         await Assert.That((double)rect.Right).IsEqualTo(800 - NativeLayout.FieldSide);
-        var tight = TerminalView.FieldRect(band, 8, 20, 80, 1f);
-        await Assert.That((double)tight.Left).IsEqualTo((3 * 8) - NativeTokens.Space8).Because("narrow cells keep the inner padding");
+        var tight = TerminalView.FieldRect(band, 6, 20, 80, 1f);
+        await Assert.That((double)tight.Left).IsEqualTo((InputLayout.HostFieldPad * 6) - NativeTokens.Space8).Because("narrow cells keep the inner padding");
         var scaled = TerminalView.FieldRect(band, 13, 25, 80, 1.25f);
         await Assert.That(scaled.Left % 1).IsEqualTo(0f).Because("a field edge on a whole device pixel at 125%");
         await Assert.That(scaled.Top % 1).IsEqualTo(0f);

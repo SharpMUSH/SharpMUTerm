@@ -386,6 +386,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window the command line sits under the output column only, as wide as the text it sends to; the
+  side column (composer and who is here, or vitals and map) runs down to the status footer. The field is also a few
+  pixels further in from its edges, as the mockups draw it. The terminal is unchanged.
 - The Dark theme is navy, as the mockups are, in the terminal and the window alike: deep blue panes with the focused
   one a step lighter, the sidebar and status row on the darkest ground, a dark header with a hairline under it, a
   command line on `#233049` with a blue edge, blue-grey rules and text. Light and Solarized Dark are unchanged, and
