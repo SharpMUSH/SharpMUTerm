@@ -113,6 +113,7 @@ public static class MapEditing
         ("R", "reset to server"),
         ("u", "undo"),
         ("⏎", "walk"),
+        ("?", "all keys"),
         ("Esc", "done"),
     ];
 

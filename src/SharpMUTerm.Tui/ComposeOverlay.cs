@@ -55,6 +55,7 @@ internal sealed class ComposeOverlay
     private SpellChecker? _spelling;
     private bool _spellingOpened;
     private MarkupControl? _headerBand;
+    private MarkupControl? _footerBand;
     private MarkupControl? _previewBand;
 
     /// <param name="system">The window system the composer opens in.</param>
@@ -293,7 +294,9 @@ internal sealed class ComposeOverlay
         }
 
         var model = Model;
-        _headerBand?.SetContent(new List<string> { _scheme.Paint(Render(model, Width).Header, ScreenPalette.HeaderBg) });
+        var (header, footer) = Render(model, Width);
+        _headerBand?.SetContent(new List<string> { _scheme.Paint(header, ScreenPalette.HeaderBg) });
+        _footerBand?.SetContent(new List<string> { _scheme.Paint(footer, ScreenPalette.FooterBg) });
         _previewBand?.SetContent(_scheme.Lines(PreviewLines(model, Width), ScreenPalette.FooterBg));
     }
 
@@ -544,7 +547,8 @@ internal sealed class ComposeOverlay
 
     private MarkupControl FooterBand()
     {
-        var band = ScreenChrome.Band(Render(Model).Footer, ScreenPalette.FooterBg, _scheme);
+        var band = ScreenChrome.Band(Render(Model, Width).Footer, ScreenPalette.FooterBg, _scheme);
+        _footerBand = band;
         band.StickyPosition = StickyPosition.Bottom;
         return band;
     }
@@ -567,6 +571,7 @@ internal sealed class ComposeOverlay
             ? $"[{ScreenPalette.Warn}]no connection[/]"
             : $"[{ScreenPalette.Value}]{Escape(model.Target)}[/]";
 
+        var footerKeys = KeyLadder.Choose(FooterKeys(model), width);
         string header;
         if (model.Edit is { } edit)
         {
@@ -579,12 +584,11 @@ internal sealed class ComposeOverlay
                 ? $"[{ScreenPalette.Accent}]literal[/]"
                 : $"[{ScreenPalette.Value}]as typed[/]";
 
+            // The key row names ⌥W (get a dictionary) and gives it up only after ⌥P and ⌥L, so the header does not name it
+            // again: a second chip for one key cost the header its room at 80 columns, where it was cut to "⌥W…".
             var spelling = model.Dictionary is { } name
                 ? $"[{ScreenPalette.Value}]{Escape(name)}[/]"
-                : model.Place == ComposerPlace.FullScreen
-                    // The state names its way out: ⌥W here is the offer to get one (the key row says so too).
-                    ? $"[{ScreenPalette.Muted}]no dictionary[/][{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥W[/][{ScreenPalette.Label}] gets one[/]"
-                    : $"[{ScreenPalette.Muted}]no dictionary[/]";
+                : $"[{ScreenPalette.Muted}]no dictionary[/]";
 
             header = $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
                 + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"
@@ -596,9 +600,23 @@ internal sealed class ComposeOverlay
 
         var footer = string.Join(
             $"[{ScreenPalette.Label}] · [/]",
-            model.Keys.Select(k => $"[{ScreenPalette.Accent}]{Escape(k.Key)}[/][{ScreenPalette.Label}] {Escape(k.Label)}[/]"));
+            footerKeys.Select(k => $"[{ScreenPalette.Accent}]{Escape(k.Key)}[/][{ScreenPalette.Label}] {Escape(k.Label)}[/]"));
         return (header, footer);
     }
+
+    /// <summary>
+    /// The key row as a ladder: parentheticals go first (<c>close (keeps the draft)</c>), then ⌥P, ⌥L and ⌥W in that order.
+    /// ⌃S and Esc are never given up — they are how a post leaves this screen.
+    /// </summary>
+    internal static IReadOnlyList<LadderKey> FooterKeys(ComposerModel model) =>
+        model.Keys.Select(k => new LadderKey(k.Key, k.Label, k.Short, k.Key switch
+        {
+            "⌥P" => 1,
+            "⌥L" => 2,
+            "⌥W" => 3,
+            "F1" => 4,
+            _ => LadderKey.Keep,
+        })).ToList();
 
     /// <summary>
     /// Sizes the editor to the window: every row the terminal has, less the two chrome bands.
@@ -645,6 +663,7 @@ internal sealed class ComposeOverlay
         _editor = null;
         _edit = null;
         _headerBand = null;
+        _footerBand = null;
         _previewBand = null;
     }
 }

@@ -62,15 +62,34 @@ internal static class ImportReview
             }
         }
 
+        return lines;
+    }
+
+    /// <summary>
+    /// The rows pinned under the review, outside its scroll: the passwords question and the keys that answer the review.
+    /// Pinned because this is a consent screen — at 80×24 the body is taller than the screen, and a footer that scrolled
+    /// with it showed no way to accept or decline. A rule row first, so the pinned rows read as the review's foot.
+    /// </summary>
+    internal static List<string> Footer(ImportReviewModel model, int width)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        width = Math.Max(30, width);
+        var lines = new List<string> { $"[{ScreenPalette.Rule}]{new string('─', width - 1)}[/]" };
         if (model.PasswordLine is { } passwords)
         {
-            lines.Add(string.Empty);
             var mark = model.StorePasswords ? $"[{ScreenPalette.Accent}]●[/] " : $"[{ScreenPalette.Label}]○[/] ";
             lines.AddRange(Indented(mark, passwords, width, Value, indent: 0));
         }
 
-        lines.Add(string.Empty);
-        lines.Add(Keys(model.Empty ? "Esc close" : model.Keys));
+        var keys = (model.Empty ? "Esc close" : model.Keys).Split(" · ").Select(part =>
+        {
+            var space = part.IndexOf(' ', StringComparison.Ordinal);
+            return space < 0 ? new LadderKey(part, string.Empty) : new LadderKey(part[..space], part[(space + 1)..]);
+        }).ToList();
+
+        // The body scrolls under these rows, and the overlay answers the scroll keys before the review does.
+        keys.Insert(Math.Max(0, keys.Count - 1), new LadderKey("↑↓", "scroll", Drop: 1));
+        lines.Add(KeyLadder.Fit(keys, width - 1, k => $"[{ScreenPalette.Accent}]{Escape(k)}[/]", Label, "   "));
         return lines;
     }
 
@@ -96,13 +115,4 @@ internal static class ImportReview
                 : new string(' ', leadWidth) + style(wrapped[i]);
         }
     }
-
-    private static string Keys(string keys) =>
-        string.Join("   ", keys.Split(" · ").Select(part =>
-        {
-            var space = part.IndexOf(' ', StringComparison.Ordinal);
-            return space < 0
-                ? Label(part)
-                : $"[{ScreenPalette.Accent}]{Escape(part[..space])}[/] {Label(part[(space + 1)..])}";
-        }));
 }

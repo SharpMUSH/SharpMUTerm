@@ -176,9 +176,36 @@ internal sealed class ScriptConsoleSurface
         lines.Add(model.CanRun
             ? $"[bold {ScreenPalette.Accent}]lua ›[/] [{ScreenPalette.Value}]{Escape(Tail(input, width - 8))}{(onStore ? string.Empty : "▏")}[/]"
             : $"[{ScreenPalette.Label}]lua › no prompt here — {Escape(model.Unavailable ?? string.Empty)}[/]");
-        lines.Add($"[{ScreenPalette.Label}]{Escape(Fit(ScriptConsoleModel.Keys, width))}[/]");
+        lines.Add(KeyLadder.Fit(
+            FooterKeys(onStore),
+            width,
+            k => $"[{ScreenPalette.Accent}]{Escape(k)}[/]",
+            l => $"[{ScreenPalette.Label}]{Escape(l)}[/]",
+            $"[{ScreenPalette.Label}] · [/]"));
         return lines;
     }
+
+    /// <summary>
+    /// The key row for where the keys are: at the prompt, or on the store list (where ↑↓ pick and Del deletes). A ladder,
+    /// so Esc is never the word cut off at 80 columns; ⌃L goes first, then ⇥, history and ⏎.
+    /// </summary>
+    internal static IReadOnlyList<LadderKey> FooterKeys(bool onStore) => onStore
+        ?
+        [
+            new("↑↓", "pick a key", "pick", Drop: 2),
+            new("Del", "deletes it", "deletes"),
+            new("⇥", "back to the prompt", "prompt", Drop: 3),
+            new("⌃L", "reloads scripts", "reload", Drop: 1),
+            new("Esc", "closes"),
+        ]
+        :
+        [
+            new("⏎", "runs", Drop: 4),
+            new("↑↓", "history", Drop: 2),
+            new("⇥", "store keys", "store", Drop: 3),
+            new("⌃L", "reloads scripts", "reload", Drop: 1),
+            new("Esc", "closes"),
+        ];
 
     private static List<string> OutputRows(ScriptConsoleModel model, int width, int rows)
     {
@@ -221,7 +248,7 @@ internal sealed class ScriptConsoleSurface
     {
         var list = new List<string>
         {
-            $"[{(onStore ? ScreenPalette.Accent : ScreenPalette.Muted)}]STORE[/] [{ScreenPalette.Label}]{model.StoreCount} key{(model.StoreCount == 1 ? string.Empty : "s")} · read only[/]",
+            $"[{(onStore ? ScreenPalette.Accent : ScreenPalette.Muted)}]STORE[/] [{ScreenPalette.Label}]{model.StoreCount} key{(model.StoreCount == 1 ? string.Empty : "s")}{(model.Store.Count == 0 ? string.Empty : onStore ? " · Del deletes" : " · ⇥ to pick")}[/]",
         };
 
         if (model.Store.Count == 0)

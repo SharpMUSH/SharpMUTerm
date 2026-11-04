@@ -326,9 +326,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- At 80 columns the terminal's key rows fit on one line: the F1 composer, the script console, the map's edit keys,
+  the import review and F10 shorten their words and then leave out the least-used keys, never the one that closes.
+  The map's edit keys are now one row under the map instead of a block beside it; `?` lists them all (also under
+  `/help` ▸ Maps).
+- The terminal map writes room names beside the rooms when the pane is wide enough, and always lists where your
+  room's exits lead in the same place, under the map.
 - Light theme: background tabs and one-row panels (vitals, quick bar) sit on a lighter grey, and small text on the
   settings screens is darker, so it is as easy to read as body text.
-- Desktop window: the composer's "no dictionary" chip is a button that offers to get one; in the terminal F1 names
+- Desktop window: the composer's "no dictionary" chip is a button that offers to get one; in the terminal F1's key row names
   Alt+W beside it. The world settings show the same "join wraps" recommendation the terminal's F5 does.
 
 - A character is named one way everywhere: the command line's prompt, the window title and tab titles now read
@@ -383,6 +389,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The import review at 80×24 no longer scrolls its Enter and Esc keys and the passwords question out of sight: they
+  stay at the bottom while the rest scrolls (arrow keys, PgUp/PgDn, Home/End).
+- The script console's store no longer says "read only" while Del deletes a key; the console names Del only on the
+  store list, where it works.
+- The map's edit keys at 160 columns no longer read "PgUp PgDnlevel".
 - F5: editing a world field low on the screen (channels, names) now scrolls the field into view instead of leaving
   the cursor off screen.
 - F5 ▸ channels `move`: a channel message whose echo arrives just before its GMCP in the same read is no longer left

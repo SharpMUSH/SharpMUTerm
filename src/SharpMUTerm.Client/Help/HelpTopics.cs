@@ -1,4 +1,5 @@
 using SharpMUTerm.Client.Modals;
+using SharpMUTerm.Client.Panels;
 
 namespace SharpMUTerm.Client.Help;
 
@@ -92,5 +93,29 @@ public static class HelpTopics
             "F4 puts your own commands on keys and says which keys this terminal cannot deliver.",
             "Every key below is also an entry on ⌃P.",
         ]),
+        new(MapTopic, "Maps", "walk from the map, find a room, edit rooms", [
+            "The map draws the area you are in around you, rooms named where the pane is wide enough. Click a",
+            "room to walk there; ⌃P ▸ Find room… looks rooms up by name or area. Exits and where they lead",
+            "are listed under the grid.",
+            "",
+            "⌃P ▸ Edit map gives the terminal's map the keys (the window has an inspector beside the map).",
+            "Its footer names the keys it has room for; these are all of them:",
+            .. MapKeyRows(),
+            "",
+            "/map rename, /map note and the rest do the same from the command line.",
+        ]),
     ];
+
+    /// <summary>The help page that lists every map-edit key, which the map's <c>?</c> opens.</summary>
+    public const string MapTopic = "map";
+
+    /// <summary><see cref="MapEditing.Keys"/>, three to a row.</summary>
+    private static IEnumerable<string> MapKeyRows()
+    {
+        var keys = MapEditing.Keys;
+        for (var i = 0; i < keys.Count; i += 3)
+        {
+            yield return "  " + string.Concat(keys.Skip(i).Take(3).Select(k => (k.Key.PadRight(10) + k.Word).PadRight(26))).TrimEnd();
+        }
+    }
 }

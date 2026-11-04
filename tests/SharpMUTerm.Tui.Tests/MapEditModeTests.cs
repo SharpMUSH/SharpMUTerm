@@ -126,7 +126,7 @@ public class MapEditModeTests
             ["n"] = [Key(ConsoleKey.N, 'n')], ["s"] = [Key(ConsoleKey.S, 's')], ["Del"] = [Key(ConsoleKey.Delete)],
             ["PgUp PgDn"] = [Key(ConsoleKey.PageDown)], ["v"] = [Key(ConsoleKey.V, 'v')], ["h"] = [Key(ConsoleKey.H, 'h')],
             ["R"] = [Key(ConsoleKey.R, 'R', shift: true)],
-            ["u"] = [Key(ConsoleKey.U, 'u')], ["⏎"] = [Key(ConsoleKey.Enter, '\r')], ["Esc"] = [Key(ConsoleKey.Escape, '\u001b')],
+            ["u"] = [Key(ConsoleKey.U, 'u')], ["⏎"] = [Key(ConsoleKey.Enter, '\r')], ["?"] = [Key(ConsoleKey.Oem2, '?', shift: true)], ["Esc"] = [Key(ConsoleKey.Escape, '\u001b')],
         };
 
         foreach (var (key, _) in MapEditing.Keys)
