@@ -99,6 +99,13 @@ internal sealed record ClientHost
     public required INativeSettings? NativeSettings { get; init; }
 
     /// <summary>
+    /// Draws ⌃P with the host's own controls, or null for a host whose palette is the cell popup. Every way in (⌃P,
+    /// the header, the pointer menu's <em>More commands…</em>) goes through one funnel that asks this first. Null in
+    /// the terminal, the snapshot, the tests and the parity harness, so every cell frame is unchanged.
+    /// </summary>
+    public required INativePalette? NativePalette { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -136,6 +143,7 @@ internal sealed record ClientHost
         Announcer = null,
         ScreenIsSeen = true,
         NativeSettings = null,
+        NativePalette = null,
     };
 
     /// <summary>
@@ -159,6 +167,7 @@ internal sealed record ClientHost
         Announcer = null,
         ScreenIsSeen = true,
         NativeSettings = null,
+        NativePalette = null,
     };
 
     /// <summary>

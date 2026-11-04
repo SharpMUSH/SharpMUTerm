@@ -59,5 +59,8 @@ internal static class WindowHost
 
         // F7 and F8 open a native settings window generated from their declarations; the rest stay cell screens.
         NativeSettings = driver.Settings,
+
+        // ⌃P is a native palette over the window, listing the same rows as the cell one.
+        NativePalette = driver.Palette,
     };
 }

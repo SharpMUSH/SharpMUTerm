@@ -65,6 +65,9 @@ internal sealed class MainWindow : Window
 
         // The window's native views over the cells: the header's Layouts button and native panels (DesktopLayer).
         root.Children.Add(new DesktopLayer(_view));
+
+        // ⌃P, over everything above; it is added last when it opens, and gives the keyboard back to the cells.
+        _driver.Palette.Attach(root, () => _view.Focus());
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
         var size = _view.SizeFor(options.Columns, options.Rows);
