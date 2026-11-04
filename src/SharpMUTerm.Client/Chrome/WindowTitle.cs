@@ -4,7 +4,7 @@ namespace SharpMUTerm.Client.Chrome;
 
 /// <summary>
 /// The title the window — the desktop window's title bar and taskbar entry, or the terminal's tab — wears for what is
-/// in front: <c>Character@World — SharpMUTerm</c>. One function, read off the same <see cref="HeaderModel"/> the
+/// in front: <c>Character · World — SharpMUTerm</c>, the character named by <see cref="CharacterNames"/>'s rule. One function, read off the same <see cref="HeaderModel"/> the
 /// header band is drawn from, so the title and the header cannot name different characters.
 /// <para>
 /// The names are the player's configuration, but a world a <c>telnet://</c> link added is named after the link's host,
@@ -24,7 +24,7 @@ public static class WindowTitle
     public static string For(HeaderModel header) => For(header.Character?.Name, header.World?.Name);
 
     /// <summary>
-    /// <c>Character@World — SharpMUTerm</c>; <c>World — SharpMUTerm</c> for a world with no character in front; and
+    /// <c>Character · World — SharpMUTerm</c>; <c>World — SharpMUTerm</c> for a world with no character in front; and
     /// <c>SharpMUTerm</c> alone when nothing is.
     /// </summary>
     public static string For(string? character, string? world)
@@ -33,7 +33,7 @@ public static class WindowTitle
         var where = Clean(world);
         return (who, where) switch
         {
-            ({ Length: > 0 }, { Length: > 0 }) => $"{who}@{where} — {Product}",
+            ({ Length: > 0 }, { Length: > 0 }) => $"{CharacterNames.Display(where, who)} — {Product}",
             ({ Length: > 0 }, _) => $"{who} — {Product}",
             (_, { Length: > 0 }) => $"{where} — {Product}",
             _ => Product,

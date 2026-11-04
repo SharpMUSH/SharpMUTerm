@@ -7,7 +7,14 @@ namespace SharpMUTerm.Core.Text;
 /// </summary>
 public static class StatusFormatter
 {
-    /// <summary>The prompt label, e.g. <c>Corvid@aetherfall ›</c>. Falls back gracefully when disconnected.</summary>
+    /// <summary>
+    /// What goes between the character and the world: the client's one spelling of a character's name,
+    /// <c>Corvid · Aetherfall</c> (<c>SharpMUTerm.Client.Chrome.CharacterNames</c>, which Core cannot reference — a
+    /// Client test holds the two together).
+    /// </summary>
+    public const string NameSeparator = " · ";
+
+    /// <summary>The prompt label, e.g. <c>Corvid · Aetherfall ›</c>. Falls back gracefully when disconnected.</summary>
     public static string CharacterPrompt(string? character, string? world)
     {
         if (string.IsNullOrEmpty(character))
@@ -15,6 +22,6 @@ public static class StatusFormatter
             return "› ";
         }
 
-        return string.IsNullOrEmpty(world) ? $"{character} › " : $"{character}@{world} › ";
+        return string.IsNullOrEmpty(world) ? $"{character} › " : $"{character}{NameSeparator}{world} › ";
     }
 }

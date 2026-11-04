@@ -196,7 +196,8 @@ public class SurfaceParityTests
             await using var app = App(driver, DemoScene.Build());
             app.RenderSnapshot("notices");
             var said = driver.Pointer.Notices;
-            await Assert.That(said.Count).IsEqualTo(3);
+            await Assert.That(said.Count).IsEqualTo(4);
+            await Assert.That(said.Count(n => n.Notice.Source is not null)).IsEqualTo(1).Because("one is a source label, not a key");
             await Assert.That((object)said[^1].Notice).IsEqualTo(app.DrawnModel(SurfaceCatalog.Notice)).Because("notice");
             await Assert.That(app.NoticeMarkup(said[^1].Notice)).IsEqualTo(app.LastNotice);
             await Assert.That(said[0].Notice.Action).IsNotNull().Because("the first offers its action");

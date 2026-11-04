@@ -263,7 +263,7 @@ internal sealed partial class SharpMUTermApp
         SyncPackages();
         SaveConfiguration();
         var said = $"Installed {manifest.Name} {manifest.Version} · F10 lists your packages";
-        Notice(said, MessageSeverity.Info, key: "package");
+        Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
         _packageManager?.PublishStatus(said);
         return true;
     }
@@ -283,7 +283,7 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void Fetch(Uri uri, string what, Action<byte[]> then)
     {
-        Notice($"Fetching {Snippet(uri.Host)}…", MessageSeverity.Info, key: "package");
+        Notice($"Fetching {Snippet(uri.Host)}…", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
         var fetch = PackageFetch ?? DownloadPackageAsync;
         _ = Task.Run(async () =>
         {
@@ -534,7 +534,7 @@ internal sealed partial class SharpMUTermApp
         SyncPackages();
         SaveConfiguration();
         var said = $"Removed {package.Manifest.Name}.";
-        Notice(said, MessageSeverity.Info, key: "package");
+        Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
         _packageManager?.PublishStatus(said);
     }
 
@@ -557,7 +557,7 @@ internal sealed partial class SharpMUTermApp
 
         SaveConfiguration();
         var said = $"Copied {package.Sets.Count} set(s) to yours; assign them on F5, and switch the package off (Space) to use only your copy.";
-        Notice(said, MessageSeverity.Info, key: "package");
+        Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
         _packageManager?.PublishStatus(said);
         _packageManager?.NotifyChanged();
     }

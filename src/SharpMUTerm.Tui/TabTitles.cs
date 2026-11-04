@@ -115,11 +115,10 @@ internal static class TabTitles
     {
         ArgumentNullException.ThrowIfNull(window);
 
-        var owner = window.Kind != WindowKind.Main && !string.IsNullOrEmpty(window.OwnerLabel)
-            ? window.OwnerLabel + " - "
-            : string.Empty;
-
-        return owner + window.Title;
+        // The owner ahead of the title in the client's one spelling of a name (Corvid · Chat), not a dash of its own.
+        return window.Kind != WindowKind.Main
+            ? SharpMUTerm.Client.Chrome.CharacterNames.Window(window.OwnerLabel, window.Title)
+            : window.Title;
     }
 
     /// <summary>

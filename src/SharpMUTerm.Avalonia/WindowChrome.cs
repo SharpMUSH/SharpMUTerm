@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
 
 namespace SharpMUTerm.Avalonia;
 
@@ -56,4 +58,61 @@ internal static class WindowChrome
         WindowEdge.SouthWest => StandardCursorType.BottomLeftCorner,
         _ => StandardCursorType.BottomRightCorner,
     };
+
+    /// <summary>
+    /// <paramref name="content"/> with a resize band along each edge of <paramref name="window"/>, for a window that draws
+    /// its own frame (<see cref="WindowDecorations.None"/>) and so gets no border to resize by from the platform. Each band
+    /// is <see cref="EdgeBand"/> wide, transparent, lies over the content's edge, shows the edge's cursor and begins the
+    /// platform's resize on a left press — what <see cref="TerminalView"/> does for the main window. The corners are the
+    /// two bands' overlap, read off the press position, so a corner resizes both ways. Nothing happens while the window
+    /// is maximised, or cannot be resized.
+    /// </summary>
+    public static Panel WithResizeBands(Window window, Control content)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(content);
+        var panel = new Panel();
+        panel.Children.Add(content);
+        foreach (var (horizontal, vertical, width, height) in new (HorizontalAlignment, VerticalAlignment, double, double)[]
+                 {
+                     (HorizontalAlignment.Stretch, VerticalAlignment.Top, double.NaN, EdgeBand),
+                     (HorizontalAlignment.Stretch, VerticalAlignment.Bottom, double.NaN, EdgeBand),
+                     (HorizontalAlignment.Left, VerticalAlignment.Stretch, EdgeBand, double.NaN),
+                     (HorizontalAlignment.Right, VerticalAlignment.Stretch, EdgeBand, double.NaN),
+                 })
+        {
+            var band = new Border
+            {
+                Background = Brushes.Transparent,
+                HorizontalAlignment = horizontal,
+                VerticalAlignment = vertical,
+                Width = width,
+                Height = height,
+                Focusable = false,
+                Tag = ResizeBandTag,
+            };
+            band.PointerMoved += (_, e) =>
+            {
+                var edge = BandEdge(window, e);
+                band.Cursor = edge is { } at ? new Cursor(CursorFor(at)) : Cursor.Default;
+            };
+            band.PointerPressed += (_, e) =>
+            {
+                if (e.GetCurrentPoint(window).Properties.IsLeftButtonPressed && BandEdge(window, e) is { } edge)
+                {
+                    e.Handled = true;
+                    window.BeginResizeDrag(edge, e);
+                }
+            };
+            panel.Children.Add(band);
+        }
+
+        return panel;
+    }
+
+    /// <summary>The <see cref="Control.Tag"/> each band of <see cref="WithResizeBands"/> carries, so a test can find them.</summary>
+    internal const string ResizeBandTag = "resize-band";
+
+    private static WindowEdge? BandEdge(Window window, PointerEventArgs e) =>
+        window is { WindowState: WindowState.Normal, CanResize: true } ? EdgeAt(e.GetPosition(window), window.ClientSize) : null;
 }

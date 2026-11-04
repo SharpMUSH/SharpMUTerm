@@ -11,7 +11,17 @@ namespace SharpMUTerm.Client.Chrome;
 public static class CharacterNames
 {
     /// <summary>What goes between the character and the world.</summary>
-    public const string Separator = " · ";
+    public const string Separator = Core.Text.StatusFormatter.NameSeparator;
+
+    /// <summary>
+    /// A window's name with the character it belongs to ahead of it — <c>Corvid · Chat</c>, the tab title of a window
+    /// that is not the character's own — in the same spelling as the character's name. The window alone without an owner.
+    /// </summary>
+    public static string Window(string? owner, string title)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        return string.IsNullOrEmpty(owner) ? title : owner + Separator + title;
+    }
 
     /// <summary><c>Corvid · Aetherfall</c>; the world alone when there is no character.</summary>
     public static string Display(string world, string? character)

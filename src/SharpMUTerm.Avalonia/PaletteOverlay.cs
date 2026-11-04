@@ -49,6 +49,12 @@ internal sealed class PaletteOverlay : Panel
 
     /// <param name="session">What to list, and where a choice goes.</param>
     /// <param name="remove">Takes the overlay out of the window and gives the keyboard back to the cells.</param>
+    /// <summary>
+    /// What the empty search box says: the surface's name first, as the cell popup's title and the header's search box
+    /// say it, then what can be typed.
+    /// </summary>
+    internal const string Placeholder = NativeHeader.SearchText + " — type a command, a character, a window or a setting";
+
     public PaletteOverlay(PaletteSession session, Action<PaletteOverlay> remove)
     {
         _session = session;
@@ -62,7 +68,7 @@ internal sealed class PaletteOverlay : Panel
 
         _search = new TextBox
         {
-            PlaceholderText = "Type a command, a character, a window or a setting",
+            PlaceholderText = Placeholder,
             FontSize = NativeTokens.Title,
             Margin = new Thickness(14, 14, 14, 6),
             Padding = new Thickness(12, 9),

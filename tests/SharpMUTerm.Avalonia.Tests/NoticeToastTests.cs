@@ -24,6 +24,24 @@ public class NoticeToastTests
     private static NoticeOverlay Overlay(long sequence, string text, NoticeAction? action, Action<string> run, int aboveRow = 8) =>
         new(new NoticeModel(text, NoticeSeverity.Info, "⌥M", action, DateTimeOffset.UnixEpoch, sequence), aboveRow, Palette, run);
 
+    /// <summary>A notice's source is a caption on the toast, not a key chip: a word in a chip reads as a key to press.</summary>
+    [Test]
+    public async Task ASourceIsACaptionAndAKeyIsAChip()
+    {
+        var (labels, words) = await Run((window, view, layer, driver) =>
+        {
+            var notices = (IPointerPresenter)driver.Pointer;
+            notices.Notice(new NoticeOverlay(new NoticeModel("muted.", NoticeSeverity.Info, null, null, DateTimeOffset.UnixEpoch, 1, NoticeModel.Sources.Sound), 8, Palette, _ => { }));
+            notices.Notice(Overlay(2, "nothing to split", null, _ => { }));
+            Drain();
+            return (layer.Toasts.LabelIsChip(), layer.Toasts.DrawnText());
+        }, columns: 80, rows: 20);
+
+        await Assert.That(labels).IsEquivalentTo(new bool?[] { false, true });
+        await Assert.That(words).Contains("Sound");
+        await Assert.That(words).Contains("Alt+M");
+    }
+
     [Test]
     public async Task AToastStacksAboveTheCommandLineAndAClickRunsItsActionWithoutTakingFocus()
     {

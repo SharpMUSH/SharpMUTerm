@@ -1,4 +1,6 @@
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Drivers;
+using SharpConsoleUI.Events;
 using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Client.Surfaces;
 using SharpMUTerm.Core.Commands;
@@ -44,6 +46,107 @@ internal sealed partial class SharpMUTermApp
     /// its chip over the strip's last cells. On every frame, after the paint, beside the header dividers.
     /// </summary>
     private void PaintTabOverflow(SharpConsoleUI.Layout.CharacterBuffer buffer)
+    {
+        try
+        {
+            PaintTabOverflowChips(buffer);
+        }
+        finally
+        {
+            // Published whole, for the driver's input thread (TakesTabOverflowPress), which must not read the dictionary
+            // this frame is rebuilding.
+            _tabOverflowChips = [.. _tabOverflow.Values.Select(o => o.Chip)];
+        }
+    }
+
+    /// <summary>Where every chip is, in desktop cells, as the last frame painted them; replaced whole, read on the input thread.</summary>
+    private volatile PaneRect[] _tabOverflowChips = [];
+
+    /// <summary>
+    /// Takes a left-button frame on a chip away from the framework, on the driver's input thread before the framework's
+    /// own handler sees the same list (it subscribes inside <c>Run()</c>, after this client). The chip is painted over the
+    /// strip's last cells, which can be the tail of a tab the framework <em>did</em> draw — its name or its <c>×</c> — so
+    /// left alone the click that opens the list also selected (or closed) that tab under it. The button flags are struck
+    /// out of the frame, which leaves the framework a pointer movement; this client's own pointer path has its own copy and
+    /// still opens the list. Both hosts deliver mouse frames through this one handler, so both are covered. Internal for tests.
+    /// </summary>
+    internal bool TakesTabOverflowPress(List<MouseFlags> flags, System.Drawing.Point point)
+    {
+        var chips = _tabOverflowChips;
+        if (chips.Length == 0 || !chips.Any(c => Contains(c, point)))
+        {
+            return false;
+        }
+
+        var removed = flags.RemoveAll(f => f is MouseFlags.Button1Pressed or MouseFlags.Button1Released
+            or MouseFlags.Button1Clicked or MouseFlags.Button1DoubleClicked or MouseFlags.Button1TripleClicked
+            or MouseFlags.Button1Dragged);
+        if (removed > 0 && flags.Count == 0)
+        {
+            flags.Add(MouseFlags.ReportMousePosition);
+        }
+
+        return removed > 0;
+    }
+
+    /// <summary>
+    /// The frame a press on a pane's chip leaves for the framework, delivered to that pane's tab strip at every cell of the
+    /// chip, as the framework would deliver it: true when any of them moved the strip's selection or asked to close a tab.
+    /// Internal for tests, for <see cref="SimulatePaneClick"/>'s reason (the framework's mouse path runs only inside
+    /// <c>Run()</c>).
+    /// </summary>
+    internal bool AChipClickReachesTheTabUnderIt(string paneId, bool filtered)
+    {
+        TabControl? tabs;
+        lock (_paneTabsLock)
+        {
+            tabs = _paneTabs.GetValueOrDefault(paneId);
+        }
+
+        if (tabs is null || TabOverflowChipAt(paneId) is not { } chip)
+        {
+            return false;
+        }
+
+        var before = tabs.ActiveTabIndex;
+        var closed = false;
+        void OnClose(object? sender, TabEventArgs e) => closed = true;
+        tabs.TabCloseRequested += OnClose;
+        try
+        {
+            for (var x = chip.X; x < chip.X + chip.Width; x++)
+            {
+                var point = new System.Drawing.Point(x, chip.Y);
+                foreach (var frame in new[] { new List<MouseFlags> { MouseFlags.Button1Pressed }, [MouseFlags.Button1Released, MouseFlags.Button1Clicked] })
+                {
+                    if (filtered)
+                    {
+                        TakesTabOverflowPress(frame, point);
+                    }
+
+                    var local = new System.Drawing.Point(tabs.ActualWidth - (chip.X + chip.Width - x), 0);
+                    tabs.ProcessMouseEvent(new MouseEventArgs(frame, local, point, point, _window));
+                }
+
+                if (tabs.ActiveTabIndex != before || closed)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            tabs.TabCloseRequested -= OnClose;
+            if (tabs.ActiveTabIndex != before)
+            {
+                tabs.ActiveTabIndex = before;
+            }
+        }
+    }
+
+    private void PaintTabOverflowChips(SharpConsoleUI.Layout.CharacterBuffer buffer)
     {
         _tabOverflow.Clear();
         foreach (var (paneId, tabs, _) in RealisedPanes())

@@ -30,8 +30,26 @@ public sealed record NoticeAction(string Command, string Label);
 /// <param name="Action">A command the notice offers, or null. Only the window can offer it as a click.</param>
 /// <param name="At">When it was said, on the client's clock.</param>
 /// <param name="Sequence">Counts the run's notices, so two that say the same thing are still two.</param>
-public sealed record NoticeModel(string Text, NoticeSeverity Severity, string? Key, NoticeAction? Action, DateTimeOffset At, long Sequence)
+/// <param name="Source">
+/// What part of the client spoke when it is not a key (<c>Packages</c>, <c>Map</c>, <c>Sound</c>): a label, drawn as one —
+/// <c>Sound:</c> on the status row, a plain caption on a toast — never in the key chip, where a word read as a chord to
+/// press. A notice carries a <paramref name="Key"/> or a source, not both.
+/// </param>
+public sealed record NoticeModel(string Text, NoticeSeverity Severity, string? Key, NoticeAction? Action, DateTimeOffset At, long Sequence, string? Source = null)
 {
+    /// <summary>The source labels in use, so every notice of one part of the client names it the same way.</summary>
+    public static class Sources
+    {
+        /// <summary>Package installs, the index, removals.</summary>
+        public const string Packages = "Packages";
+
+        /// <summary>The map and a speedwalk.</summary>
+        public const string Map = "Map";
+
+        /// <summary>Game sound and mute.</summary>
+        public const string Sound = "Sound";
+    }
+
     /// <summary>How long a notice holds the status row, and how long a toast stays before it fades.</summary>
     public static readonly TimeSpan Duration = TimeSpan.FromSeconds(6);
 }

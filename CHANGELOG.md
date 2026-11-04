@@ -273,6 +273,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- A character is named one way everywhere: the command line's prompt, the window title and tab titles now read
+  `Corvid · Aetherfall` and `Corvid · Chat` instead of `Corvid@Aetherfall` and `Corvid - Chat`.
+- Messages from packages, the map and sound name where they came from as a label ("Sound: muted.") rather than in the
+  place a shortcut key is shown. The desktop palette's empty search box now starts with "Command palette".
+
 - Desktop window: one look across settings, menus, the command palette and every prompt — the client's own teal
   instead of a stock blue, one set of text sizes and corner radii, and every colour readable on Dark, Light and
   Solarized Dark. The settings panel now has a title bar with a close button, dims the window behind it, and when
@@ -319,6 +324,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   still loading.
 
 ### Fixed
+
+- Desktop window: the settings window can be resized again from any edge, and opens at the size you last left it
+  for the rest of the session. Notification cards disappear as soon as it opens rather than showing beside it.
+- Clicking a tab strip's `+N ▾` no longer also selects (or closes) the tab drawn underneath it.
 
 - The away, new-activity, search and restore bars fit the pane they are in: their rule runs to the pane's edge,
   never past it, and the words shorten before the rule does in a narrow pane. They redraw when the pane is resized.

@@ -51,13 +51,16 @@ internal sealed class SettingsWindow : Window
     private bool _choosing;
     private int _meterRows = -1;
 
+    /// <summary>The size the window first opens at, before the player resizes it.</summary>
+    internal const double DefaultWidth = 960, DefaultHeight = 680;
+
     public SettingsWindow(SettingsForm form)
     {
         _form = form;
         _tokens = TokensFor(form);
         Title = "Settings";
-        Width = 960;
-        Height = 680;
+        Width = DefaultWidth;
+        Height = DefaultHeight;
         MinWidth = 640;
         MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -139,7 +142,10 @@ internal sealed class SettingsWindow : Window
         dock.Children.Add(_sections);
         dock.Children.Add(_scroller);
         _frame = new Border { BorderThickness = new Thickness(1), Child = dock };
-        Content = _frame;
+
+        // The frame is ours, so the resize border is too: a band along each edge, as the borderless main window has.
+        CanResize = true;
+        Content = WindowChrome.WithResizeBands(this, _frame);
 
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());
         Opened += (_, _) =>

@@ -33,7 +33,7 @@ internal readonly record struct TabCost(int NameLength, int TitleLength, int Fix
 /// </para>
 /// <para>
 /// <b>The owner prefix goes first, and goes for everybody.</b> A pane full of one character's captures
-/// repeats <c>Corvid - </c> on every tab, which is the cheapest thing in the strip to lose and the most
+/// repeats <c>Corvid · </c> on every tab, which is the cheapest thing in the strip to lose and the most
 /// there is of it — dropping it is what turns eight tabs that do not fit into eight tabs that nearly do.
 /// It is dropped across the whole strip rather than per tab, so the tabs stay comparable, and what it
 /// said is still said twice over: by the chip the tab is painted on, and by the <c>⌁</c> a window

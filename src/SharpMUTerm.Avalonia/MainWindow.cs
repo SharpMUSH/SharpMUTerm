@@ -90,6 +90,11 @@ internal sealed class MainWindow : Window
         layer.ToastsHidden = () => _driver.Settings.Window is not null || _driver.Palette.Overlay is not null
             || _driver.Modals.Modal is not null || _driver.Modals.Quit is not null;
 
+        // The settings window is a window of its own, so opening or closing it paints no frame here: re-check at once, or
+        // a toast already up stays beside it (seen under Xvfb, where nothing stacks the windows) and one hidden under it
+        // stays hidden after it closes.
+        _driver.Settings.OpenedOrClosed = layer.Sync;
+
         // Panels popped out into windows of their own, owned by this one so they stay above it and go with it.
         _driver.Floating.Attach(this, _view);
         Closed += (_, _) => _driver.Floating.Detach();

@@ -1382,7 +1382,9 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
   it in `SurfaceCatalog.All`, and add its model and action probes to `SurfaceParityTests`, whose coverage guards
   fail until you do.
 - **A notice is a model, drawn as the status row's text in both hosts and as a toast in the window**
-  (`NoticeModel`/`NoticeSeverity`/`NoticeAction`, Client `Chrome/`; `SharpMUTermApp.Notices.cs`; `NoticeToasts`,
+  (`NoticeModel`/`NoticeSeverity`/`NoticeAction`, Client `Chrome/`; a notice carries a chord `Key` *or* a `Source`
+  label from `NoticeModel.Sources` — Packages, Map, Sound — drawn `Sound:` on the row and as a caption on a toast, never
+  in the key chip; a lowercase word passed as `key:` is a test failure; `SharpMUTermApp.Notices.cs`; `NoticeToasts`,
   Avalonia; surface `notice`, `CellsUnderNative`; the `notices` view). `Notice(...)` builds one model per call
   (`Drawing`), draws the row from it with the same markup as before (`NoticeMarkup`; terminal frames are
   byte-identical) and publishes it through `IPointerPresenter.Notice`. Decisions not to relitigate:
@@ -1424,7 +1426,11 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
   painted, and the chip is painted after the frame over the strip's own last (clipped) cells, so no cell, pane or NAWS
   moves. A click opens a native menu in the window (`IPointerPresenter.ShowMenu(cell, MenuModel, dispatch)`) and a cell
   list (`_sendMenu`, digits) in a terminal; each entry is `win:<id>` through `RunTabOverflowEntry`, which refuses what
-  the list did not offer. The keyboard's way to a hidden tab is ⌃P *Go to …* or ⌃N.
+  the list did not offer. The keyboard's way to a hidden tab is ⌃P *Go to …* or ⌃N. **A press on the chip is taken
+  away from the framework** (`TakesTabOverflowPress`, in `OnDriverMouseEvent` on the input thread): the chip can sit
+  over the tail of a tab the framework drew, name or `×`, and the framework (subscribed later, inside `Run()`) would
+  select or close it on the same click. The button flags are struck from the shared list, leaving a movement; the chip
+  rects are a snapshot array published per frame. Both hosts go through that handler (`AClickOnTheChipDoesNotAlso…`).
 - **The composer says how long the post is as sent, and ⌥P shows it** (`ComposerModel.Characters`/`SentLength`, the
   escaped and `%r`-joined command; a MOO edit counts its text). F1 and the docked panel carry the `N chars` cell in both
   hosts; ⌥P toggles an *as sent* band under F1 (`ComposeOverlay.Preview`, run-wide, shared with the native editor via
@@ -1457,7 +1463,9 @@ the terminal still says *no numpad key ever arrives*. F4 and the quick bar print
 **A character is named one way on every surface: `Corvid · Aetherfall`** (Client `CharacterNames`; Tui
 `DisplayName(sessionKey)`, open sessions first, then the configuration, so a dotted world still splits). The quit
 prompt, ⌃P's *acting on*, ⌥M, F10, refusals and notices read it; the dotted session key is an address and is never
-shown. Not changed: tab titles (`Corvid - Chat`) and the prompt's `Corvid@Aetherfall`.
+shown. The prompt (`Corvid · Aetherfall ›`, `StatusFormatter.NameSeparator`, which `CharacterNames.Separator` reads),
+the window title (`Corvid · Aetherfall — SharpMUTerm`) and a tab's owner prefix (`Corvid · Chat`,
+`CharacterNames.Window`) use the same spelling; there is no `@` or ` - ` left (`WindowTitleTests`).
 
 ## Building and testing
 
@@ -1525,7 +1533,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `menu-fuzzy` (`trig sel` typed into ⌃P after a real drag, so the trigger builder's entry is offered — the
   frame showing a two-word fuzzy match highlighted), `menu-recent` (⌃P opened empty after two commands ran
   through the palette's own path, `RunFromPalette` — RECENT at the top, newest first, listed once),
-  `messages`, `notices` (two notices with a refusal between them, the first carrying an action — the window shows them as toasts over the same cells), `quit`, `connections` (**two connections on one world** — the one view where the header's
+  `messages`, `notices` (two notices with a refusal and a `Sound` source notice between them, the first carrying an action — the window shows them as toasts over the same cells), `quit`, `connections` (**two connections on one world** — the one view where the header's
   fraction, the rail's dots and the quit prompt's count are all visible together and all have to agree;
   every other view has at most one character connected per world, which is what hid a header dividing
   connections by *worlds* and a quit prompt reducing them to distinct world names), `characters` (**two
@@ -1827,6 +1835,12 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `SettingsPresenter` on the driver; `OpenSettingsScreen`/`TryOpenNativeSettings` in `SharpMUTermApp.Settings.cs`).
   The terminal, the snapshot, the tests and the parity harness pass null, so their cells do not change. Decisions
   not to relitigate:
+  - **The frame is the window's own** (`WindowDecorations.None`: title, ✕, Esc, drag the title to move), **so is the
+    resize border**: `WindowChrome.WithResizeBands` lays a 5 px band along each edge that begins `BeginResizeDrag`, the
+    main window's rule. The size the player leaves the centred window at is reused for the run
+    (`SettingsPresenter.RememberedSize`, never saved); docked beside the output (trigger builder) is not remembered.
+    Opening or closing it calls `OpenedOrClosed` → `DesktopLayer.Sync`, so toasts hide and return at once (another OS
+    window paints no frame here). Under Xvfb with no window manager `BeginResizeDrag` does nothing; untried under a WM.
   - **Every way in goes through `OpenSettingsScreen`**: the F-key, ⌃P's `screen:` entries and the cell search's ⏎
     (`GoToSetting`). A section with fields goes native and any open cell screen is closed first. A section with
     none is a cell screen as before. In the window's list it carries `↗`, and choosing it calls
@@ -2308,7 +2322,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   draw it in *and* the strip has keyboard focus (which it never has here: focus is pinned to the armed
   command line). Measured: five captures in a split pane drew two tabs and half of a third.
   - **The owner prefix goes first, and goes for the whole strip.** A pane full of one character's
-    captures repeats `Corvid - ` on every tab; it is the cheapest thing there is to lose and the most
+    captures repeats `Corvid · ` on every tab; it is the cheapest thing there is to lose and the most
     there is of it, and what it said is still said twice over — by the chip the tab is painted on, and by
     the `⌁` a window belonging to another character wears. Dropping it alone is often the whole fix.
   - **Then names share by water-filling, not in proportion.** A cap is lowered until the strip fits and

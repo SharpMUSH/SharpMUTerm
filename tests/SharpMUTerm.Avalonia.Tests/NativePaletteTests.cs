@@ -92,6 +92,16 @@ public class NativePaletteTests
         await Assert.That(onTop).IsTrue().Because("nothing native draws over it: it is the root panel's last child");
     }
 
+    /// <summary>The empty search box names the surface as the cell popup's title and the header's search box do.</summary>
+    [Test]
+    public async Task TheSearchBoxSaysCommandPaletteAsTheCellTitleDoes()
+    {
+        var placeholder = await Run(rig => Open(rig).SearchBox.PlaceholderText);
+
+        await Assert.That(placeholder).StartsWith(CommandPalette.Title);
+        await Assert.That(NativeHeader.SearchText).IsEqualTo(CommandPalette.Title);
+    }
+
     [Test]
     public async Task ThePaletteCentresOverTheWholeWindowAndClearsTheNativeHeader()
     {

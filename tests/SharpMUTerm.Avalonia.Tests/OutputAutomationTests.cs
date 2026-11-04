@@ -73,9 +73,9 @@ public class OutputAutomationTests
         var heard = new List<string>();
         bar.Changed += heard.Add;
 
-        bar.Show("Ann@Mush — SharpMUTerm");
+        bar.Show("Ann · Mush — SharpMUTerm");
 
-        await Assert.That(bar.Current).IsEqualTo("Ann@Mush — SharpMUTerm");
-        await Assert.That(heard).IsEquivalentTo(new[] { "Ann@Mush — SharpMUTerm" });
+        await Assert.That(bar.Current).IsEqualTo("Ann · Mush — SharpMUTerm");
+        await Assert.That(heard).IsEquivalentTo(new[] { "Ann · Mush — SharpMUTerm" });
     }
 }

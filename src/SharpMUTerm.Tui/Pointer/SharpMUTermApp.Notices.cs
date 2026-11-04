@@ -50,7 +50,9 @@ internal sealed partial class SharpMUTermApp
         var body = notice.Severity == NoticeSeverity.Warning
             ? $"[{ScreenPalette.Warn}]{Escape(notice.Text)}[/]"
             : $"[dim]{Escape(notice.Text)}[/]";
-        return notice.Key is null ? body : $"[{_ink.Notice}]{Escape(notice.Key)}[/] {body}";
+        // A source is a label (Sound:), a key a chord chip (⌃P): two shapes, so a word is never read as a key to press.
+        return notice.Source is { } source ? $"[{_ink.Notice}]{Escape(source)}:[/] {body}"
+            : notice.Key is null ? body : $"[{_ink.Notice}]{Escape(notice.Key)}[/] {body}";
     }
 
     /// <summary>Hands a notice to a host that draws notices natively; nothing for one that does not.</summary>
@@ -141,8 +143,8 @@ internal sealed partial class SharpMUTermApp
     internal NoticeModel? LastNoticeModel => DrawnModel(SurfaceCatalog.Notice) as NoticeModel;
 
     /// <summary>Says a notice through the real <see cref="Notice"/>, as a test needs one with an action.</summary>
-    internal void SimulateNotice(string text, MessageSeverity severity, string? key, NoticeAction? action) =>
-        Notice(text, severity, key, action);
+    internal void SimulateNotice(string text, MessageSeverity severity, string? key, NoticeAction? action, string? source = null) =>
+        Notice(text, severity, key, action, source);
 }
 
 /// <summary>

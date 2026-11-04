@@ -15,6 +15,9 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal sealed class CommandPalette
 {
+    /// <summary>The surface's name: the popup's title here, and what the window's header search box and native palette say.</summary>
+    internal const string Title = "Command palette";
+
     private readonly ConsoleWindowSystem _system;
     private readonly Func<IReadOnlyList<CommandItem>> _catalog;
     private readonly Func<string?> _context;
@@ -127,7 +130,7 @@ internal sealed class CommandPalette
         // centring first placed the surface as if it were that size — which only became visible once
         // the catalog grew tall enough for the misplacement to push its bottom border off-screen.
         _window = new WindowBuilder(_system)
-            .WithTitle("Command palette")
+            .WithTitle(Title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))

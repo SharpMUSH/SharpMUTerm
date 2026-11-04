@@ -341,7 +341,7 @@ internal abstract class NativeChromeView : Control
 internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 {
     /// <summary>What the search box says. ⌃P lists commands, characters and windows, and settings screens.</summary>
-    internal const string SearchText = "Command palette";
+    internal const string SearchText = CommandPalette.Title;
 
     /// <summary>The prefix's leading word, beside its chord.</summary>
     internal const string PrefixWord = "awaiting a pane key";

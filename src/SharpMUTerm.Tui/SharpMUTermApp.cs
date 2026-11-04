@@ -1902,6 +1902,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 "⌥M",
                 new NoticeAction(Client.Commands.LayoutCommands.Manage, "Change layout"));
             RefusePrefix(PrefixPanel.NoSplitRefusal);
+            Notice("muted.", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Sound);
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
         }
 
@@ -6746,7 +6747,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Refreshes the input region: each bar's character-bound prompt (<c>Corvid@Aetherfall ›</c>) and
+    /// Refreshes the input region: each bar's character-bound prompt (<c>Corvid · Aetherfall ›</c>) and
     /// the status bar (which carries the live character count now that the gutter is gone). The armed
     /// bar's prompt is the bright one and ends in <c>›</c>; the other is dimmed and ends in <c>·</c>,
     /// so which line ⏎ will send is readable without hunting for the caret.
@@ -9114,7 +9115,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (map.WalkTo(room) is { } problem)
         {
-            Notice($"Cannot walk there: {problem}.", key: "map");
+            Notice($"cannot walk there: {problem}.", source: NoticeModel.Sources.Map);
         }
     }
 
@@ -9192,7 +9193,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         RenderMap(MapWindowId(session.SessionKey));
         if (reason is not null)
         {
-            Notice($"Walk {reason}.", MessageSeverity.Info, key: "map");
+            Notice($"walk {reason}.", MessageSeverity.Info, source: NoticeModel.Sources.Map);
         }
     }
 
@@ -12445,6 +12446,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var frame = flags.ToList();
         OnUiThread(() => OnPointerFrame(frame, point));
 
+        // A press on a tab strip's +N ▾ chip opens its list and nothing else: the framework, which reads this same list
+        // after us, is left a pointer movement rather than a click on the tab under the chip.
+        if (TakesTabOverflowPress(flags, point))
+        {
+            return;
+        }
+
         // Overlays own the whole screen while they're up; a drag underneath them would target panes
         // the user can't even see.
         if (AnyOverlayOpen || _moveMode)
@@ -13560,11 +13568,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// A command the notice offers. The status row never draws it (a terminal cell is not a button, and the text
     /// already names the key); a host that draws notices natively offers it as a click (<see cref="NoticeModel"/>).
     /// </param>
-    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null)
+    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null, string? source = null)
     {
         // The same notice raised again while it is still up is one notice: it keeps the row for another few seconds and
         // is not said, toasted or announced a second time. Two identical toasts stacked in the window were the report.
-        if (_notice is not null && _noticeShown is { } shown && shown.Text == text && shown.Key == key
+        if (_notice is not null && _noticeShown is { } shown && shown.Text == text && shown.Key == key && shown.Source == source
             && shown.Severity == NoticeSeverityOf(severity) && shown.Action == action)
         {
             _noticeTimer?.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
@@ -13582,13 +13590,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 _ => LogLevel.Information,
             },
             "{Notice:l}", // :l renders the string literally; the default quotes it, and a quoted sentence reads as data
-            key is null ? text : $"{key} {text}");
+            source is not null ? $"{source}: {text}" : key is null ? text : $"{key} {text}");
 
         AnnounceNotice(text);
         var model = Drawing(
             SurfaceCatalog.Notice,
             string.Empty,
-            new NoticeModel(text, NoticeSeverityOf(severity), key, action, _time.GetUtcNow(), ++_noticeSequence));
+            new NoticeModel(text, NoticeSeverityOf(severity), source is null ? key : null, action, _time.GetUtcNow(), ++_noticeSequence, source));
         var markup = NoticeMarkup(model);
 
         _notice = markup;

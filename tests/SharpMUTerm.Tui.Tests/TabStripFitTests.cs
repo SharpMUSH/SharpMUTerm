@@ -11,13 +11,13 @@ public class TabStripFitTests
 {
     /// <summary>
     /// One tab: <paramref name="name"/> is what it would draw whole, and the part after the last
-    /// <c>" - "</c> is its title — the same split <c>TabTitles.Name</c> makes. <paramref name="extra"/>
+    /// <c>" · "</c> is its title — the same split <c>TabTitles.Name</c> makes. <paramref name="extra"/>
     /// is what the tab spends besides its name; three is the ordinary case (a space either side, and the
     /// separator that follows it).
     /// </summary>
     private static TabCost Tab(string name, bool selected = false, int extra = 3)
     {
-        var at = name.LastIndexOf(" - ", StringComparison.Ordinal);
+        var at = name.LastIndexOf(" · ", StringComparison.Ordinal);
         return new TabCost(name.Length, at >= 0 ? name.Length - at - 3 : name.Length, extra, selected);
     }
 
@@ -28,7 +28,7 @@ public class TabStripFitTests
     [Test]
     public async Task AStripThatFitsIsNotElidedAtAll()
     {
-        var tabs = new[] { Tab("Corvid - Chat"), Tab("Corvid - Public", selected: true) };
+        var tabs = new[] { Tab("Corvid · Chat"), Tab("Corvid · Public", selected: true) };
 
         await Assert.That(Budgets(100, tabs)).IsEquivalentTo(new[] { 13, 15 });
     }
@@ -40,7 +40,7 @@ public class TabStripFitTests
     [Test]
     public async Task AnUnarrangedStripElidesNothing()
     {
-        var tabs = new[] { Tab("Corvid - Chat"), Tab("Corvid - O-Gatecrashers", selected: true) };
+        var tabs = new[] { Tab("Corvid · Chat"), Tab("Corvid · O-Gatecrashers", selected: true) };
 
         await Assert.That(Budgets(0, tabs)).IsEquivalentTo(new[] { 13, 23 });
     }
@@ -55,9 +55,9 @@ public class TabStripFitTests
     {
         var tabs = new[]
         {
-            Tab("Corvid - Chat", selected: true),
-            Tab("Corvid - Public"),
-            Tab("Corvid - Tells"),
+            Tab("Corvid · Chat", selected: true),
+            Tab("Corvid · Public"),
+            Tab("Corvid · Tells"),
         };
 
         // 4 + 6 + 5 names, 9 of frame: the titles fit exactly where the prefixed names could not.
@@ -132,7 +132,7 @@ public class TabStripFitTests
     [Test]
     public async Task NoBudgetIsNegativeOrLongerThanTheNameItIsFor()
     {
-        var tabs = new[] { Tab("A"), Tab("Corvid - B", selected: true), Tab("Corvid - Announcements") };
+        var tabs = new[] { Tab("A"), Tab("Corvid · B", selected: true), Tab("Corvid · Announcements") };
 
         foreach (var width in new[] { 0, 1, 5, 12, 30, 400 })
         {

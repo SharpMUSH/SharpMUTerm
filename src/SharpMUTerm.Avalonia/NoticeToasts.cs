@@ -144,10 +144,18 @@ internal sealed class NoticeToasts : Control
 
     /// <summary>The words each toast draws — its key chip, its text and its action — oldest first. Internal for tests.</summary>
     internal IReadOnlyList<string> DrawnText() =>
-        Layout().SelectMany(l => new[] { ChipText(l.Toast), BodyText(l.Toast), ActionText(l.Toast) }).OfType<string>().ToList();
+        Layout().SelectMany(l => new[] { SourceText(l.Toast), ChipText(l.Toast), BodyText(l.Toast), ActionText(l.Toast) }).OfType<string>().ToList();
+
+    /// <summary>Whether each toast's label is a key chip (true) or a source caption (false), oldest first; null for none. Internal for tests.</summary>
+    internal IReadOnlyList<bool?> LabelIsChip() =>
+        Layout().Select(l => l.Toast.Overlay.Notice.Source is not null ? false : l.Toast.Overlay.Notice.Key is not null ? true : (bool?)null).ToList();
+
+    // A source (Packages, Map, Sound) is a caption over the text, never a chip: in a chip a word reads as a key to press.
+    private static string? SourceText(Toast toast) => toast.Overlay.Notice.Source;
 
     // What a toast says, in the window's words (NativeKeys): the key chip, the text, the action line.
-    private static string? ChipText(Toast toast) => toast.Overlay.Notice.Key is { } key ? NativeKeys.Words(key) : null;
+    private static string? ChipText(Toast toast) =>
+        toast.Overlay.Notice.Source is null && toast.Overlay.Notice.Key is { } key ? NativeKeys.Words(key) : null;
 
     private static string BodyText(Toast toast) => NativeKeys.Words(toast.Overlay.Notice.Text);
 
@@ -220,7 +228,7 @@ internal sealed class NoticeToasts : Control
 
     // ── Layout ───────────────────────────────────────────────────────────────────────────────
 
-    private readonly record struct Placed(Toast Toast, Rect Rect, FormattedText Text, FormattedText? Chip, FormattedText? Action);
+    private readonly record struct Placed(Toast Toast, Rect Rect, FormattedText Text, FormattedText? Chip, FormattedText? Action, FormattedText? Source = null);
 
     private List<Placed> Layout()
     {
@@ -300,9 +308,10 @@ internal sealed class NoticeToasts : Control
         var textWidth = inner - (chip is null ? 0 : chip.Width + 8);
         var text = Format(BodyText(toast), TextSize, ink, bold: false, Math.Max(40, textWidth), lines: 3);
         var action = ActionText(toast) is { } a ? Format(a, ChipSize, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
-        var height = (2 * Padding) + text.Height + (action is null ? 0 : action.Height + 6);
+        var source = SourceText(toast) is { } said ? Format(said.ToUpperInvariant(), ChipSize - 1, PanelText.Parse(palette.Edge(toast.Overlay.Notice.Severity)), bold: true, inner) : null;
+        var height = (2 * Padding) + text.Height + (action is null ? 0 : action.Height + 6) + (source is null ? 0 : source.Height + 2);
         var top = bottom - height;
-        return top < Inset ? null : new Placed(toast, new Rect(x, top, width, height), text, chip, action);
+        return top < Inset ? null : new Placed(toast, new Rect(x, top, width, height), text, chip, action, source);
     }
 
     private static FormattedText Format(string text, double size, Color colour, bool bold, double maxWidth, int lines = 1) =>
@@ -381,7 +390,7 @@ internal sealed class NoticeToasts : Control
     {
         var now = _clock.Elapsed;
         var hovered = HoveredToast();
-        foreach (var (toast, rect, text, chip, action) in Layout())
+        foreach (var (toast, rect, text, chip, action, source) in Layout())
         {
             var palette = toast.Overlay.Palette;
             var plane = PanelText.Parse(palette.Plane);
@@ -404,6 +413,13 @@ internal sealed class NoticeToasts : Control
 
             var x = rect.X + EdgeWidth + Padding;
             var y = rect.Y + Padding;
+            if (source is not null)
+            {
+                // The part of the client that spoke, as a small caption above the text: a label, not a key.
+                context.DrawText(source, new Point(x, y));
+                y += source.Height + 2;
+            }
+
             if (chip is not null)
             {
                 var chipRect = new Rect(x - 3, y + 1, chip.Width + 6, chip.Height);

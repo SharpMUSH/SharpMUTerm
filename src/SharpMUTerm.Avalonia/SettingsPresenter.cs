@@ -23,6 +23,15 @@ internal sealed class SettingsPresenter : INativeSettings
     private SettingsWindow? _window;
     private Border? _scrim;
 
+    /// <summary>Whether the open window is docked beside the output (its size is then the main window's half, not the player's).</summary>
+    private bool _docked;
+
+    /// <summary>The size the player last left the centred window at, kept for the run (never saved); null until they resize it.</summary>
+    internal Size? RememberedSize { get; private set; }
+
+    /// <summary>Called on the window's thread once the settings window has opened or closed, so the main window can re-hide or show what sits under it.</summary>
+    public Action? OpenedOrClosed { get; set; }
+
     /// <summary>The window the settings window belongs to, set once the main window exists.</summary>
     public Window? Owner { get; set; }
 
@@ -48,13 +57,30 @@ internal sealed class SettingsPresenter : INativeSettings
         }
 
         var window = new SettingsWindow(form);
+        if (RememberedSize is { } remembered)
+        {
+            window.Width = remembered.Width;
+            window.Height = remembered.Height;
+        }
+
         Place(window, form);
+
+        // The size the player resizes the centred window to is the size it opens at next time, for the run.
+        window.Resized += (_, e) =>
+        {
+            if (ReferenceEquals(_window, window) && !_docked && window.WindowState == WindowState.Normal
+                && e.ClientSize.Width > 0 && e.ClientSize.Height > 0)
+            {
+                RememberedSize = e.ClientSize;
+            }
+        };
         window.Closed += (_, _) =>
         {
             if (ReferenceEquals(_window, window))
             {
                 _window = null;
                 Unveil();
+                OpenedOrClosed?.Invoke();
             }
 
             // The keyboard goes back to the client, as it does when a cell screen closes.
@@ -71,6 +97,7 @@ internal sealed class SettingsPresenter : INativeSettings
             window.Show();
         }
 
+        OpenedOrClosed?.Invoke();
         return window;
     }
 
@@ -90,6 +117,7 @@ internal sealed class SettingsPresenter : INativeSettings
 
         if (form.BesideOutput)
         {
+            _docked = true;
             Unveil();
             var scale = owner.RenderScaling;
             var size = owner.ClientSize;
@@ -100,6 +128,24 @@ internal sealed class SettingsPresenter : INativeSettings
                 owner.Position.X + (int)Math.Round((size.Width - window.Width) * scale),
                 owner.Position.Y);
             return;
+        }
+
+        // Back from docked beside the output (or first opened): the player's size, centred over the main window.
+        if (_docked || window.WindowStartupLocation == WindowStartupLocation.CenterOwner)
+        {
+            var wasDocked = _docked;
+            _docked = false;
+            var size = RememberedSize ?? new Size(SettingsWindow.DefaultWidth, SettingsWindow.DefaultHeight);
+            window.Width = Math.Max(window.MinWidth, size.Width);
+            window.Height = Math.Max(window.MinHeight, size.Height);
+            if (wasDocked)
+            {
+                var scale = owner.RenderScaling;
+                var client = owner.ClientSize;
+                window.Position = new PixelPoint(
+                    owner.Position.X + (int)Math.Round(Math.Max(0, client.Width - window.Width) / 2 * scale),
+                    owner.Position.Y + (int)Math.Round(Math.Max(0, client.Height - window.Height) / 2 * scale));
+            }
         }
 
         if (_scrim is null && owner.Content is Panel root)

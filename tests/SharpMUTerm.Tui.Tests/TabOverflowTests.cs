@@ -89,6 +89,36 @@ public class TabOverflowTests
         await Assert.That(app.RunTabOverflowEntry("term:quit")).IsFalse();
     }
 
+    /// <summary>
+    /// The chip is painted over the strip's last cells, which can be the tail of a tab the framework drew. A press on it
+    /// opens the list and nothing else: the frame the framework is left (it reads the same list after this client) carries
+    /// no button, so no tab under the chip is selected or closed.
+    /// </summary>
+    [Test]
+    public async Task AClickOnTheChipDoesNotAlsoSelectTheTabUnderIt()
+    {
+        var (app, _) = Crowded();
+        var (paneId, _) = app.TabOverflowMenus.Single();
+        var chip = app.TabOverflowChipAt(paneId)!.Value;
+        var press = new List<MouseFlags> { MouseFlags.Button1Pressed };
+        var click = new List<MouseFlags> { MouseFlags.Button1Released, MouseFlags.Button1Clicked };
+        var at = new System.Drawing.Point(chip.X + 1, chip.Y);
+
+        await Assert.That(app.AChipClickReachesTheTabUnderIt(paneId, filtered: false)).IsTrue()
+            .Because("unfiltered, the framework's own click on the chip's cells lands on the tab drawn under it — the defect");
+
+        await Assert.That(app.TakesTabOverflowPress(press, at)).IsTrue();
+        await Assert.That(app.TakesTabOverflowPress(click, at)).IsTrue();
+        await Assert.That(press.Concat(click).Any(f => f.ToString().StartsWith("Button1", StringComparison.Ordinal))).IsFalse()
+            .Because("the framework is left a movement, not a click");
+        await Assert.That(app.AChipClickReachesTheTabUnderIt(paneId, filtered: true)).IsFalse()
+            .Because("no cell of the chip selects or closes the tab drawn under it");
+
+        var elsewhere = new List<MouseFlags> { MouseFlags.Button1Pressed };
+        await Assert.That(app.TakesTabOverflowPress(elsewhere, new System.Drawing.Point(chip.X - 3, chip.Y))).IsFalse();
+        await Assert.That(elsewhere).Contains(MouseFlags.Button1Pressed).Because("a press beside the chip is the strip's as before");
+    }
+
     [Test]
     public async Task TheCellListNamesEachHiddenTabWithADigit()
     {

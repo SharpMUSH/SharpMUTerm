@@ -152,12 +152,12 @@ public class TelnetLinkClientTests
 
         app.StartTitle();
         app.DispatchCommand(CommandIds.Character("Mush.Ann"));
-        await Assert.That(app.ShownTitle).IsEqualTo("Ann@Mush — SharpMUTerm");
+        await Assert.That(app.ShownTitle).IsEqualTo("Ann · Mush — SharpMUTerm");
 
         app.DispatchCommand(CommandIds.Character("Mush.Bea"));
-        await Assert.That(app.ShownTitle).IsEqualTo("Bea@Mush — SharpMUTerm");
+        await Assert.That(app.ShownTitle).IsEqualTo("Bea · Mush — SharpMUTerm");
         await Assert.That(titles.Shown.Count).IsGreaterThanOrEqualTo(3);
-        await Assert.That(titles.Shown[^2..]).IsEquivalentTo(new[] { "Ann@Mush — SharpMUTerm", "Bea@Mush — SharpMUTerm" });
+        await Assert.That(titles.Shown[^2..]).IsEquivalentTo(new[] { "Ann · Mush — SharpMUTerm", "Bea · Mush — SharpMUTerm" });
     }
 
     [Test]

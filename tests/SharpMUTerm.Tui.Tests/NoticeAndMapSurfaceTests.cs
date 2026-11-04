@@ -53,6 +53,43 @@ public class NoticeAndMapSurfaceTests
         await Assert.That(app.LastNotice).IsEqualTo($"{chip}F5[/] [dim]saved [[x]][/]");
     }
 
+    /// <summary>
+    /// A notice from a part of the client rather than a key (packages, the map, sound) carries a source, drawn as a label
+    /// — <c>Sound:</c> — and never in the key's place, where a word read as a chord to press. No notice in the client
+    /// passes a word as its key any more.
+    /// </summary>
+    [Test]
+    public async Task ASourceIsALabelNotAChord()
+    {
+        await using var app = App();
+        app.RenderSnapshot(null);
+
+        app.SimulateNotice("on.", MessageSeverity.Info, null, null, NoticeModel.Sources.Sound);
+        var model = (NoticeModel?)app.DrawnModel(SurfaceCatalog.Notice);
+
+        await Assert.That(model!.Source).IsEqualTo("Sound");
+        await Assert.That(model.Key).IsNull().Because("a source is not a key");
+        await Assert.That(app.LastNotice).EndsWith("]Sound:[/] [dim]on.[/]");
+
+        var words = Directory.GetFiles(SourceRoot(), "*.cs", SearchOption.AllDirectories)
+            .SelectMany(f => File.ReadAllLines(f).Select(l => (f, l)))
+            .Where(x => System.Text.RegularExpressions.Regex.IsMatch(x.l, "Notice\\(.*key: \"[a-z]"))
+            .Select(x => $"{Path.GetFileName(x.f)}: {x.l.Trim()}")
+            .ToList();
+        await Assert.That(words).IsEmpty().Because("a word as a notice's key reads as a chord; it is a source");
+    }
+
+    private static string SourceRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "SharpMUTerm.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return Path.Combine(dir!.FullName, "src", "SharpMUTerm.Tui");
+    }
+
     /// <summary>The model the row was drawn from is recorded as the notice surface's drawn model, sequence and all.</summary>
     [Test]
     public async Task EachNoticeIsOneModelTheRowIsDrawnFrom()
