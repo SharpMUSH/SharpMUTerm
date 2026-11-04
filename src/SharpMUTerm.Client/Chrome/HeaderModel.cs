@@ -45,6 +45,37 @@ public sealed record HeaderModel(
 
     /// <summary>The log cell as the header words it.</summary>
     public string LogText => Log == LogFormat.None ? "LOG off" : $"LOG {Log.ToString().ToLowerInvariant()}";
+
+    /// <summary>
+    /// While ⌃B is armed, what the next key does — the which-key keymap the cell header's strip abbreviates and the
+    /// panel lists in full; null otherwise. A host drawing its own header shows this in place of the search box.
+    /// </summary>
+    public HeaderPrefix? Prefix { get; init; }
+}
+
+/// <summary>The ⌃B keymap as the header shows it while the prefix is armed.</summary>
+/// <param name="Keys">Every key the prefix answers, in the panel's order.</param>
+/// <param name="Exit">How the prefix is left, as every surface words it.</param>
+public sealed record HeaderPrefix(IReadOnlyList<HeaderPrefixKey> Keys, string Exit)
+{
+    /// <summary>The chord that arms the prefix.</summary>
+    public const string Chord = "⌃B";
+
+    /// <summary>Value equality over the keys, which a record's list member does not give.</summary>
+    public bool Equals(HeaderPrefix? other) =>
+        other is not null && Exit == other.Exit && Keys.SequenceEqual(other.Keys);
+
+    public override int GetHashCode() => HashCode.Combine(Exit, Keys.Count);
+}
+
+/// <summary>One key of the ⌃B keymap.</summary>
+/// <param name="Keys">The key, or keys, as the panel writes them (<c>|</c>, <c>1–9</c>, <c>&lt; &gt;  ← →</c>).</param>
+/// <param name="Title">What it does.</param>
+/// <param name="Blocked">Why it cannot run now, or null when it can.</param>
+public sealed record HeaderPrefixKey(string Keys, string Title, string? Blocked)
+{
+    /// <summary>Whether the key does something now.</summary>
+    public bool Available => Blocked is null;
 }
 
 /// <summary>The world in front, as the header names it.</summary>

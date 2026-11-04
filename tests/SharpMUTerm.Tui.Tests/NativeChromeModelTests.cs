@@ -11,7 +11,7 @@ namespace SharpMUTerm.Tui.Tests;
 
 /// <summary>
 /// The header and the rail as data (<see cref="HeaderModel"/>, <see cref="SidebarModel"/>): the cell chrome is drawn from
-/// the same models a host is handed, the host is told where the header and the rail are, and a click it hands back
+/// the same models a host is handed, the host that draws them is told what they say, and a click it hands back
 /// goes where the same click on the cells goes — and nowhere the client did not offer.
 /// </summary>
 /// <remarks>Serialised: rendering a frame redirects the process-global <c>Console.Out</c>.</remarks>
@@ -46,7 +46,7 @@ public class NativeChromeModelTests
     {
         Console.SetIn(TextReader.Null);
         var pointer = new ChromePresenter();
-        var host = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 32), null, null, _ => { }) with { Pointer = pointer };
+        var host = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 32), null, null, _ => { }) with { Pointer = pointer, Chrome = HostChrome.HeaderAndRail };
         var app = new SharpMUTermApp(DemoScene.Build(), host);
         app.RenderSnapshot(view);
         app.RenderNextFrame();
@@ -86,17 +86,13 @@ public class NativeChromeModelTests
     }
 
     [Test]
-    public async Task TheHostIsToldWhereTheHeaderAndTheRailAre()
+    public async Task TheHostIsToldWhatTheHeaderAndTheRailSay()
     {
         var (app, pointer) = App("characters");
         await using var _app = app;
         var chrome = pointer.Published.Last();
-        await Assert.That(chrome.Shown).IsTrue();
-        await Assert.That(chrome.Header).IsEqualTo(new PaneRect(0, 0, 120, 1));
-        await Assert.That(chrome.Rail.X).IsEqualTo(0);
-        await Assert.That(chrome.Rail.Y).IsEqualTo(1);
-        await Assert.That(chrome.Rail.Width).IsEqualTo(app.RailColumnWidth);
-        await Assert.That(chrome.Rail.Height).IsGreaterThan(10);
+        await Assert.That(chrome.Interactive).IsTrue();
+        await Assert.That(chrome.Drawn).IsEqualTo(HostChrome.HeaderAndRail);
         await Assert.That(chrome.Sidebar).IsEqualTo(app.BuildSidebar());
         await Assert.That(chrome.HeaderModel).IsEqualTo(app.BuildHeaderModel());
 
@@ -107,7 +103,7 @@ public class NativeChromeModelTests
     }
 
     [Test]
-    public async Task TheSearchBoxOpensTheCommandSurfaceAndTheChromeStandsDownUnderIt()
+    public async Task TheSearchBoxOpensTheCommandSurfaceAndTheChromeGoesInertUnderIt()
     {
         var (app, pointer) = App();
         await using var _app = app;
@@ -120,7 +116,7 @@ public class NativeChromeModelTests
         await Assert.That(app.MenuIsOpen).IsTrue();
 
         app.RenderNextFrame();
-        await Assert.That(pointer.Published.Last().Shown).IsFalse().Because("the command surface is drawn over the cells the chrome would cover");
+        await Assert.That(pointer.Published.Last().Interactive).IsFalse().Because("the command surface owns the screen while it is up");
     }
 
     [Test]
@@ -149,12 +145,12 @@ public class NativeChromeModelTests
     }
 
     [Test]
-    public async Task TheChromeStandsDownUnderTheQuitPrompt()
+    public async Task TheChromeGoesInertUnderTheQuitPrompt()
     {
         // The connections scene leaves the quit prompt open over the main window.
         var (app, pointer) = App("connections");
         await using var _app = app;
-        await Assert.That(pointer.Published.Last().Shown).IsFalse();
+        await Assert.That(pointer.Published.Last().Interactive).IsFalse();
     }
 
     [Test]

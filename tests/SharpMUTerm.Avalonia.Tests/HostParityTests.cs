@@ -25,28 +25,42 @@ public partial class HostParityTests
     public static IEnumerable<string> Views() => SnapshotViews.All.Select(v => v ?? "(default)");
 
     /// <summary>
+    /// Every view under both chrome arrangements: the client's chrome in cells (the terminal's, and the window's with
+    /// <c>--cell-chrome</c>), and the header and rail drawn by the host (the window as a person runs it). Both hosts
+    /// are told the same arrangement each time, so the comparison is still of drivers and nothing else, over every
+    /// cell either one draws.
+    /// </summary>
+    public static IEnumerable<(string View, bool HostChrome)> ViewsUnderBothChromes() =>
+        from view in Views()
+        from native in new[] { false, true }
+        select (view, native);
+
+    private static HostChrome ChromeFor(bool native) => native ? HostChrome.HeaderAndRail : HostChrome.None;
+
+    /// <summary>
     /// A view drawn in the window is the view drawn in the terminal, cell for cell. What this catches is the
     /// driver falling behind the framework — a cell it does not store, a write path it does not implement —
     /// for any view, including the next one added (<c>EveryViewTheSnapshotKnowsIsInTheParityList</c>).
     /// </summary>
     [Test]
-    [MethodDataSource(nameof(Views))]
-    public async Task EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal(string name)
+    [MethodDataSource(nameof(ViewsUnderBothChromes))]
+    public async Task EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal(string name, bool hostChrome)
     {
         var view = name == "(default)" ? null : name;
+        var chrome = ChromeFor(hostChrome);
         Console.SetIn(TextReader.Null);
 
         string ansi;
         using (var headless = new HeadlessConsoleDriver(Width, Height))
         {
-            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps));
+            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps) with { Chrome = chrome });
             ansi = terminal.RenderSnapshot(view);
         }
 
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using (var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, RunsInline = true }))
+            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, RunsInline = true }))
         {
             window.RenderSnapshot(view);
         }
@@ -60,12 +74,14 @@ public partial class HostParityTests
     /// above draws every view inline, with no loop, and that is how a ⌃P menu and an F1 composer that the window
     /// drew as empty frames went unnoticed: inline they were whole. The bottom row is left out — a running client
     /// has been through startup, and says on that row that nothing connects at start, where a snapshot never
-    /// started — and so are the views that read the clock, which a loop does and a snapshot pins.
+    /// started — and so are the views that read the clock, which a loop does and a snapshot pins. Drawn with the
+    /// window's own chrome, because that is how a person runs it; the terminal is told the same.
     /// </summary>
     [Test]
     [MethodDataSource(nameof(Views))]
     public async Task EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning(string name)
     {
+        var chrome = HostChrome.HeaderAndRail;
         var view = name == "(default)" ? null : name;
         if (view is "timestamps" or "timestamps-toggled")
         {
@@ -76,14 +92,14 @@ public partial class HostParityTests
         string ansi;
         using (var headless = new HeadlessConsoleDriver(Width, Height))
         {
-            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps));
+            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps) with { Chrome = chrome });
             ansi = terminal.RenderSnapshot(view);
         }
 
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null });
+            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null });
         window.OnUiThread(() => _ = window.RenderSnapshot(view));
         var loop = new Thread(() => window.Run([])) { IsBackground = true };
         loop.Start();

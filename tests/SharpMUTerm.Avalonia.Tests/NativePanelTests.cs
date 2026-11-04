@@ -95,7 +95,7 @@ public class NativePanelTests
         foreach (var view in new[] { "layout-roleplay", "layout-combat" })
         {
             using var headless = new HeadlessConsoleDriver(140, 36);
-            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, WindowOptions.Capabilities));
+            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, WindowOptions.Capabilities) with { Chrome = HostChrome.HeaderAndRail });
             terminal.RenderSnapshot(view);
 
             using var driver = new AvaloniaConsoleDriver(140, 36);

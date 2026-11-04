@@ -103,6 +103,13 @@ internal sealed class TerminalView : Control
     internal AvaloniaConsoleDriver Driver => _driver;
 
     /// <summary>
+    /// Whether the client's header is the cells' first row, so a blank cell there moves the window as a title bar
+    /// would. False when the window draws the header itself (<see cref="NativeHeader"/>): the first row is then a
+    /// pane's tab strip, whose blank run is the client's and never a handle.
+    /// </summary>
+    internal bool CellsHoldHeader { get; set; } = true;
+
+    /// <summary>
     /// Raised on the window's thread after a new frame is taken for painting, and when the cell size or the view's
     /// size changes: when anything placed over cells may need to move.
     /// </summary>
@@ -393,13 +400,13 @@ internal sealed class TerminalView : Control
             return false;
         }
 
-        if (window.WindowState == WindowState.Normal && WindowChrome.EdgeAt(position, Bounds.Size) is { } edge)
+        if (EdgeAt(position) is { } edge)
         {
             window.BeginResizeDrag(edge, e);
             return true;
         }
 
-        if (!emptyChrome && !WindowChrome.IsMoveHandle(_driver.Frame, Cell(position)))
+        if (!emptyChrome && (!CellsHoldHeader || !WindowChrome.IsMoveHandle(_driver.Frame, Cell(position))))
         {
             return false;
         }
@@ -415,6 +422,36 @@ internal sealed class TerminalView : Control
             window.BeginMoveDrag(e);
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// The window edge a pointer at <paramref name="position"/> (in this view's coordinates, which may lie outside it —
+    /// a native view beside the cells asks with its own pointer) would resize, or null. Measured against the
+    /// <em>window</em>: the view does not reach the window's top or left edge when the window draws its own header
+    /// and sidebar there.
+    /// </summary>
+    private WindowEdge? EdgeAt(Point position) =>
+        Undecorated is { WindowState: WindowState.Normal } window && this.TranslatePoint(position, window) is { } inWindow
+            ? WindowChrome.EdgeAt(inWindow, window.ClientSize)
+            : null;
+
+    /// <summary>The resize cursor for a native view's pointer over a window edge, or null when it is not over one.</summary>
+    internal StandardCursorType? EdgeCursorFromChrome(PointerEventArgs e) =>
+        EdgeAt(e.GetPosition(this)) is { } edge ? WindowChrome.CursorFor(edge) : null;
+
+    /// <summary>
+    /// A left press on a native view beside the cells that lands in the window's resize band: begins the resize, as a
+    /// press on a cell there does. Returns false off the band, and with a title bar.
+    /// </summary>
+    internal bool ResizeFromChrome(PointerPressedEventArgs e)
+    {
+        if (Undecorated is not { } window || EdgeAt(e.GetPosition(this)) is not { } edge)
+        {
+            return false;
+        }
+
+        window.BeginResizeDrag(edge, e);
         return true;
     }
 
@@ -435,7 +472,7 @@ internal sealed class TerminalView : Control
     /// </summary>
     private void UpdateCursor(Point position)
     {
-        var edge = Undecorated is { WindowState: WindowState.Normal } && !_mouse.IsHeld ? WindowChrome.EdgeAt(position, Bounds.Size) : null;
+        var edge = !_mouse.IsHeld ? EdgeAt(position) : null;
         var cursor = edge is { } e ? WindowChrome.CursorFor(e)
             : _scrollDrag is not null || _barHovered is not null ? StandardCursorType.Arrow
             : CursorFor(_target.Shape);

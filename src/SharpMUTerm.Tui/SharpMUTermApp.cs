@@ -838,6 +838,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _header.FocusedLinkBackgroundColor = ToColor(new Rgb(brand.R, brand.G, brand.B));
         _header.FocusedLinkForegroundColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: true));
 
+        // A host that draws the header (the window) gets no header row at all: hidden, a sticky band takes no row,
+        // so the workspace starts at row 0 and every count of the chrome below follows (ChromeRows).
+        _header.Visible = !host.Chrome.Header;
+
         var main = NewPaneControl(MainWindowId);
 
         // The connection rail (worlds → characters → windows) sits left of the pane area, joined by
@@ -950,7 +954,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // *old* window's arranged rectangles — the new ones don't exist until the next frame is
             // laid out — so a report made here would announce a size that was already wrong. The
             // repaint this resize forces reports them once they are real; see ReportPaneSizes.
-            _header.SetContent(new List<string> { HeaderMarkup() }); // re-align the status cluster to the new width
+            RefreshHeader(); // re-align the status cluster to the new width
             SyncInputWidth(); // keep the input band spanning the full row after a resize
             SyncInputBars();  // and re-derive how tall the bars may grow in the new window
         };
@@ -1801,7 +1805,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (string.Equals(view, "prefix-panel", StringComparison.OrdinalIgnoreCase))
         {
             _prefixArmed = true;
-            _header.SetContent(new List<string> { HeaderMarkup() });
+            RefreshHeader();
             _prefixPanel.Open();
         }
 
@@ -1915,7 +1919,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (_config.Worlds.ElementAtOrDefault(1) is { Characters.Count: > 0 } second)
             {
                 _demoConnectedKeys.Add($"{second.Name}.{second.Characters[0].Name}");
-                _header.SetContent(new List<string> { HeaderMarkup() }); // the band counts them: 2/3
+                RefreshHeader(); // the band counts them: 2/3
             }
 
             _input.SetAndNotify("say back in a moment — kettle's on");
@@ -2344,7 +2348,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // would read "utf-8 forced" and a server that never negotiated "utf-8 assumed".
         _demoEncoding = new SessionEncoding(Encoding.UTF8, EncodingSource.Negotiated);
         _statusBar.SetContent(new List<string> { StatusBarMarkup("Corvid", "connected") });
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
         _input.SetAndNotify("say hello there");
         RebuildPaneArea(); // realise the Chat spawn tab, then refresh badges
     }
@@ -5647,7 +5651,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// on the first frame too, and nothing has been arranged yet when the window is built.
     /// </summary>
     private int ChromeRows() =>
-        InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth())
+        // No row for a header the host draws: it is not in the cells, so the bars may have the row it would take.
+        (_header.Visible ? InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth()) : 0)
         + InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth())
         // One, not WrappedRows: the prompt row is elided to a single row by construction, precisely so
         // that a long prompt cannot take a second row off the panes. See PromptRowRenderer.
@@ -8044,6 +8049,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var lines = RenderRailLines();
         _rail.SetContent(lines);
         ApplyRailWidth(RailWidth(lines));
+        PublishHostChrome(); // a rail the host draws has no cell to repaint (RefreshHeader's reason)
     }
 
     /// <summary>
@@ -9351,7 +9357,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _palette.Toggle();
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
     }
 
     /// <summary>
@@ -10152,6 +10158,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Stretch (control default is Left) so the window arranges the whole row at the full console
         // width; without it the row floats at content width and the Flex pane column can't claim the
         // space to the right edge. (SharpConsoleUI docs/patterns.md — sidebar+content layouts.)
+        // A host that draws the rail itself (the window) gets the pane area alone: no rail column, no divider and no
+        // spacer, so the panes start at column 0 and are as wide as the cells really are — which is what NAWS reports.
+        if (Host.Chrome.Rail)
+        {
+            _railColumn = null;
+            return Controls.HorizontalGrid()
+                .WithAlignment(HorizontalAlignment.Stretch)
+                .WithVerticalAlignment(VerticalAlignment.Fill)
+                .Column(c => c.Flex(1).Add(paneArea))
+                .Build();
+        }
+
         var row = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
@@ -10594,6 +10612,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return _railCollapsed
             ? RailRenderer.RenderCollapsed(rows, _ink)
             : RailRenderer.Render(rows, RailMaxWidth - RailMargin, _ink);
+    }
+
+    /// <summary>
+    /// Folds the rail to its narrow strip, or opens it again: ⌃B b, and the native sidebar's own fold button. With the
+    /// rail in the cells that is a rebuild of the row it shares with the panes; with the rail the host's, the cells do
+    /// not change at all and only the host is told — its sidebar narrows, and the cell grid it hands the driver widens.
+    /// </summary>
+    private void ToggleRail()
+    {
+        _railCollapsed = !_railCollapsed;
+        RebuildPaneArea();
+        PublishHostChrome();
     }
 
     /// <summary>The narrowest the expanded sidebar goes, so a sparse rail still reads as a column.</summary>
@@ -11047,7 +11077,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _prefixArmed = true;
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
         _prefixTimer ??= _time.CreateTimer(
             _ => OnUiThread(ShowPrefixPanel), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _prefixTimer.Change(PrefixPanelDelay, Timeout.InfiniteTimeSpan);
@@ -11068,7 +11098,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _prefixArmed = false;
         _prefixTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _prefixPanel.Close();
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
     }
 
     /// <summary>
@@ -11799,8 +11829,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 break;
 
             case 'b':
-                _railCollapsed = !_railCollapsed;
-                RebuildPaneArea();
+                ToggleRail();
                 break;
 
             case '<':
@@ -13296,7 +13325,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var character = session.Character?.Name ?? session.World.Name;
         _statusIdentity = (character, session.World.Host, session.World.Port, session.State.ToString().ToLowerInvariant());
         RefreshStatusBar();
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
         RefreshRail();
     }
 
@@ -13306,7 +13335,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// connected fraction reading the old denominator until the next connect or disconnect happened to
     /// repaint it.
     /// </summary>
-    private void RefreshHeader() => _header.SetContent(new List<string> { HeaderMarkup() });
+    private void RefreshHeader()
+    {
+        _header.SetContent(new List<string> { HeaderMarkup() });
+
+        // A host that draws the header itself has no cell of it to repaint, so a change that moves no cell (⌃B
+        // armed, a world connecting) might paint no frame and the host would not hear of it on PostBufferPaint.
+        PublishHostChrome();
+    }
 
     /// <summary>
     /// The design header row: the brand affordance on the left, the active world (with its accent)
@@ -13353,7 +13389,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ConfiguredConnections(),
             _config.Worlds.Count > 0,
             HeaderLogFormat(),
-            _prefixArmed);
+            _prefixArmed)
+        {
+            Prefix = _prefixArmed
+                ? new HeaderPrefix(
+                    [.. PrefixPanel.Entries(PrefixFactsNow()).Select(e => new HeaderPrefixKey(e.Keys, e.Title, e.Blocked))],
+                    "Esc cancels")
+                : null,
+        };
     }
 
     /// <summary>The header row's markup, drawn from <paramref name="model"/> and nothing else it could disagree with.</summary>

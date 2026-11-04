@@ -31,7 +31,13 @@ internal static class WindowHost
         Reserved = [Maximise, .. Paste],
     };
 
-    public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard) => new()
+    /// <param name="driver">The window's driver.</param>
+    /// <param name="clipboard">Where a copy goes.</param>
+    /// <param name="chrome">
+    /// Which chrome the window draws natively. The header and the rail by default, which is the window a person runs;
+    /// <see cref="HostChrome.None"/> for <c>--render-png</c> and <c>--cell-chrome</c>, where the cells carry it all.
+    /// </param>
+    public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard, HostChrome? chrome = null) => new()
     {
         Name = "window",
         Driver = driver,
@@ -59,5 +65,9 @@ internal static class WindowHost
 
         // F7 and F8 open a native settings window generated from their declarations; the rest stay cell screens.
         NativeSettings = driver.Settings,
+
+        // The header band and the connections sidebar are the window's own controls, beside the cell grid rather
+        // than over it (MainWindow, DesktopLayer): the client draws neither.
+        Chrome = chrome ?? HostChrome.HeaderAndRail,
     };
 }

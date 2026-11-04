@@ -23,8 +23,15 @@ internal sealed record WindowOptions(
     string? RenderPng,
     int Columns,
     int Rows,
-    bool TitleBar = false)
+    bool TitleBar = false,
+    bool CellChrome = false)
 {
+    /// <summary>
+    /// Which chrome the window draws natively: the header and the sidebar, unless <c>--cell-chrome</c> asked for the
+    /// terminal's cells or this is <c>--render-png</c>, which draws cells and nothing native.
+    /// </summary>
+    public HostChrome Chrome => CellChrome || RenderPng is not null ? HostChrome.None : HostChrome.HeaderAndRail;
+
     /// <summary>
     /// What the client is told about this "terminal": Kitty graphics and truecolour. Both are true by
     /// construction — this driver is the thing drawing the pixels — so nothing is probed.
@@ -39,6 +46,7 @@ internal sealed record WindowOptions(
         var points = 14f;
         var demo = false;
         var titleBar = false;
+        var cellChrome = false;
         var (columns, rows) = (120, 36);
         for (var i = 0; i < args.Length; i++)
         {
@@ -55,6 +63,7 @@ internal sealed record WindowOptions(
                     break;
                 case "--demo-config": demo = true; break;
                 case "--title-bar": titleBar = true; break;
+                case "--cell-chrome": cellChrome = true; break;
                 case WindowHandoff.Flag: break; // already in a window
                 case "--view": view = Next(); break;
                 case "--theme": theme = Next(); break;
@@ -70,7 +79,7 @@ internal sealed record WindowOptions(
             }
         }
 
-        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar);
+        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome);
     }
 
     /// <summary>Applies <c>--theme</c>, the way the snapshot does: name and inline theme both.</summary>
@@ -118,8 +127,10 @@ internal sealed record WindowOptions(
                 new("--font <family>", "Monospace font (default: the first installed Nerd Font, then Cascadia, Consolas…)."),
                 new("--font-size <pt>", "Font size (default 14)."),
                 new("--size <WxH>", "The window's first size in cells, and the grid for --render-png (default 120x36)."),
-                new("--title-bar", "Keep the system title bar. Without it, drag the blank part of the top row",
+                new("--title-bar", "Keep the system title bar. Without it, drag the blank part of the header",
                     "to move the window, double-click it to maximise, and drag an edge to resize."),
+                new("--cell-chrome", "Draw the header and the connections sidebar in cells, as the terminal does,",
+                    "instead of as the window's own controls."),
             ]),
             ("Demo:",
             [

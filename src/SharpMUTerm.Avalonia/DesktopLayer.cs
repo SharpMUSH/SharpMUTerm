@@ -13,11 +13,12 @@ using SkiaSharp;
 namespace SharpMUTerm.Avalonia;
 
 /// <summary>
-/// The window's native views, in a layer over the <see cref="TerminalView"/>: header buttons, and native panels
-/// drawn over the panes the client says hold them. The client's cells are painted underneath exactly as in a
-/// terminal — nothing here takes a cell, moves a pane or changes what any world is told about its pane's size —
-/// so this layer is the window's presentation of the same frame, and the terminal-and-window parity, which
-/// compares cells, does not see it.
+/// The window's native views, in a layer over the whole window: the header band and the connections sidebar beside
+/// the <see cref="TerminalView"/> (when the window draws them, <see cref="HostChrome"/>), the header buttons, and
+/// native panels drawn over the panes the client says hold them. The header and the sidebar have no cells under
+/// them — the client leaves no row or column for them, and this layer moves the view out of their way
+/// (<see cref="NativeLayout"/>) — while a panel sits over its pane's cells, which are painted underneath exactly as in
+/// a terminal, so nothing a panel does takes a cell, moves a pane or changes what any world is told.
 /// <para>
 /// <b>Input.</b> The layer itself has no background and so is never hit: a pointer anywhere it draws nothing goes
 /// to the view, and on to the client, as before. A header button is the window's alone — its press, release,
@@ -37,6 +38,7 @@ internal sealed class DesktopLayer : Canvas
 
     private readonly TerminalView _view;
     private readonly WindowPointer _pointer;
+    private readonly HostChrome _chrome;
     private readonly Dictionary<string, HeaderButton> _buttons = new(StringComparer.Ordinal);
     private readonly Dictionary<string, VitalsGauges> _gauges = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MapCanvas> _maps = new(StringComparer.Ordinal);
@@ -45,10 +47,17 @@ internal sealed class DesktopLayer : Canvas
     private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
 
-    public DesktopLayer(TerminalView view)
+    /// <param name="view">The cells.</param>
+    /// <param name="chrome">
+    /// Which chrome the window draws: the same value the client was told (<see cref="ClientHost.Chrome"/>), so the part
+    /// the client leaves out of the cells is the part this layer draws, and nothing is drawn twice or not at all.
+    /// </param>
+    public DesktopLayer(TerminalView view, HostChrome chrome)
     {
         _view = view;
+        _chrome = chrome;
         _pointer = view.Driver.Pointer;
+        _view.CellsHoldHeader = !chrome.Header;
         ClipToBounds = true;
         _pointer.ActionsChanged += () => Dispatcher.UIThread.Post(Sync);
         _pointer.PanelsChanged += () => Dispatcher.UIThread.Post(Sync);
@@ -60,7 +69,30 @@ internal sealed class DesktopLayer : Canvas
         Children.Add(_header);
         Children.Add(_sidebar);
         _view.Repainted += Sync;
+        SyncInsets(collapsed: false);
         Sync();
+    }
+
+    /// <summary>Which chrome this layer draws. Internal for tests.</summary>
+    internal HostChrome Chrome => _chrome;
+
+    /// <summary>
+    /// Where the cells start in this layer: past the native header and sidebar. Every view placed over cells is placed
+    /// from here, so a panel sits on its pane however wide the sidebar is.
+    /// </summary>
+    internal Point CellOrigin => new(_view.Margin.Left, _view.Margin.Top);
+
+    /// <summary>
+    /// Moves the cells out of the way of the native header and sidebar: the view's margin is their size, so the view —
+    /// and the grid it hands the driver, and so every pane the client lays out — is what is left of the window.
+    /// </summary>
+    private void SyncInsets(bool collapsed)
+    {
+        var insets = NativeLayout.Insets(_chrome, collapsed);
+        if (_view.Margin != insets)
+        {
+            _view.Margin = insets;
+        }
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
@@ -98,52 +130,52 @@ internal sealed class DesktopLayer : Canvas
     {
         var frame = _view.Driver.Frame;
         var cell = _view.CellExtent;
+        SyncChrome();
         SyncButtons(frame, cell);
         SyncPanels(frame, cell);
-        SyncChrome(frame, cell);
     }
 
     /// <summary>
-    /// The native header and sidebar over the cells the client says hold them, each painting the plane read off its
-    /// own cells. Neither is drawn while another of the client's windows is in front (it would paint over it), the
-    /// header not while ⌃B is armed (the cells then say what the next key does), the sidebar not while collapsed.
+    /// The native header across the top and the sidebar down the left, when the window draws them — always, a modal in
+    /// front included: the client draws its modals in the cells, which no longer reach under either, so the chrome
+    /// stays where a desktop app's stays and only goes inert (<see cref="ChromeOverlay.Interactive"/>). ⌃B armed is said
+    /// by the header itself, and a collapsed rail is the sidebar's slim strip.
     /// </summary>
-    private void SyncChrome(ScreenFrame frame, Size cell)
+    private void SyncChrome()
     {
         var chrome = _pointer.Chrome;
-        var ink = Colour(_view.Renderer.DefaultForeground);
-        Cover(_header, chrome, chrome is { Shown: true, HeaderModel.PrefixArmed: false } ? chrome.Header : default, frame, cell, ink, header: true);
-        Cover(_sidebar, chrome, chrome is { Shown: true, Sidebar.Collapsed: false } ? chrome.Rail : default, frame, cell, ink, header: false);
+        SyncInsets(chrome?.Sidebar.Collapsed ?? false);
+        var width = Bounds.Width;
+        var height = Bounds.Height;
+        var top = _chrome.Header ? NativeLayout.HeaderHeight : 0;
+
+        // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above the header.
+        _header.ReserveRight = _chrome.Header
+            ? (_pointer.Actions.Count * (NativeLayout.ButtonSize + NativeLayout.ButtonGap)) + WindowChrome.EdgeBand + 4
+            : 0;
+
+        // Before the client has said anything the bands are drawn empty, on the view's own colours, so a window never
+        // opens with a hole where its header will be.
+        var ink = chrome is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(chrome.Palette.Ink);
+        Place(_header, _chrome.Header, new Rect(0, 0, width, NativeLayout.HeaderHeight), chrome,
+            chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.HeaderPlane), ink);
+        Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top)), chrome,
+            chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane), ink);
     }
 
-    private void Cover(NativeChromeView view, ChromeOverlay? chrome, PaneRect rect, ScreenFrame frame, Size cell, Color ink, bool header)
+    private static void Place(NativeChromeView view, bool drawn, Rect area, ChromeOverlay? chrome, Color plane, Color ink)
     {
-        var inside = rect.Width > 0 && rect.Height > 0 && rect.X >= 0 && rect.Y >= 0
-            && rect.X + rect.Width <= frame.Width && rect.Y + rect.Height <= frame.Height;
-        if (chrome is null || !inside)
+        if (!drawn || area.Width <= 0 || area.Height <= 0)
         {
             view.IsVisible = false;
             return;
         }
 
-        SetLeft(view, rect.X * cell.Width);
-        SetTop(view, rect.Y * cell.Height);
-        view.Width = rect.Width * cell.Width;
-        view.Height = rect.Height * cell.Height;
-        if (view is NativeHeader nativeHeader)
-        {
-            // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above this view.
-            nativeHeader.ReserveRight = (_pointer.Actions.Count * ButtonCells * cell.Width) + WindowChrome.EdgeBand;
-        }
-        else if (view is NativeSidebar sidebar)
-        {
-            sidebar.SetCellHeight(cell.Height);
-        }
-
-        // The plane is read off the last cell of the rectangle's first row: the header's right end and the rail's
-        // margin column are blank in every state, so the colour is the band's own and not a segment's fill.
-        var plane = _view.Renderer.Background(frame[rect.X + rect.Width - 1, rect.Y]);
-        view.Show(chrome, Colour(plane), ink);
+        SetLeft(view, area.X);
+        SetTop(view, area.Y);
+        view.Width = area.Width;
+        view.Height = area.Height;
+        view.Show(chrome, plane, ink);
         view.IsVisible = true;
     }
 
@@ -156,6 +188,7 @@ internal sealed class DesktopLayer : Canvas
             _buttons.Remove(stale);
         }
 
+        var origin = CellOrigin;
         for (var i = 0; i < actions.Count; i++)
         {
             var action = actions[i];
@@ -167,6 +200,21 @@ internal sealed class DesktopLayer : Canvas
                 ToolTip.SetTip(button, action.Hint is { } hint ? $"{action.Label} ({hint})" : action.Label);
                 _buttons[action.Id] = button;
                 Children.Add(button);
+            }
+
+            if (_chrome.Header)
+            {
+                // In the window's own header: right to left from its end, clear of the resize band, on its plane.
+                var side = NativeLayout.ButtonSize;
+                button.Width = side;
+                button.Height = side;
+                SetLeft(button, Bounds.Width - WindowChrome.EdgeBand - 4 - ((i + 1) * (side + NativeLayout.ButtonGap)) + NativeLayout.ButtonGap);
+                SetTop(button, Math.Round((NativeLayout.HeaderHeight - side) / 2));
+                var said = _pointer.Chrome;
+                button.Ink = said is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(said.Palette.Ink);
+                button.Plane = said is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(said.Palette.HeaderPlane);
+                button.IsVisible = Bounds.Width > 0;
+                continue;
             }
 
             // Right to left from the header's end, one slot of blank cells each. Shown only while every cell of
@@ -187,8 +235,8 @@ internal sealed class DesktopLayer : Canvas
             var size = Math.Max(8, Math.Min(cell.Height + 2, right - ((first + 0.6) * cell.Width)));
             button.Width = size;
             button.Height = Math.Max(4, cell.Height - 2);
-            SetLeft(button, right - size);
-            SetTop(button, 1);
+            SetLeft(button, origin.X + right - size);
+            SetTop(button, origin.Y + 1);
             var behind = _view.Renderer.Background(frame[frame.Width - 1, 0]);
             button.Ink = Colour(_view.Renderer.DefaultForeground);
             button.Plane = Colour(behind);
@@ -260,8 +308,9 @@ internal sealed class DesktopLayer : Canvas
             }
 
             var rect = panel.Rect;
-            SetLeft(control, rect.X * cell.Width);
-            SetTop(control, rect.Y * cell.Height);
+            var origin = CellOrigin;
+            SetLeft(control, origin.X + (rect.X * cell.Width));
+            SetTop(control, origin.Y + (rect.Y * cell.Height));
             control.Width = rect.Width * cell.Width;
             control.Height = rect.Height * cell.Height;
 
@@ -380,4 +429,40 @@ internal sealed class HeaderButton : Control
         var middle = Math.Round(y + (h / 2)) + 0.5;
         context.DrawLine(pen, new Point(split, middle), new Point(x + w, middle));
     }
+}
+
+/// <summary>
+/// How big the window's own chrome is, in logical pixels: the header band across the top and the sidebar down the
+/// left, each the size of a desktop app's rather than a cell's. The client is told only that it draws neither
+/// (<see cref="HostChrome"/>); the sizes are the window's, and the cell grid is the rest of the window.
+/// </summary>
+internal static class NativeLayout
+{
+    /// <summary>The header band's height.</summary>
+    public const double HeaderHeight = 42;
+
+    /// <summary>The sidebar's width, open.</summary>
+    public const double SidebarWidth = 232;
+
+    /// <summary>The sidebar's width folded to its strip (⌃B b, or its own fold button).</summary>
+    public const double SidebarSlim = 48;
+
+    /// <summary>
+    /// The sidebar's breathing room before the panes: its own plane carried a few pixels on, so a pane's first column
+    /// of text does not sit hard against the sidebar's edge. Part of the sidebar, never of a pane, so it costs no cell.
+    /// </summary>
+    public const double SidebarGutter = 8;
+
+    /// <summary>A header button's side.</summary>
+    public const double ButtonSize = 30;
+
+    /// <summary>The gap between two header buttons.</summary>
+    public const double ButtonGap = 6;
+
+    /// <summary>The cells' margin in the window: the space the native header and sidebar take.</summary>
+    public static Thickness Insets(HostChrome chrome, bool collapsed) => new(
+        chrome.Rail ? (collapsed ? SidebarSlim : SidebarWidth) + SidebarGutter : 0,
+        chrome.Header ? HeaderHeight : 0,
+        0,
+        0);
 }

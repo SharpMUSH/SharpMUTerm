@@ -99,6 +99,14 @@ internal sealed record ClientHost
     public required INativeSettings? NativeSettings { get; init; }
 
     /// <summary>
+    /// Which of the client's chrome the host draws itself, outside the cells (<see cref="HostChrome"/>). The client
+    /// draws no cell for a part the host draws: no header row when <see cref="HostChrome.Header"/>, no rail column
+    /// when <see cref="HostChrome.Rail"/>, so the cell grid the host hands the driver is only what is left. None in
+    /// the terminal, the snapshot and the tests, so their frames are the ones they always were.
+    /// </summary>
+    public required HostChrome Chrome { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -136,6 +144,7 @@ internal sealed record ClientHost
         Announcer = null,
         ScreenIsSeen = true,
         NativeSettings = null,
+        Chrome = HostChrome.None,
     };
 
     /// <summary>
@@ -159,6 +168,7 @@ internal sealed record ClientHost
         Announcer = null,
         ScreenIsSeen = true,
         NativeSettings = null,
+        Chrome = HostChrome.None,
     };
 
     /// <summary>
@@ -208,4 +218,25 @@ internal sealed record ClientHost
             Audio = null, // a test never makes a noise
             Presence = null, // nor talks to Discord
         };
+}
+
+/// <summary>
+/// The parts of the client's chrome a host draws with its own controls, outside the cell grid. The space they take is
+/// the host's business, in its own units (the window's header is 42 pixels, not a row): the client is told only
+/// that the part is not its to draw, and leaves no cell for it. So nothing is drawn twice, nothing native sits over a
+/// cell it hides, and every count the client makes of its own rows — the input-height veto, the layout, the pane
+/// rectangles and therefore NAWS — is made over the cells that really exist.
+/// </summary>
+/// <param name="Header">The host draws the header band (the client's first row).</param>
+/// <param name="Rail">The host draws the connection rail (the client's left column, with its divider and spacer).</param>
+internal sealed record HostChrome(bool Header, bool Rail)
+{
+    /// <summary>The client draws all of its chrome in cells: the terminal, the snapshot, the tests.</summary>
+    public static HostChrome None { get; } = new(false, false);
+
+    /// <summary>The host draws the header and the rail natively: the desktop window.</summary>
+    public static HostChrome HeaderAndRail { get; } = new(true, true);
+
+    /// <summary>Whether the host draws anything at all.</summary>
+    public bool Any => Header || Rail;
 }

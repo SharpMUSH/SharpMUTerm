@@ -50,11 +50,12 @@ internal sealed class MainWindow : Window
             app.RequestedThemeVariant = luma < 128 ? ThemeVariant.Dark : ThemeVariant.Light;
         }
 
-        // No title bar: the client's own header is the top of the window, as it is the top of a terminal. The
-        // border stays, and the header's blank cells move the window (WindowChrome). --title-bar brings it back.
+        // No title bar: the header is the top of the window — the window's own (NativeHeader), or the client's cells
+        // with --cell-chrome. The border stays, and the header's empty space moves the window (WindowChrome).
+        // --title-bar brings it back.
         WindowDecorations = options.TitleBar ? WindowDecorations.Full : WindowDecorations.BorderOnly;
         Background = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
-        // The view fills the window; the screen-reader regions sit under it, unseen.
+        // The view fills the window past the native chrome; the screen-reader regions sit under it, unseen.
         var root = new Panel();
         foreach (var region in _driver.Announcer.Regions())
         {
@@ -63,11 +64,16 @@ internal sealed class MainWindow : Window
 
         root.Children.Add(_view);
 
-        // The window's native views over the cells: the header's Layouts button and native panels (DesktopLayer).
-        root.Children.Add(new DesktopLayer(_view));
+        // The window's native views: the header band and the connections sidebar beside the cells (the layer moves the
+        // view out of their way, so no cell lies under either), the Layouts button, and native panels over their panes.
+        root.Children.Add(new DesktopLayer(_view, options.Chrome));
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
-        var size = _view.SizeFor(options.Columns, options.Rows);
+
+        // --size names the grid, so the window is that grid plus the native chrome around it.
+        var insets = NativeLayout.Insets(options.Chrome, collapsed: false);
+        var cells = _view.SizeFor(options.Columns, options.Rows);
+        var size = new Size(cells.Width + insets.Left, cells.Height + insets.Top);
         Width = size.Width;
         Height = size.Height;
         _normalSize = size;

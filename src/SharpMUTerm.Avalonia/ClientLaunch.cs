@@ -37,13 +37,13 @@ internal static class ClientLaunch
             return app.Run([]);
         }
 
-        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard));
+        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard, options.Chrome));
     }
 
     /// <summary>The demo client, with its <c>--view</c> scene laid out and not yet running.</summary>
     public static SharpMUTermApp Demo(WindowOptions options, AppConfiguration config, AvaloniaConsoleDriver driver, Action<string>? clipboard)
     {
-        var app = new SharpMUTermApp(config, WindowHost.Create(driver, clipboard));
+        var app = new SharpMUTermApp(config, WindowHost.Create(driver, clipboard, options.Chrome));
 
         // The snapshot's scene builder is the demo: it pours the demo output in and opens the named view. What
         // it returns is the headless driver's capture, which on this driver is empty and not wanted. It is queued

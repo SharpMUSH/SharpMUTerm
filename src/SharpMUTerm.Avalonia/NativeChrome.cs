@@ -15,9 +15,12 @@ namespace SharpMUTerm.Avalonia;
 /// What the native header and sidebar share: a clickable area naming the target the client put in its model, and the
 /// pointer handling that turns a press and release on one area into that target. Nothing here spells a target: every
 /// one comes out of <see cref="HeaderModel"/> or <see cref="SidebarModel"/>, and goes back through
-/// <see cref="ChromeOverlay.Activate"/>, which acts on it exactly as a click on the cells under it would.
+/// <see cref="ChromeOverlay.Activate"/>, which acts on it exactly as a click on the cell rail or header would.
 /// <para>
-/// Never focusable: the keyboard stays with the client, as a click on the cells leaves it.
+/// Both sit beside the cells, never over them (<see cref="NativeLayout"/>): the client leaves no row or column for
+/// them. The window's resize band runs along their outer edges as it does along the cells'. Never focusable: the
+/// keyboard stays with the client. While a modal of the client's is in front (<see cref="ChromeOverlay.Interactive"/>
+/// false) they stay drawn, under a veil, and take no click.
 /// </para>
 /// </summary>
 internal abstract class NativeChromeView : Control
@@ -35,36 +38,43 @@ internal abstract class NativeChromeView : Control
 
     protected TerminalView View { get; }
 
-    /// <summary>What the client last said, or null.</summary>
+    /// <summary>What the client last said, or null before it has said anything.</summary>
     internal ChromeOverlay? Overlay { get; private set; }
 
     protected Color Plane { get; private set; } = Colors.Black;
 
     protected Color Ink { get; private set; } = Colors.White;
 
+    /// <summary>Whether the chrome is drawn but takes no click, because a modal of the client's is in front.</summary>
+    internal bool Inert => Overlay is { Interactive: false };
+
     /// <summary>The clickable areas and their targets, as last laid out. Internal for tests.</summary>
     internal IReadOnlyList<(Rect Area, string Target, string Tip)> Hits => _hits;
 
-    /// <summary>Takes what the client said and the plane under the view, read off the frame, and redraws.</summary>
-    public void Show(ChromeOverlay overlay, Color plane, Color ink)
+    /// <summary>Takes what the client said and the plane and ink to draw with, and redraws.</summary>
+    public void Show(ChromeOverlay? overlay, Color plane, Color ink)
     {
         Overlay = overlay;
         Plane = plane;
         Ink = ink;
         _hits.Clear();
-        Layout(_hits);
+        if (overlay is not null && !double.IsNaN(Width) && !double.IsNaN(Height))
+        {
+            Layout(overlay, _hits);
+        }
+
         InvalidateVisual();
     }
 
     /// <summary>Works out where each clickable thing goes, for the size the view has been given.</summary>
-    protected abstract void Layout(List<(Rect Area, string Target, string Tip)> hits);
+    protected abstract void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits);
 
     /// <summary>A left press on no clickable area. The header moves the window; the sidebar does nothing.</summary>
     protected virtual void PressedEmpty(PointerPressedEventArgs e)
     {
     }
 
-    /// <summary>The area under <paramref name="point"/>, or null.</summary>
+    /// <summary>The area under <paramref name="point"/>, or null. An area with no target only carries a tooltip.</summary>
     protected (Rect Area, string Target, string Tip)? HitAt(Point point)
     {
         foreach (var hit in _hits)
@@ -79,23 +89,32 @@ internal abstract class NativeChromeView : Control
     }
 
     /// <summary>Whether the pointer is over <paramref name="area"/>, for a hover plate.</summary>
-    protected bool Hovered(Rect area) => _hover == area;
+    protected bool Hovered(Rect area) => !Inert && _hover == area;
 
     /// <summary>Whether <paramref name="area"/> is being pressed.</summary>
     protected bool Pressing(Rect area) => _pressed is not null && _hover == area;
 
     /// <summary>Acts on a target as a click would. Internal for tests.</summary>
-    internal void Click(string target) => Overlay?.Activate(target);
+    internal void Click(string target)
+    {
+        if (!Inert && target.Length > 0)
+        {
+            Overlay?.Activate(target);
+        }
+    }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
         var hit = HitAt(e.GetPosition(this));
         var area = hit?.Area;
+        var edge = View.EdgeCursorFromChrome(e);
+        Cursor = edge is { } resize ? new Cursor(resize)
+            : hit is { Target.Length: > 0 } && !Inert ? new Cursor(StandardCursorType.Hand)
+            : Cursor.Default;
         if (area != _hover)
         {
             _hover = area;
-            Cursor = hit is null ? Cursor.Default : new Cursor(StandardCursorType.Hand);
             ToolTip.SetTip(this, hit?.Tip);
             InvalidateVisual();
         }
@@ -110,30 +129,24 @@ internal abstract class NativeChromeView : Control
         InvalidateVisual();
     }
 
-    // Every pointer event over the view is the window's, as over a header button: nothing routes on to the cells,
-    // which would read a press on whatever the client drew there.
+    // Every pointer event over the view is the window's: there is no cell under it to reach, and the client's own
+    // cells beside it are a different place.
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         e.Handled = true;
         var point = e.GetCurrentPoint(this);
-        if (point.Properties.IsRightButtonPressed)
-        {
-            // The client's own menu for the place under the pointer, as over the cells (the map does the same).
-            if (this.TranslatePoint(point.Position, View) is { } onView)
-            {
-                View.ForwardRightClick(onView, e.KeyModifiers);
-            }
-
-            return;
-        }
-
         if (!point.Properties.IsLeftButtonPressed)
         {
             return;
         }
 
-        if (HitAt(point.Position) is { } hit)
+        if (View.ResizeFromChrome(e))
+        {
+            return;
+        }
+
+        if (!Inert && HitAt(point.Position) is { Target.Length: > 0 } hit)
         {
             _pressed = hit.Target;
             _hover = hit.Area;
@@ -166,7 +179,10 @@ internal abstract class NativeChromeView : Control
 
     // ── Drawing ────────────────────────────────────────────────────────────────────────────────
 
-    protected Color Dim => Color.FromArgb(0xA0, Ink.R, Ink.G, Ink.B);
+    /// <summary>The UI font size the chrome's text is set in.</summary>
+    protected const double FontSize = 13;
+
+    protected Color Dim => Color.FromArgb(0xA8, Ink.R, Ink.G, Ink.B);
 
     protected Color Faint(byte alpha) => Color.FromArgb(alpha, Ink.R, Ink.G, Ink.B);
 
@@ -182,9 +198,28 @@ internal abstract class NativeChromeView : Control
     protected static Color On(Color fill, Color ink) =>
         ToColour(Contrast.Legible(new Rgb(ink.R, ink.G, ink.B), new Rgb(fill.R, fill.G, fill.B)));
 
-    protected static Color Parse(string? hex) => hex is not null && Color.TryParse(hex, out var colour) ? colour : Colors.Gray;
+    /// <summary>A <c>#rrggbb</c> the client handed over, or grey.</summary>
+    internal static Color Parse(string? hex) => hex is not null && Color.TryParse(hex, out var colour) ? colour : Colors.Gray;
 
     private static Color ToColour(Rgb rgb) => Color.FromRgb(rgb.R, rgb.G, rgb.B);
+
+    /// <summary>The plane lifted (on a dark theme) or lowered (on a light one) by <paramref name="amount"/>: a raised surface.</summary>
+    protected Color Raised(double amount)
+    {
+        var luma = (0.2126 * Plane.R) + (0.7152 * Plane.G) + (0.0722 * Plane.B);
+        var target = luma < 128 ? Colors.White : Colors.Black;
+        byte Mix(byte a, byte b) => (byte)Math.Round(a + ((b - a) * amount));
+        return Color.FromRgb(Mix(Plane.R, target.R), Mix(Plane.G, target.G), Mix(Plane.B, target.B));
+    }
+
+    /// <summary>The veil a modal in front lays over the chrome: drawn, readable, and plainly not the thing in use.</summary>
+    protected void DrawVeil(DrawingContext context)
+    {
+        if (Inert)
+        {
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x70, Plane.R, Plane.G, Plane.B)), null, new Rect(Bounds.Size));
+        }
+    }
 
     protected static FormattedText Format(string text, double size, Color colour, bool bold = false, double maxWidth = double.PositiveInfinity)
     {
@@ -225,12 +260,57 @@ internal abstract class NativeChromeView : Control
     {
         var text = UnreadText(unread);
         var fill = Legible(Parse(Overlay?.Palette.Unread));
-        var width = Measure(text, size * 0.85, bold: true) + (size * 0.9);
-        var height = Math.Max(size * 1.15, 10);
+        var width = Math.Max(Measure(text, size * 0.85, bold: true) + (size * 0.9), size * 1.4);
+        var height = Math.Max(size * 1.3, 10);
         var pill = new Rect(right - width, middle - (height / 2), width, height);
         context.DrawRectangle(new SolidColorBrush(fill), null, pill, height / 2, height / 2);
         Text(context, text, pill.X + ((width - Measure(text, size * 0.85, bold: true)) / 2), middle, size * 0.85, On(fill, Plane), bold: true);
         return width;
+    }
+
+    /// <summary>A presence dot: filled while connected, a ring while being dialled or offline.</summary>
+    protected static void Dot(DrawingContext context, Point centre, double radius, Color colour, bool filled, bool diamond = false)
+    {
+        if (diamond)
+        {
+            // A member of the send group wears a diamond, as on the cells.
+            var shape = new StreamGeometry();
+            using (var g = shape.Open())
+            {
+                g.BeginFigure(centre + new Point(0, -radius * 1.25), true);
+                g.LineTo(centre + new Point(radius * 1.25, 0));
+                g.LineTo(centre + new Point(0, radius * 1.25));
+                g.LineTo(centre + new Point(-radius * 1.25, 0));
+                g.EndFigure(true);
+            }
+
+            context.DrawGeometry(filled ? new SolidColorBrush(colour) : null, new Pen(new SolidColorBrush(colour), 1.3), shape);
+            return;
+        }
+
+        if (filled)
+        {
+            context.DrawEllipse(new SolidColorBrush(colour), null, centre, radius, radius);
+        }
+        else
+        {
+            context.DrawEllipse(null, new Pen(new SolidColorBrush(colour), 1.3), centre, radius, radius);
+        }
+    }
+
+    /// <summary>A chevron pointing left (<paramref name="left"/>) or right, centred in <paramref name="area"/>.</summary>
+    protected static void Chevron(DrawingContext context, Rect area, bool left, Color colour)
+    {
+        var pen = new Pen(new SolidColorBrush(colour), 1.6, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        var c = area.Center;
+        var s = Math.Min(area.Width, area.Height) * 0.18;
+        foreach (var dx in new[] { -s * 0.9, s * 0.9 })
+        {
+            var tip = left ? c.X + dx - s : c.X + dx + s;
+            var back = left ? c.X + dx + s : c.X + dx - s;
+            context.DrawLine(pen, new Point(back, c.Y - (s * 1.6)), new Point(tip, c.Y));
+            context.DrawLine(pen, new Point(tip, c.Y), new Point(back, c.Y + (s * 1.6)));
+        }
     }
 
     /// <summary>A count as the cells write it (<c>99+</c> past the cap), so the two views agree about one count.</summary>
@@ -238,21 +318,25 @@ internal abstract class NativeChromeView : Control
 }
 
 /// <summary>
-/// The window's own header, drawn over the client's header row: the app's name, a search box that opens the command
-/// surface (⌃P), the connected count and log state, and the character in front as a pill — a presence dot, the name,
-/// and <c>world · TLS</c>. Everything it says is <see cref="HeaderModel"/>, the model the cell ribbon under it is
-/// drawn from.
+/// The window's own header band, across the top of the window above the cells: the app's name, a search box that
+/// opens the command surface (⌃P), the connected count and log state, and the character in front as a pill — a
+/// presence dot, the name, and <c>world · TLS</c>. Everything it says is <see cref="HeaderModel"/>, the model the cell
+/// ribbon would be drawn from; the client draws no header row in this host.
 /// <para>
-/// <b>Within the row, never taller.</b> The header is one cell row and stays one; a taller native header needs the
-/// client's layout to leave the room (see CLAUDE.md, native chrome). The right end is left clear for the header
-/// buttons (<see cref="DesktopLayer.ButtonCells"/>), which sit above this view. A press on empty space moves the
-/// window and a double-click maximises, as a blank header cell does (<see cref="TerminalView.WindowGestureFromChrome"/>).
+/// While ⌃B is armed the search box and the counts give way to the keymap (<see cref="HeaderModel.Prefix"/>): the
+/// chord, each key it answers (a key that cannot run now is dimmed, and its tooltip says why), and the way out — what
+/// the cell header's strip says, with the room to say all of it. The right end is left clear for the header buttons
+/// (<see cref="NativeLayout.ButtonSize"/>), which sit above this view. A press on empty space moves the window and a
+/// double-click maximises (<see cref="TerminalView.WindowGestureFromChrome"/>).
 /// </para>
 /// </summary>
 internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 {
     /// <summary>What the search box says. ⌃P lists commands, characters and windows, and settings screens.</summary>
     internal const string SearchText = "Search commands, windows, settings";
+
+    /// <summary>The prefix's leading word, beside its chord.</summary>
+    internal const string PrefixWord = "awaiting a pane key";
 
     /// <summary>Width kept clear at the right for the header buttons.</summary>
     public double ReserveRight { get; set; }
@@ -261,54 +345,94 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
     private Rect _search;
     private Rect _pill;
     private Rect _counts;
+    private Rect _prefix;
+    private readonly List<(Rect Area, HeaderPrefixKey Key)> _keys = [];
+    private Rect _exit;
 
-    private double Size => Math.Clamp(Height * 0.6, 9, 14);
+    /// <summary>The ⌃B keys as last laid out. Internal for tests.</summary>
+    internal IReadOnlyList<(Rect Area, HeaderPrefixKey Key)> PrefixKeys => _keys;
 
-    protected override void Layout(List<(Rect Area, string Target, string Tip)> hits)
+    private const double PlateHeight = 30;
+
+    protected override void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits)
     {
-        _brand = _search = _pill = _counts = default;
-        if (Overlay is not { } overlay || double.IsNaN(Width) || double.IsNaN(Height))
-        {
-            return;
-        }
-
+        _brand = _search = _pill = _counts = _prefix = _exit = default;
+        _keys.Clear();
         var model = overlay.HeaderModel;
-        var size = Size;
+        const double size = FontSize;
         var h = Height;
-        var plateTop = 1.0;
-        var plateHeight = Math.Max(4, h - 2);
-        var pad = Math.Round(size * 0.8);
+        var plateHeight = Math.Min(PlateHeight, Math.Max(4, h - 6));
+        var plateTop = Math.Round((h - plateHeight) / 2);
+        const double pad = 12;
 
-        _brand = new Rect(6, plateTop, Measure("SharpMUTerm", size, bold: true) + (pad * 2), plateHeight);
+        _brand = new Rect(10, plateTop, Measure("SharpMUTerm", size + 1, bold: true) + pad + 22, plateHeight);
         hits.Add((_brand, HeaderModel.PaletteTarget, $"Commands ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
 
-        var right = Width - ReserveRight - 6;
+        var right = Width - ReserveRight - 8;
         if (model.Character is { } character && model.World is { } world)
         {
             var name = Measure(character.Name, size, bold: true);
-            var detail = Measure(character.Detail(world.Name), size * 0.9);
-            var width = Math.Min(pad + size + name + pad + detail + pad, Math.Max(0, right - _brand.Right - 24));
+            var detail = Measure(character.Detail(world.Name), size - 1);
+            var width = Math.Min(pad + 10 + 8 + name + 10 + detail + pad, Math.Max(0, right - _brand.Right - 24));
             _pill = new Rect(right - width, plateTop, width, plateHeight);
-            hits.Add((_pill, character.Target, $"{character.Name} on {world.Name}"));
-            right = _pill.Left - 12;
+            hits.Add((_pill, character.Target, $"{character.Name} on {world.Name} — {character.Host}:{character.Port}"));
+            right = _pill.Left - 16;
+        }
+
+        var start = _brand.Right + 20;
+        if (model.Prefix is { } prefix)
+        {
+            LayoutPrefix(prefix, start, right, plateTop, plateHeight, hits);
+            return;
         }
 
         var counts = CountsText(model);
-        var countsWidth = Measure(counts, size * 0.9);
-        var searchStart = _brand.Right + 16;
-        var keyWidth = Measure(KeyGlyphs.Words(HeaderModel.PaletteKey), size * 0.85) + 10;
-        var searchFloor = size + Measure("Search", size) + keyWidth + (pad * 3);
-        if (right - countsWidth - 16 - searchStart >= searchFloor)
+        var countsWidth = Measure(counts, size - 1);
+        var keyWidth = Measure(KeyGlyphs.Words(HeaderModel.PaletteKey), size - 1.5) + 12;
+        var searchFloor = 18 + Measure("Search", size) + keyWidth + (pad * 3);
+        if (right - countsWidth - 20 - start >= searchFloor)
         {
             _counts = new Rect(right - countsWidth, 0, countsWidth, h);
-            right = _counts.Left - 16;
+            right = _counts.Left - 20;
         }
 
-        if (right - searchStart >= searchFloor)
+        if (right - start >= searchFloor)
         {
-            var width = Math.Min(420, right - searchStart);
-            _search = new Rect(searchStart, plateTop, width, plateHeight);
+            var width = Math.Min(460, right - start);
+            _search = new Rect(start, plateTop, width, plateHeight);
             hits.Add((_search, HeaderModel.PaletteTarget, $"Commands, characters, windows and settings ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
+        }
+    }
+
+    private void LayoutPrefix(HeaderPrefix prefix, double start, double right, double plateTop, double plateHeight, List<(Rect Area, string Target, string Tip)> hits)
+    {
+        const double size = FontSize;
+        var chipHeight = plateHeight - 6;
+        var chipTop = plateTop + 3;
+        var lead = Measure(HeaderPrefix.Chord, size, bold: true) + Measure(PrefixWord, size - 1) + 34;
+        _prefix = new Rect(start, plateTop, Math.Min(lead, Math.Max(0, right - start)), plateHeight);
+        hits.Add((_prefix, string.Empty, $"{HeaderPrefix.Chord} is armed: the next key acts on the workspace. {prefix.Exit}."));
+
+        var exitWidth = Measure(prefix.Exit, size - 1) + 8;
+        var x = _prefix.Right + 12;
+        var limit = right - exitWidth - 12;
+        foreach (var key in prefix.Keys)
+        {
+            var width = Measure(key.Keys, size, bold: true) + 16;
+            if (x + width > limit)
+            {
+                break;
+            }
+
+            var area = new Rect(x, chipTop, width, chipHeight);
+            _keys.Add((area, key));
+            hits.Add((area, string.Empty, key.Available ? $"{key.Keys}  {key.Title}" : $"{key.Keys}  {key.Title} — {key.Blocked}"));
+            x += width + 5;
+        }
+
+        if (right - x >= exitWidth)
+        {
+            _exit = new Rect(right - exitWidth, 0, exitWidth, Height);
         }
     }
 
@@ -319,18 +443,22 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
 
     public override void Render(DrawingContext context)
     {
-        context.DrawRectangle(new SolidColorBrush(Plane), null, new Rect(Bounds.Size));
+        var bounds = new Rect(Bounds.Size);
+        context.DrawRectangle(new SolidColorBrush(Plane), null, bounds);
+
+        // A hairline under the band, where a desktop app's toolbar meets its content.
+        context.DrawRectangle(new SolidColorBrush(Faint(0x24)), null, new Rect(0, bounds.Height - 1, bounds.Width, 1));
         if (Overlay is not { } overlay)
         {
             return;
         }
 
         var model = overlay.HeaderModel;
-        var size = Size;
+        const double size = FontSize;
         var middle = Bounds.Height / 2;
-        var radius = Math.Min(6, _brand.Height / 2);
+        const double radius = 7;
 
-        // The brand: the ribbon's first segment, in its own fill.
+        // The brand: the ribbon's first segment, in its own fill, with the ☰ the ribbon carries.
         var brand = Parse(overlay.Palette.Brand);
         if (Pressing(_brand) || Hovered(_brand))
         {
@@ -338,77 +466,110 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view)
         }
 
         context.DrawRectangle(new SolidColorBrush(brand), null, _brand, radius, radius);
-        Text(context, "SharpMUTerm", _brand.X + ((_brand.Width - Measure("SharpMUTerm", size, true)) / 2), middle, size, On(brand, Colors.Black), bold: true);
+        var brandInk = On(brand, Colors.Black);
+        var menu = new Pen(new SolidColorBrush(brandInk), 1.6, lineCap: PenLineCap.Round);
+        var mx = _brand.X + 12;
+        foreach (var dy in new[] { -4.0, 0, 4 })
+        {
+            context.DrawLine(menu, new Point(mx, middle + dy), new Point(mx + 11, middle + dy));
+        }
+
+        Text(context, "SharpMUTerm", mx + 18, middle, size + 1, brandInk, bold: true);
 
         if (_search.Width > 0)
         {
-            var fill = Faint((byte)(Hovered(_search) ? 0x26 : 0x14));
-            context.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Faint(0x38)), 1), _search.Deflate(0.5), radius, radius);
-            var pad = Math.Round(size * 0.8);
-
-            // A magnifier: a ring and its handle.
-            var ring = size * 0.32;
-            var centre = new Point(_search.X + pad + ring, middle - (ring * 0.25));
-            var pen = new Pen(new SolidColorBrush(Dim), 1.3);
-            context.DrawEllipse(null, pen, centre, ring, ring);
-            context.DrawLine(pen, centre + new Point(ring * 0.7, ring * 0.7), centre + new Point(ring * 1.5, ring * 1.5));
-
-            var key = KeyGlyphs.Words(HeaderModel.PaletteKey);
-            var keyWidth = Measure(key, size * 0.85) + 10;
-            var cap = new Rect(_search.Right - pad - keyWidth, middle - (_search.Height * 0.36), keyWidth, _search.Height * 0.72);
-            context.DrawRectangle(null, new Pen(new SolidColorBrush(Faint(0x50)), 1), cap.Deflate(0.5), 3, 3);
-            Text(context, key, cap.X + 5, middle, size * 0.85, Dim);
-            var textLeft = centre.X + (ring * 2) + 6;
-            Text(context, SearchText, textLeft, middle, size, Dim, maxWidth: Math.Max(1, cap.Left - 8 - textLeft));
+            DrawSearch(context, middle, radius);
         }
 
         if (_counts.Width > 0)
         {
-            Text(context, CountsText(model), _counts.X, middle, size * 0.9, Dim);
+            Text(context, CountsText(model), _counts.X, middle, size - 1, Dim);
+        }
+
+        if (model.Prefix is { } prefix)
+        {
+            DrawPrefix(context, prefix, overlay, middle);
         }
 
         if (_pill.Width > 0 && model.Character is { } character && model.World is { } world)
         {
-            var fill = Faint((byte)(Hovered(_pill) ? 0x2A : 0x18));
+            var fill = Hovered(_pill) ? Raised(0.16) : Raised(0.09);
             context.DrawRectangle(new SolidColorBrush(fill), null, _pill, _pill.Height / 2, _pill.Height / 2);
-            var pad = Math.Round(size * 0.8);
-            var dot = size * 0.32;
-            var dotCentre = new Point(_pill.X + pad + dot, middle);
             var accent = Accent(world.Accent);
-            switch (character.Presence)
-            {
-                case CharacterPresence.Online:
-                    context.DrawEllipse(new SolidColorBrush(accent), null, dotCentre, dot, dot);
-                    break;
-                case CharacterPresence.Connecting:
-                    context.DrawEllipse(null, new Pen(new SolidColorBrush(accent), 1.5), dotCentre, dot, dot);
-                    break;
-                default:
-                    context.DrawEllipse(null, new Pen(new SolidColorBrush(Dim), 1.2), dotCentre, dot, dot);
-                    break;
-            }
-
-            var x = dotCentre.X + dot + 6;
-            var room = _pill.Right - pad - x;
+            var dotCentre = new Point(_pill.X + 12 + 4.5, middle);
+            Dot(context, dotCentre, 4.5, character.Presence == CharacterPresence.Offline ? Dim : accent, character.Presence == CharacterPresence.Online);
+            var x = dotCentre.X + 4.5 + 8;
+            var room = _pill.Right - 12 - x;
             var nameWidth = Text(context, character.Name, x, middle, size, Ink, bold: true, maxWidth: room);
-            x += nameWidth + 8;
-            if (_pill.Right - pad - x > 12)
+            x += nameWidth + 10;
+            if (_pill.Right - 12 - x > 12)
             {
-                Text(context, character.Detail(world.Name), x, middle, size * 0.9, Dim, maxWidth: _pill.Right - pad - x);
+                Text(context, character.Detail(world.Name), x, middle, size - 1, Dim, maxWidth: _pill.Right - 12 - x);
             }
+        }
+
+        DrawVeil(context);
+    }
+
+    private void DrawSearch(DrawingContext context, double middle, double radius)
+    {
+        const double size = FontSize;
+        var fill = Hovered(_search) ? Raised(0.13) : Raised(0.07);
+        context.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Faint(0x30)), 1), _search.Deflate(0.5), radius, radius);
+
+        // A magnifier: a ring and its handle.
+        const double ring = 5;
+        var centre = new Point(_search.X + 14 + ring, middle - 1);
+        var pen = new Pen(new SolidColorBrush(Dim), 1.4, lineCap: PenLineCap.Round);
+        context.DrawEllipse(null, pen, centre, ring, ring);
+        context.DrawLine(pen, centre + new Point(ring * 0.72, ring * 0.72), centre + new Point(ring * 1.55, ring * 1.55));
+
+        var key = KeyGlyphs.Words(HeaderModel.PaletteKey);
+        var keyWidth = Measure(key, size - 1.5) + 12;
+        var cap = new Rect(_search.Right - 8 - keyWidth, middle - 10, keyWidth, 20);
+        context.DrawRectangle(null, new Pen(new SolidColorBrush(Faint(0x50)), 1), cap.Deflate(0.5), 4, 4);
+        Text(context, key, cap.X + 6, middle, size - 1.5, Dim);
+        var textLeft = centre.X + (ring * 2) + 8;
+        Text(context, SearchText, textLeft, middle, size, Dim, maxWidth: Math.Max(1, cap.Left - 10 - textLeft));
+    }
+
+    private void DrawPrefix(DrawingContext context, HeaderPrefix prefix, ChromeOverlay overlay, double middle)
+    {
+        const double size = FontSize;
+        var notice = Legible(Parse(overlay.Palette.Notice));
+        if (_prefix.Width > 0)
+        {
+            var plate = Color.FromArgb(0x2A, notice.R, notice.G, notice.B);
+            context.DrawRectangle(new SolidColorBrush(plate), new Pen(new SolidColorBrush(Color.FromArgb(0x90, notice.R, notice.G, notice.B)), 1), _prefix.Deflate(0.5), 7, 7);
+            var x = _prefix.X + 12;
+            x += Text(context, HeaderPrefix.Chord, x, middle, size, notice, bold: true) + 8;
+            Text(context, PrefixWord, x, middle, size - 1, Ink, maxWidth: Math.Max(1, _prefix.Right - 10 - x));
+        }
+
+        foreach (var (area, key) in _keys)
+        {
+            var colour = key.Available ? Ink : Faint(0x60);
+            context.DrawRectangle(new SolidColorBrush(Raised(key.Available ? 0.12 : 0.04)), new Pen(new SolidColorBrush(Faint(key.Available ? (byte)0x40 : (byte)0x20)), 1), area.Deflate(0.5), 5, 5);
+            Text(context, key.Keys, area.X + 8, middle, size, colour, bold: true);
+        }
+
+        if (_exit.Width > 0)
+        {
+            Text(context, prefix.Exit, _exit.Right, middle, size - 1, Dim, alignRight: true);
         }
     }
 }
 
 /// <summary>
-/// The window's own sidebar, drawn over the client's rail: <c>CONNECTIONS</c>, worlds as headings, characters with a
-/// presence dot and an unread badge (offline ones greyed and saying so), the open character's windows indented with
-/// the chord that reaches each and its unread count, and an "add a game" button at the foot. Everything it says is
-/// <see cref="SidebarModel"/>, the model the cell rail under it is drawn from, and every click goes back as the
-/// target that model gave — the rail's own handler acts on it.
+/// The window's own sidebar, down the left of the window beside the cells: <c>CONNECTIONS</c>, worlds as headings,
+/// characters with a presence dot and an unread badge (offline ones greyed and saying so), the open character's
+/// windows indented with the chord that reaches each and its unread count, and an "add a game" button at the foot.
+/// Everything it says is <see cref="SidebarModel"/>, the model the cell rail would be drawn from, and every click goes
+/// back as the target that model gave — the rail's own handler acts on it. The client draws no rail column here.
 /// <para>
-/// It draws within the rail's cells and never wider, so no pane moves and no world is told a new size. While the
-/// rail is collapsed (⌃B b) it draws nothing and the cells' narrow strip shows.
+/// <b>Folded</b> (⌃B b, or the fold button beside the title) it is a slim strip, the cell rail's collapsed form at a
+/// desktop app's size: an unfold button, an accent mark per world, and a dot with an initial per character (filled
+/// while connected, with an unread mark), each still a click on its target, with the name in its tooltip.
 /// </para>
 /// </summary>
 internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
@@ -416,38 +577,38 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
     /// <summary>What the button at the foot says.</summary>
     internal const string AddGameText = "+ Add a game or connect";
 
+    /// <summary>The fold button's tooltip, open and folded.</summary>
+    internal const string FoldTip = "Fold the sidebar (⌃B b)", UnfoldTip = "Open the sidebar (⌃B b)";
+
     /// <summary>One drawn row: what it is, where, and its node.</summary>
     internal sealed record Row(RailRowKind Kind, Rect Area, RailWorld World, RailCharacter? Character = null, RailWindow? Window = null);
 
     private readonly List<Row> _rows = [];
     private Rect _add;
+    private Rect _fold;
 
     /// <summary>The rows as last laid out. Internal for tests.</summary>
     internal IReadOnlyList<Row> Rows => _rows;
 
-    private double CellHeight { get; set; } = 16;
+    private const double RowHeight = 28;
 
-    /// <summary>The height of a cell, which the rows are spaced from.</summary>
-    public void SetCellHeight(double height) => CellHeight = Math.Max(8, height);
+    private const double TitleHeight = 40;
 
-    private double Size => Math.Clamp(CellHeight * 0.66, 9, 14);
+    private bool Folded => Overlay?.Sidebar.Collapsed ?? false;
 
-    private double RowHeight => Math.Round(Math.Max(CellHeight * 1.3, Size * 1.9));
-
-    protected override void Layout(List<(Rect Area, string Target, string Tip)> hits)
+    protected override void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits)
     {
         _rows.Clear();
         _add = default;
-        if (Overlay is not { } overlay || double.IsNaN(Width) || double.IsNaN(Height))
-        {
-            return;
-        }
+        var width = Width - NativeLayout.SidebarGutter; // the gutter is plane, never a row
+        var folded = overlay.Sidebar.Collapsed;
+        _fold = folded ? new Rect((width - 32) / 2, 6, 32, 28) : new Rect(width - 38, 6, 30, 28);
+        hits.Add((_fold, SidebarModel.CollapseTarget, folded ? UnfoldTip : FoldTip));
 
-        var row = RowHeight;
-        var width = Width;
-        _add = new Rect(8, Height - row - 8, Math.Max(0, width - 16), row);
+        var row = folded ? 32 : RowHeight;
+        _add = folded ? new Rect((width - 32) / 2, Height - 32 - 10, 32, 32) : new Rect(10, Height - row - 12, Math.Max(0, width - 20), row + 2);
         var bottom = _add.Top - 6;
-        var y = row + 4; // under the CONNECTIONS title
+        var y = TitleHeight;
         void Add(Row r, string target, string tip)
         {
             if (r.Area.Bottom > bottom)
@@ -461,34 +622,52 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
         foreach (var world in overlay.Sidebar.Worlds)
         {
-            y += 6;
-            Add(new Row(RailRowKind.World, new Rect(4, y, width - 8, row), world), SidebarModel.TargetOf(world), world.Name);
-            y += row;
+            y += folded ? 4 : 8;
+            if (folded)
+            {
+                // The world's accent mark, one short rule: where its characters begin.
+                Add(new Row(RailRowKind.World, new Rect(6, y, width - 12, 10), world), SidebarModel.TargetOf(world), world.Name);
+                y += 10;
+            }
+            else
+            {
+                Add(new Row(RailRowKind.World, new Rect(6, y, width - 12, row), world), SidebarModel.TargetOf(world), $"{world.Name} — {world.Host}:{world.Port}");
+                y += row;
+            }
+
             if (world.Characters.Count == 0)
             {
-                Add(new Row(RailRowKind.Empty, new Rect(4, y, width - 8, row), world), SidebarModel.TargetOf(world), $"{world.Name} has no characters yet");
-                y += row;
+                if (!folded)
+                {
+                    Add(new Row(RailRowKind.Empty, new Rect(6, y, width - 12, row), world), SidebarModel.TargetOf(world), $"{world.Name} has no characters yet");
+                    y += row;
+                }
+
                 continue;
             }
 
             foreach (var character in world.Characters)
             {
-                Add(new Row(RailRowKind.Character, new Rect(4, y, width - 8, row), world, character), SidebarModel.TargetOf(character), $"Switch to {character.Name}");
+                var area = folded ? new Rect((width - 36) / 2, y, 36, row) : new Rect(6, y, width - 12, row);
+                var tip = folded
+                    ? $"{character.Name} on {world.Name}{(character.Connected ? string.Empty : " (offline)")}{(character.Unread > 0 ? $", {UnreadText(character.Unread)} unread" : string.Empty)}"
+                    : $"Switch to {character.Name}";
+                Add(new Row(RailRowKind.Character, area, world, character), SidebarModel.TargetOf(character), tip);
                 y += row;
-                if (!character.Active)
+                if (!character.Active || folded)
                 {
                     continue;
                 }
 
                 foreach (var window in character.Windows)
                 {
-                    Add(new Row(RailRowKind.Window, new Rect(4, y, width - 8, row), world, character, window), SidebarModel.TargetOf(window), window.Closed ? $"{window.Title} is closed" : $"Go to {window.Title}");
+                    Add(new Row(RailRowKind.Window, new Rect(6, y, width - 12, row), world, character, window), SidebarModel.TargetOf(window), window.Closed ? $"{window.Title} is closed" : $"Go to {window.Title}");
                     y += row;
                 }
             }
         }
 
-        if (_add.Width > 40 && _add.Top > row)
+        if (_add.Width > 20 && _add.Top > TitleHeight)
         {
             hits.Add((_add, SidebarModel.AddGameTarget, "Connect to a game, or add one"));
         }
@@ -500,38 +679,53 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
     public override void Render(DrawingContext context)
     {
+        // The plane runs on through the gutter to the panes (NativeLayout.SidebarGutter): the pane's own raised surface
+        // against it is the edge, as the cell rail's backdrop is.
         context.DrawRectangle(new SolidColorBrush(Plane), null, new Rect(Bounds.Size));
         if (Overlay is not { } overlay)
         {
             return;
         }
 
-        var size = Size;
-        var row = RowHeight;
-        Text(context, "CONNECTIONS", 12, row / 2 + 4, size * 0.8, Dim, bold: true);
+        const double size = FontSize;
+        if (Hovered(_fold))
+        {
+            context.DrawRectangle(new SolidColorBrush(Raised(0.12)), null, _fold, 6, 6);
+        }
+
+        Chevron(context, _fold, left: !Folded, Dim);
+        if (!Folded)
+        {
+            Text(context, "CONNECTIONS", 16, _fold.Center.Y, size - 2.5, Dim, bold: true);
+        }
 
         foreach (var r in _rows)
         {
+            if (Folded)
+            {
+                DrawFolded(context, r, overlay);
+                continue;
+            }
+
             var middle = r.Area.Center.Y;
             var hovered = Hovered(r.Area);
             var selected = r.Window is { } w && overlay.Sidebar.IsSelected(w) || r.Kind == RailRowKind.Character && r.Character!.Active;
             if (selected || hovered)
             {
-                var plate = (byte)(selected && hovered ? 0x30 : selected ? 0x22 : 0x14);
-                context.DrawRectangle(new SolidColorBrush(Faint(plate)), null, r.Area, 5, 5);
+                context.DrawRectangle(new SolidColorBrush(Raised(selected && hovered ? 0.16 : selected ? 0.11 : 0.07)), null, r.Area, 6, 6);
             }
 
             var accent = Accent(r.World.Accent);
-            var right = r.Area.Right - 8;
+            var right = r.Area.Right - 10;
             switch (r.Kind)
             {
                 case RailRowKind.World:
-                    context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X + 4, middle - (size * 0.55), 3, size * 1.1), 1.5, 1.5);
-                    Text(context, r.World.Name, r.Area.X + 14, middle, size, Ink, bold: true, maxWidth: right - r.Area.X - 14);
+                    context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X + 6, middle - 7, 3, 14), 1.5, 1.5);
+                    Text(context, r.World.Name, r.Area.X + 18, middle, size, Ink, bold: true, maxWidth: right - r.Area.X - 18);
                     break;
 
                 case RailRowKind.Empty:
-                    Text(context, "no characters", r.Area.X + 24, middle, size * 0.92, Dim, maxWidth: right - r.Area.X - 24);
+                    Text(context, "no characters", r.Area.X + 28, middle, size - 1, Dim, maxWidth: right - r.Area.X - 28);
                     break;
 
                 case RailRowKind.Character:
@@ -546,40 +740,71 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
         if (_add.Width > 0)
         {
-            var fill = Faint((byte)(Hovered(_add) ? 0x22 : 0x0E));
-            context.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Faint(0x40)), 1), _add.Deflate(0.5), 6, 6);
-            Text(context, AddGameText, _add.Center.X - (Math.Min(Measure(AddGameText, size), _add.Width - 12) / 2), _add.Center.Y, size, Ink, maxWidth: _add.Width - 12);
+            var fill = Hovered(_add) ? Raised(0.12) : Raised(0.05);
+            context.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Faint(0x40)), 1), _add.Deflate(0.5), 7, 7);
+            if (Folded)
+            {
+                var pen = new Pen(new SolidColorBrush(Ink), 1.6, lineCap: PenLineCap.Round);
+                var c = _add.Center;
+                context.DrawLine(pen, c + new Point(-6, 0), c + new Point(6, 0));
+                context.DrawLine(pen, c + new Point(0, -6), c + new Point(0, 6));
+            }
+            else
+            {
+                Text(context, AddGameText, _add.Center.X - (Math.Min(Measure(AddGameText, size), _add.Width - 12) / 2), _add.Center.Y, size, Ink, maxWidth: _add.Width - 12);
+            }
+        }
+
+        DrawVeil(context);
+    }
+
+    private void DrawFolded(DrawingContext context, Row r, ChromeOverlay overlay)
+    {
+        var accent = Accent(r.World.Accent);
+        if (r.Kind == RailRowKind.World)
+        {
+            context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.Center.X - 9, r.Area.Center.Y - 1.5, 18, 3), 1.5, 1.5);
+            return;
+        }
+
+        if (r.Character is not { } character)
+        {
+            return;
+        }
+
+        // A disc with the character's initial: filled in the world's colour while connected, a ring while not.
+        var centre = r.Area.Center;
+        const double radius = 12;
+        if (character.Active || Hovered(r.Area))
+        {
+            context.DrawRectangle(new SolidColorBrush(Raised(character.Active ? 0.12 : 0.07)), null, r.Area, 7, 7);
+        }
+
+        var colour = character.Connected ? accent : Dim;
+        if (character.Connected)
+        {
+            context.DrawEllipse(new SolidColorBrush(colour), null, centre, radius, radius);
+        }
+        else
+        {
+            context.DrawEllipse(null, new Pen(new SolidColorBrush(colour), 1.4), centre, radius, radius);
+        }
+
+        var initial = character.Name.Length > 0 ? char.ToUpperInvariant(character.Name[0]).ToString() : "?";
+        var ink = character.Connected ? On(colour, Plane) : Dim;
+        Text(context, initial, centre.X - (Measure(initial, FontSize, bold: true) / 2), centre.Y, FontSize, ink, bold: true);
+        if (character.Unread > 0)
+        {
+            var mark = Legible(Parse(overlay.Palette.Unread));
+            context.DrawEllipse(new SolidColorBrush(mark), new Pen(new SolidColorBrush(Plane), 1.5), centre + new Point(radius * 0.75, -radius * 0.75), 4, 4);
         }
     }
 
     private void DrawCharacter(DrawingContext context, Row r, RailCharacter character, Color accent, double middle, double right, double size)
     {
-        var dot = size * 0.32;
-        var centre = new Point(r.Area.X + 22, middle);
+        var centre = new Point(r.Area.X + 24, middle);
         var colour = character.Connected ? accent : Dim;
-        if (character.InGroup)
-        {
-            // A member of the send group wears a diamond, as on the cells.
-            var diamond = new StreamGeometry();
-            using (var g = diamond.Open())
-            {
-                g.BeginFigure(centre + new Point(0, -dot * 1.2), true);
-                g.LineTo(centre + new Point(dot * 1.2, 0));
-                g.LineTo(centre + new Point(0, dot * 1.2));
-                g.LineTo(centre + new Point(-dot * 1.2, 0));
-                g.EndFigure(true);
-            }
-
-            context.DrawGeometry(character.Connected ? new SolidColorBrush(colour) : null, new Pen(new SolidColorBrush(colour), 1.2), diamond);
-        }
-        else if (character.Connected)
-        {
-            context.DrawEllipse(new SolidColorBrush(colour), null, centre, dot, dot);
-        }
-        else
-        {
-            context.DrawEllipse(null, new Pen(new SolidColorBrush(colour), 1.2), centre, dot, dot);
-        }
+        Dot(context, centre, 4.5, colour, character.Connected, diamond: character.InGroup);
 
         // Right to left: the unread badge or the offline word, then the cycle chord.
         if (character.Unread > 0)
@@ -588,24 +813,24 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
         }
         else if (!character.Connected)
         {
-            right -= Text(context, "offline", right, middle, size * 0.85, Dim, alignRight: true) + 6;
+            right -= Text(context, "offline", right, middle, size - 1.5, Dim, alignRight: true) + 6;
         }
 
         if (character.Chord is { Length: > 0 } chord)
         {
-            right -= Text(context, KeyGlyphs.Words(chord), right, middle, size * 0.85, Dim, alignRight: true) + 6;
+            right -= Text(context, KeyGlyphs.Words(chord), right, middle, size - 1.5, Dim, alignRight: true) + 6;
         }
 
-        var x = centre.X + dot + 7;
+        var x = centre.X + 12;
         Text(context, character.Name, x, middle, size, character.Connected ? Ink : Dim, bold: character.Active, maxWidth: Math.Max(1, right - x));
     }
 
     private void DrawWindow(DrawingContext context, Row r, RailWindow window, Color accent, bool selected, double middle, double right, double size)
     {
-        var x = r.Area.X + 36;
+        var x = r.Area.X + 40;
         if (selected)
         {
-            context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X + 28, middle - (size * 0.5), 2.5, size), 1, 1);
+            context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X + 31, middle - 7, 3, 14), 1.5, 1.5);
         }
 
         if (window.Unread > 0)
@@ -615,12 +840,12 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view)
 
         if (!window.Closed && window.Chord is { Length: > 0 } chord)
         {
-            right -= Text(context, KeyGlyphs.Words(chord), right, middle, size * 0.85, Dim, alignRight: true) + 6;
+            right -= Text(context, KeyGlyphs.Words(chord), right, middle, size - 1.5, Dim, alignRight: true) + 6;
         }
 
         if (window.Closed)
         {
-            right -= Text(context, "closed", right, middle, size * 0.85, Dim, alignRight: true) + 6;
+            right -= Text(context, "closed", right, middle, size - 1.5, Dim, alignRight: true) + 6;
         }
 
         if (window.HasUnsent)

@@ -30,6 +30,13 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
     /// </summary>
     public const string AddGameTarget = "term:welcome";
 
+    /// <summary>
+    /// The sidebar's own target for folding it to its slim strip and back: what ⌃B b does. A chrome target, never a
+    /// server's — only the chrome's own handler reads it — and offered only by a host that draws the sidebar itself,
+    /// because the cell rail is folded with the keys.
+    /// </summary>
+    public const string CollapseTarget = "sharpmuterm-rail:toggle";
+
     /// <summary>The flat rows the cell rail draws (<see cref="RailModel.Build"/>).</summary>
     public IReadOnlyList<RailRow> Rows() => RailModel.Build(Worlds);
 
