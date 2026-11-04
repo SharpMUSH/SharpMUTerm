@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Layouts;
 using System.Globalization;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Telnet;
@@ -95,6 +96,27 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.DiscordPresence"/>, as one of <see cref="DiscordChoices"/>.</summary>
     internal const int DiscordField = 14;
 
+    /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
+    internal const int WorldLayoutField = 15;
+
+    /// <summary>What a world with no layout of its own reads as: the suggestion it accepted, else Roleplay.</summary>
+    internal const string WorldLayoutDefault = "(suggested)";
+
+    /// <summary>What a character with no layout of its own reads as.</summary>
+    internal const string CharacterLayoutDefault = "(world default)";
+
+    /// <summary>The layout row's choices: the default word, then every layout by name.</summary>
+    internal static IReadOnlyList<string> LayoutChoices(IReadOnlyList<LayoutDefinition> layouts, string unset) =>
+        [unset, .. layouts.Select(l => l.Name)];
+
+    /// <summary>The name of the layout <paramref name="id"/> names, or null for none (or one that is gone).</summary>
+    internal static string? LayoutName(IReadOnlyList<LayoutDefinition> layouts, string? id) =>
+        id is null ? null : layouts.FirstOrDefault(l => string.Equals(l.Id, id, StringComparison.Ordinal))?.Name;
+
+    /// <summary>The id of the layout called <paramref name="name"/>, or null for the default word.</summary>
+    internal static string? LayoutId(IReadOnlyList<LayoutDefinition> layouts, string name) =>
+        layouts.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
+
     /// <summary>F5's words for <see cref="WorldDefinition.DiscordPresence"/>.</summary>
     internal static readonly string[] DiscordChoices = ["off", "show status"];
 
@@ -160,6 +182,9 @@ internal static class WorldsScreenRenderer
     /// <em>appearance</em>: it belongs at the end, where a reader stops looking for behaviour.
     /// </summary>
     internal const int PaneTintField = 9;
+
+    /// <summary><see cref="CharacterDefinition.Layout"/>, appended after the tint: also about how the panes look.</summary>
+    internal const int CharacterLayoutField = 10;
 
     /// <summary>
     /// The trigger-set row's field ordinals. A set's name leads, as every list row's does — and here it
@@ -446,10 +471,12 @@ internal static class WorldsScreenRenderer
         int selectedWorld,
         int selectedCharacter,
         int selectedSet = 0,
-        Action<int>? info = null)
+        Action<int>? info = null,
+        IReadOnlyList<LayoutDefinition>? layouts = null)
     {
         ArgumentNullException.ThrowIfNull(worlds);
         ArgumentNullException.ThrowIfNull(triggerSets);
+        var all = layouts ?? BuiltInLayouts.All;
 
         (selectedWorld, selectedCharacter) = Resolve(worlds, selectedWorld, selectedCharacter);
 
@@ -480,7 +507,12 @@ internal static class WorldsScreenRenderer
                 "discord",
                 () => w.DiscordPresence ? DiscordChoices[1] : DiscordChoices[0],
                 v => w.DiscordPresence = v == DiscordChoices[1],
-                DiscordChoices)))
+                DiscordChoices),
+            ScreenField.Choice(
+                "layout",
+                () => LayoutName(all, w.Layout) ?? WorldLayoutDefault,
+                v => w.Layout = LayoutId(all, v),
+                LayoutChoices(all, WorldLayoutDefault))))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -511,7 +543,12 @@ internal static class WorldsScreenRenderer
                     () => c.Logging.RestoreLog ? RestoreOn : RestoreOff,
                     v => c.Logging.RestoreLog = string.Equals(v, RestoreOn, StringComparison.OrdinalIgnoreCase),
                     RestoreChoices),
-                ScreenField.Enumeration(TintLabel, () => c.Tint, v => c.Tint = v)))
+                ScreenField.Enumeration(TintLabel, () => c.Tint, v => c.Tint = v),
+                ScreenField.Choice(
+                    "layout",
+                    () => LayoutName(all, c.Layout) ?? CharacterLayoutDefault,
+                    v => c.Layout = LayoutId(all, v),
+                    LayoutChoices(all, CharacterLayoutDefault))))
                 .Concat(CharacterButtons(world, selectedCharacter))
                 .ToArray();
 
@@ -938,8 +975,10 @@ internal static class WorldsScreenRenderer
         int selectedCharacter,
         string accent,
         ScreenFocus? focus = null,
-        int height = 0)
+        int height = 0,
+        IReadOnlyList<LayoutDefinition>? layouts = null)
     {
+        var all = layouts ?? BuiltInLayouts.All;
         var cursor = focus ?? ScreenFocus.None;
         (selectedWorld, selectedCharacter) = Resolve(worlds, selectedWorld, selectedCharacter);
         if (selectedWorld < 0)
@@ -1028,6 +1067,13 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 DiscordField)),
+            WorldField("layout", Field(
+                LayoutName(all, world.Layout) is { } worldLayout
+                    ? $"[{Value}]{Escape(worldLayout)}[/]"
+                    : $"[{Label}]{WorldLayoutDefault} · {Escape(LayoutName(all, world.AcceptedLayoutSuggestion) ?? BuiltInLayouts.Roleplay.Name)}[/]",
+                cursor,
+                selectedWorld,
+                WorldLayoutField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });
@@ -1144,8 +1190,13 @@ internal static class WorldsScreenRenderer
     /// </para>
     /// </summary>
     internal static List<string> FormColumn(
-        CharacterDefinition character, string accent, ScreenFocus? focus = null, int selectedCharacter = -1)
+        CharacterDefinition character,
+        string accent,
+        ScreenFocus? focus = null,
+        int selectedCharacter = -1,
+        IReadOnlyList<LayoutDefinition>? layouts = null)
     {
+        var all = layouts ?? BuiltInLayouts.All;
         var cursor = focus ?? ScreenFocus.None;
         var form = new List<string>
         {
@@ -1219,6 +1270,14 @@ internal static class WorldsScreenRenderer
                 selectedCharacter,
                 PaneTintField,
                 pane: CharactersPane) + $" [{Label}]{TintNote}[/]"),
+            CharField("layout", Field(
+                LayoutName(all, character.Layout) is { } own
+                    ? $"[{Value}]{Escape(own)}[/]"
+                    : $"[{Label}]{CharacterLayoutDefault}[/]",
+                cursor,
+                selectedCharacter,
+                CharacterLayoutField,
+                pane: CharactersPane)),
         };
 
         // The log format and `restore` both sit near the foot of this block, so their lists are drawn

@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Layouts;
 using SharpMUTerm.Core.Configuration;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -27,7 +28,8 @@ internal static class WorldsScreenView
         string fkey = WorldsScreenRenderer.FKey,
         int selectedSet = 0,
         int height = 0,
-        bool info = false)
+        bool info = false,
+        IReadOnlyList<LayoutDefinition>? layouts = null)
     {
         // Both panes end in button rows, so a raw cursor can point past its list; resolving once here
         // keeps every block of the screen agreeing on which world and character are selected.
@@ -38,7 +40,7 @@ internal static class WorldsScreenView
         // The model is rebuilt here only to derive the header's hints, so the INFO row's presence is all
         // it needs of the action — a no-op stands in for it, and the delegate stays with the session.
         var model = WorldsScreenRenderer.Model(
-            worlds, triggerSets, selectedWorld, selectedCharacter, selectedSet, info ? _ => { } : null);
+            worlds, triggerSets, selectedWorld, selectedCharacter, selectedSet, info ? _ => { } : null, layouts);
         var header = ScreenChrome.Band(
             WorldsScreenRenderer.HeaderLine(width, model, focus, fkey), ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
@@ -51,7 +53,7 @@ internal static class WorldsScreenView
         var band = WorldsScreenRenderer.HasCharacter(worlds, selectedWorld, selectedCharacter)
             ? Math.Max(
                 WorldsScreenRenderer.FormColumn(
-                    worlds[selectedWorld].Characters[selectedCharacter], accent, focus, selectedCharacter).Count,
+                    worlds[selectedWorld].Characters[selectedCharacter], accent, focus, selectedCharacter, layouts).Count,
                 WorldsScreenRenderer.TriggersColumn(
                     worlds[selectedWorld].Characters[selectedCharacter],
                     triggerSets,
@@ -67,7 +69,7 @@ internal static class WorldsScreenView
             WorldsScreenRenderer.WorldsColumn(worlds, selectedWorld, focus, rows, info), scheme));
         var detailCol = ScreenChrome.Stretch(ScreenChrome.Panel(
             WorldsScreenRenderer
-                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows),
+                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts),
             scheme));
         var body = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
@@ -85,7 +87,7 @@ internal static class WorldsScreenView
         if (WorldsScreenRenderer.HasCharacter(worlds, selectedWorld, selectedCharacter))
         {
             var character = worlds[selectedWorld].Characters[selectedCharacter];
-            var form = WorldsScreenRenderer.FormColumn(character, accent, focus, selectedCharacter).ToList();
+            var form = WorldsScreenRenderer.FormColumn(character, accent, focus, selectedCharacter, layouts).ToList();
             var triggers = WorldsScreenRenderer
                 .TriggersColumn(character, triggerSets, accent, focus, selectedSet, worlds)
                 .ToList();

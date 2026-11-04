@@ -388,6 +388,32 @@ public sealed class WorkspaceLayout
         return false;
     }
 
+    /// <summary>
+    /// Replaces the whole tree, as applying a layout does (<c>Layouts.LayoutRealiser</c>). Empty panes are
+    /// pruned and single-child splits collapsed, exactly as after any other change; the zoom is cleared, because
+    /// the pane it named may be gone and a layout is asked for in order to be seen whole; focus goes to
+    /// <paramref name="focusedPaneId"/> when it survives, else to pane 1. A pane carrying no creation sequence is
+    /// given one after the highest taken, and the <c>pN</c> counter moves past any <c>pN</c> id in the new tree,
+    /// so a later split cannot collide with it.
+    /// </summary>
+    public void ReplaceTree(LayoutNode root, string? focusedPaneId = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        Root = root;
+        ZoomedPaneId = null;
+        var panes = Root.Panes().ToList();
+        _paneCounter = Math.Max(_paneCounter, panes.Select(p => ParsePaneCounter(p.Id)).DefaultIfEmpty(0).Max());
+        _sequenceCounter = Math.Max(_sequenceCounter, panes.Select(p => p.Sequence).DefaultIfEmpty(PaneNode.Unsequenced).Max());
+        foreach (var pane in panes.Where(p => p.Sequence <= PaneNode.Unsequenced))
+        {
+            pane.Sequence = ++_sequenceCounter;
+        }
+
+        FocusedPaneId = focusedPaneId ?? string.Empty;
+        _removed.Clear();
+        PruneAndFix();
+    }
+
     /// <summary>Swaps <paramref name="target"/> for <paramref name="replacement"/> in the tree.</summary>
     private void ReplaceNode(LayoutNode target, LayoutNode replacement)
     {

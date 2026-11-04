@@ -167,6 +167,10 @@ internal static class MacroKeys
         // So ⌥G is the whole repeat, and no surface advertises a chord that goes back — going back is
         // ⌃F again, which is one keystroke more and is a key that exists.
         new(ConsoleModifiers.Alt, ConsoleKey.G, "goes to the next search hit"),
+        // The layouts list (⌃P ▸ Layouts). ⌥M is `ESC m`, a printable byte after ESC, so it arrives as one Alt
+        // chord like ⌥D/⌥R/⌥F; nothing in the framework or the command line's key table takes it, and the
+        // window host does not keep it for itself (HostKeys.Reserved holds ⌥⏎ and the paste chords).
+        new(ConsoleModifiers.Alt, ConsoleKey.M, "opens Layouts"),
         // The character cycle. Letters and not digits because the digit row is spent (⌥N windows, ⌃B N
         // panes) and there is no third digit-bearing modifier this terminal delivers: read off a pty,
         // kitty writes ⌥⇧1 as `CSI 49;4u` and ⌃⇧N as `CSI 110;6u` — kitty-keyboard-protocol sequences

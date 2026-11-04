@@ -723,9 +723,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MediaCache? media = null,
         PackageStore? packages = null,
         string? scriptStoreRoot = null,
-        Func<SpellChecker?>? spelling = null)
+        Func<SpellChecker?>? spelling = null,
+        bool autoLayout = false)
     {
         _spelling = spelling;
+        _autoLayout = autoLayout;
         var capabilities = host.Capabilities;
         Host = host;
         _config = config;
@@ -781,6 +783,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Resume the last session's workspace (panes/windows/focus) when the config carries one;
         // otherwise start with a single main window. Real startup and the demo share this path.
         _workspace = ResumeOrNew(config);
+        NoteRestoredOwners();
+        RegisterTerminalPanels();
 
         var headless = host.RunsInline;
         _headless = headless;
@@ -915,6 +919,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _composer = new ComposeOverlay(_system, _spelling, _screens);
         _packageView = new ListOverlay(_system, _screens);
         _sendMenu = new ListOverlay(_system, _screens);
+        _layoutsView = new ListOverlay(_system, _screens);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -1791,6 +1796,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 DispatchCommand("term:gamedata");
             }
+        }
+
+        // Layouts. `layouts` is the ⌥M list over the demo, opened through the registered shortcut itself;
+        // `layout-combat` is the demo with the Combat layout realised through the same ApplyLayout ⌥M ⏎ runs, over
+        // the demo's game data (vitals, so the meters have values) and its recorded streets (so the map has rooms).
+        // Panels nothing draws yet stay out, which is the data gating the frame is there to show.
+        if (string.Equals(view, "layouts", StringComparison.OrdinalIgnoreCase))
+        {
+            _shortcuts[(ConsoleModifiers.Alt, ConsoleKey.M)]();
+        }
+
+        if (string.Equals(view, "layout-combat", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            LoadDemoMap();
+            ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Combat);
         }
 
         // The ⌃Q confirmation, over a workspace that has something to lose: a second world marked
@@ -2773,6 +2794,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 // after this transition, so a server that does publish overwrites nothing: it adds a
                 // report beside a connection time that is already here.
                 _mssp.RecordConnection(session.World.Host, session.World.Port, _time.GetUtcNow());
+                ScheduleLayoutSuggestion(session);
             }
 
             UpdateStatus();
@@ -2786,12 +2808,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         session.MsspReceived += (_, e) => OnUi(() => CaptureMssp(session.World, e.Data));
         // The meters read the session's game data, which the session has already stored by the time this is
         // raised. Only the session the status row describes repaints it.
-        session.GameData.Changed += (_, _) => OnUi(() =>
+        session.GameData.Changed += (_, package) => OnUi(() =>
         {
             if (ReferenceEquals(session, _active))
             {
                 RefreshStatusBar();
             }
+
+            // A panel can have just got its data (vitals, who is here); re-folding is rate-limited and a no-op
+            // when nothing drawn changes, so this costs a dictionary lookup per message.
+            NoteLayoutInput(session.SessionKey);
+            NoteSuggestionSignal(session, package);
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
         session.MooEditReceived += (_, edit) => OnUi(() => ReceiveMooEdit(session, edit));
@@ -2817,6 +2844,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         session.EncodingChanged += (_, _) => OnUi(UpdateStatus);
         RefreshTabTitles();
         UpdateStatus();
+        ApplyLayoutOnBind(session);
     }
 
     /// <summary>
@@ -4639,6 +4667,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
         else
         {
+            PlaceNewSpawnWindow(session, window.Id);
             RebuildPaneArea();
         }
     }
@@ -5095,7 +5124,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen;
+        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
+        || _layoutsView.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -6674,6 +6704,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return () => { NextSearchHit(); return true; };
             }
 
+            // ⌥M opens the layouts list. ESC m, like the rest of the Alt letters.
+            if (claim.Key == ConsoleKey.M)
+            {
+                return () => { ShowLayouts(); return true; };
+            }
+
             // ⌥F freezes and resumes the focused pane. It was ⌃F, and moved so that search could have the
             // chord every reader on every platform reaches for. Same delivery story as ⌥D and ⌥R: ESC + a
             // printable byte, decoded as that letter with Alt set.
@@ -6910,6 +6946,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // And F7's sound levels, and F5's per-world download switch, which a playing queue holds a copy of.
         ApplySoundMix();
 
+        // And F5's layout rows: a live layout whose owner now resolves to another one is re-applied. No timers.
+        ReapplyLayoutAfterSettings();
+
         PersistConfiguration();
     }
 
@@ -7134,7 +7173,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             selection.SelectionIn(WorldsScreenRenderer.WorldsPane),
             selection.SelectionIn(WorldsScreenRenderer.CharactersPane),
             selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
-            OpenMsspScreen),
+            OpenMsspScreen,
+            Layouts.All),
             SaveConfiguration);
         session.Selection.Seed(WorldsScreenRenderer.WorldsPane, ActiveWorldIndex());
         session.Selection.Seed(WorldsScreenRenderer.CharactersPane, ActiveCharacterIndex());
@@ -7154,7 +7194,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             fkey,
             session.Selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
             _system.DesktopDimensions.Height,
-            info: true));
+            info: true,
+            layouts: Layouts.All));
     }
 
     /// <summary>
@@ -8179,6 +8220,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "term:map":
                 ShowMap();
                 return true;
+            case "layout:layouts":
+                ShowLayouts();
+                return true;
             case "term:mute":
             case "term:unmute":
                 SetMuted(id == "term:mute");
@@ -8387,6 +8431,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             RenderMap(MapWindowId(session.SessionKey));
             RefreshStatusBar();
+            NoteLayoutInput(session.SessionKey); // the first room recorded is the map panel's data
         };
         walk.Changed += (_, reason) => OnWalkChanged(session, reason);
         session.StateChanged += (_, e) =>
@@ -10484,6 +10529,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return map;
         }
 
+        // A layout panel drawn by a control of its own (TerminalPanels). An unregistered one falls through to an
+        // empty output view rather than vanishing, so a window restored from a build that had the panel still shows.
+        if (TerminalPanels.TryParseWindowId(windowId, out var panelId, out var panelOwner)
+            && Panels.GetOrCreate(new TerminalPanelContext(panelId, panelOwner, FindSession(panelOwner), windowId)) is { } panel)
+        {
+            return panel;
+        }
+
         return OutputViewFor(windowId, window.Title);
     }
 
@@ -10567,12 +10620,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Rebuilds the pane area from the model and swaps it into the live window.</summary>
     private void RebuildPaneArea()
     {
+        PaneAreaRebuilds++;
         var row = BuildWorkspaceRow();
         _window.RemoveContent(_workspaceRow);
         _window.InsertControl(WorkspaceRowIndex, row);
         _workspaceRow = row;
         RefreshTabTitles();
     }
+
+    /// <summary>How many times the pane area has been torn down and rebuilt; a test counts the reflows a change cost.</summary>
+    internal int PaneAreaRebuilds { get; private set; }
 
     /// <summary>The TabControl of the focused pane, or null if none is realised.</summary>
     private TabControl? FocusedTabs() => _paneTabs.GetValueOrDefault(_workspace.Layout.FocusedPaneId);

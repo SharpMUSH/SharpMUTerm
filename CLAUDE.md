@@ -924,6 +924,37 @@ fallbacks) for inline images/maps.
   - Screenshots of the window's cues come from a real window under Xvfb, driven with XTest; `--render-png`
     has no pointer and cannot show them.
 
+- **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
+  `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
+  `TerminalPanels.cs`; ⌥M / ⌃P ▸ *Layouts*; F5 `layout` rows; the `layouts` and `layout-combat` views). The layout's
+  name is shown nowhere on the main screen. Decisions not to relitigate:
+  - **A panel is a window.** `output` is the session's window, `chat` its spawn windows, `map` `map:<key>`, and
+    every other panel a window `panel:<panelId>:<key>` (`TerminalPanels.WindowId`) whose control comes from the
+    factory registered for that id (`Panels.Register(id, ctx => control)`, from `partial void
+    RegisterTerminalPanels()`), built once and re-parented like the map's. So panels get tabs, the rail, focus,
+    `Activate`/`SendTarget` (a panel window is owned by its session) and persistence for nothing. An id with no
+    factory counts as having no data (`DrawableAvailability`), so an unbuilt panel is *Waiting* and costs no cell.
+  - **Applying never closes a window.** Windows no panel places stay in the pane they were in if its id survives,
+    else in the output pane; a collapsed panel's windows are background tabs of the first pane in its region.
+  - **A restored workspace wins at startup.** The first bind of a character whose windows the resumed workspace
+    holds keeps that arrangement; any other bind applies the resolved layout; ⌥M ⏎ always applies. Only the live
+    entry point applies on its own (`autoLayout:`, the `save:`/`logRoot:` family), so no test or snapshot that
+    binds a session has its panes rearranged.
+  - **Re-folding is gated twice.** Inputs (game data, the map recorder, a new spawn window) arm one 500 ms timer
+    (`LayoutRefoldDelay`), and the re-fold rebuilds only if `LayoutRealiser.FoldShape` changed — a burst of GMCP
+    that draws the same panels reflows nothing (`PaneAreaRebuilds` is the pin). It stands down for good once the
+    tree's shape (`TreeShape`: pane ids and nesting) is not the one it applied: the player split, closed or
+    moved a pane and the arrangement is theirs. A divider dragged is not a shape change and is reset by the next
+    re-fold. A new spawn window goes into the live layout's chat pane, not the focused one.
+  - **Saving captures geometry, not intent.** `LayoutCapture` reads regions off the solved rectangles (above the
+    output = top strip, right of it = side, below = bottom); panels not on screen keep their old placement.
+    Saving changes to a built-in saves a copy and points the character (or the world using it) at the copy.
+  - **Layout saves go through `PersistConfiguration`**, never `SaveConfiguration`, which re-periodises timers.
+    F5's rows commit through `SaveConfiguration` like every screen and it re-applies a live layout whose owner
+    now resolves differently.
+  - **The suggestion is taken once per world** (`AcceptedLayoutSuggestion`), 5 s after a connect or at once when
+    vitals arrive, said in one notice, and only by the live entry point.
+
 ## One client, several hosts — and how they are kept the same
 
 The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the headless snapshot all run the
@@ -1105,6 +1136,9 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `tabs-many` (**more tabs than the strip can hold** — five of one character's captures in a split pane,
   which is the state every other tab view is too small to reach. Without eliding, that pane draws two
   tabs and half of a third and says nothing about the rest), plus the
+  `layouts` (the ⌥M list over the demo, through the registered shortcut) and `layout-combat` (the Combat layout
+  applied over the demo's game data and recorded streets: the map beside the output with Chat as a tab under it,
+  and no pane for the panels nothing draws yet), plus the
   default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
