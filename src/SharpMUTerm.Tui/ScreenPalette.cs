@@ -1,11 +1,17 @@
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// The colours the full-screen settings screens (F2–F9) are built from. Renderers interpolate them
-/// into markup tags; the views hand the same hexes to <see cref="SharpConsoleUI.Color"/> as control
-/// backgrounds, so the bands a renderer writes text for and the panel a view paints agree by
-/// construction. Screen files pull these in with
-/// <c>using static SharpMUTerm.Tui.ScreenPalette;</c>.
+/// The colour <em>roles</em> the full-screen settings screens (F1–F10) are built from, spelt as the Dark
+/// theme's values. Renderers interpolate them into markup tags; the views resolve that markup, and the
+/// control backgrounds, through a <see cref="ScreenTheme"/> for the active theme — so the bands a renderer
+/// writes text for and the panel a view paints agree by construction, on every theme. On Dark the two are
+/// the same bytes. Screen files pull these in with <c>using static SharpMUTerm.Tui.ScreenPalette;</c>.
+/// <para>
+/// A view must never hand one of these to a control directly (<c>new Color(ScreenPalette.EditBg)</c>, or a
+/// renderer's lines straight into a <c>MarkupControl</c>): that is a dark island on a light theme, defect
+/// D6. <see cref="ScreenChrome.Panel"/>, <see cref="ScreenChrome.Band"/> and
+/// <see cref="ScreenTheme.Colour"/> are the ways in.
+/// </para>
 /// </summary>
 internal static class ScreenPalette
 {

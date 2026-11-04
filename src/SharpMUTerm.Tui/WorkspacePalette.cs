@@ -156,19 +156,30 @@ internal static class WorkspacePalette
     /// plane it is going onto, so what is fixed here is hue and saturation. Ten, spread around the wheel,
     /// so two characters' colours are recognised rather than compared; saturated, because chroma is
     /// bounded by luminance and these are re-lit onto a dark plane.
+    /// <para>
+    /// <b>Picked for colour-blind readers as well</b> (<c>TintColourVisionTests</c>): searched, within
+    /// 40° of each name's hue, for the set whose closest pair — among the ten and the untinted plane, on
+    /// all three themes — is furthest apart under simulated protanopia, deuteranopia and tritanopia,
+    /// without the closest pair for typical vision getting any closer and without the light theme's planes
+    /// leaving pastel. Worst pair, CIEDE2000: 2.05 protan, 2.22 deutan, 2.00 tritan on Dark (were 1.74,
+    /// 0.28, 0.83), 1.99 deutan on Solarized Dark; typical vision 3.96 (was 3.71). That is "two panes side
+    /// by side differ", not "a pane is recognised alone": ten planes at one luminance near L* 7 cannot be,
+    /// for a dichromat — the best found with the names ignored was about 2.2 — which is why a tinted
+    /// character's rail row and tab say the colour by name.
+    /// </para>
     /// </summary>
     private static Rgb? Anchor(PaneTint tint) => tint switch
     {
-        PaneTint.Slate => new Rgb(0x1e, 0x5c, 0xe0),
-        PaneTint.Teal => new Rgb(0x00, 0xa0, 0x94),
-        PaneTint.Moss => new Rgb(0x3f, 0xa8, 0x18),
-        PaneTint.Ochre => new Rgb(0xd4, 0x96, 0x00),
-        PaneTint.Ember => new Rgb(0xd8, 0x33, 0x1c),
-        PaneTint.Plum => new Rgb(0xb0, 0x2c, 0xd4),
-        PaneTint.Indigo => new Rgb(0x5a, 0x3c, 0xf0),
-        PaneTint.Azure => new Rgb(0x00, 0x90, 0xd8),
-        PaneTint.Jade => new Rgb(0x00, 0xb0, 0x60),
-        PaneTint.Rose => new Rgb(0xe0, 0x30, 0x7a),
+        PaneTint.Slate => new Rgb(0x17, 0x57, 0xe0),
+        PaneTint.Teal => new Rgb(0x2e, 0xa0, 0x7f),
+        PaneTint.Moss => new Rgb(0x48, 0xa8, 0x30),
+        PaneTint.Ochre => new Rgb(0xa1, 0x32, 0x00),
+        PaneTint.Ember => new Rgb(0xd8, 0x00, 0x18),
+        PaneTint.Plum => new Rgb(0x60, 0x2f, 0xa1),
+        PaneTint.Indigo => new Rgb(0x40, 0x40, 0xff),
+        PaneTint.Azure => new Rgb(0x00, 0x89, 0xce),
+        PaneTint.Jade => new Rgb(0x07, 0xb0, 0x6e),
+        PaneTint.Rose => new Rgb(0xc6, 0x17, 0x84),
         _ => null,
     };
 

@@ -52,10 +52,13 @@ public enum PaneTint
     /// <summary>Green.</summary>
     Moss,
 
-    /// <summary>Amber.</summary>
+    /// <summary>
+    /// Red ochre — a burnt orange-brown. It was amber until the set was re-picked for colour-blind readers;
+    /// the stored name is kept, since a name is what the configuration holds.
+    /// </summary>
     Ochre,
 
-    /// <summary>Red-orange.</summary>
+    /// <summary>Red.</summary>
     Ember,
 
     /// <summary>Violet.</summary>

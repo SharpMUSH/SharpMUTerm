@@ -18,12 +18,13 @@ internal static class MsspScreenView
         MsspObservation? observation,
         DateTimeOffset now,
         int width,
+        ScreenTheme scheme,
         ScreenFocus? focus = null,
         int height = 0)
     {
-        var header = ScreenChrome.Band(MsspScreenRenderer.HeaderLine(width), ScreenPalette.HeaderBg);
+        var header = ScreenChrome.Band(MsspScreenRenderer.HeaderLine(width), ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            MsspScreenRenderer.FooterLine(world, observation, focus, width, now), ScreenPalette.FooterBg);
+            MsspScreenRenderer.FooterLine(world, observation, focus, width, now), ScreenPalette.FooterBg, scheme);
 
         var rows = ScreenChrome.Rows(height);
 
@@ -32,7 +33,7 @@ internal static class MsspScreenView
         // way for the control's content and the height it was sized for to disagree the moment the
         // renderer stopped being a pure function of its arguments.
         var lines = MsspScreenRenderer.Render(world, observation, now, focus, rows, width);
-        var body = ScreenChrome.Stretch(new MarkupControl(lines));
+        var body = ScreenChrome.Stretch(ScreenChrome.Panel(lines, scheme));
 
         var root = Controls.Grid()
             .WithAlignment(HorizontalAlignment.Stretch)

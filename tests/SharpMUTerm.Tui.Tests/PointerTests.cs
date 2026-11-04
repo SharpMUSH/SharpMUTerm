@@ -182,6 +182,21 @@ public class PointerTests
         await Assert.That(kinds.Any(t => t.Kind == PointerKind.Output && t.Shape == PointerShape.Text)).IsTrue();
     }
 
+    /// <summary>
+    /// A tinted character's rail row and tab say the pane colour <em>by name</em> — the cue that survives a
+    /// reader who cannot tell the ten hues apart, in the one place it costs no cell. An untinted character's
+    /// rows say nothing about colour.
+    /// </summary>
+    [Test]
+    public async Task ATintedCharactersRowsNameThePaneColour()
+    {
+        var (app, _) = App("tint-tabs");
+        var targets = Scan(app).Select(hit => hit.Target).Where(t => t.Tooltip is not null).ToArray();
+
+        await Assert.That(targets.Any(t => t.Kind == PointerKind.RailRow && t.Tooltip!.Contains("pane colour: "))).IsTrue();
+        await Assert.That(targets.Any(t => t.Kind == PointerKind.Tab && t.Tooltip!.Contains("pane colour: "))).IsTrue();
+    }
+
     [Test]
     public async Task ARightClickOnADividerOrAPaneAsksTheHostForAMenu()
     {

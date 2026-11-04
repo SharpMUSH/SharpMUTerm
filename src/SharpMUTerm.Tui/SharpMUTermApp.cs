@@ -53,6 +53,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly Theme _theme;
 
     /// <summary>
+    /// The settings screens' palette, resolved from <see cref="_theme"/> once (<see cref="ScreenTheme"/>).
+    /// Handed to every surface built from <see cref="ScreenPalette"/>'s roles — F1–F10, the deletion review
+    /// and the package and send lists — so they follow a Light theme instead of staying dark.
+    /// </summary>
+    private readonly ScreenTheme _screens;
+
+    /// <summary>
     /// The colours this client paints in its own voice, resolved from <see cref="_theme"/> and held to
     /// the legibility floor against the plane they land on — see <see cref="ChromeInk"/>. They were
     /// hexes written into the markup at each use site, each picked against a dark theme and then painted
@@ -896,10 +903,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
-        _settings = new SettingsOverlay(_system);
-        _composer = new ComposeOverlay(_system, _spelling);
-        _packageView = new ListOverlay(_system);
-        _sendMenu = new ListOverlay(_system);
+        _screens = ScreenTheme.For(_theme);
+        _settings = new SettingsOverlay(_system, _screens);
+        _composer = new ComposeOverlay(_system, _spelling, _screens);
+        _packageView = new ListOverlay(_system, _screens);
+        _sendMenu = new ListOverlay(_system, _screens);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -7066,6 +7074,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             observation,
             _time.GetUtcNow(),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7112,6 +7121,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             session.Selection.SelectionIn(WorldsScreenRenderer.WorldsPane),
             session.Selection.SelectionIn(WorldsScreenRenderer.CharactersPane),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             fkey,
             session.Selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
@@ -7147,6 +7157,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             session.Selection.SelectionIn(0),
             RouteTargets(),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height,
             _theme,
@@ -7164,6 +7175,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7184,6 +7196,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7199,6 +7212,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7220,7 +7234,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var session = new SettingsSession(_ => OptionsScreenRenderer.Model(screen()), SaveConfiguration);
         return new ScreenBinding(session, () => OptionsScreenView.Build(
-            screen(), _system.DesktopDimensions.Width, session.Focus()));
+            screen(), _system.DesktopDimensions.Width, _screens, session.Focus()));
     }
 
     /// <summary>The <c>--view</c> suffix that opens a settings screen with a field being typed into.</summary>

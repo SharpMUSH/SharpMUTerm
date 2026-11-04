@@ -21,6 +21,7 @@ internal static class TriggersScreenView
         int selectedTrigger,
         IReadOnlyList<string> routeTargets,
         int width,
+        ScreenTheme scheme,
         ScreenFocus? focus = null,
         int height = 0,
         Theme? theme = null,
@@ -29,9 +30,9 @@ internal static class TriggersScreenView
         var header = ScreenChrome.Band(
             TriggersScreenRenderer.HeaderLine(
                 width, TriggersScreenRenderer.Model(sets, selectedTrigger, routeTargets), focus),
-            ScreenPalette.HeaderBg);
+            ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            TriggersScreenRenderer.FooterLine(sets, selectedTrigger, width, focus), ScreenPalette.FooterBg);
+            TriggersScreenRenderer.FooterLine(sets, selectedTrigger, width, focus), ScreenPalette.FooterBg, scheme);
 
         // Body: rule list │ editor, as two real columns. The split is a function of the screen's width:
         // at 120 the rule list keeps the share it was designed with, and at 100 it gives cells back to
@@ -60,9 +61,9 @@ internal static class TriggersScreenView
             sets, selectedTrigger, routeTargets, focus,
             width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme, recent);
 
-        var rulesCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, body)));
-        var editorCol = ScreenChrome.Stretch(new MarkupControl(
-            ScreenChrome.Indent(ScreenChrome.Window(right, body))));
-        return ScreenChrome.Split(header, footer, rulesCol, editorCol, rules, Math.Max(left.Count, right.Count), body);
+        var rulesCol = ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(left, body), scheme));
+        var editorCol = ScreenChrome.Stretch(ScreenChrome.Panel(
+            ScreenChrome.Indent(ScreenChrome.Window(right, body)), scheme));
+        return ScreenChrome.Split(header, footer, rulesCol, editorCol, rules, Math.Max(left.Count, right.Count), body, scheme);
     }
 }

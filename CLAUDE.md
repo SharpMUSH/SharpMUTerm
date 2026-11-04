@@ -726,9 +726,10 @@ fallbacks) for inline images/maps.
   - **A span carrying a background is measured against *it*.** That plane is known exactly and a
     highlight's pair must be judged as a pair; a span with the default background emits none and takes
     the pane, so it is measured against the reading plane. `reverse` swaps first.
-  - **`ScreenPalette` is deliberately not built this way.** Those constants sit on the settings screens'
-    own fixed backdrop, which no theme moves; measuring them against a theme plane would be measuring
-    them against a plane they are never painted on. `ChromeInk` is the other four — `Accent`, `Notice`,
+  - **`ScreenPalette` is not built this way either, but it does follow the theme** (`ScreenTheme`, Tui;
+    defect D6). The settings screens are their own backdrop, so their inks are measured against their own
+    planes rather than a pane's; but the planes themselves move with the theme. See the *settings screens
+    follow the theme* entry below. `ChromeInk` is the other four — `Accent`, `Notice`,
     `Draft`, `Marker` — and it carries **the plane it was resolved against**, so a renderer can hold a
     colour it was *handed* (a world's accent) to the same floor.
   - **A fill is not text.** A ribbon segment's accent, a pane tint and F2's swatch are identity or
@@ -746,6 +747,31 @@ fallbacks) for inline images/maps.
     focused pane. Reaching it means giving up `[dim]` across every renderer for an explicit floor-checked
     grey — a sweep, for a near miss on one theme. The exemption is a named predicate with the number in
     it, so whoever does that sweep can delete it and watch the test pass.
+- **The settings screens follow the theme, and the renderers do not know it** (`ScreenTheme`, Tui; defect
+  D6). `ScreenPalette`'s constants are *roles* spelt as the Dark theme's values; renderers keep writing
+  `[{Label}]…` in them, and the views resolve the markup and every control colour through one immutable
+  `ScreenTheme` the app builds from its theme (`ScreenTheme.For`, held in `_screens`, handed to
+  `SettingsOverlay`, `ComposeOverlay`, `ListOverlay` and `EditReviewOverlay`, and to every `*ScreenView.Build`
+  as a **required** parameter). Decisions not to relitigate:
+  - **Resolve at the view, not in the renderers.** A palette parameter on every renderer function is every
+    screen and every renderer test rewritten for a value only the last step needs; a mutable `ScreenPalette`
+    is global state the parallel suites race on. `ScreenChrome.Panel`/`Band`/`VerticalRule(scheme)` and
+    `ScreenTheme.Colour` are the only ways a role reaches a control. A view that hands a renderer's lines
+    straight to a `MarkupControl` is a dark island on Light — legible, so `FrameContrastTests` cannot see it;
+    `ScreenThemeTests.NoLightSettingsFramePaintsADarkPlane` can.
+  - **Dark resolves to the constants byte for byte** (`IsIdentity`), so no Dark frame moved. A dark theme
+    keeps each role's lightness and takes its background's hue shift; a light one mirrors L* (100 − L*) and
+    keeps the tint, the menu shadow is placed below the darkest plane, and every ink is then held to
+    `Contrast.Floor` on the planes it is drawn on (`PlanesUnder`: a label never sits on the menu's selected
+    row). The wells are the *lightest* thing on a light screen — the input-field convention there.
+  - **`Paint` rewrites colours and nothing else**: escaped `[[`/`]]` and `link=` targets are text; a run of
+    `█░▒▓` is a colour *sample* and keeps its hex even when it equals a role's (F2's swatch of a highlight
+    that happens to be `#00f5b7`); a foreground that is no role (a world's accent) is held to the floor on
+    the plane it lands on, except on Dark, which stays as it was.
+  - A bordered modal's title, border and unstyled text are the framework's cyan and `#eeeeee`, 1.4:1 on a
+    light backdrop; `ScreenTheme.Frame` recolours them off Dark. **Not themed**: the workspace popups that do
+    not sit on a settings screen (⌃P, quit, ⌃B panel, search, game data, message log, history) still paint
+    `ScreenPalette.MenuBg` raw. They pass the floor on Light and look dark; same recipe when someone wants it.
 - **A trigger's `route` says three things, and the third is "nothing"** (`TriggerActions.MainWindow`,
   Core; F2's `route` list). `SpawnTarget = null` has always meant *this rule adds no destination — the
   line follows whatever the other matched rules decided*, which is exactly what a highlight rule wants.
@@ -1548,6 +1574,18 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   chroma distance on the darkened surface: nearest pair Teal/Jade at 7.8, against that test's floor of 6.
   The yellow-greens were tried and rejected — an olive measured 5.9 from `Ochre`, a lime 6.5 from `Moss` — and
   `TintStrength` went from 0.75 to 0.85 with the darkening, for the same chroma-is-bounded reason.
+  **The ten anchors were then re-picked for colour-blind readers** (`ColourVision`, Core: Machado 2009
+  dichromat matrices on linear sRGB, CIEDE2000; `TintColourVisionTests`). Searched within 40° of each
+  name's hue for the set whose closest pair — the ten *and* the untinted plane, all three themes — is
+  furthest apart under protanopia, deuteranopia and tritanopia, on condition that typical vision's closest
+  pair got no closer and the Light planes stayed pastel. Worst pair went from 0.28 (deutan, Moss/Ember on
+  Dark) to 1.99 (deutan, Moss/Ochre on Solarized Dark); typical vision 3.71 → 3.96. The floors are 1.9
+  (dichromat) and 3.5 (typical). **That is "side by side they differ", not "alone it is recognised"**,
+  and it cannot be more: ten planes at one luminance near L* 7, seen on one hue axis, top out around 2.2
+  even with the names ignored. So the name is the second cue, where it costs no cell: a tinted character's
+  rail row and tab tooltips say `pane colour: moss` (`TintLine`), and F5's `tint` row already names it.
+  **Names are stored, so they were kept**; `Ochre` is now a red ochre (hue 18°) and `Ember` a red, and the
+  enum's doc says so. Do not add a migration for a hue change — the name is the setting.
   **It says nothing on a monochrome terminal, deliberately** — the
   cue that must survive a lost hue is focus, and the rail and the tab title still name the character in
   words — and it is a **truecolor** cue, which is unacceptable for focus and is why
