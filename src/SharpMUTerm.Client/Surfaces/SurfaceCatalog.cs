@@ -530,6 +530,11 @@ public static class SurfaceCatalog
                 // Add is Browse worlds' own pick. The cells reach both through the Browse row.
                 new(SurfaceActionKind.Modal, "find", "FindWorldsInWelcome"),
                 new(SurfaceActionKind.Modal, "add", "PickWorld"),
+
+                // A world added from there that answers at several addresses is chosen from in the card, as in Browse
+                // worlds, and the choice fills in the form; Esc goes back to the worlds.
+                new(SurfaceActionKind.Modal, "address", "ChooseWorldEndpoint"),
+                new(SurfaceActionKind.Modal, "leave", "LeaveWorldChoice"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.WelcomeSurface.Render",

@@ -21,7 +21,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - The docked composer in the window has its escaping on a chip you can click, a paragraph and word count, and Preview
   and Send buttons; Preview opens the full-screen composer with the as-sent band.
 - The window's welcome is one page: find a world from mu*index and add it, connect directly (with the `/connect` line
-  it stands for), and pick a starting layout from two cards. Nothing is fetched until you ask for the list.
+  it stands for), and pick a starting layout from two cards. Nothing is fetched until you ask for the list. A world
+  listed at several addresses lets you choose one right in the Find a world card (Esc goes back to the worlds).
 - The desktop window's status line is now a footer under the whole window, in the window's own type, with keys in words.
   Clicking "Ctrl+P palette" opens the palette, and clicking a notice's action (Reconnect, Open F5…) runs it.
 - The desktop window draws the command line as a rounded field with the prompt in its own type and a hint at the right

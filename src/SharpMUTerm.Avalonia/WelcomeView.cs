@@ -46,9 +46,13 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private readonly TextBlock _layoutReason;
     private readonly List<(WelcomeLayout Layout, Border Card)> _layoutCards = [];
     private readonly List<Border> _worldRows = [];
+    private readonly List<Border> _addressRows = [];
+    private readonly TextBlock _footer;
     private WelcomeModel _model;
     private WorldBrowseSession? _worlds;
     private WelcomeModel? _filledFrom;
+    private WorldGame? _choiceDrawn;
+    private int _address;
 
     public WelcomeView(WelcomeSession session, NativeTokens colours, Action done)
     {
@@ -200,7 +204,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         others.Children.Add(ModalParts.Button("Import…", null, colours, () => Choose(WelcomeChoice.Import)));
         page.Children.Add(others);
 
-        var footer = ModalParts.Footer("Tab moves · Enter connects, or searches · Esc closes", colours);
+        var footer = _footer = ModalParts.Footer(PageKeys, colours);
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
         Children.Add(new ScrollViewer
@@ -247,6 +251,15 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     /// <summary>The world rows the find card shows now, for a test.</summary>
     public IReadOnlyList<Border> WorldRows => _worldRows;
+
+    /// <summary>The address rows the find card shows while a picked world's addresses are chosen from, for a test.</summary>
+    public IReadOnlyList<Border> AddressRows => _addressRows;
+
+    /// <summary>Whether the find card lists a picked world's addresses in place of the worlds, for a test.</summary>
+    public bool ChoosingAddress => _worlds?.Model.Choosing is not null;
+
+    /// <summary>The address Enter would choose, for a test.</summary>
+    public int SelectedAddress => _address;
 
     /// <summary>The <c>/connect</c> line under the form as drawn, for a test.</summary>
     public string CommandLine => string.Concat(_command.Inlines?.OfType<Run>().Select(r => r.Text) ?? []);
@@ -304,7 +317,19 @@ internal sealed class WelcomeView : DockPanel, IModalView
     /// <summary>A row's Add: Browse worlds' pick of row <paramref name="index"/> of the list's rows.</summary>
     public void Add(int index) => _worlds?.Pick(index);
 
-    private static FontFamily Mono => new("JetBrains Mono, DejaVu Sans Mono, Consolas, Menlo, monospace");
+    /// <summary>
+    /// An address row, or Enter on the selected one, while a picked world's addresses are listed: Browse worlds' own
+    /// choice, which reopens the welcome with the form filled in from it.
+    /// </summary>
+    public void ChooseAddress(int index) => _worlds?.Choose(index);
+
+    /// <summary>Back, or Esc, while the addresses are listed: the worlds again, as Browse worlds' Esc does.</summary>
+    public void LeaveAddresses() => _worlds?.Back();
+
+    /// <summary>The page's keys, spelt in words.</summary>
+    private const string PageKeys = "Tab moves · Enter connects, or searches · Esc closes";
+
+    private static FontFamily Mono => NativeTokens.MonoFont;
 
     private void OnChanged(WelcomeModel model) => Dispatcher.UIThread.Post(() =>
     {
@@ -402,6 +427,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
     {
         _findBody.Children.Clear();
         _worldRows.Clear();
+        _addressRows.Clear();
+        _search.IsVisible = true;
         if (!_session.CanFindWorlds)
         {
             // No directory set (or a host that cannot list in place): the model's reason, and Browse worlds as a choice.
@@ -435,7 +462,23 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
         _findBody.Children.Clear();
         _worldRows.Clear();
+        _addressRows.Clear();
         var model = worlds.Model;
+        if (model.Choosing is { } game)
+        {
+            DrawChoice(model, game);
+            return;
+        }
+
+        var choosingWasDrawn = _choiceDrawn is not null;
+        _choiceDrawn = null;
+        _search.IsVisible = true;
+        _footer.Text = PageKeys;
+        if (choosingWasDrawn)
+        {
+            _search.Focus();
+        }
+
         var query = _search.Text ?? string.Empty;
         var shown = model.View(query, WorldDirectorySort.Players);
         var list = new StackPanel { Spacing = 8 };
@@ -471,6 +514,124 @@ internal sealed class WelcomeView : DockPanel, IModalView
             ? NativeKeys.Words(status)
             : $"{model.CountLine(query)} · {WorldBrowseModel.AttributionLine}";
         _findNote.Foreground = _colours.Brush(model.State is WorldBrowseState.Failed || (model.Problem is not null && model.State == WorldBrowseState.Ready) ? _colours.Warn : _colours.Dim);
+    }
+
+    /// <summary>
+    /// A picked world's addresses in the find card, in place of the worlds: Browse worlds' choice, with its words — whose
+    /// addresses and how many, the charset, then a row per address (<c>host:port</c>, TLS or plain, its state) — and Back.
+    /// </summary>
+    private void DrawChoice(WorldBrowseModel model, WorldGame game)
+    {
+        if (!ReferenceEquals(_choiceDrawn, game))
+        {
+            _address = Math.Max(0, game.FirstConnectable);
+        }
+
+        var fresh = _choiceDrawn is null;
+        _choiceDrawn = game;
+        _search.IsVisible = false;
+        _footer.Text = NativeKeys.Words(string.Join(" · ", WorldBrowseModel.ChoiceKeys.Select(k => $"{k.Key} {k.Label}")));
+        _findBody.Children.Add(new TextBlock
+        {
+            Text = model.ChoiceLine,
+            FontSize = NativeTokens.Title,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _colours.Brush(_colours.Text),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        _findBody.Children.Add(new TextBlock
+        {
+            Text = model.CharsetLine,
+            FontSize = NativeTokens.Body,
+            Foreground = _colours.Brush(_colours.Dim),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var list = new StackPanel { Spacing = 2 };
+        _address = Math.Clamp(_address, 0, game.Endpoints.Count - 1);
+        for (var i = 0; i < game.Endpoints.Count; i++)
+        {
+            var endpoint = game.Endpoints[i];
+            var (address, security, state) = WorldBrowseModel.Endpoint(endpoint);
+            var index = i;
+            var line = new DockPanel();
+            var host = new TextBlock
+            {
+                Text = address,
+                FontFamily = Mono,
+                FontSize = NativeTokens.Body + 1,
+                Foreground = _colours.Brush(_colours.Text),
+                Width = 210,
+                Margin = new Thickness(0, 0, 10, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            DockPanel.SetDock(host, Dock.Left);
+            line.Children.Add(host);
+            var kind = new TextBlock
+            {
+                Text = security,
+                FontSize = NativeTokens.Body,
+                FontWeight = endpoint.Tls ? FontWeight.SemiBold : FontWeight.Normal,
+                Foreground = _colours.Brush(endpoint.Tls ? _colours.Accent : _colours.Dim),
+                Width = 44,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            DockPanel.SetDock(kind, Dock.Left);
+            line.Children.Add(kind);
+            line.Children.Add(new TextBlock
+            {
+                Text = state,
+                FontSize = NativeTokens.Body,
+                Foreground = _colours.Brush(endpoint.Stale || !endpoint.Connectable ? _colours.Warn : _colours.Dim),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            var row = ModalParts.Row(line, address, () => SelectAddress(index), () => ChooseAddress(index));
+            ToolTip.SetTip(row, WorldBrowseModel.EndpointText(endpoint));
+            _addressRows.Add(row);
+            list.Children.Add(row);
+        }
+
+        _findBody.Children.Add(new ScrollViewer
+        {
+            Content = list,
+            MaxHeight = ShownRows * 40,
+            HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+        });
+
+        var back = ModalParts.Button("Back to the worlds", "Esc", _colours, LeaveAddresses);
+        back.Name = "BackToWorlds";
+        back.HorizontalAlignment = HorizontalAlignment.Left;
+        _findBody.Children.Add(back);
+
+        _findNote.Text = NativeKeys.Words(model.Problem ?? WorldBrowseModel.ChoiceNote);
+        _findNote.Foreground = _colours.Brush(model.Problem is null ? _colours.Dim : _colours.Warn);
+        HighlightAddress();
+
+        // The Add pressed to get here has left the page; the keys stay with the choice.
+        if (fresh)
+        {
+            back.Focus();
+        }
+    }
+
+    private void SelectAddress(int index)
+    {
+        if (index != _address)
+        {
+            _address = index;
+            HighlightAddress();
+        }
+    }
+
+    private void HighlightAddress()
+    {
+        for (var i = 0; i < _addressRows.Count; i++)
+        {
+            _addressRows[i].Background = i == _address ? _colours.Brush(_colours.Selected) : Brushes.Transparent;
+        }
     }
 
     private static int IndexOf(WorldBrowseModel model, WorldListing world)
@@ -624,6 +785,26 @@ internal sealed class WelcomeView : DockPanel, IModalView
             return;
         }
 
+        if (_worlds?.Model.Choosing is { } game)
+        {
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    e.Handled = true;
+                    LeaveAddresses();
+                    return;
+                case Key.Up when !IsWithinForm(e.Source):
+                case Key.Down when !IsWithinForm(e.Source):
+                    e.Handled = true;
+                    SelectAddress(ModalParts.Step(_address, e.Key == Key.Up ? -1 : 1, game.Endpoints.Count));
+                    return;
+                case Key.Enter when !IsWithinForm(e.Source):
+                    e.Handled = true;
+                    ChooseAddress(_address);
+                    return;
+            }
+        }
+
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
@@ -647,6 +828,10 @@ internal sealed class WelcomeView : DockPanel, IModalView
             Connect();
         }
     }
+
+    /// <summary>Whether a key came from the connect card's fields, where Enter connects whatever the find card shows.</summary>
+    private bool IsWithinForm(object? source) =>
+        source is Visual v && new Visual[] { _host, _port, _character, _tls, _passwordLater }.Any(f => IsWithin(v, f));
 
     private static bool IsWithin(Visual visual, Visual ancestor)
     {

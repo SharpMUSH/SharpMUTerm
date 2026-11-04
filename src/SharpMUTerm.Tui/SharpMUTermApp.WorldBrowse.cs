@@ -280,6 +280,8 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
+        // The choice is over, so a list shown again (the welcome's find card, reopened filled in) lists the worlds again.
+        _worldModel = _worldModel with { Choosing = null, Problem = null };
         OpenWorldForm(game.Address(index));
     }
 
@@ -380,6 +382,8 @@ internal sealed partial class SharpMUTermApp
             ThemeIsDark(),
             index => OnUiThread(() => PickWorld(worlds!.Model, index)),
             words => OnUiThread(() => AskWorldDirectory(words)),
+            endpoint => OnUiThread(() => ChooseWorldEndpoint(worlds!.Model, endpoint)),
+            () => OnUiThread(LeaveWorldChoice),
             () => { })
         {
             Theme = _theme.Clone(),

@@ -56,7 +56,8 @@ public class NativeTabStripTests
     [Test]
     public async Task TheStripRowStaysAndNothingMoves()
     {
-        await using var cells = App(HostChrome.HeaderAndRail, out _, "split");
+        // The same arrangement with the strips left to the cells: drawing them natively is the only difference.
+        await using var cells = App(HostChrome.Native with { Tabs = false }, out _, "split");
         await using var native = App(HostChrome.Native, out _, "split");
 
         await Assert.That(native.PaneOutputRects()).IsEquivalentTo(cells.PaneOutputRects());

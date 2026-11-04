@@ -864,19 +864,43 @@ public class SurfaceParityTests
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
             });
-        // The welcome's Find a world card: Show worlds lists the directory in the page, Add on the first row is the
-        // browse list's pick — the same connect form, filled in, as the cells' Browse worlds row and ⏎.
+        // The welcome's Find a world card: Show worlds lists the directory in the page, Add on the second row (Lanternport,
+        // one address) is the browse list's pick — the same connect form, filled in, as the cells' Browse worlds row and ⏎.
         await SameModal("welcome: find a world and add it", "welcome",
             (app, m) =>
             {
                 var welcome = (WelcomeSession)m.Open(SurfaceCatalog.Welcome)!;
                 welcome.FindWorlds(string.Empty);
-                welcome.Worlds!.Pick(0);
+                welcome.Worlds!.Pick(1);
             },
             app =>
             {
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
                 app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+            });
+        // The demo's first world (Aetherfall) answers at several addresses, so Add lists them in the card; choosing the
+        // second (plain) fills in the form with it and the charset's encoding — as the cells' Browse pick and choice do.
+        await SameModal("welcome: add a world with several addresses, choose the second", "welcome",
+            (app, m) =>
+            {
+                var welcome = (WelcomeSession)m.Open(SurfaceCatalog.Welcome)!;
+                welcome.FindWorlds(string.Empty);
+                welcome.Worlds!.Pick(0);
+                if (welcome.Worlds.Model.Choosing is not { Endpoints.Count: > 1 })
+                {
+                    throw new InvalidOperationException("the demo's first world no longer answers at several addresses");
+                }
+
+                welcome.Worlds.Choose(1);
+            },
+            app =>
+            {
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
                 app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
             });
         probed.Add(SurfaceCatalog.Welcome);
