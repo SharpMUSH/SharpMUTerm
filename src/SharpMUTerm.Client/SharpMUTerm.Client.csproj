@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The shared client shell: view-models and the contribution registry that every host's views read from.
+    It references Core and nothing that draws (no SharpConsoleUI, no Avalonia), so the terminal views and the
+    desktop window can both be written against it. ClientAssemblyTests fails the day that stops being true.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SharpMUTerm.Client</RootNamespace>
+    <AssemblyName>SharpMUTerm.Client</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpMUTerm.Core\SharpMUTerm.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -16,6 +16,12 @@ public static class CommandIds
     /// <summary>Prefix of a "go to this window" id; the remainder is a workspace window id.</summary>
     public const string WindowPrefix = "win:";
 
+    /// <summary>Prefix of an "open this settings screen" id; the remainder is the screen's first view name.</summary>
+    public const string ScreenPrefix = "screen:";
+
+    /// <summary>Prefix every send-group id shares: the toggles, <see cref="GroupSend"/> and <see cref="GroupClear"/>.</summary>
+    public const string GroupPrefix = "group:";
+
     /// <summary>Prefix of an "add to / remove from the send group" id; the remainder is a session key.</summary>
     public const string GroupTogglePrefix = "group:toggle:";
 

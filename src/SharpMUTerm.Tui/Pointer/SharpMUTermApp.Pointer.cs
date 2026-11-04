@@ -535,7 +535,7 @@ internal sealed partial class SharpMUTermApp
 
             if (catalog.FirstOrDefault(c => c.Id == id) is { } command)
             {
-                items.Add(new PointerMenuItem(command.Title, ShortHint(command.Subtitle), () => OnUiThread(() => DispatchCommand(id))));
+                items.Add(new PointerMenuItem(command.Title, MenuKeyHint(command), () => OnUiThread(() => DispatchCommand(id))));
             }
         }
     }

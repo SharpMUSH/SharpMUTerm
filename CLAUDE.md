@@ -58,7 +58,7 @@ fallbacks) for inline images/maps.
 
 ## Repository state
 
-**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all twelve projects on
+**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all fifteen projects on
 `net10.0`, with the full test suite passing. In place:
 
 - **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
@@ -194,6 +194,21 @@ fallbacks) for inline images/maps.
     the review opens, so the review is never shown for bytes the index did not name. The focused window's
     world (its session's, else its owner's, never `_active`) sorts its own packages first; a `*` package does
     not count as the world's own. The default index repository does not exist yet.
+- **The shared client shell** (`SharpMUTerm.Client`; `ContributionRegistry`). UI-agnostic, references Core only
+  (`ClientAssemblyTests` fails on a SharpConsoleUI or Avalonia reference). The registry holds six kinds —
+  commands, panels, settings sections (field descriptors only), status cells (reserved width, drop order),
+  overlays, output decorators — each with a stable id unique within its kind and an owner (built-in or a
+  package id, so `RemoveOwnedBy` takes a package's contributions with it). Order is registration order unless
+  the kind defines one, ties by registration. Only **commands** are live so far:
+  - **⌃P's catalog is the registry's.** `BuiltInCommands.Register` (Client) says what each entry is called,
+    its group, its key per host (`KeyHint`, `HostKey.Newline` resolved from `HostKeyGlyphs`) and when it is
+    offered; the work is the Tui's `RunBuiltInCommand`, handed in as `run`. `CommandPalette`, the pointer menu
+    (`AddCommands`, key from the contribution) and `DispatchCommand` all read `SharpMUTermApp.Contributions`.
+    Entries generated from live state (characters, windows, panes, settings screens, the send group) are a
+    `CommandFamily` owning an id prefix; a single command's id may not fall under one. Dispatch ignores
+    availability (a rail row or the other half of a stateful pair still runs). A new ⌃P command is a
+    contribution in `BuiltInCommands` plus a case in `RunBuiltInCommand`; Core's `CommandCatalog` keeps only
+    `CharacterCycle`.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
@@ -915,8 +930,8 @@ through `MacroKeys`, `ScreenField` and the keypad renderer.
   ```bash
   dotnet run -c Release --project tests/SharpMUTerm.Core.Tests </dev/null
   ```
-  There are six: Core, Graphics, Scripting, Web, Tui, Avalonia. Primary signal is
-  `dotnet build SharpMUTerm.slnx` plus all six green and warning-free.
+  There are seven: Core, Client, Graphics, Scripting, Web, Tui, Avalonia. Primary signal is
+  `dotnet build SharpMUTerm.slnx` plus all seven green and warning-free.
 - **Building against the local SharpConsoleUI clone surfaces 2 NuGet advisory warnings** for
   AngleSharp. They are the framework's, not ours; a build against the package has none.
 
@@ -2082,9 +2097,10 @@ Planned solution layout:
 |---|---|
 | `SharpMUTerm.Core` | Transport, telnet, ANSI/MXP/Pueblo parsers, GMCP/MSDP routing, scrollback, engines, logging (no UI deps) |
 | `SharpMUTerm.Graphics` | Kitty/Sixel encoders, capability probe, half-block fallback, `InlineImagePolicy` (no UI deps) |
+| `SharpMUTerm.Client` | The shared client shell: the contribution registry and (later) view-models both hosts read. References Core only — no SharpConsoleUI, no Avalonia |
 | `SharpMUTerm.Scripting` | MoonSharp host + scripting API |
 | `SharpMUTerm.Tui` | SharpConsoleUI application |
-| `*.Tests` (Core, Graphics, Scripting, Web, Tui) | TUnit |
+| `*.Tests` (Core, Client, Graphics, Scripting, Web, Tui, Avalonia) | TUnit |
 
 ## Milestone M1 — first task (delivered)
 
@@ -2099,7 +2115,7 @@ Kept for context; **M1 is done** (see *Repository state* above). As originally s
 
 ## Verification
 
-- Primary signal: `dotnet build SharpMUTerm.slnx` plus all six suites (see *Building and testing*).
+- Primary signal: `dotnet build SharpMUTerm.slnx` plus all seven suites (see *Building and testing*).
   Keep coverage in `SharpMUTerm.Core.Tests` — ANSI/SGR parser, telnet round-trips, engines.
 - **The TUI is verifiable headlessly** via the snapshot pipeline above; a claim about layout or
   chrome should be backed by a rendered frame you actually looked at, not by reading the markup.
