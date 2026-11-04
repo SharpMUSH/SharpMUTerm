@@ -40,6 +40,17 @@ public static class WindowTitle
         };
     }
 
+    /// <summary>The most a title's unread count says before it reads <c>99+</c>.</summary>
+    public const int MaxUnread = 99;
+
+    /// <summary>
+    /// <paramref name="title"/> led by how many lines arrived while the window was behind another —
+    /// <c>(3) Corvid@Aetherfall — SharpMUTerm</c> — or the title alone for none. Capped at <c>99+</c>, so a busy
+    /// channel does not retitle the window with every line.
+    /// </summary>
+    public static string WithUnread(string title, int unread) =>
+        unread <= 0 ? title : $"({(unread > MaxUnread ? $"{MaxUnread}+" : unread.ToString(System.Globalization.CultureInfo.InvariantCulture))}) {title}";
+
     private static string Clean(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))

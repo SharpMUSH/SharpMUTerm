@@ -31,10 +31,25 @@ internal sealed class FakeTelnetSession : ITelnetSession
 
     public List<(string Package, string Json)> SentGmcp { get; } = new();
 
+    /// <summary>When set, the next connect fails with it.</summary>
+    public Exception? ConnectFault { get; set; }
+
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
+        if (ConnectFault is { } fault)
+        {
+            return Task.FromException(fault);
+        }
+
         IsConnected = true;
         return Task.CompletedTask;
+    }
+
+    /// <summary>The server goes away: cleanly (an orderly close) with no error, or failed with one.</summary>
+    public void Drop(Exception? error = null)
+    {
+        IsConnected = false;
+        Disconnected?.Invoke(this, new SessionDisconnectedEventArgs(error));
     }
 
     public ValueTask SendLineAsync(string text, CancellationToken cancellationToken = default)

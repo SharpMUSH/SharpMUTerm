@@ -163,6 +163,9 @@ public static partial class BuiltInSettings
                 },
                 ItemFlag<Trigger>("gag", "gag line", DeliveryGroup, t => t.Actions.Gag, (t, v) => t.Actions.Gag = v,
                     "keep the line out of its usual window", "hide suppress", () => NewTrigger()),
+                ItemFlag<Trigger>("alert", "alert me", DeliveryGroup, t => t.Actions.Alert, (t, v) => t.Actions.Alert = v,
+                    "tell the desktop when this matches while you are in another window", "notify notification bell flash",
+                    () => NewTrigger()),
 
                 ItemText<Trigger>("rewrite", "rewrite", TextRule.Template, ActionsGroup,
                     (_, t) => t.Actions.Rewrite, (_, t, v) => t.Actions.Rewrite = v,

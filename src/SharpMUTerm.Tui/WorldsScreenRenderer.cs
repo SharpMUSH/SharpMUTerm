@@ -104,6 +104,24 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
     internal const int JoinWrapsField = 16;
 
+    /// <summary><see cref="WorldDefinition.AutoReconnect"/>, as one of <see cref="ReconnectChoices"/>.</summary>
+    internal const int ReconnectField = 17;
+
+    /// <summary><see cref="WorldDefinition.CommandSeparator"/>, as one of <see cref="SeparatorChoices"/>.</summary>
+    internal const int StackingField = 18;
+
+    /// <summary><see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
+    internal const int AlertOnField = 19;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.AutoReconnect"/>.</summary>
+    internal static readonly IReadOnlyList<string> ReconnectChoices = WorldFieldValues.ReconnectChoices;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.CommandSeparator"/>.</summary>
+    internal static readonly IReadOnlyList<string> SeparatorChoices = WorldFieldValues.SeparatorChoices;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.AlertOnName"/>.</summary>
+    internal static readonly IReadOnlyList<string> AlertChoices = WorldFieldValues.AlertChoices;
+
     /// <summary>F5's words for <see cref="WorldDefinition.JoinWrappedLines"/>: off shows rows as the server sent them.</summary>
     internal static readonly IReadOnlyList<string> JoinWrapChoices = WorldFieldValues.JoinWrapChoices;
 
@@ -752,7 +770,8 @@ internal static class WorldsScreenRenderer
     internal static readonly IReadOnlyList<string> WorldFieldOrder =
     [
         "name", "host", "port", "encoding", "keepalive", "gmcp-modules", "content", "emoji", "map-room", "map-exits",
-        "walk-fail", "sounds", "edit-grab", "gmcp-login", "discord", "layout", "join-wraps",
+        "walk-fail", "sounds", "edit-grab", "gmcp-login", "discord", "layout", "join-wraps", "reconnect", "stacking",
+        "alert-on",
     ];
 
     /// <summary>The world's two security checkboxes, drawn in the WORLD block (<see cref="SecurityPane"/>), by declared id.</summary>
@@ -1047,6 +1066,27 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 JoinWrapsField)),
+            WorldField("reconnect", Field(
+                world.AutoReconnect
+                    ? $"[{Value}]{ReconnectChoices[1]} · 5 s to 60 s, five tries[/]"
+                    : $"[{Label}]{ReconnectChoices[0]} · ⌥R dials again[/]",
+                cursor,
+                selectedWorld,
+                ReconnectField)),
+            WorldField("stacking", Field(
+                world.CommandSeparator is { } separator
+                    ? $"[{Value}]{Escape(separator)} splits · #3 repeats[/]"
+                    : $"[{Label}]{SeparatorChoices[0]} · lines go as typed[/]",
+                cursor,
+                selectedWorld,
+                StackingField)),
+            WorldField("alert on", Field(
+                world.AlertOnName
+                    ? $"[{Value}]{AlertChoices[1]}[/]"
+                    : $"[{Label}]{AlertChoices[0]} · alert triggers only[/]",
+                cursor,
+                selectedWorld,
+                AlertOnField)),
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });

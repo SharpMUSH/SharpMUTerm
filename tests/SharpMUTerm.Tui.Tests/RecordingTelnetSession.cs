@@ -24,7 +24,7 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     /// connection is the case the old fire-and-forget <c>Reconnect</c> swallowed, so the tests need a
     /// transport that can refuse one.
     /// </summary>
-    public Exception? ConnectFault { get; init; }
+    public Exception? ConnectFault { get; set; }
 
     /// <summary>How many times a connection was asked for, refused ones included.</summary>
     public int ConnectAttempts { get; private set; }
@@ -184,6 +184,13 @@ internal sealed class RecordingTelnetSession : ITelnetSession
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The server goes away on its own: an orderly close with no error, or failed with one.</summary>
+    public void Drop(Exception? error = null)
+    {
+        IsConnected = false;
+        Disconnected?.Invoke(this, new SessionDisconnectedEventArgs(error));
     }
 
     public Task DisconnectAsync()

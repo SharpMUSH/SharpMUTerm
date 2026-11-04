@@ -117,7 +117,7 @@ internal static class TriggersScreenRenderer
         ["name", "pattern", "route", "fg", "bg", "attributes", "rewrite", "respond", "script", "set", "match"];
 
     /// <summary>The editor pane's check boxes by declared id, in the order the pane draws them.</summary>
-    internal static IReadOnlyList<string> EditorFieldOrder { get; } = ["gag", "stop", "case"];
+    internal static IReadOnlyList<string> EditorFieldOrder { get; } = ["gag", "stop", "case", "alert"];
 
     /// <summary>
     /// How many sample rows the live test always draws, matching or not, so the rows under it do not jump
@@ -778,13 +778,15 @@ internal static class TriggersScreenRenderer
         lines.Add(ActionRow("script", trigger.Actions.ScriptCallback, script));
         lines.Add(string.Empty);
 
-        // The three rows below are real booleans on the trigger, and are the editor pane's navigable
+        // The four rows below are real booleans on the trigger, and are the editor pane's navigable
         // rows in this order.
         lines.Add(ScreenChrome.Cursor(Checkbox("gag line", trigger.Actions.Gag), cursor.IsOn(1, 0), width));
         lines.Add(ScreenChrome.Cursor(
             Checkbox("stop processing", trigger.StopProcessing), cursor.IsOn(1, 1), width));
         lines.Add(ScreenChrome.Cursor(
             Checkbox("case sensitive", trigger.CaseSensitive), cursor.IsOn(1, 2), width));
+        lines.Add(ScreenChrome.Cursor(
+            Checkbox("alert me when away", trigger.Actions.Alert), cursor.IsOn(1, 3), width));
 
         // Compacted before the dropdown is laid over it, not after: the overlay replaces rows by index,
         // so dropping a blank underneath it afterwards would slide the list off the field it belongs to.

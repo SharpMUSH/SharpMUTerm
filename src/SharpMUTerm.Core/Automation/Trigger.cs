@@ -85,6 +85,13 @@ public sealed class TriggerActions
     public string? ScriptCallback { get; set; }
 
     /// <summary>
+    /// Ask for the player's attention when this rule matches while they are in another window: a desktop
+    /// notification and a taskbar flash in the window, a notification or a bell in a terminal. Rate-limited and
+    /// switched off by F7 ▸ <c>alert when away</c>; matched lines that are gagged still alert, since the rule asked.
+    /// </summary>
+    public bool Alert { get; set; }
+
+    /// <summary>
     /// A copy of these actions. Every field is a value or an immutable string, so a member-wise copy
     /// really is a deep one — but it has to be written out rather than shared, because
     /// <see cref="Trigger.Actions"/> is <c>init</c>-only and two triggers holding the same instance
@@ -100,6 +107,7 @@ public sealed class TriggerActions
         SendResponse = SendResponse,
         SpawnTarget = SpawnTarget,
         ScriptCallback = ScriptCallback,
+        Alert = Alert,
     };
 }
 

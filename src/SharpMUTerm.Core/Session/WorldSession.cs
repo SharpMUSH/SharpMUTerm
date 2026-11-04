@@ -25,6 +25,9 @@ public sealed class WorldSession : IAsyncDisposable
     private static readonly TextStyle SystemStyle =
         new(TerminalColor.FromIndex(6), TerminalColor.Default, TextAttributes.Italic);
 
+    /// <summary>The style of the client's own lines in a session's window (<see cref="PrintSystem"/>), for a demo that writes one by hand.</summary>
+    public static TextStyle SystemLineStyle => SystemStyle;
+
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
     private ILineParser _parser;
     private EmojiSubstitutor? _emoji;
@@ -608,6 +611,7 @@ public sealed class WorldSession : IAsyncDisposable
         // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
         _emoji = NewEmoji(World.Emoji);
 
+        _closingByPlayer = false;
         SetState(ConnectionState.Connecting, null);
         PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");
 
@@ -940,7 +944,25 @@ public sealed class WorldSession : IAsyncDisposable
         {
             Print(shown);
         }
+
+        // Asked for by a rule (shown or not: the rule said so), or by the world for a line that mentions the
+        // character or pages them — only a line someone will see, and never a prompt.
+        var shownSomewhere = result.RouteMain || !result.Suppress || result.SpawnTargets.Count > 0;
+        var reason = result.Matched.Any(t => t.Actions.Alert)
+            ? AttentionReason.Trigger
+            : World.AlertOnName && shownSomewhere && !isPrompt ? AttentionMatcher.Classify(shown.Text, Character?.Name) : null;
+        if (reason is { } why)
+        {
+            AttentionRequested?.Invoke(this, new AttentionEventArgs(why, shown.Text));
+        }
     }
+
+    /// <summary>
+    /// Raised on the read loop when a line asks for the player's attention: a trigger marked <c>alert</c> matched,
+    /// or (with <see cref="WorldDefinition.AlertOnName"/>) the line names the character or pages them. Whether that
+    /// reaches the desktop — the player away, F7's switch, the rate limit — is the host's to decide.
+    /// </summary>
+    public event EventHandler<AttentionEventArgs>? AttentionRequested;
 
     /// <summary>
     /// Marks the plain-text URLs in a line clickable when F7's <c>detect links</c> is on; a no-op
@@ -967,9 +989,36 @@ public sealed class WorldSession : IAsyncDisposable
     public async Task SendUserInputAsync(string input, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
+        Echo(input);
+        await ExpandAndSendAsync(input, cancellationToken).ConfigureAwait(false);
+    }
 
-        var expansion = Aliases.Expand(input);
+    /// <summary>
+    /// Handles a line the player <em>typed</em> on the command line: the world's command stacking first
+    /// (<see cref="Input.TypedCommands"/> — <c>n;e;e</c>, <c>#3 kill rat</c>), then each command through
+    /// <see cref="SendUserInputAsync"/>'s alias expansion. The line is echoed once, as typed. A composed post, a
+    /// grab and a script go through <see cref="SendUserInputAsync"/> or <see cref="SendRawAsync"/> instead, so a
+    /// <c>;</c> in a post is never a command boundary.
+    /// </summary>
+    public async Task SendTypedAsync(string input, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var stacked = Input.TypedCommands.Expand(input, World.CommandSeparator);
+        Echo(input);
+        if (stacked.Refusal is { } refusal)
+        {
+            PrintSystem($"*** {refusal}");
+            return;
+        }
 
+        foreach (var command in stacked.Commands)
+        {
+            await ExpandAndSendAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private void Echo(string input)
+    {
         // Two switches, and both have to be on: the world's (some servers echo for you, some don't)
         // and F8's app-wide one. The app-wide one is read per line, not captured, so unticking it
         // stops the echo on the next command rather than the next session.
@@ -977,7 +1026,11 @@ public sealed class WorldSession : IAsyncDisposable
         {
             Print(StyledLine.FromText(input, EchoStyle));
         }
+    }
 
+    private async Task ExpandAndSendAsync(string input, CancellationToken cancellationToken)
+    {
+        var expansion = Aliases.Expand(input);
         if (expansion.Matched)
         {
             if (expansion.Alias?.ScriptCallback is { Length: > 0 } callback && expansion.Match is { } match)
@@ -1354,6 +1407,8 @@ public sealed class WorldSession : IAsyncDisposable
         CancelGmcpLogin();
         StopTimers();
         ClearPrompt();
+        LastClose = _closingByPlayer ? SessionClose.Player : e.IsClean ? SessionClose.Server : SessionClose.Failed;
+        _closingByPlayer = false;
         SetState(e.IsClean ? ConnectionState.Disconnected : ConnectionState.Faulted, e.Error);
         PrintSystem(e.IsClean ? "*** Disconnected." : $"*** Connection lost: {e.Error?.Message}");
     }
@@ -1388,6 +1443,7 @@ public sealed class WorldSession : IAsyncDisposable
     {
         if (_telnet is not null)
         {
+            _closingByPlayer = true;
             await SendLeavingAsync().ConfigureAwait(false);
             await _telnet.DisconnectAsync().ConfigureAwait(false);
         }
@@ -1481,8 +1537,18 @@ public sealed class WorldSession : IAsyncDisposable
             });
     }
 
+    /// <summary>
+    /// How the last connection ended, set before the state change that reports it: the player closed it
+    /// (Disconnect, Reconnect, quitting), the server closed it in an orderly way, or it failed. <see cref="SessionClose.None"/>
+    /// until a connection has ended. What <see cref="AutoReconnect"/> reads to tell a drop from a goodbye.
+    /// </summary>
+    public SessionClose LastClose { get; private set; }
+
+    private volatile bool _closingByPlayer;
+
     public async ValueTask DisposeAsync()
     {
+        _closingByPlayer = true;
         StopTimers();
         Scheduler.Dispose();
         DetachLog(); // flushes what the session logged before closing the file behind it

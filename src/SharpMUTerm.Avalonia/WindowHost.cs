@@ -89,5 +89,8 @@ internal static class WindowHost
 
         // A panel popped out is a window of its own, owned by the main one, for a second monitor.
         FloatingPanels = driver.Floating,
+
+        // A page while the window is behind another: a desktop notification and the taskbar's attention state.
+        Attention = driver.Attention,
     };
 }

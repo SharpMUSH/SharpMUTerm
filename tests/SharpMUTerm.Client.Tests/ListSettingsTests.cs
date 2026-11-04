@@ -53,7 +53,7 @@ public class ListSettingsTests
 
         var triggers = BuiltInSettings.Triggers.Collection!.Fields.Select(f => f.Id).ToList();
         await Assert.That(triggers).IsEquivalentTo(
-            new[] { "enabled", "name", "match", "pattern", "set", "route", "fg", "bg", "attributes", "gag", "rewrite", "respond", "script", "stop", "case" });
+            new[] { "enabled", "name", "match", "pattern", "set", "route", "fg", "bg", "attributes", "gag", "alert", "rewrite", "respond", "script", "stop", "case" });
     }
 
     [Test]

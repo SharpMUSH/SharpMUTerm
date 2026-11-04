@@ -9,6 +9,17 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- A world can reconnect by itself after its connection drops (F5 ▸ reconnect). It waits 5, 15, 30, 60 and 60
+  seconds between tries, counts down on the status row, and stops after five; Alt+R dials at once, and Disconnect or
+  Ctrl+P ▸ Stop reconnecting cancels. Your own Disconnect, quitting, or the game closing right after you typed a
+  command (a logout) never reconnects.
+- The client can tell your desktop when something wants you while you are in another window: tick "alert me when
+  away" on a trigger, or set F5 ▸ alert on to "name & pages" for a world. The desktop window flashes or shows a
+  notification; kitty, WezTerm, Ghostty and foot show a notification, other terminals ring the bell. At most one every
+  ten seconds, and F7 ▸ alert when away turns it all off. While the desktop window is behind another, its title
+  counts the lines that arrived.
+- Command stacking, per world and off by default (F5 ▸ command stacking): `n;e;e` sends three commands and `#3 kill rat`
+  sends one three times. Only lines typed on the command line are split — never a composer post.
 - A tab strip too narrow for its tabs now says how many it could not draw (`+3 ▾` at its right edge); click it to
   list them and go to one — a menu in the desktop window, a short list in a terminal.
 - The composer shows how many characters the post will be once escaped and joined, and Alt+P shows exactly what will

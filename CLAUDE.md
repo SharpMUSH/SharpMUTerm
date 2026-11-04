@@ -1340,7 +1340,7 @@ one `SharpMUTermApp`; a host is only the place it runs. What differs between hos
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
 the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
-draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M and the welcome itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1610,7 +1610,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   (each panel in a pane of its own over the demo's game data; the composer over who-here, armed, with a draft
   typed through its real key path), `welcome`/`welcome-connect` (the first-run welcome over an **emptied**
   configuration and a main window alone — `--demo-config` has worlds, and the welcome never opens over them — and
-  its connect form filled in by real keys) and `tour` (the key tour row at the end of the demo's main window), plus
+  its connect form filled in by real keys) `tour` (the key tour row at the end of the demo's main window) and `reconnect` (Corvid dropped, the second try
+  counting down on the status row), plus
   the default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
@@ -2862,6 +2863,32 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   OSC 2 through the `?1004` raw write, and pops it after the loop; the window sets `Window.Title`. Control
   characters are stripped twice (names, then the sequence). Not a surface in `SurfaceCatalog`: nothing draws it in
   cells and it hands nothing back.
+- **Attention while the player is elsewhere is a host member** (`ClientHost.Attention` → `IAttention`, `Hosting/`;
+  Core `AttentionMatcher`, `AttentionThrottle`; `SharpMUTermApp.Attention.cs`). A trigger's `alert` flag, or on a world
+  with F5 ▸ `alert on` a line naming the character (whole word, not the line's first) or paging/telling/whispering
+  them (`WorldSession.AttentionRequested`, raised after the line is shown, never for a prompt or a gagged line). The
+  client asks only with F7 ▸ `alert when away` on, the host not in front, and one per 10 s. The window
+  (`WindowAttention`, `DesktopAlert`) knows its focus: Windows flashes the taskbar, macOS `osascript`, Linux
+  `notify-send`, all argv, errors swallowed. A terminal cannot tell focus-out, so `TerminalAttention.Focused` is null:
+  kitty gets OSC 99 with `o=unfocused` (kitty filters), WezTerm/Ghostty/foot OSC 777, anything else BEL, and those last
+  two only after 30 s with no input (`AwayAfter`). Text is stripped of control characters and base64'd for OSC 99.
+  While a host that knows its focus is behind, the title leads with the count of lines that arrived (`(3) …`,
+  `WindowTitle.WithUnread`). Null in tests, snapshots and the parity harness.
+- **A dropped connection is dialled again only where F5 ▸ `reconnect` says so** (`AutoReconnect`, Core, one per
+  session; `SharpMUTermApp.Reconnect.cs`). `WorldSession.LastClose` says who closed: `Player` (Disconnect, quit,
+  dispose) never reconnects; `Failed` (an error) does; `Server` (orderly close) does **unless a command was sent in
+  the 10 s before** (`LogoutWindow`) — that is a `QUIT`, and dialling back would log the player in again. Waits 5, 15,
+  30, 60, 60 s, then gives up; a connection that lasted 60 s (`StableAfter`) starts the count over. A dial is
+  `ConnectAsync`, so auto-login applies exactly as by hand. Each try prints a line and a notice (action: Stop); the
+  status row reads `reconnecting in 12 s · ⌥R now` (two-digit field) once the notice has gone, ticked by a one-shot
+  timer re-armed each second. ⌥R dials at once, ⌥D and ⌃P ▸ *Stop reconnecting* (offered only while one waits) cancel.
+  The `reconnect` view fakes it with the same writers (`ReconnectLine`, `ReconnectState`).
+- **Command stacking is per world and off by default** (`WorldDefinition.CommandSeparator`, F5 ▸ `command stacking`:
+  off, `;`, `|`, `;;`; `TypedCommands`, Core; `WorldSession.SendTypedAsync`). Off because `;` is a MUSH's own
+  character. Only a line typed on the command line (and the send group) is split: the composer, a grab, a script's
+  `world.send`, a macro and a raw send never are. `\` before the separator keeps it; pieces are trimmed and empties
+  dropped; `#N cmd` repeats (1–100) within a piece; a line past 100 commands, or a repeat out of range, sends nothing
+  and says why. Each piece goes through the alias engine; the typed line is echoed once.
 - **Discord presence is a host member and a per-world opt-in** (`ClientHost.Presence`, a lazy
   `Func<IPresence?>?`; `GamePresence`/`DiscordIpc`, Core; F5 ▸ `discord`, off by default). The world asks for
   `External.Discord 1`. `WorldSession.GamePresence` folds `Info` (application id: digits only) and `Status`

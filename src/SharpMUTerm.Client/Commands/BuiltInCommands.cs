@@ -20,6 +20,9 @@ public static class BuiltInCommands
     /// <summary>The command that moves the keyboard into the connection sidebar (⌥C).</summary>
     public const string RailKeysCommand = "layout:rail-keys";
 
+    /// <summary>Cancels a dropped connection's waiting reconnect.</summary>
+    public const string StopReconnectCommand = "world:stop-reconnect";
+
     /// <summary>
     /// Turns F5's <c>join wraps</c> on for the world named after the prefix: the action of the notice that says a pane is
     /// narrower than the server's wrap column. Lists nothing on ⌃P (F5 is the setting's home).
@@ -76,6 +79,10 @@ public static class BuiltInCommands
         // can find is the same as no feature — ⌃L's newline sat unused until it was reported missing.
         Add("world:reconnect", CommandGroup.World, "Reconnect", "⌥R");
         Add("world:disconnect", CommandGroup.World, "Disconnect", "⌥D");
+
+        // Only while a dropped connection waits to dial again (F5 ▸ reconnect); the drop's notice carries it too.
+        Add(StopReconnectCommand, CommandGroup.World, "Stop reconnecting", detail: "a dropped connection is waiting to dial again",
+            when: c => c.State.Reconnecting);
         Family("world:send-group", CommandIds.GroupPrefix, SendGroup);
         Family("world:join-wraps", JoinWrapsPrefix, _ => []);
         Add("world:reload-scripts", CommandGroup.World, "Reload scripts",
