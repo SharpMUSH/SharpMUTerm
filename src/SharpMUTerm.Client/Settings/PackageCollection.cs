@@ -121,14 +121,14 @@ public sealed class PackageCollection
         return true;
     }
 
-    /// <summary>The characters a package applies to: everyone on a world it is for, as <c>Corvid (Aetherfall)</c>.</summary>
+    /// <summary>The characters a package applies to: everyone on a world it is for, as <c>Corvid · Aetherfall</c>.</summary>
     public static IReadOnlyList<string> CharactersFor(AppConfiguration config, PackageManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(manifest);
         return config.Worlds.ToArray()
             .Where(w => manifest.IsFor(w.Host, w.Port))
-            .SelectMany(w => w.Characters.ToArray().Select(c => $"{c.Name} ({w.Name})"))
+            .SelectMany(w => w.Characters.ToArray().Select(c => Chrome.CharacterNames.Display(w.Name, c.Name)))
             .ToList();
     }
 

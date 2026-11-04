@@ -248,8 +248,8 @@ public class SessionStateAccountingTests
 
         var prompt = string.Join("\n", wired.App.QuitPromptLines);
         await Assert.That(prompt).Contains("2 characters connected");
-        await Assert.That(prompt).Contains("Convergence.Mannaz");
-        await Assert.That(prompt).Contains("Convergence.Riko");
+        await Assert.That(prompt).Contains("Mannaz · Convergence");
+        await Assert.That(prompt).Contains("Riko · Convergence");
         await Assert.That(prompt).DoesNotContain("1 world connected");
     }
 

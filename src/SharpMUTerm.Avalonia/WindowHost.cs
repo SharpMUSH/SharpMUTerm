@@ -32,6 +32,9 @@ internal static class WindowHost
 
         // Avalonia reports the key and its modifiers: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O arrive as themselves.
         ReportsChordsWhole = true,
+
+        // KeyMapper reads Key.NumPad0–9 (Num Lock on) and hands the client ConsoleKey.NumPad0–9 with the digit.
+        DeliversNumpad = true,
     };
 
     /// <param name="driver">The window's driver.</param>

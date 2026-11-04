@@ -76,7 +76,7 @@ public class KeypadScreenRendererTests
     public async Task Render_HotkeyListShowsCtrlF1BindingCommandAndEnabledTick()
     {
         var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
-        var row = lines.Single(l => l.Contains("Ctrl+F1"));
+        var row = lines.Single(l => l.Contains("⌃F1"));
         await Assert.That(row).Contains("ping");
         await Assert.That(row).Contains("✓");
     }
@@ -85,7 +85,7 @@ public class KeypadScreenRendererTests
     public async Task Render_DisabledHotkeyShowsDimMarker()
     {
         var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, Scene());
-        var row = lines.Single(l => l.Contains("Ctrl+F2"));
+        var row = lines.Single(l => l.Contains("⌃F2"));
         await Assert.That(row).Contains("who");
         await Assert.That(row).Contains("[dim]·[/]");
     }
@@ -114,7 +114,7 @@ public class KeypadScreenRendererTests
             new Macro { Name = "Weird", Key = "Ctrl+F9", Enabled = true, Command = "say [hi]" },
         };
         var lines = KeypadScreenRenderer.Render(HostKeys.Terminal, macros);
-        var row = lines.Single(l => l.Contains("Ctrl+F9"));
+        var row = lines.Single(l => l.Contains("⌃F9"));
         await Assert.That(row).Contains("say [[hi]]");
     }
 }

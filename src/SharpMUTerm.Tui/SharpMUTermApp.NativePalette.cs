@@ -70,7 +70,7 @@ internal sealed partial class SharpMUTermApp
             BuildCatalog(),
             _recentCommands.Ids,
             SuggestedCommandIds,
-            _active?.SessionKey,
+            _active is { } acting ? DisplayName(acting.SessionKey) : null,
             ThemeIsDark(),
             _openingQuery ?? string.Empty,
             id => OnUiThread(() => RunFromPalette(id)),

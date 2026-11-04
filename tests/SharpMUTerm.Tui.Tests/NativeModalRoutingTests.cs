@@ -137,7 +137,7 @@ public class NativeModalRoutingTests
         app.SimulateKey(CtrlQ);
         var quit = modals.Shown.OfType<QuitSession>().Single();
         await Assert.That(quit.AlwaysInFront).IsTrue();
-        await Assert.That(quit.Model.ConnectedCharacters).IsEquivalentTo(new[] { "Quiet.Ann" });
+        await Assert.That(quit.Model.ConnectedCharacters).IsEquivalentTo(new[] { "Ann · Quiet" });
         await Assert.That(search.IsEnded).IsFalse().Because("the search stays under the prompt");
 
         quit.Answer(false);

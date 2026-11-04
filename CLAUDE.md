@@ -227,11 +227,14 @@ fallbacks) for inline images/maps.
     `CharacterCycle`.
 - **⌃P's ranking and grouping are the Client's, so both hosts list the same rows** (`CommandPaletteModel`,
   `FuzzyMatch`, `RecentCommands`, `KeyGlyphs` in `Client/Palette`; the Tui only draws, `CommandSurfaceRenderer`).
-  Core's `CommandMatcher` is gone. Decisions not to relitigate:
+  Core's `CommandMatcher` is gone. The surface is called *Command palette* everywhere (title, the native header's
+  search box, its automation name), and the group of output commands is `OUTPUT`. Decisions not to relitigate:
   - **Matching is subsequence, word by word, in order**, scored per character: +1 matched, +8 at a word start,
     +6 straight after the previous match, +4 on the first character, −1 per skipped character (−4 at most
     per gap), +20 when the title starts with the whole query. Each word is aligned by dynamic programming,
-    falling back to the leftmost alignment so anything that is a subsequence matches. A title match always
+    falling back to the earliest-ending alignment. **A query word of `FuzzyMatch.StrictLength` (4) letters or
+    fewer must start at a word start and continue in runs or at word starts** (`layo` no longer finds "Clear
+    window, say you"); a longer word may match as any subsequence. A title match always
     lists above a match on the detail, the key or the group's name; ties keep catalog order. Groups keep
     their headers but are ordered by their best entry, so the best match is the first row.
   - **An empty query lists RECENT, then SUGGESTED, then the groups**, each entry once. SUGGESTED is read off
@@ -310,6 +313,8 @@ fallbacks) for inline images/maps.
     mid-word cannot split a match and `#ff0000` cannot find every red line (`UrlDetector`'s rule, one
     layer down) — and it is computed once at append, because the surface refilters over every line of
     every window on every keystroke. Chrome rows carry none, so a search cannot find its own bars.
+    It is the line's span text (`StyledLine.Text`), not the stripped markup: the `▌ ` a highlight rule draws
+    is markup only, so `^\[public\]` matches in ⌃F and in F2's live test as it does in the engine.
   - **Case is ignored in both modes**, matching `HistorySearch`; `(?-i)` is the way back, which is why
     there is no third toggle. An invalid pattern is a *state* (a regex is unparseable most of the time it
     is being typed), and there is a match timeout, because this runs on the UI thread per keystroke.
@@ -327,6 +332,10 @@ fallbacks) for inline images/maps.
   - **Two kinds of client chrome now live in the line buffers**, so `InsertChromeRow`/`RemoveChromeRow`
     are the one place that fixes up everything indexing into one — the freeze point, the pending
     boundary, the activity bar and the search bar move together or none of them do.
+  - **A bar's rule is sized to its pane** (`BarRule.Fit`): each bar's `Bar` closure reads `BarWidth(windowId)` (the
+    viewport width) when drawn, the label elides before the rule shrinks, and `SyncChromeBarWidths` (on
+    `PostBufferPaint`) redraws a window's bars in place when its width moves. Width 0 (not arranged) draws 48 cells.
+    ⌃F's footer is a drop ladder (`SearchPrompt.HintLadder`), so the surface fits from 44 columns.
   - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
     first frame, and every line would otherwise count as missed — so any frame that later made such a
     window visible carried an activity bar reporting the client's own setup as news.
@@ -640,6 +649,8 @@ fallbacks) for inline images/maps.
   optional character, a password reminder), *Browse games* (`BrowsePackages`, so the index is still fetched only
   when asked; with no https `PackageIndexUrl` it says so on the row instead), *Open settings* (F5), the
   `/connect` example, and a starting layout. Decisions not to relitigate:
+  - **Its words live on `WelcomeModel`** (headings, intro, field labels, key rows), so both hosts say the same thing;
+    the client calls a game a *world* on every surface of it.
   - **The form goes through `ConnectCommand`**, with a `shape` callback that adds the character — so it can do
     nothing `/connect` cannot. Esc on the form goes back to the menu; on the menu it closes, leaving
     `NoWorldsNotice` (short enough for an 80-column row, and it names `/welcome`), and nothing reopens it that
@@ -733,7 +744,7 @@ fallbacks) for inline images/maps.
   - **Drafts are per character and in memory only**, for the life of the run. Not on disk deliberately: a
     post is a few minutes' work, and a file would be a fourth thing this client writes, a purge entry, a
     `--help` line and somebody's unsent post in their home directory. Keyed by the *window's* owner, never
-    `_active`; a window belonging to no connection keeps none. **`Close()` raises `Closed`, which is what
+    `_active`; a window belonging to no connection keeps none. The header names that owner even while it is offline. **`Close()` raises `Closed`, which is what
     stores the draft, so a send must close first and forget after** — the other order posts the text and
     hands it straight back next time the window opens.
   - **F1 is claimed in `MacroKeys.AppShortcuts` but is not a settings screen**, so `ShortcutAction` answers
@@ -1158,6 +1169,8 @@ fallbacks) for inline images/maps.
     settings screens and F1 size to the driver's screen, which is the cell area, so they fit and centre there.
   - **Folded, the sidebar is a 48 px strip**: the unfold chevron, an accent mark per world, a disc with the initial
     per character (filled while connected, an unread dot), "+" at the foot; names in tooltips.
+    The cell rail's folded strip marks each world with an accent `▌` row and gives characters two letters where two
+    share an initial (`RailRenderer.CollapsedWorldMark`, `InitialLength`).
   - **Input**: every press, release and wheel over the native views is the window's (`NativeChromeView`); a right
     press does nothing (there is no cell under it to forward to), and nothing is focusable. A left press on empty
     header space calls `TerminalView.WindowGestureFromChrome`: edge band resizes, the rest moves the window,
@@ -1411,6 +1424,13 @@ an optional PATH entry so `sharpmuterm` runs from any terminal.
 delivers a modified key as itself (the window: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O fire) or as the terminal's bytes;
 a chord in `HostKeys.Reserved` or the host's newline is *Taken* with the host's own reason (the window's ⌥⏎
 maximises). `SurfaceCellTests.F4TellsTheTerminalsTruth` and `SurfaceParityTests.F4TellsTheWindowsTruth` pin each.
+`HostKeys.DeliversNumpad` (true in the window, whose `KeyMapper` maps `NumPad0–9`) makes a `Num…` binding fire there;
+the terminal still says *no numpad key ever arrives*. F4 and the quick bar print keys through `KeyGlyphs.Normalize`.
+
+**A character is named one way on every surface: `Corvid · Aetherfall`** (Client `CharacterNames`; Tui
+`DisplayName(sessionKey)`, open sessions first, then the configuration, so a dotted world still splits). The quit
+prompt, ⌃P's *acting on*, ⌥M, F10, refusals and notices read it; the dotted session key is an address and is never
+shown. Not changed: tab titles (`Corvid - Chat`) and the prompt's `Corvid@Aetherfall`.
 
 ## Building and testing
 
@@ -1813,7 +1833,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     sets and their items on the left (an enable check box per item, `+ Add`/`Copy`/`Delete`/`↑`/`↓` over it, ⌥↑/⌥↓,
     Delete and Space on the list), the item's declared fields on the right, grouped. It fills the page below the
     title and scrolls in its two halves. A package's set is drawn read-only with *Copy to edit*. F2's pattern field
-    has the live test under it, re-run on every keystroke, each matching line with the match marked. The trigger
+    has the live test under it, re-run on every keystroke, each matching line with the match marked. A text field
+    with suggestions (F2's route) is an editable `ComboBox` listing them all, so the windows are seen without typing. The trigger
     builder opens it on the rule it made (`TryOpenNativeSettings(section, item)`); with no window it opens the cell
     F2 as before. **Each list keeps its selection for the run** (`SettingsForm.Selections`, the app's
     `_listSelections`, by section id; never saved): switching section and back, or closing and reopening the window,

@@ -50,6 +50,11 @@ internal static class KeyMapper
             case Key.Insert: return Make('\x1b', ConsoleKey.Insert);
             case Key.Delete: return Make('\x1b', ConsoleKey.Delete);
             case >= Key.F1 and <= Key.F24: return Make('\0', ConsoleKey.F1 + (key - Key.F1));
+
+            // The numpad as itself, so a Num7 binding fires (HostKeys.DeliversNumpad). It carries its digit, so an
+            // unbound numpad key still types one; the TextInput that follows is swallowed (TerminalView).
+            case >= Key.NumPad0 and <= Key.NumPad9:
+                return Make((char)('0' + (key - Key.NumPad0)), ConsoleKey.NumPad0 + (key - Key.NumPad0));
         }
 
         // Ctrl together with Alt is AltGr on a European layout: the character it types is TextInput's.

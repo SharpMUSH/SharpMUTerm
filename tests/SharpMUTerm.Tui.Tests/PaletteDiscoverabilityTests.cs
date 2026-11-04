@@ -82,7 +82,7 @@ public class PaletteDiscoverabilityTests
         await Assert.That(app.DispatchCommand("settings:key-clashes")).IsTrue();
         await Assert.That(app.Settings.IsOpen).IsTrue();
         var frame = Text(app.RenderWholeFrame());
-        await Assert.That(frame).Contains("△ Ctrl+C");
+        await Assert.That(frame).Contains("△ ⌃C");
         await Assert.That(frame).Contains("hide a client key");
     }
 }

@@ -57,6 +57,24 @@ internal static class SearchPrompt
     internal const string Hints =
         "type to search · ↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · Esc cancel · ⌃F closes";
 
+    /// <summary>
+    /// The footer's drop-order ladder, longest first: the status row's rule (<c>FocusHints</c>). <see cref="Hints"/>
+    /// is 84 cells and an 80-column surface holds 74, where it used to be cut to a bare <c>⌃F</c>. The prose goes
+    /// first, then the words after the toggles' keys, then Esc (⌃F also closes); every rung still names each key
+    /// that does something different.
+    /// </summary>
+    internal static readonly string[] HintLadder =
+    [
+        Hints,
+        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · Esc cancel · ⌃F closes",
+        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all · Esc cancel · ⌃F closes",
+        "↑↓ · ⏎ go · ⌥E regex · ⌥A all · Esc · ⌃F",
+    ];
+
+    /// <summary>The longest rung of <see cref="HintLadder"/> that fits <paramref name="width"/> (all of it when unknown).</summary>
+    internal static string HintsFor(int width) =>
+        width <= 0 ? Hints : FirstFitting(width, HintLadder);
+
     /// <summary>The longest an entry is drawn before it is elided, when no width is supplied.</summary>
     private const int DefaultEntryWidth = 72;
 
@@ -225,7 +243,7 @@ internal static class SearchPrompt
 
         lines.AddRange(body);
         lines.Add(string.Empty);
-        lines.Add($"[{Label}]{Hints}[/]");
+        lines.Add($"[{Label}]{Escape(HintsFor(width))}[/]");
         return lines;
     }
 

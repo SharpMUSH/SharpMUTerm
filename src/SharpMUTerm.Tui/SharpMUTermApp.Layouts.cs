@@ -524,7 +524,7 @@ internal sealed partial class SharpMUTermApp
 
         _layoutsView.Open(
             "layouts",
-            $"Layouts · {Snippet(key)}",
+            $"Layouts · {Snippet(DisplayName(key))}",
             width => LayoutsListLines(key, width),
             k => LayoutsKeyPressed(key, k),
             width: 64,
@@ -696,7 +696,7 @@ internal sealed partial class SharpMUTermApp
     {
         if (!ApplyLayout(key, selected))
         {
-            var refused = $"no window to arrange for {Snippet(key)} — switch to the character first";
+            var refused = $"no window to arrange for {Snippet(DisplayName(key))} — switch to the character first";
             RefuseCommand(refused);
             return new(false, refused);
         }
@@ -893,7 +893,7 @@ internal sealed partial class SharpMUTermApp
             .Select(l => new LayoutRow(l.Id, Snippet(l.Name), LayoutDescription(l), l.IsBuiltIn, l.Id == inUse, l.Id == worldDefault))
             .ToArray();
         return new LayoutsModel(
-            key,
+            DisplayName(key),
             rows,
             Math.Clamp(_layoutsSelected, 0, Math.Max(0, rows.Length - 1)),
             _layoutsStatus,

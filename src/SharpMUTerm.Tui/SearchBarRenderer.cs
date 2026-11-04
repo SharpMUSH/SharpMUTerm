@@ -19,9 +19,6 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal static class SearchBarRenderer
 {
-    /// <summary>How long the trailing rule is. The same 48 cells the other three bars draw.</summary>
-    private const int RuleCells = 48;
-
     /// <summary>The chord the bar names, and the only one it can: see <c>MacroKeys</c> for why ⌥⇧G is not here.</summary>
     internal const string NextChord = "⌥G next";
 
@@ -29,15 +26,17 @@ internal static class SearchBarRenderer
     /// The bar for hit <paramref name="ordinal"/> of <paramref name="total"/> for
     /// <paramref name="query"/>, on an already-resolved <c>#rrggbb</c> accent.
     /// </summary>
-    public static string Bar(string query, int ordinal, int total, string accentHex)
+    public static string Bar(string query, int ordinal, int total, string accentHex, int width = 0)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
         // The ordinal is what makes ⌥G legible: without it the bar moves and nothing says whether you
         // are getting closer to the end of the results or going round in circles.
-        var counted = MarkupText.Escape($"{query} ({ordinal} of {total})");
-        var rule = new string('─', RuleCells);
-        return $"[{accentHex}]{Glyphs.Search} {counted}[/] [dim]{rule} {NextChord}[/]";
+        // The query gives way before the count and the chord: they are what make the bar usable, the query is
+        // what the reader just typed.
+        var counted = $" ({ordinal} of {total})";
+        var (text, rule) = BarRule.Fit(2 + counted.Length + 2 + NextChord.Length, query, width);
+        return $"[{accentHex}]{Glyphs.Search} {MarkupText.Escape(text + counted)}[/] [dim]{BarRule.Rule(rule)} {NextChord}[/]";
     }
 }

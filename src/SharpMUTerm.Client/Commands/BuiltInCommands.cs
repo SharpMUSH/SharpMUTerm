@@ -79,7 +79,7 @@ public static class BuiltInCommands
             when: c => c.State.Announced is not null,
             titleFor: c => c.State.Announced == true ? "Stop reading this window aloud" : "Read this window aloud");
 
-        // TERMINAL — stateful labels.
+        // OUTPUT (CommandGroup.Terminal) — stateful labels.
         Add("term:log-off", CommandGroup.Terminal, "Pause logging", when: c => c.State.LoggingOn);
         Add("term:log-on", CommandGroup.Terminal, "Start logging", when: c => !c.State.LoggingOn);
         Add("term:unfreeze", CommandGroup.Terminal, "Resume scrollback", when: c => c.State.Frozen);
@@ -167,7 +167,7 @@ public static class BuiltInCommands
         // The first run's two surfaces, both reachable again: the welcome a client with no worlds opens on, and
         // the one-line tour of the keys worth knowing that follows the first connect. The tour entry is one
         // toggle, so it can always be offered and always says what it will do: show it, or hide it.
-        Add("term:welcome", CommandGroup.Terminal, "Welcome", detail: "connect to a game, browse games, pick a layout");
+        Add("term:welcome", CommandGroup.Terminal, "Welcome", detail: "connect to a world, browse worlds, pick a layout");
         Add("term:tour", CommandGroup.Terminal, "Key tour", detail: "the keys worth knowing · again to hide it");
         Add("term:timestamps-off", CommandGroup.Terminal, "Hide timestamps", when: c => c.State.TimestampsOn);
         Add("term:timestamps-on", CommandGroup.Terminal, "Show timestamps", when: c => !c.State.TimestampsOn);
@@ -336,7 +336,7 @@ public static class BuiltInCommands
                 continue;
             }
 
-            var owner = window.SessionKey ?? "unowned";
+            var owner = window.SessionKey is { } key ? Chrome.CharacterNames.ForKey(key, context.Characters) : "unowned";
             var unread = window.Unread > 0 ? $" · {window.Unread} unread" : string.Empty;
 
             // The chord leads, because it is the part a reader is here to learn — the owner and the count

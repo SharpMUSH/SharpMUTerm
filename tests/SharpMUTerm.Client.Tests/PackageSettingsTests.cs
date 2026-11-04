@@ -117,7 +117,7 @@ public class PackageSettingsTests
         await Assert.That(Read("sets")).IsEqualTo("Basics · 1 rule");
         await Assert.That(Read("scripts")).IsEqualTo("main.lua");
         await Assert.That(Read("media")).IsEqualTo("none");
-        await Assert.That(Read("characters")).IsEqualTo("Corvid (Aetherfall)");
+        await Assert.That(Read("characters")).IsEqualTo("Corvid · Aetherfall");
         await Assert.That(Read("update")).Contains("not checked");
     }
 
@@ -160,7 +160,7 @@ public class PackageSettingsTests
     {
         var contents = Contents("aether.basics", "Aether basics", "1.0.0", "\"*\"", SendingSet, script: true);
 
-        var review = PackageReviewModel.From(contents, ["Corvid (Aetherfall)"], existing: null);
+        var review = PackageReviewModel.From(contents, ["Corvid · Aetherfall"], existing: null);
 
         await Assert.That(review.Title).IsEqualTo("Install package");
         await Assert.That(review.Acts).IsTrue();

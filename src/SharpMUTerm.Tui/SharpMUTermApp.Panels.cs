@@ -272,7 +272,7 @@ internal sealed partial class SharpMUTermApp
     {
         if (FindSession(sessionKey) is not { } session)
         {
-            RefuseCommand($"{Snippet(sessionKey)} has no open session — ⌃P ▸ Switch to it opens one");
+            RefuseCommand($"{Snippet(DisplayName(sessionKey))} has no open session — ⌃P ▸ Switch to it opens one");
             return;
         }
 

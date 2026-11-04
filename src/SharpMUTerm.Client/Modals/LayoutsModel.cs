@@ -39,7 +39,7 @@ public sealed record LayoutRow(string Id, string Name, string Description, bool 
 /// the cell list (<c>SharpMUTermApp.LayoutsListLines</c>) and by the window's native one; every action in either ends
 /// in the client's one verb method, whose result (a <c>LayoutActionResult</c>) becomes <see cref="Status"/>.
 /// </summary>
-/// <param name="Subject">Whose layouts these are: the character's session key.</param>
+/// <param name="Subject">Whose layouts these are, named for a person (<see cref="Chrome.CharacterNames"/>).</param>
 /// <param name="Rows">The layouts, built-ins first, in the library's order.</param>
 /// <param name="Selected">Which row is pointed at.</param>
 /// <param name="Status">What the last action said, or null.</param>

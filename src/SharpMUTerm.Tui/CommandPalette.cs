@@ -127,7 +127,7 @@ internal sealed class CommandPalette
         // centring first placed the surface as if it were that size — which only became visible once
         // the catalog grew tall enough for the misplacement to push its bottom border off-screen.
         _window = new WindowBuilder(_system)
-            .WithTitle("Command surface")
+            .WithTitle("Command palette")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))

@@ -26,6 +26,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private readonly Action _done;
     private readonly StackPanel _body = new();
     private readonly TextBlock _footer;
+    private readonly TextBlock _heading;
     private readonly List<Border> _choiceRows = [];
     private readonly List<Button> _chips = [];
     private WelcomeModel _model;
@@ -45,7 +46,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _model = session.Model;
         _selected = Array.IndexOf(Choices, _model.Selected);
 
-        var heading = ModalParts.Heading("Welcome to SharpMUTerm", colours);
+        var heading = _heading = ModalParts.Heading(WelcomeModel.Heading, colours);
         heading.Margin = new Thickness(22, 18, 22, 2);
         SetDock(heading, Dock.Top);
         Children.Add(heading);
@@ -156,7 +157,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
     {
         _host = _port = _character = null;
         _tls = _passwordLater = null;
-        _body.Children.Add(ModalParts.Dim("No worlds yet. Pick a way in — you can add more at any time.", _colours, new Thickness(22, 0, 22, 10)));
+        _heading.Text = WelcomeModel.Heading;
+        _body.Children.Add(ModalParts.Dim(WelcomeModel.Intro, _colours, new Thickness(22, 0, 22, 10)));
 
         var list = new StackPanel { Margin = new Thickness(12, 0, 12, 4) };
         for (var i = 0; i < Choices.Length; i++)
@@ -176,7 +178,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _body.Children.Add(list);
 
         var example = new TextBlock { Margin = new Thickness(22, 6, 22, 0), FontSize = NativeTokens.Body, Foreground = _colours.Brush(_colours.Dim), TextWrapping = TextWrapping.Wrap };
-        example.Inlines!.Add(new global::Avalonia.Controls.Documents.Run("Or type on the command line: "));
+        example.Inlines!.Add(new global::Avalonia.Controls.Documents.Run(WelcomeModel.ExampleLead + " "));
         example.Inlines.Add(new global::Avalonia.Controls.Documents.Run(WelcomeModel.ExampleCommand)
         {
             Foreground = _colours.Brush(_colours.Accent),
@@ -197,13 +199,15 @@ internal sealed class WelcomeView : DockPanel, IModalView
         }
 
         _body.Children.Add(chips);
-        _footer.Text = "↑↓ pick · Enter choose · ←→ layout · Esc closes";
+        _body.Children.Add(ModalParts.Dim(NativeKeys.Words(WelcomeModel.LayoutNote), _colours, new Thickness(22, 2, 22, 0)));
+        _footer.Text = NativeKeys.Words($"{WelcomeModel.MenuKeys.Left} · {WelcomeModel.MenuKeys.Right}");
         HighlightChoice();
     }
 
     private void DrawForm()
     {
-        _body.Children.Add(ModalParts.Dim("Connect to a host. It is saved as a world, and you can change it on F5.", _colours, new Thickness(22, 0, 22, 10)));
+        _heading.Text = WelcomeModel.FormHeading;
+        _body.Children.Add(ModalParts.Dim(WelcomeModel.FormIntro, _colours, new Thickness(22, 0, 22, 10)));
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),
@@ -238,16 +242,19 @@ internal sealed class WelcomeView : DockPanel, IModalView
             return box;
         }
 
-        Label("Host", 0);
-        _host = Field("Host", _model.Host, "mud.example.org", 0, WelcomeModel.MaxHost);
-        Label("Port", 1);
-        _port = Field("Port", _model.Port, "4000", 1, 5);
+        string Named(WelcomeField field) => WelcomeModel.FieldLabel(field);
+        Label(Named(WelcomeField.Host), 0);
+        _host = Field(Named(WelcomeField.Host), _model.Host, WelcomeModel.HostPlaceholder, 0, WelcomeModel.MaxHost);
+        Label(Named(WelcomeField.Port), 1);
+        _port = Field(Named(WelcomeField.Port), _model.Port, "4000", 1, 5);
         _port.HorizontalAlignment = HorizontalAlignment.Left;
         _port.Width = 110;
-        _tls = Check("Use TLS", _model.Tls, 2);
-        Label("Character", 3);
-        _character = Field("Character", _model.Character, "optional", 3, WelcomeModel.MaxCharacter);
-        _passwordLater = Check("I'll set a password later (F5)", _model.PasswordLater, 4);
+        Label(Named(WelcomeField.Tls), 2);
+        _tls = Check(WelcomeModel.TlsOn, _model.Tls, 2);
+        Label(Named(WelcomeField.Character), 3);
+        _character = Field(Named(WelcomeField.Character), _model.Character, WelcomeModel.CharacterPlaceholder, 3, WelcomeModel.MaxCharacter);
+        Label(Named(WelcomeField.Password), 4);
+        _passwordLater = Check(NativeKeys.Words(WelcomeModel.PasswordOn), _model.PasswordLater, 4);
         _body.Children.Add(grid);
 
         _body.Children.Add(ModalParts.Dim(_model.FormLayoutLine, _colours, new Thickness(22, 10, 22, 0)));

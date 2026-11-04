@@ -732,16 +732,19 @@ internal sealed class ListEditorView : Grid
     {
         var suggestions = _form.Suggestions(text);
         TextBox? box = null;
-        AutoCompleteBox? auto = null;
+        ComboBox? auto = null;
         if (suggestions.Count > 0)
         {
-            auto = new AutoCompleteBox
+            // An editable combo box: the cell screen offers these as a list ((none), main, the windows), so the reserved
+            // words have to be visible here too, not only reachable by typing; anything else can still be typed.
+            auto = new ComboBox
             {
-                Text = _form.Text(text),
+                IsEditable = true,
                 ItemsSource = suggestions,
-                FilterMode = AutoCompleteFilterMode.ContainsOrdinal,
-                MinimumPrefixLength = 0,
+                Text = _form.Text(text),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
             };
+            AutomationProperties.SetName(auto, text.Label);
         }
         else
         {
@@ -794,6 +797,19 @@ internal sealed class ListEditorView : Grid
         }
 
         control.LostFocus += (_, _) => Commit();
+        if (auto is not null)
+        {
+            // A pick from the list commits as ⏎ would; typing commits on ⏎ or leaving the box.
+            auto.SelectionChanged += (_, _) =>
+            {
+                if (!_syncing && auto.SelectedItem is string picked)
+                {
+                    auto.Text = picked;
+                    Commit();
+                }
+            };
+        }
+
         control.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter && (text.Rule != TextRule.Lines || e.KeyModifiers == KeyModifiers.Control))

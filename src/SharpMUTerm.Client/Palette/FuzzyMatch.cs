@@ -21,7 +21,15 @@ public sealed record FuzzyResult(int Score, IReadOnlyList<int> Positions);
 /// <para>
 /// Each word is aligned by dynamic programming over every place its characters could land, so the best
 /// alignment is found rather than the leftmost; if aligning the words one by one leaves a later word nowhere
-/// to go, the leftmost alignment of all of them is scored instead, so anything that is a subsequence matches.
+/// to go, the earliest-ending alignment of each word in turn is scored instead.
+/// </para>
+/// <para>
+/// <b>A short word may not scatter.</b> A query word of <see cref="StrictLength"/> letters or fewer matches only
+/// where each of its letters begins a word of the text or follows the one before it: <c>trig</c> finds
+/// <em>Make a trigger…</em> and <em>fp</em> still finds <em>Freeze pane</em>, but <c>trig</c> no longer finds
+/// <em>Stop reading this window aloud</em> (a t, r, i and g spread over four words) or <em>Start logging</em>. A few
+/// letters is a prefix or an acronym; scattered across a title they match nearly everything. A longer word keeps the
+/// plain subsequence rule, where scattered letters are rare enough to mean something (<c>tstamp</c>).
 /// </para>
 /// </summary>
 public static class FuzzyMatch
@@ -47,6 +55,9 @@ public static class FuzzyMatch
     /// <summary>Added when the text starts with the whole query, spaces and all.</summary>
     public const int WholePrefix = 20;
 
+    /// <summary>A query word this long or shorter matches only at word starts and runs (see the class remarks).</summary>
+    public const int StrictLength = 4;
+
     /// <summary>
     /// Matches <paramref name="query"/> against <paramref name="text"/>, or returns null when it is not a
     /// subsequence of it. An empty or blank query matches everything with a score of zero.
@@ -69,7 +80,7 @@ public static class FuzzyMatch
         var aligned = true;
         foreach (var word in words)
         {
-            var best = AlignWord(word.ToLowerInvariant(), lower, text, from);
+            var best = AlignWord(word.ToLowerInvariant(), lower, text, from, word.Length <= StrictLength, earliest: false);
             if (best is null)
             {
                 aligned = false;
@@ -83,27 +94,23 @@ public static class FuzzyMatch
 
         if (!aligned)
         {
-            // A word aligned for its own best score can leave the next one nowhere to go; the leftmost
-            // alignment of every word in turn finds a match whenever there is one.
+            // A word aligned for its own best score can leave the next one nowhere to go; the earliest-ending
+            // alignment of every word in turn leaves each later word the most room, so it finds a match whenever
+            // there is one.
             positions.Clear();
             score = 0;
             from = 0;
             foreach (var word in words)
             {
-                var start = positions.Count;
-                foreach (var c in word.ToLowerInvariant())
+                var early = AlignWord(word.ToLowerInvariant(), lower, text, from, word.Length <= StrictLength, earliest: true);
+                if (early is null)
                 {
-                    var at = lower.IndexOf(c, from);
-                    if (at < 0)
-                    {
-                        return null;
-                    }
-
-                    positions.Add(at);
-                    from = at + 1;
+                    return null;
                 }
 
-                score += ScoreRun(text, positions, start);
+                score += early.Value.Score;
+                positions.AddRange(early.Value.Positions);
+                from = early.Value.Positions[^1] + 1;
             }
         }
 
@@ -138,22 +145,7 @@ public static class FuzzyMatch
 
     // Scored against the original text, so a capital inside a word (camelCase) counts as a word start.
     // ToLowerInvariant maps char for char, so an index in the lowered text is the same index here.
-    private static int ScoreRun(string text, List<int> positions, int start)
-    {
-        var score = 0;
-        for (var i = start; i < positions.Count; i++)
-        {
-            score += CharScore(text, positions[i]);
-            if (i > start)
-            {
-                score += Link(positions[i - 1], positions[i]);
-            }
-        }
-
-        return score;
-    }
-
-    private static (int Score, int[] Positions)? AlignWord(string word, string text, string original, int from)
+    private static (int Score, int[] Positions)? AlignWord(string word, string text, string original, int from, bool strict, bool earliest)
     {
         var m = word.Length;
         var n = text.Length;
@@ -176,7 +168,7 @@ public static class FuzzyMatch
 
         for (var j = from; j < n; j++)
         {
-            if (text[j] == word[0])
+            if (text[j] == word[0] && (!strict || IsWordStart(original, j)))
             {
                 best[0, j] = CharScore(original, j);
                 back[0, j] = -1;
@@ -192,11 +184,12 @@ public static class FuzzyMatch
                     continue;
                 }
 
+                var wordStart = IsWordStart(original, j);
                 var top = none;
                 var arg = -1;
                 for (var k = from + i - 1; k < j; k++)
                 {
-                    if (best[i - 1, k] == none)
+                    if (best[i - 1, k] == none || (strict && !wordStart && k != j - 1))
                     {
                         continue;
                     }
@@ -221,11 +214,16 @@ public static class FuzzyMatch
         var score = none;
         for (var j = from; j < n; j++)
         {
-            // Strictly greater, so the earliest of equal endings wins and later words keep the most room.
+            // Strictly greater, so the earliest of equal endings wins and later words keep the most room; asked for
+            // the earliest outright, the first ending at all.
             if (best[m - 1, j] != none && best[m - 1, j] > score)
             {
                 score = best[m - 1, j];
                 end = j;
+                if (earliest)
+                {
+                    break;
+                }
             }
         }
 

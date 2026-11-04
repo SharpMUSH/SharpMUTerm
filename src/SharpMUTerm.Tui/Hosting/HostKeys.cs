@@ -36,6 +36,14 @@ internal sealed record HostKeys
     /// </summary>
     public required bool ReportsChordsWhole { get; init; }
 
+    /// <summary>
+    /// Whether a numpad digit reaches the client as itself (<c>Num7</c>) rather than as the main row's <c>7</c>. A
+    /// window reads the physical key; a terminal is never put in application-keypad mode, so its numpad types digits
+    /// and a <c>Num</c> binding never fires there. The numpad is the combat player's walking keys, which is why F4
+    /// says which it is per host.
+    /// </summary>
+    public required bool DeliversNumpad { get; init; }
+
     public bool Reserves(ConsoleKeyInfo key) => Reserved.Any(r => r.Chord.Matches(key));
 
     /// <summary>The reserved chord a descriptor names, or null.</summary>
@@ -62,5 +70,6 @@ internal sealed record HostKeys
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Alt, "Alt+⏎", "Alt+Enter"),
         Reserved = [],
         ReportsChordsWhole = false,
+        DeliversNumpad = false,
     };
 }

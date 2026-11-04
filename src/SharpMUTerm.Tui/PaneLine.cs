@@ -33,7 +33,9 @@ namespace SharpMUTerm.Tui;
 /// <param name="Markup">The line's own Spectre-style markup, with no gutter attached.</param>
 /// <param name="Stamp">When the line arrived, pre-formatted for the gutter, or null for no gutter.</param>
 /// <param name="Plain">
-/// The text the markup puts on the screen (<see cref="MarkupText.Plain"/>) — what ⌃F searches.
+/// The text the line says — what ⌃F searches and F2's live test matches. A world's line is its spans' text
+/// (<see cref="Core.Text.StyledLine.Text"/>), never the composed markup, which carries the client's decoration (the
+/// trigger left rule <c>▌ </c>); any other row is the text its markup puts on the screen (<see cref="MarkupText.Plain"/>).
 /// <para>
 /// Held rather than derived, because the search surface refilters on every keystroke over every line of
 /// every window: stripping thousands of lines eight times while somebody types a word is the difference
