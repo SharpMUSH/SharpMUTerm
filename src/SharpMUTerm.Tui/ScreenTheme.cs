@@ -136,7 +136,7 @@ internal sealed class ScreenTheme
         // Text printed on the accent: near-black on a bright accent, the panel's own tone on a dark one.
         var accent = roles[ScreenPalette.Accent];
         var ink0 = Contrast.RelativeLuminance(accent) < LightPlaneLuminance ? roles[ScreenPalette.PanelBg] : Parse(ScreenPalette.Ink);
-        roles[ScreenPalette.Ink] = Contrast.Legible(ink0, accent);
+        roles[ScreenPalette.Ink] = Contrast.Legible(ink0, accent, FloorOn(accent));
 
         return new ScreenTheme(roles.ToDictionary(r => r.Key, r => r.Value.ToHex(), StringComparer.OrdinalIgnoreCase));
     }
@@ -268,6 +268,15 @@ internal sealed class ScreenTheme
         }
 
         var plane = background ?? planes.Peek();
+
+        // The framework draws [dim] as faint text in the inherited ink (or a fixed #808080 with none), which nothing
+        // holds to a floor. On a light screen plane it becomes a grey held to body text's 4.5:1 there; a dark plane keeps
+        // the framework's faint, so Dark and Solarized Dark frames do not move.
+        if (foreground < 0 && !IsIdentity && FloorOn(Parse(plane)) > Contrast.Floor && Array.IndexOf(words, "dim") is >= 0 and var dim)
+        {
+            words[dim] = Contrast.Legible(FrameworkDim, Parse(plane), FloorOn(Parse(plane))).ToHex();
+        }
+
         if (foreground >= 0)
         {
             var given = words[foreground];
@@ -287,7 +296,7 @@ internal sealed class ScreenTheme
             else if (!IsIdentity)
             {
                 // Not a role: a colour the screen was handed. Hold it to the floor where it lands.
-                words[foreground] = Contrast.Legible(Parse(given), Parse(plane)).ToHex();
+                words[foreground] = Contrast.Legible(Parse(given), Parse(plane), FloorOn(Parse(plane))).ToHex();
             }
         }
 
@@ -349,7 +358,7 @@ internal sealed class ScreenTheme
         {
             foreach (var plane in planes ?? TextPlanes)
             {
-                ink = Contrast.Legible(ink, roles[plane]);
+                ink = Contrast.Legible(ink, roles[plane], FloorOn(roles[plane]));
             }
         }
 
@@ -360,6 +369,20 @@ internal sealed class ScreenTheme
     private const double ShadowStep = 16;
 
     private const double LightPlaneLuminance = 0.18;
+
+    /// <summary>
+    /// The floor an ink is held to on <paramref name="plane"/>: WCAG AA's 4.5:1 for body text on a light plane, where a
+    /// settings screen's labels and help are small text in a terminal font and 3:1 read as faint; the client's 3:1 on a
+    /// dark one, where it was chosen (and where Dark's constants, byte for byte, are the identity this must not move).
+    /// </summary>
+    internal static double FloorOn(Rgb plane) =>
+        Contrast.RelativeLuminance(plane) >= LightPlaneLuminance ? LightTextFloor : Contrast.Floor;
+
+    /// <summary>The grey SharpConsoleUI resolves the <c>[dim]</c> tag to, through no option this client holds.</summary>
+    internal static readonly Rgb FrameworkDim = new(0x80, 0x80, 0x80);
+
+    /// <summary>The floor small text is held to on a light settings screen.</summary>
+    internal const double LightTextFloor = 4.5;
 
     /// <summary>
     /// A dark role on a light theme: the same colour at the mirrored lightness (100 − L*), keeping the

@@ -581,7 +581,10 @@ internal sealed class ComposeOverlay
 
             var spelling = model.Dictionary is { } name
                 ? $"[{ScreenPalette.Value}]{Escape(name)}[/]"
-                : $"[{ScreenPalette.Muted}]no dictionary[/]";
+                : model.Place == ComposerPlace.FullScreen
+                    // The state names its way out: ⌥W here is the offer to get one (the key row says so too).
+                    ? $"[{ScreenPalette.Muted}]no dictionary[/][{ScreenPalette.Label}] · [/][{ScreenPalette.Accent}]⌥W[/][{ScreenPalette.Label}] gets one[/]"
+                    : $"[{ScreenPalette.Muted}]no dictionary[/]";
 
             header = $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
                 + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"

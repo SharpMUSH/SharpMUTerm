@@ -27,6 +27,10 @@ public class SettingsWindowTests
         /// <summary>The sections the form lists; every built-in one is declared now, so a test adds one that is not.</summary>
         public IReadOnlyList<SettingsSectionContribution> Sections { get; init; } = BuiltInSettings.All;
 
+        /// <summary>The notes the client captured for the world fields (F5's join wraps recommendation).</summary>
+        public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Notes { get; init; } =
+            new Dictionary<string, IReadOnlyDictionary<string, string>>();
+
         public SettingsForm Form(string initial = "text")
         {
             SettingsForm? form = null;
@@ -45,7 +49,10 @@ public class SettingsWindowTests
                 () => [new ReceivedValue("Char.Vitals.hp", "412"), new ReceivedValue("Char.Vitals.maxhp", "500")],
                 meter => meter.Value == "Char.Vitals.hp" ? "412/500" : null,
                 () => ThemePreviews.Cards(Config),
-                () => ThemePreviews.IsDark(ThemeChoices.Resolve(Config)));
+                () => ThemePreviews.IsDark(ThemeChoices.Resolve(Config)))
+            {
+                WorldNotes = Notes,
+            };
             return form;
         }
     }
@@ -220,6 +227,40 @@ public class SettingsWindowTests
         await Assert.That(harness.Config.Worlds[1].GrabPrefix).IsEqualTo("Edit>");
         await Assert.That(harness.Config.Worlds[0].GrabPrefix).IsNull();
         await Assert.That(harness.Commits).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// The cell F5's <c>join wraps</c> recommendation is drawn under the field natively, from the same sentence, and goes
+    /// when the field is changed.
+    /// </summary>
+    [Test]
+    public async Task JoinWrapsCarriesTheCellScreensRecommendation()
+    {
+        var advice = WorldFieldValues.JoinWrapsAdvice(78, 60);
+        var harness = new Harness
+        {
+            Notes = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                [WorldFieldValues.JoinWrapsFieldId] = new Dictionary<string, string> { ["Aetherfall"] = advice },
+            },
+        };
+        harness.Config.Worlds.Clear();
+        harness.Config.Worlds.Add(new WorldDefinition { Name = "Aetherfall", Host = "aether.example" });
+        var (before, shownBefore, after) = await Run(harness, "worlds", window =>
+        {
+            var note = window.NoteFor(WorldFieldValues.JoinWrapsFieldId)!;
+            var text = note.Text;
+            var shown = note.IsVisible;
+            var combo = (ComboBox)window.FieldControls[WorldFieldValues.JoinWrapsFieldId];
+            combo.SelectedItem = WorldFieldValues.JoinWrapChoices[1];
+            Dispatcher.UIThread.RunJobs();
+            return (text, shown, window.NoteFor(WorldFieldValues.JoinWrapsFieldId)!.IsVisible);
+        });
+
+        await Assert.That(before).IsEqualTo("Recommended · wraps at 78, pane is 60");
+        await Assert.That(shownBefore).IsTrue();
+        await Assert.That(harness.Config.Worlds[0].JoinWrappedLines).IsTrue();
+        await Assert.That(after).IsFalse();
     }
 
     /// <summary>A text the cell screen would refuse is refused here too, and the box shows the value kept.</summary>

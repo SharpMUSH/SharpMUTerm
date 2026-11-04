@@ -177,7 +177,6 @@ public class FrameContrastTests
         var failures = pairs
             .Select(pair => (pair.Key.Fg, pair.Key.Bg, pair.Value, Ratio: Contrast.Ratio(pair.Key.Fg, pair.Key.Bg)))
             .Where(t => t.Ratio < Contrast.Floor)
-            .Where(t => !IsFrameworkDim(t.Fg))
             .OrderBy(t => t.Ratio)
             .Select(t => $"{t.Ratio:0.00} {t.Fg.ToHex()} on {t.Bg.ToHex()} ({t.Value} cells)")
             .ToList();
@@ -186,19 +185,10 @@ public class FrameContrastTests
             .Because($"--theme \"{test.Theme}\" --view {(test.View.Length == 0 ? "(default)" : test.View)}");
     }
 
-    /// <summary>
-    /// <b>The one exemption, and it is the framework's rather than ours.</b> SharpConsoleUI resolves the
-    /// <c>[dim]</c> markup tag to a fixed <c>#808080</c> of its own — it is an internal local function in
-    /// the markup renderer, reachable through no option we hold — so a dim rule measures 4.01:1 on the
-    /// default dark theme and <b>2.52:1</b> on Solarized Dark's focused pane.
-    /// <para>
-    /// It is exempted rather than papered over. Reaching it means giving up <c>[dim]</c> everywhere in
-    /// favour of an explicit floor-checked grey, which is a sweep across every renderer in the app for a
-    /// near miss on one theme; the honest state is a named exemption and a number, so that anybody who
-    /// does that sweep can delete this and watch the test still pass.
-    /// </para>
-    /// </summary>
-    private static bool IsFrameworkDim(Rgb fg) => fg == new Rgb(0x80, 0x80, 0x80);
+    // There is no exemption for the framework's [dim] any more. It resolves to a fixed #808080 nothing can retheme, and
+    // was exempted while it measured 2.52:1 on Solarized Dark's focused pane; the panes have since been deepened, the
+    // settings screens repaint it off Dark (ScreenTheme), and the status row swaps it (StatusInk), so every [dim] cell
+    // in every view here clears the floor on all three themes, and a new one that does not fails like any other ink.
 
     /// <summary>
     /// A glyph that is a <em>fill</em> rather than text, and to which a text floor therefore does not

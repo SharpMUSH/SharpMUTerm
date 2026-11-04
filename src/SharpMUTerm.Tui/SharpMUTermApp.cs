@@ -8012,6 +8012,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             yield break;
         }
 
+        if (string.Equals(view, "settings", StringComparison.OrdinalIgnoreCase))
+        {
+            // F5 under its second name: the world's last field, far below the fold on an ordinary terminal,
+            // so the frame shows the detail column windowed to the field being typed in.
+            for (var i = 0; i < WorldsScreenRenderer.HighlightNamesField; i++)
+            {
+                yield return Stroke('\t', ConsoleKey.Tab);
+            }
+
+            yield break;
+        }
+
         if (string.Equals(view, "logging", StringComparison.OrdinalIgnoreCase))
         {
             // name → password → connect → on connect → log: the character row's fields, in order. The

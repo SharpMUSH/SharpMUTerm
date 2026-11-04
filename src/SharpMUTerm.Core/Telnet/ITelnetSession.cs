@@ -51,6 +51,18 @@ public interface ITelnetSession : IAsyncDisposable
     }
 
     /// <summary>
+    /// Raised after every event one read from the socket produced has been raised: the lines, prompts and GMCP of a
+    /// single receive are one batch. Channel capture's <c>move</c> holds lines to the end of the batch, so an echo the
+    /// server printed just before its GMCP in the same write still finds it. A session that does not say leaves those
+    /// lines to a short timer, which is what the default does.
+    /// </summary>
+    event EventHandler? ReceiveBatchEnded
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Raised once the server has switched this connection to Pueblo (its start sequence, after our
     /// <c>PUEBLOCLIENT</c>). The <see cref="MxpEnabled"/> of Pueblo.
     /// </summary>

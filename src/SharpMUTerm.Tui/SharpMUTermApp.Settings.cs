@@ -194,8 +194,30 @@ internal sealed partial class SharpMUTermApp
             Selections = _listSelections,
             Theme = () => _theme.Clone(),
             BesideOutput = item is not null,
+            WorldNotes = WorldNotesNow(),
         };
         return form;
+    }
+
+    /// <summary>
+    /// The notes the cell F5 draws beside a world's fields, for every world, read now on the client's thread: today the
+    /// <c>join wraps</c> recommendation (<see cref="JoinWrapsAdvice"/>), the one sentence both surfaces say.
+    /// </summary>
+    private Dictionary<string, IReadOnlyDictionary<string, string>> WorldNotesNow()
+    {
+        var joinWraps = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var world in _config.Worlds)
+        {
+            if (JoinWrapsAdvice(world) is { } advice)
+            {
+                joinWraps[world.Name] = advice;
+            }
+        }
+
+        return new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
+        {
+            [Client.Settings.WorldFieldValues.JoinWrapsFieldId] = joinWraps,
+        };
     }
 
     /// <summary>

@@ -225,6 +225,29 @@ public sealed class SettingsForm
         return field.Binding?.IsDefault(Target) ?? true;
     }
 
+    /// <summary>
+    /// Notes the client attaches to a world field for one world — F5's <c>join wraps</c> recommendation while the pane is
+    /// narrower than the server wraps — keyed by field id, then world name. Captured on the client's thread when the form
+    /// opens, from the data its cell screen draws the same sentence from, so the window reads nothing live.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> WorldNotes { get; init; } =
+        new Dictionary<string, IReadOnlyDictionary<string, string>>();
+
+    /// <summary>
+    /// The note beside <paramref name="field"/> for the world being edited, or null. A note recommends changing the
+    /// setting, so it holds only while the field is still at its default — once taken, it has nothing left to say.
+    /// </summary>
+    public string? Note(SettingsField field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        return _world is { } world
+            && WorldNotes.TryGetValue(field.Id, out var byWorld)
+            && byWorld.TryGetValue(world.Name, out var note)
+            && IsDefault(field)
+                ? note
+                : null;
+    }
+
     /// <summary>The default of <paramref name="field"/> as text, for a reset button's tooltip.</summary>
     public static string DefaultText(SettingsField field)
     {

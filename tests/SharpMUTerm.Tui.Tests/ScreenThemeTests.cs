@@ -171,6 +171,61 @@ public class ScreenThemeTests
     [Arguments("worlds")]
     public async Task NoLightSettingsFramePaintsADarkPlaneAt80Columns(string view) => await AssertNoDarkPlane(view, 80, 24);
 
+    /// <summary>
+    /// On a light theme a settings screen's text is body text: every ink, the framework's <c>[dim]</c> included, clears
+    /// WCAG AA's 4.5:1 on the screen plane it is painted on. Labels and help were held to the client's 3:1 and read as
+    /// faint in a terminal font; Dark keeps its constants (and its 3:1), byte for byte.
+    /// </summary>
+    [Test]
+    [Arguments("triggers")]
+    [Arguments("worlds")]
+    [Arguments("textansi")]
+    [Arguments("aliases")]
+    [Arguments("timers")]
+    [Arguments("keypad")]
+    public async Task ALightSettingsScreensTextClearsBodyTextContrast(string view)
+    {
+        Console.SetIn(TextReader.Null);
+        var config = DemoScene.Build();
+        config.ThemeName = "Light";
+        config.Theme = ThemeLibrary.Get("Light");
+        var scheme = ScreenTheme.For(config.Theme);
+        var caps = new TerminalCapabilities(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
+        var app = new SharpMUTermApp(config, caps, new HeadlessConsoleDriver(120, 32));
+        var frame = app.RenderSnapshot(view);
+
+        var planes = TextPlanes.Select(p => Rgb(scheme.Role(p))).ToHashSet();
+        var failures = FrameGrid.Cells(frame, 120, 32).Values
+            .Where(c => c.Background is { } bg && planes.Contains(bg) && c.Foreground is { })
+            .Where(c => c.Glyph is not (' ' or '▌' or '▐') && !(c.Glyph is >= '─' and <= '▟') && c.Glyph is not ('\ue0b0' or '\ue0b2'))
+            .Select(c => (Fg: c.Foreground!.Value, Bg: c.Background!.Value))
+            .Distinct()
+            .Where(p => Contrast.Ratio(p.Fg, p.Bg) < ScreenTheme.LightTextFloor)
+            .Select(p => $"{Contrast.Ratio(p.Fg, p.Bg):0.00} {p.Fg.ToHex()} on {p.Bg.ToHex()}")
+            .ToList();
+
+        await Assert.That(failures).IsEmpty().Because($"--theme Light --view {view}");
+    }
+
+    [Test]
+    public async Task OnALightThemeEveryInkClearsBodyTextContrast()
+    {
+        var scheme = ScreenTheme.For(ThemeLibrary.Get("Light"));
+        string[] inks = [ScreenPalette.Label, ScreenPalette.Muted, ScreenPalette.Value, ScreenPalette.PanelFg, ScreenPalette.Warn];
+        foreach (var ink in inks)
+        {
+            foreach (var plane in ScreenTheme.PlanesUnder(ink))
+            {
+                await Assert.That(Contrast.Ratio(Rgb(scheme.Role(ink)), Rgb(scheme.Role(plane))))
+                    .IsGreaterThanOrEqualTo(ScreenTheme.LightTextFloor).Because($"{ink} on {plane}");
+            }
+        }
+
+        await Assert.That(Contrast.Ratio(Rgb(scheme.Ink), Rgb(scheme.Accent))).IsGreaterThanOrEqualTo(ScreenTheme.LightTextFloor);
+        await Assert.That(scheme.Paint("[dim]x[/]")).DoesNotContain("dim").Because("the framework's fixed grey is rethemed off Dark");
+        await Assert.That(ScreenTheme.For(ThemeLibrary.Get("Dark")).Paint("[dim]x[/]")).IsEqualTo("[dim]x[/]");
+    }
+
     private static async Task AssertNoDarkPlane(string view, int width, int height)
     {
         Console.SetIn(TextReader.Null);
