@@ -44,8 +44,9 @@ public class NoticeAndMapSurfaceTests
         var chip = plain[..plain.IndexOf("⌃B", StringComparison.Ordinal)];
         var muted = plain[(plain.IndexOf("⌃B[/] ", StringComparison.Ordinal) + "⌃B[/] ".Length)..plain.IndexOf("nothing", StringComparison.Ordinal)];
 
+        // A cell is not a button, so the row names the way to the action instead — after the words, unchanged.
         app.SimulateNotice("nothing to split", MessageSeverity.Warning, "⌃B", new NoticeAction("layout:layouts", "Change layout"));
-        await Assert.That(app.LastNotice).IsEqualTo(plain).Because("the action is the window's to offer; the row is unchanged");
+        await Assert.That(app.LastNotice).StartsWith(plain).And.EndsWith(" · ⌥M Change layout[/]");
 
         app.SimulateNotice("no route to host", MessageSeverity.Error, null, null);
         await Assert.That(app.LastNotice).IsEqualTo($"[{ScreenPalette.Warn}]no route to host[/]");

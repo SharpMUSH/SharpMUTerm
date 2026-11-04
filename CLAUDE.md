@@ -645,7 +645,9 @@ fallbacks) for inline images/maps.
   out, the accept) is never dropped. F1 (`ComposeOverlay.FooterKeys`; the header no longer repeats the `⌥W` chip), the
   script console (per state: Del is named only on the store list), the map's edit row, the import review and F10's
   header use it. `FooterFitTests` renders every cell modal/footer view at 80×24 and fails unless its first and last
-  hints share one painted row — add a view there when it gains a key row.
+  hints share one painted row — add a view there when it gains a key row. Settings screen headers go through it too
+  (`ScreenChrome.Hints(…, room)`, `HeaderRoom`): `{F}/Esc close` and an edit's ⏎/Esc are `Keep`, the pane and select
+  keys go first; `FooterFitTests.SettingsHeaders` fails on a `…` in any F2–F10 header at 80×24.
 - **The status row names the keys of the mode you are in** (`ModeHints`/`StatusMode`, Client;
   `SharpMUTermApp.ModeHints.cs`). Composer armed > search bar in the focused window > frozen > split > scrolled back;
   while one holds, its hints replace `FocusHints` (`End returns · ⌥F freezes`, `⌥F thaws`, `⌥G next hit · ⌃F searches
@@ -1436,7 +1438,20 @@ fallbacks) for inline images/maps.
     the client's own list, in both hosts, with no new trust path. `--plain` gets client rows instead.
   - **What the client says in a session window is a client row** (`ClientRowRenderer`, `AppendClientRow`: a bar function
     and no `Plain`), never a `***` session line: reconnect countdowns and stops reach no transcript, restore, scene log or ⌃F.
-    Core's own `*** Connecting/Connection lost` lines are still session lines.
+    Core's own connection notes are too: `WorldSession.ConnectionNoted` (`ConnectionNote`: CONNECT/FAILED/LOST/CLOSED)
+    replaces the `*** Connecting/Connection lost/failed` lines, `BindSession` draws them as client rows and announces them.
+  - **The status row names a notice's action** (`NoticeActionHints`): `⌥R Reconnect` when the command has a key, else
+    `⌃P ▸ <palette title>`, else the action's shorter label; added whole after ` · ` only if the row still fits, never cut.
+  - **Help topics are blocks** (`HelpPage`, Client): a paragraph or line opening `Label: ` is a heading, keys are spans
+    (glyph runs, F-keys, Esc, PgUp…), two-space-indented lines stay rows. The cells draw bold headings and accent keys;
+    the window draws headings and key chips (`NativeKeys.Words`). The cell topic header is one elided row.
+  - **F5's world column at 80×24 drops its group headings** when the fields do not fit, naming the top row's group on the
+    column's first row (`├ WORLD · CONNECTION`, `⌃ 12 more · MAP`); while a world field is focused the character form and
+    trigger sets are capped to a third of the height. ⇥ order is unchanged. An open `highlight names` edit draws the
+    syntax and colours under its well (`NamesHelpRows`; `ScreenChrome.Window(…, keepBelow)` keeps them on screen); the
+    window's field help is `HighlightColours.NamesHelp`, the same words.
+  - **The native modal scrim is `NativeTokens.Scrim`, shared with ⌃P and settings**, raised to 0x73 dark / 0x4d light;
+    `NativeModalTests.EveryModalIsVeiledByTheOneScrimOverTheWholeWindow` pins it.
   - **A scene recording is marked** (`● REC` status cell, `HeaderModel.Recording`), and the saved notice carries two actions
     (`NoticeModel.Second`): `scene:open:N` and `scene:copy:N`, by index into this run's saved scenes, never a path. Open goes
     through `ClientHost.OpenFile` (required; null headless), which takes only an existing absolute `.html/.htm/.txt/.log`

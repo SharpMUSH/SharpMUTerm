@@ -31,7 +31,8 @@ internal static class ScreenChrome
         ScreenFocus? focus = null,
         bool removable = false,
         bool detailed = false,
-        bool resettable = false)
+        bool resettable = false,
+        int room = 0)
     {
         if (focus?.Edit is { } edit)
         {
@@ -44,25 +45,91 @@ internal static class ScreenChrome
                 return $"[{ScreenPalette.Label}]{CaptureHints}[/]";
             }
 
-            var editing = EditingHints
-                + (edit.VisibleChoices.Count > 0 ? ChoiceHint : string.Empty)
-                + (edit.RowFields > 1 ? NextFieldHint : string.Empty);
-            return $"[{ScreenPalette.Label}]{editing} · [/][{ScreenPalette.Accent}]{fkey}[/]"
-                + $"[{ScreenPalette.Label}] close [/]";
+            var editing = new List<LadderKey>
+            {
+                new("⏎", "commit"),
+                new("Esc", "revert"),
+            };
+            if (edit.VisibleChoices.Count > 0)
+            {
+                editing.Add(new LadderKey("↑↓", "pick from list", "pick", Drop: 2));
+            }
+
+            if (edit.RowFields > 1)
+            {
+                editing.Add(new LadderKey("⇥", "next field", "next", Drop: 1));
+            }
+
+            editing.Add(new LadderKey(fkey, "close", Drop: 3));
+            return HintMarkup(KeyLadder.Choose(editing, room), fkey, closesWithEsc: false);
         }
 
-        // Order is a budget, not taste: a header narrower than its hints loses the *tail* of this string
-        // (see the 80-column frames), so whatever is appended last is what a narrow terminal does not
-        // get. `i info` goes after `Del remove` because Delete is the destructive key and must be the
-        // one that survives — and because the INFO key's drawn row (`i  info on Aetherfall`) is on the
-        // screen either way, while a key that removes a world has only this line and its own row.
-        var all = (editable ? verbs + EditHint : verbs)
-            + (resettable ? ResetHint : string.Empty)
-            + (removable ? DeleteHint : string.Empty)
-            + (detailed ? DetailHint : string.Empty)
-            + SearchHint;
-        return $"[{ScreenPalette.Label}]{all} · [/][{ScreenPalette.Accent}]{fkey}[/][{ScreenPalette.Label}]/[/]"
-            + $"[{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close [/]";
+        // Fitted by KeyLadder, never cut mid-word: a header narrower than its hints gives up whole keys, lowest Drop
+        // first, and keeps the way out. Del outlasts everything but the close, because Delete is the destructive key and
+        // this line is the only place it is named; `i info` and `/ search` go early, because the INFO row is drawn on
+        // the screen either way and search is the overlay's, not the screen's.
+        var keys = new List<LadderKey>(VerbKeys(verbs));
+        if (editable)
+        {
+            keys.Add(new LadderKey("⏎", "edit", Drop: 6));
+        }
+
+        if (resettable)
+        {
+            keys.Add(new LadderKey("r", "reset", Drop: 5));
+        }
+
+        if (removable)
+        {
+            keys.Add(new LadderKey("Del", "remove", Drop: 8));
+        }
+
+        if (detailed)
+        {
+            keys.Add(new LadderKey("i", "info", Drop: 4));
+        }
+
+        keys.Add(new LadderKey("/", "search", Drop: 1));
+        keys.Add(new LadderKey($"{fkey}/Esc", "close"));
+        return HintMarkup(KeyLadder.Choose(keys, room), fkey, closesWithEsc: true);
+    }
+
+    /// <summary>
+    /// The cells a header has for its hints once <paramref name="title"/> is drawn in <paramref name="width"/>: what
+    /// <see cref="Hints"/> is fitted to (0 when the caller has no width). One cell for the gap, one for the trailing pad.
+    /// </summary>
+    internal static int HeaderRoom(string title, int width) =>
+        width <= 0 ? 0 : Math.Max(1, width - MarkupText.VisibleLength(title) - 2);
+
+    /// <summary>A verbs string (<see cref="ListHints"/>, <see cref="SingleListHints"/>) as ladder keys, each with its drop rank.</summary>
+    private static IEnumerable<LadderKey> VerbKeys(string verbs)
+    {
+        foreach (var part in verbs.Split(" · ", StringSplitOptions.RemoveEmptyEntries))
+        {
+            var cut = part.LastIndexOf(' ');
+            var key = cut > 0 ? part[..cut] : part;
+            var label = cut > 0 ? part[(cut + 1)..] : string.Empty;
+            yield return new LadderKey(key, label, Drop: label switch
+            {
+                "pane" => 2,
+                "select" => 3,
+                _ => 7,
+            });
+        }
+    }
+
+    /// <summary>
+    /// A header's hints as markup: the keys in the label ink, then the close — its keys in the accent, as every screen
+    /// has drawn them. The close is always the last key <see cref="KeyLadder.Choose"/> kept (it is never dropped).
+    /// </summary>
+    private static string HintMarkup(IReadOnlyList<(string Key, string Label)> keys, string fkey, bool closesWithEsc)
+    {
+        var verbs = string.Join(" · ", keys.Take(keys.Count - 1).Select(k => k.Label.Length == 0 ? k.Key : $"{k.Key} {k.Label}"));
+        var lead = verbs.Length == 0 ? string.Empty : $"[{ScreenPalette.Label}]{verbs} · [/]";
+        var close = closesWithEsc
+            ? $"[{ScreenPalette.Accent}]{fkey}[/][{ScreenPalette.Label}]/[/][{ScreenPalette.Accent}]Esc[/]"
+            : $"[{ScreenPalette.Accent}]{fkey}[/]";
+        return lead + close + $"[{ScreenPalette.Label}] close [/]";
     }
 
     /// <summary>
@@ -270,7 +337,7 @@ internal static class ScreenChrome
     /// with no cursor in it shows its top, where its heading is, and the edges say what they are hiding.
     /// </para>
     /// </summary>
-    internal static List<string> Window(List<string> block, int height)
+    internal static List<string> Window(List<string> block, int height, int keepBelow = 0)
     {
         ArgumentNullException.ThrowIfNull(block);
 
@@ -288,9 +355,10 @@ internal static class ScreenChrome
             focused = block.FindIndex(l => l.Contains(CursorMark, StringComparison.Ordinal));
         }
 
+        // keepBelow: rows under the focused one that belong to it (an open field's explanation), kept on screen too.
         var start = focused < 0
             ? 0
-            : Math.Clamp(focused - (height / 2), 0, block.Count - height);
+            : Math.Clamp(Math.Max(focused - (height / 2), focused + keepBelow + 2 - height), 0, block.Count - height);
 
         var window = block.GetRange(start, height);
         if (start > 0)

@@ -255,7 +255,7 @@ internal sealed record NativeTokens(
 
     /// <summary>The palette's dark card, as it was drawn before there were tokens.</summary>
     private static readonly Canon DarkCanon = new(
-        Color.FromArgb(0x59, 0, 0, 0),
+        Color.FromArgb(0x73, 0, 0, 0),
         new Rgb(0x1e, 0x1e, 0x25),
         new Rgb(0x3a, 0x3a, 0x46),
         new Rgb(0x2c, 0x2c, 0x36),
@@ -270,7 +270,7 @@ internal sealed record NativeTokens(
 
     /// <summary>The palette's light card.</summary>
     private static readonly Canon LightCanon = new(
-        Color.FromArgb(0x33, 0, 0, 0),
+        Color.FromArgb(0x4d, 0, 0, 0),
         new Rgb(0xff, 0xff, 0xff),
         new Rgb(0xd4, 0xd4, 0xdd),
         new Rgb(0xe6, 0xe6, 0xec),

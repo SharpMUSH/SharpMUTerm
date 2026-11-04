@@ -304,7 +304,7 @@ public static partial class BuiltInSettings
             WorldText("highlight-names", "highlight names", TextRule.NameHighlights, WorldAlertsGroup,
                 (_, w) => NameHighlights.Format(w.HighlightNames),
                 (_, w, v) => w.HighlightNames = [.. NameHighlights.Parse(v).Names],
-                "names drawn in a colour wherever they appear: Ashlyn=gold, Merrow=red",
+                HighlightColours.NamesHelp,
                 "friends enemies highlight name colour"),
 
             WorldText("map-room", "map room", TextRule.Pattern, MapGroup,

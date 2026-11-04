@@ -114,7 +114,8 @@ internal static class TimersScreenRenderer
     {
         var title = $"[bold {Value}] Timers[/]";
         var hints = ScreenChrome.Hints(
-            ScreenChrome.ListHints, "F6", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false);
+            ScreenChrome.ListHints, "F6", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
+            room: ScreenChrome.HeaderRoom(" " + title, width));
         return SpreadTitle(" " + title, hints, width);
     }
 

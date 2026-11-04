@@ -3250,6 +3250,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         session.LinePrinted += (_, line) => OnUi(() => OnLine(session, windowId, line));
+
+        // What the session says about its connection is the client's row in this window, never a line of the session:
+        // no transcript, restore log, scene log, trigger or ⌃F sees it (ClientRowRenderer). A reader with no rows hears it.
+        session.ConnectionNoted += (_, note) => OnUi(() =>
+        {
+            AppendClientRow(windowId, note.Label, note.Text);
+            AnnounceLine(windowId, note.ToString());
+        });
         session.PromptChanged += (_, _) => OnUi(() =>
         {
             UpdateStatus();

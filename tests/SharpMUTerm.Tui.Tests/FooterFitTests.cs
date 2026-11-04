@@ -71,10 +71,39 @@ public class FooterFitTests
     [Test]
     public async Task EveryViewInTheListIsOneTheSnapshotKnows()
     {
-        foreach (var (view, _) in Footers)
+        foreach (var (view, _) in Footers.Concat(SettingsHeaders.Select(v => (v, Array.Empty<string>()))))
         {
             await Assert.That(SnapshotViews.All.Contains(view)).IsTrue().Because(view);
         }
+    }
+
+    /// <summary>
+    /// Every settings screen, navigating and mid-edit. Their header's keys are fitted by <see cref="KeyLadder"/>
+    /// (<c>ScreenChrome.Hints</c>): at 80 columns they used to be cut from the middle (<c>⏎ …</c>, <c>Del remo…</c>).
+    /// </summary>
+    internal static readonly string[] SettingsHeaders =
+    [
+        "settings", "worlds", "triggers", "route", "highlight", "set", "aliases", "timers", "keypad", "textansi", "input",
+        "logging", "password", "startup", "settings-search", "settings-meters", "settings-changed",
+        "settings-themes", "triggers-edit", "logging-edit", "keypad-edit", "password-edit", "startup-edit", "channels-f5",
+        "join-wraps-f5",
+    ];
+
+    public static IEnumerable<Func<string>> SettingsCases() => SettingsHeaders.Select(v => (Func<string>)(() => v));
+
+    [Test]
+    [MethodDataSource(nameof(SettingsCases))]
+    public async Task ASettingsHeaderKeepsWholeKeysAndItsWayOutAt80x24(string view)
+    {
+        var rows = FrameGrid.Decode(Render(view), Width, Height);
+        var header = rows[0];
+        await Assert.That(header.Contains('…')).IsFalse()
+            .Because($"{view}: a key is given up whole, never cut: '{header}'");
+        await Assert.That(header.Contains("close", StringComparison.Ordinal) || header.Contains("cancels", StringComparison.Ordinal)
+                || header.Contains("Esc back", StringComparison.Ordinal))
+            .IsTrue().Because($"{view}: the way out stays: '{header}'");
+        var footer = rows.LastOrDefault(r => r.Contains("[Esc]", StringComparison.Ordinal));
+        await Assert.That(footer).IsNotNull().Because($"{view}: its action bar is on screen:\n{string.Join('\n', rows)}");
     }
 
     [Test]

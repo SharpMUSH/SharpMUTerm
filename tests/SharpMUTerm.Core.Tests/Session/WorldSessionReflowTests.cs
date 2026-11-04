@@ -31,6 +31,10 @@ public class WorldSessionReflowTests
         };
         var printed = new List<StyledLine>();
         session.LinePrinted += (_, l) => printed.Add(l);
+
+        // The connection's own notes are not lines any more (ConnectionNoted); recorded in order with the lines, as
+        // "*** CLOSED: …", so a test can still say a note came after a line.
+        session.ConnectionNoted += (_, n) => printed.Add(StyledLine.FromText("*** " + n, TextStyle.Default));
         return (session, telnet, printed);
     }
 
@@ -142,6 +146,6 @@ public class WorldSessionReflowTests
         var texts = printed.Select(l => l.Text).ToList();
         var held = texts.IndexOf(Paragraph[0]);
         await Assert.That(held).IsGreaterThanOrEqualTo(0);
-        await Assert.That(texts.FindIndex(t => t.StartsWith("*** Disconnected", StringComparison.Ordinal))).IsGreaterThan(held);
+        await Assert.That(texts.FindIndex(t => t.StartsWith("*** " + ConnectionNote.Closed, StringComparison.Ordinal))).IsGreaterThan(held);
     }
 }

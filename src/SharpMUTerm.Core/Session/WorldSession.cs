@@ -399,6 +399,21 @@ public sealed class WorldSession : IAsyncDisposable
 
     public event EventHandler<StyledLine>? LinePrinted;
 
+    /// <summary>
+    /// What the session says about its own connection — dialling, connected, could not connect, lost, closed. Not a
+    /// line: the client draws it as one of its own rows in the session's window, so it reaches no transcript, restore
+    /// log, scene log, trigger or search (it used to be a <c>***</c> line printed into all of them as if the game had
+    /// said it). Raised on whichever thread the change happened on; also written to the diagnostics at debug level (the app already reports a failure as a notice, which the message log keeps).
+    /// </summary>
+    public event EventHandler<ConnectionNote>? ConnectionNoted;
+
+    /// <summary>Says <paramref name="text"/> about the connection (<see cref="ConnectionNoted"/>) and keeps it in the diagnostics.</summary>
+    private void NoteConnection(string label, string text)
+    {
+        Logger.LogDebug("{World}: {Label} {Text}", World.Name, label, text);
+        ConnectionNoted?.Invoke(this, new ConnectionNote(label, text));
+    }
+
     public event EventHandler<StyledLine?>? PromptChanged;
 
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
@@ -618,7 +633,7 @@ public sealed class WorldSession : IAsyncDisposable
 
         _closingByPlayer = false;
         SetState(ConnectionState.Connecting, null);
-        PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");
+        NoteConnection(ConnectionNote.Connect, $"dialling {World.Host}:{World.Port}…");
 
         var telnet = _sessionFactory(World.ToConnectionOptions());
         _telnet = telnet;
@@ -688,14 +703,14 @@ public sealed class WorldSession : IAsyncDisposable
         {
             await telnet.ConnectAsync(cancellationToken).ConfigureAwait(false);
             SetState(ConnectionState.Connected, null);
-            PrintSystem("*** Connected.");
+            NoteConnection(ConnectionNote.Connect, $"connected to {World.Host}:{World.Port}");
             await SendLoginAsync(cancellationToken).ConfigureAwait(false);
             StartTimers();
         }
         catch (Exception ex)
         {
             SetState(ConnectionState.Faulted, ex);
-            PrintSystem($"*** Connection failed: {ex.Message}");
+            NoteConnection(ConnectionNote.Failed, $"could not connect to {World.Host}:{World.Port} · {ex.Message}");
             Logger.LogWarning(ex, "Connect to {Host}:{Port} failed", World.Host, World.Port);
             throw;
         }
@@ -1554,7 +1569,9 @@ public sealed class WorldSession : IAsyncDisposable
         LastClose = _closingByPlayer ? SessionClose.Player : e.IsClean ? SessionClose.Server : SessionClose.Failed;
         _closingByPlayer = false;
         SetState(e.IsClean ? ConnectionState.Disconnected : ConnectionState.Faulted, e.Error);
-        PrintSystem(e.IsClean ? "*** Disconnected." : $"*** Connection lost: {e.Error?.Message}");
+        NoteConnection(
+            e.IsClean ? ConnectionNote.Closed : ConnectionNote.Lost,
+            e.IsClean ? "disconnected" : $"connection lost · {e.Error?.Message}");
     }
 
     /// <summary>

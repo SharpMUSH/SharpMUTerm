@@ -51,17 +51,24 @@ internal static class WorldsScreenView
         // How many rows the WORLDS/detail body has once the header, the character band, the gap under
         // it and the action bar have taken theirs. The detail column is built against that number, so a
         // pane taller than its slot compacts and then scrolls rather than losing its tail silently.
+        // While the keyboard is in the world's own rows (the WORLDS list, a world field, its security boxes) the character
+        // band below gives up rows to them: it is drawn to a third of the screen and says what it holds back, so a short
+        // terminal shows a page of world fields rather than one field and "⌄ 33 more". On a character it is whole again.
+        var capBand = height > 0 && focus is { Pane: WorldsScreenRenderer.WorldsPane or WorldsScreenRenderer.SecurityPane };
+        var bandCap = capBand ? Math.Max(5, (height - 3) / 3) : 0;
+        List<string> Capped(List<string> rows) => capBand ? ScreenChrome.Window(rows, bandCap) : rows;
+
         var band = WorldsScreenRenderer.HasCharacter(worlds, selectedWorld, selectedCharacter)
             ? Math.Max(
-                WorldsScreenRenderer.FormColumn(
-                    worlds[selectedWorld].Characters[selectedCharacter], accent, focus, selectedCharacter, layouts).Count,
-                WorldsScreenRenderer.TriggersColumn(
+                Capped(WorldsScreenRenderer.FormColumn(
+                    worlds[selectedWorld].Characters[selectedCharacter], accent, focus, selectedCharacter, layouts).ToList()).Count,
+                Capped(WorldsScreenRenderer.TriggersColumn(
                     worlds[selectedWorld].Characters[selectedCharacter],
                     triggerSets,
                     accent,
                     focus,
                     selectedSet,
-                    worlds).Count) + 2
+                    worlds).ToList()).Count) + 2
             : 1;
         var rows = height <= 0 ? 0 : Math.Max(1, height - 1 - band);
 
@@ -88,10 +95,10 @@ internal static class WorldsScreenView
         if (WorldsScreenRenderer.HasCharacter(worlds, selectedWorld, selectedCharacter))
         {
             var character = worlds[selectedWorld].Characters[selectedCharacter];
-            var form = WorldsScreenRenderer.FormColumn(character, accent, focus, selectedCharacter, layouts).ToList();
-            var triggers = WorldsScreenRenderer
+            var form = Capped(WorldsScreenRenderer.FormColumn(character, accent, focus, selectedCharacter, layouts).ToList());
+            var triggers = Capped(WorldsScreenRenderer
                 .TriggersColumn(character, triggerSets, accent, focus, selectedSet, worlds)
-                .ToList();
+                .ToList());
             var editHeight = Math.Max(form.Count, triggers.Count);
 
             // Form panel on the left; the trigger checklist pushed to the right by a flex spacer so its

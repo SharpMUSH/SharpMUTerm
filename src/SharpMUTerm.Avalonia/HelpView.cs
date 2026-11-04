@@ -4,6 +4,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Controls.Documents;
+using SharpMUTerm.Client.Help;
 using SharpMUTerm.Client.Modals;
 
 namespace SharpMUTerm.Avalonia;
@@ -168,6 +170,9 @@ internal sealed class HelpView : DockPanel, IModalView
         return -1;
     }
 
+    /// <summary>The face a help page's table rows (the map's keys) are set in, so their columns line up.</summary>
+    private static FontFamily TableFace { get; } = new($"{CellFonts.BundledFamily}, DejaVu Sans Mono, Consolas, Menlo, monospace");
+
     private void ShowPage(HelpTopic topic)
     {
         Page = topic.Id;
@@ -191,16 +196,53 @@ internal sealed class HelpView : DockPanel, IModalView
             Foreground = _colours.Brush(_colours.Dim),
             TextWrapping = TextWrapping.Wrap,
         });
-        foreach (var line in topic.Paragraphs)
+        // The cells' blocks (HelpPage): a heading over each paragraph, keys as key caps, the map's table rows in the
+        // cell face. No blank paragraphs: the stack's spacing and a heading's top margin are the gaps, so the page has no
+        // tall empty bands.
+        HelpBlock? previous = null;
+        foreach (var block in HelpPage.Blocks(topic))
         {
-            _pageText.Children.Add(new TextBlock
+            if (block.Heading is { } heading)
             {
-                Text = NativeKeys.Words(line),
-                FontSize = NativeTokens.Title,
+                _pageText.Children.Add(new TextBlock
+                {
+                    Text = NativeKeys.Words(heading),
+                    FontSize = NativeTokens.Title,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = _colours.Brush(_colours.Header),
+                    Margin = new Thickness(0, previous is null ? 4 : 8, 0, -4),
+                });
+            }
+
+            var text = new TextBlock
+            {
+                FontSize = NativeTokens.Body + 1,
                 Foreground = _colours.Brush(_colours.Text),
-                TextWrapping = TextWrapping.Wrap,
-                MinHeight = line.Length == 0 ? 4 : 0,
-            });
+                TextWrapping = block.Preformatted ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                LineHeight = (NativeTokens.Body + 1) * 1.45,
+                Margin = block.Preformatted && previous is { Preformatted: true } ? new Thickness(12, -6, 0, 0)
+                    : block.Preformatted ? new Thickness(12, 0, 0, 0) : default,
+            };
+            if (block.Preformatted)
+            {
+                text.FontFamily = TableFace;
+            }
+
+            foreach (var span in block.Spans)
+            {
+                text.Inlines!.Add(span.IsKey
+                    ? new Run(" " + NativeKeys.Words(span.Text) + " ")
+                    {
+                        Background = _colours.Brush(_colours.KeyFill),
+                        Foreground = _colours.Brush(_colours.KeyInk),
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = NativeTokens.Body,
+                    }
+                    : new Run(NativeKeys.Words(span.Text)));
+            }
+
+            _pageText.Children.Add(text);
+            previous = block;
         }
 
         var back = ModalParts.Button("Back to help", "Esc", _colours, Back);

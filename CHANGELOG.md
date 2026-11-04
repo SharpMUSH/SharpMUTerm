@@ -331,6 +331,18 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The settings screens' key hints no longer lose words from the middle at 80 columns: the least-used keys are left
+  out and the way to close is always there.
+- Help topics have headings and show their keys as keys, in the terminal and the window, and a topic's title fits
+  on one row at 80 columns.
+- The window's dialogs (quit, search, history, layouts, welcome) dim the window behind them more clearly.
+- Editing F5 ▸ highlight names shows the `Name=colour` syntax and the colours you can use, in both the terminal
+  and the window.
+- "Connecting", "connection lost" and "connection failed" are now client rows in the window, like the reconnect
+  countdown: they no longer go into transcripts, the restore log, scene logs, triggers or Ctrl+F.
+- At 80×24, F5's world column shows a page of fields instead of one, naming the group at the top.
+- When a notice has an action, the terminal's status row names it (`· ⌃P ▸ Show messages`, or the action's key)
+  if there is room.
 - At 80 columns the terminal's key rows fit on one line: the F1 composer, the script console, the map's edit keys,
   the import review and F10 shorten their words and then leave out the least-used keys, never the one that closes.
   The map's edit keys are now one row under the map instead of a block beside it; `?` lists them all (also under

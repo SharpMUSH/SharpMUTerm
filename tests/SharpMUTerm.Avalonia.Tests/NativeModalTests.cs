@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Theming;
@@ -181,6 +182,33 @@ public class NativeModalTests
 
         await Assert.That(open).IsFalse();
         await Assert.That(focused).IsTrue();
+    }
+
+    /// <summary>
+    /// Every native modal lies under one veil, the palette's and the settings window's (<see cref="NativeTokens.Scrim"/>):
+    /// the whole window is dimmed, so the cells behind do not look live. Two stacked modals are two veils, the quit
+    /// prompt's in front.
+    /// </summary>
+    [Test]
+    public async Task EveryModalIsVeiledByTheOneScrimOverTheWholeWindow()
+    {
+        var (searchVeil, quitVeil, spans, inFront) = await Run(rig =>
+        {
+            Key(rig, CtrlF);
+            var search = rig.Driver.Modals.Modal!;
+            Key(rig, CtrlQ);
+            var quit = rig.Driver.Modals.Quit!;
+            return ((search.Background as SolidColorBrush)?.Color, (quit.Background as SolidColorBrush)?.Color,
+                search.Bounds.Width >= rig.Root.Bounds.Width - 1 && search.Bounds.Height >= rig.Root.Bounds.Height - 1,
+                ReferenceEquals(rig.Root.Children[^1], quit));
+        });
+
+        await Assert.That(searchVeil).IsEqualTo(NativeTokens.Dark.Scrim);
+        await Assert.That(quitVeil).IsEqualTo(NativeTokens.Dark.Scrim);
+        await Assert.That(spans).IsTrue().Because("the veil covers the header, the sidebar and the cells");
+        await Assert.That(inFront).IsTrue();
+        await Assert.That(NativeTokens.Dark.Scrim.A).IsGreaterThanOrEqualTo((byte)0x70).Because("faint enough to read through, dark enough to read as a veil");
+        await Assert.That(NativeTokens.Light.Scrim.A).IsGreaterThanOrEqualTo((byte)0x48);
     }
 
     [Test]

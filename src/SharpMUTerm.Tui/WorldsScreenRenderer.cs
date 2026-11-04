@@ -355,7 +355,8 @@ internal static class WorldsScreenRenderer
             model?.HasEditableRow ?? false,
             focus,
             model?.HasRemovableRow ?? false,
-            model?.HasDetailRow ?? false);
+            model?.HasDetailRow ?? false,
+            room: ScreenChrome.HeaderRoom(" " + title, width));
         return SpreadTitle(" " + title, hints, width);
     }
 
@@ -1119,15 +1120,23 @@ internal static class WorldsScreenRenderer
         };
 
         var right = new List<string> { $"[{accent}]├ WORLD[/]" };
+
+        // Which group each world row is under, and which rows are the headings: a short column gives the headings up
+        // and names the group of its first drawn row on its top row instead (see the end of this method).
+        var groupOf = new Dictionary<int, string>();
+        var namesHelp = 0;
+        var headings = new HashSet<int>();
         string? group = null;
         foreach (var field in BuiltInSettings.World.Fields)
         {
             if (field.Group is { } heading && !string.Equals(heading, group, StringComparison.Ordinal))
             {
                 group = heading;
+                headings.Add(right.Count);
                 right.Add(GroupHeading(heading));
             }
 
+            var first = right.Count;
             if (string.Equals(field.Id, SecurityFieldOrder[0], StringComparison.Ordinal))
             {
                 right.AddRange(SecurityColumn(world, cursor));
@@ -1135,6 +1144,18 @@ internal static class WorldsScreenRenderer
             else if (cells.TryGetValue(field.Id, out var cell))
             {
                 right.Add(WorldField(field.Label, cell));
+                if (string.Equals(field.Id, "highlight-names", StringComparison.Ordinal)
+                    && cursor.EditOn(WorldsPane, selectedWorld, HighlightNamesField) is not null)
+                {
+                    var help = NamesHelpRows().ToList();
+                    namesHelp = help.Count;
+                    right.AddRange(help);
+                }
+            }
+
+            for (var i = first; i < right.Count && group is not null; i++)
+            {
+                groupOf[i] = group;
             }
         }
 
@@ -1169,8 +1190,58 @@ internal static class WorldsScreenRenderer
 
         // Compacted, then windowed, then overlaid: the dropdown replaces rows by index, so anything that
         // moves a row has to happen before it is drawn or the list slides off the field it belongs to.
-        return ScreenChrome.Choices(
-            ScreenChrome.Window(ScreenChrome.Compact(right, height), height), cursor.Edit, DetailRowWidth);
+        if (height <= 0 || ScreenChrome.Compact(new List<string>(right), height).Count <= height)
+        {
+            return ScreenChrome.Choices(
+                ScreenChrome.Window(ScreenChrome.Compact(right, height), height, namesHelp), cursor.Edit, DetailRowWidth);
+        }
+
+        // Too short for every row: the group headings go first after the blanks (each costs a row and names no field),
+        // and the group of the first field drawn is named on the column's top row — `├ WORLD · CONNECTION`, or
+        // `⌃ 12 more · MAP` once it scrolls. ⇥ order is the fields' and is untouched.
+        var rows = new List<(string Line, string? Group)>();
+        for (var i = 0; i < right.Count; i++)
+        {
+            if (!headings.Contains(i))
+            {
+                rows.Add((right[i], groupOf.TryGetValue(i, out var g) ? g : null));
+            }
+        }
+
+        var window = ScreenChrome.Window(ScreenChrome.Compact(rows.ConvertAll(r => r.Line), height), height, namesHelp);
+        if (window.Count > 1 && rows.FirstOrDefault(r => string.Equals(r.Line, window[1], StringComparison.Ordinal)).Group is { } top)
+        {
+            window[0] += $"[{Label}] · {Escape(top.ToUpperInvariant())}[/]";
+        }
+
+        return ScreenChrome.Choices(window, cursor.Edit, DetailRowWidth);
+    }
+
+    /// <summary>
+    /// What an open highlight-names edit draws under its well (<see cref="HighlightColours.NameSyntax"/>, then the colours
+    /// it takes, a few to a row): the syntax is not on screen anywhere else. The window says the same as the field's help.
+    /// </summary>
+    internal static IEnumerable<string> NamesHelpRows()
+    {
+        const int room = 28;
+        yield return WorldField(string.Empty, $"[{Label}]{Escape(HighlightColours.NameSyntax.Split(';')[0])}[/]");
+        yield return WorldField(string.Empty, $"[{Label}]{Escape(HighlightColours.NameSyntax.Split(';')[1].Trim())}[/]");
+        var line = "colours:";
+        foreach (var colour in HighlightColours.NameColours)
+        {
+            if (line.Length > 0 && line.Length + 1 + colour.Length > room)
+            {
+                yield return WorldField(string.Empty, $"[{Label}]{line}[/]");
+                line = string.Empty;
+            }
+
+            line = line.Length == 0 ? colour : line + " " + colour;
+        }
+
+        if (line.Length > 0)
+        {
+            yield return WorldField(string.Empty, $"[{Label}]{line}[/]");
+        }
     }
 
     /// <summary>

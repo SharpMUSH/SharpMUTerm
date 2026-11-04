@@ -151,6 +151,28 @@ public class AlertsAndReconnectTests
         await Assert.That(rig.App.SearchModelFor("try 1 of", regex: false, all: true).Rows).IsEmpty();
     }
 
+    /// <summary>
+    /// The session's own connection lines (dialling, connected, lost) are client rows too, not <c>***</c> session lines:
+    /// the window still says them, and no scrollback (so no transcript, restore or scene log), trigger or ⌃F sees them.
+    /// </summary>
+    [Test]
+    public async Task ConnectingAndLosingTheConnectionAreClientRowsNotSessionLines()
+    {
+        var rig = await Open(autoReconnect: false);
+        await using var _ = rig.App;
+        rig.Wire.Drop(new IOException("Connection reset by peer"));
+
+        var window = rig.App.ActiveWindowId();
+        var rows = rig.App.PaneLines(window).Select(MarkupText.Plain).ToList();
+        await Assert.That(rows.Any(r => r.Contains(ConnectionNote.Connect + " dialling aetherfall.example:4201", StringComparison.Ordinal))).IsTrue()
+            .Because(string.Join('\n', rows));
+        await Assert.That(rows.Any(r => r.Contains(ConnectionNote.Connect + " connected to aetherfall.example:4201", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(rows.Any(r => r.Contains(ConnectionNote.Lost + " connection lost · Connection reset by peer", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(rows.Any(r => r.StartsWith("***", StringComparison.Ordinal))).IsFalse();
+        await Assert.That(rig.Session.Scrollback.Snapshot().Any(l => l.Text.Contains("onnect", StringComparison.Ordinal))).IsFalse();
+        await Assert.That(rig.App.SearchModelFor("dialling", regex: false, all: true).Rows).IsEmpty();
+    }
+
     [Test]
     public async Task StopReconnectingCancelsTheWait()
     {

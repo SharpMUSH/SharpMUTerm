@@ -55,8 +55,46 @@ internal sealed partial class SharpMUTermApp
         var body = $"[{ink}]{Escape(notice.Text)}[/]";
         var label = HeldOn(_ink.Notice, plane);
         // A source is a label (Sound:), a key a chord chip (⌃P): two shapes, so a word is never read as a key to press.
-        return notice.Source is { } source ? $"[{label}]{Escape(source)}:[/] {body}"
+        var row = notice.Source is { } source ? $"[{label}]{Escape(source)}:[/] {body}"
             : notice.Key is null ? body : $"[{label}]{Escape(notice.Key)}[/] {body}";
+
+        // The toast offers the action as a button; the row names the way to it, where it fits whole — never by cutting
+        // the notice's own words, and never wrapping the row (FitStatusRow).
+        if (NoticeActionHints(notice.Action).FirstOrDefault(h => MarkupWidth(row) + 3 + h.Length <= HeaderWidth()) is { } hint)
+        {
+            row += $"[{label}] · {Escape(hint)}[/]";
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// The ways the status row may say a notice's action, longest first: its key and the action's name
+    /// (<c>⌥R Reconnect</c>) when the command has a key on this host, else the ⌃P entry it is by title
+    /// (<c>⌃P ▸ Show client messages</c>) and then by the action's shorter label, which ⌃P still finds (it matches word by
+    /// word). None for a command ⌃P does not list (a saved scene's Open): that is the toast's alone, and the row will not
+    /// name a way that is not there. Never a bare <c>⌃P</c>: a chip with no verb says nothing.
+    /// </summary>
+    internal IReadOnlyList<string> NoticeActionHints(NoticeAction? action)
+    {
+        if (action is null)
+        {
+            return [];
+        }
+
+        if (CommandKey(action.Command) is { } key)
+        {
+            return [$"{key} {action.Label}"];
+        }
+
+        if (BuildCatalog().FirstOrDefault(c => c.Id == action.Command) is not { } entry)
+        {
+            return [];
+        }
+
+        return string.Equals(entry.Title, action.Label, StringComparison.OrdinalIgnoreCase)
+            ? [$"⌃P ▸ {entry.Title}"]
+            : [$"⌃P ▸ {entry.Title}", $"⌃P ▸ {action.Label}"];
     }
 
     /// <summary>A colour held to <see cref="WorkspacePalette.HeaderTextFloor"/> on <paramref name="plane"/>: notice text is small text.</summary>

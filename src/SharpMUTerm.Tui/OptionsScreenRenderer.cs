@@ -139,7 +139,8 @@ internal static class OptionsScreenRenderer
             model?.HasEditableRow ?? false,
             focus,
             removable: model?.HasRemovableRow ?? false,
-            resettable: resettable);
+            resettable: resettable,
+            room: ScreenChrome.HeaderRoom(" " + heading, width));
         return SpreadTitle(" " + heading, hints, width);
     }
 

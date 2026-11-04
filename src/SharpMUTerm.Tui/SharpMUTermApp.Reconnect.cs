@@ -165,9 +165,9 @@ internal sealed partial class SharpMUTermApp
     private void ShowDemoReconnect()
     {
         _demoReconnect = 12;
-        AppendWindowLine(MainWindowId, StyledLine.FromText("*** Connection lost: Connection reset by peer", WorldSession.SystemLineStyle), StampNow());
-        AppendWindowLine(MainWindowId, StyledLine.FromText("*** Connecting to aetherfall.mux:4201...", WorldSession.SystemLineStyle), StampNow());
-        AppendWindowLine(MainWindowId, StyledLine.FromText("*** Connection failed: Connection refused", WorldSession.SystemLineStyle), StampNow());
+        AppendClientRow(MainWindowId, ConnectionNote.Lost, "connection lost · Connection reset by peer");
+        AppendClientRow(MainWindowId, ConnectionNote.Connect, "dialling aetherfall.mux:4201…");
+        AppendClientRow(MainWindowId, ConnectionNote.Failed, "could not connect to aetherfall.mux:4201 · Connection refused");
         AppendClientRow(MainWindowId, ReconnectLabel, ReconnectLine(12, 2));
         _statusIdentity = ("Corvid", "aetherfall.mux", 4201, "faulted");
         RefreshStatusBar();

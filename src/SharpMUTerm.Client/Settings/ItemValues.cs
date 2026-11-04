@@ -23,6 +23,19 @@ public static class HighlightColours
         "blue", "magenta", "purple", "pink", "white", "silver", "grey", "black",
     ];
 
+    /// <summary>
+    /// How a highlight-names list is written (F5 ▸ <c>highlight names</c>), said where it is edited in both hosts: the cell
+    /// field draws it under the open edit, the window as the field's help.
+    /// </summary>
+    public const string NameSyntax = "Name=colour, comma between; a name alone is " + Core.Automation.NameHighlights.DefaultColour;
+
+    /// <summary>The colours a highlight-names list may name: the palette without <see cref="None"/>.</summary>
+    public static IReadOnlyList<string> NameColours { get; } = [.. Palette.Where(n => n != None)];
+
+    /// <summary>The highlight-names field's help: what it does, how to write it, and every colour it takes.</summary>
+    public static string NamesHelp { get; } =
+        $"names drawn in a colour wherever they appear, e.g. Ashlyn=gold, Merrow=red. {NameSyntax}. Colours: {string.Join(", ", NameColours)}";
+
     /// <summary>A colour as text: a palette name where one matches, else <c>#rrggbb</c> or <c>idx:N</c>.</summary>
     public static string Format(TerminalColor? colour)
     {

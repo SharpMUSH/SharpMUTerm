@@ -204,7 +204,8 @@ internal static class KeypadScreenRenderer
     {
         var title = $"[bold {Value}] Keypad & hotkeys[/]";
         var hints = ScreenChrome.Hints(
-            ScreenChrome.SingleListHints, "F4", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false);
+            ScreenChrome.SingleListHints, "F4", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
+            room: ScreenChrome.HeaderRoom(" " + title, width));
         return SpreadTitle(" " + title, hints, width);
     }
 

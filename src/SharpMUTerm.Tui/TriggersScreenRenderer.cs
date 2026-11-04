@@ -294,7 +294,8 @@ internal static class TriggersScreenRenderer
     {
         var title = $"[bold {Value}] Triggers & spawn routing[/]";
         var hints = ScreenChrome.Hints(
-            ScreenChrome.ListHints, "F2", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false);
+            ScreenChrome.ListHints, "F2", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
+            room: ScreenChrome.HeaderRoom(" " + title, width));
         return SpreadTitle(" " + title, hints, width);
     }
 

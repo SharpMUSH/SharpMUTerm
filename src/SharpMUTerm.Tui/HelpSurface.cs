@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Help;
 using SharpMUTerm.Client.Modals;
 using static SharpMUTerm.Tui.MarkupText;
 
@@ -145,14 +146,17 @@ internal sealed class HelpSurface
         var body = rows - 3;
         if (model.Topic(topic) is { } page)
         {
-            lines.Add($"[{ScreenPalette.Accent}]HELP ▸[/] [bold {ScreenPalette.Value}]{Escape(page.Title)}[/]"
-                + $"[{ScreenPalette.Label}]  ·  {Escape(page.Summary)}[/]");
+            // One row, never wrapped: the summary gives way to the title (it wrapped at 80 columns).
+            lines.Add(ElideVisible(
+                $"[{ScreenPalette.Accent}]HELP ▸[/] [bold {ScreenPalette.Value}]{Escape(page.Title)}[/]"
+                    + $"[{ScreenPalette.Label}]  ·  {Escape(page.Summary)}[/]",
+                width - 1));
             lines.Add(string.Empty);
-            var text = page.Paragraphs.SelectMany(l => Wrap(l, width - 3)).ToList();
+            var text = PageRows(page, width - 3);
             var top = Math.Clamp(scroll, 0, Math.Max(0, text.Count - body));
             foreach (var line in text.Skip(top).Take(body))
             {
-                lines.Add($" [{ScreenPalette.Value}]{Escape(line)}[/]");
+                lines.Add(line);
             }
 
             Pad(lines, rows - 1);
@@ -205,6 +209,44 @@ internal sealed class HelpSurface
         lines.Add($"[{ScreenPalette.Label}]type to search · ↑↓ pick · ⏎ opens, places or runs it · Esc closes[/]");
         return lines;
     }
+
+    /// <summary>
+    /// A page as rows of markup (<see cref="HelpPage.Blocks"/>): each block's heading on a row of its own in bold, its
+    /// words wrapped to <paramref name="width"/> under it, keys in the accent as every footer draws them, a blank row
+    /// between blocks, and table rows (the map's keys) kept as written. The window draws the same blocks.
+    /// </summary>
+    internal static List<string> PageRows(HelpTopic page, int width)
+    {
+        var rows = new List<string>();
+        var blocks = HelpPage.Blocks(page);
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            var block = blocks[i];
+            if (i > 0 && !(block.Preformatted && blocks[i - 1].Preformatted))
+            {
+                rows.Add(string.Empty);
+            }
+
+            if (block.Heading is { } heading)
+            {
+                rows.Add($" [bold {ScreenPalette.Value}]{Escape(heading)}[/]");
+            }
+
+            var indent = block.Preformatted ? "   " : " ";
+            foreach (var line in Wrap(block.Text, Math.Max(10, width - (indent.Length - 1))))
+            {
+                rows.Add(indent + Styled(line));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>A row of a help page as markup: words in the value ink, keys bold in the accent.</summary>
+    private static string Styled(string line) =>
+        string.Concat(HelpPage.Spans(line).Select(s => s.IsKey
+            ? $"[bold {ScreenPalette.Accent}]{Escape(s.Text)}[/]"
+            : $"[{ScreenPalette.Value}]{Escape(s.Text)}[/]"));
 
     private static string Row(HelpEntry entry, bool selected, int width, int titleWidth)
     {
