@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
@@ -532,6 +533,9 @@ internal sealed partial class SharpMUTermApp
         }
     }
 
+    /// <summary>The pointer menu's last entry, which opens ⌃P.</summary>
+    internal const string MoreCommandsLabel = "More commands…";
+
     /// <summary>The menu <see cref="ShowPointerMenu"/> would show. Internal so a test can read it.</summary>
     internal IReadOnlyList<PointerMenuItem> PointerMenu(System.Drawing.Point point)
     {
@@ -609,6 +613,13 @@ internal sealed partial class SharpMUTermApp
             case PointerKind.CommandLine:
                 AddCommands(items, "term:copy", "term:compose", "term:history", "term:newline");
                 break;
+        }
+
+        // Everything else is on ⌃P, and the menu says so: the same palette the chord opens, native in the window.
+        if (items.Count > 0 && target.Kind != PointerKind.Divider)
+        {
+            items.Add(PointerMenuItem.Separator);
+            items.Add(new PointerMenuItem(MoreCommandsLabel, HeaderModel.PaletteKey, () => OnUiThread(() => OpenMenu())));
         }
 
         return Tidy(items);

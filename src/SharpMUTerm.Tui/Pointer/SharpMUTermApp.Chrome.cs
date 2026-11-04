@@ -116,10 +116,7 @@ internal sealed partial class SharpMUTermApp
         if (target == HeaderModel.PaletteTarget)
         {
             // Opens, rather than the ☰'s toggle: a search box is clicked to start typing in it, never to close it.
-            if (!_palette.IsOpen)
-            {
-                ToggleMenu();
-            }
+            OpenMenu();
 
             return true;
         }

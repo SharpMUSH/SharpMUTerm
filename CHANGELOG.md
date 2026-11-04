@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Desktop window: Ctrl+P opens a native command palette, a rounded popup near the top of the window with a
+  search box, grouped results, the matched letters highlighted and each command's key on the right. It lists
+  the same commands in the same order as the terminal's palette, recent and suggested first. Arrow keys and the
+  mouse choose, Enter runs, Escape closes and returns you to the command line. The header's search box and a new
+  *More commands…* entry at the foot of every right-click menu open it too.
 - Desktop window: F7 (Text & display) and F8 (Input) open a settings window with real switches, number boxes
   and a search box. Matches are counted per section as you type. A changed setting shows a dot and a Reset
   button, and every change applies and saves as you make it. The status-row meters are a table that shows each

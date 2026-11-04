@@ -105,6 +105,11 @@ internal sealed record ClientHost
     /// the terminal, the snapshot and the tests, so their frames are the ones they always were.
     /// </summary>
     public required HostChrome Chrome { get; init; }
+    /// Draws ⌃P with the host's own controls, or null for a host whose palette is the cell popup. Every way in (⌃P,
+    /// the header, the pointer menu's <em>More commands…</em>) goes through one funnel that asks this first. Null in
+    /// the terminal, the snapshot, the tests and the parity harness, so every cell frame is unchanged.
+    /// </summary>
+    public required INativePalette? NativePalette { get; init; }
 
     /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
@@ -145,6 +150,7 @@ internal sealed record ClientHost
         ScreenIsSeen = true,
         NativeSettings = null,
         Chrome = HostChrome.None,
+        NativePalette = null,
     };
 
     /// <summary>
@@ -169,6 +175,7 @@ internal sealed record ClientHost
         ScreenIsSeen = true,
         NativeSettings = null,
         Chrome = HostChrome.None,
+        NativePalette = null,
     };
 
     /// <summary>

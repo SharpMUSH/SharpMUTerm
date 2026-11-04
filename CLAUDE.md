@@ -1188,7 +1188,8 @@ The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the 
 one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
 (`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
-the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), and whether it draws the declared settings natively (`INativeSettings`, null for the cell screens). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
+draws ⌃P natively (`INativePalette`, null for the cell popup). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -1566,6 +1567,30 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     native menu and tooltips were built against.
   - Not done: the window is not modal and does not follow a theme change while it is open. Screenshots come from a
     real window under Xvfb, driven with XTest (`ux-wave4/native-settings-*.png`).
+- **In the window, ⌃P is a native palette over the window, listing the cell palette's rows** (`ClientHost.NativePalette`
+  → `INativePalette`; Client `PaletteSession`; Avalonia `PaletteOverlay`, `PalettePresenter` on the driver;
+  `SharpMUTermApp.NativePalette.cs`). The terminal, the snapshot, the tests and the parity harness pass null. Decisions
+  not to relitigate:
+  - **One funnel**: `ToggleMenu` (⌃P, the header ☰ link) and `OpenMenu` (the native header's search box and brand
+    through `ActivateChromeTarget`, the pointer menu's last entry *More commands…*, the `menu*` snapshot views) ask
+    `TryOpenNativePalette` first. ⌃P is a toggle in both. The composer refusal is `ToggleMenu`'s, so it holds for both.
+    `PaletteIsOpen` (either palette) feeds `AnyOverlayOpen`, `OpenOverlayName`, `MenuIsOpen` and the header's caret.
+  - **The session is captured on the client's thread** — catalog, recents, suggestions, `acting on`, dark or light,
+    an opening query — so the window filters with `CommandPaletteModel.Build` on its own thread and locks nothing.
+    The rows are therefore the cell palette's for the same query (`NativePaletteTests.TheRowsAreTheModelsForTheSameQuery`).
+  - **Running goes back through the session**: `Run` closes, then the client runs `RunFromPalette` on its own thread,
+    so recents are recorded exactly as from the cells. A session runs once and closes once; a session an earlier
+    opening left behind is ignored when it reports closing.
+  - **It is an overlay, not a window**: `PalettePresenter.Attach(root, refocus)` from `MainWindow`, and the overlay is
+    added as the root panel's *last* child when it opens, so it lies over the cells, `DesktopLayer`'s panels and the
+    native chrome. A scrim covers the rest; a press on it closes. Closing gives the keyboard back to `TerminalView`,
+    which is the client's command line by the focus pin. Fluent is applied to the card alone (`ThemeVariantScope`),
+    in the client's variant.
+  - **Keys are words** (`KeyGlyphs.Words`, as the native chrome does): the UI font draws `Ctrl+⏎` better than `⌃⏎`,
+    and the window's catalog already carries the window's newline. A sequence (`⌃B |`) is one chip per key.
+  - **Hover selects on movement only** (`PointerMoved`, not `PointerEntered`), so the row that opens under a resting
+    pointer is not chosen. ↑↓ wrap as in the cells; PgUp/PgDn stop at the ends.
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave5/native-palette-*.png`).
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on

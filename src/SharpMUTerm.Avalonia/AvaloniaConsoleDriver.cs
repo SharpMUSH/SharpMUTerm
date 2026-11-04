@@ -73,6 +73,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's native settings window, which the main window owns (<see cref="SettingsPresenter"/>).</summary>
     public SettingsPresenter Settings { get; } = new();
 
+    /// <summary>The window's native ⌃P, drawn over everything in the main window (<see cref="PalettePresenter"/>).</summary>
+    public PalettePresenter Palette { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

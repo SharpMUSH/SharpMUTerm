@@ -60,7 +60,7 @@ public partial class HostParityTests
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using (var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, RunsInline = true }))
+            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, NativePalette = null, RunsInline = true }))
         {
             window.RenderSnapshot(view);
         }
@@ -99,7 +99,7 @@ public partial class HostParityTests
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null });
+            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, NativePalette = null });
         window.OnUiThread(() => _ = window.RenderSnapshot(view));
         var loop = new Thread(() => window.Run([])) { IsBackground = true };
         loop.Start();

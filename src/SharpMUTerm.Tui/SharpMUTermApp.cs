@@ -1773,7 +1773,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 RebuildPaneArea();
             }
 
-            _palette.Toggle();
+            OpenMenu();
         }
 
         // The command surface searched: a real drag across the output first, because "Make a trigger from
@@ -1784,8 +1784,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RenderWholeFrame();
             SimulatePaneDrag(MainWindowId, 0, 1, 46, 3);
             ReArmWholeFrame();
-            _palette.Toggle();
-            _palette.SetQuery("trig sel");
+            OpenMenu("trig sel");
         }
 
         // The command surface opened with nothing typed after two commands were run through the palette's
@@ -1794,7 +1793,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             RunFromPalette("layout:split-right");
             RunFromPalette("layout:cycle");
-            _palette.Toggle();
+            OpenMenu();
         }
 
         // The ⌃B which-key panel over the demo workspace: what the arming timer opens when no key has
@@ -5356,7 +5355,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// how the framework happens to dispatch, and the next surface may not be modal.
     /// </summary>
     private bool AnyOverlayOpen =>
-        _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
+        PaletteIsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
         || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
         || _layoutsView.IsOpen || _welcomeView.IsOpen;
 
@@ -5468,7 +5467,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private string OpenOverlayName() =>
         _settings.IsOpen ? "the settings screen"
-        : _palette.IsOpen ? "the command surface"
+        : PaletteIsOpen ? "the command surface"
         : _quit.IsOpen ? "the quit prompt"
         : _messageLog.IsOpen ? "the client messages"
         : _gameData.IsOpen ? "the game data"
@@ -8187,7 +8186,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal IReadOnlyList<string> WindowIds() => _workspace.Windows.Select(w => w.Id).ToArray();
 
     /// <summary>Whether the ⌃P command surface is up — the header's ☰ opens it, and only the header may.</summary>
-    internal bool MenuIsOpen => _palette.IsOpen;
+    internal bool MenuIsOpen => PaletteIsOpen;
 
     /// <summary>
     /// Clicks the connection rail at a cell measured from the rail's own top-left, the way the framework
@@ -9351,12 +9350,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Opens/closes the command surface (⌃P or the header ☰ menu) and flips the header caret.</summary>
     private void ToggleMenu()
     {
+        // The host's palette is a toggle too: ⌃P reaches here only when the host passes it on.
+        if (_nativePaletteSession is not null)
+        {
+            CloseNativePalette();
+            return;
+        }
+
         if (ComposerIsInTheWay("the command surface"))
         {
             return;
         }
 
-        _palette.Toggle();
+        // A host that draws ⌃P itself gets it, unless the cell popup is already up (then this closes that).
+        if (_palette.IsOpen || !TryOpenNativePalette())
+        {
+            _palette.Toggle();
+        }
+
         RefreshHeader();
     }
 
@@ -13382,7 +13393,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         return new HeaderModel(
-            _palette is { IsOpen: true },
+            _palette is { IsOpen: true } || _nativePaletteSession is not null,
             world,
             character,
             ConnectedCharacters().Count,
