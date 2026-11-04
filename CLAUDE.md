@@ -767,7 +767,9 @@ fallbacks) for inline images/maps.
     `Func<SpellChecker?>` that is null by default, so a test and a snapshot read none and their header says
     `no dictionary`. A MOO edit is not checked (its buffer is code as often as prose). `%`-codes, a word
     before `(`, and any word with a digit or an inner capital are skipped. ⌥W appends to
-    `dictionaries/user-words.txt`.
+    `dictionaries/user-words.txt`. **A command token is skipped** (one starting `+ @ & /`, up to its first `=`), and so
+    is **every name the client knows** (`SpellChecker.KnowNames`: configured worlds and characters, each session's
+    `CompletionIndex.Names()`), refreshed each time F1 opens and held for the run, never written to disk.
 - **An MXP `<IMAGE>` is drawn in the output pane as rows of markup under the line that named it**
   (`MxpParser.HandleImage` + `MxpImageSource`, Core; `InlineImageHost`/`InlineImageRows`/`InlineImageLayout`,
   Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
@@ -2434,6 +2436,15 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     used to be `#222226`. A light theme is left alone: darkening it makes a grey theme, and its focus step
     clamps at white either way. The cost is the pane-over-backdrop step, a ratio, which is fewer L* points
     a range lower (Dark 4.0 → 2.8); `EveryThemeGetsARaisedSurfaceOverARecessedBackdrop` now measures L*.
+  - **A light theme's backdrop takes a shallower step** (`LightBackdropScale` 0.95, `Backdrop` only — `Recessed`, the
+    chips' step, is unchanged): the dark ratio off a near-white surface put the rail and status row at mid-grey
+    `#b7b7b9` (L* 75), which read as disabled. Light's backdrop is `#e6e6e9` now, about 4 L* under the panes.
+  - **The status row and ⌃P's selected row are small text, held to 4.5:1** (`FrameContrastTests.TheStatusRowAndThe…`).
+    A notice's inks are held on the backdrop (`NoticeMarkup`, `WorkspacePalette.NoticeMuted`), and every bare `[dim]`
+    on the row is swapped for that held grey as it is painted (`StatusInk`); ⌃P's band is `Ink on Accent`, both roles,
+    so a light theme re-inks the pair. The native chrome's secondary ink (`NativeChromeView.SecondaryInk`) is opaque and
+    held to `NativeTokens.TextFloor`. `FrameContrastTests` also walks 80×24 (F2/F4/search draw one column there, through
+    `ScreenChrome.Panel` like every other column), and `ScreenThemeTests` checks 80-column Light settings frames.
   - **F7 ▸ `background transparency (%)` (0, off, by default) is a level only kitty can honour**
     (`TextSettings.BackgroundTransparency`; `KittyTransparentColours`, `SyncTransparentColours`). A
     translucent terminal draws translucent only cells on its *default* background (`SGR 49`), at the

@@ -175,4 +175,19 @@ public class MapWindowTests
 
         app.SimulateKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
     }
+
+    /// <summary>
+    /// On a wide row the room field grows into the spare cells, so a long name is not cut with thirty cells free beside
+    /// it; it is still a fixed width for the row, so a walk moves nothing.
+    /// </summary>
+    [Test]
+    public async Task TheStatusRoomCellGrowsToTheWidthItIsGiven()
+    {
+        var cell = SharpMUTermApp.RoomCell("The Grand Plaza", "Aetherfall Old Town", 48);
+
+        await Assert.That(MarkupText.VisibleLength(cell)).IsEqualTo(48);
+        await Assert.That(MarkupText.Plain(cell)).Contains("Aetherfall Old Town");
+        await Assert.That(MarkupText.VisibleLength(SharpMUTermApp.RoomCell("x", null, 10))).IsEqualTo(SharpMUTermApp.RoomCellWidth)
+            .Because("never narrower than the reserved field");
+    }
 }

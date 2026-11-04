@@ -26,8 +26,8 @@ internal static class CommandSurfaceRenderer
     /// <summary>The fewest characters of a detail worth showing; below this it is left out rather than cut to a stub.</summary>
     private const int MinDetail = 4;
 
-    /// <summary>The selected row's band: dark ink on the accent.</summary>
-    private const string SelectedBand = "#18181c on #00f5b7";
+    /// <summary>The selected row's band: the popups' selected ink on the accent, both roles, so a light theme re-inks them as a pair.</summary>
+    private const string SelectedBand = ScreenPalette.Ink + " on " + ScreenPalette.Accent;
 
     /// <summary>A matched character on an unselected row.</summary>
     private static readonly string MatchInk = $"bold {ScreenPalette.Accent}";

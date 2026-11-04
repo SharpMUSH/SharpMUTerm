@@ -131,4 +131,46 @@ public class ComposeSpellingTests
         await Assert.That(app.Composer.Spelling).IsNull();
         await Assert.That(ForegroundOf(app, "player")).IsNotEqualTo(Warn);
     }
+
+    /// <summary>
+    /// A command word is not a word to correct: every board post starts with one (<c>+bbpost</c>), so the first two
+    /// marks of every post were false (UX audit wave 11, #8). A token starting with <c>+ @ &amp; /</c> is skipped up to
+    /// its first <c>=</c>; the text after it is still checked.
+    /// </summary>
+    [Test]
+    public async Task ACommandWordIsNeverMarked()
+    {
+        var checker = Dictionary();
+
+        await Assert.That(checker.Misspellings("+bbpost hello")).IsEmpty();
+        await Assert.That(checker.Misspellings("@emit/room hello")).IsEmpty();
+        await Assert.That(checker.Misspellings("&attr the=hello")).IsEmpty();
+        await Assert.That(checker.Misspellings("+bbpost/wrold hello wrold").Count).IsEqualTo(1)
+            .Because("the switch is the command's; the body after the space is prose");
+        await Assert.That(checker.Misspellings("&attr the=wrold").Count).IsEqualTo(1).Because("after = is the value");
+    }
+
+    /// <summary>
+    /// Nor is a name the client knows: the writer's own (every configured character and world) and the names the game
+    /// reported. <c>Corvid</c> was marked under a header naming Corvid.
+    /// </summary>
+    [Test]
+    public async Task TheCharactersOwnNameIsNeverMarked()
+    {
+        var checker = Dictionary();
+        var config = new AppConfiguration();
+        var world = new WorldDefinition { Name = "Aetherfall", Host = "a.example", Port = 4201 };
+        world.Characters.Add(new CharacterDefinition { Name = "Corvid", Logging = new() });
+        config.Worlds.Add(world);
+        Console.SetIn(TextReader.Null);
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height), spelling: () => checker);
+
+        app.SimulateKey(Key(ConsoleKey.F1));
+        app.Composer.SimulateTyping("hello Corvid of Aetherfall wrold");
+
+        await Assert.That(ForegroundOf(app, "Corvid")).IsNotEqualTo(Warn);
+        await Assert.That(ForegroundOf(app, "Aetherfall")).IsNotEqualTo(Warn);
+        await Assert.That(ForegroundOf(app, "wrold")).IsEqualTo(Warn);
+        await Assert.That(checker.AddedWords).IsEmpty().Because("a known name is not a word the player added");
+    }
 }

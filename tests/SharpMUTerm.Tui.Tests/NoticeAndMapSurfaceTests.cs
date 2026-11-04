@@ -29,8 +29,8 @@ public class NoticeAndMapSurfaceTests
     // ── notices ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The row reads exactly as before the model: a key chip in the notice ink, the text dim — or in the warning red when
-    /// something failed — and an action changes nothing on it, since a cell is not a button.
+    /// The row: a key chip in the notice ink, the text in a muted grey — or in the warning red when something failed —
+    /// and an action changes nothing on it, since a cell is not a button. On Dark the red is the palette's own.
     /// </summary>
     [Test]
     public async Task TheStatusRowDrawsANoticeAsItAlwaysHas()
@@ -40,8 +40,9 @@ public class NoticeAndMapSurfaceTests
 
         app.SimulateNotice("nothing to split", MessageSeverity.Warning, "⌃B", null);
         var plain = app.LastNotice!;
-        await Assert.That(plain).EndsWith("]⌃B[/] [dim]nothing to split[/]");
+        await Assert.That(plain).Contains("]⌃B[/] [#").And.EndsWith("]nothing to split[/]").And.DoesNotContain("[dim]");
         var chip = plain[..plain.IndexOf("⌃B", StringComparison.Ordinal)];
+        var muted = plain[(plain.IndexOf("⌃B[/] ", StringComparison.Ordinal) + "⌃B[/] ".Length)..plain.IndexOf("nothing", StringComparison.Ordinal)];
 
         app.SimulateNotice("nothing to split", MessageSeverity.Warning, "⌃B", new NoticeAction("layout:layouts", "Change layout"));
         await Assert.That(app.LastNotice).IsEqualTo(plain).Because("the action is the window's to offer; the row is unchanged");
@@ -50,7 +51,35 @@ public class NoticeAndMapSurfaceTests
         await Assert.That(app.LastNotice).IsEqualTo($"[{ScreenPalette.Warn}]no route to host[/]");
 
         app.SimulateNotice("saved [x]", MessageSeverity.Info, "F5", null);
-        await Assert.That(app.LastNotice).IsEqualTo($"{chip}F5[/] [dim]saved [[x]][/]");
+        await Assert.That(app.LastNotice).IsEqualTo($"{chip}F5[/] {muted}saved [[x]][/]");
+    }
+
+    /// <summary>
+    /// On Light every ink on the row clears 4.5:1 on the plane it is drawn on: an error in the raw warning red was 1.39:1
+    /// on the old mid-grey status plane, and the framework's <c>[dim]</c> 2.4:1 (UX audit wave 11, #2).
+    /// </summary>
+    [Test]
+    public async Task OnLightANoticesInksAreBodyText()
+    {
+        Console.SetIn(TextReader.Null);
+        var config = DemoScene.Build();
+        config.ThemeName = "Light";
+        config.Theme = SharpMUTerm.Core.Theming.ThemeLibrary.Get("Light");
+        await using var app = new SharpMUTermApp(config, ClientHost.Headless(new HeadlessConsoleDriver(120, 34), Caps));
+        app.RenderSnapshot(null);
+        var plane = WorkspacePalette.Backdrop(config.Theme);
+
+        foreach (var severity in new[] { MessageSeverity.Error, MessageSeverity.Warning, MessageSeverity.Info })
+        {
+            app.SimulateNotice("no route to host", severity, "⌃P", null);
+            foreach (System.Text.RegularExpressions.Match hex in System.Text.RegularExpressions.Regex.Matches(app.LastNotice!, "#[0-9a-f]{6}"))
+            {
+                var ink = new SharpMUTerm.Core.Text.Rgb(
+                    Convert.ToByte(hex.Value[1..3], 16), Convert.ToByte(hex.Value[3..5], 16), Convert.ToByte(hex.Value[5..7], 16));
+                await Assert.That(SharpMUTerm.Core.Text.Contrast.Ratio(ink, plane)).IsGreaterThanOrEqualTo(4.5)
+                    .Because($"{severity}: {hex.Value} on {plane.ToHex()}");
+            }
+        }
     }
 
     /// <summary>The model the row was drawn from is recorded as the notice surface's drawn model, sequence and all.</summary>
@@ -162,5 +191,42 @@ public class NoticeAndMapSurfaceTests
         var markup = string.Join('\n', app.MapMarkup(window));
         await Assert.That(markup).Contains($"[{view.AreaColour}]");
         await Assert.That(markup).Contains($"[{view.ColourOf("Saltmarsh Docks")}]■[/]");
+    }
+
+    // ── the demo agrees with itself ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The demo says Corvid is connected — the header, the rail and the quit prompt read <see cref="SharpMUTermApp.ConnectedCharacters"/>,
+    /// which falls back to the keys the scene declares. F1 in that window has to agree, as it does in a live client where
+    /// the window's session is connected; it said "send (nothing connected)" (UX audit wave 11, #17). The pin is the
+    /// header's own answer, not a constant.
+    /// </summary>
+    [Test]
+    public async Task TheDemosComposerCanSendWhereTheHeaderSaysItIsConnected()
+    {
+        await using var app = App();
+        app.RenderSnapshot(null);
+
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+
+        await Assert.That(app.ConnectedCharacters()).Contains(DemoScene.ActiveSessionKey);
+        await Assert.That(app.Composer.IsOpen).IsTrue();
+        await Assert.That(app.Composer.Model.CanSend).IsTrue();
+        await Assert.That(app.Composer.Model.Keys.Select(k => k.Label)).DoesNotContain("send (nothing connected)");
+    }
+
+    /// <summary>
+    /// Nor does the demo's startup pass say "nothing connects at start" under a header saying a character is connected —
+    /// the window's demo runs that pass with no startup list.
+    /// </summary>
+    [Test]
+    public async Task TheDemosStartupDoesNotSayNothingConnects()
+    {
+        await using var app = App();
+        app.RenderSnapshot(null);
+
+        await app.StartAsync([]);
+
+        await Assert.That(app.LastNotice ?? string.Empty).DoesNotContain("nothing connects at start");
     }
 }

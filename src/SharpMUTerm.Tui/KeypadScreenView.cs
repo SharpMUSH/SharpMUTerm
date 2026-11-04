@@ -50,7 +50,7 @@ internal static class KeypadScreenView
             // and keeps the list, which is where every key on this screen acts.
             var only = KeypadScreenRenderer.HotkeysColumn(keys, macros, focus, sets, selected, width);
             return ScreenChrome.Single(
-                header, footer, ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(only, rows))),
+                header, footer, ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(only, rows), scheme)),
                 only.Count, rows);
         }
 

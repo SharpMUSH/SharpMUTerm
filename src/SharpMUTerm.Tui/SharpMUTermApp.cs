@@ -2465,7 +2465,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // server agreed to UTF-8, which the row draws unqualified. A world that pinned an encoding
         // would read "utf-8 forced" and a server that never negotiated "utf-8 assumed".
         _demoEncoding = new SessionEncoding(Encoding.UTF8, EncodingSource.Negotiated);
-        _statusBar.SetContent(new List<string> { StatusBarMarkup("Corvid", "connected") });
+        _statusBar.SetContent(new List<string> { StatusInk(StatusBarMarkup("Corvid", "connected")) });
         RefreshHeader();
         _input.SetAndNotify("say hello there");
         RebuildPaneArea(); // realise the Chat spawn tab, then refresh badges
@@ -2788,10 +2788,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // configured is a client with nothing to do yet, while worlds configured and none marked is
             // a client doing exactly what it was told. The second is Info for that reason — and neither
             // carries a key chip, because no surface refused anything; the text names the keys instead.
+            // The demo scene declares its connections without dialling them (_demoConnectedKeys), so the header and
+            // the rail already say Corvid is connected: "nothing connects at start" under them contradicted the frame.
             var empty = _config.Worlds.Count == 0;
-            Notice(
-                empty ? NoWorldsNotice : NothingAtStartNotice,
-                empty ? MessageSeverity.Warning : MessageSeverity.Info);
+            if (empty || _demoConnectedKeys.Count == 0)
+            {
+                Notice(
+                    empty ? NoWorldsNotice : NothingAtStartNotice,
+                    empty ? MessageSeverity.Warning : MessageSeverity.Info);
+            }
 
             // And the first run gets somewhere to start from: the welcome, over the notice it leaves behind
             // when it is closed.
@@ -5231,9 +5236,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             target,
             draft.Body,
             draft.Escaping,
-            canSend: session is not null,
+            canSend: ComposerCanSend(session, key),
             draft.Edit);
     }
+
+    /// <summary>
+    /// Whether a composer for <paramref name="ownerKey"/>'s window offers a send: it has a session, or — in the demo
+    /// scene, which opens no sockets — the scene declares that character connected (<see cref="ConnectedCharacters"/>),
+    /// so the composer's footer never says "nothing connected" under a header and rail saying the opposite.
+    /// </summary>
+    private bool ComposerCanSend(WorldSession? session, string? ownerKey) =>
+        session is not null
+        || (_sessions.Sessions.Count == 0 && ownerKey is not null && _demoConnectedKeys.Contains(ownerKey));
 
     /// <summary>
     /// Which character a composed post belongs to: the window's own owner, never <c>_active</c>. Null for
@@ -13467,9 +13481,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PaintStatus(string markup)
     {
-        _statusBar.SetContent(new List<string> { FitStatusRow(markup, HeaderWidth()) });
+        _statusBar.SetContent(new List<string> { StatusInk(FitStatusRow(markup, HeaderWidth())) });
         SyncInputHeights(_second.Visible);
     }
+
+    /// <summary>
+    /// The status row's quiet text in a grey held to 4.5:1 on the backdrop it is painted on, in place of the framework's
+    /// fixed <c>[dim]</c> <c>#808080</c> — 3.4:1 on Light's status plane, and the row is small text a reader looks for
+    /// (UX audit wave 11, #2 and #7). Only the bare tag is replaced; the cells do not move.
+    /// </summary>
+    private string StatusInk(string markup) =>
+        BareDim.Replace(markup, $"[{Hex(WorkspacePalette.NoticeMuted(_theme, WorkspacePalette.Backdrop(_theme)))}]");
+
+    /// <summary>A <c>[dim]</c> tag that is a tag, not the escaped text <c>[[dim]]</c>.</summary>
+    private static readonly System.Text.RegularExpressions.Regex BareDim = new(@"(?<!\[)\[dim\]", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     /// <summary>
     /// The status row's markup cut to <paramref name="width"/> cells, ending in <c>…</c>. The row is one row in every
@@ -13947,16 +13972,33 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The cells the status row's room field always takes, whatever the room is called.</summary>
     internal const int RoomCellWidth = 28;
 
+    /// <summary>The most cells the room field grows to on a wide row (<see cref="RoomCellFor"/>).</summary>
+    internal const int RoomCellMaxWidth = 64;
+
+    /// <summary>
+    /// How wide the room field is on this row: <see cref="RoomCellWidth"/>, grown into the row's spare cells up to
+    /// <see cref="RoomCellMaxWidth"/> — after the widest focus hint is set aside, so the field never takes a hint's
+    /// place. A function of the row and never of the room's name, so a walk still moves nothing: at 160 columns the
+    /// cell read <c>The Grand Plaza · Aetherf…</c> with thirty cells free beside it.
+    /// </summary>
+    private int RoomCellFor(string left, string rightBar, StatusMode mode)
+    {
+        var hints = mode == StatusMode.None ? FocusHints().Select(h => MarkupWidth(h) + 3).DefaultIfEmpty(0).Max() : 0;
+        var moo = _active?.McpStatus is null ? 0 : MooStatusCellWidth + 3;
+        var spare = HeaderWidth() - MarkupWidth(left) - 3 - MarkupWidth(rightBar) - MinStatusGap - MeterSlack - hints - moo;
+        return Math.Clamp(spare, RoomCellWidth, RoomCellMaxWidth);
+    }
+
     /// <summary>The room the active connection's map says the character is in, or null.</summary>
     private (long Id, string Name, string? Area)? StatusRoom() =>
         MapOf(_active?.SessionKey ?? (_sessions.Sessions.Count == 0 ? DemoScene.ActiveSessionKey : null))?.Current;
 
     /// <summary><c>⌂ Room · Area</c>, elided and padded to <see cref="RoomCellWidth"/>. The room leads: it is what
     /// changes, and it is what an elision should keep.</summary>
-    internal static string RoomCell(string name, string? area)
+    internal static string RoomCell(string name, string? area, int width = RoomCellWidth)
     {
         var text = string.IsNullOrWhiteSpace(area) ? name : $"{name} · {area}";
-        var room = RoomCellWidth - 2;
+        var room = Math.Max(RoomCellWidth, width) - 2;
         if (text.Length > room)
         {
             text = text[..(room - 1)] + "…";
@@ -14162,7 +14204,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // cluster with every room name; a name too long for it is elided, never wrapped.
         if (StatusRoom() is { } here)
         {
-            var cell = RoomCell(here.Name, here.Area);
+            var cell = RoomCell(here.Name, here.Area, RoomCellFor(left, rightBar, mode));
             if (MarkupWidth(left) + 3 + RoomCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
             {
                 left = $"{left}   {cell}";

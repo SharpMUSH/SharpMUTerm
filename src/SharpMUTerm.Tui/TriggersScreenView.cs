@@ -47,7 +47,7 @@ internal static class TriggersScreenView
                 ? TriggersScreenRenderer.EditorColumn(sets, selectedTrigger, routeTargets, focus, width, body, theme, recent)
                 : TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, width);
             return ScreenChrome.Single(
-                header, footer, ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(only, body))),
+                header, footer, ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(only, body), scheme)),
                 only.Count, body);
         }
 

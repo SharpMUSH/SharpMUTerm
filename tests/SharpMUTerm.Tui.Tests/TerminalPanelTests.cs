@@ -243,4 +243,21 @@ public class TerminalPanelTests
         app.RenderNextFrame();
         return new Wired(app, telnet, session);
     }
+
+    /// <summary>
+    /// The idle words go before a name is cut: at 80 columns who-here cut every name to nine cells to keep
+    /// <c>active</c>/<c>idle 4m</c> (UX audit wave 11), when the dot already says which.
+    /// </summary>
+    [Test]
+    public async Task WhoHereDropsTheIdleColumnBeforeCuttingAName()
+    {
+        RoomOccupant[] here = [new("Ashlyn", "Ashlyn the Wanderer", true, 30), new("Bran", "Brannoc", true, 600)];
+
+        var narrow = WhoHereRenderer.Render("Plaza", here, 22, 6, new WhoHereRenderer.Ink("#00f5b7")).Select(StripMarkup).ToList();
+        await Assert.That(narrow[1]).Contains("Ashlyn the Wanderer").And.DoesNotContain("active");
+        await Assert.That(narrow.All(r => r.Length <= 22)).IsTrue();
+
+        var wide = WhoHereRenderer.Render("Plaza", here, 40, 6, new WhoHereRenderer.Ink("#00f5b7")).Select(StripMarkup).ToList();
+        await Assert.That(wide[1]).Contains("Ashlyn the Wanderer").And.Contains("active");
+    }
 }
