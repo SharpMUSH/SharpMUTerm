@@ -356,6 +356,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The desktop window's settings look like the rest of the redesigned app: a header with the search box and, for worlds
+  and characters, which one the settings apply to; the sections down a darker side column; each group of settings in a
+  card of its own, with what you searched for marked in the labels, a "Changed" mark and a "Reset to default" link; and
+  a footer saying changes apply as you make them. The meter table shows the paths received as a drop-down style panel.
 - The older-history page fits an 80×24 terminal: it sizes its page to the screen, keeps its keys on screen and no longer
   covers the command line.
 - Ctrl+F with older history says both counts on one line (`this window 3 of 39 · older 4 of 6,000`). Older matches say

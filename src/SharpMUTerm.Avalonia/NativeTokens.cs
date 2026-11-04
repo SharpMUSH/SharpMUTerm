@@ -25,7 +25,7 @@ namespace SharpMUTerm.Avalonia;
 /// their reasons.
 /// </para>
 /// </summary>
-internal sealed record NativeTokens(
+internal sealed partial record NativeTokens(
     bool IsDark,
     Color Scrim,
     Color Card,

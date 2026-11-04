@@ -54,7 +54,7 @@ internal sealed class ListEditorView : Grid
         _visible = visible;
         _tokens = tokens;
         _accent = tokens.Brush(tokens.Accent);
-        ColumnDefinitions = new ColumnDefinitions("292,*");
+        ColumnDefinitions = new ColumnDefinitions("316,*");
         Margin = new Thickness(0, 10, 0, 0);
 
         AddButton = ToolButton("+ Add", $"Add a {_collection.Noun} to the selected set");
@@ -81,22 +81,22 @@ internal sealed class ListEditorView : Grid
         _list.SelectionChanged += (_, _) => OnRowChosen();
         _list.KeyDown += OnListKey;
 
-        var left = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 14, 0) };
+        // Both halves are cards on the page, as the settings mockup draws its sections: the list with its tools over it,
+        // and the selected item's fields.
+        var page = tokens.Page;
+        var left = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(tools, Dock.Top);
+        tools.Margin = new Thickness(10, 10, 10, 4);
         left.Children.Add(tools);
-        left.Children.Add(new Border
-        {
-            Child = _list,
-            BorderThickness = new Thickness(1),
-            BorderBrush = Hairline,
-            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-        });
-        Children.Add(left);
+        _list.Margin = new Thickness(4, 0, 4, 6);
+        left.Children.Add(_list);
+        Children.Add(PageCard(left, page, new Thickness(0), new Thickness(0, 0, 16, 0)));
 
-        _detail = new StackPanel { Spacing = 2, Margin = new Thickness(4, 0, 4, 16) };
+        _detail = new StackPanel { Spacing = 2, Margin = new Thickness(20, 16, 20, 18) };
         var scroller = new ScrollViewer { Content = _detail, HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-        SetColumn(scroller, 1);
-        Children.Add(scroller);
+        var detailCard = PageCard(scroller, page, new Thickness(0), new Thickness(0));
+        SetColumn(detailCard, 1);
+        Children.Add(detailCard);
 
         // The item this section had selected last (switched away from, or the window closed) wins over the first —
         // unless the form opened on an item of this list (the trigger builder's new rule).
@@ -196,14 +196,27 @@ internal sealed class ListEditorView : Grid
 
     // ── the list ─────────────────────────────────────────────────────────────────────────────────
 
-    private IBrush Hairline => _tokens.Brush(_tokens.Edge);
+    private IBrush Hairline => _tokens.Page.Brush(_tokens.Page.Rule);
+
+    /// <summary>A card on the settings page: the card plane, a hairline edge, the card radius.</summary>
+    internal static Border PageCard(Control child, PageTokens page, Thickness padding, Thickness margin) => new()
+    {
+        Child = child,
+        Background = page.Brush(page.Card),
+        BorderBrush = page.Brush(page.Rule),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
+        Padding = padding,
+        Margin = margin,
+        ClipToBounds = true,
+    };
 
     /// <summary>A quiet line's ink, held to the floor (an opacity would not be).</summary>
-    private IBrush DimInk => _tokens.Brush(_tokens.Dim);
+    private IBrush DimInk => _tokens.Page.Brush(_tokens.Page.Dim);
 
     private static Button ToolButton(string text, string tip)
     {
-        var button = new Button { Content = text, Padding = new Thickness(8, 3), MinWidth = 32, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var button = new Button { Content = text, Padding = new Thickness(10, 4), MinWidth = 32, FontSize = NativeTokens.Label, HorizontalContentAlignment = HorizontalAlignment.Center };
         ToolTip.SetTip(button, NativeKeys.Words(tip));
         AutomationProperties.SetName(button, tip);
         return button;
@@ -445,7 +458,7 @@ internal sealed class ListEditorView : Grid
         }
 
         var title = _collection.TitleOf(item);
-        _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        _detail.Children.Add(new TextBlock { Text = title.Length == 0 ? "(unnamed)" : NativeKeys.Words(title), FontSize = NativeTokens.PageTitle - 2, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         if (group.ReadOnly)
         {
             var banner = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 4) };
@@ -521,7 +534,7 @@ internal sealed class ListEditorView : Grid
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), Margin = new Thickness(0, 3), MinHeight = 34 };
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title, TextWrapping = TextWrapping.Wrap });
+        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Label, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
         if (field.Help is { } help)
         {
             ToolTip.SetTip(words, NativeKeys.Words(Capitalise(help)));

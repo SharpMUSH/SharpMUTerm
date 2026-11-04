@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -44,6 +45,16 @@ internal sealed class SettingsWindow : Window
     private readonly List<ThemeCardView> _themeCards = [];
     private readonly Border _frame;
     private readonly TextBlock _title;
+    private readonly Border _bar;
+    private readonly Border _searchFrame;
+    private readonly TextBlock _searchCount;
+    private readonly global::Avalonia.Controls.Shapes.Path _searchGlass;
+    private readonly ContentControl _scope;
+    private readonly Border _nav;
+    private readonly TextBlock _navNote;
+    private readonly Border _footer;
+    private readonly TextBlock _footerLeft;
+    private readonly TextBlock _footerRight;
     private SettingsForm _form;
     private NativeTokens _tokens;
     private IReadOnlyList<SettingsMatch> _matches = [];
@@ -53,7 +64,7 @@ internal sealed class SettingsWindow : Window
     private int _meterRows = -1;
 
     /// <summary>The size the window first opens at, before the player resizes it.</summary>
-    internal const double DefaultWidth = 960, DefaultHeight = 680;
+    internal const double DefaultWidth = 1120, DefaultHeight = 760;
 
     public SettingsWindow(SettingsForm form)
     {
@@ -63,7 +74,7 @@ internal sealed class SettingsWindow : Window
         Width = DefaultWidth;
         Height = DefaultHeight;
         MinWidth = 640;
-        MinHeight = 420;
+        MinHeight = 440;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         // The palette's frame, not the platform's: the window draws its own title, close button and edge, so it reads
@@ -71,19 +82,20 @@ internal sealed class SettingsWindow : Window
         WindowDecorations = WindowDecorations.None;
         Styles.Add(new FluentTheme());
 
+        // ── the header: title, search, the subject a scoped section is for, close ──
         _title = new TextBlock
         {
             Text = "Settings",
-            FontSize = NativeTokens.Title,
+            FontSize = NativeTokens.CardTitle + 1,
             FontWeight = FontWeight.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 0, 0, 0),
+            Width = 212,
         };
         CloseButton = new Button
         {
             Content = "✕",
             Padding = new Thickness(10, 4),
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(12, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
@@ -91,35 +103,107 @@ internal sealed class SettingsWindow : Window
         AutomationProperties.SetName(CloseButton, "Close settings");
         ToolTip.SetTip(CloseButton, "Close (Esc)");
         CloseButton.Click += (_, _) => Close();
-        var bar = new DockPanel { Height = 40, LastChildFill = true, Background = Brushes.Transparent };
-        DockPanel.SetDock(CloseButton, Dock.Right);
-        bar.Children.Add(CloseButton);
-        bar.Children.Add(_title);
-        bar.PointerPressed += (_, e) =>
-        {
-            if (e.GetCurrentPoint(bar).Properties.IsLeftButtonPressed && !ReferenceEquals(e.Source, CloseButton))
-            {
-                BeginMoveDrag(e);
-            }
-        };
-        DockPanel.SetDock(bar, Dock.Top);
 
         _search = new TextBox
         {
             PlaceholderText = "Search settings",
-            Margin = new Thickness(16, 4, 16, 10),
-            FontSize = NativeTokens.Title,
-            Padding = new Thickness(12, 7),
+            FontSize = NativeTokens.Label,
+            Padding = new Thickness(0, 2),
+            MinHeight = 0,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            VerticalAlignment = VerticalAlignment.Center,
         };
+        foreach (var key in new[]
+        {
+            "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+            "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused",
+        })
+        {
+            _search.Resources[key] = Brushes.Transparent;
+        }
+
         AutomationProperties.SetName(_search, "Search settings");
         _search.TextChanged += (_, _) => OnQuery();
-        DockPanel.SetDock(_search, Dock.Top);
+        _searchCount = new TextBlock { FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        _searchGlass = new global::Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse("M6,0 A6,6 0 1 1 6,12 A6,6 0 1 1 6,0 M10.5,10.5 L14,14"),
+            StrokeThickness = 1.6,
+            Width = 14,
+            Height = 14,
+            Stretch = Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        var searchRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        searchRow.Children.Add(_searchGlass);
+        Grid.SetColumn(_search, 1);
+        searchRow.Children.Add(_search);
+        Grid.SetColumn(_searchCount, 2);
+        searchRow.Children.Add(_searchCount);
+        _searchFrame = new Border
+        {
+            Child = searchRow,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusM),
+            Padding = new Thickness(12, 6),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Ibeam),
+        };
+        _searchFrame.PointerPressed += (_, _) => _search.Focus();
 
-        _sections = new ListBox { Width = 250, Margin = new Thickness(8, 0, 0, 12), Background = Brushes.Transparent };
+        _scope = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
+        var header = new Grid { ColumnDefinitions = [new ColumnDefinition(GridLength.Auto), new ColumnDefinition(3, GridUnitType.Star) { MaxWidth = 480 }, new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto)], Margin = new Thickness(20, 0, 8, 0), Background = Brushes.Transparent };
+        header.Children.Add(_title);
+        Grid.SetColumn(_searchFrame, 1);
+        header.Children.Add(_searchFrame);
+        Grid.SetColumn(_scope, 3);
+        header.Children.Add(_scope);
+        Grid.SetColumn(CloseButton, 4);
+        header.Children.Add(CloseButton);
+        _bar = new Border { Height = 56, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
+        _bar.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(_bar).Properties.IsLeftButtonPressed
+                && (ReferenceEquals(e.Source, _bar) || ReferenceEquals(e.Source, header) || ReferenceEquals(e.Source, _title)))
+            {
+                BeginMoveDrag(e);
+            }
+        };
+        DockPanel.SetDock(_bar, Dock.Top);
+
+        // ── the footer ──
+        _footerLeft = new TextBlock { Text = "Changes apply to connected sessions as you make them.", FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
+        _footerRight = new TextBlock { Text = "Ctrl+F searches · Esc closes", FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
+        var footerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(20, 0) };
+        footerRow.Children.Add(_footerLeft);
+        Grid.SetColumn(_footerRight, 1);
+        footerRow.Children.Add(_footerRight);
+        _footer = new Border { Height = 36, BorderThickness = new Thickness(0, 1, 0, 0), Child = footerRow };
+        DockPanel.SetDock(_footer, Dock.Bottom);
+
+        // ── the section navigation ──
+        _sections = new ListBox { Background = Brushes.Transparent, Padding = new Thickness(0) };
         _sections.SelectionChanged += (_, _) => OnSectionChosen();
-        DockPanel.SetDock(_sections, Dock.Left);
+        _navNote = new TextBlock
+        {
+            Text = "Every page here is drawn from the same declared settings the terminal's F-screens use.",
+            FontSize = NativeTokens.Body,
+            LineHeight = 18,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(10, 8, 10, 4),
+        };
+        var navDock = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(_navNote, Dock.Bottom);
+        navDock.Children.Add(_navNote);
+        navDock.Children.Add(_sections);
+        _nav = new Border { Width = 232, BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(10, 12), Child = navDock };
+        DockPanel.SetDock(_nav, Dock.Left);
 
-        _page = new StackPanel { Margin = new Thickness(28, 4, 28, 28), Spacing = 2 };
+        // ── the page ──
+        _page = new StackPanel { Margin = new Thickness(40, 24, 40, 28), Spacing = 20 };
         _scroller = new ScrollViewer { Content = _page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
         // A list editor fills the page below its title rather than scrolling with it: its list and its detail scroll
@@ -138,9 +222,9 @@ internal sealed class SettingsWindow : Window
         };
 
         var dock = new DockPanel { LastChildFill = true };
-        dock.Children.Add(bar);
-        dock.Children.Add(_search);
-        dock.Children.Add(_sections);
+        dock.Children.Add(_bar);
+        dock.Children.Add(_footer);
+        dock.Children.Add(_nav);
         dock.Children.Add(_scroller);
         _frame = new Border { BorderThickness = new Thickness(1), Child = dock };
 
@@ -197,11 +281,39 @@ internal sealed class SettingsWindow : Window
         _tokens = tokens;
         RequestedThemeVariant = tokens.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         tokens.Apply(Resources);
-        Background = tokens.Brush(tokens.Card);
-        Foreground = tokens.Brush(tokens.Text);
-        _frame.BorderBrush = tokens.Brush(tokens.Edge);
-        _title.Foreground = tokens.Brush(tokens.Text);
-        CloseButton.Foreground = tokens.Brush(tokens.Dim);
+        var page = tokens.Page;
+        page.Apply(Resources);
+        foreach (var key in new[] { "SystemControlHighlightListAccentLowBrush", "SystemControlHighlightListAccentMediumBrush", "SystemControlHighlightListAccentHighBrush" })
+        {
+            _sections.Resources[key] = tokens.Brush(tokens.Accent);
+        }
+
+        _sections.Resources["ListBoxItemBackgroundSelected"] = tokens.Brush(tokens.Accent);
+        _sections.Resources["ListBoxItemBackgroundSelectedPointerOver"] = tokens.Brush(tokens.Accent);
+        _sections.Resources["ListBoxItemBackgroundSelectedPressed"] = tokens.Brush(tokens.Accent);
+        _sections.Resources["ListBoxItemForegroundSelected"] = tokens.Brush(tokens.AccentInk);
+        _sections.Resources["ListBoxItemForegroundSelectedPointerOver"] = tokens.Brush(tokens.AccentInk);
+        _sections.Resources["ListBoxItemBackgroundPointerOver"] = page.Brush(page.Button);
+        _sections.Resources["ListBoxItemBackgroundPressed"] = page.Brush(page.PopupSelected);
+        Background = page.Brush(page.Ground);
+        Foreground = page.Brush(page.Text);
+        _frame.BorderBrush = page.Brush(page.Rule);
+        _frame.Background = page.Brush(page.Ground);
+        _bar.Background = page.Brush(page.Card);
+        _bar.BorderBrush = page.Brush(page.Rule);
+        _footer.Background = page.Brush(page.Card);
+        _footer.BorderBrush = page.Brush(page.Rule);
+        _footerLeft.Foreground = page.Brush(page.Dim);
+        _footerRight.Foreground = page.Brush(page.Dim);
+        _nav.Background = page.Brush(page.Nav);
+        _nav.BorderBrush = page.Brush(page.Rule);
+        _navNote.Foreground = page.Brush(page.Dim);
+        _searchFrame.Background = page.Brush(page.Ground);
+        _searchFrame.BorderBrush = page.Brush(page.FocusEdge);
+        _searchGlass.Stroke = page.Brush(page.Dim);
+        _searchCount.Foreground = page.Brush(page.Dim);
+        _title.Foreground = page.Brush(page.Text);
+        CloseButton.Foreground = page.Brush(page.Dim);
     }
 
     /// <summary>The ids of the fields drawn on the right, in order, for a test.</summary>
@@ -211,7 +323,7 @@ internal sealed class SettingsWindow : Window
     public IReadOnlyDictionary<string, Control> FieldControls => _controls;
 
     /// <summary>The height a list editor takes: the page's viewport less the title above it.</summary>
-    private double ListEditorHeight() => Math.Max(360, _scroller.Bounds.Height - 96);
+    private double ListEditorHeight() => Math.Max(360, _scroller.Bounds.Height - 124);
 
     /// <summary>F10's package manager page, or null on any other page.</summary>
     internal PackagePageView? PackagePage { get; private set; }
@@ -278,14 +390,22 @@ internal sealed class SettingsWindow : Window
         var items = new List<ListBoxItem>();
         foreach (var section in _form.Sections)
         {
-            var title = new TextBlock { Text = section.Title, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-            var badge = new TextBlock { Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            var title = new TextBlock { Text = section.Title, FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            var badge = new TextBlock { FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
             _badges[section.Id] = badge;
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             row.Children.Add(title);
             Grid.SetColumn(badge, 1);
             row.Children.Add(badge);
-            var item = new ListBoxItem { Content = row, Tag = section.Id, Padding = new Thickness(12, 9) };
+            var item = new ListBoxItem
+            {
+                Content = row,
+                Tag = section.Id,
+                Padding = new Thickness(10, 8),
+                Margin = new Thickness(0, 0, 0, 2),
+                MinHeight = 0,
+                CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+            };
             ToolTip.SetTip(item, SettingsForm.IsDeclared(section) ? section.Key : $"Opens the {section.Key} screen");
             items.Add(item);
         }
@@ -309,6 +429,30 @@ internal sealed class SettingsWindow : Window
             if (Items.FirstOrDefault(i => Equals(i.Tag, section.Id)) is { } item)
             {
                 item.Opacity = searching && count == 0 ? 0.45 : 1;
+            }
+        }
+
+        StyleNavigation();
+        var total = _matches.Count(m => m.Field is not null);
+        _searchCount.Text = searching ? $"{total} setting{(total == 1 ? string.Empty : "s")}" : string.Empty;
+    }
+
+    /// <summary>
+    /// The chosen section's row wears the accent with its ink and weight, as the mockup's does; the rest wear the page's
+    /// text, their counts quiet. (The row's fill is the list's own selected brush.)
+    /// </summary>
+    private void StyleNavigation()
+    {
+        var page = _tokens.Page;
+        foreach (var item in Items)
+        {
+            var chosen = Equals(item.Tag, _shown);
+            if (item.Content is Grid { Children: [TextBlock title, TextBlock badge] })
+            {
+                title.FontWeight = chosen ? FontWeight.SemiBold : FontWeight.Normal;
+                title.Foreground = chosen ? _tokens.Brush(_tokens.AccentInk) : page.Brush(page.Text);
+                badge.FontWeight = title.FontWeight;
+                badge.Foreground = chosen ? _tokens.Brush(_tokens.AccentInk) : page.Brush(page.Dim);
             }
         }
     }
@@ -346,6 +490,7 @@ internal sealed class SettingsWindow : Window
         _choosing = true;
         _sections.SelectedItem = Items.FirstOrDefault(i => Equals(i.Tag, id));
         _choosing = false;
+        StyleNavigation();
     }
 
     // ── search ───────────────────────────────────────────────────────────────────────────────────
@@ -390,15 +535,13 @@ internal sealed class SettingsWindow : Window
         _meterRows = -1;
         if (_shown is null || _form.Section(_shown) is not { } section)
         {
+            _scope.Content = null;
             ShownFields = [];
             return;
         }
 
-        _page.Children.Add(new TextBlock { Text = section.Title, FontSize = NativeTokens.Heading, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 2) });
-        if (section.Key is { } key)
-        {
-            _page.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", Foreground = DimInk, Margin = new Thickness(0, 0, 0, 6) });
-        }
+        _scope.Content = section.Scope is SettingScope.World or SettingScope.Character ? SubjectRow(section) : null;
+        _page.Children.Add(PageHead(section));
 
         if (section.Packages is not null)
         {
@@ -455,14 +598,12 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        if (section.Scope != SettingScope.App)
+        if (section.Scope != SettingScope.App && !_form.HasSubject(section))
         {
-            _page.Children.Add(SubjectRow(section));
-            if (!_form.HasSubject(section))
-            {
-                ShownFields = [];
-                return;
-            }
+            var noun = section.Scope == SettingScope.World ? "world" : "character";
+            _page.Children.Add(new TextBlock { Text = $"There is no {noun} yet. Add one on its own screen.", Foreground = DimInk });
+            ShownFields = [];
+            return;
         }
 
         var visible = Searching
@@ -473,24 +614,35 @@ internal sealed class SettingsWindow : Window
             _page.Children.Add(new TextBlock { Text = "No setting here matches the search.", Foreground = DimInk, Margin = new Thickness(0, 16, 0, 0) });
         }
 
+        // A card per group, as the mockup draws its sections: the group's name heads it and its fields are rows inside,
+        // a hairline between them.
+        StackPanel? body = null;
         string? group = null;
         foreach (var field in visible)
         {
-            if (field.Group is { } heading && !string.Equals(heading, group, StringComparison.Ordinal))
+            if (body is null || !string.Equals(field.Group, group, StringComparison.Ordinal))
             {
-                group = heading;
-                _page.Children.Add(new TextBlock
+                group = field.Group;
+                body = new StackPanel();
+                if (group is { } heading && !string.Equals(heading, field.Label, StringComparison.OrdinalIgnoreCase))
                 {
-                    Text = heading.ToUpperInvariant(),
-                    FontSize = NativeTokens.Small,
-                    FontWeight = FontWeight.SemiBold,
-                    LetterSpacing = 0.8,
-                    Margin = new Thickness(0, 20, 0, 6),
-                    Foreground = _tokens.Brush(_tokens.Header),
-                });
+                    body.Children.Add(new TextBlock
+                    {
+                        Text = heading,
+                        FontSize = NativeTokens.CardTitle,
+                        FontWeight = FontWeight.SemiBold,
+                        Margin = new Thickness(0, 12, 0, 0),
+                    });
+                }
+
+                _page.Children.Add(Card(body));
+            }
+            else
+            {
+                body.Children.Add(new Border { Height = 1, Background = _tokens.Page.Brush(_tokens.Page.Rule) });
             }
 
-            _page.Children.Add(field switch
+            body.Children.Add(field switch
             {
                 ListField { Id: BuiltInSettings.MetersField } meters => MeterTable(meters),
                 ThemeField theme => ThemePicker(theme),
@@ -502,66 +654,134 @@ internal sealed class SettingsWindow : Window
     }
 
     /// <summary>
-    /// A scoped section's header row: which world or character its fields are for, picked from every one there is, and
-    /// the way to the section's own cell screen for what is not a field — the lists of characters and trigger sets,
-    /// adding and deleting. With nothing to edit yet it says so and offers only the screen.
+    /// The page's heading: the section's title and, under it, what the page is showing — the screen it is in the
+    /// terminal, or what the search matched with the way back to everything — and, for a scoped section, the way to its
+    /// own cell screen for what is not a field (the lists of characters and trigger sets, adding and deleting).
     /// </summary>
-    private StackPanel SubjectRow(SettingsSectionContribution section)
+    private StackPanel PageHead(SettingsSectionContribution section)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 6, 0, 2) };
+        var head = new StackPanel { Spacing = 6 };
+        head.Children.Add(new TextBlock { Text = section.Title, FontSize = NativeTokens.PageTitle, FontWeight = FontWeight.SemiBold });
+        var line = new WrapPanel { Orientation = Orientation.Horizontal };
+        if (Searching)
+        {
+            line.Children.Add(new TextBlock { Text = $"Showing settings that match “{_search.Text!.Trim()}”. ", FontSize = NativeTokens.Label, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
+            var all = section.Fields.Count;
+            var clear = LinkButton(all > 0 ? $"Show all {all}" : "Show all");
+            AutomationProperties.SetName(clear, "Clear the search");
+            clear.Click += (_, _) => _search.Text = string.Empty;
+            line.Children.Add(clear);
+        }
+        else if (section.Key is { } key)
+        {
+            line.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", FontSize = NativeTokens.Label, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
+        }
+
+        if (section.Scope is SettingScope.World or SettingScope.Character && section.Key is { } screen)
+        {
+            var door = LinkButton($"Open the {screen} screen ↗");
+            door.Margin = new Thickness(line.Children.Count > 0 ? 12 : 0, 0, 0, 0);
+            ToolTip.SetTip(door, section.Scope == SettingScope.World
+                ? "Adding and deleting worlds, their characters and trigger sets are on the cell screen"
+                : "Adding and deleting characters is on the cell screen");
+            AutomationProperties.SetName(door, $"Open the {screen} screen");
+            var id = section.Id;
+            door.Click += (_, _) => _form.OpenScreen(id);
+            ScreenDoor = door;
+            line.Children.Add(door);
+        }
+
+        if (line.Children.Count > 0)
+        {
+            head.Children.Add(line);
+        }
+
+        return head;
+    }
+
+    /// <summary>A card on the page: the card plane, a hairline edge, the card radius.</summary>
+    private Border Card(Control body) => new()
+    {
+        Child = body,
+        Background = _tokens.Page.Brush(_tokens.Page.Card),
+        BorderBrush = _tokens.Page.Brush(_tokens.Page.Rule),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
+        Padding = new Thickness(20, 6),
+    };
+
+    /// <summary>A button drawn as a link in the accent, underlined, as the mockup's "Reset to default" and "Show all".</summary>
+    private Button LinkButton(string text)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock { Text = text, TextDecorations = TextDecorations.Underline, FontSize = NativeTokens.Body },
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            MinHeight = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = _tokens.Page.Brush(_tokens.Page.Link),
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+        foreach (var key in new[] { "ButtonBackgroundPointerOver", "ButtonBackgroundPressed", "ButtonBorderBrushPointerOver" })
+        {
+            button.Resources[key] = Brushes.Transparent;
+        }
+
+        foreach (var key in new[] { "ButtonForegroundPointerOver", "ButtonForegroundPressed" })
+        {
+            button.Resources[key] = _tokens.Page.Brush(_tokens.Page.Link);
+        }
+
+        return button;
+    }
+
+    /// <summary>
+    /// A scoped section's subject, in the header as the mockup's "Applies to": which world or character the fields are
+    /// for, picked from every one there is.
+    /// </summary>
+    private Control SubjectRow(SettingsSectionContribution section)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var subjects = _form.Subjects(section.Scope);
         var noun = section.Scope == SettingScope.World ? "world" : "character";
         if (subjects.Count == 0)
         {
-            row.Children.Add(new TextBlock { Text = $"There is no {noun} yet.", VerticalAlignment = VerticalAlignment.Center, Foreground = DimInk });
+            row.Children.Add(new TextBlock { Text = $"No {noun} yet", VerticalAlignment = VerticalAlignment.Center, Foreground = DimInk, FontSize = NativeTokens.Label });
+            return row;
         }
-        else
+
+        var labels = subjects.Select(s => s.Label).ToList();
+        var current = _form.Subject(section.Scope);
+        var picker = new ComboBox { ItemsSource = labels, MinWidth = 180, MaxWidth = 280, SelectedItem = current?.Label, FontSize = NativeTokens.Label };
+        AutomationProperties.SetName(picker, $"The {noun} these settings are for");
+        picker.SelectionChanged += (_, _) =>
         {
-            var labels = subjects.Select(s => s.Label).ToList();
-            var current = _form.Subject(section.Scope);
-            var picker = new ComboBox { ItemsSource = labels, MinWidth = 240, SelectedItem = current?.Label };
-            AutomationProperties.SetName(picker, $"The {noun} these settings are for");
-            picker.SelectionChanged += (_, _) =>
+            if (!_syncing && picker.SelectedIndex is >= 0 and var i && i < subjects.Count
+                && !string.Equals(subjects[i].Label, _form.Subject(section.Scope)?.Label, StringComparison.Ordinal))
             {
-                if (!_syncing && picker.SelectedIndex is >= 0 and var i && i < subjects.Count
-                    && !string.Equals(subjects[i].Label, _form.Subject(section.Scope)?.Label, StringComparison.Ordinal))
-                {
-                    _form.Choose(subjects[i]);
-                    var offset = _scroller.Offset;
-                    BuildPage();
-                    _scroller.Offset = offset;
-                }
-            };
-            SubjectPicker = picker;
-            row.Children.Add(new TextBlock { Text = section.Scope == SettingScope.World ? "World" : "Character", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold });
-            row.Children.Add(picker);
-        }
-
-        if (section.Key is { } key)
-        {
-            var door = new Button { Content = $"Open the {key} screen ↗", VerticalAlignment = VerticalAlignment.Center };
-            ToolTip.SetTip(door, section.Scope == SettingScope.World
-                ? "Adding and deleting worlds, their characters and trigger sets are on the cell screen"
-                : "Adding and deleting characters is on the cell screen");
-            AutomationProperties.SetName(door, $"Open the {key} screen");
-            var id = section.Id;
-            door.Click += (_, _) => _form.OpenScreen(id);
-            ScreenDoor = door;
-            row.Children.Add(door);
-        }
-
+                _form.Choose(subjects[i]);
+                var offset = _scroller.Offset;
+                BuildPage();
+                _scroller.Offset = offset;
+            }
+        };
+        SubjectPicker = picker;
+        row.Children.Add(new TextBlock { Text = section.Scope == SettingScope.World ? "Applies to world" : "Applies to character", VerticalAlignment = VerticalAlignment.Center, Foreground = DimInk, FontSize = NativeTokens.Label });
+        row.Children.Add(picker);
         return row;
     }
 
     /// <summary>The theme field: a card per theme, its preview drawn from the client's model; a click uses it.</summary>
     private StackPanel ThemePicker(ThemeField field)
     {
-        var outer = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
-        var words = new StackPanel { Spacing = 1 };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title });
+        var outer = new StackPanel { Spacing = 6, Margin = new Thickness(0, 12, 0, 4) };
+        var words = new StackPanel();
+        words.Children.Add(LabelBlock(field.Label));
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(HelpBlock(help));
         }
 
         outer.Children.Add(words);
@@ -598,27 +818,88 @@ internal sealed class SettingsWindow : Window
     private string? CurrentTheme(ThemeField field) =>
         field.Binding is SettingBinding<string> binding ? _form.Get(binding) : null;
 
-    /// <summary>The accent the changed dot wears: the client's, as every native surface's.</summary>
-    private SolidColorBrush Accent => _tokens.Brush(_tokens.Accent);
+    /// <summary>The accent the changed dot wears: the client's, as every native surface's, held on the page's planes.</summary>
+    private SolidColorBrush Accent => _tokens.Page.Brush(_tokens.Page.Link);
 
-    /// <summary>A quiet line's ink, held to the floor (an opacity would not be).</summary>
-    private SolidColorBrush DimInk => _tokens.Brush(_tokens.Dim);
+    /// <summary>A quiet line's ink, held to the floor on the page's planes (an opacity would not be).</summary>
+    private SolidColorBrush DimInk => _tokens.Page.Brush(_tokens.Page.Dim);
 
-    /// <summary>One field: label and help on the left, its control, then the changed dot and the reset.</summary>
+    /// <summary>
+    /// A field's label, in the label weight, with every word of the search marked as the mockup marks "meter": the
+    /// page's mark plane behind it and the mark ink on it.
+    /// </summary>
+    private TextBlock LabelBlock(string label)
+    {
+        var text = NativeKeys.Words(Capitalise(label));
+        var block = new TextBlock { FontSize = NativeTokens.Label, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        var words = Searching
+            ? _search.Text!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : [];
+        var marks = new bool[text.Length];
+        foreach (var word in words)
+        {
+            for (var at = text.IndexOf(word, StringComparison.OrdinalIgnoreCase); at >= 0; at = text.IndexOf(word, at + word.Length, StringComparison.OrdinalIgnoreCase))
+            {
+                Array.Fill(marks, true, at, word.Length);
+            }
+        }
+
+        if (!marks.Contains(true))
+        {
+            block.Text = text;
+            return block;
+        }
+
+        var page = _tokens.Page;
+        for (var i = 0; i < text.Length;)
+        {
+            var marked = marks[i];
+            var j = i;
+            while (j < text.Length && marks[j] == marked)
+            {
+                j++;
+            }
+
+            var run = new Run(text[i..j]);
+            if (marked)
+            {
+                run.Background = page.Brush(page.Mark);
+                run.Foreground = page.Brush(page.MarkInk);
+            }
+
+            block.Inlines!.Add(run);
+            i = j;
+        }
+
+        return block;
+    }
+
+    /// <summary>A field's help line under its label: quiet, wrapped.</summary>
+    private TextBlock HelpBlock(string help) =>
+        new() { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+
+    /// <summary>
+    /// One field, as a row of its group's card: the label (with the changed mark beside it) and its help on the left;
+    /// the reset link and the control on the right.
+    /// </summary>
     private Grid FieldRow(SettingsField field)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 4), MinHeight = 44 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 12), MinHeight = 32 };
 
-        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1, Margin = new Thickness(0, 0, 16, 0) };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title, TextWrapping = TextWrapping.Wrap });
+        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
+        var (changed, reset) = ChangedMark(field);
+        var top = new WrapPanel { Orientation = Orientation.Horizontal };
+        top.Children.Add(LabelBlock(field.Label));
+        top.Children.Add(changed);
+        words.Children.Add(top);
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(HelpBlock(help));
         }
 
         // The note the cell F5 draws beside the value (join wraps' recommendation), from the same sentence, in the
         // cells' caution amber; gone once the field has been changed.
-        var note = new TextBlock { FontSize = NativeTokens.Body, Foreground = _tokens.Brush(_tokens.Notice), TextWrapping = TextWrapping.Wrap };
+        var note = new TextBlock { FontSize = NativeTokens.Body, Foreground = _tokens.Brush(_tokens.Notice), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
         void ShowNote()
         {
             var text = _form.Note(field);
@@ -633,43 +914,45 @@ internal sealed class SettingsWindow : Window
 
         grid.Children.Add(words);
 
+        reset.Margin = new Thickness(0, 0, 16, 0);
+        Grid.SetColumn(reset, 1);
+        grid.Children.Add(reset);
+
         var control = ControlFor(field);
         control.VerticalAlignment = VerticalAlignment.Center;
         AutomationProperties.SetName(control, field.Label);
-        Grid.SetColumn(control, 1);
+        Grid.SetColumn(control, 2);
         grid.Children.Add(control);
         _controls[field.Id] = control;
-
-        grid.Children.Add(ChangedMark(field, column: 2));
         return grid;
     }
 
-    /// <summary>The dot and reset button for <paramref name="field"/>, shown only while it differs from its default.</summary>
-    private StackPanel ChangedMark(SettingsField field, int column)
+    /// <summary>
+    /// The changed mark for <paramref name="field"/> — a dot and the word "Changed", beside the label — and its reset
+    /// link, both shown only while the field differs from its default.
+    /// </summary>
+    private (Control Changed, Button Reset) ChangedMark(SettingsField field)
     {
-        var dot = new Ellipse { Width = 8, Height = 8, Fill = Accent, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 8, 0) };
-        ToolTip.SetTip(dot, "Changed from its default");
-        var reset = new Button { Content = "Reset", Padding = new Thickness(10, 3), VerticalAlignment = VerticalAlignment.Center };
+        var mark = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        mark.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = Accent, VerticalAlignment = VerticalAlignment.Center });
+        mark.Children.Add(new TextBlock { Text = "Changed", FontSize = NativeTokens.Body, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
+        ToolTip.SetTip(mark, "Changed from its default");
+        var reset = LinkButton("Reset to default");
         ToolTip.SetTip(reset, $"Back to the default: {SettingsForm.DefaultText(field)}");
         AutomationProperties.SetName(reset, $"Reset {field.Label}");
         reset.Click += (_, _) => _form.Reset(field);
         _resets[field.Id] = reset;
 
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, MinWidth = 100 };
-        panel.Children.Add(dot);
-        panel.Children.Add(reset);
-        Grid.SetColumn(panel, column);
-
         void Refresh()
         {
             var changed = !_form.IsDefault(field);
-            dot.Opacity = changed ? 1 : 0;
+            mark.IsVisible = changed;
             reset.IsVisible = changed;
         }
 
         Refresh();
         _refreshers.Add(Refresh);
-        return panel;
+        return (mark, reset);
     }
 
     /// <summary>The native control for a field's kind, wired to the form and refreshed from it.</summary>
@@ -822,35 +1105,38 @@ internal sealed class SettingsWindow : Window
 
     private StackPanel MeterTable(ListField field)
     {
-        var outer = new StackPanel { Spacing = 8, Margin = new Thickness(0, 4, 0, 4) };
+        var outer = new StackPanel { Spacing = 10, Margin = new Thickness(0, 12, 0, 4) };
+        var page = _tokens.Page;
 
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var words = new StackPanel { Spacing = 1 };
-        words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(field.Label)), FontSize = NativeTokens.Title });
+        var (changed, reset) = ChangedMark(field);
+        var heading = new WrapPanel { Orientation = Orientation.Horizontal };
+        heading.Children.Add(LabelBlock(field.Label));
+        heading.Children.Add(changed);
+        top.Children.Add(heading);
+        Grid.SetColumn(reset, 1);
+        top.Children.Add(reset);
+        outer.Children.Add(top);
         if (field.Help is { } help)
         {
-            words.Children.Add(new TextBlock { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
+            outer.Children.Add(HelpBlock(help));
         }
-
-        top.Children.Add(words);
-        top.Children.Add(ChangedMark(field, column: 1));
-        outer.Children.Add(top);
 
         var received = _form.Received();
         var paths = received.Select(r => r.Path).ToList();
         var meters = _form.Meters(field);
         _meterRows = meters.Count;
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*,*,100,Auto"), ColumnSpacing = 8, RowSpacing = 6 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*,*,120,32"), ColumnSpacing = 8, RowSpacing = 8 };
         MeterGrid = grid;
         _controls[field.Id] = grid;
-        string[] headings = ["Label", "Value path", "Maximum path", "Now"];
+        string[] headings = ["Label", "Value path", "Maximum path", "Live value"];
         grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         for (var c = 0; c < headings.Length; c++)
         {
-            var heading = new TextBlock { Text = headings[c], FontSize = NativeTokens.Body, FontWeight = FontWeight.SemiBold, Foreground = DimInk };
-            Grid.SetColumn(heading, c);
-            grid.Children.Add(heading);
+            var title = new TextBlock { Text = headings[c], FontSize = NativeTokens.Body, Foreground = DimInk };
+            Grid.SetColumn(title, c);
+            grid.Children.Add(title);
         }
 
         AutoCompleteBox? lastPath = null;
@@ -862,7 +1148,7 @@ internal sealed class SettingsWindow : Window
             var row = i + 1;
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
-            var label = new TextBox { Text = meter.Label, MaxLength = StatusMeter.MaxLabelLength };
+            var label = new TextBox { Text = meter.Label, MaxLength = StatusMeter.MaxLabelLength, FontSize = NativeTokens.Label };
             AutomationProperties.SetName(label, $"meter {row} label");
             label.LostFocus += (_, _) =>
             {
@@ -878,10 +1164,18 @@ internal sealed class SettingsWindow : Window
             value.GotFocus += (_, _) => lastPath = value;
             max.GotFocus += (_, _) => lastPath = max;
 
-            var now = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold };
+            var now = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontFamily = Mono, FontSize = NativeTokens.Body };
             _meterNow.Add((meter, now));
 
-            var remove = new Button { Content = "✕", Padding = new Thickness(9, 3) };
+            var remove = new Button
+            {
+                Content = "✕",
+                Padding = new Thickness(8, 3),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = DimInk,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
             ToolTip.SetTip(remove, $"Remove {meter.Label}");
             AutomationProperties.SetName(remove, $"Remove meter {meter.Label}");
             var index = i;
@@ -902,37 +1196,29 @@ internal sealed class SettingsWindow : Window
 
         outer.Children.Add(grid);
 
-        var add = new Button { Content = "+ Meter", HorizontalAlignment = HorizontalAlignment.Left };
-        AutomationProperties.SetName(add, "Add a meter");
-        add.Click += (_, _) =>
-        {
-            meters.Add(new StatusMeter { Label = "new" });
-            Commit();
-        };
-        outer.Children.Add(add);
-
-        // What this connection has received, to pick a path from: a click puts it in the path box last used.
-        var box = new StackPanel { Spacing = 2 };
-        box.Children.Add(new TextBlock { Text = "Received on this connection", FontSize = NativeTokens.Body, FontWeight = FontWeight.SemiBold, Foreground = DimInk, Margin = new Thickness(0, 2, 0, 2) });
+        // What this connection has received, to pick a path from: a click puts it in the path box last used. Drawn as the
+        // mockup's drop-down panel, under the path columns.
+        var box = new StackPanel();
+        box.Children.Add(new TextBlock { Text = "Paths this connection has received", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(12, 4, 12, 4) });
         if (received.Count == 0)
         {
-            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.Body, Foreground = DimInk });
+            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(12, 4, 12, 6) });
         }
 
         foreach (var item in received.Take(40))
         {
-            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            line.Children.Add(new TextBlock { Text = item.Path, FontFamily = FontFamily.Parse("monospace"), FontSize = NativeTokens.Body });
-            var v = new TextBlock { Text = item.Value, FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(16, 0, 0, 0) };
-            Grid.SetColumn(v, 1);
-            line.Children.Add(v);
+            var line = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Body, TextTrimming = TextTrimming.CharacterEllipsis };
+            line.Inlines!.Add(new Run(item.Path) { Foreground = page.Brush(page.Text) });
+            line.Inlines.Add(new Run($"  = {item.Value}") { Foreground = DimInk });
             var pick = new Button
             {
                 Content = line,
                 Background = Brushes.Transparent,
-                Padding = new Thickness(6, 2),
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(0),
+                Padding = new Thickness(12, 6),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
             };
             ToolTip.SetTip(pick, "Use this path in the path box you were last in");
             pick.Click += (_, _) =>
@@ -949,16 +1235,31 @@ internal sealed class SettingsWindow : Window
         outer.Children.Add(new Border
         {
             Child = box,
+            Background = page.Brush(page.Popup),
             BorderThickness = new Thickness(1),
-            BorderBrush = _tokens.Brush(_tokens.Edge),
+            BorderBrush = page.Brush(page.FocusEdge),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
-            Padding = new Thickness(10, 6, 10, 8),
-            Margin = new Thickness(0, 4, 0, 0),
+            Padding = new Thickness(0, 8),
+            Margin = new Thickness(128, 0, 0, 0),
+            MaxWidth = 420,
+            HorizontalAlignment = HorizontalAlignment.Left,
         });
+
+        var add = new Button { Content = "+ Add a meter", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(12, 6), FontSize = NativeTokens.Label };
+        AutomationProperties.SetName(add, "Add a meter");
+        add.Click += (_, _) =>
+        {
+            meters.Add(new StatusMeter { Label = "new" });
+            Commit();
+        };
+        outer.Children.Add(add);
 
         Tick();
         return outer;
     }
+
+    /// <summary>The page's monospace face, for paths and values (the mockup's game-text face).</summary>
+    private static readonly FontFamily Mono = FontFamily.Parse("monospace");
 
     private static AutoCompleteBox PathBox(string? text, IReadOnlyList<string> paths, string name, Action<string?> set, Action commit)
     {
@@ -966,6 +1267,8 @@ internal sealed class SettingsWindow : Window
         {
             Text = text ?? string.Empty,
             ItemsSource = paths,
+            FontFamily = Mono,
+            FontSize = NativeTokens.Body,
             FilterMode = AutoCompleteFilterMode.ContainsOrdinal,
             MinimumPrefixLength = 0,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -1001,7 +1304,7 @@ internal sealed class SettingsWindow : Window
         {
             var text = _form.Now(meter);
             now.Text = text ?? "waiting";
-            now.Opacity = text is null ? 0.6 : 1;
+            now.Foreground = text is null ? DimInk : _tokens.Page.Brush(_tokens.Page.Text);
         }
     }
 
