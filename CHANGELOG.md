@@ -9,6 +9,17 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- `telnet://` and `telnets://` links open the client: it adds the world (or dials the one you already have for that
+  address) and connects, and never logs in or sends anything a link names. Links with a user name, a password or
+  anything after the address are refused, and say why. If SharpMUTerm is already running the link opens there. The
+  Windows installer has an option to register the links, and the Linux desktop file declares them.
+- Character passwords are kept in the system's credential store — Windows Credential Manager, the Secret Service
+  keyring on Linux, the Keychain on macOS — when there is one, and moved there from `secrets.json` the first time.
+  Without one, `secrets.json` works as before.
+- The window's title, and the terminal's, say who is in front: `Character@World — SharpMUTerm`. The terminal's own
+  title comes back when you quit.
+- Desktop window: a screen reader that moves to the output finds a read-only document holding the newest lines of the
+  window in front, alongside the lines it already hears as they arrive.
 - Triggers, aliases, key bindings and timers (F2, F3, F4, F6) open in the desktop window's settings as a list
   beside the selected item's fields: tick a box to switch one on or off, add, copy, delete or move it up and down,
   and watch the trigger's live test mark the matching lines as you type its pattern. A package's sets are shown

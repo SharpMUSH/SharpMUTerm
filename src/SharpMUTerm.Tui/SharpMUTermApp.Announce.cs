@@ -17,10 +17,51 @@ internal sealed partial class SharpMUTermApp
 
     private void AnnounceLine(string windowId, string text)
     {
-        if (Host.Announcer is { } announcer && !_quietWindows.Contains(windowId) && text.Trim().Length > 0)
+        if (Host.Announcer is not { } announcer)
+        {
+            return;
+        }
+
+        if (!_quietWindows.Contains(windowId) && text.Trim().Length > 0)
         {
             announcer.Announce(text, AnnouncementKind.Output);
         }
+
+        // A quiet window is not spoken as lines arrive, but a reader that asks the output view for its text still
+        // gets the window in front, quiet or not.
+        if (windowId == ActiveWindowId())
+        {
+            PublishReading(windowId);
+        }
+    }
+
+    /// <summary>
+    /// Hands the host the window in front and its newest lines (<see cref="IAnnouncer.Reading"/>), which the window
+    /// exposes as its output view's text for a screen reader to read at its own pace. Plain text from the pane's own
+    /// buffer, so it is what ⌃F searches: chrome rows carry none and are left out.
+    /// </summary>
+    private void PublishReading(string windowId)
+    {
+        if (Host.Announcer is not { } announcer)
+        {
+            return;
+        }
+
+        var lines = new List<string>(IAnnouncer.ReadingLines);
+        if (_lines.TryGetValue(windowId, out var buffer))
+        {
+            for (var i = buffer.Count - 1; i >= 0 && lines.Count < IAnnouncer.ReadingLines; i--)
+            {
+                if (buffer[i].Plain is { Length: > 0 } plain)
+                {
+                    lines.Add(plain);
+                }
+            }
+
+            lines.Reverse();
+        }
+
+        announcer.Reading(WindowTitle(windowId), lines);
     }
 
     private void AnnounceNotice(string text) => Host.Announcer?.Announce(text, AnnouncementKind.Notice);
@@ -30,6 +71,7 @@ internal sealed partial class SharpMUTermApp
         if (Host.Announcer is { } announcer)
         {
             announcer.Announce(WindowTitle(windowId), AnnouncementKind.Focus);
+            PublishReading(windowId);
         }
     }
 

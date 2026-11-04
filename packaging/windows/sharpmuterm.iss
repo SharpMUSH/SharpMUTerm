@@ -45,6 +45,7 @@ WizardStyle=modern
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "addtopath"; Description: "Add the install folder to PATH, so sharpmuterm runs from any terminal"; GroupDescription: "Terminal:"
+Name: "telnetlinks"; Description: "Open telnet:// and telnets:// links in SharpMUTerm"; GroupDescription: "Links:"; Flags: unchecked
 
 [Files]
 Source: "{#PublishDir}\sharpmuterm-window.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -54,6 +55,19 @@ Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignor
 [Icons]
 Name: "{autoprograms}\SharpMUTerm"; Filename: "{app}\sharpmuterm-window.exe"
 Name: "{autodesktop}\SharpMUTerm"; Filename: "{app}\sharpmuterm-window.exe"; Tasks: desktopicon
+
+; telnet:// and telnets:// links, for this user (HKA is HKCU in the default per-user install). Only with the task above;
+; the program never registers itself. --open-link makes the client read the link and nothing else, so a link holding a
+; quote cannot add arguments of its own to the command line Windows builds from this template.
+[Registry]
+Root: HKA; Subkey: "Software\Classes\telnet"; ValueType: string; ValueName: ""; ValueData: "URL:Telnet Protocol"; Flags: uninsdeletekey; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnet"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnet\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\sharpmuterm-window.exe"",0"; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnet\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\sharpmuterm-window.exe"" --open-link ""%1"""; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnets"; ValueType: string; ValueName: ""; ValueData: "URL:Telnet over TLS Protocol"; Flags: uninsdeletekey; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnets"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnets\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\sharpmuterm-window.exe"",0"; Tasks: telnetlinks
+Root: HKA; Subkey: "Software\Classes\telnets\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\sharpmuterm-window.exe"" --open-link ""%1"""; Tasks: telnetlinks
 
 [Run]
 Filename: "{app}\sharpmuterm-window.exe"; Description: "{cm:LaunchProgram,SharpMUTerm}"; Flags: nowait postinstall skipifsilent

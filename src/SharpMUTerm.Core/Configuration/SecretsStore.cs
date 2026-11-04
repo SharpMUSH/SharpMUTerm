@@ -22,9 +22,10 @@ namespace SharpMUTerm.Core.Configuration;
 /// read them. What the split buys is that accidental disclosure and deliberate sharing stop being the same
 /// action — which is the failure that actually happens to people. What the file mode buys is that "anyone
 /// who can read the file" is one account. Reversible obfuscation would buy neither and would cost a
-/// permanent migration burden plus a field that looks protected and is not. An OS credential store
-/// (DPAPI/Keychain/libsecret) is the thing that would make these secrets at rest; it remains a legitimate
-/// future option and nothing here claims it exists.
+/// permanent migration burden plus a field that looks protected and is not. An OS credential store is the
+/// thing that makes these secrets at rest, and the live client uses one where the machine has it
+/// (<see cref="CredentialVault"/>); this file is what holds a password when there is none, or when the store
+/// refuses it.
 /// </para>
 /// <para>
 /// <b>Everything degrades to "no password".</b> A missing file, an unparseable one, a key that is not a

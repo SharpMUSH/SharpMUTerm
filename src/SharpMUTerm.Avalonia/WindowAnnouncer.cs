@@ -18,6 +18,30 @@ internal sealed class WindowAnnouncer : IAnnouncer
 {
     private TextBlock? _output;
     private TextBlock? _notices;
+    private Tuple<string?, IReadOnlyList<string>> _front = Tuple.Create<string?, IReadOnlyList<string>>(null, []);
+
+    /// <summary>
+    /// The window in front and its newest lines, as the client last said them (<see cref="IAnnouncer.Reading"/>): the
+    /// text the output view's automation peer exposes (<see cref="TerminalViewAutomationPeer"/>). Safe from any thread:
+    /// the pair is swapped whole.
+    /// </summary>
+    public (string? Window, IReadOnlyList<string> Lines) Front
+    {
+        get
+        {
+            var front = Volatile.Read(ref _front);
+            return (front.Item1, front.Item2);
+        }
+    }
+
+    /// <summary>Raised on the client's thread when <see cref="Front"/> changes.</summary>
+    public event Action? ReadingChanged;
+
+    public void Reading(string window, IReadOnlyList<string> lines)
+    {
+        Volatile.Write(ref _front, Tuple.Create<string?, IReadOnlyList<string>>(window, lines.ToArray()));
+        ReadingChanged?.Invoke();
+    }
 
     /// <summary>The two regions, built once for the window that shows them.</summary>
     public IReadOnlyList<Control> Regions()
