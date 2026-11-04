@@ -154,6 +154,12 @@ public static class BuiltInCommands
         Add("term:packages", CommandGroup.Terminal, "Packages", "F10", "installed packages, on/off, remove");
         Add("term:package-install", CommandGroup.Terminal, "Install package…", detail: "from a file or an https link");
         Add("term:package-browse", CommandGroup.Terminal, "Browse packages", detail: "the package index, this game's first");
+
+        // The first run's two surfaces, both reachable again: the welcome a client with no worlds opens on, and
+        // the one-line tour of the keys worth knowing that follows the first connect. The tour entry is one
+        // toggle, so it can always be offered and always says what it will do: show it, or hide it.
+        Add("term:welcome", CommandGroup.Terminal, "Welcome", detail: "connect to a game, browse games, pick a layout");
+        Add("term:tour", CommandGroup.Terminal, "Key tour", detail: "the keys worth knowing · again to hide it");
         Add("term:timestamps-off", CommandGroup.Terminal, "Hide timestamps", when: c => c.State.TimestampsOn);
         Add("term:timestamps-on", CommandGroup.Terminal, "Show timestamps", when: c => !c.State.TimestampsOn);
         Add("term:input2-off", CommandGroup.Terminal, "Hide second input", "⌃B i", "this window",

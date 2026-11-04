@@ -731,6 +731,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var capabilities = host.Capabilities;
         Host = host;
         _config = config;
+        _startedEmpty = config.Worlds.Count == 0;
         _save = save;
         _openUrl = host.OpenUrl;
         _clipboard = host.Clipboard;
@@ -921,6 +922,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _packageView = new ListOverlay(_system, _screens);
         _sendMenu = new ListOverlay(_system, _screens);
         _layoutsView = new ListOverlay(_system, _screens);
+        _welcomeView = new ListOverlay(_system, _screens);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
         _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
@@ -1111,9 +1113,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // one of them would count as missed, so any frame that later made such a window visible (a split,
         // a tab change) would carry an activity bar reporting the client's own setup as news. Same
         // reasoning as `_watching` itself, which the restore replay needs for the same shape of reason.
+        // The first-run welcome is what a client with *no* worlds opens on, so it is drawn over an empty
+        // configuration whatever the caller loaded — --demo-config has worlds, and the welcome never opens
+        // over them.
+        if (view is not null && view.StartsWith(WelcomeView, StringComparison.OrdinalIgnoreCase))
+        {
+            return RenderWelcomeSnapshot(view);
+        }
+
         _watching = false;
         LoadDemoScene();
         _watching = true;
+
+        // The key tour row, as the first connect of a new configuration leaves it at the end of the window.
+        if (string.Equals(view, "tour", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowKeyTour(MainWindowId);
+            SettleScroll();
+        }
 
         // The reported bug, as a frame: the scene is already on screen with the column off, and *then*
         // the real ⌃P entry is dispatched. Under the old append-time gutter this frame was identical to
@@ -2582,6 +2599,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice(
                 empty ? NoWorldsNotice : NothingAtStartNotice,
                 empty ? MessageSeverity.Warning : MessageSeverity.Info);
+
+            // And the first run gets somewhere to start from: the welcome, over the notice it leaves behind
+            // when it is closed.
+            if (empty)
+            {
+                ShowWelcome();
+            }
+
             return;
         }
 
@@ -2607,9 +2632,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         await Task.WhenAll(opened.Select(o => DialAtStartupAsync(o.Session))).ConfigureAwait(false);
     }
 
-    /// <summary>The empty-workspace message when there is nothing to connect because there is nothing at all.</summary>
+    /// <summary>
+    /// The empty-workspace message when there is nothing to connect because there is nothing at all. It is what
+    /// the welcome leaves behind when it is closed, so it names the welcome's way back as well as the two ways
+    /// in; and it is short enough for an 80-column status row, which a longer one wrapped onto a second row.
+    /// </summary>
     internal const string NoWorldsNotice =
-        "No world configured. Type /connect <host> <port>, pass one on the command line, or add one on F5.";
+        "No world configured · /connect <host> <port> · F5 adds one · /welcome";
 
     /// <summary>
     /// And when there are worlds but none of their characters is marked. It is the ordinary state of a
@@ -2918,6 +2947,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 // report beside a connection time that is already here.
                 _mssp.RecordConnection(session.World.Host, session.World.Port, _time.GetUtcNow());
                 ScheduleLayoutSuggestion(session);
+                OnFirstRunConnected(session, windowId);
             }
 
             UpdateStatus();
@@ -4821,6 +4851,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // `/welcome` shows the first-run welcome again; `/welcome layout …` picks its starting layout.
+        if (command.StartsWith("/welcome", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            WelcomeCommand(command[8..].Trim());
+            return;
+        }
+
         // `/package` opens the Packages screen; `/package install …` reads one for review.
         if (command.StartsWith("/package", StringComparison.OrdinalIgnoreCase)
             && (command.Length == 8 || command[8] == ' '))
@@ -5252,7 +5290,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private bool AnyOverlayOpen =>
         _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
         || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
-        || _layoutsView.IsOpen;
+        || _layoutsView.IsOpen || _welcomeView.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -5371,6 +5409,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
+        : _welcomeView.IsOpen ? "the welcome"
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -7106,6 +7145,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PersistConfiguration()
     {
+        NoteFirstWorld();
         if (_save is null)
         {
             return;
@@ -8403,6 +8443,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:package-browse":
                 BrowsePackages();
+                return true;
+            case "term:welcome":
+                ShowWelcome();
+                return true;
+            case "term:tour":
+                ToggleKeyTour();
                 return true;
             case "term:package-install":
                 ActiveBar().SetAndNotify("/package install ");

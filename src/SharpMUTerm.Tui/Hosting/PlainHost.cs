@@ -29,6 +29,7 @@ internal static class PlainHost
             Audio = () => DesktopAudio.TryCreate(),
             Presence = () => new DiscordIpc(),
             Announcer = new PlainAnnouncer(output),
+            ScreenIsSeen = false,
         };
     }
 

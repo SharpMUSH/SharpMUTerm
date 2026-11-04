@@ -113,6 +113,15 @@ public sealed class AppConfiguration
     /// <summary>The ids of installed packages the player has switched off; their sets apply to nobody.</summary>
     public List<string> DisabledPackages { get; set; } = new();
 
+    /// <summary>
+    /// The short key tour is owed: set when a configuration that started a run with no worlds gains its first
+    /// one, and cleared once the tour has been shown after a connect. A pending flag rather than a "shown" one,
+    /// so a configuration from before the tour existed (every one that already has worlds) never gets it and
+    /// needs no migration; and it survives a restart, so a new player who adds a world and quits before it
+    /// connects still gets the tour on the connect that follows.
+    /// </summary>
+    public bool KeyTourPending { get; set; }
+
     /// <summary>The package index Browse packages reads: an https link to an <c>index.json</c>.</summary>
     public string PackageIndexUrl { get; set; } = DefaultPackageIndexUrl;
 

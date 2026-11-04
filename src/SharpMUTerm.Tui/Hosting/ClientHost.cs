@@ -84,6 +84,14 @@ internal sealed record ClientHost
     public required IAnnouncer? Announcer { get; init; }
 
     /// <summary>
+    /// Whether anybody looks at the cells. False for <c>--plain</c>, whose screen is a headless buffer nobody
+    /// reads: a surface the client would open as a modal there (the first-run welcome) is said as lines through
+    /// <see cref="Announcer"/> and worked by typed commands instead, because a modal there would take the keys
+    /// the reader types and show them nothing.
+    /// </summary>
+    public required bool ScreenIsSeen { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -119,6 +127,7 @@ internal sealed record ClientHost
         Audio = () => DesktopAudio.TryCreate(),
         Presence = () => new DiscordIpc(),
         Announcer = null,
+        ScreenIsSeen = true,
     };
 
     /// <summary>
@@ -140,6 +149,7 @@ internal sealed record ClientHost
         Audio = null,
         Presence = null,
         Announcer = null,
+        ScreenIsSeen = true,
     };
 
     /// <summary>

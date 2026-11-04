@@ -19,7 +19,11 @@ internal sealed partial class SharpMUTermApp
     /// <summary>What <c>/connect</c> with nothing after it says.</summary>
     internal const string ConnectUsage = "/connect <world>, or /connect <host> [port] [tls] to add one";
 
-    private void ConnectCommand(string windowId, string arguments)
+    /// <param name="shape">
+    /// Finishes a world this adds before it is saved — the welcome's form adds the character it named. Not
+    /// called when the words name a world that already exists.
+    /// </param>
+    private void ConnectCommand(string windowId, string arguments, Action<WorldDefinition>? shape = null)
     {
         var words = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var tls = words.Any(IsTlsWord);
@@ -54,6 +58,15 @@ internal sealed partial class SharpMUTermApp
                 Port = endpoint.Port,
                 UseTls = tls,
             };
+
+            // A configuration's first world takes the layout the welcome was left at, whether it came from
+            // the welcome's form or from a /connect typed under it.
+            if (_config.Worlds.Count == 0)
+            {
+                ApplyWelcomeLayout(world);
+            }
+
+            shape?.Invoke(world);
             _config.Worlds.Add(world);
             SaveConfiguration();
             Notice($"added {world.Name} ({world.Host}:{world.Port}) — F5 edits it", MessageSeverity.Info, "F5");

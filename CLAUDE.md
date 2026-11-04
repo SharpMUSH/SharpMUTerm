@@ -543,6 +543,30 @@ fallbacks) for inline images/maps.
   leaves, so several auto-connects always land you in the same place, and a black-holed host cannot hold
   the other worlds' windows hostage. `ConnectAtStartup` is *not* `AutoLogin` — one opens the socket, the
   other sends the connect line once one is open, and either is useful alone.
+- **A client with no worlds opens on a welcome, and the first connect of a new configuration leaves a key tour**
+  (`WelcomeSurface`, `SharpMUTermApp.Welcome.cs`; `/welcome`, ⌃P ▸ *Welcome* / *Key tour*). The welcome is a
+  `ListOverlay` over a pure model (the `QuitPrompt` split): *Connect to a host* (a form: host, port 4000, TLS, an
+  optional character, a password reminder), *Browse games* (`BrowsePackages`, so the index is still fetched only
+  when asked; with no https `PackageIndexUrl` it says so on the row instead), *Open settings* (F5), the
+  `/connect` example, and a starting layout. Decisions not to relitigate:
+  - **The form goes through `ConnectCommand`**, with a `shape` callback that adds the character — so it can do
+    nothing `/connect` cannot. Esc on the form goes back to the menu; on the menu it closes, leaving
+    `NoWorldsNotice` (short enough for an 80-column row, and it names `/welcome`), and nothing reopens it that
+    run. The menu and the form are drawn at **one height in one window**: reopening the overlay to resize it
+    worked headlessly and left the old window in front under the window host's loop.
+  - **The layout row's default is *suggested*, which writes nothing**, so `LayoutSuggester` still applies at the
+    first connect; Roleplay or Combat is written to `WorldDefinition.Layout`. It applies to the first world a
+    configuration gains however it is added, so a `/connect` typed under the welcome gets it too.
+  - **`--plain` gets lines, not a modal** (`ClientHost.ScreenIsSeen`, false only there): a modal on a screen
+    nobody reads would take the reader's typing. The choices are announced as commands, and `/welcome layout
+    roleplay|combat|suggested` stands in for the arrows. A host with an announcer hears the lines either way.
+  - **The tour is owed, not "shown"** (`AppConfiguration.KeyTourPending`): set on the way to a save
+    (`PersistConfiguration` → `NoteFirstWorld`) once a configuration that started the run empty has a world, and
+    cleared when the tour row is put up on the next `Connected`. A configuration from before the tour has
+    worlds and never gets it, with no migration; a new player who quits before connecting still gets it next
+    run. The row is chrome (`AppendWindowLine`), found again by its markup, and hidden or shown by ⌃P ▸
+    *Key tour* — not by a link, because the panes' link handler is scheme-tagged server text and a client action
+    there would be a new trust path.
 - **The URLs a world prints as plain text are marked up by this client, because the terminal's own
   detection cannot survive a pane** (`UrlDetector`, Core; F7 ▸ `detect links in output`, default on).
   Kitty, WezTerm and Ghostty all find URLs in the cells they paint — across the terminal **row**. A pane
@@ -1177,8 +1201,10 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   applied over the demo's game data and recorded streets: the map beside the output with Chat as a tab under it,
   and no pane for the panels nothing draws yet), `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer`
   (each panel in a pane of its own over the demo's game data; the composer over who-here, armed, with a draft
-  typed through its real key path), plus the
-  default workspace
+  typed through its real key path), `welcome`/`welcome-connect` (the first-run welcome over an **emptied**
+  configuration and a main window alone — `--demo-config` has worlds, and the welcome never opens over them — and
+  its connect form filled in by real keys) and `tour` (the key tour row at the end of the demo's main window), plus
+  the default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
   and `timestamps-toggled` — the same column reached the *other* way, by dispatching the real ⌃P entry

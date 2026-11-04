@@ -18,6 +18,7 @@ internal sealed class ListOverlay
     private MarkupControl? _content;
     private Func<int, List<string>>? _render;
     private Func<ConsoleKeyInfo, bool>? _key;
+    private Func<bool>? _escape;
 
     private readonly ScreenTheme _scheme;
 
@@ -37,9 +38,16 @@ internal sealed class ListOverlay
 
     /// <summary>
     /// Opens a surface. <paramref name="render"/> draws it at a width; <paramref name="key"/> answers a key
-    /// and returns whether the surface stays open.
+    /// and returns whether the surface stays open. <paramref name="escape"/>, when given, is asked first about
+    /// Esc and keeps the surface open by returning true — a surface with a step to go back from.
     /// </summary>
-    public void Open(string mode, string title, Func<int, List<string>> render, Func<ConsoleKeyInfo, bool> key, int? width = null)
+    public void Open(
+        string mode,
+        string title,
+        Func<int, List<string>> render,
+        Func<ConsoleKeyInfo, bool> key,
+        int? width = null,
+        Func<bool>? escape = null)
     {
         if (_window is not null)
         {
@@ -48,6 +56,7 @@ internal sealed class ListOverlay
 
         _render = render;
         _key = key;
+        _escape = escape;
         var desktop = _system.DesktopDimensions;
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
@@ -119,6 +128,16 @@ internal sealed class ListOverlay
         // A key can start a fetch whose answer opens the next surface (browse, then a review). Only the
         // surface the key was pressed on is closed, so that answer is never closed with it.
         var window = _window;
+        if (e.KeyInfo.Key == ConsoleKey.Escape && _escape?.Invoke() == true)
+        {
+            if (_window == window)
+            {
+                Repaint();
+            }
+
+            return;
+        }
+
         if (e.KeyInfo.Key == ConsoleKey.Escape || !_key(e.KeyInfo))
         {
             if (_window == window)
@@ -138,6 +157,7 @@ internal sealed class ListOverlay
         _content = null;
         _render = null;
         _key = null;
+        _escape = null;
         Mode = null;
     }
 }
