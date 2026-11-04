@@ -91,9 +91,30 @@ internal sealed class VitalsGauges : Control
     /// <summary>Height one stacked block takes: a line of text, the bar under it, and the gap to the next.</summary>
     private static double BlockHeight(double cellHeight) => LabelHeight(cellHeight) + NativeTokens.Space4 + BarHeight(cellHeight) + NativeTokens.Space12;
 
-    /// <summary>The height every stacked block takes, the target's rule included.</summary>
-    private double BlocksHeight(VitalsModel model) =>
-        (model.Meters.Count * BlockHeight(_cellHeight)) + (model.Target is null ? 0 : BlockHeight(_cellHeight) + 8);
+    /// <summary>The height every stacked block takes, the target's included (its rule sits in the gap above it).</summary>
+    private double BlocksHeight(VitalsModel model) => BlocksHeight(model.Meters.Count, model.Target is not null, _cellHeight);
+
+    private static double BlocksHeight(int meters, bool target, double cellHeight) =>
+        (Math.Max(0, meters) + (target ? 1 : 0)) * BlockHeight(cellHeight);
+
+    /// <summary>The mockup's padding under the last bar, to the card's edge.</summary>
+    private const double BottomPad = NativeTokens.Space16;
+
+    /// <summary>
+    /// The height a headed stacked card needs: the heading, the gap under it, every block, and <see cref="BottomPad"/> under
+    /// the last bar (a block's own trailing gap is <see cref="NativeTokens.Space12"/>, so four more).
+    /// </summary>
+    internal static double NeededHeight(int meters, bool target, double cellHeight) =>
+        PanelText.HeadingHeight(cellHeight) + NativeTokens.Space12 + BlocksHeight(meters, target, cellHeight) + (BottomPad - NativeTokens.Space12);
+
+    /// <summary>
+    /// The whole rows a side-column card on cells of <paramref name="cellHeight"/> takes for these gauges: their needed
+    /// height rounded up, so the card is never short and is less than a row too tall; that remainder is spread over the
+    /// gaps between the blocks (<see cref="RenderStacked"/>), so the last bar still ends <see cref="BottomPad"/> above the
+    /// map. What the window answers for <see cref="SharpMUTerm.Tui.IPointerPresenter.VitalsCardRows"/>.
+    /// </summary>
+    internal static int CardRows(int meters, bool target, double cellHeight) =>
+        (int)Math.Ceiling((NeededHeight(meters, target, cellHeight) / cellHeight) - 0.001);
 
     private bool StackedFor(double height, VitalsModel model)
     {
@@ -103,7 +124,23 @@ internal sealed class VitalsGauges : Control
 
     /// <summary>Whether a stacked pane also has room for the panel heading over the blocks.</summary>
     private bool HeadedFor(double height, VitalsModel model) =>
-        height >= PanelText.HeadingHeight(_cellHeight) + 12 + BlocksHeight(model) + 4;
+        height >= NeededHeight(model.Meters.Count, model.Target is not null, _cellHeight) - 0.5;
+
+    /// <summary>
+    /// What each gap (under the heading, and between blocks) grows by in a headed card of <paramref name="height"/>: the
+    /// part of a row the card has over what it needs, spread evenly so the last bar ends <see cref="BottomPad"/> above the
+    /// card's edge, at most <see cref="NativeTokens.Space8"/> a gap (a taller card keeps the rest at its foot).
+    /// </summary>
+    private double GapGrowth(double height, VitalsModel model)
+    {
+        var target = model.Target is not null;
+        var gaps = model.Meters.Count + (target ? 1 : 0);
+        var extra = height - NeededHeight(model.Meters.Count, target, _cellHeight);
+        return gaps <= 0 || extra <= 0 ? 0 : Math.Min(NativeTokens.Space8, Math.Floor(extra / gaps));
+    }
+
+    /// <summary>Where the last bar drawn ends, from the top of the card. Internal for tests.</summary>
+    internal double LastBarBottom => _drawn.Count == 0 ? 0 : _drawn[^1].Track.Bottom;
 
     /// <summary>Whether the heading is drawn now. Internal for tests.</summary>
     internal bool Headed => Stacked && HeadedFor(Bounds.Height > 0 ? Bounds.Height : Height, _model);
@@ -137,12 +174,14 @@ internal sealed class VitalsGauges : Control
     /// </summary>
     private void RenderStacked(DrawingContext context, Rect bounds)
     {
-        var block = BlockHeight(_cellHeight);
+        var headed = HeadedFor(bounds.Height, _model);
+        var grow = headed ? GapGrowth(bounds.Height, _model) : 0;
+        var block = BlockHeight(_cellHeight) + grow;
         var label = LabelHeight(_cellHeight);
         var barHeight = BarHeight(_cellHeight);
         var size = Math.Min(PanelText.Size - 1, Math.Max(10, _cellHeight * 0.68));
-        var top = HeadedFor(bounds.Height, _model)
-            ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this)) + 12
+        var top = headed
+            ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this)) + 12 + grow
             : 8;
         var inner = new Rect(PanelText.Pad, top, Math.Max(1, bounds.Width - (PanelText.Pad * 2)), Math.Max(1, bounds.Height - top));
         var dim = PanelText.Dim(_text, _plane);
@@ -161,7 +200,7 @@ internal sealed class VitalsGauges : Control
 
         if (_model.Target is { } target)
         {
-            context.FillRectangle(new SolidColorBrush(PanelText.Rule(_text, _plane)), new Rect(inner.Left, y - 4, inner.Width, 1));
+            context.FillRectangle(new SolidColorBrush(PanelText.Rule(_text, _plane)), new Rect(inner.Left, Math.Round(y - 4 - (grow / 2)), inner.Width, 1));
             y += 4;
             var middle = y + (label / 2);
             var leadWidth = 6 + PanelText.Draw(context, "Target", inner.Left, middle, size, dim, false, inner.Width * 0.3);

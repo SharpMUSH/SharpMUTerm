@@ -84,6 +84,21 @@ internal sealed class WindowPointer : IPointerPresenter
 
     int? IPointerPresenter.WindowColumns => WindowColumnsMeasured is > 0 and var columns ? columns : null;
 
+    private double _cellHeight;
+
+    /// <summary>
+    /// A cell's height in the window's logical pixels, written by <see cref="TerminalView"/> when it is made and when its
+    /// fonts change; zero while there is no view (a test, the parity harness), when the row rule sizes vitals cards.
+    /// </summary>
+    internal double CellHeightMeasured
+    {
+        get => Volatile.Read(ref _cellHeight);
+        set => Volatile.Write(ref _cellHeight, value);
+    }
+
+    int? IPointerPresenter.VitalsCardRows(int meters, bool target) =>
+        CellHeightMeasured is > 0 and var cell ? VitalsGauges.CardRows(meters, target, cell) : null;
+
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
         Volatile.Write(ref _bars, bars);

@@ -179,8 +179,11 @@ fallbacks) for inline images/maps.
     (`NamesFromStep`), the current room always, plus the hovered name on a plate, stairs triangles, a halo on the
     current room and a legend plate. **Names are laid out, not centred blindly** (`Labels`/`LayOutNames`, cached per view):
     the character's room first, then nearest first, each whole (up to `NameMaxWidth`) at the first place covering no room,
-    no placed name and staying between the look buttons and the legend — under, over or beside with every exit clear, else
-    straight under/over across a line, else pulled aside — and elided only where none fits (under `NameMinWidth`: hover only).
+    no placed name and no line the map draws, staying between the look buttons and the legend — under, over, beside, else
+    pulled aside — then elided to the widest that fits one of those places, else hover only (under `NameMinWidth`). **A
+    name never crosses a line** (wave 27): every exit of the view and every area spur is an obstacle (`ExitSegments`, not
+    only the room's own or those on screen), tested on the plate as drawn (`PlateOf`) after snapping; `MapNameExitTests`
+    lays out the demo streets and a dense 9×9 grid at five panes and five zooms and fails on any crossing.
   - **A speedwalk sends one step and waits for the map to say it arrived** (`Speedwalk`); it goes through
     `SendCommandAsync`, so the recorder sees the step. It stops off the path, on the world's
     `WalkFailurePattern`, after `StepTimeout` with no room, and on disconnect.
@@ -1507,7 +1510,10 @@ fallbacks) for inline images/maps.
     player's own layout gets it too; the terminal mockup's top strip is the narrow arrangement, not the wide one.
     **Where the host draws strips (`HostChrome.Strips`, the window) the card is as tall as its gauges**
     (`VitalsGaugeCardRows` = 2 a meter + 4, + 2 only while a target is named; `SharpMUTermApp.MapColumn.cs`), so the map
-    gets the rows; a target arriving or a meter appearing re-lays the pane area (`ResizeVitalsCard`, on the panel's game
+    gets the rows. **The window answers the rows from the gauges' pixels** (`IPointerPresenter.VitalsCardRows`, default null;
+    `WindowPointer` from the cell height `TerminalView` writes, `VitalsGauges.CardRows` = `NeededHeight` rounded up), and
+    the gauges spread the rest of the last row over their gaps (`GapGrowth`, ≤ 8 px a gap), so the last bar ends 16 px
+    (the mockup's padding) above the map; with no view measured (tests, the parity harness) the row rule stands; a target arriving or a meter appearing re-lays the pane area (`ResizeVitalsCard`, on the panel's game
     data change, only when the rows differ). The column is beside the output, so no NAWS moves. The terminal keeps the
     reserved card. **There too a pane holding the map window alone draws no tab strip** (`ApplyLoneMapPanes`, under
     `HostChrome.Tabs`): the native map's heading names it. The terminal keeps its strip (the cell map's drag handle and ×).

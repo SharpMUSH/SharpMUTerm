@@ -932,11 +932,11 @@ internal sealed class MapCanvas : Control
 
     /// <summary>
     /// Where each room's name is drawn at the view shown. The character's room is placed first, then the others nearest it
-    /// first. A name goes where it covers no room and no name already placed, on the canvas: under its room, over it or
-    /// beside it with every exit line clear; else straight under or over it across a line; else pulled to one side, clear
-    /// of lines if it can be, else crossing fewest. Only a name that fits nowhere is elided, to the room
-    /// under or over its room; one that has not <see cref="NameMinWidth"/> even then is left to the hover's plate. Below
-    /// <see cref="NamesFromStep"/> only the character's room is named. Internal for tests.
+    /// first. A name goes where its plate covers no room, no name already placed and no line the map draws (every exit and
+    /// spur, <see cref="ExitSegments"/>, not only its own room's), on the canvas: under its room, over it or beside it,
+    /// else pulled to one side. A name that fits nowhere whole is elided to the widest that fits in one of those places;
+    /// one that has not <see cref="NameMinWidth"/> even then is left to the hover's plate. A name never crosses a line.
+    /// Below <see cref="NamesFromStep"/> only the character's room is named. Internal for tests.
     /// </summary>
     internal IReadOnlyList<PlacedName> Labels(Rect bounds)
     {
@@ -971,11 +971,7 @@ internal sealed class MapCanvas : Control
             .Where(r => bounds.Inflate(size).Contains(r.Centre))
             .ToList();
         var boxes = visible.Select(r => new Rect(r.Centre.X - (size / 2) - 2, r.Centre.Y - (size / 2) - 2, size + 4, size + 4)).ToList();
-        var byId = visible.ToDictionary(r => r.Room.Id, r => r.Centre);
-        var lines = _model.Exits
-            .Where(e => byId.ContainsKey(e.From) && byId.ContainsKey(e.To))
-            .Select(e => (byId[e.From], byId[e.To]))
-            .ToList();
+        var lines = ExitSegments();
 
         var anchor = _model.Current ?? _model.Rooms[0];
         var order = visible
@@ -989,11 +985,11 @@ internal sealed class MapCanvas : Control
             var full = PanelText.Format(room.Name, NativeTokens.Small, DimInk, bold: false, NameMaxWidth);
             var w = full.Width;
             var h = full.Height;
-            bool Free(Rect r, bool exits) =>
+            bool Free(Rect r) =>
                 area.Contains(r)
                 && !boxes.Any(b => b.Intersects(r))
                 && !placed.Any(p => p.Rect.Inflate(new Thickness(NativeTokens.Space4, NativeTokens.Space2)).Intersects(r))
-                && (!exits || !lines.Any(l => Crosses(l.Item1, l.Item2, r)));
+                && !lines.Any(l => Crosses(l.From, l.To, PlateOf(r)));
 
             var below = c.Y + (size / 2) + NativeTokens.Space4;
             var above = c.Y - (size / 2) - NativeTokens.Space4 - h;
@@ -1016,39 +1012,60 @@ internal sealed class MapCanvas : Control
                 new(c.X - NativeTokens.Space4 - width, above, width, h),
             ];
 
-            var places = Places(w).Select(r => Inside(r, area)).ToArray();
-            // Under, over or beside the room with every line clear; else straight under or over it across a line (its plate
-            // breaks the line, and the name still reads as the room's); only then pulled to one side.
-            var spot = places.Take(4).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value, exits: true))
-                ?? places.Take(2).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value, exits: false))
-                ?? places.Skip(4).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value, exits: true))
-                ?? places.Where(r => Free(r, exits: false))
-                    .Select(r => (Rect?)r)
-                    .OrderBy(r => lines.Count(l => Crosses(l.Item1, l.Item2, r!.Value)))
-                    .FirstOrDefault();
+            // Whole, under, over or beside the room, then pulled to one side; never across a line, a room or a name.
+            var spot = Places(w).Select(r => Snap(Inside(r, area))).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value));
             if (spot is { } found)
             {
-                placed.Add(new PlacedName(room.Id, Snap(found), full, Elided: false));
+                placed.Add(new PlacedName(room.Id, found, full, Elided: false));
                 continue;
             }
 
-            // Nowhere whole: the widest elision that fits under or over the room, centred on it.
+            // Nowhere whole: the widest elision that fits in any of those places. None, and the name is left to the hover.
             for (var width = Math.Floor(w) - 6; width >= NameMinWidth; width -= 6)
             {
                 var cut = PanelText.Format(room.Name, NativeTokens.Small, DimInk, bold: false, width);
-                var fits = new[] { new Rect(c.X - (cut.Width / 2), below, cut.Width, h), new Rect(c.X - (cut.Width / 2), above, cut.Width, h) }
-                    .Select(r => Inside(r, area))
-                    .Cast<Rect?>()
-                    .FirstOrDefault(r => Free(r!.Value, exits: false));
+                var fits = Places(cut.Width).Select(r => Snap(Inside(r, area))).Cast<Rect?>().FirstOrDefault(r => Free(r!.Value));
                 if (fits is { } at)
                 {
-                    placed.Add(new PlacedName(room.Id, Snap(at), cut, Elided: true));
+                    placed.Add(new PlacedName(room.Id, at, cut, Elided: true));
                     break;
                 }
             }
         }
 
         return placed;
+    }
+
+    /// <summary>
+    /// The box a name's plate takes on the canvas (<see cref="Render"/> draws it <see cref="NativeTokens.Space2"/> wider each
+    /// side), plus a pixel for the exit pen's width: what must miss every line. Internal for tests.
+    /// </summary>
+    internal static Rect PlateOf(Rect name) => name.Inflate(new Thickness(NativeTokens.Space2 + PenAllowance, PenAllowance));
+
+    /// <summary>Half the widest exit pen (2 px), kept clear of a name's plate.</summary>
+    private const double PenAllowance = 1;
+
+    /// <summary>
+    /// Every line the map draws between rooms or off one, at the view shown: each exit between two rooms of the view (on
+    /// screen or not, since a line from an off-screen room still crosses the canvas) and each spur into another area. A
+    /// name crosses none of them. Internal for tests.
+    /// </summary>
+    internal List<(Point From, Point To)> ExitSegments()
+    {
+        var size = RoomSize;
+        var centres = _model.Rooms.ToDictionary(r => r.Id, CentreOf);
+        var segments = _model.Exits
+            .Where(e => centres.ContainsKey(e.From) && centres.ContainsKey(e.To))
+            .Select(e => (centres[e.From], centres[e.To]))
+            .ToList();
+        foreach (var room in _model.Rooms.Where(r => ElsewhereColourOf(r) is not null))
+        {
+            var corner = centres[room.Id] + new Vector(size / 2, size / 2);
+            var dot = Math.Max(2, size * 0.11);
+            segments.Add((corner - new Vector(size * 0.1, size * 0.1), corner + new Vector((size * 0.34) + dot, (size * 0.34) + dot)));
+        }
+
+        return segments;
     }
 
     /// <summary><paramref name="r"/> moved the least distance that puts it inside <paramref name="area"/> across (rows stay).</summary>

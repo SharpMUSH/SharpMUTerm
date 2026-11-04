@@ -178,6 +178,14 @@ internal interface IPointerPresenter
     int? WindowColumns => null;
 
     /// <summary>
+    /// The rows a vitals card of <paramref name="meters"/> meters (and a target, when <paramref name="target"/>) takes where
+    /// this host draws it as native gauges: their pixel height rounded up to whole rows, so the card ends where its gauges
+    /// do. Null when the host does not know (no view measured yet, the terminal, the default), and the row rule applies.
+    /// Asked on the client's thread; only a side column's rows change with it, never an output pane's (NAWS).
+    /// </summary>
+    int? VitalsCardRows(int meters, bool target) => null;
+
+    /// <summary>
     /// A notice was said, as it is drawn on the status row. The status row's cells carry it in every host; a host that
     /// draws notices natively (the window's toasts) shows this over the cells and ignores nothing else. It must never
     /// take focus. A host that draws none ignores this (the default).

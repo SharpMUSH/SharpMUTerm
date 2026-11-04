@@ -21,10 +21,17 @@ internal sealed partial class SharpMUTermApp
     {
         var vitals = TerminalPanels.TryParseWindowId(windowId, out _, out var sessionKey) ? ReadVitals(sessionKey) : null;
         var meters = vitals is { } shown ? shown.Meters.Count : VitalsMetersOfWindow(windowId);
-        var rows = PanelSizing.VitalsGaugeCardRows(meters, vitals?.Target is not null);
+        var rows = GaugeCardRows(meters, vitals?.Target is not null);
         _vitalsCardRows[windowId] = rows;
         return rows;
     }
+
+    /// <summary>
+    /// The rows a gauge card takes: what the host measures its gauges to need (<see cref="IPointerPresenter.VitalsCardRows"/>,
+    /// the window's pixel height rounded up to whole rows, so the gauges end where the map begins), else the row rule.
+    /// </summary>
+    private int GaugeCardRows(int meters, bool target) =>
+        _pointer?.VitalsCardRows(meters, target) ?? PanelSizing.VitalsGaugeCardRows(meters, target);
 
     /// <summary>
     /// <see cref="PanelSizing.ApplyAll"/>'s card rule for this host: the gauges' height where the host draws strips, else
@@ -54,7 +61,7 @@ internal sealed partial class SharpMUTermApp
 
         var vitals = TerminalPanels.TryParseWindowId(windowId, out _, out var sessionKey) ? ReadVitals(sessionKey) : null;
         var meters = vitals is { } shown ? shown.Meters.Count : VitalsMetersOfWindow(windowId);
-        if (PanelSizing.VitalsGaugeCardRows(meters, vitals?.Target is not null) != applied)
+        if (GaugeCardRows(meters, vitals?.Target is not null) != applied)
         {
             RebuildPaneArea();
         }

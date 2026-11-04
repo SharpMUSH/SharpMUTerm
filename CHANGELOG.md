@@ -436,6 +436,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window a room's name on the map never runs across an exit line or a way into another area: a name with
+  no clear place is shortened, and one that cannot be is shown when you point at its room.
+- In the desktop window's combat layout the vitals card ends just under its last gauge, so the map below it starts
+  higher and the empty band between them is gone.
+
 - The first-run welcome looks like its design. In the desktop window it is the whole first page rather than a card
   over an empty client: a centred column on the dark ground, Find a world wider than Connect directly, the first listed
   world raised with Add in the accent, the chosen starting layout outlined in the accent, and square check boxes. Drag
