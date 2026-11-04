@@ -579,6 +579,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- In the desktop window the command line no longer shrinks to a sliver under a narrow output pane: when the output's
+  column is under 54 cells (three panes side by side, say), the bar goes under the widest column around it that fits,
+  or across the whole window, and moves back when the window is widened again.
 - In the desktop window, the Roleplay layout no longer draws a thick coloured bar between the Compose and Here panels,
   only the hairline seam; the docked composer's Command hint now reads whole (`+pose, say, +bbpost 3=`).
 - Terminal polish from a sweep of every screen at 80×24 and 120×32: the header's brand reads `SharpMUTerm` where the row

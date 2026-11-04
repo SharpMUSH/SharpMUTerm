@@ -55,4 +55,59 @@ public class InputColumnTests
         await Assert.That(InputColumn.Target(root, null, Output)).IsSameReferenceAs(root);
         await Assert.That(InputColumn.Target(root, "gone", Output)).IsSameReferenceAs(root);
     }
+
+    [Test]
+    public async Task AColumnUnderTheFloorGivesTheBarsTheSplit()
+    {
+        // Three panes side by side in 120 columns: 39 each, under the floor, so the bars span the split.
+        var output = new PaneNode("out", ["main"]);
+        var root = new SplitNode(SplitDirection.Row, [new PaneNode("chat", ["chat"]), output, new PaneNode("scenes", ["scenes"])]);
+
+        await Assert.That(InputColumn.Target(root, "out", Output, 120)).IsSameReferenceAs(root);
+        await Assert.That(InputColumn.Target(root, "out", Output, 200)).IsSameReferenceAs(output);
+    }
+
+    [Test]
+    public async Task HalfTheDefaultWindowKeepsItsColumn()
+    {
+        var output = new PaneNode("out", ["main"]);
+        var root = new SplitNode(SplitDirection.Row, [output, new PaneNode("chat", ["chat"])]);
+
+        await Assert.That(InputColumn.Target(root, "out", Output, 120)).IsSameReferenceAs(output);
+        await Assert.That(InputColumn.Target(root, "out", Output, 100)).IsSameReferenceAs(root);
+    }
+
+    [Test]
+    public async Task TheFloorStopsAtTheWidestNodeThatStillFits()
+    {
+        // The output in a narrow column nested inside a wide one: the bars go under the wide one, not the root.
+        var output = new PaneNode("out", ["main"]);
+        var inner = new SplitNode(SplitDirection.Row, [output, new PaneNode("chat", ["chat"])], [0.4, 0.6]);
+        var root = new SplitNode(SplitDirection.Row, [inner, new PaneNode("map", ["map:x"])], [0.7, 0.3]);
+
+        // 140 columns: inner is 97 wide, the output 38 — under the floor.
+        await Assert.That(InputColumn.Target(root, "out", Output, 140)).IsSameReferenceAs(inner);
+    }
+
+    [Test]
+    public async Task TheFloorIsMeasuredOnTheSolversWidths()
+    {
+        var output = new PaneNode("out", ["main"]);
+        var root = new SplitNode(SplitDirection.Row, [output, new PaneNode("chat", ["chat"])]);
+        var width = LayoutSolver.Solve(root, new PaneRect(0, 0, 109, 10))["out"].Width;
+
+        await Assert.That(width).IsEqualTo(InputColumn.MinimumColumns);
+        await Assert.That(InputColumn.Target(root, "out", Output, 109)).IsSameReferenceAs(output);
+        await Assert.That(InputColumn.Target(root, "out", Output, 107)).IsSameReferenceAs(root);
+    }
+
+    [Test]
+    public async Task AnUnarrangedAreaAppliesNoFloor()
+    {
+        var output = new PaneNode("out", ["main"]);
+        var root = new SplitNode(SplitDirection.Row, [new PaneNode("chat", ["chat"]), output, new PaneNode("scenes", ["scenes"])]);
+
+        await Assert.That(InputColumn.Target(root, "out", Output, 0)).IsSameReferenceAs(output);
+        await Assert.That(InputColumn.Target(root, "out", Output)).IsSameReferenceAs(output);
+    }
 }

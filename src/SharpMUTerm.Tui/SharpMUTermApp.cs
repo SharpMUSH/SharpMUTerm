@@ -1010,6 +1010,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // repaint this resize forces reports them once they are real; see ReportPaneSizes.
             RefreshHeader(); // re-align the status cluster to the new width
             SyncNarrowLayout(); // fold or unfold the rail if the width crossed the narrow line
+            SyncInputColumn(); // move the command line to a wider column, or back, if its floor was crossed
             SyncInputWidth(); // keep the input band spanning the full row after a resize
             SyncInputBars();  // and re-derive how tall the bars may grow in the new window
         };
@@ -11006,9 +11007,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
         DetachInputBars();
-        _inputTarget = Host.Chrome.InputInColumn
-            ? zoomed ?? InputColumn.Target(_workspace.Layout.Root, InputAnchorPane(), HoldsOutput)
-            : null;
+        _inputTarget = InputTargetNow(zoomed);
         var paneArea = zoomed is not null
             ? WithInputBars(OnSurface(BuildPaneTabs(zoomed), zoomed.Id), zoomed)
             : BuildLayoutNode(_workspace.Layout.Root);
@@ -11573,6 +11572,45 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// (<see cref="HostChrome.InputInColumn"/>); null for one that keeps it across the window. Set on every rebuild.
     /// </summary>
     private SharpMUTerm.Core.Workspaces.LayoutNode? _inputTarget;
+
+    /// <summary>
+    /// The node the command line goes under for the arrangement as it is now: the zoomed pane, else
+    /// <see cref="InputColumn.Target(SharpMUTerm.Core.Workspaces.LayoutNode, string?, Func{PaneNode, bool}, int, int)"/>
+    /// over the pane area's width, so a column narrower than <see cref="InputColumn.MinimumColumns"/> gives the bars a
+    /// wider ancestor; null for a host that keeps the bars across the window.
+    /// </summary>
+    private SharpMUTerm.Core.Workspaces.LayoutNode? InputTargetNow(PaneNode? zoomed) =>
+        Host.Chrome.InputInColumn
+            ? zoomed ?? InputColumn.Target(_workspace.Layout.Root, InputAnchorPane(), HoldsOutput, PaneAreaColumns())
+            : null;
+
+    /// <summary>
+    /// The pane area's width in cells: the window's, less the cell rail and its rule where the client draws them (the last
+    /// build's rail width, which is all a rebuild can know before it lays the rail out).
+    /// </summary>
+    private int PaneAreaColumns() => HeaderWidth() - (Host.Chrome.Rail ? 0 : _railWidth + 1);
+
+    /// <summary>
+    /// Rebuilds the pane area when a resize has moved the command line's column across its floor, so the bars go back under
+    /// the output's column, or out to a wider one, without waiting for the next layout change. Returns whether it rebuilt.
+    /// Internal for tests, which have no resize to raise.
+    /// </summary>
+    internal bool SyncInputColumn()
+    {
+        if (!Host.Chrome.InputInColumn || _workspaceRow is null)
+        {
+            return false;
+        }
+
+        var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
+        if (ReferenceEquals(InputTargetNow(zoomed), _inputTarget))
+        {
+            return false;
+        }
+
+        RebuildPaneArea();
+        return true;
+    }
 
     /// <summary>The grid holding the bars under <see cref="_inputTarget"/>, so a rebuild can take them out before it is disposed.</summary>
     private GridControl? _inputColumn;

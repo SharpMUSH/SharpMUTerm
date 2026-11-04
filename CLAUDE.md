@@ -1806,7 +1806,12 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     status row as in the mockups. The node: from the root, into the anchor's child of a side-by-side split unless another
     child holds a character's own window (two characters share the bars), into a stacked split only through its last child,
     else that split (the output and its quick bar). The anchor is the live layout's output pane, else the first pane holding
-    a `Main` window — **never focus**, so moving the selection moves no pane (`InputColumnLayoutTests`). A rebuild takes the
+    a `Main` window — **never focus**, so moving the selection moves no pane (`InputColumnLayoutTests`).
+    **The column has a floor** (`InputColumn.MinimumColumns`, 54: pad 3+3, a 22-cell prompt, 26 to type): the walk never goes
+    into a side-by-side child narrower than that (measured with `LayoutSolver.Distribute` over `PaneAreaColumns()`), and the
+    split is the answer — the widest node on the way that fits, else the root. Half the default 120-column grid keeps its
+    column; the wave-25 three-pane drop (29 each) gives the bars the left half. It reads widths, never focus; `SyncInputColumn`
+    (on `OnResize`) rebuilds when a resize crosses it. A rebuild takes the
     bars out of the old grid before it is disposed. `InputBand` carries `Left`/`Columns`; the view draws the strip, the
     field, the row shift and the press mapping only in those columns, and carries the panes and dividers beside it down
     through the `FieldReserve` pixels. NAWS is the arranged rectangles. The terminal keeps the full-width band (`None`),

@@ -18,6 +18,12 @@ namespace SharpMUTerm.Core.Workspaces;
 /// it only when the anchor is there; otherwise the split is the answer (the output with a quick bar under it).</item>
 /// </list>
 /// <para>
+/// A column has a floor (<see cref="MinimumColumns"/>): when the walk would go into a side-by-side child narrower than
+/// that, it stops at the split instead, so three panes side by side share one bar that can still be typed in rather
+/// than a field showing the prompt and two letters. The width is the arrangement's, not the keyboard's, so the floor
+/// moves nothing on a focus change either.
+/// </para>
+/// <para>
 /// Nothing here reads focus. Moving the selection between panes must not move a pane rectangle — every connected
 /// server would be told a new size — so the column is a property of the arrangement, not of where the keyboard is.
 /// </para>
@@ -25,12 +31,36 @@ namespace SharpMUTerm.Core.Workspaces;
 public static class InputColumn
 {
     /// <summary>
-    /// The node the command line goes under: the root when there is no anchor in the tree.
+    /// The narrowest column, in cells, the command line is put under: the field's padding either side (3 + 3), a prompt
+    /// such as <c>Corvid · Aetherfall › </c> (22) and 26 cells to type in before the bar wraps (it then grows a row).
+    /// Measured on the window's default 120-column grid and the built-in layouts: half of it is 59 and keeps its column,
+    /// as do Roleplay's and Combat's output at 100 columns (65, 70) and Roleplay's narrow arrangement at 80 (55); a
+    /// three-way split of it is 39, where the bar showed the prompt and two letters, and falls back to a wider node.
+    /// </summary>
+    public const int MinimumColumns = 54;
+
+    /// <summary>
+    /// The node the command line goes under, with no width floor: the root when there is no anchor in the tree.
     /// </summary>
     /// <param name="root">The pane tree.</param>
     /// <param name="anchorPaneId">The pane the output is in, or null.</param>
     /// <param name="holdsOutput">Whether a pane holds output of its own (a character's window), as opposed to furniture.</param>
-    public static LayoutNode Target(LayoutNode root, string? anchorPaneId, Func<PaneNode, bool> holdsOutput)
+    public static LayoutNode Target(LayoutNode root, string? anchorPaneId, Func<PaneNode, bool> holdsOutput) =>
+        Target(root, anchorPaneId, holdsOutput, int.MaxValue, 0);
+
+    /// <summary>
+    /// The node the command line goes under when the pane area is <paramref name="columns"/> wide: as
+    /// <see cref="Target(LayoutNode, string?, Func{PaneNode, bool})"/>, except that the walk never goes into a
+    /// side-by-side child narrower than <paramref name="minimumColumns"/> — the split is the answer then, the widest
+    /// node on the way that still fits a usable bar (the root, if nothing narrower does).
+    /// </summary>
+    /// <param name="root">The pane tree.</param>
+    /// <param name="anchorPaneId">The pane the output is in, or null.</param>
+    /// <param name="holdsOutput">Whether a pane holds output of its own (a character's window), as opposed to furniture.</param>
+    /// <param name="columns">The pane area's width in cells; zero or less (not arranged yet) applies no floor.</param>
+    /// <param name="minimumColumns">The floor, <see cref="MinimumColumns"/> by default.</param>
+    public static LayoutNode Target(
+        LayoutNode root, string? anchorPaneId, Func<PaneNode, bool> holdsOutput, int columns, int minimumColumns = MinimumColumns)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(holdsOutput);
@@ -39,6 +69,8 @@ public static class InputColumn
             return root;
         }
 
+        var floor = columns > 0 ? minimumColumns : 0;
+        var width = columns > 0 ? columns : int.MaxValue;
         var node = root;
         while (node is SplitNode split)
         {
@@ -49,6 +81,16 @@ public static class InputColumn
                 if (sharing)
                 {
                     return split;
+                }
+
+                if (width != int.MaxValue)
+                {
+                    // The solver's own arithmetic, so the floor is measured on the width the child is really given.
+                    width = LayoutSolver.Distribute(Math.Max(0, width - PaneExtent.Dividers(split)), split.Sizes)[index];
+                    if (width < floor)
+                    {
+                        return split;
+                    }
                 }
             }
             else if (index != split.Children.Count - 1)
