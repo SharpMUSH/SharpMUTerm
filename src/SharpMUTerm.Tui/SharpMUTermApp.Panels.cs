@@ -99,7 +99,7 @@ internal sealed partial class SharpMUTermApp
         {
             var model = Drawing(PanelIds.WhoHere, context.WindowId, ReadWhoHere(context.SessionKey));
             drawn = model.Rows;
-            return WhoHereRenderer.Render(model, width, height, new WhoHereRenderer.Ink(_ink.Accent, HeadingBand.For(_theme, _ink.Accent)));
+            return WhoHereRenderer.Render(model, width, height, new WhoHereRenderer.Ink(_ink.Accent, PanelHeadingInk()));
         });
         view.Click = url =>
         {
@@ -238,7 +238,7 @@ internal sealed partial class SharpMUTermApp
     /// meaning, so they are lifted like text; the empty part of a bar is a grey that still reads as a track.
     /// </summary>
     private VitalsStripRenderer.Ink VitalsInk() =>
-        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)), HeadingBand.For(_theme, _ink.Accent),
+        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)), PanelHeadingInk(),
             colour => MeterInk(colour, _ink.Plane));
 
     /// <summary>The low cue's ink on <paramref name="plane"/> (<see cref="WorkspacePalette.Low"/>), as markup.</summary>
@@ -325,11 +325,19 @@ internal sealed partial class SharpMUTermApp
     /// <summary>The descriptor the quick bar last ran, for the tests.</summary>
     internal string? LastQuickMacro { get; private set; }
 
+    /// <summary>
+    /// The band a docked panel's heading is drawn on in the cells (<see cref="HeadingBand"/>), or null for the bare accent
+    /// label. Null where the host draws the panels natively (<see cref="HostChrome.Strips"/>, the window): a native view lies
+    /// over the heading row, so the band is never seen there except where the window reads the cells beside a divider for
+    /// the planes either side of its hairline, and a band there drew a filled bar across the seam between two panels.
+    /// </summary>
+    private HeadingBand.Ink? PanelHeadingInk() => Host.Chrome.Strips ? null : HeadingBand.For(_theme, _ink.Accent);
+
     // --- The docked composer ----------------------------------------------------------------------------------
 
     private IWindowControl NewDockedComposer(TerminalPanelContext context)
     {
-        var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent, DescribeDocked, HeadingBand.For(_theme, _ink.Accent));
+        var composer = new DockedComposer(context.WindowId, context.SessionKey, _screens, _ink.Accent, DescribeDocked, PanelHeadingInk());
         if (_composeDrafts.TryGetValue(context.SessionKey, out var draft))
         {
             composer.Load(draft.Body, draft.Escaping, draft.Verb);

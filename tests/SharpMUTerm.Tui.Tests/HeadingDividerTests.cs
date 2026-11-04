@@ -128,6 +128,31 @@ public class HeadingDividerTests
         await Assert.That(here.Y).IsEqualTo(composer.Y + composer.Height + 1);
     }
 
+    /// <summary>
+    /// The window draws the seam between two native panels as a hairline with each half of the divider row in the plane
+    /// beside it, read off the cells above and below. The cells under a native panel's heading are never seen otherwise,
+    /// so a band painted there was read as the lower pane's plane and drew a filled bar across the seam (wave 23). Under
+    /// the window's chrome no cell wears the band; the terminal keeps it.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    public async Task NoCellUnderTheWindowsNativePanelsWearsTheHeadingBand(string theme)
+    {
+        var band = WorkspacePalette.HeadingBand(ThemeLibrary.Get(theme));
+        var sgr = $"48;2;{band.R};{band.G};{band.B}";
+
+        var window = App(HostChrome.Desktop, theme);
+        var (_, here) = Column(window);
+        var cells = FrameGrid.Backgrounds(window.RenderWholeFrame());
+        await Assert.That(cells.Values.Count(bg => bg == sgr)).IsEqualTo(0);
+        var below = Enumerable.Range(here.X, here.Width).Select(x => cells.GetValueOrDefault((here.Y, x))).Distinct().ToArray();
+        await Assert.That(below.Length).IsEqualTo(1).Because("the row under the divider is the pane's own plane, all of it");
+
+        var terminal = FrameGrid.Backgrounds(App(theme: theme).RenderWholeFrame());
+        await Assert.That(terminal.Values.Count(bg => bg == sgr)).IsGreaterThan(0).Because("the terminal keeps its bands");
+    }
+
     /// <summary>The band does not wait for the roster: in a stack it is the boundary, and must not come and go.</summary>
     [Test]
     public async Task WhoHereDrawsItsBandBeforeTheGameHasSaidWhoIsThere()
