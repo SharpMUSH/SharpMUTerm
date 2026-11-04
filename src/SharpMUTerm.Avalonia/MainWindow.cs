@@ -43,6 +43,17 @@ internal sealed class MainWindow : Window
 
         // Character@World — SharpMUTerm for what is in front, from the client's own header (WindowTitle).
         _driver.TitleBar.Changed += title => Dispatcher.UIThread.Post(() => Title = title);
+
+        // Whether the window is in front decides whether an alert is shown at all, and the title's unread count.
+        Activated += (_, _) => _driver.Attention.SetFocused(true);
+        Deactivated += (_, _) => _driver.Attention.SetFocused(false);
+        _driver.Attention.Requested += request => Dispatcher.UIThread.Post(() =>
+        {
+            if (!IsActive)
+            {
+                DesktopAlert.Show(request, TryGetPlatformHandle()?.Handle);
+            }
+        });
         _driver.Settings.Owner = this;
 
         // The window's own pop-ups (tooltips, the right-click menu) follow the client's theme: a light menu

@@ -91,6 +91,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's title for what is in front, which the main window shows (<see cref="WindowTitleBar"/>).</summary>
     public WindowTitleBar TitleBar { get; } = new();
 
+    /// <summary>The window's alerts while it is behind another (<see cref="WindowAttention"/>).</summary>
+    public WindowAttention Attention { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

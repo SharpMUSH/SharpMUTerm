@@ -35,6 +35,9 @@ public static partial class BuiltInSettings
     /// <summary>The status row's meters.</summary>
     public const string MetersGroup = "Status row & meters";
 
+    /// <summary>Telling the desktop while the player is in another window.</summary>
+    public const string AlertsGroup = "Alerts";
+
     /// <summary>The bar marking where a reader left a window.</summary>
     public const string ActivityGroup = "Activity";
 
@@ -115,6 +118,11 @@ public static partial class BuiltInSettings
                 ActivityGroup,
                 c => c.Text.ActivityBarSeconds, (c, v) => c.Text.ActivityBarSeconds = v,
                 "how long the NEW bar stays once you are back; 0 retires it at once", "unread new away"),
+
+            Flag("alerts", "alert when away", AlertsGroup,
+                c => c.Text.AlertWhenAway, (c, v) => c.Text.AlertWhenAway = v,
+                "tell the desktop when an alert trigger or a page arrives while you are in another window",
+                "notify notification bell flash urgent page tell mention"),
 
             Flag("split-scrollback", "split the pane when scrolled back", ScrollbackGroup,
                 c => c.Text.SplitScrollback, (c, v) => c.Text.SplitScrollback = v,
@@ -235,6 +243,10 @@ public static partial class BuiltInSettings
                 (_, w) => w.GmcpLogin ? WorldFieldValues.LoginChoices[1] : WorldFieldValues.LoginChoices[0],
                 (_, w, v) => w.GmcpLogin = v == WorldFieldValues.LoginChoices[1],
                 "log in over GMCP when the server offers it", "char.login password credentials"),
+            WorldChoice("reconnect", "reconnect", WorldFieldValues.ReconnectChoices, ConnectionGroup,
+                (_, w) => w.AutoReconnect ? WorldFieldValues.ReconnectChoices[1] : WorldFieldValues.ReconnectChoices[0],
+                (_, w, v) => w.AutoReconnect = v == WorldFieldValues.ReconnectChoices[1],
+                "dial again after a dropped connection, 5 s to 60 s apart, five tries", "auto reconnect drop retry"),
             WorldChoice("discord", "discord", WorldFieldValues.DiscordChoices, ProtocolGroup,
                 (_, w) => w.DiscordPresence ? WorldFieldValues.DiscordChoices[1] : WorldFieldValues.DiscordChoices[0],
                 (_, w, v) => w.DiscordPresence = v == WorldFieldValues.DiscordChoices[1],
@@ -247,6 +259,14 @@ public static partial class BuiltInSettings
                 (_, w) => w.JoinWrappedLines ? WorldFieldValues.JoinWrapChoices[1] : WorldFieldValues.JoinWrapChoices[0],
                 (_, w, v) => w.JoinWrappedLines = v == WorldFieldValues.JoinWrapChoices[1],
                 "join lines the server wrapped at its own width", "reflow wrap hard"),
+            WorldChoice("stacking", "command stacking", WorldFieldValues.SeparatorChoices, WorldTextGroup,
+                (_, w) => WorldFieldValues.SeparatorName(w.CommandSeparator),
+                (_, w, v) => w.CommandSeparator = WorldFieldValues.SeparatorOf(v),
+                "split a typed line on this, and #3 cmd repeats one; off for a MUSH", "separator semicolon repeat speedwalk"),
+            WorldChoice("alert-on", "alert on", WorldFieldValues.AlertChoices, WorldTextGroup,
+                (_, w) => w.AlertOnName ? WorldFieldValues.AlertChoices[1] : WorldFieldValues.AlertChoices[0],
+                (_, w, v) => w.AlertOnName = v == WorldFieldValues.AlertChoices[1],
+                "tell the desktop when a line names your character or pages you", "notify mention page tell"),
             WorldText("edit-grab", "edit grab", TextRule.Optional, WorldTextGroup,
                 (_, w) => w.GrabPrefix, (_, w, v) => w.GrabPrefix = v,
                 "a line starting with this goes on the command line instead of the output", "fugueedit mush edit prefix"),

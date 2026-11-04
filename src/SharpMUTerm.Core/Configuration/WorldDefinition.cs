@@ -190,6 +190,32 @@ public sealed class WorldDefinition
     public bool JoinWrappedLines { get; set; }
 
     /// <summary>
+    /// Whether a connection this world dropped is dialled again on its own (F5 ▸ <c>reconnect</c>). Off by default.
+    /// Only a drop the player did not ask for counts: never after Disconnect, Reconnect or quitting, and never after a
+    /// server closed the connection within <see cref="Session.AutoReconnect.LogoutWindow"/> of a command the player
+    /// sent (a <c>QUIT</c>). The attempts back off (<see cref="Session.AutoReconnect.Delays"/>) and stop after the
+    /// last one; a connection must last <see cref="Session.AutoReconnect.StableAfter"/> before the count starts again,
+    /// so a login the server refuses is not retried for ever.
+    /// </summary>
+    public bool AutoReconnect { get; set; }
+
+    /// <summary>
+    /// What splits a typed line into several commands (F5 ▸ <c>command stacking</c>), or null for nothing, the
+    /// default. While it is set, <c>#N command</c> repeats a command too (<see cref="Input.TypedCommands"/>). Off by
+    /// default because a MUSH spends both: <c>;</c> is a semipose and an attribute separator, and <c>#123 cmd</c> is
+    /// PennMUSH's force shorthand. Applied only to what the player types on the command line, never to a composed
+    /// post, a grab or a script's <c>world.send</c>.
+    /// </summary>
+    public string? CommandSeparator { get; set; }
+
+    /// <summary>
+    /// Whether a line naming this world's character, or a page or a tell, asks for attention while the player is in
+    /// another window (F5 ▸ <c>alert on</c>; <see cref="Automation.AttentionMatcher"/>). Off by default. A trigger can
+    /// ask for the same with its own <c>alert</c> flag on any world.
+    /// </summary>
+    public bool AlertOnName { get; set; }
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
@@ -240,6 +266,9 @@ public sealed class WorldDefinition
         DownloadMedia = DownloadMedia,
         GrabPrefix = GrabPrefix,
         JoinWrappedLines = JoinWrappedLines,
+        AutoReconnect = AutoReconnect,
+        CommandSeparator = CommandSeparator,
+        AlertOnName = AlertOnName,
         GmcpLogin = GmcpLogin,
         DiscordPresence = DiscordPresence,
         Layout = Layout,

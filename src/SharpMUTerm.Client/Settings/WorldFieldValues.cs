@@ -83,6 +83,26 @@ public static class WorldFieldValues
     /// <summary>The words for <see cref="WorldDefinition.JoinWrappedLines"/>.</summary>
     public static IReadOnlyList<string> JoinWrapChoices { get; } = ["off", "join"];
 
+    /// <summary>The words for <see cref="WorldDefinition.AutoReconnect"/>.</summary>
+    public static IReadOnlyList<string> ReconnectChoices { get; } = ["off", "after a drop"];
+
+    /// <summary>The words for <see cref="WorldDefinition.AlertOnName"/>.</summary>
+    public static IReadOnlyList<string> AlertChoices { get; } = ["off", "name & pages"];
+
+    /// <summary>
+    /// The words for <see cref="WorldDefinition.CommandSeparator"/>: off, or the separator itself. A closed list, so a
+    /// separator is never a letter or a space that would split ordinary text.
+    /// </summary>
+    public static IReadOnlyList<string> SeparatorChoices { get; } = ["off", ";", "|", ";;"];
+
+    /// <summary>The stacking row's word for <paramref name="separator"/>.</summary>
+    public static string SeparatorName(string? separator) =>
+        separator is { Length: > 0 } s && SeparatorChoices.Contains(s) ? s : SeparatorChoices[0];
+
+    /// <summary>The separator <paramref name="name"/> names, or null for off.</summary>
+    public static string? SeparatorOf(string name) =>
+        name != SeparatorChoices[0] && SeparatorChoices.Contains(name) ? name : null;
+
     /// <summary>What a world's layout row says while it names none.</summary>
     public const string WorldLayoutDefault = "(suggested)";
 

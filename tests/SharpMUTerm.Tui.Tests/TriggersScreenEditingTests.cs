@@ -76,8 +76,8 @@ public class TriggersScreenEditingTests
         await Assert.That(model.FieldAt(0, 0, TriggersScreenRenderer.ScriptField)!.Value.Get()).IsEqualTo(string.Empty);
 
         // The editor pane holds only checkbox rows — every value it draws is a field on the rule, not a
-        // cursor stop of its own. It gained the third checkbox (case sensitivity) and nothing else.
-        await Assert.That(model.Sizes[1]).IsEqualTo(3);
+        // cursor stop of its own. It gained the third checkbox (case sensitivity) and the fourth (alert).
+        await Assert.That(model.Sizes[1]).IsEqualTo(4);
     }
 
     [Test]

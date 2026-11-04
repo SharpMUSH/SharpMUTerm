@@ -75,7 +75,7 @@ internal sealed partial class SharpMUTermApp
 
         foreach (var session in reachable)
         {
-            _ = session.SendUserInputAsync(command);
+            _ = session.SendTypedAsync(command); // typed on the command line, so each world stacks it its own way
         }
 
         var kind = BarKind(bar);

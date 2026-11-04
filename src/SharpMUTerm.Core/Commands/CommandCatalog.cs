@@ -37,6 +37,7 @@ public sealed record CharacterRef(
 /// Whether this client runs Lua at all, so <c>Reload scripts</c> is offered only where it can do something.
 /// </param>
 /// <param name="Walking">Whether the focused connection is speedwalking, so <c>Stop walking</c> has a walk to stop.</param>
+/// <param name="Reconnecting">Whether a dropped connection is waiting to dial again, so <c>Stop reconnecting</c> has one to stop.</param>
 /// <param name="Sound">
 /// Null where the client cannot play sound, so no mute is offered; otherwise whether sound is playing
 /// (offer <c>Mute sound</c>) or muted (offer <c>Unmute sound</c>).
@@ -63,6 +64,7 @@ public sealed record CommandContext(
     string NewlineChord = "Alt+⏎",
     bool ScriptsOn = false,
     bool Walking = false,
+    bool Reconnecting = false,
     bool? Sound = null,
     bool? Announced = null,
     bool OutputSelected = false,

@@ -18,9 +18,24 @@ internal sealed partial class SharpMUTermApp
     /// <summary>What was last handed to the host, for the tests; null before the first header.</summary>
     internal string? ShownTitle => _shownTitle;
 
+    // The title for what is in front, before the unread count (SharpMUTermApp.Attention.cs) is put in front of it.
+    private string? _baseTitle;
+
     private void PublishTitle(HeaderModel header)
     {
-        var title = SharpMUTerm.Client.Chrome.WindowTitle.For(header);
+        _baseTitle = SharpMUTerm.Client.Chrome.WindowTitle.For(header);
+        RepublishTitle();
+    }
+
+    /// <summary>Hands the host the title as it stands: the header's, led by the unread count while away.</summary>
+    private void RepublishTitle()
+    {
+        if (_baseTitle is not { } baseTitle)
+        {
+            return;
+        }
+
+        var title = SharpMUTerm.Client.Chrome.WindowTitle.WithUnread(baseTitle, _unseenWhileAway);
         if (title == _shownTitle)
         {
             return;

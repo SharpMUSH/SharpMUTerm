@@ -832,6 +832,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // these two handlers is UI-thread state. OnUiThread runs inline when it already is one.
         _focus.Input += at => OnUiThread(() => NoteReaderInput(at));
         _focus.Returned += away => OnUiThread(() => MarkWhereTheReaderLeft(away));
+        WireAttention();
 
         _header = Controls.Markup(HeaderMarkup()).StickyTop().Build();
         _header.LinkClicked += (_, e) => OnChromeLinkClicked(e.Url);
@@ -1157,6 +1158,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _watching = false;
         LoadDemoScene();
         _watching = true;
+
+        // A dropped connection waiting to dial again: the status row counts down in place of "faulted".
+        if (string.Equals(view, "reconnect", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowDemoReconnect();
+        }
 
         // The key tour row, as the first connect of a new configuration leaves it at the end of the window.
         if (string.Equals(view, "tour", StringComparison.OrdinalIgnoreCase))
@@ -3176,6 +3183,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             NoteSuggestionSignal(session, package);
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
+        session.AttentionRequested += (_, e) => OnUi(() => OnAttentionRequested(session, e));
         session.MooEditReceived += (_, edit) => OnUi(() => ReceiveMooEdit(session, edit));
         session.EditGrabbed += (_, text) => OnUi(() => ReceiveGrab(session, windowId, text));
         session.McpStatusChanged += (_, _) => OnUi(() =>
@@ -3830,6 +3838,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void NoteReaderInput(long at)
     {
+        NoteAttended();
         foreach (var (windowId, buffer) in _lines)
         {
             _awayBoundary[windowId] = _awayPending.GetValueOrDefault(windowId);
@@ -4992,6 +5001,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         AppendSessionLine(windowId, line, stamp);
         RecordForRestore(session, windowId, WindowTitle(windowId), line, stamp);
         AnnounceLine(windowId, line.Text);
+        NoteUnseenLine();
 
         if (!_workspace.IsCaughtUp(windowId))
         {
@@ -5052,6 +5062,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         AppendSessionLine(window.Id, line, stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
         AnnounceLine(window.Id, line.Text);
+        NoteUnseenLine();
 
         // A first-seen destination adds a tab to its pane, so rebuild; otherwise just refresh badges.
         if (existed)
@@ -5156,7 +5167,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // by the line quietly going to whichever world was active before you navigated.
         if (SendTarget() is { } target)
         {
-            _ = target.SendUserInputAsync(command);
+            _ = target.SendTypedAsync(command);
             return;
         }
 
@@ -8334,6 +8345,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             NewlineChord: Host.Keys.Newline.Glyph,
             ScriptsOn: _scriptsRoot is not null,
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
+            Reconnecting: _reconnects.Values.Any(r => r.IsActive),
             Sound: CanPlaySound ? !_muted : null,
             Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
             OutputSelected: HasOutputSelection,
@@ -8853,6 +8865,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "world:disconnect":
                 Disconnect();
                 break;
+            case StopReconnectCommand:
+                StopReconnectCommandRun();
+                break;
             case "world:reload-scripts":
                 ReloadScripts();
                 break;
@@ -8920,6 +8935,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         WatchPresence(session);
+        StartReconnecting(session);
         StartMapping(session);
         StartSound(session);
         if (_scriptsRoot is null || _scripts.ContainsKey(session))
@@ -8935,6 +8951,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void OnSessionRemoved(object? sender, WorldSession session)
     {
         StopSound(session);
+        StopReconnecting(session);
         _sendGroup.Remove(session.SessionKey);
         if (_scripts.Remove(session, out var scripts))
         {
@@ -9437,6 +9454,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // A try waiting to dial is this key's job done sooner: the wait goes, and the dial is this one.
+        CancelReconnect(session);
         LastCommand = ReconnectAsync(session);
     }
 
@@ -9492,6 +9511,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (!session.IsConnected)
         {
+            // Not connected but waiting to dial again: Disconnect means "stay disconnected".
+            if (CancelReconnect(session))
+            {
+                session.PrintSystem("*** Stopped reconnecting.");
+                Notice($"stopped reconnecting {SessionTitle(session)} — ⌥R dials it", MessageSeverity.Info, "⌥R");
+                return;
+            }
+
             RefuseCommand($"{SessionTitle(session)} is not connected");
             return;
         }
@@ -11933,6 +11960,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private string? HandleWindowKey(KeyPressedEventArgs e)
     {
+        NoteAttended();
         if (_moveMode)
         {
             HandleMoveKey(e);
@@ -14054,6 +14082,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     private string StatusBarMarkup(string character, string state)
     {
+        // A dropped connection waiting to dial again says when, in place of "faulted" (SharpMUTermApp.Reconnect.cs).
+        state = ReconnectStatus(_active) ?? state;
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
         var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
         // The vitals strip already draws these meters for this character, larger; the row says them only while it
@@ -14261,6 +14291,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sizeFlushTimer?.Dispose(); // nothing left to tell a server we are shutting down to
         _noticeTimer?.Dispose();    // and no row left to put a notice back on
         _prefixTimer?.Dispose();    // and no window left to float a which-key panel over
+        _reconnectTicker?.Dispose(); // and no status row left to count down on
+        foreach (var reconnect in _reconnects.Values)
+        {
+            reconnect.Dispose();    // before the sessions, so no try dials a session being closed
+        }
+
+        _reconnects.Clear();
         _webImageCts?.Cancel();
         _webImageCts?.Dispose();
         _inlineImages.Dispose();

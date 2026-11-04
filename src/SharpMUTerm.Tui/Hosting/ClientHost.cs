@@ -148,6 +148,13 @@ internal sealed record ClientHost
     public required IFloatingPanels? FloatingPanels { get; init; }
 
     /// <summary>
+    /// How the host tells the desktop that a page, a mention or an alert trigger arrived while the player was in another
+    /// window (<see cref="IAttention"/>): the window's notification and taskbar flash, the terminal's <c>OSC 99</c>,
+    /// <c>OSC 777</c> or bell. Null in the snapshot, the tests and <c>--plain</c>, which must never reach a desktop.
+    /// </summary>
+    public required IAttention? Attention { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -191,6 +198,7 @@ internal sealed record ClientHost
         NativeModals = null,
         Title = new TerminalTitle(driver),
         FloatingPanels = null,
+        Attention = new TerminalAttention(driver, TerminalAttention.Detect()),
     };
 
     /// <summary>
@@ -220,6 +228,7 @@ internal sealed record ClientHost
         NativeModals = null,
         Title = null,
         FloatingPanels = null,
+        Attention = null,
     };
 
     /// <summary>
@@ -269,6 +278,7 @@ internal sealed record ClientHost
             Audio = null, // a test never makes a noise
             Presence = null, // nor talks to Discord
             Title = null, // nor retitles the terminal running the suite
+            Attention = null, // nor rings its bell
         };
 }
 
