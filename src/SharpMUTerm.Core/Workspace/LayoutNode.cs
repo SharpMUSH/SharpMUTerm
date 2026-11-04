@@ -118,6 +118,13 @@ public sealed class PaneNode : LayoutNode
     /// </summary>
     public bool DrawsHeader { get; set; }
 
+    /// <summary>
+    /// Whether the one panel this pane holds draws a filled heading band along its top row (the terminal's COMPOSE and
+    /// HERE). Like <see cref="DrawsHeader"/>, that band is the boundary in a stacked split: no divider row is drawn above
+    /// the pane, and the host makes the band's empty run the divider's handle. Derived by the host and not persisted.
+    /// </summary>
+    public bool DrawsHeading { get; set; }
+
     public override IEnumerable<PaneNode> Panes()
     {
         yield return this;

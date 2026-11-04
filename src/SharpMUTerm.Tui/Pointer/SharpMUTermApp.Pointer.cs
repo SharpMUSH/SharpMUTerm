@@ -107,6 +107,12 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private PaneRect? HeaderFill(string paneId)
     {
+        // A panel's heading band standing in for the divider (HeadingDividers): its run as the last paint left it.
+        if (HeadingFill(paneId) is { } heading)
+        {
+            return heading;
+        }
+
         TabControl? tabs;
         lock (_paneTabsLock)
         {

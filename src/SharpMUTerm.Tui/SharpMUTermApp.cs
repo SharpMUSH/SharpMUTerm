@@ -195,7 +195,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly MarkupControl _promptRow;
     private readonly MarkupControl _rail;
-    private readonly MarkupControl _railSpacer = new(new List<string>());
     private readonly Dictionary<string, TabControl> _paneTabs = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -1048,6 +1047,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ReportPaneSizes();
             SyncTabStripWidths();
             SyncTransparentColours();
+            MeasureHeadingRuns(buffer);
             PaintHeaderDividers(buffer);
             PaintTabOverflow(buffer);
             BlankNativeTabStrips(buffer);
@@ -10980,6 +10980,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             VitalsCardRowsRule());
         ApplyCollapsedBars();
         ApplyLoneMapPanes();
+        ApplyHeadingPanes();
 
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
@@ -10998,8 +10999,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var railWidth = RailWidth(railLines);
         _railWidth = railWidth;
 
-        // rail │ thin divider │ 1-col spacer (breathing room) │ output — a solid 1-col bar in the
-        // border colour instead of the framework's double-line splitter, for a calmer single-line look.
+        // rail │ thin divider │ output — a solid 1-col bar in the border colour instead of the framework's double-line
+        // splitter, for a calmer single-line look. There used to be a rail-coloured spacer column after the bar; it was
+        // given back to the panes (wave 24). The bar stays: the rail is the backdrop, and an unfocused pane is only
+        // ~2.8 L* above it on Dark (a tinted one less still), so the plane step alone would not carry the edge
+        // (RailEdgeTests). The rail's own margin cell is the breathing room on its side; the pane's text meets the
+        // rule as it meets every divider between two panes.
         // Stretch (control default is Left) so the window arranges the whole row at the full console
         // width; without it the row floats at content width and the Flex pane column can't claim the
         // space to the right edge. (SharpConsoleUI docs/patterns.md — sidebar+content layouts.)
@@ -11020,7 +11025,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Width(railWidth).Add(_rail))
             .Column(c => c.Width(1).Add(Divider()))
-            .Column(c => c.Width(1).Add(_railSpacer))
             .Column(c => c.Flex(1).Add(paneArea))
             .Build();
 
@@ -11477,8 +11481,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Breathing room between the widest row and the divider beside it. One cell, not two: the divider
-    /// column and the <c>_railSpacer</c> beside it (see <see cref="BuildWorkspaceRow"/>) already separate
-    /// the rail from the panes, so a second margin cell is a column taken off every pane to no effect.
+    /// column (see <see cref="BuildWorkspaceRow"/>) already separates the rail from the panes, so a second
+    /// margin cell is a column taken off every pane to no effect.
     /// </summary>
     private const int RailMargin = 1;
 

@@ -47,7 +47,11 @@ internal static class WhoHereRenderer
     {
         if (!model.Known)
         {
-            return [$"[dim]{UnknownText}[/]"];
+            // The band is drawn whatever the game has said: in a stack it is the boundary above this pane (no divider
+            // row is drawn there), so it must not come and go with the roster.
+            return ink.Heading is { } unknownBand && height > 1
+                ? [HeadingBand.Row("HERE", string.Empty, string.Empty, Math.Max(8, width), unknownBand), $"[dim]{UnknownText}[/]"]
+                : [$"[dim]{UnknownText}[/]"];
         }
 
         width = Math.Max(8, width);

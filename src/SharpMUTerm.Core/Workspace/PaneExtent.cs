@@ -63,8 +63,8 @@ public static class PaneExtent
     /// <list type="bullet">
     /// <item>none beside a fixed-height strip, which sits flush and is told apart by its own plane — it cannot be
     /// resized, so a row there would be a rule with nothing to drag;</item>
-    /// <item>none above a child whose top row is all tab strip (<see cref="HeaderPanes"/>): that strip is the
-    /// boundary, and the host makes its empty run the divider's handle.</item>
+    /// <item>none above a child whose top row is all tab strip or panel heading band (<see cref="HeaderPanes"/>): that
+    /// row is the boundary, and the host makes its empty run the divider's handle.</item>
     /// </list>
     /// </summary>
     public static int DividerRows(SplitNode split, int index)
@@ -104,8 +104,8 @@ public static class PaneExtent
     }
 
     /// <summary>
-    /// The panes whose tab strips run along <paramref name="node"/>'s whole top edge, or an empty list when any part
-    /// of that edge is not a tab strip. A pane is its own answer; a stack is its first child's; a side-by-side row is
+    /// The panes whose tab strips or panel heading bands (<see cref="PaneNode.DrawsHeading"/>) run along
+    /// <paramref name="node"/>'s whole top edge, or an empty list when any part of that edge is neither. A pane is its own answer; a stack is its first child's; a side-by-side row is
     /// every child's, and only when each of them has one.
     /// </summary>
     public static IReadOnlyList<PaneNode> HeaderPanes(LayoutNode node)
@@ -113,7 +113,7 @@ public static class PaneExtent
         ArgumentNullException.ThrowIfNull(node);
         if (node is PaneNode pane)
         {
-            return pane.DrawsHeader ? [pane] : [];
+            return pane.DrawsHeader || pane.DrawsHeading ? [pane] : [];
         }
 
         var split = (SplitNode)node;

@@ -71,6 +71,30 @@ public class PaneExtentTests
     }
 
     [Test]
+    public async Task NoDividerRowIsDrawnAboveAPaneWhosePanelDrawsAHeadingBand()
+    {
+        var below = Pane("below");
+        below.DrawsHeading = true;
+        var root = new SplitNode(SplitDirection.Column, [Pane("top"), below]);
+
+        var rects = LayoutSolver.Solve(root, Screen);
+
+        await Assert.That(PaneExtent.DividerRows(root, 0)).IsEqualTo(0);
+        await Assert.That(PaneExtent.HeaderPanes(below).Select(p => p.Id)).IsEquivalentTo(["below"]);
+        await Assert.That(rects["below"].Y).IsEqualTo(rects["top"].Height);
+    }
+
+    [Test]
+    public async Task OnlyTheComposerAndWhoHereDrawAHeadingBandAPaneCanStandOn()
+    {
+        await Assert.That(PanelSizing.DrawsHeadingBand(PanelIds.Composer)).IsTrue();
+        await Assert.That(PanelSizing.DrawsHeadingBand(PanelIds.WhoHere)).IsTrue();
+        await Assert.That(PanelSizing.DrawsHeadingBand(PanelIds.Vitals)).IsFalse();
+        await Assert.That(PanelSizing.DrawsHeadingBand(PanelIds.Map)).IsFalse();
+        await Assert.That(PanelSizing.DrawsHeadingBand(null)).IsFalse();
+    }
+
+    [Test]
     public async Task APaneWithNoTabStripStillGetsItsDividerRow()
     {
         var top = Pane("top");

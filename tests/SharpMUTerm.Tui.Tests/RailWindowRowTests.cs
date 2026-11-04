@@ -244,9 +244,8 @@ public class RailWindowRowTests
     /// <summary>
     /// <b>The sidebar spends at most one blank column past its widest row.</b> The other half of the width
     /// invariant: the rail must be wide enough for its rows (above) and no wider, because everything it
-    /// keeps is taken off the panes. One column and not two — a divider and a one-cell spacer already stand
-    /// between the rail's last cell and the first pane, so a second margin cell separates nothing from
-    /// nothing. Asserted on the demo, whose widest row is comfortably past <c>RailMinWidth</c>, so what is
+    /// keeps is taken off the panes. One column and not two — a divider already stands between the rail's
+    /// last cell and the first pane, so a second margin cell separates nothing from nothing. Asserted on the demo, whose widest row is comfortably past <c>RailMinWidth</c>, so what is
     /// being read is the margin rather than the floor.
     /// </summary>
     [Test]
@@ -261,10 +260,11 @@ public class RailWindowRowTests
 
         // And the layout spent exactly that. The line above is arithmetic over the rows and would still
         // pass if nothing applied the answer, so the claim is closed against the arranged pane rectangle:
-        // a pane starts past the rail, its divider and the one-cell spacer beside it
-        // (SharpMUTermApp.BuildWorkspaceRow), which is also the geometry per-pane NAWS is derived from.
+        // a pane starts just past the rail and its divider (SharpMUTermApp.BuildWorkspaceRow), which is also the
+        // geometry per-pane NAWS is derived from. It was + 2 until wave 24 gave the rail-coloured spacer column
+        // beside the divider back to the panes (RailEdgeTests says why the divider stayed and the spacer went).
         var rect = app.PaneOutputRects()[app.FocusedPaneId];
-        await Assert.That(rect.X).IsEqualTo(app.RailColumnWidth + 2);
+        await Assert.That(rect.X).IsEqualTo(app.RailColumnWidth + 1);
     }
 
     /// <summary>

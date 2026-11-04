@@ -675,7 +675,7 @@ fallbacks) for inline images/maps.
   **The window's native sidebar folds by the same rule** (verified under Xvfb at `--size 60x24` and on a live resize): at
   `--size 80x24` the window is ~102 columns wide with its sidebar, so it stays open and the pane is the 80 columns the
   rule protects. Decisions not to relitigate:
-  - **100 because of the server's wrap width**: the open rail, divider and spacer cost ~20 columns, so 100 still
+  - **100 because of the server's wrap width**: the open rail and its divider cost ~20 columns, so 100 still
     leaves the pane 80; below it a world's 80-column text orphans a word on every other row. 30 rows because above it
     the output keeps 24 rows with a three-row bar. Height never folds the rail.
   - **The automatic fold acts only on a crossing** (`_narrowSeen`) and once at start, never on a resize that stays on
@@ -1235,6 +1235,17 @@ fallbacks) for inline images/maps.
     the deep grey a dark theme's step gives. Side by side, nothing changed. The
     freed row went to the panes, which is the point and a NAWS change; `StackedDividerTests` and the
     `split-stacked` view are the pins.
+  - **A panel's heading band is a boundary too, in the cells** (`PaneNode.DrawsHeading`, set by `ApplyHeadingPanes`
+    after `ApplyAll` for a lone composer or who-here pane, `PanelSizing.DrawsHeadingBand`; `HeaderPanes` counts it).
+    Roleplay's composer over who-here has no divider row; the HERE band's empty run is the handle (`HeadingFill`),
+    **read off the paint** (`MeasureHeadingRuns`, before `PaintHeaderDividers`: the longest blank run on the band's or
+    the lit rule's plane), because three renderers lay their headings out three ways. Who-here draws its band before
+    the roster arrives, so the boundary never comes and goes. **Not in the window** (`HostChrome.Strips`): its native
+    panels lie over that row and take its presses, so it keeps the divider row. `HeadingDividerTests`.
+  - **The rail is `rail │ panes`: the spacer column after the rule went to the panes in wave 24** (NAWS +1 column).
+    Measured, not preferred (`RailEdgeTests`): the mockup lets the planes carry the rail's edge (~6 L*), but here an
+    unfocused pane is 2.9 L* above the backdrop on Dark (a tinted one less) and the rule 15.9, so the rule stays and
+    the rail-coloured spacer beside it separated nothing. Pane text meets the rule as at any pane divider.
   - **The menu is the ⌃P catalog's own entries** (`AddCommands`), so it cannot offer an action the keyboard
     lacks, and each says its key (`ShortHint`). A right-click on a link or output focuses that pane first,
     and on a tab activates it, so the entries act on what was clicked.
@@ -1326,7 +1337,7 @@ fallbacks) for inline images/maps.
     `NativeLayout`), and the client is only told the part is not its to draw. With `Header` the header control is
     `Visible = false` — a hidden sticky band takes no row — and `ChromeRows()` counts no header row, so the
     input-height veto (`SyncInputHeights`) and the layout agree. With `Rail` `BuildWorkspaceRow` builds the pane area
-    alone (no rail column, divider or spacer; `_railColumn` is null, so `ApplyRailWidth` does nothing). Everything
+    alone (no rail column or divider; `_railColumn` is null, so `ApplyRailWidth` does nothing). Everything
     else follows from arranged bounds: `PaneOutputRects` and so per-pane NAWS are the panes the cells really hold.
     `HostChromeLayoutTests` pins rows, rectangles, NAWS and the veto at 80×6.
   - **The window moves the cells out of the way; nothing native sits over a cell.** `DesktopLayer` spans the window

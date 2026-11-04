@@ -81,6 +81,7 @@ internal sealed partial class SharpMUTermApp
             pane.FixedRows = CollapsedBarRows;
             pane.MinRows = null;
             pane.DrawsHeader = false;
+            pane.DrawsHeading = false;
             foreach (var windowId in pane.Tabs)
             {
                 _workspace.SetScrolledBack(windowId, true);

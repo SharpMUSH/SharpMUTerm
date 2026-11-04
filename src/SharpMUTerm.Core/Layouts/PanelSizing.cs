@@ -78,6 +78,15 @@ public static class PanelSizing
     public static bool ShowsTabStrip(IReadOnlyList<string?> panels) => !(panels.Count == 1 && panels[0] is not null);
 
     /// <summary>
+    /// Whether <paramref name="panel"/> draws a filled heading band on its first row in the cells (COMPOSE, HERE), which a
+    /// host may take as the boundary above its pane (<see cref="PaneNode.DrawsHeading"/>). The vitals card has one too, but
+    /// it is a fixed strip, which never has a divider row beside it.
+    /// </summary>
+    public static bool DrawsHeadingBand(string? panel) =>
+        string.Equals(panel, PanelIds.Composer, StringComparison.Ordinal)
+        || string.Equals(panel, PanelIds.WhoHere, StringComparison.Ordinal);
+
+    /// <summary>
     /// Sets <paramref name="pane"/>'s <see cref="PaneNode.FixedRows"/> and <see cref="PaneNode.MinRows"/> from what it
     /// holds. <paramref name="panelOf"/> names the panel each tab draws (null for an ordinary window), and
     /// <paramref name="tabStripRows"/> is the height of the tab strip the host draws over a pane that shows one.
