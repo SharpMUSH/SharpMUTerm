@@ -39,6 +39,27 @@ internal sealed class VitalsGauges : Control
     /// <summary>Whether the meters are stacked (true) or side by side. Internal for tests.</summary>
     internal bool Stacked => StackedFor(Bounds.Height > 0 ? Bounds.Height : Height, _model);
 
+    /// <summary>
+    /// What a bar is filled with: the warning when low, else the meter's own colour (<see cref="VitalsMeter.Colour"/>) held
+    /// to the floor on the pane's plane — the cells' rule — else the panel's bar ink. Internal for tests.
+    /// </summary>
+    internal Color FillFor(string? colour, bool low)
+    {
+        if (low)
+        {
+            return Parse(_ink.Low);
+        }
+
+        if (colour is null || !Color.TryParse(colour, out var own))
+        {
+            return Parse(_ink.Bar);
+        }
+
+        var held = SharpMUTerm.Core.Text.Contrast.Legible(
+            new SharpMUTerm.Core.Text.Rgb(own.R, own.G, own.B), new SharpMUTerm.Core.Text.Rgb(_plane.R, _plane.G, _plane.B));
+        return Color.FromRgb(held.R, held.G, held.B);
+    }
+
     /// <summary>The bars drawn on the last render, in order: each bar's track and filled part. Internal for tests.</summary>
     internal IReadOnlyList<(Rect Track, Rect Fill, bool Low)> DrawnBars => _drawn;
 
@@ -132,7 +153,7 @@ internal sealed class VitalsGauges : Control
             var title = low ? $"{meter.Title} · low" : meter.Title;
             PanelText.Draw(context, title, inner.Left, middle, size, low ? warn : _text, low, inner.Width * 0.6);
             PanelText.Draw(context, Numbers(meter), inner.Right, middle, size, low ? warn : _text, false, inner.Width * 0.4, alignRight: true);
-            DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, barHeight), meter.HasMax ? meter.Share ?? 0 : 1, low);
+            DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, barHeight), meter.HasMax ? meter.Share ?? 0 : 1, low, meter.Colour);
             y += block;
         }
 
@@ -146,7 +167,7 @@ internal sealed class VitalsGauges : Control
             if (target.Share is { } share)
             {
                 PanelText.Draw(context, Percent(share), inner.Right, middle, size, _text, false, inner.Width * 0.25, alignRight: true);
-                DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, Math.Max(4, barHeight - 4)), share, target.Low);
+                DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, Math.Max(4, barHeight - 4)), share, target.Low, target.Colour);
             }
         }
     }
@@ -195,7 +216,7 @@ internal sealed class VitalsGauges : Control
             var barRight = x + unit - numbersWidth - 8;
             if (barRight - barLeft >= 8)
             {
-                DrawBar(context, new Rect(barLeft, middle - (barHeight / 2), barRight - barLeft, barHeight), meter.HasMax ? meter.Share ?? 0 : 1, low);
+                DrawBar(context, new Rect(barLeft, middle - (barHeight / 2), barRight - barLeft, barHeight), meter.HasMax ? meter.Share ?? 0 : 1, low, meter.Colour);
             }
 
             x += unit + gap;
@@ -215,7 +236,7 @@ internal sealed class VitalsGauges : Control
                 var barRight = inner.Right - pctWidth - 8;
                 if (barRight - barLeft >= 8)
                 {
-                    DrawBar(context, new Rect(barLeft, middle - (barHeight / 2), barRight - barLeft, barHeight), target.Share!.Value, target.Low);
+                    DrawBar(context, new Rect(barLeft, middle - (barHeight / 2), barRight - barLeft, barHeight), target.Share!.Value, target.Low, target.Colour);
                 }
             }
         }
@@ -244,7 +265,7 @@ internal sealed class VitalsGauges : Control
         return formatted;
     }
 
-    private void DrawBar(DrawingContext context, Rect track, double share, bool low)
+    private void DrawBar(DrawingContext context, Rect track, double share, bool low, string? colour)
     {
         // Flat fills on a track one step off the plane, rounded to the bar's height: the mockups' gauge.
         var radius = track.Height / 2;
@@ -252,7 +273,7 @@ internal sealed class VitalsGauges : Control
         var fill = new Rect(track.X, track.Y, track.Width * Math.Clamp(share, 0, 1), track.Height);
         if (fill.Width > 0.5)
         {
-            context.DrawRectangle(new SolidColorBrush(Parse(low ? _ink.Low : _ink.Bar)), null, fill, radius, radius);
+            context.DrawRectangle(new SolidColorBrush(FillFor(colour, low)), null, fill, radius, radius);
         }
 
         _drawn.Add((track, fill, low));

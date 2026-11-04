@@ -220,7 +220,7 @@ internal sealed partial class SharpMUTermApp
 
         var configured = PanelMeters(sessionKey);
         var meters = StatusMeterRenderer.Read(configured, data)
-            .Select(m => new VitalsMeter(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low))
+            .Select(m => new VitalsMeter(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low, m.Colour))
             .ToList();
 
         // Where each value was found: the first of a meter's alternatives the game has sent, as the reading took it.
@@ -238,10 +238,21 @@ internal sealed partial class SharpMUTermApp
     /// meaning, so they are lifted like text; the empty part of a bar is a grey that still reads as a track.
     /// </summary>
     private VitalsStripRenderer.Ink VitalsInk() =>
-        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)), HeadingBand.For(_theme, _ink.Accent));
+        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)), HeadingBand.For(_theme, _ink.Accent),
+            colour => MeterInk(colour, _ink.Plane));
 
     /// <summary>The low cue's ink on <paramref name="plane"/> (<see cref="WorkspacePalette.Low"/>), as markup.</summary>
-    private string LowInk(Rgb plane) => WorkspacePalette.Low(_theme, ParseHex(_ink.Notice), plane).ToHex();
+    private string LowInk(Rgb plane) => WorkspacePalette.Low(_theme, plane).ToHex();
+
+    /// <summary>The plane the panels' inks are held against (the panes' reading plane). Internal for tests.</summary>
+    internal Rgb PanelPlane => _ink.Plane;
+
+    /// <summary>A meter's colour (<see cref="MeterColours"/>) held to the floor on <paramref name="plane"/>, as markup.</summary>
+    private static string MeterInk(string colour, Rgb plane) => Contrast.Legible(ParseHex(colour), plane).ToHex();
+
+    /// <summary>A meter's label on the status row: its colour held to the row's small-text floor on the row's plane.</summary>
+    private string StatusMeterInk(string colour) =>
+        Contrast.Legible(ParseHex(colour), _theme.StatusBackground, WorkspacePalette.HeaderTextFloor).ToHex();
 
     /// <summary>
     /// The ink a dangerous binding (<see cref="Macro.Danger"/>) is drawn in: the settings screens' warning red, held to the

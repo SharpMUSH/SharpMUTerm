@@ -12,6 +12,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - In the terminal, a docked panel's heading band is the boundary between stacked panes: Roleplay's composer and the
   who-is-here list no longer have a grey row between them (drag the HERE band's empty part to resize), and the panes
   are one column wider, because the spare column between the sidebar's rule and the output is gone.
+- Vitals have colours: health is green, mana blue and movement gold on the status row, the terminal's vitals strip and card,
+  and the desktop window's gauges, and the target's bar is orange. A low vital turns red everywhere. Pick any meter's
+  colour in F7's meter table (a new colour column; `auto` keeps the default for its name).
 - In the desktop window, Combat's map uses its pane: rooms are drawn at full size, every room's name is written out in
   full where it fits without covering another room or name (shortened only where it truly cannot fit), the map pane no
   longer repeats a lone "Map" tab above its own heading, and the vitals card is only as tall as its gauges, so the map

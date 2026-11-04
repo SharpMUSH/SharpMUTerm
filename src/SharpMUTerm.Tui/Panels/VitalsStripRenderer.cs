@@ -23,8 +23,16 @@ internal static class VitalsStripRenderer
     /// <summary>The meter's mark when it is below <see cref="StatusMeterRenderer.LowShare"/>.</summary>
     internal const string LowMark = "low";
 
-    /// <summary>The panel's colours: the bars, the warning, the empty part of a bar, and the card heading's band.</summary>
-    internal readonly record struct Ink(string Bar, string Low, string Empty, HeadingBand.Ink? Heading = null);
+    /// <summary>
+    /// The panel's colours: the bars (a meter with no colour of its own), the warning, the empty part of a bar, the card
+    /// heading's band, and how a meter's own colour is held to the pane's floor (none: every bar is <see cref="Bar"/>).
+    /// </summary>
+    internal readonly record struct Ink(string Bar, string Low, string Empty, HeadingBand.Ink? Heading = null, Func<string, string>? Hold = null)
+    {
+        /// <summary>What a bar is drawn in: the warning when low, else its own colour held to the floor, else <see cref="Bar"/>.</summary>
+        public string For(string? colour, bool low) =>
+            low ? Low : colour is not null && Hold is { } hold ? hold(colour) : Bar;
+    }
 
     /// <summary>The one-cell low mark the tighter levels use in place of <see cref="LowMark"/>.</summary>
     internal const string ShortLowMark = "!";
@@ -50,7 +58,8 @@ internal static class VitalsStripRenderer
     /// The strip for a box <paramref name="width"/> cells wide, or empty when no meter has a value and the game
     /// names no target.
     /// </summary>
-    internal static string Render(IReadOnlyList<StatusMeterRenderer.MeterReading> meters, CombatTarget? target, int width, Ink ink)
+    internal static string Render(
+        IReadOnlyList<StatusMeterRenderer.MeterReading> meters, CombatTarget? target, int width, Ink ink, string? targetColour = null)
     {
         if (meters.Count == 0 && target is null)
         {
@@ -61,7 +70,7 @@ internal static class VitalsStripRenderer
         string? last = null;
         foreach (var level in Levels)
         {
-            last = Compose(meters, target, level, width, ink);
+            last = Compose(meters, target, level, width, ink, targetColour);
             if (VisibleLength(last) <= width)
             {
                 return last;
@@ -74,10 +83,11 @@ internal static class VitalsStripRenderer
     /// <summary>The strip for a <see cref="VitalsModel"/>: the same model the window's native gauges are drawn from.</summary>
     internal static string Render(VitalsModel vitals, int width, Ink ink) =>
         Render(
-            [.. vitals.Meters.Select(m => new StatusMeterRenderer.MeterReading(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low))],
+            [.. vitals.Meters.Select(m => new StatusMeterRenderer.MeterReading(m.Label, m.Value, m.Max, m.HasMax, m.Share, m.Low, m.Colour))],
             vitals.Target is { } target ? new CombatTarget(target.Name, target.Share) : null,
             width,
-            ink);
+            ink,
+            vitals.Target?.Colour);
 
     /// <summary>
     /// The card a tall vitals pane draws (<see cref="Core.Layouts.PanelSizing.VitalsCardRows"/>): a heading, then per meter its title
@@ -111,7 +121,7 @@ internal static class VitalsStripRenderer
         {
             foreach (var meter in vitals.Meters)
             {
-                var colour = meter.Low ? ink.Low : ink.Bar;
+                var colour = ink.For(meter.Colour, meter.Low);
                 var title = Escape(Fit(meter.Low ? $"{meter.Title} · {LowMark}" : meter.Title, width - 1));
                 lines.Add(Spread(meter.Low ? $"[bold {colour}]{title}[/]" : $"[bold]{title}[/]", Numbers(meter), width));
                 lines.Add(Bar(meter.HasMax ? meter.Share ?? 0 : 1, width, colour, ink));
@@ -124,7 +134,7 @@ internal static class VitalsStripRenderer
                 var percent = target.Share is { } share ? StatusMeterRenderer.Percent(share) : string.Empty;
                 var name = Escape(Fit(target.Name, Math.Max(1, width - 8 - percent.Length)));
                 lines.Add(Spread("[dim]Target[/] " + (target.Low ? $"[{ink.Low}]{name}[/]" : name), percent, width));
-                lines.Add(target.Share is { } s ? Bar(s, width, target.Low ? ink.Low : ink.Bar, ink) : string.Empty);
+                lines.Add(target.Share is { } s ? Bar(s, width, ink.For(target.Colour, target.Low), ink) : string.Empty);
             }
 
             return lines;
@@ -133,7 +143,7 @@ internal static class VitalsStripRenderer
         // One row a meter: the label, a bar in what is left, the value.
         foreach (var meter in vitals.Meters.Take(Math.Max(1, height - (vitals.Target is null ? 0 : 1))))
         {
-            var colour = meter.Low ? ink.Low : ink.Bar;
+            var colour = ink.For(meter.Colour, meter.Low);
             var value = Escape(StatusMeter.Fit(meter.Value, StatusMeterRenderer.ValueWidth));
             var label = Fit(meter.Label, 4).PadRight(4);
             var bar = Math.Max(0, width - label.Length - VisibleLength(value) - 2);
@@ -170,7 +180,7 @@ internal static class VitalsStripRenderer
         width <= 0 ? string.Empty : text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
 
     private static string Compose(
-        IReadOnlyList<StatusMeterRenderer.MeterReading> meters, CombatTarget? target, Level level, int width, Ink ink)
+        IReadOnlyList<StatusMeterRenderer.MeterReading> meters, CombatTarget? target, Level level, int width, Ink ink, string? targetColour)
     {
         var left = string.Join(new string(' ', level.Gap), meters.Select(m => Meter(m, level, ink)));
         if (target is null)
@@ -178,7 +188,7 @@ internal static class VitalsStripRenderer
             return left;
         }
 
-        var right = Target(target, level, ink);
+        var right = Target(target, level, ink, targetColour);
         var gap = width - VisibleLength(left) - VisibleLength(right);
         return left.Length == 0
             ? new string(' ', Math.Max(0, gap)) + right
@@ -189,7 +199,7 @@ internal static class VitalsStripRenderer
     {
         var sb = new StringBuilder();
         sb.Append($"[dim]{Escape(meter.Label)}[/]");
-        var colour = meter.Low ? ink.Low : ink.Bar;
+        var colour = ink.For(meter.Colour, meter.Low);
         if (!level.Values)
         {
             var text = meter.Share is { } share
@@ -220,7 +230,7 @@ internal static class VitalsStripRenderer
         return sb.ToString();
     }
 
-    private static string Target(CombatTarget target, Level level, Ink ink)
+    private static string Target(CombatTarget target, Level level, Ink ink, string? colour)
     {
         var name = target.Name.Length <= level.TargetName
             ? target.Name.PadRight(level.TargetName)
@@ -231,7 +241,7 @@ internal static class VitalsStripRenderer
             var low = share < StatusMeterRenderer.LowShare;
             if (level.TargetBar > 0)
             {
-                sb.Append(' ').Append(Bar(share, level.TargetBar, low ? ink.Low : ink.Bar, ink));
+                sb.Append(' ').Append(Bar(share, level.TargetBar, ink.For(colour, low), ink));
             }
 
             sb.Append($" [bold]{StatusMeterRenderer.Percent(share).PadLeft(StatusMeterRenderer.ShareWidth)}[/]");

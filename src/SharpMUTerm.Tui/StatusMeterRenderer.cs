@@ -48,9 +48,13 @@ internal static class StatusMeterRenderer
     /// The meters that have a value, as status-row runs, or none when none does: each label in
     /// <paramref name="dimInk"/>, the value bold (in <paramref name="lowInk"/> when low), the maximum in
     /// <paramref name="dimInk"/>, two cells between meters. <see cref="Render"/> is the same runs as markup.
+    /// With <paramref name="hold"/>, a meter's label is drawn in its colour (<see cref="MeterReading.Colour"/>) as
+    /// <paramref name="hold"/> holds it to the row's plane, and a low meter's label in <paramref name="lowInk"/> with its
+    /// value: the colour costs no cell.
     /// </summary>
     internal static List<SharpMUTerm.Client.Chrome.StatusRun> Runs(
-        IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, string dimInk, bool compact = false)
+        IReadOnlyList<StatusMeter> meters, GameDataStore data, string lowInk, string dimInk, bool compact = false,
+        Func<string, string>? hold = null)
     {
         var runs = new List<SharpMUTerm.Client.Chrome.StatusRun>();
         foreach (var reading in Read(meters, data))
@@ -63,7 +67,11 @@ internal static class StatusMeterRenderer
             var value = compact && reading.Share is { } share
                 ? Percent(share).PadLeft(ShareWidth)
                 : StatusMeter.Fit(reading.Value, ValueWidth).PadLeft(ValueWidth);
-            runs.Add(new(reading.Label, dimInk, false));
+            var labelInk = hold is null ? dimInk
+                : reading.Low ? lowInk
+                : reading.Colour is { } colour ? hold(colour)
+                : dimInk;
+            runs.Add(new(reading.Label, labelInk, false));
             runs.Add(new(" ", null, false));
             runs.Add(new(value, reading.Low ? lowInk : null, true));
             if (!(compact && reading.Share is not null) && reading.HasMax)
@@ -85,7 +93,9 @@ internal static class StatusMeterRenderer
     /// <param name="HasMax">Whether the meter is configured with a maximum at all, sent yet or not.</param>
     /// <param name="Share">Value over maximum, when both are numbers and the maximum is positive.</param>
     /// <param name="Low">Whether <see cref="Share"/> is under <see cref="LowShare"/>.</param>
-    internal readonly record struct MeterReading(string Label, string Value, string? Max, bool HasMax, double? Share, bool Low);
+    /// <param name="Colour">The meter's colour as <c>#rrggbb</c> before the floor (<c>MeterColours.For</c>), or null for the accent.</param>
+    internal readonly record struct MeterReading(
+        string Label, string Value, string? Max, bool HasMax, double? Share, bool Low, string? Colour = null);
 
     /// <summary>The meters that have a value, in their configured order. A meter with nothing to read is left out.</summary>
     internal static IReadOnlyList<MeterReading> Read(IReadOnlyList<StatusMeter> meters, GameDataStore data)
@@ -100,7 +110,8 @@ internal static class StatusMeterRenderer
 
             var hasMax = !string.IsNullOrWhiteSpace(meter.Max);
             var max = hasMax ? StatusMeter.Read(data, meter.Max) : null;
-            readings.Add(new MeterReading(meter.Label, value, max, hasMax, Share(value, max), IsLow(value, max)));
+            readings.Add(new MeterReading(
+                meter.Label, value, max, hasMax, Share(value, max), IsLow(value, max), SharpMUTerm.Client.Panels.MeterColours.For(meter)));
         }
 
         return readings;

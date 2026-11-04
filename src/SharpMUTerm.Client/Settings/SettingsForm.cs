@@ -1,4 +1,5 @@
 using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
 
@@ -599,6 +600,7 @@ public sealed class SettingsForm
             Label = StatusMeter.Clip(m.Label.Trim()),
             Value = m.Value.Trim(),
             Max = string.IsNullOrWhiteSpace(m.Max) ? null : m.Max.Trim(),
+            Colour = MeterColours.TryNormalise(m.Colour, out var colour) ? colour : null,
         }).ToList();
         Set(binding, list);
     }
@@ -626,5 +628,5 @@ public sealed class SettingsForm
     /// <summary>Raises <see cref="Changed"/>; the client calls it once a committed change has landed.</summary>
     public void NotifyChanged() => Changed?.Invoke();
 
-    private static StatusMeter Copy(StatusMeter m) => new() { Label = m.Label, Value = m.Value, Max = m.Max };
+    private static StatusMeter Copy(StatusMeter m) => new() { Label = m.Label, Value = m.Value, Max = m.Max, Colour = m.Colour };
 }

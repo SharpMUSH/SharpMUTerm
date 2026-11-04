@@ -140,7 +140,7 @@ public class SettingsWindowTests
         {
             var grid = window.MeterGrid!;
             var rows = grid.RowDefinitions.Count;
-            var now = grid.Children.OfType<TextBlock>().Where(t => Grid.GetRow(t) == 1 && Grid.GetColumn(t) == 3).Select(t => t.Text).Single();
+            var now = grid.Children.OfType<TextBlock>().Where(t => Grid.GetRow(t) == 1 && Grid.GetColumn(t) == 4).Select(t => t.Text).Single();
 
             var add = window.GetVisualDescendantsOf<Button>().Single(b => Equals(b.Content, "+ Add a meter"));
             add.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -152,6 +152,26 @@ public class SettingsWindowTests
         await Assert.That(now).IsEqualTo("412/500");
         await Assert.That(rowsAfterAdd).IsEqualTo(3);
         await Assert.That(harness.Config.Text.StatusMeters.Select(m => m.Label)).IsEquivalentTo(new[] { "hp", "new" });
+    }
+
+    [Test]
+    public async Task AMetersColourIsPickedFromThePaletteAndStoredThroughTheForm()
+    {
+        var harness = new Harness();
+        harness.Config.Text.StatusMeters = [new StatusMeter { Label = "hp", Value = "Char.Vitals.hp", Max = "Char.Vitals.maxhp" }];
+        var (first, count) = await Run(harness, "text", window =>
+        {
+            var box = window.MeterGrid!.Children.OfType<ComboBox>().Single(c => Grid.GetRow(c) == 1 && Grid.GetColumn(c) == 3);
+            var first = box.SelectedIndex;
+            var count = box.ItemCount;
+            box.SelectedIndex = SharpMUTerm.Client.Panels.MeterColours.Choices.ToList().IndexOf("purple");
+            Dispatcher.UIThread.RunJobs();
+            return (first, count);
+        });
+
+        await Assert.That(first).IsEqualTo(0).Because("a meter with no colour of its own reads auto");
+        await Assert.That(count).IsEqualTo(SharpMUTerm.Client.Panels.MeterColours.Choices.Count);
+        await Assert.That(harness.Config.Text.StatusMeters[0].Colour).IsEqualTo("purple");
     }
 
     [Test]

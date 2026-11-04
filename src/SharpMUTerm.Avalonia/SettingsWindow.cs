@@ -12,6 +12,7 @@ using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Configuration;
 
@@ -1131,10 +1132,10 @@ internal sealed class SettingsWindow : Window
         var meters = _form.Meters(field);
         _meterRows = meters.Count;
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*,*,120,32"), ColumnSpacing = 8, RowSpacing = 8 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*,*,130,120,32"), ColumnSpacing = 8, RowSpacing = 8 };
         MeterGrid = grid;
         _controls[field.Id] = grid;
-        string[] headings = ["Label", "Value path", "Maximum path", "Live value"];
+        string[] headings = ["Label", "Value path", "Maximum path", "Colour", "Live value"];
         grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         for (var c = 0; c < headings.Length; c++)
         {
@@ -1189,7 +1190,8 @@ internal sealed class SettingsWindow : Window
                 Commit();
             };
 
-            Control[] cells = [label, value, max, now, remove];
+            var colour = MeterColourBox(meter, row, Commit);
+            Control[] cells = [label, value, max, colour, now, remove];
             for (var c = 0; c < cells.Length; c++)
             {
                 Grid.SetRow(cells[c], row);
@@ -1268,6 +1270,61 @@ internal sealed class SettingsWindow : Window
 
         Tick();
         return outer;
+    }
+
+    /// <summary>
+    /// A meter's colour: <c>auto</c> (its label's default) or a highlight palette name, each item a swatch of the colour the
+    /// meter is drawn in and its name. A colour typed in the cells that no name covers (<c>#rrggbb</c>) is listed too, so
+    /// opening the page shows it. A choice is stored through <see cref="SettingsForm.SetMeters"/>, the funnel.
+    /// </summary>
+    private ComboBox MeterColourBox(StatusMeter meter, int row, Action commit)
+    {
+        var current = MeterColours.Label(meter);
+        var names = MeterColours.Choices.Contains(current, StringComparer.OrdinalIgnoreCase)
+            ? MeterColours.Choices.ToList()
+            : [.. MeterColours.Choices, current];
+        var box = new ComboBox
+        {
+            ItemsSource = names.Select(n => MeterColourItem(n, meter)).ToList(),
+            SelectedIndex = Math.Max(0, names.FindIndex(n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase))),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            FontSize = NativeTokens.Label,
+        };
+        AutomationProperties.SetName(box, $"meter {row} colour");
+        box.SelectionChanged += (_, _) =>
+        {
+            if (box.SelectedIndex < 0 || box.SelectedIndex >= names.Count)
+            {
+                return;
+            }
+
+            var picked = names[box.SelectedIndex];
+            if (!string.Equals(picked, current, StringComparison.OrdinalIgnoreCase))
+            {
+                meter.Colour = MeterColours.TryNormalise(picked, out var stored) ? stored : null;
+                commit();
+            }
+        };
+        return box;
+    }
+
+    /// <summary>One colour in the meter colour box: a swatch (auto's is the label's default) and the name.</summary>
+    private StackPanel MeterColourItem(string name, StatusMeter meter)
+    {
+        var hex = name == MeterColours.Auto ? MeterColours.Hex(StatusMeter.DefaultColour(meter.Label)) : MeterColours.Hex(name);
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
+        panel.Children.Add(new Border
+        {
+            Width = 12,
+            Height = 12,
+            CornerRadius = new CornerRadius(NativeTokens.RadiusS),
+            Background = hex is not null && Color.TryParse(hex, out var colour) ? new SolidColorBrush(colour) : Brushes.Transparent,
+            BorderThickness = hex is null ? new Thickness(NativeTokens.Hairline) : default,
+            BorderBrush = DimInk,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        panel.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center, Foreground = _tokens.Page.Brush(_tokens.Page.Text) });
+        return panel;
     }
 
     /// <summary>The page's monospace face, for paths and values (the mockup's game-text face).</summary>

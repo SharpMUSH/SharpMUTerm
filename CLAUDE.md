@@ -133,6 +133,14 @@ fallbacks) for inline images/maps.
   - **A meter is drawn only once its value has arrived, and from then its fields are reserved** (value and
     max five cells each, `StatusMeter.Fit` scales past that). A world with no game data costs the row
     nothing; one with it never reflows the row as numbers change.
+  - **Each meter has a colour** (`StatusMeter.Colour`, null = `DefaultColour(label)`: hp green, mp blue, mv gold, else the
+    accent; no schema bump, absent means default; the one-line form writes ` @name`). Client `MeterColours` turns a palette
+    name into a *meter shade* (the mockups' `#4cc38a`/`#5aa9e6`, not web green/blue), `VitalsMeter.Colour` and
+    `VitalsTarget.Colour` (`#ff8a65`) carry it, and each host holds it on its own plane: the cell strip and card
+    (`VitalsStripRenderer.Ink.For`/`Hold`) and the native gauges (`VitalsGauges.FillFor`) to 3:1 on the pane, the status row's
+    label (`StatusMeterInk`) to 4.5:1 on the row. **Low is the warning red in all three** (`WorkspacePalette.Low` =
+    `ScreenPalette.Warn` held to 4.5:1, every theme): it was the notice amber, which said nothing beside a gold movement bar.
+    F7's meter table has a colour column (`auto` + the highlight palette, typed `#rrggbb` too) in both hosts.
 - **Maps** (`Core/Mapping`: `WorldMap`, `MapRoom`, `PathFinder`, `MapStore`). Mudlet's room model (id, area,
   x/y/z, exits by direction and by command, room and exit weights, locks). `MapStore` keeps one file per
   **endpoint** under `maps/` (`MsspCache`'s reasoning), memory-only with no directory, never overwrites a

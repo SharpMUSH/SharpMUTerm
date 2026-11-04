@@ -107,11 +107,12 @@ public static partial class BuiltInSettings
                     new TextField("label", "label", StatusMeter.MaxLabelLength),
                     new TextField("value", "value path"),
                     new TextField("max", "maximum path"),
+                    new TextField("colour", "colour"),
                 ],
-                "game data the status row shows, such as hp 412/500")
+                "game data the status row shows, such as hp 412/500, each in its own colour")
             {
                 Group = MetersGroup,
-                Keywords = "gauge gmcp msdp vitals hp mana status",
+                Keywords = "gauge gmcp msdp vitals hp mana status colour color",
                 Binding = new SettingBinding<List<StatusMeter>>(
                     c => c.Text.StatusMeters,
                     (c, v) => c.Text.StatusMeters = v,

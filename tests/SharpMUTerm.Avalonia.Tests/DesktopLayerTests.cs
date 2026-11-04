@@ -165,6 +165,25 @@ public class DesktopLayerTests
     }
 
     [Test]
+    public async Task AGaugeIsFilledWithItsMetersColourHeldToThePlaneAndALowOneWithTheWarning()
+    {
+        var (own, low, none) = await Run((window, view, layer, driver) =>
+        {
+            var gauges = new VitalsGauges();
+            gauges.Show(
+                Vitals, new PanelInk("#00f5b7", "#c62828", "#3a3a40"),
+                global::Avalonia.Media.Color.FromRgb(0xf4, 0xf4, 0xf6), global::Avalonia.Media.Colors.Black, 16);
+            return (gauges.FillFor("#4cc38a", low: false), gauges.FillFor("#4cc38a", low: true), gauges.FillFor(null, low: false));
+        });
+
+        var held = SharpMUTerm.Core.Text.Contrast.Legible(new(0x4c, 0xc3, 0x8a), new(0xf4, 0xf4, 0xf6));
+        await Assert.That(own).IsEqualTo(global::Avalonia.Media.Color.FromRgb(held.R, held.G, held.B))
+            .Because("health's green, darkened to the floor on a light pane, as the cells hold it");
+        await Assert.That(low).IsEqualTo(global::Avalonia.Media.Color.FromRgb(0xc6, 0x28, 0x28));
+        await Assert.That(none).IsEqualTo(global::Avalonia.Media.Color.FromRgb(0x00, 0xf5, 0xb7)).Because("no colour of its own: the panel's bar ink");
+    }
+
+    [Test]
     public async Task VitalsGaugesAreDrawnOverTheirPaneAndThePointerStillReachesTheCells()
     {
         var (gaugeRect, paneRect, bars, barColour, cellsUnchanged, clientSaw) = await Run((window, view, layer, driver) =>

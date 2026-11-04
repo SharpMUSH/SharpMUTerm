@@ -138,7 +138,7 @@ public class GameDataTests
     }
 
     /// <summary>
-    /// F7's meters are a table: one row per meter with its label, value path and maximum path as three fields
+    /// F7's meters are a table: one row per meter with its label, value path, maximum path and colour as four fields
     /// of that row, written straight into <see cref="TextSettings.StatusMeters"/>. It replaced a single
     /// <c>label=value/max; …</c> line, which was the maintainer's complaint about it: too small to edit.
     /// </summary>
@@ -152,7 +152,7 @@ public class GameDataTests
         var row = model.RowAt(0, first);
         var edits = new ScreenEdits();
 
-        await Assert.That(row.FieldCount).IsEqualTo(3);
+        await Assert.That(row.FieldCount).IsEqualTo(4);
         await Assert.That(edits.Apply(row.FieldAt(0)!.Value, "life")).IsNull();
         await Assert.That(edits.Apply(row.FieldAt(1)!.Value, "Char.Vitals.hp")).IsNull();
         await Assert.That(edits.Apply(row.FieldAt(2)!.Value, "  ")).IsNull();
@@ -161,6 +161,15 @@ public class GameDataTests
         await Assert.That(text.StatusMeters[0].Label).IsEqualTo("life");
         await Assert.That(text.StatusMeters[0].Value).IsEqualTo("Char.Vitals.hp");
         await Assert.That(text.StatusMeters[0].Max).IsNull();
+
+        // The colour column steps the palette with auto first; a name is stored, auto clears it, nonsense is refused.
+        await Assert.That(row.FieldAt(3)!.Value.Choices![0]).IsEqualTo("auto");
+        await Assert.That(edits.Apply(row.FieldAt(3)!.Value, "Lime")).IsNull();
+        await Assert.That(text.StatusMeters[0].Colour).IsEqualTo("lime");
+        await Assert.That(edits.Apply(row.FieldAt(3)!.Value, "sparkly")).IsNotNull();
+        await Assert.That(text.StatusMeters[0].Colour).IsEqualTo("lime");
+        await Assert.That(edits.Apply(row.FieldAt(3)!.Value, "auto")).IsNull();
+        await Assert.That(text.StatusMeters[0].Colour).IsNull();
     }
 
     /// <summary>

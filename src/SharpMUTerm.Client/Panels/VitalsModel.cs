@@ -12,7 +12,11 @@ namespace SharpMUTerm.Client.Panels;
 /// <param name="HasMax">Whether the meter is configured with a maximum at all, sent yet or not.</param>
 /// <param name="Share">Value over maximum, when both are numbers and the maximum is positive.</param>
 /// <param name="Low">Whether <paramref name="Share"/> is under <see cref="VitalsModel.LowShare"/>.</param>
-public sealed record VitalsMeter(string Label, string Value, string? Max, bool HasMax, double? Share, bool Low)
+/// <param name="Colour">
+/// The meter's colour as <c>#rrggbb</c> (<see cref="MeterColours.For"/>), before any host holds it to its plane; null for
+/// the client's accent. A low meter is drawn in the warning colour instead, in every view.
+/// </param>
+public sealed record VitalsMeter(string Label, string Value, string? Max, bool HasMax, double? Share, bool Low, string? Colour = null)
 {
     /// <summary>
     /// The label spelt out where a view has the room: <c>hp</c> reads as <c>Health</c>, <c>mp</c> as <c>Mana</c>.
@@ -24,7 +28,8 @@ public sealed record VitalsMeter(string Label, string Value, string? Max, bool H
 /// <summary>What the character is fighting, when the game says.</summary>
 /// <param name="Name">The target's name, bounded by <see cref="CombatTarget.MaxNameLength"/>.</param>
 /// <param name="Share">Its health as a share of its maximum, when the game sends one.</param>
-public sealed record VitalsTarget(string Name, double? Share)
+/// <param name="Colour">Its bar's colour as <c>#rrggbb</c> before the floor (<see cref="MeterColours.Target"/>); low is the warning colour.</param>
+public sealed record VitalsTarget(string Name, double? Share, string? Colour = MeterColours.Target)
 {
     /// <summary>Whether the target is below <see cref="VitalsModel.LowShare"/>.</summary>
     public bool Low => Share < VitalsModel.LowShare;

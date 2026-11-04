@@ -1,9 +1,11 @@
 using System.Globalization;
 using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Input;
 using SharpMUTerm.Core.Protocols;
+using SharpMUTerm.Core.Text;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
 
@@ -691,6 +693,9 @@ internal static class OptionsScreenRenderer
     /// <summary>The cells the meter table's label column takes (a label is at most eight).</summary>
     private const int MeterLabelWidth = StatusMeter.MaxLabelLength + 1;
 
+    /// <summary>The cells its colour column takes: <c>magenta</c> and a cell.</summary>
+    private const int MeterColourWidth = 8;
+
     /// <summary>The cells its <c>now</c> column takes: <c>1000/1000</c> and a cell.</summary>
     private const int MeterNowWidth = 11;
 
@@ -737,6 +742,7 @@ internal static class OptionsScreenRenderer
                 ScreenField.Text("label", () => meter.Label, v => meter.Label = StatusMeter.Clip(v)),
                 PathField("value path", () => meter.Value, v => meter.Value = v ?? string.Empty, received, required: true),
                 PathField("maximum path", () => meter.Max, v => meter.Max = v, received, required: false),
+                ColourField(() => MeterColours.Label(meter), v => meter.Colour = v),
             };
             rows.Add(new OptionRow(
                 meter.Label, null, null,
@@ -802,10 +808,22 @@ internal static class OptionsScreenRenderer
             ChoiceCaption: ReceivedCaption);
     }
 
+    /// <summary>
+    /// A meter's colour: <see cref="MeterColours.Auto"/> (its label's default) or a highlight palette name, stepped with
+    /// ↑↓ or typed — <c>#rrggbb</c> too, as F2's highlight takes it. Stored through <see cref="MeterColours.TryNormalise"/>.
+    /// </summary>
+    private static ScreenField ColourField(Func<string> get, Action<string?> set) =>
+        new(
+            "colour",
+            get,
+            value => MeterColours.TryNormalise(value, out _) ? null : $"{value.Trim()} is not a colour",
+            value => set(MeterColours.TryNormalise(value, out var stored) ? stored : null),
+            MeterColours.Choices);
+
     /// <summary>How wide the table's two path columns are at <paramref name="width"/>.</summary>
     private static (int Value, int Max) PathWidths(int width)
     {
-        var room = (width > 0 ? width : 100) - AffordanceWidth - MeterLabelWidth - MeterNowWidth - (3 * MeterGap);
+        var room = (width > 0 ? width : 100) - AffordanceWidth - MeterLabelWidth - MeterColourWidth - MeterNowWidth - (4 * MeterGap);
         room = Math.Max(16, room);
         return (room / 2, room - (room / 2));
     }
@@ -818,6 +836,7 @@ internal static class OptionsScreenRenderer
             + "label".PadRight(MeterLabelWidth) + gap
             + "value path".PadRight(value) + gap
             + "maximum path".PadRight(max) + gap
+            + "colour".PadRight(MeterColourWidth) + gap
             + "now";
         return $"[dim]{line}[/]" + (changed ? Changed() : string.Empty);
     }
@@ -831,7 +850,11 @@ internal static class OptionsScreenRenderer
         var (valueWidth, maxWidth) = PathWidths(width);
         var gap = new string(' ', MeterGap);
         var line = new System.Text.StringBuilder(new string(' ', AffordanceWidth));
-        var cells = new[] { (meter.Label, MeterLabelWidth), (meter.Value, valueWidth), (meter.Max ?? string.Empty, maxWidth) };
+        var cells = new[]
+        {
+            (meter.Label, MeterLabelWidth), (meter.Value, valueWidth), (meter.Max ?? string.Empty, maxWidth),
+            (MeterColours.Label(meter), MeterColourWidth),
+        };
         for (var i = 0; i < cells.Length; i++)
         {
             var (text, cell) = cells[i];
@@ -844,12 +867,25 @@ internal static class OptionsScreenRenderer
 
             var shown = string.IsNullOrEmpty(text) ? "—" : text;
             var display = Escape(ElidePlain(shown, cell - 1).PadRight(cell - 1));
-            line.Append(PadVisible(ScreenChrome.Field($"[{ScreenPalette.Value}]{display}[/]", null), cell)).Append(gap);
+            var ink = i == 3 ? MeterColourInk(meter) : ScreenPalette.Value;
+            line.Append(PadVisible(ScreenChrome.Field($"[{ink}]{display}[/]", null), cell)).Append(gap);
         }
 
         line.Append(Now(meter, data));
         return line.ToString();
     }
+
+    /// <summary>
+    /// The colour column's ink: the colour the meter is drawn in (its own, or <c>auto</c>'s default), held to the floor on
+    /// the field's well, so the name is its own sample; the value ink for a meter that takes the accent.
+    /// </summary>
+    private static string MeterColourInk(StatusMeter meter) =>
+        MeterColours.For(meter) is { } hex
+            ? Contrast.Legible(ToRgb(hex), ToRgb(ScreenPalette.FieldBg)).ToHex()
+            : ScreenPalette.Value;
+
+    private static Core.Text.Rgb ToRgb(string hex) => new(
+        Convert.ToByte(hex.Substring(1, 2), 16), Convert.ToByte(hex.Substring(3, 2), 16), Convert.ToByte(hex.Substring(5, 2), 16));
 
     /// <summary>The <c>now</c> column: <c>412/500</c>, <c>412</c> with no maximum, or <see cref="Waiting"/>.</summary>
     internal static string Now(StatusMeter meter, GameDataStore? data) =>

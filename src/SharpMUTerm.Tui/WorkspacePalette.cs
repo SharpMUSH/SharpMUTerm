@@ -407,21 +407,19 @@ internal static class WorkspacePalette
 
     /// <summary>
     /// The low cue on a meter (a vital below <c>StatusMeterRenderer.LowShare</c>): its bar, its value and its <c>low</c>
-    /// mark, in both hosts. A dark theme keeps the client's notice amber (<paramref name="notice"/>), which reads as a
-    /// warning on a dark plane. A light theme gets a deep orange held to <see cref="HeaderTextFloor"/> on
-    /// <paramref name="plane"/>: the amber pushed down to a light plane's floor turns olive, and the cue then read as a
-    /// grey word over an olive bar — no warning at all (UX audit #29).
+    /// mark, in both hosts — the settings screens' warning red (<see cref="ScreenPalette.Warn"/>, the mockups' low mana)
+    /// held to <see cref="HeaderTextFloor"/> on <paramref name="plane"/>. It was the notice amber on a dark theme until
+    /// meters had colours of their own: movement is gold, and an amber low cue said nothing beside it. A red pushed down
+    /// to a light plane's floor stays red, where the amber turned olive (UX audit #29).
     /// </summary>
-    internal static Rgb Low(Theme theme, Rgb notice, Rgb plane)
+    internal static Rgb Low(Theme theme, Rgb plane)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance
-            ? notice
-            : Contrast.Legible(LowBase, plane, HeaderTextFloor);
+        return Contrast.Legible(LowBase, plane, HeaderTextFloor);
     }
 
-    /// <summary>The light themes' low cue before the plane has said how deep it must be: a warm, saturated orange.</summary>
-    private static readonly Rgb LowBase = new(0xe8, 0x59, 0x0c);
+    /// <summary>The low cue before the plane has said how deep it must be.</summary>
+    private static readonly Rgb LowBase = new(0xff, 0x6b, 0x6b);
 
     /// <summary>How far the header's quiet text leans from its band toward its ink before the floor is applied.</summary>
     private const double MutedLean = 0.55;

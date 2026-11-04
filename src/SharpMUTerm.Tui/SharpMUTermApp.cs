@@ -14820,7 +14820,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // is not on screen. Nothing else on the row moves with it: every other cell is reserved or dropped by width.
         _statusMetersHidden = VitalsStripShowing();
         StatusSegment? MeterSegment(bool compact) =>
-            StatusMeterRenderer.Runs(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), StatusDim, compact) is { Count: > 0 } runs
+            StatusMeterRenderer.Runs(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), StatusDim, compact, StatusMeterInk) is { Count: > 0 } runs
                 ? new StatusSegment(StatusRole.Meters, runs)
                 : null;
         var meters = _statusMetersHidden ? null : MeterSegment(compact: false);

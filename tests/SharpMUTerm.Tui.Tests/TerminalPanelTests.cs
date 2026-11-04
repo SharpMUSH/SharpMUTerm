@@ -187,6 +187,63 @@ public class TerminalPanelTests
         await Assert.That(strip).Contains("412").And.Contains("a rotting").And.Contains("40%");
     }
 
+    [Test]
+    public async Task EachMeterIsDrawnInItsOwnColourAndALowOneInTheWarning()
+    {
+        var world = await Connected();
+        world.App.Configuration.Text.StatusMeters[2].Colour = "purple";
+        world.Session.GameData.SetGmcp("Char.Vitals", """{"hp":"412","maxhp":"500","mp":"23","maxmp":"120","moves":"90"}""");
+        world.Session.GameData.SetGmcp("Char.MaxStats", """{"maxmoves":"100"}""");
+        var windowId = world.Open(PanelIds.Vitals);
+
+        var vitals = world.App.ReadVitals(world.Session.SessionKey)!;
+        await Assert.That(vitals.Meters.Select(m => m.Colour ?? string.Empty))
+            .IsEquivalentTo(new[] { "#4cc38a", "#5aa9e6", "#a98bf0" });
+        await Assert.That(vitals.Meters[1].Low).IsTrue();
+
+        // Health's bar is its green held to the floor; mana is low, so its bar is the warning, not its blue.
+        var markup = string.Join("\n", world.App.PanelMarkup(windowId));
+        var plane = world.App.PanelPlane;
+        await Assert.That(markup).Contains(Core.Text.Contrast.Legible(new(0x4c, 0xc3, 0x8a), plane).ToHex());
+        await Assert.That(markup).Contains(Core.Text.Contrast.Legible(new(0xa9, 0x8b, 0xf0), plane).ToHex());
+        await Assert.That(markup).DoesNotContain(Core.Text.Contrast.Legible(new(0x5a, 0xa9, 0xe6), plane).ToHex());
+        await Assert.That(markup).Contains(Core.Text.Contrast.Legible(new(0xff, 0x6b, 0x6b), plane, WorkspacePalette.HeaderTextFloor).ToHex());
+    }
+
+    [Test]
+    public async Task TheStatusRowsMeterLabelsWearTheirColoursAndClearTheSmallTextFloor()
+    {
+        var store = new GameDataStore();
+        store.SetGmcp("Char.Vitals", """{"hp":"412","maxhp":"500","mp":"23","maxmp":"120"}""");
+        var plane = new Core.Text.Rgb(0x1c, 0x1c, 0x22);
+        string Hold(string hex) => Core.Text.Contrast.Legible(
+            new(Convert.ToByte(hex[1..3], 16), Convert.ToByte(hex[3..5], 16), Convert.ToByte(hex[5..7], 16)), plane, 4.5).ToHex();
+
+        var runs = StatusMeterRenderer.Runs(StatusMeter.Defaults(), store, "#ff0000", "#808080", hold: Hold);
+
+        await Assert.That(runs.Single(r => r.Text == "hp").Ink).IsEqualTo(Hold("#4cc38a"));
+        await Assert.That(runs.Single(r => r.Text == "mp").Ink).IsEqualTo("#ff0000");
+
+        // Without a hold (the markup path the tests above read) the labels are dim as they always were.
+        var plain = StatusMeterRenderer.Runs(StatusMeter.Defaults(), store, "#ff0000", "#808080");
+        await Assert.That(plain.Single(r => r.Text == "hp").Ink).IsEqualTo("#808080");
+    }
+
+    [Test]
+    public async Task TheStripAndTheCardDrawAMetersColourAndTheTargetsThroughTheHold()
+    {
+        var ink = VitalsInk with { Hold = hex => hex == "#4cc38a" ? "#111111" : "#222222" };
+        var model = new Client.Panels.VitalsModel(
+            [new("hp", "412", "500", true, 0.82, false, "#4cc38a"), new("gold", "12", null, false, null, false)],
+            new Client.Panels.VitalsTarget("a ghoul", 0.4));
+
+        var strip = VitalsStripRenderer.Render(model, 120, ink);
+        await Assert.That(strip).Contains("[#111111]█").And.Contains("[#222222]█");
+
+        var card = string.Join("\n", VitalsStripRenderer.RenderCard(model, 40, 12, ink));
+        await Assert.That(card).Contains("[#111111]█").And.Contains("[#222222]█");
+    }
+
     /// <summary>Every registered panel is one a layout can place, and the layout counts the rest as drawing nothing.</summary>
     [Test]
     public async Task ThePanelsThisClientDrawsAreTheOnesItRegistered()
