@@ -165,9 +165,9 @@ internal sealed class SettingsSession
     private ScreenEnter Enter(ScreenModel model)
     {
         var row = model.RowAt(Selection.Pane, Selection.Index);
-        if (row.Button is not null)
+        if (row.Button is { } button)
         {
-            return ScreenEnter.Add;
+            return button.Kind == ScreenButtonKind.Apply ? ScreenEnter.Apply : ScreenEnter.Add;
         }
 
         return row.FieldCount > 0 ? ScreenEnter.Edit : ScreenEnter.Close;

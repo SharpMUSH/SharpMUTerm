@@ -53,14 +53,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly AppConfiguration _config;
     private readonly SessionManager _sessions = new();
     private readonly TerminalCapabilities _capabilities;
-    private readonly Theme _theme;
+    private Theme _theme;
 
     /// <summary>
     /// The settings screens' palette, resolved from <see cref="_theme"/> once (<see cref="ScreenTheme"/>).
     /// Handed to every surface built from <see cref="ScreenPalette"/>'s roles — F1–F10, the deletion review
     /// and the package and send lists — so they follow a Light theme instead of staying dark.
     /// </summary>
-    private readonly ScreenTheme _screens;
+    private ScreenTheme _screens;
 
     /// <summary>
     /// The colours this client paints in its own voice, resolved from <see cref="_theme"/> and held to
@@ -68,9 +68,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// hexes written into the markup at each use site, each picked against a dark theme and then painted
     /// on whatever plane the workspace happened to have.
     /// </summary>
-    private readonly ChromeInk _ink;
-    private readonly MarkupFormatter _formatter;
-    private readonly MarkupFormatter _promptFormatter;
+    private ChromeInk _ink;
+    private MarkupFormatter _formatter;
+    private MarkupFormatter _promptFormatter;
     private readonly Workspace _workspace;
     private readonly Dictionary<string, MarkupControl> _panes = new(StringComparer.Ordinal);
 
@@ -765,7 +765,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _ownsDiagnostics = diagnostics is null;
         _messages = _diagnostics.Messages;
         _sessions.Logger = _diagnostics.For("SharpMUTerm.Session");
-        _theme = ResolveTheme(config);
+        _theme = SharpMUTerm.Client.Settings.ThemeChoices.Resolve(config);
         _ink = WorkspacePalette.Chrome(_theme);
         _formatter = new MarkupFormatter(_theme, config.Text);
 
@@ -2122,10 +2122,35 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // demo's game data holds. The game data is written through SetGmcp, the call the wire makes.
         // `settings-changed` is F7 after two real edits — Space on `emoji substitution`, and `8` typed into
         // the tab width — so the frame carries the `● changed` marks and the header's `r reset`.
+        // `settings-themes` is F7 opened and ↓ pressed once: the cursor on the second theme, so the screen is painted
+        // in it and its preview is drawn — the theme picker's live preview, before anything is committed.
+        // `settings-themes-solarized` presses ↓ twice. `settings-themes-used` presses ⏎ on the second theme, so the
+        // frame is the client after a theme was committed live.
+        if (view is not null && view.StartsWith("settings-themes", StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
+            var downs = view.EndsWith("-solarized", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+            for (var down = 0; down < downs; down++)
+            {
+                _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
+            }
+
+            if (view.EndsWith("-used", StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            }
+
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
         if (string.Equals(view, "settings-changed", StringComparison.OrdinalIgnoreCase))
         {
             _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
-            for (var down = 0; down < 5; down++)
+
+            // Past the theme picker's rows first, then down to `emoji substitution`.
+            var themes = SharpMUTerm.Client.Settings.ThemeChoices.Names(_config).Count;
+            for (var down = 0; down < themes + 5; down++)
             {
                 _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
             }
@@ -7196,6 +7221,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal void SaveConfiguration()
     {
+        // F7's theme picker (or the desktop's theme cards): a new theme is put into force first, so everything
+        // repainted below is painted in it. See SharpMUTermApp.Theme.cs.
+        ApplyThemeIfChanged();
+
         // F8 edits the live InputSettings, so a committed height applies to the bars immediately rather
         // than at the next launch.
         SyncInputBars();
@@ -7570,7 +7599,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>Opens the F7 Text &amp; display screen, drawn from its declared section.</summary>
-    private ScreenBinding TextAnsiScreen() => OptionsScreen(TextProjection);
+    private ScreenBinding TextAnsiScreen()
+    {
+        // The cursor opens on the theme in force, so opening F7 previews nothing but what is already on screen.
+        var binding = OptionsScreen(TextProjection);
+        var names = SharpMUTerm.Client.Settings.ThemeChoices.Names(_config);
+        var current = SharpMUTerm.Client.Settings.ThemeChoices.Current(_config);
+        var row = names.ToList().FindIndex(n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase));
+        if (row > 0)
+        {
+            binding.Session.Selection.Seed(0, row);
+        }
+
+        return binding;
+    }
 
     /// <summary>Opens the F8 Input screen, drawn from its declared section.</summary>
     private ScreenBinding InputScreen() => OptionsScreen(_ => InputProjection());
@@ -7588,10 +7630,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return new ScreenBinding(session, () =>
         {
             var focus = session.Focus();
+            var shown = screen(session.Selection.CursorIn(0));
+
+            // On the theme picker the screen is painted in the theme under the cursor: the live preview. Nothing is
+            // committed until ⏎, so Esc closes on the theme in force.
             return OptionsScreenView.Build(
-                screen(session.Selection.CursorIn(0)),
+                shown,
                 _system.DesktopDimensions.Width,
-                _screens,
+                SchemeFor(shown.Preview),
                 focus,
                 _system.DesktopDimensions.Height);
         });
@@ -13926,19 +13972,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     private static SColor ToColor(Rgb rgb) => new(rgb.R, rgb.G, rgb.B, 255);
 
-    /// <summary>
-    /// Resolves the active theme: a built-in by <see cref="AppConfiguration.ThemeName"/> unless
-    /// the config carries a customised inline <see cref="AppConfiguration.Theme"/>.
-    /// </summary>
-    private static Theme ResolveTheme(AppConfiguration config)
-    {
-        if (config.Theme is { } inline && !string.Equals(inline.Name, config.ThemeName, StringComparison.OrdinalIgnoreCase))
-        {
-            return inline;
-        }
-
-        return ThemeLibrary.Get(config.ThemeName);
-    }
 
     public async ValueTask DisposeAsync()
     {

@@ -370,9 +370,11 @@ public class ScreenModelTests
         // settings. Since F7 was drawn from its declared section the groups are COLOUR & LEGIBILITY, TEXT,
         // LINKS & PICTURES, STATUS ROW & METERS, ACTIVITY and SCROLLBACK; it was 21/10 with one row for the
         // meters as a typed line, and 23/13 before SCROLLBACK.
-        await Assert.That(screen.Rows.Count).IsEqualTo(26);
+        // The THEME group on top adds thirteen rows and three stops: its heading and spacer, a row per built-in
+        // theme, and the preview's caption and seven rows, which are drawn and never a stop.
+        await Assert.That(screen.Rows.Count).IsEqualTo(39);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(14);
+        await Assert.That(model.Sizes[0]).IsEqualTo(17);
     }
 
     /// <summary>
@@ -387,33 +389,36 @@ public class ScreenModelTests
         var text = new TextSettings();
         var model = OptionsScreenRenderer.Model(OptionsScreenRenderer.TextAnsiScreen(text));
 
-        model.ToggleAt(0, 0)!.Value.Flip();
+        // The three built-in themes are the first three stops; the ordinals below count from after them.
+        const int Themes = 3;
+
+        model.ToggleAt(0, Themes + 0)!.Value.Flip();
         await Assert.That(text.StripIncomingColour).IsTrue();
 
         // 1 is "keep text legible", which sits directly under the row above because the two are the ends
         // of one question's range — discard every colour the server sent, or keep them and move the few
         // that cannot be read.
-        model.ToggleAt(0, 1)!.Value.Flip();
+        model.ToggleAt(0, Themes + 1)!.Value.Flip();
         await Assert.That(text.KeepTextLegible).IsFalse();
 
-        model.ToggleAt(0, 6)!.Value.Flip();
+        model.ToggleAt(0, Themes + 6)!.Value.Flip();
         await Assert.That(text.UnderlineHyperlinks).IsFalse();
 
-        model.ToggleAt(0, 7)!.Value.Flip();
+        model.ToggleAt(0, Themes + 7)!.Value.Flip();
         await Assert.That(text.DetectLinks).IsFalse();
 
-        model.ToggleAt(0, 5)!.Value.Flip();
+        model.ToggleAt(0, Themes + 5)!.Value.Flip();
         await Assert.That(text.EmojiSubstitution).IsFalse();
 
         // Row 4 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
         // this screen carry an editable row at all.
-        await Assert.That(model.ToggleAt(0, 4)).IsNull();
+        await Assert.That(model.ToggleAt(0, Themes + 4)).IsNull();
         await Assert.That(model.HasEditableRow).IsTrue();
 
         // Row 3 is the background transparency, a percentage rather than the checkbox it started as, at the
         // foot of COLOUR & LEGIBILITY.
-        await Assert.That(model.ToggleAt(0, 3)).IsNull();
-        var transparency = model.FieldAt(0, 3, 0)!.Value;
+        await Assert.That(model.ToggleAt(0, Themes + 3)).IsNull();
+        var transparency = model.FieldAt(0, Themes + 3, 0)!.Value;
         await Assert.That(transparency.Validate("101")).IsNotNull();
         transparency.Set("60");
         await Assert.That(text.BackgroundTransparency).IsEqualTo(60);

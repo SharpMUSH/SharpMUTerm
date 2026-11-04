@@ -23,6 +23,14 @@ public sealed class AppConfiguration
     public Theme Theme { get; set; } = ThemeLibrary.Dark();
 
     /// <summary>
+    /// The player's own themes that are not in use. A customised theme lives in <see cref="Theme"/> while it is the
+    /// active one; picking another moves it here rather than dropping it, so the theme picker can offer it again.
+    /// Empty by default; no schema version moved for it, since a configuration without it has no custom theme to
+    /// keep.
+    /// </summary>
+    public List<Theme> CustomThemes { get; set; } = new();
+
+    /// <summary>
     /// Maximum scrollback lines retained per session. See
     /// <see cref="SharpMUTerm.Core.Text.ScrollbackBuffer.DefaultCapacity"/> for why the default is ten
     /// thousand and not the twenty thousand it used to be. (Fully qualified: this class has its own

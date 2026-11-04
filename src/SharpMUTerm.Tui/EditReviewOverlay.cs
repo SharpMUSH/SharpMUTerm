@@ -35,7 +35,10 @@ internal sealed class EditReviewOverlay
     private Action? _keep;
     private Action? _undo;
 
-    private readonly ScreenTheme _scheme;
+    private ScreenTheme _scheme;
+
+    /// <summary>The palette it is painted in; the app replaces it when the theme changes.</summary>
+    internal ScreenTheme Scheme { get => _scheme; set => _scheme = value ?? ScreenTheme.Dark; }
 
     public EditReviewOverlay(ConsoleWindowSystem system, ScreenTheme? scheme = null)
     {

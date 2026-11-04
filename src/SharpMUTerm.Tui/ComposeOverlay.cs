@@ -67,7 +67,10 @@ internal sealed class ComposeOverlay
         _scheme = scheme ?? ScreenTheme.Dark;
     }
 
-    private readonly ScreenTheme _scheme;
+    private ScreenTheme _scheme;
+
+    /// <summary>The palette it is painted in; the app replaces it when the theme changes, and the next time it is drawn follows.</summary>
+    internal ScreenTheme Scheme { get => _scheme; set => _scheme = value ?? ScreenTheme.Dark; }
 
     /// <summary>
     /// The dictionary marking this post, or null: none was found, or this is a MOO edit, whose buffer is as often

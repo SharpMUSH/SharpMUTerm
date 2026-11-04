@@ -79,15 +79,32 @@ internal sealed class SettingsOverlay
     public SettingsOverlay(ConsoleWindowSystem system, ScreenTheme? scheme = null)
     {
         _system = system;
-        Scheme = scheme ?? ScreenTheme.Dark;
-        _review = new EditReviewOverlay(system, Scheme);
+        _scheme = scheme ?? ScreenTheme.Dark;
+        _review = new EditReviewOverlay(system, _scheme);
     }
 
     /// <summary>
     /// The palette the screens are painted in — the app's theme, resolved once. The window's own
     /// backdrop is painted from it here; each screen's view paints its panels from the same instance.
     /// </summary>
-    internal ScreenTheme Scheme { get; }
+    internal ScreenTheme Scheme
+    {
+        get => _scheme;
+        set
+        {
+            _scheme = value ?? ScreenTheme.Dark;
+            _review.Scheme = _scheme;
+            if (_window is { } window)
+            {
+                // A theme picked on F7 lands while F7 is open: repaint the window's own backdrop and the screen in it.
+                window.BackgroundColor = _scheme.Colour(PanelBg);
+                window.ForegroundColor = _scheme.Colour(PanelFg);
+                Refresh();
+            }
+        }
+    }
+
+    private ScreenTheme _scheme = ScreenTheme.Dark;
 
     /// <summary>The F-key of the currently open screen, or null when closed.</summary>
     public ConsoleKey? OpenKey => _window is null ? null : _openKey;

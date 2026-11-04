@@ -17,7 +17,13 @@ namespace SharpMUTerm.Client.Settings;
 /// </summary>
 public static class BuiltInSettings
 {
-    /// <summary>F7's groups, in the order they are drawn. Colour and legibility: what the client does with the colours a world sends.</summary>
+    /// <summary>F7's groups, in the order they are drawn. The theme: the client's own colours, picked with a preview.</summary>
+    public const string ThemeGroup = "Theme";
+
+    /// <summary>The id of the theme field, which a host draws as a list of previews rather than one value.</summary>
+    public const string ThemeFieldId = "theme";
+
+    /// <summary>Colour and legibility: what the client does with the colours a world sends.</summary>
     public const string ColourGroup = "Colour & legibility";
 
     /// <summary>Text: how a line's characters are laid out.</summary>
@@ -50,6 +56,13 @@ public static class BuiltInSettings
         Order = 60,
         Fields =
         [
+            new ThemeField(ThemeFieldId, "theme", "the colours of the panes, the bars and these screens")
+            {
+                Group = ThemeGroup,
+                Keywords = "colour color dark light solarized palette appearance look",
+                Binding = new SettingBinding<string>(ThemeChoices.Current, ThemeChoices.Apply),
+            },
+
             Flag("strip-colour", "strip incoming ANSI colour", ColourGroup,
                 c => c.Text.StripIncomingColour, (c, v) => c.Text.StripIncomingColour = v,
                 "draw every line in the theme's own colours", "sgr monochrome color"),
@@ -159,17 +172,203 @@ public static class BuiltInSettings
         ],
     };
 
+    /// <summary>F5's world groups.</summary>
+    public const string ConnectionGroup = "Connection";
+
+    /// <summary>What the world speaks and how it logs in.</summary>
+    public const string ProtocolGroup = "Protocols & login";
+
+    /// <summary>How the world's text is taken in.</summary>
+    public const string WorldTextGroup = "Text";
+
+    /// <summary>What the mapper reads.</summary>
+    public const string MapGroup = "Map";
+
+    /// <summary>Sound and the starting layout.</summary>
+    public const string WorldMediaGroup = "Sound & layout";
+
+    /// <summary>
+    /// F5: one world's own fields, edited for the world a surface has chosen. The cell screen builds its world row from
+    /// these (in its own ⇥ order, by id — see <c>WorldsScreenRenderer.WorldFieldOrder</c>), and its CHARACTERS and TRIGGER
+    /// SETS panes — lists, not fields — stay the cell screen's, which the native window links to.
+    /// </summary>
+    public static SettingsSectionContribution World { get; } = new()
+    {
+        Id = "worlds",
+        Title = "Worlds & Characters",
+        Key = "F5",
+        Order = 10,
+        Scope = SettingScope.World,
+        Fields =
+        [
+            WorldText("name", "name", TextRule.Name, ConnectionGroup,
+                (_, w) => w.Name, (_, w, v) => w.Name = v ?? w.Name, "what the world is called here", resettable: false),
+            WorldText("host", "host", TextRule.Required, ConnectionGroup,
+                (_, w) => w.Host, (_, w, v) => w.Host = v ?? w.Host, "the address to dial", "address server dns", resettable: false),
+            new NumberField("port", "port", 1, 65535, "the port to dial")
+            {
+                Group = ConnectionGroup,
+                Binding = SettingBinding<int>.ForWorld((_, w) => w.Port, (_, w, v) => w.Port = v, resettable: false),
+            },
+            WorldFlag("tls", "TLS", ConnectionGroup, w => w.UseTls, (w, v) => w.UseTls = v,
+                "connect over an encrypted connection", "ssl secure encrypted"),
+            WorldFlag("invalid-certificates", "accept invalid certificates", ConnectionGroup,
+                w => w.AllowInvalidCertificates, (w, v) => w.AllowInvalidCertificates = v,
+                "connect even when the server's certificate does not check out", "ssl tls self-signed insecure"),
+            WorldChoice("encoding", "encoding", WorldFieldValues.Encodings, ConnectionGroup,
+                (_, w) => w.Encoding, (_, w, v) => w.Encoding = v,
+                "auto follows what the server agrees; anything else overrides it", "charset utf-8 latin"),
+            new NumberField("keepalive", "keepalive", 0, 86400, "seconds between keepalives; 0 is off")
+            {
+                Group = ConnectionGroup,
+                Keywords = "idle timeout ping",
+                Binding = SettingBinding<int>.ForWorld((_, w) => w.KeepaliveSeconds, (_, w, v) => w.KeepaliveSeconds = v),
+            },
+
+            WorldChoice("content", "content", WorldFieldValues.ContentChoices, ProtocolGroup,
+                (_, w) => WorldFieldValues.ContentName(w.ContentFormat), (_, w, v) => w.ContentFormat = WorldFieldValues.ContentOf(v),
+                "the markup the world sends; auto follows what it negotiates", "mxp pueblo ansi markup"),
+            WorldText("gmcp-modules", "gmcp modules", TextRule.Optional, ProtocolGroup,
+                (_, w) => WorldFieldValues.JoinModules(w), (_, w, v) => WorldFieldValues.SplitModules(w, v),
+                "extra GMCP packages to ask for, such as IRE.Rift 1", "gmcp packages supports"),
+            WorldChoice("gmcp-login", "gmcp login", WorldFieldValues.LoginChoices, ProtocolGroup,
+                (_, w) => w.GmcpLogin ? WorldFieldValues.LoginChoices[1] : WorldFieldValues.LoginChoices[0],
+                (_, w, v) => w.GmcpLogin = v == WorldFieldValues.LoginChoices[1],
+                "log in over GMCP when the server offers it", "char.login password credentials"),
+            WorldChoice("discord", "discord", WorldFieldValues.DiscordChoices, ProtocolGroup,
+                (_, w) => w.DiscordPresence ? WorldFieldValues.DiscordChoices[1] : WorldFieldValues.DiscordChoices[0],
+                (_, w, v) => w.DiscordPresence = v == WorldFieldValues.DiscordChoices[1],
+                "show what the game says you are doing on Discord", "presence rich status"),
+
+            WorldChoice("emoji", "emoji", WorldFieldValues.EmojiChoices, WorldTextGroup,
+                (_, w) => WorldFieldValues.EmojiName(w.Emoji), (_, w, v) => WorldFieldValues.SetEmoji(w.Emoji, v),
+                "which emoji substitutions run on this world's text", "emoticons shortcodes"),
+            WorldChoice("join-wraps", "join wraps", WorldFieldValues.JoinWrapChoices, WorldTextGroup,
+                (_, w) => w.JoinWrappedLines ? WorldFieldValues.JoinWrapChoices[1] : WorldFieldValues.JoinWrapChoices[0],
+                (_, w, v) => w.JoinWrappedLines = v == WorldFieldValues.JoinWrapChoices[1],
+                "join lines the server wrapped at its own width", "reflow wrap hard"),
+            WorldText("edit-grab", "edit grab", TextRule.Optional, WorldTextGroup,
+                (_, w) => w.GrabPrefix, (_, w, v) => w.GrabPrefix = v,
+                "a line starting with this goes on the command line instead of the output", "fugueedit mush edit prefix"),
+
+            WorldText("map-room", "map room", TextRule.Pattern, MapGroup,
+                (_, w) => w.Map.RoomNamePattern, (_, w, v) => w.Map.RoomNamePattern = v,
+                "a pattern matching a room's name line", "mapper regex"),
+            WorldText("map-exits", "map exits", TextRule.Pattern, MapGroup,
+                (_, w) => w.Map.ExitsPattern, (_, w, v) => w.Map.ExitsPattern = v,
+                "a pattern matching a room's exits line", "mapper regex"),
+            WorldText("walk-fail", "walk fail", TextRule.Pattern, MapGroup,
+                (_, w) => w.Map.WalkFailurePattern, (_, w, v) => w.Map.WalkFailurePattern = v,
+                "a pattern that stops a speedwalk", "speedwalk mapper regex"),
+
+            WorldChoice("sounds", "sounds", WorldFieldValues.SoundChoices, WorldMediaGroup,
+                (_, w) => w.DownloadMedia ? WorldFieldValues.SoundChoices[0] : WorldFieldValues.SoundChoices[1],
+                (_, w, v) => w.DownloadMedia = v == WorldFieldValues.SoundChoices[0],
+                "fetch the sounds the game asks for, or play only those already cached", "audio media download"),
+            new ChoiceField("layout", "layout", [WorldFieldValues.WorldLayoutDefault], "the layout this world's characters start in")
+            {
+                Group = WorldMediaGroup,
+                Keywords = "panes combat roleplay",
+                ChoicesFrom = c => WorldFieldValues.LayoutChoices(WorldFieldValues.Layouts(c), WorldFieldValues.WorldLayoutDefault),
+                Binding = SettingBinding<string>.ForWorld(
+                    (c, w) => WorldFieldValues.LayoutName(WorldFieldValues.Layouts(c), w.Layout) ?? WorldFieldValues.WorldLayoutDefault,
+                    (c, w, v) => w.Layout = WorldFieldValues.LayoutId(WorldFieldValues.Layouts(c), v)),
+            },
+        ],
+    };
+
+    /// <summary>F9's character groups.</summary>
+    public const string CharacterGroup = "Character";
+
+    /// <summary>The character's transcript and restore log.</summary>
+    public const string LoggingGroup = "Logging";
+
+    /// <summary>How the character's panes look.</summary>
+    public const string LookGroup = "Panes";
+
+    /// <summary>
+    /// F9: one character's own fields, edited for the character a surface has chosen. The cell screen builds its
+    /// character row from these (in its ⇥ order, by id — <c>WorldsScreenRenderer.CharacterFieldOrder</c>); the trigger
+    /// sets a character uses are a list, and stay on the cell screen.
+    /// </summary>
+    public static SettingsSectionContribution Character { get; } = new()
+    {
+        Id = "logging",
+        Title = "Characters",
+        Key = "F9",
+        Order = 80,
+        Scope = SettingScope.Character,
+        Fields =
+        [
+            CharacterText("name", "name", TextRule.Name, CharacterGroup,
+                (_, c) => c.Name, (_, c, v) => c.Name = v ?? c.Name, "the name the connect line logs in as", resettable: false),
+            new TextField("password", "password", Masked: true, Help: "saved in secrets.json, in plain text")
+            {
+                Group = CharacterGroup,
+                Rule = TextRule.Secret,
+                Keywords = "secret login",
+                Binding = SettingBinding<string?>.ForCharacter((_, c) => c.Password, (_, c, v) => c.Password = v, resettable: false),
+            },
+            new TextField("connect", "connect", Help: "the login line; %CHARACTER% and %PASSWORD% are filled in")
+            {
+                Group = CharacterGroup,
+                Rule = TextRule.Defaulted,
+                Fallback = ConnectStringTemplate.Default,
+                Keywords = "login auto-login connect string",
+                Binding = SettingBinding<string?>.ForCharacter((_, c) => c.ConnectString, (_, c, v) => c.ConnectString = v),
+            },
+            CharacterText("on-connect", "on connect", TextRule.Optional, CharacterGroup,
+                (_, c) => c.OnConnect, (_, c, v) => c.OnConnect = v, "a command sent once logged in", "commands startup"),
+            CharacterText("disconnect", "disconnect", TextRule.Optional, CharacterGroup,
+                (_, c) => c.OnDisconnect, (_, c, v) => c.OnDisconnect = v, "a command sent before hanging up", "quit logout"),
+            CharacterChoice("at-start", "at start", WorldFieldValues.StartupChoices, CharacterGroup,
+                (_, c) => c.ConnectAtStartup ? WorldFieldValues.StartupOn : WorldFieldValues.StartupOff,
+                (_, c, v) => c.ConnectAtStartup = string.Equals(v, WorldFieldValues.StartupOn, StringComparison.OrdinalIgnoreCase),
+                "connect this character when the client starts", "startup launch auto connect"),
+
+            CharacterChoice("log", "log", WorldFieldValues.LogFormats, LoggingGroup,
+                (_, c) => c.Logging.Format.ToString(),
+                (_, c, v) => c.Logging.Format = Enum.TryParse<LogFormat>(v, ignoreCase: true, out var f) ? f : c.Logging.Format,
+                "write this character's session to a transcript", "transcript html text logging"),
+            CharacterText("log-folder", "log folder", TextRule.Optional, LoggingGroup,
+                (_, c) => c.Logging.Directory, (_, c, v) => c.Logging.Directory = v,
+                "where transcripts go; blank is the default folder", "directory path logging"),
+            CharacterChoice("restore", "restore", WorldFieldValues.RestoreChoices, LoggingGroup,
+                (_, c) => c.Logging.RestoreLog ? WorldFieldValues.RestoreOn : WorldFieldValues.RestoreOff,
+                (_, c, v) => c.Logging.RestoreLog = string.Equals(v, WorldFieldValues.RestoreOn, StringComparison.OrdinalIgnoreCase),
+                "panes refill after a restart", "restart history"),
+
+            new ColourField("tint", "tint", WorldFieldValues.Tints, "this character's pane colour")
+            {
+                Group = LookGroup,
+                Keywords = "colour color pane tint",
+                Binding = SettingBinding<string>.ForCharacter(
+                    (_, c) => c.Tint.ToString(),
+                    (_, c, v) => c.Tint = Enum.TryParse<PaneTint>(v, ignoreCase: true, out var t) ? t : c.Tint),
+            },
+            new ChoiceField("layout", "layout", [WorldFieldValues.CharacterLayoutDefault], "the layout this character starts in")
+            {
+                Group = LookGroup,
+                Keywords = "panes combat roleplay",
+                ChoicesFrom = c => WorldFieldValues.LayoutChoices(WorldFieldValues.Layouts(c), WorldFieldValues.CharacterLayoutDefault),
+                Binding = SettingBinding<string>.ForCharacter(
+                    (c, ch) => WorldFieldValues.LayoutName(WorldFieldValues.Layouts(c), ch.Layout) ?? WorldFieldValues.CharacterLayoutDefault,
+                    (c, ch, v) => ch.Layout = WorldFieldValues.LayoutId(WorldFieldValues.Layouts(c), v)),
+            },
+        ],
+    };
+
     /// <summary>Every section the client declares, in their order: the screens F2 to F10.</summary>
     public static IReadOnlyList<SettingsSectionContribution> All { get; } =
     [
-        Listed("worlds", "Worlds & Characters", "F5", 10),
+        World,
         Listed("triggers", "Triggers & spawn routing", "F2", 20),
         Listed("aliases", "Aliases", "F3", 30),
         Listed("keypad", "Keypad & hotkeys", "F4", 40),
         Listed("timers", "Timers", "F6", 50),
         Text,
         Input,
-        Listed("logging", "Character logging", "F9", 80),
+        Character,
         Listed("packages", "Packages", "F10", 90),
     ];
 
@@ -199,6 +398,89 @@ public static class BuiltInSettings
             Group = group,
             Keywords = keywords,
             Binding = new SettingBinding<bool>(get, set, v => v ? "on" : "off"),
+        };
+
+    private static BoolField WorldFlag(
+        string id,
+        string label,
+        string group,
+        Func<WorldDefinition, bool> get,
+        Action<WorldDefinition, bool> set,
+        string? help = null,
+        string? keywords = null) =>
+        new(id, label, help)
+        {
+            Group = group,
+            Keywords = keywords,
+            Binding = SettingBinding<bool>.ForWorld((_, w) => get(w), (_, w, v) => set(w, v), v => v ? "on" : "off"),
+        };
+
+    private static ChoiceField WorldChoice(
+        string id,
+        string label,
+        IReadOnlyList<string> choices,
+        string group,
+        Func<AppConfiguration, WorldDefinition, string> get,
+        Action<AppConfiguration, WorldDefinition, string> set,
+        string? help = null,
+        string? keywords = null) =>
+        new(id, label, choices, help)
+        {
+            Group = group,
+            Keywords = keywords,
+            Binding = SettingBinding<string>.ForWorld(get, set),
+        };
+
+    private static TextField WorldText(
+        string id,
+        string label,
+        TextRule rule,
+        string group,
+        Func<AppConfiguration, WorldDefinition, string?> get,
+        Action<AppConfiguration, WorldDefinition, string?> set,
+        string? help = null,
+        string? keywords = null,
+        bool resettable = true) =>
+        new(id, label, Help: help)
+        {
+            Group = group,
+            Rule = rule,
+            Keywords = keywords,
+            Binding = SettingBinding<string?>.ForWorld(get, set, resettable: resettable),
+        };
+
+    private static ChoiceField CharacterChoice(
+        string id,
+        string label,
+        IReadOnlyList<string> choices,
+        string group,
+        Func<AppConfiguration, CharacterDefinition, string> get,
+        Action<AppConfiguration, CharacterDefinition, string> set,
+        string? help = null,
+        string? keywords = null) =>
+        new(id, label, choices, help)
+        {
+            Group = group,
+            Keywords = keywords,
+            Binding = SettingBinding<string>.ForCharacter(get, set),
+        };
+
+    private static TextField CharacterText(
+        string id,
+        string label,
+        TextRule rule,
+        string group,
+        Func<AppConfiguration, CharacterDefinition, string?> get,
+        Action<AppConfiguration, CharacterDefinition, string?> set,
+        string? help = null,
+        string? keywords = null,
+        bool resettable = true) =>
+        new(id, label, Help: help)
+        {
+            Group = group,
+            Rule = rule,
+            Keywords = keywords,
+            Binding = SettingBinding<string?>.ForCharacter(get, set, resettable: resettable),
         };
 
     private static NumberField Number(

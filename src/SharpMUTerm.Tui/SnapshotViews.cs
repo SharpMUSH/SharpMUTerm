@@ -14,6 +14,7 @@ internal static class SnapshotViews
         "worlds", "settings", "triggers", "route", "highlight", "set", "aliases", "timers", "keypad", "textansi",
         "input", "logging", "password", "startup", "deletions",
         "settings-search", "settings-meters", "settings-meters-pick", "settings-changed",
+        "settings-themes", "settings-themes-solarized", "settings-themes-used",
         "triggers-edit", "logging-edit", "keypad-edit", "password-edit", "startup-edit",
         "freeze", "freeze-scrollback", "spawn", "split", "split-stacked", "move", "drag",
         "history", "history-search", "history-search-filter", "draft", "draft2",

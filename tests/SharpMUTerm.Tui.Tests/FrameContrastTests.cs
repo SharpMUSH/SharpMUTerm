@@ -76,6 +76,7 @@ public class FrameContrastTests
         // The settings search marks its matches in the accent and the changed marks wear it too; the meter
         // editor's dropdown carries the received values as muted notes beside each path.
         "settings-search", "settings-meters", "settings-meters-pick", "settings-changed",
+        "settings-themes", "settings-themes-solarized", "settings-themes-used",
 
         // The prompt row is the only thing this client paints outside a pane that carries the
         // *game's* colours rather than its own, so the floor is applied against the idle input band

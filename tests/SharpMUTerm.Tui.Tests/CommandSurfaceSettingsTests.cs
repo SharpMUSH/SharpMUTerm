@@ -53,7 +53,12 @@ public class CommandSurfaceSettingsTests
             new HeadlessConsoleDriver(Width, Height),
             save: _ => saves++);
 
-        app.DispatchCommand("screen:textansi"); // F7: every row a checkbox
+        app.DispatchCommand("screen:textansi"); // F7: past the theme rows, a checkbox
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            app.SimulateSettingsKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        }
+
         app.SimulateSettingsKey(new ConsoleKeyInfo(' ', ConsoleKey.Spacebar, false, false, false));
 
         await Assert.That(saves).IsGreaterThan(0);
@@ -75,7 +80,12 @@ public class CommandSurfaceSettingsTests
     {
         var app = App();
 
-        app.DispatchCommand("screen:textansi");
+        app.DispatchCommand("screen:textansi"); // F7: past the theme rows, a checkbox
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            app.SimulateSettingsKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        }
+
         app.SimulateSettingsKey(new ConsoleKeyInfo(' ', ConsoleKey.Spacebar, false, false, false));
 
         // Nothing threw and nothing was written: the only route to disk is the action the entry point
