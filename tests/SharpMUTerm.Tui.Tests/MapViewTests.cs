@@ -64,7 +64,7 @@ public class MapViewTests
 
     private static WorldMap MapOf(SharpMUTermApp app) => app.SessionMapFor(app.FindSession(Ann)!)!.Map;
 
-    private static string Title(SharpMUTermApp app) => MarkupText.Plain(app.MapMarkup(MapId)[0]);
+    private static string Title(SharpMUTermApp app) => MarkupText.Plain(app.MapMarkup(MapId)[0]).TrimStart();
 
     [Test]
     public async Task PaletteStepsALevelUpAndBackAndTheTitleSaysWhereItIs()

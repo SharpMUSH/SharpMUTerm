@@ -436,6 +436,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the terminal, the map draws corridors three cells long when the area fits, puts its title on the panel heading
+  band, keeps its words a cell in from the edge and says "Click a room to walk there" in a tall pane.
+- The settings search lists its sections on a navigation column of their own, a shade off the page, with the selected
+  section in bold.
+
 - The terminal looks more like its design: the sidebar's heading and world names are plain (no corner or stripe), the
   who-is-here list, vitals card and quick bar keep a space of margin at their edges, quick-bar keys are quiet so the
   names read first, vitals bars show their empty part as a dim solid track, the docked composer's text sits in a darker

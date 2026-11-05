@@ -9,8 +9,8 @@ namespace SharpMUTerm.Tui;
 /// <summary>
 /// Draws one level of one area of a map as rows of markup, centred on where the character stands.
 /// <para>
-/// <b>A room is three cells, <c>[ ]</c>, and the grid is four columns by two rows</b>, which leaves one cell
-/// between rooms for an east–west line and one row for the north–south and diagonal ones. The middle cell says
+/// <b>A room is three cells, <c>[ ]</c>, and the grid is four columns by two rows</b> (six columns where the level fits,
+/// <see cref="WideCellWidth"/>), which leaves a gap between rooms for an east–west line and one row for the north–south and diagonal ones. The middle cell says
 /// what the room is: <c>@</c> where you are, the room's own symbol when it has one, an arrow when it has a way
 /// up or down (the view's <see cref="MapViewRoom.Up"/>/<see cref="MapViewRoom.Down"/>), otherwise blank. A room is
 /// drawn in its area's colour (<see cref="MapViewModel.AreaColour"/>); a room on the walk ahead wears the notice ink,
@@ -47,7 +47,26 @@ internal static class MapRenderer
     /// The inks a map is drawn in. Hexes, already held to the legibility floor by the caller; <paramref name="Plane"/>
     /// is the pane plane the area colours are held to, or null to draw them as the view gives them.
     /// </summary>
-    internal readonly record struct Ink(string Title, string Current, string Path, string Locked, Rgb? Plane = null, string? Selected = null);
+    internal readonly record struct Ink(
+        string Title,
+        string Current,
+        string Path,
+        string Locked,
+        Rgb? Plane = null,
+        string? Selected = null,
+        Panels.HeadingBand.Ink? Band = null);
+
+    /// <summary>
+    /// The cell a map's words keep from the pane's edge (title, exits, hint, legend), the terminal mockup's 14 px inset,
+    /// from <see cref="InsetFromWidth"/> cells; the grid is centred and needs none.
+    /// </summary>
+    internal const int InsetFromWidth = 24;
+
+    /// <summary>
+    /// The column step of a plain grid when the whole level fits at it: <c>[ ]───[ ]</c>, the terminal mockup's exits,
+    /// three cells of line between rooms instead of one. A level that does not fit keeps <see cref="CellWidth"/>.
+    /// </summary>
+    internal const int WideCellWidth = 6;
 
     /// <summary>The narrowest map that lists names beside its grid: the current room's exits, or the room being edited.</summary>
     internal const int SideFromWidth = 64;
@@ -167,15 +186,30 @@ internal static class MapRenderer
             title.Append(" · ").Append(walking);
         }
 
-        // The ways to look elsewhere and back, after the title: links the map's own handler answers.
-        var (controls, controlsWidth) = LookControls(view, ink);
-        if (controlsWidth > 0 && controlsWidth + 8 <= width)
+        // The ways to look elsewhere and back, after the title: links the map's own handler answers. Under a heading
+        // band (a panel's, the terminal mockup's MAP band) the title is the band's bold ink and the controls sit at its
+        // far end in the band's accent.
+        var inset = width >= InsetFromWidth ? 1 : 0;
+        if (ink.Band is { } band)
         {
-            lines.Add(Title(title.ToString(), width - controlsWidth, ink) + controls);
+            var (bandControls, bandWidth) = LookControls(view, ink with { Title = band.Accent, Current = band.Accent });
+            var inner = Math.Max(1, width - 2);
+            var keep = bandWidth > 0 && bandWidth + 8 <= width;
+            var heading = Elide(title.ToString(), keep ? inner - bandWidth : inner);
+            lines.Add(Panels.HeadingBand.Row(MarkupText.Escape(heading), string.Empty, keep ? bandControls.TrimStart() : string.Empty, width, band));
         }
         else
         {
-            lines.Add(Title(title.ToString(), width, ink));
+            var (controls, controlsWidth) = LookControls(view, ink);
+            var lead = new string(' ', inset);
+            if (controlsWidth > 0 && controlsWidth + 8 + inset <= width)
+            {
+                lines.Add(lead + Title(title.ToString(), width - controlsWidth - inset, ink) + controls);
+            }
+            else
+            {
+                lines.Add(lead + Title(title.ToString(), width - inset, ink));
+            }
         }
         if (height == 1)
         {
@@ -188,7 +222,16 @@ internal static class MapRenderer
         var side = view.Editing ? SideWidth(width) : 0;
         var gridWidth = side > 0 ? width - side - 2 : width;
         var legend = !view.Editing && height >= LegendMinHeight;
-        var under = side > 0 ? [] : UnderLines(view, width, height, ink, keysHeld);
+        var words = width - inset;
+        var lead_ = new string(' ', inset);
+        var under = side > 0 ? [] : UnderLines(view, words, height, ink, keysHeld).Select(l => l.Length == 0 ? l : lead_ + l).ToList();
+        if (!view.Editing && height >= UnderFromHeight && view.Hint is { } hint && hint.Length <= words)
+        {
+            // The model's own hint, the terminal mockup's "click a room to walk", over the legend in a tall pane, and only
+            // whole: an elided instruction says less than none.
+            under.Add($"{lead_}[dim]{MarkupText.Escape(hint)}[/]");
+        }
+
         var footer = side > 0 && height >= 4 ? KeysLine(width, ink, keysHeld) : null;
         var rows = Math.Max(0, height - 1 - (legend ? 1 : 0) - under.Count - (footer is null ? 0 : 1));
         var grid = new Cell[rows, gridWidth];
@@ -305,7 +348,7 @@ internal static class MapRenderer
 
         if (legend)
         {
-            lines.Add(WithSide(Legend(view, gridWidth, ink), column, rows, gridWidth));
+            lines.Add(WithSide(lead_ + Legend(view, gridWidth - inset, ink), column, rows, gridWidth));
         }
 
         return lines;
@@ -318,14 +361,17 @@ internal static class MapRenderer
 
         void Connect(int col, int row, string direction, Kind kind, string? colour, int named = 0)
         {
+            // A diagonal sits in the middle of a plain grid's gap: one cell in from the room on a wide step.
+            var mid = label == 0 ? (cellWidth - CellWidth) / 2 : 0;
             switch (direction)
             {
                 case "east":
-                    // With names on the grid the way east starts one cell past the name and runs to the next room.
+                    // With names on the grid the way east starts one cell past the name and runs to the next room; on a
+                    // plain grid it fills the gap. An unexplored way is one cell, a stub and not a corridor.
                     for (var c = named > 0 ? col + 5 + named : col + 3; c <= col + cellWidth - 1; c++)
                     {
                         Put(c, row, '─', kind, colour: colour);
-                        if (label == 0)
+                        if (kind == Kind.Stub)
                         {
                             break;
                         }
@@ -333,7 +379,13 @@ internal static class MapRenderer
 
                     break;
                 case "west":
-                    Put(col - 1, row, '─', kind, colour: colour);
+                    // A plain grid's way west fills the gap too (the room to the west may not list its way back); with
+                    // names that gap holds the western room's name, so it is one cell.
+                    for (var c = col - 1; c >= (label == 0 && kind != Kind.Stub ? col - (cellWidth - 3) : col - 1); c--)
+                    {
+                        Put(c, row, '─', kind, colour: colour);
+                    }
+
                     break;
                 case "south":
                     Put(col + 1, row + 1, '│', kind, colour: colour);
@@ -342,16 +394,16 @@ internal static class MapRenderer
                     Put(col + 1, row - 1, '│', kind, colour: colour);
                     break;
                 case "southeast":
-                    Put(col + 3, row + 1, '╲', kind, colour: colour);
+                    Put(col + 3 + mid, row + 1, '╲', kind, colour: colour);
                     break;
                 case "northwest":
-                    Put(col - 1, row - 1, '╲', kind, colour: colour);
+                    Put(col - 1 - mid, row - 1, '╲', kind, colour: colour);
                     break;
                 case "southwest":
-                    Put(col - 1, row + 1, '╱', kind, colour: colour);
+                    Put(col - 1 - mid, row + 1, '╱', kind, colour: colour);
                     break;
                 case "northeast":
-                    Put(col + 3, row - 1, '╱', kind, colour: colour);
+                    Put(col + 3 + mid, row - 1, '╱', kind, colour: colour);
                     break;
             }
         }
@@ -372,13 +424,25 @@ internal static class MapRenderer
     /// </summary>
     internal static (int Label, int CellWidth, int OriginCol) Labelling(IReadOnlyList<MapRoom> level, MapRoom centre, int gridWidth, int originCol)
     {
-        if (gridWidth < LabelFromWidth || level.Count == 0)
+        if (level.Count == 0)
         {
             return (0, CellWidth, originCol);
         }
 
         var west = Math.Max(0, centre.X - level.Min(r => r.X));
         var east = Math.Max(0, level.Max(r => r.X) - centre.X);
+
+        // A plain grid takes the mockup's wide step when every room still lands inside the box (centred on the room as
+        // before; a stub past the last room may be cut, as it always could be).
+        (int, int, int) Plain() =>
+            originCol - (west * WideCellWidth) >= 1 && originCol + (east * WideCellWidth) + 3 <= gridWidth
+                ? (0, WideCellWidth, originCol)
+                : (0, CellWidth, originCol);
+
+        if (gridWidth < LabelFromWidth)
+        {
+            return Plain();
+        }
         for (var label = LabelMax; label >= LabelMin; label--)
         {
             var step = label + 6;
@@ -389,7 +453,7 @@ internal static class MapRenderer
             }
         }
 
-        return gridWidth >= 100 ? (8, 14, originCol) : (0, CellWidth, originCol);
+        return gridWidth >= 100 ? (8, 14, originCol) : Plain();
     }
 
     /// <summary>

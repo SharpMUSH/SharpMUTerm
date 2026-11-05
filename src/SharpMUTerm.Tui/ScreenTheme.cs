@@ -51,6 +51,8 @@ internal sealed class ScreenTheme
 
     internal string PanelFg => Role(ScreenPalette.PanelFg);
 
+    internal string NavBg => Role(ScreenPalette.NavBg);
+
     internal string HeaderBg => Role(ScreenPalette.HeaderBg);
 
     internal string FooterBg => Role(ScreenPalette.FooterBg);
@@ -84,6 +86,7 @@ internal sealed class ScreenTheme
     [
         ScreenPalette.PanelBg, ScreenPalette.HeaderBg, ScreenPalette.FooterBg, ScreenPalette.EditBg,
         ScreenPalette.CursorBg, ScreenPalette.MenuBg, ScreenPalette.MenuSelectedBg, ScreenPalette.FieldBg,
+        ScreenPalette.NavBg,
     ];
 
     /// <summary>
@@ -355,7 +358,7 @@ internal sealed class ScreenTheme
             ScreenPalette.FooterBg, ScreenPalette.EditBg, ScreenPalette.Label, ScreenPalette.Value,
             ScreenPalette.Muted, ScreenPalette.Rule, ScreenPalette.CursorBg, ScreenPalette.Ink,
             ScreenPalette.MenuBg, ScreenPalette.MenuSelectedBg, ScreenPalette.MenuShadow, ScreenPalette.FieldBg,
-            ScreenPalette.Warn,
+            ScreenPalette.Warn, ScreenPalette.NavBg,
         }.Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(h => h, h => h, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>

@@ -862,6 +862,18 @@ internal static class ScreenChrome
         new(scheme.Lines(lines, plane)) { ForegroundColor = scheme.Colour(ScreenPalette.PanelFg) };
 
     /// <summary>
+    /// A navigation column (the settings search's section list): <see cref="Panel"/> on <see cref="ScreenPalette.NavBg"/>,
+    /// stretched and filled to the body's height so the plane runs from the header band to the action bar.
+    /// </summary>
+    internal static MarkupControl Nav(IEnumerable<string> lines, ScreenTheme scheme)
+    {
+        var nav = Stretch(Panel(lines, scheme, ScreenPalette.NavBg));
+        nav.BackgroundColor = scheme.Colour(ScreenPalette.NavBg);
+        nav.VerticalAlignment = VerticalAlignment.Fill;
+        return nav;
+    }
+
+    /// <summary>
     /// How many rows a two-column screen's body has: everything but the header band and the action bar.
     /// Zero when the caller has no height, which is how every block below reads "draw it all".
     /// </summary>

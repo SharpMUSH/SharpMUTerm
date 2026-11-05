@@ -190,7 +190,7 @@ public class NoticeAndMapSurfaceTests
 
         await Assert.That(all).Contains("[link=mux:map:2][#abcdef][[↑]][/][/]").Because("a room wears its area's colour and the view's stairs");
         await Assert.That(all).Contains("[#fedcba]│[/]").Because("the way south into the docks is drawn in the docks' colour");
-        await Assert.That(MarkupText.Plain(lines[^1])).IsEqualTo("@ you · ↑↓ stairs · ■ Town · ■ Docks");
+        await Assert.That(MarkupText.Plain(lines[^1]).TrimStart()).IsEqualTo("@ you · ↑↓ stairs · ■ Town · ■ Docks");
         await Assert.That(lines[^1]).Contains("[#abcdef]■[/]");
         await Assert.That(lines[^1]).Contains("[#fedcba]■[/]");
 

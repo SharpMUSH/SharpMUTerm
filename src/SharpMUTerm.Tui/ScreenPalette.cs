@@ -24,6 +24,13 @@ internal static class ScreenPalette
     /// <summary>Default text on the backdrop.</summary>
     internal const string PanelFg = "#c8d0e0";
 
+    /// <summary>
+    /// The navigation column a screen lists its sections in (the settings search's <c>SECTIONS</c>): a step below the
+    /// backdrop, the terminal mockup's <c>#141822</c> nav beside its <c>#171b24</c> page, so the list reads as a column of
+    /// its own rather than as more of the page. Text on it is held to the floor like on every other plane.
+    /// </summary>
+    internal const string NavBg = "#141822";
+
     /// <summary>The header band behind the title and keyboard hints.</summary>
     internal const string HeaderBg = "#232b3d";
 

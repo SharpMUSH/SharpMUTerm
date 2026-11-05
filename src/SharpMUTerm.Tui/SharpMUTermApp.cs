@@ -9703,7 +9703,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // cannot disagree about where the character is, which level is shown or whether a walk is under way.
         var view = Drawing(Core.Layouts.PanelIds.Map, windowId, BuildMapView(windowId, map));
         _mapViews[windowId] = (_mapRevisions[windowId], view);
-        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft, WorkspacePalette.ReadingPlane(_theme), "bold " + RailCursorBand());
+        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft, WorkspacePalette.ReadingPlane(_theme), "bold " + RailCursorBand(), PanelHeadingInk());
         var lines = MapRenderer.Render(view, map.Map, width, height, ink, keysHeld: _mapKeys == windowId);
         _mapMarkup[windowId] = lines;
         control.SetContent(lines.ToList());

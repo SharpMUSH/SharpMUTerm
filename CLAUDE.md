@@ -1667,7 +1667,19 @@ fallbacks) for inline images/maps.
   Combat mockup's top vitals strip and no rail (the narrow arrangement; ⌃B b folds the rail), the map tab strip beside
   Chat (a pane with two windows keeps its strip), area-coloured map rooms (`MapAreaPalette`), `rows` not `lines`, the
   `Corvid · Aetherfall` spelling, `›` as the resting prompt, the cell settings screens having no permanent nav (only the
-  search lists sections), and the nav's own plane (the screens have no such role yet).
+  search lists sections). The nav's plane came in wave 30 (below).
+- **Wave 30 terminal map and nav (cells; both hosts' cells move together, the window's native map is unchanged).**
+  Measured against `Terminal-Combat`'s map and `Terminal-Settings`' nav (`ux-wave30/terminal-map-and-nav/`). The cell map's
+  title is a heading band where the panels have one (`MapRenderer.Ink.Band` = `PanelHeadingInk()`, null under
+  `HostChrome.Strips`), its look controls at the band's far end in the band's accent. A plain grid takes the mockup's
+  `[ ]───[ ]` step (`WideCellWidth` 6) when every room of the level lands in the box centred on the current room, else
+  `CellWidth` 4; a plain way west fills the gap too, a stub stays one cell, a diagonal sits mid-gap. From
+  `InsetFromWidth` (24) the title, exits, hint and legend keep a cell from the pane's edge. A tall pane (≥
+  `UnderFromHeight`) says `MapViewModel.Hint` over the legend, only whole. The settings search's section list is on
+  `ScreenPalette.NavBg` (`#141822`, a text plane `ScreenTheme` mirrors and holds inks on; `ScreenChrome.Nav` pads it to
+  the body's rows so the plane reaches the action bar), the selected section bold in the value ink. Left as they are:
+  area-coloured rooms (decided), the map's tab strip beside Chat, the title naming the room rather than `MAP` (decided),
+  the solid one-cell `Split` rule (shared by every two-column screen), and the mockup's target `◆` (no model carries it).
 - **Wave 19 panels and welcome (window only; the cells are unchanged).** Each docked native panel draws a heading from
   its model (`PanelHeading.For`, Client; `PanelText.Heading`); `VitalsModel.Source` names where the meters came from
   (`SourceOf`, set in `ReadVitals`), a mixture names nothing. The docked composer's footer (summary, Preview, Send) ends

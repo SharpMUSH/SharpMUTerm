@@ -22,12 +22,14 @@ public class ScreenThemeTests
         ScreenPalette.FooterBg, ScreenPalette.EditBg, ScreenPalette.Label, ScreenPalette.Value, ScreenPalette.Muted,
         ScreenPalette.Rule, ScreenPalette.CursorBg, ScreenPalette.Ink, ScreenPalette.MenuBg,
         ScreenPalette.MenuSelectedBg, ScreenPalette.MenuShadow, ScreenPalette.FieldBg, ScreenPalette.Warn,
+        ScreenPalette.NavBg,
     ];
 
     private static readonly string[] TextPlanes =
     [
         ScreenPalette.PanelBg, ScreenPalette.HeaderBg, ScreenPalette.FooterBg, ScreenPalette.EditBg,
         ScreenPalette.CursorBg, ScreenPalette.MenuBg, ScreenPalette.MenuSelectedBg, ScreenPalette.FieldBg,
+        ScreenPalette.NavBg,
     ];
 
     private static readonly string[] Planes = [.. TextPlanes, ScreenPalette.Rule, ScreenPalette.MenuShadow];
@@ -82,6 +84,22 @@ public class ScreenThemeTests
 
         await Assert.That(Contrast.Ratio(Rgb(scheme.Ink), Rgb(scheme.Accent)))
             .IsGreaterThanOrEqualTo(Contrast.Floor).Because($"ink on the accent on {themeName}");
+    }
+
+    /// <summary>
+    /// The settings search's nav is a plane of its own on every theme (wave 30, the terminal mockup's <c>#141822</c> nav
+    /// beside its <c>#171b24</c> page): never the page's colour, and close to it, a step and not a band.
+    /// </summary>
+    [Test]
+    [Arguments("Dark")]
+    [Arguments("Light")]
+    [Arguments("Solarized Dark")]
+    public async Task TheNavIsAStepOffThePageOnEveryTheme(string themeName)
+    {
+        var scheme = ScreenTheme.For(ThemeLibrary.Get(themeName));
+
+        await Assert.That(scheme.NavBg).IsNotEqualTo(scheme.PanelBg).Because(themeName);
+        await Assert.That(Contrast.Ratio(Rgb(scheme.NavBg), Rgb(scheme.PanelBg))).IsLessThan(1.3).Because(themeName);
     }
 
     /// <summary>

@@ -184,11 +184,17 @@ internal static class SettingsSearchView
 
         var left = ScreenChrome.SplitWidth(width, SectionsWidth, SectionsMinimum, MatchesMinimum);
         var sections = SectionColumn(state, matches, left);
+        // The nav's plane runs to the action bar: a control paints its background only on the rows it holds.
+        while (sections.Count < rows)
+        {
+            sections.Add(string.Empty);
+        }
+
         var right = ScreenChrome.Window(MatchColumn(state, matches, width - left - ScreenChrome.ColumnDivider), rows);
         return ScreenChrome.Split(
             header,
             footer,
-            ScreenChrome.Stretch(ScreenChrome.Panel(sections, scheme)),
+            ScreenChrome.Nav(sections, scheme),
             ScreenChrome.Stretch(ScreenChrome.Panel(right, scheme)),
             left,
             Math.Max(sections.Count, right.Count),
@@ -250,7 +256,8 @@ internal static class SettingsSearchView
             var key = section.Key ?? string.Empty;
             var tally = count > 0 ? count.ToString(CultureInfo.InvariantCulture) : string.Empty;
             var title = ElideVisible(Escape(section.Title), Math.Max(4, width - 11));
-            var ink = typed && count == 0 ? Muted : PanelFg;
+            // The section the cursor is on is bold in the value ink, the mockup's selected nav row.
+            var ink = section.Id == selected ? $"bold {Value}" : typed && count == 0 ? Muted : PanelFg;
             var row = $" [{ink}]{PadVisible(title, Math.Max(4, width - 11))}[/][{Accent}]{tally,3}[/] [{Label}]{key,4}[/]";
             lines.Add(ScreenChrome.Cursor(row, section.Id == selected, width));
         }
