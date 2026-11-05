@@ -30,11 +30,11 @@ public class WorldSessionReflowTests
             ReflowHold = TimeSpan.FromHours(1), // released only by what the tests send
         };
         var printed = new List<StyledLine>();
-        session.LinePrinted += (_, l) => printed.Add(l);
+        session.LinePrinted += (_, l) => { lock (printed) { printed.Add(l); } };
 
         // The connection's own notes are not lines any more (ConnectionNoted); recorded in order with the lines, as
         // "*** CLOSED: …", so a test can still say a note came after a line.
-        session.ConnectionNoted += (_, n) => printed.Add(StyledLine.FromText("*** " + n, TextStyle.Default));
+        session.ConnectionNoted += (_, n) => { lock (printed) { printed.Add(StyledLine.FromText("*** " + n, TextStyle.Default)); } };
         return (session, telnet, printed);
     }
 
@@ -47,8 +47,14 @@ public class WorldSessionReflowTests
         }
     }
 
-    private static List<string> Output(List<StyledLine> printed) =>
-        printed.Select(l => l.Text).Where(t => !t.StartsWith("***", StringComparison.Ordinal) && !t.StartsWith("===", StringComparison.Ordinal)).ToList();
+    // The hold timer prints on its own thread, so the list is read and written under its lock.
+    private static List<string> Output(List<StyledLine> printed)
+    {
+        lock (printed)
+        {
+            return printed.Select(l => l.Text).Where(t => !t.StartsWith("***", StringComparison.Ordinal) && !t.StartsWith("===", StringComparison.Ordinal)).ToList();
+        }
+    }
 
     [Test]
     public async Task AWorldThatJoinsShowsTheParagraphAsOneLine()
