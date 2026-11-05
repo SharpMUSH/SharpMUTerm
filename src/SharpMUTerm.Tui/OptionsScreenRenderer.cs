@@ -921,8 +921,7 @@ internal static class OptionsScreenRenderer
         return edit with { Text = edit.Text.Substring(start, length), Caret = edit.Caret - start };
     }
 
-    private static string ElidePlain(string text, int width) =>
-        text.Length <= width ? text : width <= 1 ? "…" : text[..(width - 1)] + "…";
+    private static string ElidePlain(string text, int width) => MarkupText.ElidePlain(text, width);
 
     /// <summary>The box of received paths under the table, drawn while the cursor is in it.</summary>
     private static IEnumerable<OptionRow> ReceivedBox(IReadOnlyList<(string Path, string Value)> received)

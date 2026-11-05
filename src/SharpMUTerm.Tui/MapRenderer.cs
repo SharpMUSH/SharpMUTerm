@@ -781,12 +781,11 @@ internal static class MapRenderer
         _ => 1,
     };
 
-    private static string Elide(string text, int width) =>
-        width <= 0 ? string.Empty : text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
+    private static string Elide(string text, int width) => MarkupText.ElidePlain(text, width);
 
     private static string Title(string text, int width, Ink ink)
     {
-        var plain = text.Length > width ? text[..Math.Max(0, width - 1)] + "…" : text;
+        var plain = MarkupText.ElidePlain(text, width);
         return $"[bold {ink.Title}]{MarkupText.Escape(plain)}[/]";
     }
 

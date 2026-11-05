@@ -120,6 +120,25 @@ internal static class MarkupText
     }
 
     /// <summary>
+    /// Plain text cut to <paramref name="width"/> cells, ending in <c>…</c> when anything was cut — and the blanks before the
+    /// cut given back, so a word is never followed by a space and then the mark (<c>Aetherfall …</c>).
+    /// </summary>
+    internal static string ElidePlain(string text, int width)
+    {
+        if (width <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (text.Length <= width)
+        {
+            return text;
+        }
+
+        return width == 1 ? "…" : text[..(width - 1)].TrimEnd() + "…";
+    }
+
+    /// <summary>
     /// Cuts a markup string to <paramref name="width"/> visible cells, ending in <c>…</c> when anything
     /// was cut. Tags are kept, including those after the cut, so every span that opened still closes.
     /// </summary>

@@ -292,7 +292,7 @@ internal static class TriggersScreenRenderer
     /// </summary>
     internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
     {
-        var title = $"[bold {Value}] Triggers & spawn routing[/]";
+        var title = $"[bold {Value}]Triggers & spawn routing[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints, "F2", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
             room: ScreenChrome.HeaderRoom(" " + title, width));

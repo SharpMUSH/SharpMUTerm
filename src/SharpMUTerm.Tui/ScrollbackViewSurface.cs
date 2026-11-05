@@ -74,6 +74,5 @@ internal static class ScrollbackViewSurface
         return $"{lead}[{ink}]{Escape(before)}[/][bold {Accent}]{Escape(hit)}[/][{ink}]{Escape(after)}[/]";
     }
 
-    private static string ElidePlain(string text, int width) =>
-        width <= 0 ? string.Empty : text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
+    private static string ElidePlain(string text, int width) => MarkupText.ElidePlain(text, width);
 }

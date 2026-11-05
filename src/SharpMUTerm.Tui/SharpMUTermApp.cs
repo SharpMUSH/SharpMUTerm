@@ -10543,9 +10543,25 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _ = LoadWebAsync(owner, url);
     }
 
+    /// <summary>
+    /// The width a web page is laid out at: the web window's viewport, else the focused pane's (where a new web window
+    /// opens), else the screen less a margin before anything is arranged. Laid out at the screen's width, a page in a pane
+    /// beside the rail was wrapped twice — by the renderer and again by the pane — leaving a word alone on every other row.
+    /// </summary>
+    private int WebRenderWidth()
+    {
+        var width = BarWidth(WebWindowId);
+        if (width <= 0 && PaneOutputRects().TryGetValue(_workspace.Layout.FocusedPane.Id, out var rect))
+        {
+            width = rect.Width;
+        }
+
+        return Math.Max(20, width > 0 ? width : _window.Width - 4);
+    }
+
     private async Task LoadWebAsync(WorldSession? owner, string url)
     {
-        var width = Math.Max(20, _window.Width - 4);
+        var width = WebRenderWidth();
         try
         {
             var page = await _fetcher.FetchAsync(url, width).ConfigureAwait(false);
@@ -10694,7 +10710,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             "</body></html>";
 
         var rendered = new SharpMUTerm.Web.HtmlStyledRenderer(url)
-            .RenderDocument(html, Math.Max(20, _window.Width - 4));
+            .RenderDocument(html, WebRenderWidth());
 
         ShowWeb(new SharpMUTerm.Web.WebPage(
             url, SharpMUTerm.Web.HtmlStyledRenderer.GetTitle(html), rendered.Lines, rendered.Images));

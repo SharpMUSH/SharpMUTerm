@@ -255,10 +255,11 @@ internal static class SettingsSearchView
             var count = counts.GetValueOrDefault(section.Id);
             var key = section.Key ?? string.Empty;
             var tally = count > 0 ? count.ToString(CultureInfo.InvariantCulture) : string.Empty;
-            var title = ElideVisible(Escape(section.Title), Math.Max(4, width - 11));
+            // One lead cell, the title, a three-cell tally, a gap and a four-cell key, and a cell of margin at the right.
+            var title = ElideVisible(Escape(section.Title), Math.Max(4, width - 10));
             // The section the cursor is on is bold in the value ink, the mockup's selected nav row.
             var ink = section.Id == selected ? $"bold {Value}" : typed && count == 0 ? Muted : PanelFg;
-            var row = $" [{ink}]{PadVisible(title, Math.Max(4, width - 11))}[/][{Accent}]{tally,3}[/] [{Label}]{key,4}[/]";
+            var row = $" [{ink}]{PadVisible(title, Math.Max(4, width - 10))}[/][{Accent}]{tally,3}[/] [{Label}]{key,4}[/]";
             lines.Add(ScreenChrome.Cursor(row, section.Id == selected, width));
         }
 

@@ -112,7 +112,7 @@ internal static class AliasesScreenRenderer
     /// </summary>
     internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
     {
-        var title = $"[bold {Value}] Aliases[/]";
+        var title = $"[bold {Value}]Aliases[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints, "F3", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
             room: ScreenChrome.HeaderRoom(" " + title, width));

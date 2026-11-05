@@ -201,8 +201,7 @@ internal sealed class GameDataOverlay
         _ => $"{(int)age.TotalHours}h ago",
     };
 
-    private static string Elide(string text, int width) =>
-        text.Length <= width ? text : width <= 1 ? "…" : text[..(width - 1)] + "…";
+    private static string Elide(string text, int width) => MarkupText.ElidePlain(text, width);
 
     private static string Escape(string text) => MarkupText.Escape(text);
 }

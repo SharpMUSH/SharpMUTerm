@@ -646,6 +646,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The older-history view (⌥H, then ⏎) no longer wraps every line onto a second row and shows a scroll bar at 80×24, and its
+  title no longer wraps at 120 columns.
+- A web page opened in a pane beside the sidebar is laid out at that pane's width, so its paragraphs no longer leave a word
+  alone on every other row.
+- Every settings screen's title now sits one cell in, the same on F2–F6 as on F7 and F8.
+- Shortened text no longer leaves a space before the `…` (the map's title and legend, Browse worlds, packages, game data).
+- The question after deleting worlds keeps a cell between its frame and its words, like every other pop-up.
+- The settings search's section list no longer shortens "Triggers & spawn routing" at 80 columns when it fits.
 - The desktop window fits the screen at 125% and 150% display scaling. It used to open taller than a 1080p screen, with
   the command line and status row below its edge; it now opens a few rows shorter, centred. The settings window fits
   too, and the welcome page no longer scrolls at 150%.

@@ -87,6 +87,7 @@ internal sealed class EditReviewOverlay
             .WithBackgroundColor(_scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words, as every popup
             .WithSize(width, height)
             .Centered()
             .AddControl(_body)

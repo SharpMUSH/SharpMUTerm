@@ -336,8 +336,7 @@ internal sealed class WorldBrowseSurface
 
     private static string Join(string a, string b) => a.Length == 0 ? b : $"{a} · {b}";
 
-    private static string Elide(string text, int width) =>
-        width <= 0 ? string.Empty : text.Length <= width ? text : width == 1 ? "…" : text[..(width - 1)] + "…";
+    private static string Elide(string text, int width) => MarkupText.ElidePlain(text, width);
 
     private static void Pad(List<string> lines, int count)
     {

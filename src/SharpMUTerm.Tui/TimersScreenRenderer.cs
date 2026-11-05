@@ -112,7 +112,7 @@ internal static class TimersScreenRenderer
     /// </summary>
     internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
     {
-        var title = $"[bold {Value}] Timers[/]";
+        var title = $"[bold {Value}]Timers[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints, "F6", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
             room: ScreenChrome.HeaderRoom(" " + title, width));

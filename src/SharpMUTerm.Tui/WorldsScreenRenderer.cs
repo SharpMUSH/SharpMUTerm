@@ -348,7 +348,7 @@ internal static class WorldsScreenRenderer
     internal static string HeaderLine(
         int width, ScreenModel? model = null, ScreenFocus? focus = null, string fkey = FKey)
     {
-        var title = $"[bold {Value}] Worlds & Characters[/]";
+        var title = $"[bold {Value}]Worlds & Characters[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints,
             fkey,

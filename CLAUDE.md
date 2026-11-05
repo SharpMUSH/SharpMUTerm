@@ -1765,6 +1765,20 @@ fallbacks) for inline images/maps.
   short tier (`WelcomeView.Short`: the `/connect` example and the layout cards' details go, the details into tooltips).
   `DisplayScalingTests`. Not fixed: under Xvfb an Avalonia `ContextMenu` at 1.25/1.5 opens a popup a few pixels smaller than
   the menu and scrolls (seen before this wave; not reproducible off X11 here).
+- **Wave 34 terminal completion audit (cells, both hosts; terminal frames moved)** (`ux-wave34/terminal-completion-audit/`).
+  Every `SnapshotViews.All` view read off the frame at 120×32 and 80×24, the four terminal mockups at 138×34, Light and
+  Solarized samples. **A `ListOverlay` with pinned keys lays its body out one column narrower** (`_barColumns`): the scroll
+  panel's bar takes a column, and laid out at the full inner width every line that filled it wrapped (the history view drew
+  each line twice and a scroll bar at 80×24, and wrapped its title at 120). **A web page is laid out at its pane's width**
+  (`WebRenderWidth`: the web window's viewport, else the focused pane's), not the screen's less 4, which wrapped it twice.
+  Every settings screen's title is one cell in (the list screens had two; F7/F8 and the mockup one). **A cut plain text gives
+  back the blanks before its mark** (`MarkupText.ElidePlain`, which the map, Browse, F10, game data, the options screens and
+  the history view now share: `Aetherfall…`, never `Aetherfall …`). The deletions question has the popups' left cell. The
+  settings search's section titles take the cells the row had spare (`width - 10`), so `Triggers & spawn routing` is whole at
+  80×24. `TerminalAuditWave34Tests`. Left as they are: list detail columns, F5's descriptions and the message log at 80×24,
+  server text, the map's room labels and legend (laddered by design), ⌃P's reserved key column and its scroll bar on the
+  frame (the window is the framework's scrollable one), F4's capture prompt widening its row (`CaptureWidth`, decided), the
+  tab strip's grey `─` (upstream), and a number and its unit split by a wrap (the framework breaks at any space).
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

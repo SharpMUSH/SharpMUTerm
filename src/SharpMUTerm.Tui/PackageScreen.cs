@@ -222,6 +222,5 @@ internal static class PackageScreen
 
     internal static string Count(int n) => n.ToString(CultureInfo.InvariantCulture);
 
-    private static string Elide(string text, int width) =>
-        text.Length <= width ? text : width <= 1 ? "…" : text[..(width - 1)] + "…";
+    private static string Elide(string text, int width) => MarkupText.ElidePlain(text, width);
 }

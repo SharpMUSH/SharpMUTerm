@@ -29,6 +29,12 @@ internal sealed class ListOverlay
     private string _plane = ScreenPalette.MenuBg;
     private int _inset = 4;
 
+    /// <summary>
+    /// The columns the body gives up to the scroll panel's bar when keys are pinned (<c>footer:</c>): rendered at the full
+    /// inner width, every line that filled it wrapped (the history view at 80×24 drew each line twice).
+    /// </summary>
+    private int _barColumns;
+
     private ScreenTheme _scheme;
 
     /// <summary>The palette it is painted in; the app replaces it when the theme changes, and the next time it is drawn follows.</summary>
@@ -108,10 +114,11 @@ internal sealed class ListOverlay
         _scrollKeys = scrollKeys && footer is not null;
         _plane = plane;
         _inset = flush ? 2 : 4;
+        _barColumns = footer is null ? 0 : 1;
         var desktop = _system.DesktopDimensions;
         var widest = Math.Clamp(desktop.Width - 8, 44, 110);
         var outer = width is { } asked ? Math.Clamp(asked + 4, 24, widest) : widest;
-        var lines = render(outer - _inset);
+        var lines = render(outer - _inset - _barColumns);
         var footerLines = footer?.Invoke(outer - _inset) ?? [];
         // A modal whose body scrolls under pinned keys is at most four rows short of the desktop, so centred it leaves the
         // header, the command line and the status row in view (two short, the import review at 80×24 sat on the command
@@ -207,7 +214,7 @@ internal sealed class ListOverlay
     {
         if (_render is not null && _content is not null)
         {
-            _content.SetContent(_scheme.Lines(_render(Width()), _plane));
+            _content.SetContent(_scheme.Lines(_render(Width() - _barColumns), _plane));
             if (_footer is not null)
             {
                 _footerControl?.SetContent(_scheme.Lines(_footer(Width()), _plane));
