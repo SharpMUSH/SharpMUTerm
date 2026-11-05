@@ -1742,6 +1742,22 @@ fallbacks) for inline images/maps.
   design), server and mu*index text, a script error's engine text in the script header, the message log's rows, F5's world
   column and trigger-set descriptions at 80×24, and the settings action bar's context line and F7's search/undo header at 60
   columns (the settings screens are held to 80×24).
+- **Wave 33 B display scaling (window only; terminal frames unchanged)** (`ux-wave33/window-display-scaling/`; Xvfb with
+  `AVALONIA_GLOBAL_SCALE_FACTOR` 1, 1.25, 1.5 on 1920×1080). **A first size fits its screen** (`WindowFit`): the main window
+  is the `--size` grid plus every inset (the footer's 28 px was left out) and, if that is more than the working area less
+  `ScreenMargin` (24) each side, loses whole columns and rows and is centred (`MainWindow`, after `TerminalView.PrepareScale`,
+  so the cell is measured at the screen's scale; `Screens.Primary` is null under Xvfb, so the first screen); the settings
+  window is clamped the same way (`WindowFit.Within`, never under its minimum). **A hairline the view draws is one device
+  pixel** (`TerminalView.DeviceHairline`: dividers, the strip's top rule, the field's edge), never the scale (1.5 px blurred
+  two rows). **The grid's leftover pixels** (the view less a whole number of cells, under one cell) belong to the last
+  column: a tab strip, band, panel or pop-out button ending there is widened over them (`DesktopLayer.RightOfGrid`), a
+  field band ending there measures its right inset from the view's edge (`FieldRect(…, viewWidth)`), and a stacked divider
+  reaching it runs on over them (`DrawDividers`; the cells' last background, the rule's, showed as a block at the edge). The docked composer's
+  summary is a `FittedText` (`ComposerModel.SummaryForms`: the longest wording that fits, else `N words`), and the view
+  draws no overlay scrollbar over a window a native panel covers (`TerminalView.CoveredWindows`). The welcome has a third,
+  short tier (`WelcomeView.Short`: the `/connect` example and the layout cards' details go, the details into tooltips).
+  `DisplayScalingTests`. Not fixed: under Xvfb an Avalonia `ContextMenu` at 1.25/1.5 opens a popup a few pixels smaller than
+  the menu and scrolls (seen before this wave; not reproducible off X11 here).
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

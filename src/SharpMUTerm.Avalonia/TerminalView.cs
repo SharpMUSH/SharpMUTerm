@@ -290,6 +290,18 @@ internal sealed class TerminalView : Control
         context.DrawRectangle(Brush(_renderer.DefaultForeground, 0x24), null, rect.Inflate(new Thickness(1, 0)), 2, 2);
     }
 
+    /// <summary>
+    /// Measures the cells at <paramref name="scale"/> before the view is attached, so a window sized from
+    /// <see cref="SizeFor"/> before it is shown is sized in the cells it will have on its screen.
+    /// </summary>
+    internal void PrepareScale(double scale)
+    {
+        if (scale > 0 && Math.Abs(scale - _scale) > 0.001)
+        {
+            Rescale(scale);
+        }
+    }
+
     private void Rescale(double scale)
     {
         // The old fonts are not disposed: a frame already queued on the render thread may still be drawing
@@ -716,9 +728,25 @@ internal sealed class TerminalView : Control
     private sealed record ScrollDrag(string WindowId, double Grab);
 
     /// <summary>A bar's track and thumb in logical pixels, or null when the pane has nothing to scroll.</summary>
+    /// <summary>The windows a native view lies over (<see cref="DesktopLayer"/>): their panes draw no overlay scrollbar.</summary>
+    internal IReadOnlySet<string> CoveredWindows
+    {
+        get => _covered;
+        set
+        {
+            if (!_covered.SetEquals(value))
+            {
+                _covered = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private IReadOnlySet<string> _covered = new HashSet<string>(StringComparer.Ordinal);
+
     private (Rect Zone, Rect Thumb, double Travel)? BarGeometry(PaneScrollbar bar)
     {
-        if (bar.ContentRows <= bar.ViewportRows || bar.ViewportRows <= 0)
+        if (bar.ContentRows <= bar.ViewportRows || bar.ViewportRows <= 0 || _covered.Contains(bar.WindowId))
         {
             return null;
         }
@@ -928,7 +956,7 @@ internal sealed class TerminalView : Control
             var cw = renderer.Fonts.CellWidth;
             var ch = renderer.Fonts.CellHeight;
             var s = (float)scale;
-            var hair = Math.Max(1f, MathF.Round(s));
+            var hair = DeviceHairline; // one device pixel at every scale (NativeTokens.Hairline); 1.5 px blurred two rows at 150%
             var wide = Math.Max(2f, MathF.Round(3 * s));
             using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
             foreach (var divider in dividers)
@@ -978,16 +1006,20 @@ internal sealed class TerminalView : Control
                 {
                     float top = y0 * ch, bottom = y1 * ch;
                     var at = MathF.Round(top + ((bottom - top - w) / 2));
+                    // A divider reaching the grid's last column runs on over the leftover pixels right of the grid, where
+                    // the cells' last background (the rule's) would otherwise show as a block at the window's edge.
+                    var past = x1 == frame.Width ? Math.Clamp((float)(Bounds.Width * scale) - (x1 * cw), 0, cw) : 0;
                     for (var x = x0; x < x1; x++)
                     {
+                        var cellWidth = x == x1 - 1 ? cw + past : cw;
                         paint.Color = PlaneBeside(x, y0 - 1, 0, -1);
-                        canvas.DrawRect(x * cw, top, cw, at - top, paint);
+                        canvas.DrawRect(x * cw, top, cellWidth, at - top, paint);
                         paint.Color = PlaneBeside(x, y1, 0, 1);
-                        canvas.DrawRect(x * cw, at + w, cw, bottom - at - w, paint);
+                        canvas.DrawRect(x * cw, at + w, cellWidth, bottom - at - w, paint);
                     }
 
                     paint.Color = colour;
-                    canvas.DrawRect(x0 * cw, at, (x1 - x0) * cw, w, paint);
+                    canvas.DrawRect(x0 * cw, at, ((x1 - x0) * cw) + past, w, paint);
                 }
             }
         }
@@ -1039,7 +1071,8 @@ internal sealed class TerminalView : Control
             // The band's columns: the whole grid, or the output's column when the bars are a row of it
             // (HostChrome.InputInColumn), and then every pane beside it runs on down to the footer.
             var left = band.From * cw;
-            var right = band.Columns is null ? width : band.To(frame.Width) * cw;
+            // A band that ends at the grid's last column runs on over the view's leftover pixels right of it.
+            var right = band.Columns is null || band.To(frame.Width) >= frame.Width ? width : band.To(frame.Width) * cw;
 
             canvas.Save();
             canvas.ClipRect(new SKRect(0, 0, width, height));
@@ -1062,13 +1095,13 @@ internal sealed class TerminalView : Control
                 }
             }
 
-            var field = FieldRect(band, cw, ch, frame.Width, s);
+            var field = FieldRect(band, cw, ch, frame.Width, s, width);
             var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.From + band.Pad), band.Top].Background);
             paint.Color = plane;
             canvas.DrawRect(left, top, right - left, height - top, paint);
             // The strip's top edge is the panes' own rule (the mockups' #2c3447), as a divider between two panes is.
             paint.Color = Rule;
-            canvas.DrawRect(left, top, right - left, Math.Max(1, s), paint);
+            canvas.DrawRect(left, top, right - left, DeviceHairline, paint);
 
             var radius = (float)(NativeTokens.RadiusM * scale);
             var rounded = new SKRoundRect(field, radius);
@@ -1111,7 +1144,7 @@ internal sealed class TerminalView : Control
             canvas.Restore();
 
             paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = Math.Max(1, s);
+            paint.StrokeWidth = DeviceHairline;
             paint.Color = FieldEdge(fill, renderer.DefaultForeground);
             var edge = rounded;
             edge.Deflate(paint.StrokeWidth / 2, paint.StrokeWidth / 2);
@@ -1124,17 +1157,27 @@ internal sealed class TerminalView : Control
     }
 
     /// <summary>
+    /// A hairline the frame draws (a pane divider, the strip's top rule, the field's edge), in device pixels: one at every
+    /// display scale, as <see cref="NativeTokens.Hairline"/> is everywhere else. Scaled with the display, it was 1.5 device
+    /// pixels at 150% and so a blend across two rows, which is what a blurred rule is.
+    /// </summary>
+    internal const float DeviceHairline = 1f;
+
+    /// <summary>
     /// The field's rectangle in device pixels: inset from the band's edges so the client's band-coloured padding columns
     /// are its inner padding, from the strip's top padding to below the last row.
     /// </summary>
-    internal static SKRect FieldRect(InputBand band, int cw, int ch, int columns, float scale)
+    internal static SKRect FieldRect(InputBand band, int cw, int ch, int columns, float scale, float viewWidth = 0)
     {
         // The mockup's 20 px from the grid's edge, as far as the padding columns leave the field its inner padding; every
         // edge on a whole device pixel, so the field's 1 px border is one crisp pixel at 125% and 150%.
         var inset = MathF.Round(Math.Max(4 * scale, Math.Min((float)(NativeLayout.FieldSide * scale), (band.Pad * cw) - (float)(NativeTokens.Space8 * scale))));
         var top = (band.Top * ch) + MathF.Round((float)(NativeLayout.FieldOuter * scale));
         var bottom = ((band.Top + band.Rows) * ch) + MathF.Round((float)((NativeLayout.FieldTop + NativeLayout.FieldInner) * scale));
-        return new SKRect((band.From * cw) + inset, top, (band.To(columns) * cw) - inset, bottom);
+        // A band ending at the grid's last column measures its right inset from the view's edge, past the leftover pixels
+        // right of the grid, so the field sits as far in from the window's edge as from the sidebar's.
+        var end = band.To(columns) >= columns && viewWidth > columns * cw ? MathF.Floor(viewWidth) : band.To(columns) * cw;
+        return new SKRect((band.From * cw) + inset, top, end - inset, bottom);
     }
 
     /// <summary>
@@ -1178,7 +1221,9 @@ internal sealed class TerminalView : Control
         var hint = new FormattedText(
             NativeKeys.Words(band.Hint), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
             new Typeface(NativeTokens.UiFont), NativeTokens.Small, Brush(SKColors.White));
-        var right = (end - band.Pad) * cell.Width;
+        // Moved with the field's edge where the field runs on past the grid's last column (FieldRect).
+        var right = ((end - band.Pad) * cell.Width)
+            + (end >= frame.Width ? Math.Clamp(Bounds.Width - (frame.Width * cell.Width), 0, cell.Width) : 0);
         var from = Math.Max(0, (int)Math.Floor((right - hint.Width) / cell.Width) - 2);
         var promptEnd = at + (band.Prompts.FirstOrDefault(p => p.Row == band.Top)?.Text.Length ?? 0);
         if (from <= promptEnd || frame.Caret is { Visible: true } caret && caret.Y == band.Top && caret.X >= from)

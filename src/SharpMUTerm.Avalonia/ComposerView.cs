@@ -67,7 +67,7 @@ internal sealed class ComposerView : Border
 
     // The docked panel's own parts: the editor's framed well, and the footer's summary, Preview and Send.
     private readonly Border? _well;
-    private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly FittedText _summary = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly Border _previewButton;
     private readonly Border _sendButton;
     private ComposerSession? _session;
@@ -786,10 +786,13 @@ internal sealed class ComposerView : Border
         {
             // 2 paragraphs · 31 words, the mockup's footer, with the length as sent in its tooltip (the chars count would
             // elide the words in a 380 px column); before anything is written, the keys that move in and out of it.
+            // In the longest wording the footer holds (FittedText): the words alone where the paragraphs do not fit.
             var summary = ComposerModel.Summary(text);
-            _summary.Text = summary.Length > 0
-                ? summary
-                : NativeKeys.Words(model.Armed ? "Esc command line · F1 full screen" : "F1 full screen");
+            _summary.Forms = summary.Length > 0
+                ? ComposerModel.SummaryForms(text)
+                : model.Armed
+                    ? [NativeKeys.Words("Esc command line · F1 full screen"), NativeKeys.Words("F1 full screen")]
+                    : [NativeKeys.Words("F1 full screen")];
             ToolTip.SetTip(_summary, summary.Length > 0 ? $"{_count.Text} as sent" : null);
         }
         if (_preview.IsVisible)

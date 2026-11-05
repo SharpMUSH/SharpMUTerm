@@ -342,6 +342,21 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private const double CompactSaving =
         (PageTop - CompactTop) + (2 * (SectionGap - CompactSectionGap)) + (OthersGap - CompactOthersGap) + (2 * (CardPadding - CompactCardPadding));
 
+    /// <summary>Whether the page has given up the /connect example and the layouts' sentences to fit, for a test.</summary>
+    internal bool Short => _short;
+
+    private bool _short;
+
+    private double _shortSaving;
+
+    /// <summary>The layout cards' sentences, which a short page leaves to the cards' tooltips.</summary>
+    private readonly List<TextBlock> _layoutDetails = [];
+
+    /// <summary>What hiding the example and the layouts' sentences gives back: each with the spacing above it.</summary>
+    private double ShortSaving() =>
+        (_command.IsVisible ? _command.Bounds.Height + NativeTokens.Space14 : 0)
+        + _layoutDetails.Where(d => d.IsVisible).Select(d => d.Bounds.Height + NativeTokens.Space4).DefaultIfEmpty(0).Max();
+
     /// <summary>Whether the page is laid out tight, for a test.</summary>
     public bool Compact => _compact;
 
@@ -492,8 +507,25 @@ internal sealed class WelcomeView : DockPanel, IModalView
             return;
         }
 
-        var natural = _page.Bounds.Height + _page.Margin.Top + _page.Margin.Bottom + (_compact ? CompactSaving : 0);
+        var natural = _page.Bounds.Height + _page.Margin.Top + _page.Margin.Bottom + (_compact ? CompactSaving : 0) + (_short ? _shortSaving : 0);
         var compact = natural > viewport + 0.5;
+
+        // Shorter still (the default window at 150% on a 1080p screen is 690 px tall): the /connect example and the layout
+        // cards' sentences go, the cells' rule for a short welcome. Both are said elsewhere: the example in help and on
+        // the command line, a layout's sentence in its card's tooltip. Measured before they go, so it cannot flip back.
+        var saving = _short ? _shortSaving : ShortSaving();
+        var shorter = compact && natural - CompactSaving > viewport + 0.5;
+        if (shorter != _short)
+        {
+            _shortSaving = saving;
+            _short = shorter;
+            _command.IsVisible = !shorter;
+            foreach (var detail in _layoutDetails)
+            {
+                detail.IsVisible = !shorter;
+            }
+        }
+
         if (compact == _compact)
         {
             return;
@@ -982,14 +1014,16 @@ internal sealed class WelcomeView : DockPanel, IModalView
             FontWeight = FontWeight.SemiBold,
             Foreground = _colours.Brush(_colours.Text),
         });
-        words.Children.Add(new TextBlock
+        var detail = new TextBlock
         {
             Text = WelcomeModel.LayoutDetail(layout),
             LineHeight = NativeTokens.Space16 + NativeTokens.Space2 + NativeTokens.Hairline,
             FontSize = NativeTokens.Body,
             Foreground = _colours.Brush(_colours.Dim),
             TextWrapping = TextWrapping.Wrap,
-        });
+        };
+        words.Children.Add(detail);
+        _layoutDetails.Add(detail);
         var card = new Border
         {
             Child = words,
@@ -998,6 +1032,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
             Name = layout.ToString(),
         };
         global::Avalonia.Automation.AutomationProperties.SetName(card, $"{layout} layout");
+        ToolTip.SetTip(card, WelcomeModel.LayoutDetail(layout));
         card.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(card).Properties.IsLeftButtonPressed)

@@ -44,6 +44,8 @@ public class PanelHeadingTests
         await Assert.That(ComposerModel.Summary("+pose waves.\nAnd sits.\n\nThen leaves.")).IsEqualTo("2 paragraphs · 6 words");
         await Assert.That(ComposerModel.Summary("hello")).IsEqualTo("1 paragraph · 1 word");
         await Assert.That(ComposerModel.Summary("  \n ")).IsEmpty();
+        await Assert.That(ComposerModel.SummaryForms("+pose waves.\nAnd sits.\n\nThen leaves.")).IsEquivalentTo(new[] { "2 paragraphs · 6 words", "6 words" });
+        await Assert.That(ComposerModel.SummaryForms("  ")).IsEmpty();
     }
 
     [Test]
