@@ -266,6 +266,99 @@ public class SettingsWindowTests
         await Assert.That(keys).StartsWith("Undo Ctrl+Z").Because("the mockup's footer");
     }
 
+    /// <summary>
+    /// Ctrl+Z in a focused text box is the box's only while the box has typing of its own to undo: a box holding the value
+    /// the page put in it hands the chord to the section's undo, and a box typed in undoes its typing first, then hands
+    /// the next Ctrl+Z to the section.
+    /// </summary>
+    [Test]
+    public async Task CtrlZInATextBoxIsTheSectionsUndoUntilTheBoxHasTypingOfItsOwn()
+    {
+        var harness = new Harness();
+        harness.History = new SettingsHistory(harness.Config, id => BuiltInSettings.All.FirstOrDefault(s => s.Id == id)?.Title);
+        var fresh = new AppConfiguration().Text.KeepTextLegible;
+        var (untouchedUndid, typed, typingUndone, legibleAfterTyping, thenSection) = await Run(harness, "text", window =>
+        {
+            var toggle = (ToggleSwitch)window.FieldControls["legible"];
+            var label = window.MeterGrid!.Children.OfType<TextBox>().First();
+
+            // A committed edit, then the keys go to a box the page filled and nobody typed in.
+            toggle.IsChecked = !fresh;
+            Dispatcher.UIThread.RunJobs();
+            label.Focus();
+            Dispatcher.UIThread.RunJobs();
+            PressIn(label, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            var untouchedUndid = harness.Config.Text.KeepTextLegible == fresh;
+
+            // The same edit again, then typing in the box: its own Ctrl+Z takes the typing back first.
+            toggle.IsChecked = !fresh;
+            Dispatcher.UIThread.RunJobs();
+            label.Focus();
+            label.CaretIndex = label.Text?.Length ?? 0;
+            label.RaiseEvent(new global::Avalonia.Input.TextInputEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.TextInputEvent, Text = "x" });
+            Dispatcher.UIThread.RunJobs();
+            var typed = label.Text;
+            PressIn(label, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            var typingUndone = label.Text;
+            var legibleAfterTyping = harness.Config.Text.KeepTextLegible;
+
+            // Nothing of its own left: the next Ctrl+Z is the section's.
+            PressIn(label, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            return (untouchedUndid, typed, typingUndone, legibleAfterTyping, harness.Config.Text.KeepTextLegible == fresh);
+        });
+
+        await Assert.That(untouchedUndid).IsTrue().Because("a box with nothing typed in it hands Ctrl+Z to the section");
+        await Assert.That(typed).EndsWith("x");
+        await Assert.That(typingUndone).DoesNotEndWith("x").Because("the box's own typing is undone first");
+        await Assert.That(legibleAfterTyping).IsEqualTo(!fresh).Because("that Ctrl+Z was the box's, not the section's");
+        await Assert.That(thenSection).IsTrue().Because("once the box's typing is gone, Ctrl+Z is the section's again");
+    }
+
+    /// <summary>
+    /// Typing committed with Enter is no longer the box's to undo: the box still has focus and the typing is still in its
+    /// own history, but Ctrl+Z goes to the section, takes the committed value back and shows it in the focused box.
+    /// </summary>
+    [Test]
+    public async Task CtrlZAfterABoxCommitsUndoesTheCommitAndShowsItInTheBox()
+    {
+        var harness = TwoWorlds();
+        harness.History = new SettingsHistory(harness.Config, id => BuiltInSettings.All.FirstOrDefault(s => s.Id == id)?.Title);
+        var (committed, prefix, shown, redone, redoneShown) = await Run(harness, "worlds", window =>
+        {
+            var box = (TextBox)window.FieldControls["edit-grab"];
+            box.Focus();
+            Dispatcher.UIThread.RunJobs();
+            box.RaiseEvent(new global::Avalonia.Input.TextInputEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.TextInputEvent, Text = "Edit>" });
+            PressIn(box, global::Avalonia.Input.Key.Enter, global::Avalonia.Input.KeyModifiers.None);
+            var committed = harness.Config.Worlds[0].GrabPrefix;
+
+            PressIn(box, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control);
+            var prefix = harness.Config.Worlds[0].GrabPrefix;
+            var shown = box.Text ?? string.Empty;
+
+            PressIn(box, global::Avalonia.Input.Key.Z, global::Avalonia.Input.KeyModifiers.Control | global::Avalonia.Input.KeyModifiers.Shift);
+            return (committed, prefix, shown, harness.Config.Worlds[0].GrabPrefix, box.Text);
+        });
+
+        await Assert.That(committed).IsEqualTo("Edit>");
+        await Assert.That(prefix).IsNull().Because("Ctrl+Z after Enter undid the committed edit, not the box's typing alone");
+        await Assert.That(shown).IsEqualTo(string.Empty).Because("the focused box shows the value the undo put back");
+        await Assert.That(redone).IsEqualTo("Edit>").Because("Ctrl+Shift+Z is the section's redo too");
+        await Assert.That(redoneShown).IsEqualTo("Edit>");
+    }
+
+    /// <summary>Raises a key on <paramref name="target"/>, so it tunnels from the window and bubbles back as a real key does.</summary>
+    private static void PressIn(global::Avalonia.Interactivity.Interactive target, global::Avalonia.Input.Key key, global::Avalonia.Input.KeyModifiers modifiers)
+    {
+        target.RaiseEvent(new global::Avalonia.Input.KeyEventArgs
+        {
+            RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent,
+            Key = key,
+            KeyModifiers = modifiers,
+        });
+        Dispatcher.UIThread.RunJobs();
+    }
+
     private static void Press(SettingsWindow window, global::Avalonia.Input.Key key, global::Avalonia.Input.KeyModifiers modifiers)
     {
         window.RaiseEvent(new global::Avalonia.Input.KeyEventArgs

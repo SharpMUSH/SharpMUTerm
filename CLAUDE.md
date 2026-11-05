@@ -2382,7 +2382,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     recorded under `packages` too (`SetPackageEnabled` → `PackageEdits`, saved through `SavePackageChange`, which re-syncs
     the packages; the cell F10 list takes ⌃Z/⌃Y itself, `StepPackageHistory`). Cells: ⌃Z / ⌃Y (⌃⇧Z
     where reported) only while navigating, the note in the header in place of the verbs until the next key, `⌃Z undo` a
-    low-drop ladder key. Window: a tunnel handler leaves the chord to a `TextBox` that has its own typing to undo; the
+    low-drop ladder key (F10's list header too, while a package is listed). Window: a tunnel handler leaves the chord to a
+    `TextBox` only while it has typing **not yet committed** — every change landing empties the focused box's own history
+    (`ForgetTyping`), so after ⏎ or with a value the page put there Ctrl+Z is the section's, and a step taken from a
+    focused box refreshes that box too (`Rewritable`, `ListEditorView.Refresh(focusedToo)`). The
     footer reads `Undo Ctrl+Z · Redo …` (the mockup's) and shows the note on the left.
   - Not done: the window is not modal. Screenshots come from a real window under Xvfb, driven with XTest
     (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`, `ux-wave7/lists-*.png`).
@@ -2540,8 +2543,19 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     what it shows (*Showing settings that match “x”. Show all N*, which clears the search; F5/F9's door is a link
     there), then **one card per declared group** with its fields as rows (label in the label weight with search words
     marked, `● Changed`, help under it; *Reset to default* link and the control on the right). A group whose name is its
-    only field's label draws no heading. List and package pages put both halves in cards. Still generated from the
-    declarations; nothing is placed by hand. Fonts are inherited (the window sets no UI family).
+    only field's label draws no heading, nor does a one-field card while searching (the mockup's result cards; the meter
+    table's label then heads the card at `CardTitle`). List and package pages put both halves in cards. Still generated
+    from the declarations; nothing is placed by hand. Fonts are inherited (the window sets no UI family).
+    **Wave 28 measured it against the mockup at 1440×900** (`ux-wave28/settings-audit/`): the nav is 232 px *inside* its
+    padding (252 with the window's edge, so the page title sits at x 293 as the mockup's), the search box is 480 px plus
+    padding 16 px after the title with the mockup's 24-unit glass at 14 px, small text (count, column headings, row help,
+    `Changed`, reset link, nav note, footer) is `PageSmall` 12, the meter grid is inset 4 px with rows 12 px apart (label
+    box 32, path boxes 34, padding 8), the received-paths panel is 360 px under the value column with `x = v` and the
+    focused path box's alternatives marked, and a live value wears its meter's colour (low: `WorkspacePalette.Low`) held on
+    the card (`PageTokens.OnCard`). A list or package page is sized from the measured title, so the page never scrolls
+    beside the editor. Left as they are: section titles (the declared names the cells and ⌃P share), the drag handle
+    (meters have no reorder), the Colour column (the mockup predates meter colours), `412/500` unspaced (the cells' text),
+    *Open config.json* (no client action), the mark's rounded padding (a `Run` has none).
 - **The window lays out on one spacing scale and on device pixels** (`NativeTokens.Spacing.cs`; wave 21B). Insets are
   `Space2…Space32` (a 4 px grid plus the mockups' 6/10/14 control half-steps; nothing odd, an odd logical pixel is half a
   device pixel at 150%), `PanelInset` (16: the header's brand, the sidebar's title, world names and foot button, every

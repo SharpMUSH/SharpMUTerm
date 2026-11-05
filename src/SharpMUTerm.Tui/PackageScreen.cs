@@ -102,7 +102,7 @@ internal static class PackageScreen
         int width,
         List<string>? drawn = null)
     {
-        // One row, never wrapped: a ladder after the count (↑↓ goes first, then the copy and browse keys).
+        // One row, never wrapped: a ladder after the count (⌃Z and ↑↓ go first, then the copy and browse keys).
         var count = $"{Count(packages.Count)} installed · ";
         var ladder = new List<LadderKey> { new("↑↓", "select", Drop: 1) };
         ladder.AddRange(declaration.Actions.Select(a => new LadderKey(
@@ -110,6 +110,14 @@ internal static class PackageScreen
             a.Label,
             a.Label.Contains(' ', StringComparison.Ordinal) ? a.Label[..a.Label.IndexOf(' ', StringComparison.Ordinal)] : null,
             a.Key switch { "c" => 2, "b" => 3, _ => LadderKey.Keep })));
+
+        // ⌃Z steps F10's history (a package switched on or off) and is taken only while a package is listed. It goes
+        // first on a narrow row, as it does on the other settings headers (ScreenChrome.Hints).
+        if (packages.Count > 0)
+        {
+            ladder.Add(new(ScreenChrome.UndoKey, "undo", Drop: 1));
+        }
+
         ladder.Add(new("Esc", "close"));
         var keys = KeyLadder.Fit(ladder, Math.Max(20, width - count.Length - 1), Escape, Escape, " · ");
         var lines = new List<string>

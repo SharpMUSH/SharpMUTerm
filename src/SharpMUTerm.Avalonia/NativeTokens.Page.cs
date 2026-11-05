@@ -26,6 +26,12 @@ internal sealed partial record NativeTokens
     /// <summary>Monospace text on a page: a path, a live value (the mockup's 12 px JetBrains Mono).</summary>
     public const double Code = 12;
 
+    /// <summary>
+    /// Small text on a page: the search count, a column heading, a row's help line, "Changed", a reset link, the
+    /// navigation's note and the footer (the mockup's 12 px).
+    /// </summary>
+    public const double PageSmall = 12;
+
     /// <summary>Corner radius of an input, a button or a navigation row on a page.</summary>
     public const double RadiusControl = 6;
 
@@ -130,6 +136,13 @@ internal sealed record PageTokens(
 {
     /// <summary>A brush of <paramref name="colour"/>.</summary>
     public SolidColorBrush Brush(Color colour) => new(colour);
+
+    /// <summary>A colour handed to the page (a meter's own), moved if it must be until it clears the text floor on the card.</summary>
+    public Color OnCard(Color ink)
+    {
+        var held = Contrast.Legible(new Rgb(ink.R, ink.G, ink.B), new Rgb(Card.R, Card.G, Card.B), NativeTokens.TextFloor);
+        return Color.FromRgb(held.R, held.G, held.B);
+    }
 
     /// <summary>
     /// Lays the page planes over what <see cref="NativeTokens.Apply"/> handed Fluent: inputs sunk into the ground with a

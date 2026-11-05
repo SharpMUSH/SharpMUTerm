@@ -33,11 +33,29 @@ namespace SharpMUTerm.Avalonia;
 /// </summary>
 internal sealed class SettingsWindow : Window
 {
-    /// <summary>How far the meter table's received-paths box sits in: under the path columns, past the label column.</summary>
-    private const double MeterPathsIndent = 128;
+    /// <summary>
+    /// How far the meter table's received-paths box sits in: under the value path column, past the table's 4 px inset,
+    /// the label column and the gap after it.
+    /// </summary>
+    private const double MeterPathsIndent = NativeTokens.Space4 + MeterLabelWidth + NativeTokens.Space8;
 
-    /// <summary>The received-paths panel's height before it scrolls: its heading and about six paths.</summary>
-    private const double MeterPathsMaxHeight = 200;
+    /// <summary>The meter table's label column (the mockup's 120 px).</summary>
+    private const double MeterLabelWidth = 120;
+
+    /// <summary>The received-paths panel's width (the mockup's 360 px).</summary>
+    private const double MeterPathsWidth = 360;
+
+    /// <summary>The header's search text (the mockup's 480 px; its padding, glass and edge are outside it).</summary>
+    private const double SearchTextWidth = 480;
+
+    /// <summary>
+    /// The navigation column's width inside its padding (the mockup's 232 px). The column is that, its padding and its
+    /// rule, less the window's own edge, so the page starts where the mockup's does.
+    /// </summary>
+    private const double NavContentWidth = 232;
+
+    /// <summary>The received-paths panel's height before it scrolls: its 24 px heading and five and a half 28 px paths, so the half row says there is more.</summary>
+    private const double MeterPathsMaxHeight = 178;
 
     private readonly TextBox _search;
     private readonly ListBox _sections;
@@ -133,14 +151,18 @@ internal sealed class SettingsWindow : Window
 
         AutomationProperties.SetName(_search, "Search settings");
         _search.TextChanged += (_, _) => OnQuery();
-        _searchCount = new TextBlock { FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space8, 0, 0, 0) };
+        _searchCount = new TextBlock { FontSize = NativeTokens.PageSmall, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space8, 0, 0, 0) };
+
+        // The mockup's glass: a 24-unit icon (a circle of radius 7 at 11,11 and a handle to 20,20, stroke 2) drawn at
+        // 14 px, so a small lens and a short handle rather than a lens filling the box.
         _searchGlass = new global::Avalonia.Controls.Shapes.Path
         {
-            Data = Geometry.Parse("M6,0 A6,6 0 1 1 6,12 A6,6 0 1 1 6,0 M10.5,10.5 L14,14"),
-            StrokeThickness = 1.6,
+            Data = Geometry.Parse("M6.42,2.33 A4.08,4.08 0 1 1 6.42,10.5 A4.08,4.08 0 1 1 6.42,2.33 M11.67,11.67 L9.63,9.63"),
+            StrokeThickness = 1.17,
+            StrokeLineCap = PenLineCap.Round,
             Width = 14,
             Height = 14,
-            Stretch = Stretch.Uniform,
+            Stretch = Stretch.None,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, NativeTokens.Space8, 0),
         };
@@ -159,11 +181,15 @@ internal sealed class SettingsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Center,
             Cursor = new Cursor(StandardCursorType.Ibeam),
+            Margin = new Thickness(NativeTokens.Space16, 0, 0, 0),
         };
         _searchFrame.PointerPressed += (_, _) => _search.Focus();
 
         _scope = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space16, 0, 0, 0) };
-        var header = new Grid { ColumnDefinitions = [new ColumnDefinition(GridLength.Auto), new ColumnDefinition(3, GridUnitType.Star) { MaxWidth = 480 }, new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto)], Margin = new Thickness(NativeTokens.Space20, 0, NativeTokens.Space8, 0), Background = Brushes.Transparent };
+        // The search column is the mockup's box: its gap after the title, its 480 px (glass, text and count), the padding
+        // round them and its edge. The left inset is the mockup's 20 px less the window's own edge.
+        var searchColumn = NativeTokens.Space16 + SearchTextWidth + (2 * NativeTokens.Space12) + (2 * NativeTokens.Hairline);
+        var header = new Grid { ColumnDefinitions = [new ColumnDefinition(GridLength.Auto), new ColumnDefinition(3, GridUnitType.Star) { MaxWidth = searchColumn }, new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto)], Margin = new Thickness(NativeTokens.Space20 - NativeTokens.Hairline, 0, NativeTokens.Space8, 0), Background = Brushes.Transparent };
         header.Children.Add(_title);
         Grid.SetColumn(_searchFrame, 1);
         header.Children.Add(_searchFrame);
@@ -183,9 +209,9 @@ internal sealed class SettingsWindow : Window
         DockPanel.SetDock(_bar, Dock.Top);
 
         // ── the footer ──
-        _footerLeft = new TextBlock { Text = FooterSentence, FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-        _footerRight = new TextBlock { Text = FooterKeys, FontSize = NativeTokens.Body, VerticalAlignment = VerticalAlignment.Center };
-        var footerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(NativeTokens.Space20, 0) };
+        _footerLeft = new TextBlock { Text = FooterSentence, FontSize = NativeTokens.PageSmall, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        _footerRight = new TextBlock { Text = FooterKeys, FontSize = NativeTokens.PageSmall, VerticalAlignment = VerticalAlignment.Center };
+        var footerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(NativeTokens.Space20 - NativeTokens.Hairline, 0) };
         footerRow.Children.Add(_footerLeft);
         Grid.SetColumn(_footerRight, 1);
         footerRow.Children.Add(_footerRight);
@@ -198,16 +224,16 @@ internal sealed class SettingsWindow : Window
         _navNote = new TextBlock
         {
             Text = "Every page here is drawn from the same declared settings the terminal's F-screens use.",
-            FontSize = NativeTokens.Body,
+            FontSize = NativeTokens.PageSmall,
             LineHeight = 18,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(NativeTokens.Space10, NativeTokens.Space8, NativeTokens.Space10, NativeTokens.Space4),
+            Margin = new Thickness(NativeTokens.Space10, NativeTokens.Space8),
         };
         var navDock = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_navNote, Dock.Bottom);
         navDock.Children.Add(_navNote);
         navDock.Children.Add(_sections);
-        _nav = new Border { Width = 232, BorderThickness = new Thickness(0, 0, NativeTokens.Hairline, 0), Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space12), Child = navDock };
+        _nav = new Border { Width = NavContentWidth + (2 * NativeTokens.Space10), BorderThickness = new Thickness(0, 0, NativeTokens.Hairline, 0), Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space12), Child = navDock };
         DockPanel.SetDock(_nav, Dock.Left);
 
         // ── the page ──
@@ -333,7 +359,22 @@ internal sealed class SettingsWindow : Window
     public IReadOnlyDictionary<string, Control> FieldControls => _controls;
 
     /// <summary>The height a list editor takes: the page's viewport less the title above it.</summary>
-    private double ListEditorHeight() => Math.Max(360, _scroller.Bounds.Height - 124);
+    /// <remarks>
+    /// Measured off the page's own margins, spacing and the title as laid out, so the editor ends at the page's bottom
+    /// margin and the page itself does not scroll (a fixed allowance left it a few pixels too tall, and the page grew a
+    /// scroll bar beside the editor's own).
+    /// </remarks>
+    private double ListEditorHeight()
+    {
+        var head = _page.Children.Count > 0 ? _page.Children[0] : null;
+        if (head is not null && head.DesiredSize.Height <= 0)
+        {
+            head.Measure(new Size(Math.Max(0, _scroller.Bounds.Width - _page.Margin.Left - _page.Margin.Right), double.PositiveInfinity));
+        }
+
+        var above = _page.Margin.Top + _page.Margin.Bottom + _page.Spacing + NativeTokens.Space8 + (head?.DesiredSize.Height ?? 0);
+        return Math.Max(360, Math.Floor(_scroller.Bounds.Height - above));
+    }
 
     /// <summary>F10's package manager page, or null on any other page.</summary>
     internal PackagePageView? PackagePage { get; private set; }
@@ -597,7 +638,7 @@ internal sealed class SettingsWindow : Window
 
             _refreshers.Add(() =>
             {
-                editor.Refresh();
+                editor.Refresh(_refreshFocused);
                 _controls.Clear();
                 foreach (var (id, control) in editor.FieldControls)
                 {
@@ -627,16 +668,22 @@ internal sealed class SettingsWindow : Window
         }
 
         // A card per group, as the mockup draws its sections: the group's name heads it and its fields are rows inside,
-        // a hairline between them.
+        // a hairline between them. A card holding one field draws no heading while searching (the mockup's result cards:
+        // the field's own label says what it is), nor when the group is named after its field.
         StackPanel? body = null;
         string? group = null;
-        foreach (var field in visible)
+        var headed = false;
+        for (var i = 0; i < visible.Count; i++)
         {
+            var field = visible[i];
             if (body is null || !string.Equals(field.Group, group, StringComparison.Ordinal))
             {
                 group = field.Group;
                 body = new StackPanel();
-                if (group is { } heading && !string.Equals(heading, field.Label, StringComparison.OrdinalIgnoreCase))
+                var alone = (i + 1 == visible.Count || !string.Equals(visible[i + 1].Group, group, StringComparison.Ordinal))
+                    && (i == 0 || !string.Equals(visible[i - 1].Group, group, StringComparison.Ordinal));
+                headed = group is { } named && !string.Equals(named, field.Label, StringComparison.OrdinalIgnoreCase) && !(alone && Searching);
+                if (headed && group is { } heading)
                 {
                     body.Children.Add(new TextBlock
                     {
@@ -656,7 +703,7 @@ internal sealed class SettingsWindow : Window
 
             body.Children.Add(field switch
             {
-                ListField { Id: BuiltInSettings.MetersField } meters => MeterTable(meters),
+                ListField { Id: BuiltInSettings.MetersField } meters => MeterTable(meters, headsCard: !headed),
                 ThemeField theme => ThemePicker(theme),
                 _ => FieldRow(field),
             });
@@ -723,11 +770,11 @@ internal sealed class SettingsWindow : Window
     };
 
     /// <summary>A button drawn as a link in the accent, underlined, as the mockup's "Reset to default" and "Show all".</summary>
-    private Button LinkButton(string text)
+    private Button LinkButton(string text, double size = NativeTokens.Body)
     {
         var button = new Button
         {
-            Content = new TextBlock { Text = text, TextDecorations = TextDecorations.Underline, FontSize = NativeTokens.Body },
+            Content = new TextBlock { Text = text, TextDecorations = TextDecorations.Underline, FontSize = size },
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
@@ -840,10 +887,10 @@ internal sealed class SettingsWindow : Window
     /// A field's label, in the label weight, with every word of the search marked as the mockup marks "meter": the
     /// page's mark plane behind it and the mark ink on it.
     /// </summary>
-    private TextBlock LabelBlock(string label)
+    private TextBlock LabelBlock(string label, double size = NativeTokens.Label)
     {
         var text = NativeKeys.Words(Capitalise(label));
-        var block = new TextBlock { FontSize = NativeTokens.Label, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        var block = new TextBlock { FontSize = size, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         var words = Searching
             ? _search.Text!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
@@ -887,8 +934,8 @@ internal sealed class SettingsWindow : Window
     }
 
     /// <summary>A field's help line under its label: quiet, wrapped.</summary>
-    private TextBlock HelpBlock(string help) =>
-        new() { Text = NativeKeys.Words(Capitalise(help)), FontSize = NativeTokens.Body, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, NativeTokens.Space2, 0, 0) };
+    private TextBlock HelpBlock(string help, double size = NativeTokens.Body) =>
+        new() { Text = NativeKeys.Words(Capitalise(help)), FontSize = size, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, NativeTokens.Space2, 0, 0) };
 
     /// <summary>
     /// One field, as a row of its group's card: the label (with the changed mark beside it) and its help on the left;
@@ -906,7 +953,7 @@ internal sealed class SettingsWindow : Window
         words.Children.Add(top);
         if (field.Help is { } help)
         {
-            words.Children.Add(HelpBlock(help));
+            words.Children.Add(HelpBlock(help, NativeTokens.PageSmall));
         }
 
         // The note the cell F5 draws beside the value (join wraps' recommendation), from the same sentence, in the
@@ -947,9 +994,9 @@ internal sealed class SettingsWindow : Window
     {
         var mark = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, Margin = new Thickness(NativeTokens.Space10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         mark.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = Accent, VerticalAlignment = VerticalAlignment.Center });
-        mark.Children.Add(new TextBlock { Text = "Changed", FontSize = NativeTokens.Body, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
+        mark.Children.Add(new TextBlock { Text = "Changed", FontSize = NativeTokens.PageSmall, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
         ToolTip.SetTip(mark, "Changed from its default");
-        var reset = LinkButton("Reset to default");
+        var reset = LinkButton("Reset to default", NativeTokens.PageSmall);
         ToolTip.SetTip(reset, $"Back to the default: {SettingsForm.DefaultText(field)}");
         AutomationProperties.SetName(reset, $"Reset {field.Label}");
         reset.Click += (_, _) => _form.Reset(field);
@@ -1007,7 +1054,7 @@ internal sealed class SettingsWindow : Window
                 };
                 _refreshers.Add(() =>
                 {
-                    if (!box.IsKeyboardFocusWithin)
+                    if (Rewritable(box))
                     {
                         box.Value = _form.Get(count);
                     }
@@ -1088,7 +1135,7 @@ internal sealed class SettingsWindow : Window
                 };
                 _refreshers.Add(() =>
                 {
-                    if (!box.IsKeyboardFocusWithin)
+                    if (Rewritable(box))
                     {
                         box.Text = _form.Text(text);
                     }
@@ -1115,15 +1162,20 @@ internal sealed class SettingsWindow : Window
 
     // ── the meter table ──────────────────────────────────────────────────────────────────────────
 
-    private StackPanel MeterTable(ListField field)
+    /// <summary>
+    /// The meter table, laid out as the mockup's: the label (the card's heading when no group heading is drawn above it)
+    /// with its changed mark and reset link, the help, a 4 px-inset grid of rows 12 px apart, the received paths under the
+    /// value path column and the add button, each 12 px from the next.
+    /// </summary>
+    private StackPanel MeterTable(ListField field, bool headsCard = false)
     {
-        var outer = new StackPanel { Spacing = NativeTokens.Space10, Margin = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space4) };
+        var outer = new StackPanel { Spacing = NativeTokens.Space12, Margin = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space12) };
         var page = _tokens.Page;
 
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var (changed, reset) = ChangedMark(field);
         var heading = new WrapPanel { Orientation = Orientation.Horizontal };
-        heading.Children.Add(LabelBlock(field.Label));
+        heading.Children.Add(LabelBlock(field.Label, headsCard ? NativeTokens.CardTitle : NativeTokens.Label));
         heading.Children.Add(changed);
         top.Children.Add(heading);
         Grid.SetColumn(reset, 1);
@@ -1139,14 +1191,25 @@ internal sealed class SettingsWindow : Window
         var meters = _form.Meters(field);
         _meterRows = meters.Count;
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*,*,130,120,32"), ColumnSpacing = 8, RowSpacing = 8 };
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            [
+                new ColumnDefinition(MeterLabelWidth, GridUnitType.Pixel), new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star), new ColumnDefinition(130, GridUnitType.Pixel),
+                new ColumnDefinition(120, GridUnitType.Pixel), new ColumnDefinition(32, GridUnitType.Pixel),
+            ],
+            ColumnSpacing = NativeTokens.Space8,
+            RowSpacing = NativeTokens.Space12,
+            Margin = new Thickness(NativeTokens.Space4, 0),
+        };
         MeterGrid = grid;
         _controls[field.Id] = grid;
         string[] headings = ["Label", "Value path", "Maximum path", "Colour", "Live value"];
         grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         for (var c = 0; c < headings.Length; c++)
         {
-            var title = new TextBlock { Text = headings[c], FontSize = NativeTokens.Body, Foreground = DimInk };
+            var title = new TextBlock { Text = headings[c], FontSize = NativeTokens.PageSmall, Foreground = DimInk };
             Grid.SetColumn(title, c);
             grid.Children.Add(title);
         }
@@ -1154,13 +1217,26 @@ internal sealed class SettingsWindow : Window
         AutoCompleteBox? lastPath = null;
         void Commit() => _form.SetMeters(field, meters);
 
+        // The received paths the box being edited already reads are marked in the panel under it, as the mockup marks
+        // Char.Vitals.mv while the mv value path has focus.
+        var picks = new List<(string Path, Button Row)>();
+        void PointAt(AutoCompleteBox box)
+        {
+            lastPath = box;
+            var reads = (box.Text ?? string.Empty).Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            foreach (var (path, pickRow) in picks)
+            {
+                pickRow.Background = reads.Contains(path, StringComparer.Ordinal) ? page.Brush(page.PopupSelected) : Brushes.Transparent;
+            }
+        }
+
         for (var i = 0; i < meters.Count; i++)
         {
             var meter = meters[i];
             var row = i + 1;
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
-            var label = new TextBox { Text = meter.Label, MaxLength = StatusMeter.MaxLabelLength, FontSize = NativeTokens.Label };
+            var label = new TextBox { Text = meter.Label, MaxLength = StatusMeter.MaxLabelLength, FontSize = NativeTokens.Label, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space6), VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetName(label, $"meter {row} label");
             label.LostFocus += (_, _) =>
             {
@@ -1173,8 +1249,8 @@ internal sealed class SettingsWindow : Window
 
             var value = PathBox(meter.Value, paths, $"meter {row} value path", v => meter.Value = v ?? string.Empty, Commit);
             var max = PathBox(meter.Max, paths, $"meter {row} maximum path", v => meter.Max = v, Commit);
-            value.GotFocus += (_, _) => lastPath = value;
-            max.GotFocus += (_, _) => lastPath = max;
+            value.GotFocus += (_, _) => PointAt(value);
+            max.GotFocus += (_, _) => PointAt(max);
 
             var now = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontFamily = Mono, FontSize = NativeTokens.Code };
             _meterNow.Add((meter, now));
@@ -1212,17 +1288,17 @@ internal sealed class SettingsWindow : Window
         // What this connection has received, to pick a path from: a click puts it in the path box last used. Drawn as the
         // mockup's drop-down panel, under the path columns.
         var box = new StackPanel();
-        box.Children.Add(new TextBlock { Text = "Paths this connection has received", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4, NativeTokens.Space12, NativeTokens.Space4) });
+        box.Children.Add(new TextBlock { Text = "Paths this connection has received", FontSize = NativeTokens.PageSmall, Foreground = DimInk, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4) });
         if (received.Count == 0)
         {
-            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.Body, Foreground = DimInk, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4, NativeTokens.Space12, NativeTokens.Space6) });
+            box.Children.Add(new TextBlock { Text = "Nothing yet — a meter shows once its value arrives.", FontSize = NativeTokens.PageSmall, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4, NativeTokens.Space12, NativeTokens.Space6) });
         }
 
         foreach (var item in received.Take(40))
         {
             var line = new TextBlock { FontFamily = Mono, FontSize = NativeTokens.Code, TextTrimming = TextTrimming.CharacterEllipsis };
             line.Inlines!.Add(new Run(item.Path) { Foreground = page.Brush(page.Text) });
-            line.Inlines.Add(new Run($"  = {item.Value}") { Foreground = DimInk });
+            line.Inlines.Add(new Run($" = {item.Value}") { Foreground = DimInk });
             var pick = new Button
             {
                 Content = line,
@@ -1243,6 +1319,7 @@ internal sealed class SettingsWindow : Window
                 }
             };
             box.Children.Add(pick);
+            picks.Add((item.Path, pick));
         }
 
         // The mockup's drop-down shows a handful of rows; a connection that has sent sixty paths scrolls inside the panel
@@ -1262,7 +1339,7 @@ internal sealed class SettingsWindow : Window
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Padding = new Thickness(0, NativeTokens.Space8),
             Margin = new Thickness(MeterPathsIndent, 0, 0, 0),
-            MaxWidth = 420,
+            Width = MeterPathsWidth,
             HorizontalAlignment = HorizontalAlignment.Left,
         });
 
@@ -1347,6 +1424,7 @@ internal sealed class SettingsWindow : Window
             FontSize = NativeTokens.Code,
             FilterMode = AutoCompleteFilterMode.ContainsOrdinal,
             MinimumPrefixLength = 0,
+            Padding = new Thickness(NativeTokens.Space8),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         AutomationProperties.SetName(box, name);
@@ -1380,8 +1458,31 @@ internal sealed class SettingsWindow : Window
         {
             var text = _form.Now(meter);
             now.Text = text ?? "waiting";
-            now.Foreground = text is null ? DimInk : _tokens.Page.Brush(_tokens.Page.Text);
+            now.Foreground = text is null ? DimInk : _tokens.Page.Brush(NowInk(meter, text));
         }
+    }
+
+    /// <summary>
+    /// The ink a meter's live value is drawn in, as the mockup's are: the warning colour while it is under
+    /// <see cref="VitalsModel.LowShare"/> of its maximum (the gauges' rule), else the meter's own colour held to the floor
+    /// on the card, else the page's text.
+    /// </summary>
+    private Color NowInk(StatusMeter meter, string text)
+    {
+        var page = _tokens.Page;
+        var parts = text.Split('/');
+        if (parts.Length == 2
+            && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var max)
+            && max > 0 && value / max < VitalsModel.LowShare)
+        {
+            // The low red every meter host draws (WorkspacePalette.Low), held on the card.
+            var card = new SharpMUTerm.Core.Text.Rgb(page.Card.R, page.Card.G, page.Card.B);
+            var low = SharpMUTerm.Tui.WorkspacePalette.Low(_form.Theme?.Invoke() ?? SharpMUTerm.Core.Theming.ThemeLibrary.Dark(), card);
+            return page.OnCard(Color.FromRgb(low.R, low.G, low.B));
+        }
+
+        return MeterColours.For(meter) is { } hex && Color.TryParse(hex, out var own) ? page.OnCard(own) : page.Text;
     }
 
     // ── changes landing ──────────────────────────────────────────────────────────────────────────
@@ -1389,9 +1490,44 @@ internal sealed class SettingsWindow : Window
     /// <summary>Raised on the client's thread once a change has landed; the page catches up on this one.</summary>
     private void OnChanged() => Dispatcher.UIThread.Post(() =>
     {
-        Refresh();
+        // A change landed, so whatever the focused box held has been committed (or replaced by an undo): its own typing
+        // is no longer its to undo, and Ctrl+Z from here is the section's. After an undo or redo taken from that box the
+        // box is refreshed too, focused or not, or it would go on showing the value the step took away.
+        var typedIn = FocusManager?.GetFocusedElement() as TextBox;
+        _refreshFocused = _steppedFromBox;
+        _steppedFromBox = false;
+        try
+        {
+            Refresh();
+        }
+        finally
+        {
+            _refreshFocused = false;
+        }
+
+        if (typedIn is not null)
+        {
+            ForgetTyping(typedIn);
+        }
+
         ShowNote();
     });
+
+    /// <summary>Set by a section undo or redo taken while a text box had focus, until the change it makes lands.</summary>
+    private bool _steppedFromBox;
+
+    /// <summary>True while a refresh should rewrite a focused control too (the change is an undo or redo, not typing).</summary>
+    private bool _refreshFocused;
+
+    /// <summary>Whether a refresh may rewrite <paramref name="control"/>: not while it is being typed in, unless the change is a history step.</summary>
+    private bool Rewritable(Control control) => _refreshFocused || !control.IsKeyboardFocusWithin;
+
+    /// <summary>Empties <paramref name="box"/>'s own undo history (Avalonia clears it when undo is switched off).</summary>
+    private static void ForgetTyping(TextBox box)
+    {
+        box.IsUndoEnabled = false;
+        box.IsUndoEnabled = true;
+    }
 
     /// <summary>The footer's sentence while nothing has been undone.</summary>
     internal const string FooterSentence = "Changes apply to connected sessions as you make them.";
@@ -1416,7 +1552,8 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>
     /// Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) on the page: the section's committed edits, through the client. A text box being
-    /// typed in keeps the chords while it has its own typing to undo, as any editor does.
+    /// typed in keeps the chords while it has typing of its own not yet committed, as any editor does; a box holding the
+    /// value the page put there, or typing already committed, hands them to the section.
     /// </summary>
     private void OnUndoKey(object? sender, KeyEventArgs e)
     {
@@ -1429,12 +1566,16 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        if (FocusManager?.GetFocusedElement() is TextBox box && (undo ? box.CanUndo : box.CanRedo))
+        // A box's own history holds only typing not yet committed (OnChanged empties it when a change lands), so while it
+        // has some the chord is the box's, and otherwise the section's.
+        var focused = FocusManager?.GetFocusedElement() as TextBox;
+        if (focused is not null && (undo ? focused.CanUndo : focused.CanRedo))
         {
             return;
         }
 
         e.Handled = redo ? _form.Redo(section) : _form.Undo(section);
+        _steppedFromBox |= e.Handled && focused is not null;
     }
 
     /// <summary>Undoes the last edit on the section shown, as Ctrl+Z does — for a test.</summary>

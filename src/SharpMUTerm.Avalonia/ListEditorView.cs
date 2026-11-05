@@ -157,8 +157,30 @@ internal sealed class ListEditorView : Grid
         BuildDetail();
     }
 
-    /// <summary>Catches up with a change that has landed: rows rebuilt, the detail re-read (or rebuilt for another item).</summary>
-    public void Refresh()
+    /// <summary>
+    /// Catches up with a change that has landed: rows rebuilt, the detail re-read (or rebuilt for another item). A field
+    /// being typed in is left alone unless <paramref name="focusedToo"/> (the change is an undo or redo taken from it).
+    /// </summary>
+    public void Refresh(bool focusedToo = false)
+    {
+        _refreshFocused = focusedToo;
+        try
+        {
+            RefreshNow();
+        }
+        finally
+        {
+            _refreshFocused = false;
+        }
+    }
+
+    /// <summary>True while <see cref="Refresh"/> rewrites a focused field too.</summary>
+    private bool _refreshFocused;
+
+    /// <summary>Whether a refresh may rewrite <paramref name="control"/>: not while it is being typed in, unless the change is a history step.</summary>
+    private bool Rewritable(Control control) => _refreshFocused || !control.IsKeyboardFocusWithin;
+
+    private void RefreshNow()
     {
         if (_form.Item is { } item && FindGroup(item) is null)
         {
@@ -659,7 +681,7 @@ internal sealed class ListEditorView : Grid
                 };
                 _refreshers.Add(() =>
                 {
-                    if (!box.IsKeyboardFocusWithin)
+                    if (Rewritable(box))
                     {
                         box.Value = (decimal)_form.Get(value);
                     }
@@ -847,7 +869,7 @@ internal sealed class ListEditorView : Grid
 
         _refreshers.Add(() =>
         {
-            if (!control.IsKeyboardFocusWithin)
+            if (Rewritable(control))
             {
                 Put(_form.Text(text));
             }

@@ -436,6 +436,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The desktop window's settings window now matches its design more closely: the section list, search box and page line
+  up as drawn, small text such as column headings, help lines and the footer is a size smaller, the meter table's rows
+  are spaced and padded as drawn, and each meter's live value is shown in that meter's colour (red when it is low).
+- The terminal's package list (F10) names ⌃Z undo in its key line while a package is listed.
 - In the desktop window a room's name on the map never runs across an exit line or a way into another area: a name with
   no clear place is shortened, and one that cannot be is shown when you point at its room.
 - In the desktop window's combat layout the vitals card ends just under its last gauge, so the map below it starts
@@ -589,6 +593,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- In the desktop window's settings, Ctrl+Z in a text box you have just confirmed with Enter now undoes that setting
+  instead of only changing the box back on screen; the box keeps Ctrl+Z for typing you have not confirmed yet.
+- The desktop window's trigger, alias, key and timer pages no longer show a second scroll bar beside the editor.
 - On the Light theme the history half of a pane you have scrolled back is now a visibly different shade from the live
   lines below it, in the terminal and in the window; before it was the same white.
 - Dragging a tab in the desktop window no longer draws the drop zone twice: only the window's wash shows where the tab
