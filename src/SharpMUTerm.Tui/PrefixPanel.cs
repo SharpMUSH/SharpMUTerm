@@ -170,9 +170,19 @@ internal static class PrefixPanel
     /// The whole panel as markup lines: one row per command, dimmed with its reason where it cannot run,
     /// then the footer naming the way out.
     /// </summary>
-    internal static List<string> Render(PrefixFacts facts)
+    /// <summary>
+    /// The keymap as the shared model both hosts draw: the cell panel here, the window's native header while ⌃B is
+    /// armed (<see cref="SharpMUTerm.Client.Chrome.HeaderModel.Prefix"/>).
+    /// </summary>
+    internal static SharpMUTerm.Client.Chrome.HeaderPrefix Model(PrefixFacts facts) =>
+        new([.. Entries(facts).Select(e => new SharpMUTerm.Client.Chrome.HeaderPrefixKey(e.Keys, e.Title, e.Blocked))], Footer);
+
+    internal static List<string> Render(PrefixFacts facts) => Render(Model(facts));
+
+    /// <summary>Builds the panel's lines from <paramref name="model"/> and nothing else.</summary>
+    internal static List<string> Render(SharpMUTerm.Client.Chrome.HeaderPrefix model)
     {
-        var entries = Entries(facts);
+        var entries = model.Keys;
         var keyColumn = entries.Max(e => e.Keys.Length);
         var titleColumn = entries.Max(e => e.Title.Length);
 
@@ -192,7 +202,7 @@ internal static class PrefixPanel
         }
 
         lines.Add(string.Empty);
-        lines.Add($" [{Label}]{Escape(Footer)}[/]");
+        lines.Add($" [{Label}]{Escape(model.Exit)}[/]");
         return lines;
     }
 

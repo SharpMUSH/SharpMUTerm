@@ -29,6 +29,12 @@ internal readonly record struct InputRow(int Start, int Length)
 internal static class InputLayout
 {
     /// <summary>
+    /// The band-coloured columns a command line leaves at each end of its rows when the host draws its field
+    /// (<see cref="HostChrome.Input"/>): the field's inner padding, inside the frame the host draws.
+    /// </summary>
+    internal const int HostFieldPad = 4;
+
+    /// <summary>
     /// Breaks <paramref name="text"/> into the rows it occupies at <paramref name="width"/> columns.
     /// Newlines break hard; everything else wraps at the last space that fits, or mid-word when a word
     /// is longer than the line. The space a wrap breaks on stays at the end of the row it ended, so the

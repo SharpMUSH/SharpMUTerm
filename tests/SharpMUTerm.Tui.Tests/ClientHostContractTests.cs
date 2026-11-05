@@ -65,6 +65,8 @@ public class ClientHostContractTests
         {
             Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
             Reserved = [],
+            ReportsChordsWhole = false,
+            DeliversNumpad = false,
         };
         await using var app = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(driver, Caps) with { Keys = keys });
 
@@ -106,7 +108,7 @@ public class ClientHostContractTests
         var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "SharpMUTerm.Tui", "SharpMUTermApp.cs"));
         var exact = Regex.Matches(source, @"string\.Equals\(view, ""([a-z0-9-]+)""").Select(m => m.Groups[1].Value);
         var prefixes = Regex.Matches(source, @"view\.StartsWith\(""([a-z0-9-]+)""").Select(m => m.Groups[1].Value);
-        var screens = Regex.Matches(source, @"new\(ConsoleKey\.F\d+, ""[^""]+"", new\[\] \{ ([^}]+) \}")
+        var screens = Regex.Matches(source, @"new\(ConsoleKey\.F\d+, [^,]+, new\[\] \{ ([^}]+) \}")
             .SelectMany(m => Regex.Matches(m.Groups[1].Value, @"""([a-z0-9-]+)""").Select(v => v.Groups[1].Value));
 
         var listed = SnapshotViews.All.OfType<string>().ToHashSet(StringComparer.Ordinal);
@@ -116,6 +118,7 @@ public class ClientHostContractTests
             .ToList();
 
         await Assert.That(exact.Count()).IsGreaterThan(20).Because("the pattern still finds the view comparisons");
+        await Assert.That(screens).Contains("textansi").Because("the pattern still finds the settings screen table");
         await Assert.That(missing).IsEmpty().Because("each view has to be rendered in the window too");
     }
 

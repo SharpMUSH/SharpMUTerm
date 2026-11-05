@@ -472,7 +472,7 @@ public class TriggerSetManagementTests
         await Assert.That(sets[1].Timers.Select(t => t.Name)).IsEquivalentTo(new[] { "ping" });
 
         var macros = sets.SelectMany(s => s.Macros).ToList();
-        var binding = KeypadScreenRenderer.Model(macros, sets, 0)
+        var binding = KeypadScreenRenderer.Model(HostKeys.Terminal, macros, sets, 0)
             .FieldAt(0, 0, KeypadScreenRenderer.SetField)!.Value;
         await Assert.That(new ScreenEdits().Apply(binding, "Trade")).IsNull();
         await Assert.That(sets[0].Macros).IsEmpty();
@@ -487,7 +487,7 @@ public class TriggerSetManagementTests
     [Test]
     public async Task TheKeypadOffersNoSetFieldWhenItWasNotToldWhichSetsTheBindingsCameFrom()
     {
-        var row = KeypadScreenRenderer.Model(Sets()[0].Macros).RowAt(0, 0);
+        var row = KeypadScreenRenderer.Model(HostKeys.Terminal, Sets()[0].Macros).RowAt(0, 0);
 
         await Assert.That(row.FieldCount).IsEqualTo(3);
         await Assert.That(row.FieldAt(KeypadScreenRenderer.SetField)).IsNull();
@@ -547,9 +547,16 @@ public class TriggerSetManagementTests
         }
 
         session.Handle(Key(ConsoleKey.DownArrow));
-        session.Handle(Key(ConsoleKey.Tab)); // commits the move and wraps to field 0
+        session.Handle(Key(ConsoleKey.Tab)); // commits the move and steps to the field after the set
 
+        // The match kind follows the set now (it was appended after it), and it belongs to the moved
+        // rule: a regex rule reads "regular expression".
         var edit = session.Focus().Edit!.Value;
+        await Assert.That(edit.Field).IsEqualTo(TriggersScreenRenderer.MatchTypeField);
+        await Assert.That(edit.Text).IsEqualTo("regular expression");
+
+        session.Handle(Key(ConsoleKey.Tab)); // and wraps to field 0 of the same rule
+        edit = session.Focus().Edit!.Value;
         await Assert.That(edit.Field).IsEqualTo(TriggersScreenRenderer.NameField);
         await Assert.That(edit.Text).IsEqualTo("Spam");
     }
@@ -575,7 +582,7 @@ public class TriggerSetManagementTests
             .Any(l => l.Contains("▪ Combat — no aliases", StringComparison.Ordinal))).IsTrue();
         await Assert.That(TimersScreenRenderer.ListColumn(sets, 0)
             .Any(l => l.Contains("▪ Combat — no timers", StringComparison.Ordinal))).IsTrue();
-        await Assert.That(KeypadScreenRenderer.HotkeysColumn(macros, null, sets, 0)
+        await Assert.That(KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros, null, sets, 0)
             .Any(l => l.Contains("▪ Combat — no bindings", StringComparison.Ordinal))).IsTrue();
 
         // Trade holds triggers but no aliases, so it is named on F3 and not on F2 — the placeholder is

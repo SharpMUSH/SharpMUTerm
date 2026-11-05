@@ -15,13 +15,13 @@ namespace SharpMUTerm.Tui;
 internal static class TimersScreenView
 {
     public static IWindowControl Build(
-        IReadOnlyList<TriggerSet> sets, int selected, int width, ScreenFocus? focus = null, int height = 0)
+        IReadOnlyList<TriggerSet> sets, int selected, int width, ScreenTheme scheme, ScreenFocus? focus = null, int height = 0)
     {
         var header = ScreenChrome.Band(
             TimersScreenRenderer.HeaderLine(width, TimersScreenRenderer.Model(sets, selected), focus),
-            ScreenPalette.HeaderBg);
+            ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            TimersScreenRenderer.FooterLine(sets, selected, width, focus), ScreenPalette.FooterBg);
+            TimersScreenRenderer.FooterLine(sets, selected, width, focus), ScreenPalette.FooterBg, scheme);
 
         var list = ScreenChrome.SplitWidth(
             width,
@@ -33,10 +33,10 @@ internal static class TimersScreenView
         var right = TimersScreenRenderer.EditorColumn(
             sets, selected, focus, width <= 0 ? list : width - list - ScreenChrome.ColumnDivider, rows);
 
-        var listCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, rows)));
+        var listCol = ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(left, rows), scheme));
         var editorCol = ScreenChrome.Stretch(
-            new MarkupControl(ScreenChrome.Indent(ScreenChrome.Window(right, rows))));
+            ScreenChrome.Panel(ScreenChrome.Indent(ScreenChrome.Window(right, rows)), scheme));
         return ScreenChrome.Split(
-            header, footer, listCol, editorCol, list, Math.Max(left.Count, right.Count), rows);
+            header, footer, listCol, editorCol, list, Math.Max(left.Count, right.Count), rows, scheme);
     }
 }

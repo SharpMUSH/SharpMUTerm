@@ -90,7 +90,8 @@ public sealed record RailCharacter(
 /// that goes to that window, rather than to whatever else happens to share its pane.
 /// </para>
 /// </summary>
-public sealed record RailWindow(string Title, string Id, string? Chord, int Unread, bool HasUnsent, bool Closed);
+/// <param name="Own">Whether this is the character's own session window (the row labelled <c>main</c>).</param>
+public sealed record RailWindow(string Title, string Id, string? Chord, int Unread, bool HasUnsent, bool Closed, bool Own = false);
 
 /// <summary>
 /// Projects the worlds/characters/windows tree into a flat list of <see cref="RailRow"/>s for the
@@ -140,7 +141,7 @@ public static class RailModel
 
         foreach (var world in worlds)
         {
-            rows.Add(new RailRow(RailRowKind.World, 0, world.Name, Accent: world.Accent, Target: WorldTarget(world)));
+            rows.Add(new RailRow(RailRowKind.World, 0, world.Name, Accent: world.Accent, Target: TargetFor(world)));
 
             if (world.Characters.Count == 0)
             {
@@ -196,9 +197,10 @@ public static class RailModel
     /// to mean one of its characters: the one already active (clicking the world you are in re-focuses
     /// it rather than dragging you elsewhere), else the first connected one (a world you click is a
     /// world you want to be looking at something live in), else simply the first. A world with no
-    /// characters says so — see <see cref="NoCharactersTarget"/>.
+    /// characters says so — see <see cref="NoCharactersTarget"/>. Public so every view of the rail — the cell rows
+    /// and the window's native sidebar — clicks a world through to the same place.
     /// </summary>
-    private static string WorldTarget(RailWorld world)
+    public static string TargetFor(RailWorld world)
     {
         if (world.Characters.Count == 0)
         {

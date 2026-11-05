@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Commands;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Workspaces;
 
@@ -35,8 +37,12 @@ internal sealed partial class SharpMUTermApp
     private DividerDrag? _dividerDrag;
     private IReadOnlyList<PaneScrollbar> _scrollbars = Array.Empty<PaneScrollbar>();
 
-    /// <summary>One divider between two children of a split, and the control that draws it.</summary>
-    private sealed record DividerSlot(HorizontalGridControl Control, SplitNode Split, int Index);
+    /// <summary>
+    /// One divider between two children of a split: either the control that draws it, or — in a stack where the pane
+    /// below draws a tab strip and so needs no divider row (<see cref="PaneExtent.DividerRows"/>) — that pane's id,
+    /// whose strip's empty run past its last tab is the handle instead (<see cref="HeaderFill"/>).
+    /// </summary>
+    private sealed record DividerSlot(HorizontalGridControl? Control, SplitNode Split, int Index, string? HeaderPaneId = null);
 
     /// <summary>A divider by what it divides, which survives the rebuild that replaces its control.</summary>
     private readonly record struct DividerKey(SplitNode Split, int Index)
@@ -60,8 +66,192 @@ internal sealed partial class SharpMUTermApp
     {
         var key = new DividerKey(split, index);
         var rule = Divider(_litDivider is { } lit && lit.Equals(key));
-        _dividers.Add(new DividerSlot(rule, split, index));
+
+        // Beside a fixed-height strip no rule is drawn at all (PaneExtent.DividerRows: it sits flush); should one
+        // ever be, it is not registered: it cannot move, so it offers no resize cue, no drag and no double-click.
+        var held = split.Direction == SplitDirection.Column
+            && (PaneExtent.FixedRows(split.Children[index]) is not null
+                || PaneExtent.FixedRows(split.Children[index + 1]) is not null);
+        if (!held)
+        {
+            _dividers.Add(new DividerSlot(rule, split, index));
+        }
+
         return rule;
+    }
+
+    /// <summary>
+    /// Registers the tab strips of the panes along the top of a stacked split's child <paramref name="index"/> + 1 as
+    /// the divider above it, where <see cref="PaneExtent.DividerRows"/> drew no row. Nothing is registered beside a
+    /// fixed strip, for <see cref="PaneDivider"/>'s reason: it cannot move.
+    /// </summary>
+    private void RegisterHeaderDivider(SplitNode split, int index)
+    {
+        if (split.Direction != SplitDirection.Column
+            || PaneExtent.FixedRows(split.Children[index]) is not null
+            || PaneExtent.FixedRows(split.Children[index + 1]) is not null)
+        {
+            return;
+        }
+
+        foreach (var pane in PaneExtent.HeaderPanes(split.Children[index + 1]))
+        {
+            _dividers.Add(new DividerSlot(null, split, index, pane.Id));
+        }
+    }
+
+    /// <summary>
+    /// The run of a pane's tab strip to the right of its last tab, in desktop cells, or null when the strip is not
+    /// drawn or its tabs fill it. Only that run is the divider: a tab, its <c>×</c> and the separators between tabs
+    /// stay the framework's, and its own hit test is what says where the last tab ends.
+    /// </summary>
+    private PaneRect? HeaderFill(string paneId)
+    {
+        // A panel's heading band standing in for the divider (HeadingDividers): its run as the last paint left it.
+        if (HeadingFill(paneId) is { } heading)
+        {
+            return heading;
+        }
+
+        TabControl? tabs;
+        lock (_paneTabsLock)
+        {
+            tabs = _paneTabs.GetValueOrDefault(paneId);
+        }
+
+        if (tabs is not { ShowTabHeader: true } || BoundsOf(tabs) is not { Height: > 0 } rect)
+        {
+            return null;
+        }
+
+        // A host that draws the strips takes the presses on its tabs; what reaches the cells is the strip's empty run,
+        // wherever the host's tabs end, so the whole blank row is the handle.
+        if (Host.Chrome.Tabs)
+        {
+            return new PaneRect(rect.X, rect.Y, rect.Width, 1);
+        }
+
+        var from = rect.Width;
+        while (from > 0 && FrameworkHitTests.TabAt(tabs, from - 1) < 0)
+        {
+            from--;
+        }
+
+        // A strip whose hit test answers nothing at all (a framework that renamed it) offers no handle rather than
+        // turning its tabs into one.
+        if (from == 0 && tabs.TabCount > 0)
+        {
+            return null;
+        }
+
+        return from >= rect.Width ? null : new PaneRect(rect.X + from, rect.Y, rect.Width - from, 1);
+    }
+
+    /// <summary>Every tab strip's run that is a divider's handle, for the pane drag to leave alone.</summary>
+    /// <remarks>
+    /// Called from the driver's input thread (<see cref="PaneSnapshot"/>), so it reads the copy
+    /// <see cref="PublishHeaderDividers"/> swapped in, never the list a rebuild is filling.
+    /// </remarks>
+    private List<PaneRect> HeaderDividerCells() =>
+        Volatile.Read(ref _headerDividerSlots)
+            .Select(AreaOf)
+            .Where(area => area is not null)
+            .Select(area => area!.Value)
+            .ToList();
+
+    /// <summary>The tab strips standing in for dividers, as of the last rebuild; swapped whole, read off-thread.</summary>
+    private DividerSlot[] _headerDividerSlots = [];
+
+    /// <summary>Publishes the rebuilt pane area's tab-strip dividers for <see cref="HeaderDividerCells"/>.</summary>
+    private void PublishHeaderDividers() =>
+        Volatile.Write(ref _headerDividerSlots, _dividers.Where(slot => slot.HeaderPaneId is not null).ToArray());
+
+    private IReadOnlyList<PaneDividerOverlay> _dividersSaid = [];
+
+    /// <summary>
+    /// Tells the host where the drawn dividers are (<see cref="IPointerPresenter.Dividers"/>), on every paint of the main
+    /// window, before the frame is flushed; said only on change.
+    /// </summary>
+    private void PublishDividers()
+    {
+        if (_pointer is null || _window is null)
+        {
+            return;
+        }
+
+        var now = DividersNow();
+        if (now.SequenceEqual(_dividersSaid))
+        {
+            return;
+        }
+
+        _dividersSaid = now;
+        _pointer.Dividers(now);
+    }
+
+    /// <summary>
+    /// The dividers drawn as cells (a tab strip standing in for one is the host's strip, not a divider), or none while
+    /// anything is drawn over the panes. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<PaneDividerOverlay> DividersNow()
+    {
+        if (!MainWindowInFront() || AnyOverlayOpen)
+        {
+            return [];
+        }
+
+        var list = new List<PaneDividerOverlay>();
+        foreach (var slot in _dividers)
+        {
+            if (slot.Control is null || AreaOf(slot) is not { Width: > 0, Height: > 0 } area)
+            {
+                continue;
+            }
+
+            var lit = _litDivider is { } key && key.Equals(new DividerKey(slot.Split, slot.Index));
+            list.Add(new PaneDividerOverlay(area, slot.Split.Direction == SplitDirection.Row, lit));
+        }
+
+        return list;
+    }
+
+    /// <summary>Where a divider's handle is, in desktop cells: its control's cells, or the empty run of a tab strip.</summary>
+    private PaneRect? AreaOf(DividerSlot slot) =>
+        slot.Control is { } control ? BoundsOf(control) : slot.HeaderPaneId is { } paneId ? HeaderFill(paneId) : null;
+
+    /// <summary>
+    /// Lights the tab strip standing in for the divider under the pointer (or being dragged). A recolour of cells the
+    /// strip already drew, after the frame is painted — the framework paints that run in the control's own
+    /// background, which is also what the pane's content inherits, so it cannot be set on the control.
+    /// </summary>
+    private void PaintHeaderDividers(SharpConsoleUI.Layout.CharacterBuffer buffer)
+    {
+        if (_litDivider is not { } lit)
+        {
+            return;
+        }
+
+        var hover = ToColor(WorkspacePalette.RuleHover(_theme));
+        foreach (var slot in _dividers)
+        {
+            if (slot.HeaderPaneId is null || !lit.Equals(new DividerKey(slot.Split, slot.Index)) || AreaOf(slot) is not { } fill)
+            {
+                continue;
+            }
+
+            var top = _window.Top + _system.DesktopUpperLeft.Y;
+            for (var x = fill.X; x < fill.X + fill.Width; x++)
+            {
+                var bx = x - _window.Left;
+                var by = fill.Y - top;
+                if (bx < 0 || by < 0 || bx >= buffer.Width || by >= buffer.Height)
+                {
+                    continue;
+                }
+
+                buffer.SetCellColors(bx, by, buffer.GetCell(bx, by).Foreground, hover);
+            }
+        }
     }
 
     /// <summary>
@@ -93,6 +283,13 @@ internal sealed partial class SharpMUTermApp
                 MoveDivider(drag.Key, point);
             }
 
+            return;
+        }
+
+        // The tab strip's +N ▾ chip lists the tabs past its edges; it is painted over the strip's last cells.
+        if (pressed && !dragged && TabOverflowAt(point) is { } overflowing)
+        {
+            OpenTabOverflow(overflowing, point);
             return;
         }
 
@@ -163,6 +360,11 @@ internal sealed partial class SharpMUTermApp
     {
         foreach (var slot in _dividers)
         {
+            if (slot.Control is null)
+            {
+                continue; // a tab strip standing in for the divider is lit after the paint (PaintHeaderDividers)
+            }
+
             var lit = _litDivider is { } key && key.Equals(new DividerKey(slot.Split, slot.Index));
             slot.Control.BackgroundColor = ToColor(lit ? WorkspacePalette.RuleHover(_theme) : WorkspacePalette.Rule(_theme));
         }
@@ -189,7 +391,7 @@ internal sealed partial class SharpMUTermApp
     {
         foreach (var slot in _dividers)
         {
-            if (BoundsOf(slot.Control) is { } rect && Contains(rect, point))
+            if (AreaOf(slot) is { } rect && Contains(rect, point))
             {
                 return slot;
             }
@@ -199,14 +401,14 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>The divider occupying exactly <paramref name="area"/>, or null.</summary>
-    private DividerSlot? DividerAt(PaneRect area) => _dividers.FirstOrDefault(slot => BoundsOf(slot.Control) == area);
+    private DividerSlot? DividerAt(PaneRect area) => _dividers.FirstOrDefault(slot => AreaOf(slot) == area);
 
     /// <summary>
     /// What is at a desktop cell, as the pointer sees it. Internal so a test can ask without a mouse.
     /// </summary>
     internal PointerTarget TargetAt(System.Drawing.Point point)
     {
-        if (DividerAt(point) is { } divider && BoundsOf(divider.Control) is { } line)
+        if (DividerAt(point) is { } divider && AreaOf(divider) is { } line)
         {
             var columns = divider.Split.Direction == SplitDirection.Row;
             return new PointerTarget(
@@ -266,6 +468,13 @@ internal sealed partial class SharpMUTermApp
             tooltip = hit.Span.Text.Trim();
         }
 
+        var owner = target.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal)
+            ? target[CommandIds.CharacterPrefix.Length..]
+            : target.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal)
+                ? _workspace.FindWindow(target[CommandIds.WindowPrefix.Length..])?.SessionKey
+                : null;
+        tooltip += TintLine(owner);
+
         return new PointerTarget(PointerKind.RailRow, row, PointerShape.Hand, tooltip, "rail:" + target);
     }
 
@@ -273,6 +482,13 @@ internal sealed partial class SharpMUTermApp
     {
         if (point.Y < rect.Y + tabs.TabHeaderHeight)
         {
+            // Where the host draws the strips, the framework's labels under them are blank cells: a press on the row
+            // that reaches the cells is past the host's last tab, nothing the framework's hit test should answer.
+            if (Host.Chrome.Tabs)
+            {
+                return PointerTarget.Nothing;
+            }
+
             var index = FrameworkHitTests.TabAt(tabs, point.X - rect.X);
             var pages = tabs.TabPages;
             if (index < 0 || index >= pages.Count || pages[index].Tag is not string tabWindow)
@@ -332,8 +548,20 @@ internal sealed partial class SharpMUTermApp
         var title = Snippet(WindowTitle(windowId));
         var unread = window is { Unread: > 0 } ? $" · {window.Unread} unread" : string.Empty;
         var actions = closable ? "click to show it · drag it onto another pane · × closes it" : "click to show it · drag it onto another pane";
-        return $"{title}{unread}\n{actions}";
+        return $"{title}{unread}\n{actions}{TintLine(window?.SessionKey)}";
     }
+
+    /// <summary>
+    /// The pane colour a character chose, <em>by name</em>, as a line for a tooltip — the cue that does not
+    /// depend on telling hues apart. Ten tints at one luminance cannot all be told apart by a reader with a
+    /// colour-vision deficiency (see <see cref="WorkspacePalette.Tint"/>), and the rail and the tab strip may
+    /// not spend a cell on saying it (the NAWS rule), so the name goes where it costs none. Empty for a
+    /// window nobody owns and for a character with no tint.
+    /// </summary>
+    private string TintLine(string? sessionKey) =>
+        TintOf(sessionKey) is var tint && tint != PaneTint.None
+            ? $"\npane colour: {tint.ToString().ToLowerInvariant()}"
+            : string.Empty;
 
     /// <summary>
     /// What clicking a pane's link does, said before it is done. For a link a server wrote, that is the
@@ -381,6 +609,9 @@ internal sealed partial class SharpMUTermApp
         }
     }
 
+    /// <summary>The pointer menu's last entry, which opens ⌃P.</summary>
+    internal const string MoreCommandsLabel = "More commands…";
+
     /// <summary>The menu <see cref="ShowPointerMenu"/> would show. Internal so a test can read it.</summary>
     internal IReadOnlyList<PointerMenuItem> PointerMenu(System.Drawing.Point point)
     {
@@ -399,39 +630,19 @@ internal sealed partial class SharpMUTermApp
                 break;
 
             case PointerKind.RailRow:
-                var railTarget = target.Key["rail:".Length..];
-                if (railTarget.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal) ||
-                    railTarget.StartsWith(CommandIds.WindowPrefix, StringComparison.Ordinal))
+                // The native sidebar's row menu, entry for entry (SidebarRowMenu): one menu for one row, whichever
+                // host draws the rail.
+                foreach (var entry in SidebarRowMenu(RailRowKeyFor(target.Key["rail:".Length..])).Entries)
                 {
-                    var go = BuildCatalog().FirstOrDefault(c => c.Id == railTarget);
-                    items.Add(new PointerMenuItem(go?.Title ?? "Go to it", null, () => OnUiThread(() => DispatchRailTarget(railTarget))));
-                }
-
-                if (railTarget.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal))
-                {
-                    items.Add(new PointerMenuItem("Connect", "⌥R", () => OnUiThread(() =>
-                    {
-                        DispatchRailTarget(railTarget);
-                        DispatchCommand("world:reconnect");
-                    })));
-                    items.Add(new PointerMenuItem("Disconnect", "⌥D", () => OnUiThread(() =>
-                    {
-                        DispatchRailTarget(railTarget);
-                        DispatchCommand("world:disconnect");
-                    })));
+                    items.Add(entry.IsSeparator
+                        ? PointerMenuItem.Separator
+                        : new PointerMenuItem(entry.Label, entry.Key, () => OnUiThread(() => RunSidebarMenuEntry(entry.Command!)), entry.Enabled));
                 }
 
                 break;
 
             case PointerKind.Tab:
-                var tabWindow = target.Key.Split(':', 3)[2];
-                Activate(tabWindow);
-                if (tabWindow != MainWindowId)
-                {
-                    items.Add(new PointerMenuItem("Close tab", "⌃W", () => OnUiThread(() => CloseWindow(tabWindow))));
-                }
-
-                AddCommands(items, "layout:next-tab", null, "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close");
+                AddTabMenu(items, target.Key.Split(':', 3)[2]);
                 break;
 
             case PointerKind.Link:
@@ -450,9 +661,10 @@ internal sealed partial class SharpMUTermApp
 
                 AddCommands(
                     items,
-                    "term:copy", null,
+                    "term:copy", "term:trigger-from-selection", null,
                     "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close", null,
                     "term:freeze", "term:unfreeze", "term:scroll-live", "term:clear", "term:timestamps-on", "term:timestamps-off");
+                AddPopOut(items);
                 break;
 
             case PointerKind.CommandLine:
@@ -460,7 +672,30 @@ internal sealed partial class SharpMUTermApp
                 break;
         }
 
+        // Everything else is on ⌃P, and the menu says so: the same palette the chord opens, native in the window.
+        if (items.Count > 0 && target.Kind != PointerKind.Divider)
+        {
+            items.Add(PointerMenuItem.Separator);
+            items.Add(new PointerMenuItem(MoreCommandsLabel, HeaderModel.PaletteKey, () => OnUiThread(() => OpenMenu())));
+        }
+
         return Tidy(items);
+    }
+
+    /// <summary>
+    /// A tab's menu: the tab is brought forward, so every entry acts on it, then Close and the pane's own commands. One
+    /// list for a right click on a cell tab and on the window's native tab (<see cref="OpenTabMenu"/>).
+    /// </summary>
+    private void AddTabMenu(List<PointerMenuItem> items, string tabWindow)
+    {
+        Activate(tabWindow);
+        if (tabWindow != MainWindowId)
+        {
+            items.Add(new PointerMenuItem("Close tab", "⌃W", () => OnUiThread(() => CloseWindow(tabWindow))));
+        }
+
+        AddCommands(items, "layout:next-tab", null, "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close");
+        AddPopOut(items);
     }
 
     /// <summary>The window and payload of a link target, read back out of its key.</summary>
@@ -521,6 +756,19 @@ internal sealed partial class SharpMUTermApp
         }
     }
 
+    /// <summary>
+    /// The focused pane's front window, popped out into a window of its own — when it is a panel that can float and the
+    /// host can float it (the entry is ⌃P's, which lists it only then), after a rule.
+    /// </summary>
+    private void AddPopOut(List<PointerMenuItem> items)
+    {
+        var front = ActiveWindowId();
+        if (FloatablePanelOf(front) is not null)
+        {
+            AddCommands(items, null, SharpMUTerm.Client.Panels.PanelFloatCommands.PopOut(front));
+        }
+    }
+
     /// <summary>Adds the ⌃P entries with these ids that the surface lists right now, in this order; null is a rule.</summary>
     private void AddCommands(List<PointerMenuItem> items, params string?[] ids)
     {
@@ -535,7 +783,7 @@ internal sealed partial class SharpMUTermApp
 
             if (catalog.FirstOrDefault(c => c.Id == id) is { } command)
             {
-                items.Add(new PointerMenuItem(command.Title, ShortHint(command.Subtitle), () => OnUiThread(() => DispatchCommand(id))));
+                items.Add(new PointerMenuItem(command.Title, MenuKeyHint(command), () => OnUiThread(() => DispatchCommand(id))));
             }
         }
     }
@@ -607,8 +855,12 @@ internal sealed partial class SharpMUTermApp
                 continue;
             }
 
+            // A pane split by scrolling back scrolls only its history, so its bar runs beside the history alone.
+            var span = _scrollHistorySurfaces.GetValueOrDefault(windowId) is { } history && BoundsOf(history) is { Height: > 0 } h
+                ? new PaneRect(rect.X, h.Y, rect.Width, h.Height)
+                : rect;
             bars.Add(new PaneScrollbar(
-                windowId, rect, panel.TotalContentHeight, panel.ViewportHeight, panel.VerticalScrollOffset,
+                windowId, span, panel.TotalContentHeight, panel.ViewportHeight, panel.VerticalScrollOffset,
                 offset => OnUiThread(() =>
                 {
                     if (_paneScrolls.GetValueOrDefault(windowId) is { } live && live.VerticalScrollOffset != offset)

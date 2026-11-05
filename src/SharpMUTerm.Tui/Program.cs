@@ -2,6 +2,7 @@ using System.Globalization;
 using SharpMUTerm.Core.Theming;
 using Microsoft.Extensions.Logging;
 using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Links;
 using SharpMUTerm.Core.Mapping;
 using SharpMUTerm.Core.Media;
 using SharpMUTerm.Core.Packages;
@@ -16,6 +17,8 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
+        // A desktop link handler's launch: the link and nothing else (ClientOptions.NarrowToLink says why).
+        args = ClientOptions.NarrowToLink(args);
         if (args.Contains("--help") || args.Contains("-h"))
         {
             PrintUsage();
@@ -27,11 +30,22 @@ internal static class Program
             return WindowHandoff.Run(args, Console.Error);
         }
 
+        // A telnet:// link a desktop launched us with goes to the client already running, when there is one; this
+        // launch then has nothing left to do. Not for a snapshot, which never talks to a running client.
+        var snapshot = args.Contains("--snapshot");
+        if (!snapshot && LinkArgument(args) is { } link && LinkHandoff.TrySend(link))
+        {
+            return 0;
+        }
+
         // Anything the load wants to say about the secrets file is collected here and logged once diagnostics
         // exist — the pipeline is built further down, and this runs before it. It is deliberately a list that
         // is drained exactly once: a secrets problem is a startup fact, not a recurring notice.
+        // A snapshot reads passwords from secrets.json alone: it never asks the OS credential store, which can put
+        // up an unlock prompt and is nothing a rendered frame needs.
         var loadNotices = new List<string>();
-        var config = LoadConfiguration(loadNotices.Add);
+        var vault = snapshot ? null : LiveVault();
+        var config = LoadConfiguration(loadNotices.Add, vault);
         var capabilities = DetectCapabilities(config);
 
         // Headless snapshot: render one demo frame to ANSI (for docs images / CI golden files) and
@@ -106,10 +120,10 @@ internal static class Program
             var stdout = Console.Out;
             Console.SetIn(TextReader.Null);
             var plain = PlainHost.Create(capabilities, stdout);
-            return RunLive(args, config, loadNotices, plain, app => PlainHost.PumpInput(stdin, (HeadlessConsoleDriver)plain.Driver, app));
+            return RunLive(args, config, loadNotices, plain, app => PlainHost.PumpInput(stdin, (HeadlessConsoleDriver)plain.Driver, app), vault);
         }
 
-        return RunLive(args, config, loadNotices, ClientHost.Terminal(capabilities));
+        return RunLive(args, config, loadNotices, ClientHost.Terminal(capabilities), vault: vault);
     }
 
     /// <summary>
@@ -123,7 +137,8 @@ internal static class Program
         AppConfiguration config,
         IReadOnlyList<string> loadNotices,
         ClientHost host,
-        Action<SharpMUTermApp>? ready = null)
+        Action<SharpMUTermApp>? ready = null,
+        CredentialVault? vault = null)
     {
         // What this launch connects: the command line's host if one was typed, else whatever is marked
         // `at start` on F5, else nothing at all. The precedence lives in Core (StartupConnections) so it
@@ -201,7 +216,7 @@ internal static class Program
             config,
             host,
             diagnostics: diagnostics,
-            save: saved => ConfigurationStore.Save(ConfigurationStore.DefaultPath, saved),
+            save: saved => ConfigurationStore.Save(ConfigurationStore.DefaultPath, saved, vault),
             logRoot: logRoot,
             restore: restore,
             mssp: mssp,
@@ -210,8 +225,21 @@ internal static class Program
             media: new MediaCache(MediaCache.DefaultRoot),
             packages: new PackageStore(PackageStore.PathFor(ConfigurationStore.DefaultPath)) { Logger = diagnostics.For("SharpMUTerm.Packages") },
             scriptStoreRoot: Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "script-data"),
-            spelling: () => OpenDictionary(loadLogger));
+            spelling: () => OpenDictionary(loadLogger),
+            autoLayout: true,
+            dictionaries: DictionariesFolder,
+            worldFetch: SharpMUTerm.Core.WorldIndex.WorldDirectory.DownloadAsync);
         ready?.Invoke(liveApp);
+
+        // A telnet:// link on the command line is followed once the loop runs, the way /connect host port would be;
+        // links later launches hand over (LinkHandoff) are followed the same way, as they arrive. Both are read as the
+        // untrusted text they are by OpenLink.
+        if (LinkArgument(args) is { } link)
+        {
+            liveApp.OnUiThread(() => liveApp.OpenLink(link));
+        }
+
+        using var links = LinkHandoff.Listen(text => liveApp.OnUiThread(() => liveApp.OpenLink(text)));
         int exitCode;
         try
         {
@@ -234,7 +262,7 @@ internal static class Program
         try
         {
             config.LastSession = liveApp.CaptureSession();
-            ConfigurationStore.Save(ConfigurationStore.DefaultPath, config);
+            ConfigurationStore.Save(ConfigurationStore.DefaultPath, config, vault);
         }
         catch
         {
@@ -264,11 +292,16 @@ internal static class Program
     /// Loads the configuration, collecting anything the store wants reported into
     /// <paramref name="report"/> for the caller to log once diagnostics exist.
     /// </summary>
-    internal static AppConfiguration LoadConfiguration(Action<string> report)
+    /// <param name="report">Collects anything worth a line in the diagnostics log.</param>
+    /// <param name="vault">
+    /// Where the passwords are kept (<see cref="LiveVault"/>), or null for <c>secrets.json</c> alone. The same vault
+    /// goes to <see cref="RunLive"/>, whose saves need what this load learned.
+    /// </param>
+    internal static AppConfiguration LoadConfiguration(Action<string> report, CredentialVault? vault = null)
     {
         try
         {
-            return ConfigurationStore.Load(ConfigurationStore.DefaultPath, report);
+            return ConfigurationStore.Load(ConfigurationStore.DefaultPath, report, vault);
         }
         catch
         {
@@ -300,7 +333,7 @@ internal static class Program
     /// </summary>
     private static WorldDefinition? CommandLineWorld(string[] args)
     {
-        var positional = ClientOptions.Positional(args);
+        var positional = ClientOptions.Positional(args).Where(word => !TelnetLink.LooksLikeLink(word)).ToArray();
         if (positional.Length >= 1)
         {
             var host = positional[0];
@@ -317,6 +350,19 @@ internal static class Program
 
         return null;
     }
+
+    /// <summary>
+    /// The <c>telnet://</c> or <c>telnets://</c> link on the command line — what a desktop passes when a link is
+    /// clicked (<c>sharpmuterm-window %U</c>) — unread; <see cref="SharpMUTermApp.OpenLink(string)"/> reads it.
+    /// </summary>
+    internal static string? LinkArgument(string[] args) =>
+        ClientOptions.Positional(args).FirstOrDefault(TelnetLink.LooksLikeLink);
+
+    /// <summary>
+    /// The live client's password vault: the OS credential store this machine has (<see cref="CredentialStores"/>),
+    /// with <c>secrets.json</c> behind it. Only the live entry points make one.
+    /// </summary>
+    internal static CredentialVault LiveVault() => new(CredentialStores.ForThisMachine());
 
     internal static string? GetOption(string[] args, string name)
     {
@@ -348,9 +394,12 @@ internal static class Program
     /// The composer's dictionary: <c>dictionaries/</c> beside config.json first, then the system's, in the
     /// locale's language. Words added with ⌥W go to <c>dictionaries/user-words.txt</c>.
     /// </summary>
+    /// <summary>The client's own dictionaries folder, beside config.json: where the composer looks first and a download goes.</summary>
+    private static string DictionariesFolder => Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "dictionaries");
+
     private static SpellChecker? OpenDictionary(ILogger logger)
     {
-        var own = Path.Combine(Path.GetDirectoryName(ConfigurationStore.DefaultPath)!, "dictionaries");
+        var own = DictionariesFolder;
         var checker = SpellChecker.Find(SpellChecker.SearchFolders(own), SpellChecker.PreferredLanguage(), Path.Combine(own, "user-words.txt"));
         if (checker is null)
         {

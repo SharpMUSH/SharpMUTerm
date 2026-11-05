@@ -23,6 +23,14 @@ public sealed class AppConfiguration
     public Theme Theme { get; set; } = ThemeLibrary.Dark();
 
     /// <summary>
+    /// The player's own themes that are not in use. A customised theme lives in <see cref="Theme"/> while it is the
+    /// active one; picking another moves it here rather than dropping it, so the theme picker can offer it again.
+    /// Empty by default; no schema version moved for it, since a configuration without it has no custom theme to
+    /// keep.
+    /// </summary>
+    public List<Theme> CustomThemes { get; set; } = new();
+
+    /// <summary>
     /// Maximum scrollback lines retained per session. See
     /// <see cref="SharpMUTerm.Core.Text.ScrollbackBuffer.DefaultCapacity"/> for why the default is ten
     /// thousand and not the twenty thousand it used to be. (Fully qualified: this class has its own
@@ -75,11 +83,14 @@ public sealed class AppConfiguration
     /// </summary>
     public List<string> CharsetOrder { get; set; } = new() { "utf-8", "iso-8859-1" };
 
-    /// <summary>How inbound text is drawn — the F7 "Text &amp; ANSI" screen's settings.</summary>
+    /// <summary>How inbound text is drawn — the F7 "Text &amp; display" screen's settings.</summary>
     public TextSettings Text { get; set; } = new();
 
     /// <summary>Game sound: on or off, the player's levels, captions (F7 ▸ SOUND).</summary>
     public SoundSettings Sound { get; set; } = new();
+
+    /// <summary>How a scene log (⌃P ▸ Start scene log) is written: HTML or plain text, poses or every line (F7 ▸ Scene log).</summary>
+    public SceneLogSettings SceneLog { get; set; } = new();
 
     /// <summary>How the command line behaves — the F8 "Input &amp; spellcheck" screen's settings.</summary>
     public InputSettings Input { get; set; } = new();
@@ -103,14 +114,39 @@ public sealed class AppConfiguration
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<Packages.InstalledPackage> Packages { get; set; } = [];
 
+    /// <summary>
+    /// The player's saved layouts. The built-in ones (<see cref="Layouts.BuiltInLayouts"/>) are never written
+    /// here; <see cref="Layouts.LayoutLibrary"/> lists them ahead of these and refuses to change them. An empty
+    /// list is the default, so a document from before layouts loads with none and needs no migration.
+    /// </summary>
+    public List<Layouts.LayoutDefinition> Layouts { get; set; } = new();
+
     /// <summary>The ids of installed packages the player has switched off; their sets apply to nobody.</summary>
     public List<string> DisabledPackages { get; set; } = new();
+
+    /// <summary>
+    /// The short key tour is owed: set when a configuration that started a run with no worlds gains its first
+    /// one, and cleared once the tour has been shown after a connect. A pending flag rather than a "shown" one,
+    /// so a configuration from before the tour existed (every one that already has worlds) never gets it and
+    /// needs no migration; and it survives a restart, so a new player who adds a world and quits before it
+    /// connects still gets the tour on the connect that follows.
+    /// </summary>
+    public bool KeyTourPending { get; set; }
 
     /// <summary>The package index Browse packages reads: an https link to an <c>index.json</c>.</summary>
     public string PackageIndexUrl { get; set; } = DefaultPackageIndexUrl;
 
     /// <summary>The project's own index, until a player names another.</summary>
     public const string DefaultPackageIndexUrl = "https://raw.githubusercontent.com/SharpMUSH/sharpmuterm-packages/main/index.json";
+
+    /// <summary>
+    /// The world directory Browse worlds reads: the https base of a mu*index API (<c>/games</c> and <c>/games/{id}</c>
+    /// under it). Asked only when the player opens Browse, never at start.
+    /// </summary>
+    public string WorldDirectoryUrl { get; set; } = DefaultWorldDirectoryUrl;
+
+    /// <summary>mu*index, the maintainer's own MU* directory.</summary>
+    public const string DefaultWorldDirectoryUrl = "https://mu-index.com/api";
 
     /// <summary>
     /// The last workspace layout (panes, windows, focus) so the app can resume where it left off.
@@ -161,4 +197,14 @@ public sealed class AppConfiguration
 
         return resolved;
     }
+}
+
+/// <summary>How a scene log is written (<see cref="Logging.SceneLog"/>).</summary>
+public sealed class SceneLogSettings
+{
+    /// <summary>HTML (the default, keeping the game's colours) or plain text.</summary>
+    public bool Html { get; set; } = true;
+
+    /// <summary>Poses only (the default) or every line the window shows.</summary>
+    public Logging.SceneLogContent Content { get; set; }
 }

@@ -35,7 +35,16 @@ internal sealed class EditReviewOverlay
     private Action? _keep;
     private Action? _undo;
 
-    public EditReviewOverlay(ConsoleWindowSystem system) => _system = system;
+    private ScreenTheme _scheme;
+
+    /// <summary>The palette it is painted in; the app replaces it when the theme changes.</summary>
+    internal ScreenTheme Scheme { get => _scheme; set => _scheme = value ?? ScreenTheme.Dark; }
+
+    public EditReviewOverlay(ConsoleWindowSystem system, ScreenTheme? scheme = null)
+    {
+        _system = system;
+        _scheme = scheme ?? ScreenTheme.Dark;
+    }
 
     public bool IsOpen => _window is not null;
 
@@ -62,7 +71,7 @@ internal sealed class EditReviewOverlay
         _selected = ReviewChoice.Keep;
 
         var lines = Lines;
-        _body = new MarkupControl(new List<string>(lines));
+        _body = new MarkupControl(_scheme.Lines(lines, ScreenPalette.MenuBg));
 
         // Hug the content: the question is as tall as it has things to name. Centred *after* WithSize,
         // because the builder reads the bounds set so far and falls back to 80x25 otherwise.
@@ -75,15 +84,17 @@ internal sealed class EditReviewOverlay
             .WithTitle("Deletions")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(_scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words, as every popup
             .WithSize(width, height)
             .Centered()
             .AddControl(_body)
             .OnClosed((_, _) => Reset())
             .Build();
 
+        _scheme.Frame(_window);
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
     }
@@ -117,7 +128,7 @@ internal sealed class EditReviewOverlay
                 break;
 
             case ReviewAction.Redraw:
-                _body?.SetContent(new List<string>(Lines));
+                _body?.SetContent(_scheme.Lines(Lines, ScreenPalette.MenuBg));
                 _window.Invalidate(redrawAll: true);
                 break;
 

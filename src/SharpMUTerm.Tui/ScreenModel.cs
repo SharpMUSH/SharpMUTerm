@@ -196,6 +196,12 @@ internal enum ScreenButtonKind
     /// "only the last world can be deleted", one feature later.
     /// </summary>
     Detail,
+
+    /// <summary>
+    /// Makes the row's own value the setting — a theme in F7's picker. A cursor stop like <see cref="Add"/>, but it
+    /// builds nothing, so ⏎ opens no field after it and the action bar says <c>Use</c>.
+    /// </summary>
+    Apply,
 }
 
 /// <summary>
@@ -211,10 +217,20 @@ internal enum ScreenButtonKind
 /// <param name="Toggle">The checkbox Space flips, or null when the row has none.</param>
 /// <param name="Fields">The values ⏎ opens for editing, in the order the screen draws them.</param>
 /// <param name="Button">The command ⏎ runs, or null when the row is not a button.</param>
+/// <param name="Reset">
+/// Puts the row's value back to its default, or null when the row is at its default or has none to go back
+/// to — so <c>r reset</c> is offered exactly where it would do something. Only declared settings carry one.
+/// </param>
+/// <param name="Move">
+/// Moves the row's item up (−1) or down (+1) within its list — ⌥↑/⌥↓ on a list screen — and answers the row it now
+/// sits at, or null when it is already at that end. Only the list screens' item rows carry one.
+/// </param>
 internal readonly record struct ScreenRow(
     ScreenToggle? Toggle = null,
     IReadOnlyList<ScreenField>? Fields = null,
-    ScreenButton? Button = null)
+    ScreenButton? Button = null,
+    Action? Reset = null,
+    Func<int, int?>? Move = null)
 {
     /// <summary>A selectable row with nothing to press and nothing to type into.</summary>
     internal static ScreenRow Stop => default;
@@ -522,6 +538,9 @@ internal sealed class ScreenModel
 
     /// <summary>The checkbox at a cursor position, or null when that row isn't pressable.</summary>
     internal ScreenToggle? ToggleAt(int pane, int index) => RowAt(pane, index).Toggle;
+
+    /// <summary>What <c>r</c> runs on a row: its reset, or null where the row is at its default.</summary>
+    internal Action? ResetAt(int pane, int index) => RowAt(pane, index).Reset;
 
     /// <summary>The button at a cursor position, or null when that row isn't one.</summary>
     internal ScreenButton? ButtonAt(int pane, int index) => RowAt(pane, index).Button;

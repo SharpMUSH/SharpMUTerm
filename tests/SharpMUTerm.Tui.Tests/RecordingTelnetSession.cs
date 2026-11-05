@@ -24,7 +24,7 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     /// connection is the case the old fire-and-forget <c>Reconnect</c> swallowed, so the tests need a
     /// transport that can refuse one.
     /// </summary>
-    public Exception? ConnectFault { get; init; }
+    public Exception? ConnectFault { get; set; }
 
     /// <summary>How many times a connection was asked for, refused ones included.</summary>
     public int ConnectAttempts { get; private set; }
@@ -69,6 +69,8 @@ internal sealed class RecordingTelnetSession : ITelnetSession
 #pragma warning restore CS0067
 
     public event EventHandler? MsdpEnabled;
+
+    public event EventHandler? ReceiveBatchEnded;
 
     public void ReceiveGmcp(string package, string json) =>
         GmcpReceived?.Invoke(this, new GmcpMessageEventArgs(package, json));
@@ -128,8 +130,11 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     /// lines. It is the only way to assert on what a <em>server's</em> markup does to this client, as
     /// opposed to what a hand-built <c>StyledLine</c> does.
     /// </summary>
-    public void Receive(string text) =>
+    public void Receive(string text)
+    {
         OutputReceived?.Invoke(this, new TelnetOutputEventArgs(text, isPrompt: false));
+        ReceiveBatchEnded?.Invoke(this, EventArgs.Empty); // one call, one read
+    }
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -184,6 +189,13 @@ internal sealed class RecordingTelnetSession : ITelnetSession
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The server goes away on its own: an orderly close with no error, or failed with one.</summary>
+    public void Drop(Exception? error = null)
+    {
+        IsConnected = false;
+        Disconnected?.Invoke(this, new SessionDisconnectedEventArgs(error));
     }
 
     public Task DisconnectAsync()

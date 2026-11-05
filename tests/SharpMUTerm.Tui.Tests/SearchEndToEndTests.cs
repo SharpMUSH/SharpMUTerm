@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Core.Session;
 using SharpMUTerm.Graphics;

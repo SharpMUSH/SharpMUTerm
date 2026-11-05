@@ -137,23 +137,92 @@ public class GameDataTests
         await Assert.That(app.GameDataIsOpen).IsFalse();
     }
 
+    /// <summary>
+    /// F7's meters are a table: one row per meter with its label, value path, maximum path and colour as four fields
+    /// of that row, written straight into <see cref="TextSettings.StatusMeters"/>. It replaced a single
+    /// <c>label=value/max; …</c> line, which was the maintainer's complaint about it: too small to edit.
+    /// </summary>
     [Test]
-    public async Task F7EditsTheMetersAsOneLine()
+    public async Task F7EditsEachMeterInItsOwnRow()
     {
         var text = new TextSettings();
         var screen = OptionsScreenRenderer.TextAnsiScreen(text);
         var model = OptionsScreenRenderer.Model(screen);
-        var field = Enumerable.Range(0, model.PaneCount)
-            .SelectMany(p => Enumerable.Range(0, model.RowCount(p)).Select(r => model.RowAt(p, r)))
-            .SelectMany(r => Enumerable.Range(0, r.FieldCount).Select(i => r.FieldAt(i)))
-            .Where(f => f is not null)
-            .Select(f => f!.Value)
-            .Single(f => f.Label == "meters");
+        var first = OptionsScreenRenderer.IndexOf(screen, "meters");
+        var row = model.RowAt(0, first);
+        var edits = new ScreenEdits();
 
-        await Assert.That(new ScreenEdits().Apply(field, "hp=Char.Vitals.hp/Char.Vitals.maxhp; gold=Char.Status.gold; broken")).IsNull();
+        await Assert.That(row.FieldCount).IsEqualTo(4);
+        await Assert.That(edits.Apply(row.FieldAt(0)!.Value, "life")).IsNull();
+        await Assert.That(edits.Apply(row.FieldAt(1)!.Value, "Char.Vitals.hp")).IsNull();
+        await Assert.That(edits.Apply(row.FieldAt(2)!.Value, "  ")).IsNull();
+        await Assert.That(edits.Apply(row.FieldAt(1)!.Value, " ")).IsNotNull();
 
-        await Assert.That(text.StatusMeters.Select(m => m.Label)).IsEquivalentTo(new[] { "hp", "gold" });
-        await Assert.That(text.StatusMeters[1].Max).IsNull();
+        await Assert.That(text.StatusMeters[0].Label).IsEqualTo("life");
+        await Assert.That(text.StatusMeters[0].Value).IsEqualTo("Char.Vitals.hp");
+        await Assert.That(text.StatusMeters[0].Max).IsNull();
+
+        // The colour column steps the palette with auto first; a name is stored, auto clears it, nonsense is refused.
+        await Assert.That(row.FieldAt(3)!.Value.Choices![0]).IsEqualTo("auto");
+        await Assert.That(edits.Apply(row.FieldAt(3)!.Value, "Lime")).IsNull();
+        await Assert.That(text.StatusMeters[0].Colour).IsEqualTo("lime");
+        await Assert.That(edits.Apply(row.FieldAt(3)!.Value, "sparkly")).IsNotNull();
+        await Assert.That(text.StatusMeters[0].Colour).IsEqualTo("lime");
+        await Assert.That(edits.Apply(row.FieldAt(3)!.Value, "auto")).IsNull();
+        await Assert.That(text.StatusMeters[0].Colour).IsNull();
+    }
+
+    /// <summary>
+    /// [+ meter] adds a row and lands on it; Delete on a meter row takes that meter out, and is offered only
+    /// there — the header names <c>Del remove</c> on a meter and nowhere else on the screen.
+    /// </summary>
+    [Test]
+    public async Task F7AddsAndRemovesMetersFromTheTable()
+    {
+        var config = new AppConfiguration();
+        var screen = () => OptionsScreenRenderer.TextAnsiScreen(config);
+        var session = new SettingsSession(s => OptionsScreenRenderer.Model(
+            OptionsScreenRenderer.TextAnsiScreen(config, cursor: s.CursorIn(0))));
+        var first = OptionsScreenRenderer.IndexOf(screen(), "meters");
+
+        session.Selection.Seed(0, first + 3);
+        session.Handle(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+        await Assert.That(config.Text.StatusMeters.Count).IsEqualTo(4);
+        await Assert.That(session.IsEditing).IsTrue();
+        session.Handle(new ConsoleKeyInfo('\0', ConsoleKey.Escape, false, false, false));
+
+        session.Selection.Seed(0, first + 1);
+        session.Handle(new ConsoleKeyInfo('\0', ConsoleKey.Delete, false, false, false));
+        await Assert.That(config.Text.StatusMeters.Select(m => m.Label)).IsEquivalentTo(new[] { "hp", "mv", "new" });
+        await Assert.That(session.Edits.HasDeletions).IsTrue();
+
+        session.Selection.Seed(0, 0);
+        await Assert.That(session.Handle(new ConsoleKeyInfo('\0', ConsoleKey.Delete, false, false, false)))
+            .IsEqualTo(ScreenAction.None);
+    }
+
+    /// <summary>
+    /// The table's <c>now</c> column reads the focused session's game data — <c>412/500</c> once both have
+    /// arrived, <c>waiting</c> before — and a path field offers every received path with its value.
+    /// </summary>
+    [Test]
+    public async Task F7MetersShowWhatTheyReadNowAndOfferWhatHasArrived()
+    {
+        var data = new GameDataStore();
+        data.SetGmcp("Char.Vitals", """{"hp":"412","maxhp":"500"}""");
+        var meters = StatusMeter.Defaults();
+
+        await Assert.That(MarkupText.Plain(OptionsScreenRenderer.Now(meters[0], data))).IsEqualTo("412/500");
+        await Assert.That(MarkupText.Plain(OptionsScreenRenderer.Now(meters[1], data)))
+            .IsEqualTo(OptionsScreenRenderer.Waiting);
+        await Assert.That(OptionsScreenRenderer.ReceivedPaths(data).Select(p => p.Path))
+            .IsEquivalentTo(new[] { "Char.Vitals.hp", "Char.Vitals.maxhp" });
+
+        var config = new AppConfiguration();
+        var screen = OptionsScreenRenderer.TextAnsiScreen(config, data: data);
+        var value = OptionsScreenRenderer.Model(screen).RowAt(0, OptionsScreenRenderer.IndexOf(screen, "meters")).FieldAt(1)!.Value;
+        await Assert.That(value.Choices!).Contains("Char.Vitals.maxhp");
+        await Assert.That(value.ChoiceNotes!["Char.Vitals.maxhp"]).IsEqualTo("500");
     }
 
     [Test]

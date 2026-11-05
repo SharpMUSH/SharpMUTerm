@@ -168,7 +168,7 @@ internal static class MsspScreenRenderer
     internal static string HeaderLine(int width)
     {
         var hints = $"[{Label}]↑↓ scroll · [/][{Accent}]Esc[/][{Label}] back [/]";
-        return SpreadLR($" [bold {Value}] {Escape(Title)}[/]", hints, width);
+        return SpreadTitle($" [bold {Value}]{Escape(Title)}[/]", hints, width);
     }
 
     /// <summary>The screen's action bar: where the cursor is in the report, and the key that leaves.</summary>

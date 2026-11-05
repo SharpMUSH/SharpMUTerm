@@ -73,6 +73,54 @@ public static class ComposeMessage
     }
 
     /// <summary>
+    /// The one line to send for a post written as a <paramref name="command"/> (<c>+pose</c>, <c>+bbpost 12=</c>) and the
+    /// <paramref name="body"/> it carries — the composer's two fields — or null when there is nothing to send.
+    /// <para>
+    /// The body is built exactly as <see cref="Build(string?, ComposeEscaping)"/> builds a whole buffer (escaped first,
+    /// then joined with <c>%r</c>), and the command is put in front of it <em>unescaped</em>: it is the verb and its
+    /// switches, which the game must read. A blank command is the old single buffer, so a body that already starts with
+    /// its verb is sent as it always was. A body with nothing in it is nothing to send, whatever the command says.
+    /// </para>
+    /// <para>
+    /// One space joins them (<see cref="Join"/>), except after a command ending in <c>=</c> (<c>+bbpost 12=Title</c>,
+    /// <c>page Bob=hi</c>) or one that is a single punctuation character — MUSH's <c>:</c>, <c>;</c> and <c>"</c>
+    /// shorthands are written against the text.
+    /// </para>
+    /// </summary>
+    public static string? Build(string? command, string? body, ComposeEscaping escaping)
+    {
+        var text = Build(body, escaping);
+        return text is null ? null : Join(command, text);
+    }
+
+    /// <summary>
+    /// <paramref name="command"/> (made one line and trimmed, <see cref="CleanCommand"/>) in front of
+    /// <paramref name="text"/>, by <see cref="Build(string?, string?, ComposeEscaping)"/>'s rule; just
+    /// <paramref name="text"/> with no command.
+    /// </summary>
+    public static string Join(string? command, string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var head = CleanCommand(command);
+        if (head.Length == 0)
+        {
+            return text;
+        }
+
+        var tight = head[^1] == '=' || (head.Length == 1 && !char.IsLetterOrDigit(head[0]));
+        return tight ? head + text : head + " " + text;
+    }
+
+    /// <summary>
+    /// The command field as it is sent: one line (a pasted break becomes a space) with no spaces at either end. Empty for
+    /// none.
+    /// </summary>
+    public static string CleanCommand(string? command) =>
+        string.IsNullOrWhiteSpace(command)
+            ? string.Empty
+            : command.Replace("\r\n", " ", StringComparison.Ordinal).Replace('\n', ' ').Replace('\r', ' ').Trim();
+
+    /// <summary>
     /// Splits a buffer into lines, treating CRLF, LF and a lone CR alike. The editor writes
     /// <see cref="Environment.NewLine"/>, a paste carries whatever the source had, and a body that
     /// travelled through either must break in the same places.

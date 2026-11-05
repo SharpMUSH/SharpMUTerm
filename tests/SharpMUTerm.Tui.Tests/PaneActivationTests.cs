@@ -244,7 +244,7 @@ public class PaneActivationTests
         Send(one.App, "look");
 
         await Assert.That(one.Ann.Lines).IsEmpty();
-        await Assert.That(one.App.StatusMarkup).Contains("Quiet.Cal");
+        await Assert.That(one.App.StatusMarkup).Contains("Cal · Quiet");
         await Assert.That(one.App.StatusMarkup).Contains("nothing was sent");
     }
 
@@ -355,7 +355,7 @@ public class PaneActivationTests
         await Assert.That(ClickTab(app, "char:Quiet.Cal")).IsTrue();
 
         await Assert.That(app.ActiveSessionKey).IsEqualTo("Quiet.Ann"); // refused, not redirected
-        await Assert.That(app.StatusMarkup).Contains("Quiet.Cal");
+        await Assert.That(app.StatusMarkup).Contains("Cal · Quiet");
         await Assert.That(app.StatusMarkup).Contains("no open session");
     }
 

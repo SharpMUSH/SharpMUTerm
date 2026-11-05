@@ -50,6 +50,38 @@ public class WorkspacePaletteTests
     }
 
     /// <summary>
+    /// <b>The scrolled-back history is a plane you can see on every pane of every theme, and never one text is harder to
+    /// read on.</b> On Light the history was the pane: the focused pane is white, and the step toward white was none. A
+    /// light plane's history is now at least 3 L* off it (down where there is no room up); a dark theme keeps the mockup's
+    /// ratio (about 1 L* on the darkest tinted panes, 1.5 on the untinted one, more when focused). And it never passes the reading plane — the extreme every
+    /// legibility floor is measured on — so a foreground held there still clears the floor on the history.
+    /// </summary>
+    [Test]
+    [Arguments("Dark", 1.0)]
+    [Arguments("Light", 3.0)]
+    [Arguments("Solarized Dark", 1.0)]
+    public async Task TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane(string themeName, double step)
+    {
+        var theme = ThemeLibrary.Get(themeName);
+        var reading = SharpMUTerm.Core.Text.Contrast.RelativeLuminance(WorkspacePalette.ReadingPlane(theme));
+        var dark = WorkspacePalette.DarkPanes(theme);
+        foreach (var tint in Enum.GetValues<PaneTint>())
+        {
+            var unfocused = WorkspacePalette.Tint(theme, tint);
+            foreach (var plane in new[] { unfocused, WorkspacePalette.Focus(unfocused) })
+            {
+                var history = WorkspacePalette.History(plane);
+                await Assert.That(Math.Abs(Lightness(history) - Lightness(plane))).IsGreaterThanOrEqualTo(step)
+                    .Because($"{themeName} {tint}: {plane.ToHex()} to {history.ToHex()}");
+
+                var y = SharpMUTerm.Core.Text.Contrast.RelativeLuminance(history);
+                await Assert.That(dark ? y <= reading : y >= reading).IsTrue()
+                    .Because($"{themeName} {tint}: the history {history.ToHex()} is past the reading plane");
+            }
+        }
+    }
+
+    /// <summary>
     /// <b>A dark theme's panes are darker than its own text background.</b> The focus step is a lift, so
     /// the base has to leave it room: on Dark the focused pane now lands about where the unfocused one
     /// used to be, rather than a step above a plane that was already grey. Measured against the theme's
@@ -97,17 +129,18 @@ public class WorkspacePaletteTests
     [Test]
     public async Task TheSurfaceCarriesTheThemesOwnChromeTint()
     {
-        var theme = ThemeLibrary.Get("Dark"); // background #1e1e1e, status background #2d2d3f
+        var theme = ThemeLibrary.Get("Dark"); // background #222835, status background #13161e (the mockups' navy)
 
         var surface = WorkspacePalette.Surface(theme);
 
         // A quarter of the way from the text background toward the chrome the header and input bands
         // are already painted in — so the output plane belongs to this application, not to the terminal —
-        // and then darkened, which scales every channel and so keeps that hue. #222226 before the scale.
-        await Assert.That(surface.R).IsEqualTo((byte)0x18);
-        await Assert.That(surface.G).IsEqualTo((byte)0x18);
-        await Assert.That(surface.B).IsEqualTo((byte)0x1b);
-        await Assert.That(surface.B).IsGreaterThan(surface.R); // cooler than the plain background, which is neutral
+        // and then darkened, which scales every channel and so keeps that hue. #1e242f before the scale;
+        // #151921 after, the mockup's pane navy (Main.dc.html's #12161f, lifted to keep the tints apart).
+        await Assert.That(surface.R).IsEqualTo((byte)0x15);
+        await Assert.That(surface.G).IsEqualTo((byte)0x19);
+        await Assert.That(surface.B).IsEqualTo((byte)0x21);
+        await Assert.That(surface.B).IsGreaterThan(surface.R); // navy: bluer than it is red
     }
 
     [Test]

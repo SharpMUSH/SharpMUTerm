@@ -433,12 +433,12 @@ public class ScreenReadOnlyTests
     {
         var macros = Sets()[0].Macros;
 
-        var grid = KeypadScreenRenderer.NumpadColumn(macros);
+        var grid = KeypadScreenRenderer.NumpadColumn(HostKeys.Terminal, macros);
         await Assert.That(grid.Any(InAWell)).IsFalse();
         await Assert.That(grid.Single(l => l.Contains("look", StringComparison.Ordinal)))
             .Contains(ScreenPalette.Muted);
 
-        var list = KeypadScreenRenderer.HotkeysColumn(macros);
+        var list = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros);
         await Assert.That(list.Single(l => l.Contains("Num5", StringComparison.Ordinal))).Contains(Well);
     }
 
@@ -501,7 +501,7 @@ public class ScreenReadOnlyTests
         {
             TriggersScreenRenderer.HeaderLine(80, TriggersScreenRenderer.Model(sets, 0)),
             AliasesScreenRenderer.HeaderLine(80, AliasesScreenRenderer.Model(sets, 0)),
-            KeypadScreenRenderer.HeaderLine(80, KeypadScreenRenderer.Model(sets[0].Macros)),
+            KeypadScreenRenderer.HeaderLine(80, KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros)),
             WorldsScreenRenderer.HeaderLine(80, WorldsScreenRenderer.Model(worlds, sets, 0, 0)),
             TimersScreenRenderer.HeaderLine(80, TimersScreenRenderer.Model(sets, 0)),
             Header(OptionsScreenRenderer.TextAnsiScreen()),
@@ -524,7 +524,7 @@ public class ScreenReadOnlyTests
         {
             ("F2 triggers", TriggersScreenRenderer.FooterLine(sets, 0, 80)),
             ("F3 aliases", AliasesScreenRenderer.FooterLine(sets, 0, 80)),
-            ("F4 keypad", KeypadScreenRenderer.FooterLine(sets[0].Macros, 80)),
+            ("F4 keypad", KeypadScreenRenderer.FooterLine(HostKeys.Terminal, sets[0].Macros, 80)),
             ("F5 worlds", WorldsScreenRenderer.FooterLine(worlds, 0, 0, accent, 80)),
             ("F6 timers", TimersScreenRenderer.FooterLine(sets, 0, 80)),
             ("F7 text", OptionsScreenRenderer.FooterLine(OptionsScreenRenderer.TextAnsiScreen().Rows, 80)),

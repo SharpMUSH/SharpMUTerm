@@ -1,0 +1,494 @@
+using SharpMUTerm.Client.Modals;
+using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Diagnostics;
+using SharpMUTerm.Core.Session;
+using static SharpMUTerm.Tui.MarkupText;
+
+namespace SharpMUTerm.Tui;
+
+/// <summary>
+/// The first run: a welcome when the configuration has no worlds, and a short key tour after the first
+/// connect. The welcome is a <see cref="ListOverlay"/> over <see cref="WelcomeSurface"/> where somebody sees
+/// the screen, and the same choices said as lines where nobody does (<c>--plain</c>,
+/// <see cref="ClientHost.ScreenIsSeen"/>). Its connect form goes through <see cref="ConnectCommand"/>, so it
+/// can do nothing <c>/connect</c> cannot.
+/// </summary>
+internal sealed partial class SharpMUTermApp
+{
+    private readonly ListOverlay _welcomeView;
+
+    /// <summary>The welcome's state while it is open, and what it was left at when it closed.</summary>
+    private WelcomeSurface? _welcome;
+
+    /// <summary>
+    /// The starting layout the welcome was left at, for the run. Applied to the first world a configuration
+    /// gains, however it is added — the form, or <c>/connect</c> typed under the welcome.
+    /// </summary>
+    private WelcomeLayout _welcomeLayout = WelcomeLayout.Suggested;
+
+    /// <summary>
+    /// Whether the configuration had no worlds when this app was made: the one state the tour is owed in. The welcome
+    /// scene empties the demo's configuration after the app is made, and sets it as an empty configuration's start would.
+    /// </summary>
+    private bool _startedEmpty;
+
+    /// <summary>Sessions whose player asked, on the welcome's form, to be reminded to save a password.</summary>
+    private readonly HashSet<string> _passwordLater = new(StringComparer.Ordinal);
+
+    /// <summary>The words the key tour row starts with, so it can be found in a buffer again.</summary>
+    internal const string KeyTourLead = "Keys:";
+
+    /// <summary>The window holding the tour row, or null when none does.</summary>
+    private string? _tourWindow;
+
+    /// <summary>Whether the welcome surface is up, for the tests.</summary>
+    internal bool WelcomeIsOpen => _welcomeView.IsOpen || NativeModalOf(Client.Surfaces.SurfaceCatalog.Welcome) is not null;
+
+    /// <summary>What the welcome shows now, for the tests.</summary>
+    internal IReadOnlyList<string> WelcomeLines => _welcomeView.Lines;
+
+    /// <summary>The welcome's model, for a test that reads the form it drove.</summary>
+    internal WelcomeSurface? Welcome => _welcome;
+
+    /// <summary>Feeds a key to the welcome surface the way the window's own handler would.</summary>
+    internal void SimulateWelcomeKey(ConsoleKeyInfo key)
+    {
+        // The native welcome takes the same keys through the same surface, and says what they did by republishing.
+        if (NativeWelcome is { } native && _welcome is { } welcome)
+        {
+            var stays = key.Key == ConsoleKey.Escape
+                ? StepBackFromWelcome(welcome)
+                : RunWelcomeAction(welcome, welcome.Interpret(key, words => ParseEndpoint(words)));
+            if (stays)
+            {
+                if (ReferenceEquals(_nativeModal, native))
+                {
+                    native.Publish(welcome.Model);
+                }
+            }
+            else if (key.Key == ConsoleKey.Escape)
+            {
+                CloseNativeModal(native);
+            }
+
+            return;
+        }
+
+        _welcomeView.SimulateKey(key);
+    }
+
+    /// <summary>Why the world directory cannot be browsed, or null when it can be asked for.</summary>
+    private string? WorldDirectoryProblem() => Core.WorldIndex.WorldDirectory.Problem(_config.WorldDirectoryUrl);
+
+    /// <summary>
+    /// Shows the welcome: the surface where the screen is seen, the lines where it is not. Opened at start on
+    /// an empty configuration and by <c>/welcome</c> or ⌃P ▸ <c>Welcome</c>; never again on its own once closed.
+    /// </summary>
+    internal void ShowWelcome()
+    {
+        var problem = WorldDirectoryProblem();
+        if (Host.Announcer is { } announcer)
+        {
+            foreach (var line in WelcomeSurface.PlainLines(_welcomeLayout, problem))
+            {
+                announcer.Announce(line, Core.Accessibility.AnnouncementKind.Notice);
+            }
+        }
+
+        if (!Host.ScreenIsSeen)
+        {
+            return;
+        }
+
+        // Already up: left as it is, form and all. Asking again (a second /welcome, or the startup pass a live
+        // loop runs after a scene was laid out) must not throw away what the player has typed.
+        if (WelcomeIsOpen && _welcome is not null)
+        {
+            return;
+        }
+
+        if (ComposerIsInTheWay("the welcome") || (AnyOverlayOpen && Refuse($"close {OpenOverlayName()} first")))
+        {
+            return;
+        }
+
+        _welcome = new WelcomeSurface(problem) { Layout = _welcomeLayout };
+        if (!TryOpenNativeWelcome(_welcome))
+        {
+            OpenWelcomeView();
+        }
+    }
+
+    private void OpenWelcomeView()
+    {
+        var welcome = _welcome!;
+
+        // Its frame and two rows either side of it, so the centred window leaves the command line and the status row in
+        // view (ListOverlay's rule for a modal whose keys are pinned): at 60×20 the welcome sat on both.
+        welcome.MaxRows = Math.Max(8, _system.DesktopDimensions.Height - 6);
+        _welcomeView.Open(
+            "welcome",
+            string.Empty, // the heading is the surface's own band, the mockup's; a frame title would say it twice
+            welcome.Render,
+            key => WelcomeKey(welcome, key),
+            WelcomeSurface.PreferredWidth,
+            escape: () => StepBackFromWelcome(welcome),
+            plane: WelcomeSurface.Plane,
+            flush: true);
+    }
+
+    /// <summary>
+    /// Esc on the welcome, from either host (the cells' Esc, the window's Esc on its form): one step back. A form a pick
+    /// in Browse worlds filled in goes back to that list as it was left, not to a menu the player never saw; one a pick in
+    /// the window's own find card filled in gives the pick back, leaving that list beside it; a form typed by hand goes
+    /// back to the menu. False when there is no step left, where Esc closes.
+    /// </summary>
+    private bool StepBackFromWelcome(WelcomeSurface welcome)
+    {
+        if (welcome.InForm && welcome.WorldName is not null)
+        {
+            if (_formFromBrowse)
+            {
+                CloseWelcome();
+                ReturnToWorldBrowse();
+                return true;
+            }
+
+            return welcome.ForgetPick();
+        }
+
+        return welcome.Back();
+    }
+
+    private bool WelcomeKey(WelcomeSurface welcome, ConsoleKeyInfo key) =>
+        RunWelcomeAction(welcome, welcome.Interpret(key, words => ParseEndpoint(words)));
+
+    /// <summary>
+    /// What the welcome asked for, from either host: the cell surface's key and the native welcome's click both end
+    /// here. Browse (Browse worlds) and Open settings close it and open what they name; Connect closes it and dials the form through
+    /// <c>/connect</c>'s path. Anything else keeps it open, which is the return value.
+    /// </summary>
+    private bool RunWelcomeAction(WelcomeSurface welcome, WelcomeAction action)
+    {
+        _welcomeLayout = welcome.Layout;
+        switch (action)
+        {
+            case WelcomeAction.Browse:
+                CloseWelcome();
+                ShowWorldBrowse(fromWelcome: true);
+                return false;
+
+            case WelcomeAction.Settings:
+                CloseWelcome();
+                if (!ComposerIsInTheWay("a settings screen"))
+                {
+                    _settings.Toggle(ConsoleKey.F5, WorldsScreen);
+                }
+
+                return false;
+
+            case WelcomeAction.Import:
+                CloseWelcome();
+                StartImport();
+                return false;
+
+            case WelcomeAction.Connect when welcome.Request is { } request:
+                CloseWelcome();
+                ConnectFromWelcome(request);
+                return false;
+
+            default:
+                return true;
+        }
+    }
+
+    /// <summary>A layout chip: the welcome's starting layout, for the run.</summary>
+    private void SetWelcomeLayout(WelcomeSurface welcome, WelcomeLayout layout)
+    {
+        welcome.Layout = layout;
+        _welcomeLayout = layout;
+    }
+
+    /// <summary>Closes the welcome in whichever host it is open.</summary>
+    private void CloseWelcome()
+    {
+        if (NativeModalOf(Client.Surfaces.SurfaceCatalog.Welcome) is { } native)
+        {
+            if (native is WelcomeSession welcome)
+            {
+                ForgetWelcomeWorlds(welcome);
+            }
+
+            CloseNativeModal(native);
+        }
+
+        _welcomeView.Close();
+    }
+
+    /// <summary>The form's answer, through <c>/connect</c>'s own path, with the character the form named.</summary>
+    private void ConnectFromWelcome(WelcomeConnect request)
+    {
+        var host = request.Host.Contains(':') ? $"[{request.Host}]" : request.Host;
+        var arguments = $"{host} {request.Port}" + (request.Tls ? " tls" : string.Empty);
+        ConnectCommand(ActiveWindowId(), arguments, world =>
+        {
+            ApplyWelcomeLayout(world);
+
+            // Browse worlds named it: the directory's name for it, made unique, in place of the host.
+            if (request.WorldName is { Length: > 0 } listed)
+            {
+                world.Name = UniqueWorldName(listed);
+            }
+
+            // mu*index named a charset that is not UTF-8 for it: the world starts on that encoding, still F5's to change.
+            if (request.Encoding is { Length: > 0 } encoding)
+            {
+                world.Encoding = encoding;
+            }
+
+            if (request.Character is { } name)
+            {
+                world.Characters.Add(new CharacterDefinition { Name = name });
+                if (request.PasswordLater)
+                {
+                    _passwordLater.Add($"{world.Name}.{name}");
+                }
+            }
+        });
+    }
+
+    /// <summary><c>/welcome</c>, and <c>/welcome layout roleplay|combat|suggested</c> for a reader with no arrows to press.</summary>
+    private void WelcomeCommand(string arguments)
+    {
+        var words = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+        {
+            ShowWelcome();
+            return;
+        }
+
+        if (words.Length == 2 && words[0].Equals("layout", StringComparison.OrdinalIgnoreCase)
+            && WelcomeSurface.ParseLayout(words[1]) is { } layout)
+        {
+            _welcomeLayout = layout;
+            if (_welcome is not null)
+            {
+                _welcome.Layout = layout;
+            }
+
+            Notice(
+                layout == WelcomeLayout.Suggested
+                    ? "starting layout: suggested from what the game sends"
+                    : $"starting layout: {layout}",
+                MessageSeverity.Info);
+            return;
+        }
+
+        RefuseCommand("/welcome, or /welcome layout roleplay, combat or suggested");
+    }
+
+    /// <summary>
+    /// What a world the welcome adds starts with: the welcome's layout, when the player chose one. Left alone,
+    /// nothing is set and the client's suggestion applies at the first connect.
+    /// </summary>
+    private void ApplyWelcomeLayout(WorldDefinition world)
+    {
+        if (WelcomeSurface.LayoutIdOf(_welcomeLayout) is { } layout)
+        {
+            world.Layout = layout;
+        }
+    }
+
+    /// <summary>
+    /// Marks the tour owed once a configuration that started this run empty has a world. Called on the way to
+    /// every save, so a world added by the welcome, by <c>/connect</c> or on F5 all count.
+    /// </summary>
+    private void NoteFirstWorld()
+    {
+        if (_startedEmpty && !_tourOwedNoted && _config.Worlds.Count > 0)
+        {
+            _tourOwedNoted = true;
+            _config.KeyTourPending = true;
+        }
+    }
+
+    private bool _tourOwedNoted;
+
+    /// <summary>The first connect of a new configuration: the key tour, and a reminder the form asked for.</summary>
+    private void OnFirstRunConnected(WorldSession session, string windowId)
+    {
+        if (_config.KeyTourPending)
+        {
+            _config.KeyTourPending = false;
+            _tourAfterConnectRow = windowId;
+            PersistConfiguration();
+        }
+
+        if (_passwordLater.Remove(session.SessionKey))
+        {
+            Notice(
+                $"to log in by itself next time, save {Snippet(session.Character?.Name ?? session.World.Name)}'s password on F5",
+                MessageSeverity.Info,
+                "F5");
+        }
+    }
+
+    /// <summary>The window the tour is owed in, until its <c>connected to …</c> row has been drawn; null when none.</summary>
+    private string? _tourAfterConnectRow;
+
+    /// <summary>
+    /// The owed tour, under the <c>CONNECT connected to …</c> row rather than above it: the state change that owes it is
+    /// raised before the session's note, and the tour drawn there split <c>dialling…</c> from <c>connected</c>.
+    /// </summary>
+    private void ShowOwedKeyTour(string windowId, ConnectionNote note)
+    {
+        if (string.Equals(_tourAfterConnectRow, windowId, StringComparison.Ordinal) && note.Label == ConnectionNote.Connect)
+        {
+            _tourAfterConnectRow = null;
+            ShowKeyTour(windowId);
+        }
+    }
+
+    /// <summary>
+    /// The tour's keys, in reading order. A row that cannot hold them all ladders (<see cref="KeyLadder"/>): short labels
+    /// first, then ⌥M, F5 and F1 go in that order; ⌃P and the way to hide the row are never given up. The full form is
+    /// the row as it always read.
+    /// </summary>
+    internal static readonly IReadOnlyList<LadderKey> KeyTourKeys =
+    [
+        new("⌃P", "every command", "commands"),
+        new("⌥M", "layouts", Drop: 1),
+        new("F1", "long posts", "posts", Drop: 3),
+        new("F5", "worlds", Drop: 2),
+        new(string.Empty, "hide with ⌃P ▸ Key tour", "hide: ⌃P ▸ Key tour"),
+    ];
+
+    /// <summary>
+    /// The tour row: one line naming four keys, chrome in the window, never the session's text. Fitted to
+    /// <paramref name="width"/> cells (0: no limit) so it never wraps; the lead counts against the width.
+    /// </summary>
+    internal string KeyTourMarkup(int width = 0)
+    {
+        string Key(string key) => $"[bold {_ink.Accent}]{Escape(key)}[/]";
+        string Say(string text) => $"[{_ink.Notice}]{Escape(text)}[/]";
+        var lead = KeyTourLead + " ";
+        return Say(lead) + KeyLadder.Fit(KeyTourKeys, width <= 0 ? 0 : Math.Max(1, width - lead.Length), Key, Say, Say(" · "));
+    }
+
+    /// <summary>Puts the tour row at the end of <paramref name="windowId"/>, or moves it there.</summary>
+    internal void ShowKeyTour(string windowId)
+    {
+        HideKeyTour();
+        if (BarWidth(windowId) <= 0)
+        {
+            // Not arranged yet: drawn in full, so the next frame must redraw it at the pane's width.
+            _chromeBarWidths.Remove(windowId);
+        }
+
+        Func<string, string> bar = _ => KeyTourMarkup(BarWidth(windowId));
+        _tourBar = bar;
+        AppendWindowLine(windowId, bar(string.Empty), bar: bar);
+        _tourWindow = windowId;
+    }
+
+    /// <summary>How the tour row is drawn, which is also how it is found in its buffer again; null when none is up.</summary>
+    private Func<string, string>? _tourBar;
+
+    /// <summary>Takes the tour row away. False when there was none.</summary>
+    private bool HideKeyTour()
+    {
+        if (_tourWindow is not { } windowId)
+        {
+            return false;
+        }
+
+        _tourWindow = null;
+        if (_lines.TryGetValue(windowId, out var buffer))
+        {
+            var bar = _tourBar;
+            _tourBar = null;
+            var at = buffer.FindLastIndex(line => line.Bar is { } drawn && ReferenceEquals(drawn, bar));
+            if (at >= 0)
+            {
+                RemoveChromeRow(windowId, at);
+                RepaintPane(windowId);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>⌃P ▸ <c>Key tour</c>: shows the row in the focused window, or hides it when it is up.</summary>
+    private void ToggleKeyTour()
+    {
+        if (!HideKeyTour())
+        {
+            ShowKeyTour(ActiveWindowId());
+        }
+    }
+
+    /// <summary>The snapshot views that start with this: <c>welcome</c> and <c>welcome-connect</c>.</summary>
+    internal const string WelcomeView = "welcome";
+
+    /// <summary>
+    /// The welcome as a first run meets it: the configuration emptied, the startup path run with nothing to
+    /// connect (which raises the notice and opens the surface), and for <c>welcome-connect</c> the form
+    /// filled in by real keys — ⏎ on the first choice, a host, a port over the default, TLS on, a name.
+    /// </summary>
+    private string RenderWelcomeSnapshot(string view)
+    {
+        // And the workspace a first run has: the main window alone, owned by nobody. --demo-config resumes a
+        // saved workspace with a character's windows in it, which an empty configuration could never have.
+        _config.Worlds.Clear();
+        _startedEmpty = true;
+        foreach (var window in _workspace.Windows.Select(w => w.Id).Where(id => id != MainWindowId).ToList())
+        {
+            _workspace.CloseWindow(window);
+        }
+
+        if (_workspace.FindWindow(MainWindowId) is { } main)
+        {
+            main.Title = "Main";
+            _workspace.SetWindowOwner(MainWindowId, null);
+        }
+
+        RebuildPaneArea();
+        RefreshHeader();
+        RefreshRail();
+        UpdateStatus();
+        WorldFetch ??= DemoWorldFetch;
+        LastCommand = StartAsync([]);
+
+        if (string.Equals(view, WelcomeView + "-connect", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateWelcomeKey(Stroke('\r', ConsoleKey.Enter));
+            Type("mud.example.org");
+            SimulateWelcomeKey(Stroke('\0', ConsoleKey.DownArrow));
+            for (var i = 0; i < 4; i++)
+            {
+                SimulateWelcomeKey(Stroke('\b', ConsoleKey.Backspace));
+            }
+
+            Type("4201");
+            SimulateWelcomeKey(Stroke('\0', ConsoleKey.DownArrow));
+            SimulateWelcomeKey(Stroke(' ', ConsoleKey.Spacebar));
+            SimulateWelcomeKey(Stroke('\0', ConsoleKey.DownArrow));
+            Type("Corvid");
+        }
+
+        SyncInputWidth();
+        return RenderFrame();
+
+        void Type(string text)
+        {
+            foreach (var c in text)
+            {
+                SimulateWelcomeKey(Stroke(c, ConsoleKey.NoName));
+            }
+        }
+    }
+
+    /// <summary>Whether a tour row is on screen, for the tests.</summary>
+    internal bool KeyTourShown => _tourWindow is not null;
+}

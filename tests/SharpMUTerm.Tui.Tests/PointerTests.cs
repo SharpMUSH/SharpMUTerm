@@ -30,6 +30,10 @@ public class PointerTests
         public bool DrawsMenus => true;
 
         public void Scrollbars(IReadOnlyList<PaneScrollbar> bars) => Bars = bars;
+
+        public IReadOnlyList<PaneDividerOverlay> Dividers { get; private set; } = [];
+
+        void IPointerPresenter.Dividers(IReadOnlyList<PaneDividerOverlay> dividers) => Dividers = dividers;
     }
 
     private static (SharpMUTermApp App, RecordingPresenter Pointer) App(string view, int width = 120, int height = 34)
@@ -77,6 +81,43 @@ public class PointerTests
         await Assert.That(divider.All(hit => hit.Target.Shape == PointerShape.ResizeColumns)).IsTrue();
         await Assert.That(divider.All(hit => hit.Cell.X >= rects[0].X + rects[0].Width && hit.Cell.X < rects[1].X)).IsTrue();
         await Assert.That(divider[0].Target.Tooltip).Contains("Drag to resize");
+    }
+
+    /// <summary>
+    /// The host is told where the divider cells are, so the window can draw them as the panes meeting at a hairline: the
+    /// column between the panes, the whole height, lit while hovered; and nothing while a modal is drawn over the panes.
+    /// </summary>
+    [Test]
+    public async Task TheHostIsToldWhereTheDividersAreAndWhichIsLit()
+    {
+        var (app, pointer) = App("split");
+        var rects = app.PaneSnapshot().Rects.Values.OrderBy(r => r.X).ToArray();
+        var said = pointer.Dividers.Single();
+
+        await Assert.That(said.Vertical).IsTrue();
+        await Assert.That(said.Lit).IsFalse();
+        await Assert.That(said.Area.X).IsEqualTo(rects[0].X + rects[0].Width);
+        await Assert.That(said.Area.Width).IsEqualTo(1);
+        await Assert.That(said.Area.Height).IsEqualTo(rects[0].Height);
+        await Assert.That(app.DividersNow()).IsEquivalentTo(pointer.Dividers);
+
+        app.SimulatePointer(DividerCell(app), MouseFlags.ReportMousePosition);
+        app.RenderNextFrame();
+        await Assert.That(pointer.Dividers.Single().Lit).IsTrue();
+
+        app.SimulateKey(new ConsoleKeyInfo('\u0010', ConsoleKey.P, shift: false, alt: false, control: true));
+        app.RenderNextFrame();
+        await Assert.That(app.MenuIsOpen).IsTrue();
+        await Assert.That(app.DividersNow()).IsEmpty().Because("⌃P is drawn over the panes, and the host must not draw over it");
+    }
+
+    /// <summary>A stacked split whose lower pane draws its strip has no divider row, and so tells the host of none.</summary>
+    [Test]
+    public async Task AStripStandingInForADividerIsNotADividerToDraw()
+    {
+        var (app, pointer) = App("split-stacked");
+
+        await Assert.That(pointer.Dividers).IsEmpty();
     }
 
     [Test]
@@ -146,6 +187,81 @@ public class PointerTests
         await Assert.That(Math.Abs(widths[0] - widths[1])).IsLessThanOrEqualTo(1);
     }
 
+    /// <summary>
+    /// In a stack there is no divider row above a pane that draws its own tab strip: the strip's empty run past
+    /// its last tab is the divider. It is found as one (rows shape, the divider's tooltip), the tab itself is
+    /// still a tab, and no row of the screen between the two panes is spent on a rule.
+    /// </summary>
+    [Test]
+    public async Task InAStackTheLowerPanesTabStripIsTheDivider()
+    {
+        var (app, _) = App("split-stacked");
+        var rects = app.PaneSnapshot().Rects.Values.OrderBy(r => r.Y).ToArray();
+        await Assert.That(rects.Length).IsEqualTo(2);
+        await Assert.That(rects[1].Y).IsEqualTo(rects[0].Y + rects[0].Height).Because("no divider row between the panes");
+
+        var header = Scan(app).Where(hit => hit.Cell.Y == rects[1].Y).ToArray();
+        var divider = header.Where(hit => hit.Target.Kind == PointerKind.Divider).ToArray();
+        var tab = header.Where(hit => hit.Target.Kind == PointerKind.Tab).ToArray();
+        await Assert.That(divider).IsNotEmpty();
+        await Assert.That(tab).IsNotEmpty().Because("the tab is still the framework's");
+        await Assert.That(divider.All(hit => hit.Target.Shape == PointerShape.ResizeRows)).IsTrue();
+        await Assert.That(divider[0].Target.Tooltip).Contains("above and below");
+        await Assert.That(divider.Min(hit => hit.Cell.X)).IsGreaterThan(tab.Max(hit => hit.Cell.X))
+            .Because("only the run past the last tab is the divider");
+        await Assert.That(divider.Max(hit => hit.Cell.X)).IsEqualTo(rects[1].X + rects[1].Width - 1);
+    }
+
+    [Test]
+    public async Task HoveringTheTabStripDividerLightsOnlyItsEmptyRun()
+    {
+        var (app, pointer) = App("split-stacked");
+        var before = app.PaneOutputRects();
+        var cell = DividerCell(app);
+        var resting = FrameGrid.Backgrounds(app.RenderWholeFrame());
+
+        app.SimulatePointer(cell, MouseFlags.ReportMousePosition);
+        var lit = FrameGrid.Backgrounds(app.RenderWholeFrame());
+
+        await Assert.That(app.DividerLit).IsTrue();
+        await Assert.That(pointer.Hovers.Last().Kind).IsEqualTo(PointerKind.Divider);
+        var changed = lit.Keys.Where(k => lit[k] != resting.GetValueOrDefault(k)).ToArray();
+        await Assert.That(changed).IsNotEmpty();
+        await Assert.That(changed.All(k => k.Row == cell.Y && k.Column >= pointer.Hovers.Last().Area.X)).IsTrue()
+            .Because("only the strip's empty run is recoloured, never a tab");
+        await Assert.That(app.PaneOutputRects()).IsEquivalentTo(before);
+
+        app.SimulatePointer(cell with { Y = cell.Y + 3 }, MouseFlags.ReportMousePosition);
+        await Assert.That(app.DividerLit).IsFalse();
+        var unlit = FrameGrid.Backgrounds(app.RenderWholeFrame());
+        await Assert.That(unlit.Keys.All(k => unlit[k] == resting.GetValueOrDefault(k))).IsTrue();
+    }
+
+    [Test]
+    public async Task DraggingTheTabStripDividerResizesTheStackAndStartsNoPaneDrag()
+    {
+        var (app, _) = App("split-stacked");
+        var cell = DividerCell(app);
+        var top = app.PaneSnapshot().Rects.Values.OrderBy(r => r.Y).First();
+
+        await Assert.That(app.PaneSnapshot().IsDragHandle(app.PaneSnapshot().PaneAt(cell.X, cell.Y)!, cell.X, cell.Y)).IsFalse()
+            .Because("a press on the divider run is the divider's, not a window drag");
+
+        app.SimulatePointer(cell, MouseFlags.Button1Pressed);
+        app.SimulatePointer(cell with { Y = cell.Y - 4 }, MouseFlags.Button1Pressed, MouseFlags.Button1Dragged, MouseFlags.ReportMousePosition);
+        app.SimulatePointer(cell with { Y = cell.Y - 4 }, MouseFlags.Button1Released);
+        app.RenderNextFrame();
+
+        var rects = app.PaneSnapshot().Rects.Values.OrderBy(r => r.Y).ToArray();
+        await Assert.That(rects[0].Height).IsEqualTo(top.Height - 4);
+        await Assert.That(rects[1].Y).IsEqualTo(cell.Y - 4).Because("the lower pane's tab strip follows the pointer");
+
+        app.SimulatePointer(DividerCell(app), MouseFlags.Button1DoubleClicked);
+        app.RenderNextFrame();
+        var heights = app.PaneSnapshot().Rects.Values.Select(r => r.Height).ToArray();
+        await Assert.That(Math.Abs(heights[0] - heights[1])).IsLessThanOrEqualTo(1);
+    }
+
     [Test]
     public async Task AURLInOutputIsALinkWhoseTooltipNamesIt()
     {
@@ -180,6 +296,21 @@ public class PointerTests
 
         await Assert.That(kinds.Any(t => t.Kind == PointerKind.CommandLine && t.Shape == PointerShape.Text)).IsTrue();
         await Assert.That(kinds.Any(t => t.Kind == PointerKind.Output && t.Shape == PointerShape.Text)).IsTrue();
+    }
+
+    /// <summary>
+    /// A tinted character's rail row and tab say the pane colour <em>by name</em> — the cue that survives a
+    /// reader who cannot tell the ten hues apart, in the one place it costs no cell. An untinted character's
+    /// rows say nothing about colour.
+    /// </summary>
+    [Test]
+    public async Task ATintedCharactersRowsNameThePaneColour()
+    {
+        var (app, _) = App("tint-tabs");
+        var targets = Scan(app).Select(hit => hit.Target).Where(t => t.Tooltip is not null).ToArray();
+
+        await Assert.That(targets.Any(t => t.Kind == PointerKind.RailRow && t.Tooltip!.Contains("pane colour: "))).IsTrue();
+        await Assert.That(targets.Any(t => t.Kind == PointerKind.Tab && t.Tooltip!.Contains("pane colour: "))).IsTrue();
     }
 
     [Test]

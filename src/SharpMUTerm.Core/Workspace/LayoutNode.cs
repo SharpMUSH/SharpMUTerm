@@ -92,6 +92,39 @@ public sealed class PaneNode : LayoutNode
     /// <summary>The active window id, or null when the pane is empty.</summary>
     public string? ActiveTab => ActiveIndex >= 0 && ActiveIndex < Tabs.Count ? Tabs[ActiveIndex] : null;
 
+    /// <summary>
+    /// The exact height this pane takes in a stacked split, in rows, or null for a pane that shares the space
+    /// (<see cref="PaneExtent"/>). A strip panel — one row of meters, one row of buttons — declares it, so it is as
+    /// tall as its content rather than a share of the window. The divider beside such a pane does not move it.
+    /// <para>
+    /// Not persisted: the host derives it from what the pane holds every time it lays the panes out, so a pane
+    /// that is handed an ordinary window stops being a strip at once.
+    /// </para>
+    /// </summary>
+    public int? FixedRows { get; set; }
+
+    /// <summary>
+    /// The fewest rows this pane is given in a stacked split, or null for the ordinary floor. An editor declares
+    /// one so a short window does not squeeze it to a line. Like <see cref="FixedRows"/>, derived by the host and
+    /// not persisted.
+    /// </summary>
+    public int? MinRows { get; set; }
+
+    /// <summary>
+    /// Whether the host draws a tab strip along this pane's top row. In a stacked split such a pane needs no divider
+    /// row above it: its own tab strip is the boundary, and the host makes the strip's empty run the handle a divider
+    /// would have been (<see cref="PaneExtent.DividerRows"/>). Like <see cref="FixedRows"/>, derived by the host every
+    /// time it lays the panes out and not persisted; false until then, which keeps the divider.
+    /// </summary>
+    public bool DrawsHeader { get; set; }
+
+    /// <summary>
+    /// Whether the one panel this pane holds draws a filled heading band along its top row (the terminal's COMPOSE and
+    /// HERE). Like <see cref="DrawsHeader"/>, that band is the boundary in a stacked split: no divider row is drawn above
+    /// the pane, and the host makes the band's empty run the divider's handle. Derived by the host and not persisted.
+    /// </summary>
+    public bool DrawsHeading { get; set; }
+
     public override IEnumerable<PaneNode> Panes()
     {
         yield return this;

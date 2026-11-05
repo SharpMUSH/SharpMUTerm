@@ -1,30 +1,46 @@
 using System.Globalization;
+using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Panels;
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Input;
+using SharpMUTerm.Core.Protocols;
+using SharpMUTerm.Core.Text;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
 
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// Produces the markup sub-blocks shared by the F7 (Text &amp; ANSI) and F8 (Input &amp; spellcheck)
-/// screens — the header band, the options list (toggle/value rows grouped under dim section headers),
-/// and the footer action bar. The two screens differ only in their title, F-key, and rows, so the
-/// blocks take an <see cref="OptionsScreen"/> rather than being written per screen.
-/// <see cref="OptionsScreenView"/> composes them into a real panel for the live/snapshot view;
-/// <see cref="Render(string, string, IReadOnlyList{OptionRow})"/> merges the same blocks into a single
-/// line list for the unit tests. Pure so every block is testable.
+/// Produces the markup sub-blocks of the single-list option screens — F7 (Text &amp; display) and F8
+/// (Input) — the header band, the options list (rows grouped under dim headings), and the footer action
+/// bar. <see cref="OptionsScreenView"/> composes them into real panels; <see cref="Render(string, string,
+/// IReadOnlyList{OptionRow})"/> merges the same blocks into one line list for the unit tests.
 /// <para>
-/// F9 was a third one, "Logging", and is gone: its rows edited one character's
-/// <see cref="LoggingSettings"/> — whichever was connected, or else the first configured — while
-/// presenting as a global preference. Logging now sits in the character's own form on F5, and F9 opens
+/// <b>Both screens are drawn from their declared settings sections</b> (<see cref="BuiltInSettings"/>, in
+/// the Client): one row per field, a heading wherever the field's group changes, and the value read and
+/// written through the field's <see cref="SettingBinding"/>. A field that differs from its default says
+/// <c>● changed</c> and carries the reset <c>r</c> runs. Nothing about a row is written here any more except
+/// how a kind of field is drawn, so a field added to a section appears on its screen, in the search and
+/// under the reset key at once.
+/// </para>
+/// <para>
+/// F7's <c>meters</c> field is the one drawn as more than a row: a table, one row per meter with its label,
+/// value path and maximum path as three fields (⏎ opens the label, ⇥ steps on), the value now in a fourth
+/// column read from the focused session's game data, <c>[[+ meter]]</c> under it, and — while the cursor is
+/// in the table — the paths this connection has received, with their values, which a path field also offers
+/// as its dropdown.
+/// </para>
+/// <para>
+/// F9 was a third one, "Logging", and is gone: its rows edited one character's <see cref="LoggingSettings"/>
+/// while presenting as a global preference. Logging sits in the character's own form on F5, and F9 opens
 /// that screen there. See <see cref="WorldsScreenRenderer.FormColumn"/>.
 /// </para>
 /// </summary>
 internal static class OptionsScreenRenderer
 {
     /// <summary>Where a row's value starts, measured from the left edge of the list.</summary>
-    private const int LabelWidth = 28;
+    private const int LabelWidth = 38;
 
     /// <summary>
     /// The checkbox column every row reserves, whether or not it has one: <c>"[[x]] "</c>. A value row
@@ -33,28 +49,57 @@ internal static class OptionsScreenRenderer
     /// </summary>
     private const int AffordanceWidth = 4;
 
+    /// <summary>What a field that differs from its default says, after its value.</summary>
+    internal const string ChangedMark = "● changed";
+
     /// <summary>
-    /// A single options-list row: a toggle, a value row, both at once, a section header, or a spacer.
-    /// <paramref name="Bind"/> is the config the checkbox writes to; <paramref name="Edit"/> is the
-    /// config the value writes to, which is what makes a value row activatable with ⏎. A row with
-    /// neither still takes the cursor but nothing happens there.
-    /// <para>
-    /// Carrying both is supported and currently unused: F9's log format was the case that needed it
-    /// (Space started and stopped logging, ⏎ picked the format), and that row now lives on F5 where its
-    /// character is. F4's bindings are the same shape one layer down — Space enables the macro, ⏎ edits
-    /// its command — so <see cref="ScreenRow"/> keeps the capability whether or not this screen uses it.
-    /// </para>
+    /// A single options-list row: a toggle, a value row, both at once, a section header, a spacer, or a
+    /// row drawn by its own <paramref name="Draw"/>. <paramref name="Bind"/> is the config the checkbox
+    /// writes to; <paramref name="Edit"/> (or <paramref name="Fields"/>, for a row of several) is what ⏎
+    /// opens. A row with neither still takes the cursor but nothing happens there.
     /// </summary>
+    /// <param name="Label">What the row is called; <c>├ </c> marks a heading, empty a spacer.</param>
+    /// <param name="Value">The value it shows, or null for a checkbox row.</param>
+    /// <param name="Toggle">The checkbox's state, or null for none.</param>
+    /// <param name="Hint">A dim note after the value.</param>
+    /// <param name="Bind">What Space flips.</param>
+    /// <param name="Edit">The one field ⏎ opens.</param>
+    /// <param name="Fields">Several fields, ⏎ opening the first and ⇥ stepping on; wins over <paramref name="Edit"/>.</param>
+    /// <param name="Button">What ⏎ runs on a button row.</param>
+    /// <param name="Reset">
+    /// Puts the row's setting back to its default; non-null exactly when it differs, which is also what
+    /// draws <see cref="ChangedMark"/>.
+    /// </param>
+    /// <param name="Draw">
+    /// Draws the row itself, given the open edit on it (null while navigating) and the width — the meter
+    /// table's rows. Null for the ordinary checkbox and label/value shapes.
+    /// </param>
+    /// <param name="Static">Drawn but never a cursor stop: a table's column headings, the received-data box.</param>
+    /// <param name="FieldId">The declared field the row draws, so the search can land on it.</param>
+    /// <param name="Where">What the footer says while the cursor is on it, in place of <c>option n/m</c>.</param>
     public readonly record struct OptionRow(
         string Label,
         string? Value,
         bool? Toggle,
         string? Hint = null,
         ScreenToggle? Bind = null,
-        ScreenField? Edit = null);
+        ScreenField? Edit = null,
+        IReadOnlyList<ScreenField>? Fields = null,
+        ScreenButton? Button = null,
+        Action? Reset = null,
+        Func<ScreenFieldEdit?, int, string>? Draw = null,
+        bool Static = false,
+        string? FieldId = null,
+        string? Where = null);
 
-    /// <summary>One options screen: the title and F-key its chrome shows, plus the rows it lists.</summary>
-    internal readonly record struct OptionsScreen(string Title, string FKey, IReadOnlyList<OptionRow> Rows);
+    /// <summary>
+    /// One options screen: the title and F-key its chrome shows, the rows it lists, and — while the cursor is
+    /// on a row Delete can take out (a meter) — that removal, which the model carries as its pane's hidden
+    /// trailing button. <paramref name="Preview"/> is the theme under the cursor in the theme picker, or null while
+    /// the cursor is elsewhere: the screen is painted in that theme while it is, which is the picker's live preview.
+    /// </summary>
+    internal readonly record struct OptionsScreen(
+        string Title, string FKey, IReadOnlyList<OptionRow> Rows, ScreenButton? Remove = null, string? Preview = null);
 
     /// <summary>
     /// Merges every sub-block into one line list (header, options, footer). Used by the unit tests and
@@ -78,45 +123,46 @@ internal static class OptionsScreenRenderer
     /// <summary>
     /// The screen title on the left, the keyboard hints right-aligned to <paramref name="width"/>. The
     /// hints are derived from <paramref name="model"/> and <paramref name="focus"/> rather than written
-    /// here, so the header cannot advertise an edit the screen doesn't offer; called without them it
-    /// describes a screen that only navigates.
+    /// here, so the header cannot advertise an edit the screen doesn't offer — <c>r reset</c> appears only
+    /// on a row that differs from its default, and <c>Del remove</c> only on a meter.
     /// <para>
-    /// There is deliberately no <c>‹ back</c> affordance. These screens were the only ones that drew
-    /// one, and it pointed nowhere: there is no navigation stack behind a settings screen, Esc closes
-    /// it, and the header already says so two columns to the right.
+    /// There is deliberately no <c>‹ back</c> affordance: there is no navigation stack behind a settings
+    /// screen, Esc closes it, and the header already says so.
     /// </para>
     /// </summary>
     internal static string HeaderLine(
         string title, string fkey, int width, ScreenModel? model = null, ScreenFocus? focus = null)
     {
         var heading = $"[bold {Value}]{Escape(title)}[/]";
+        var resettable = model is not null && focus is { Edit: null } at && model.ResetAt(at.Pane, at.Index) is not null;
         var hints = ScreenChrome.Hints(
             ScreenChrome.SingleListHints,
             Escape(fkey),
             model?.HasEditableRow ?? false,
-            focus);
-        return SpreadLR(" " + heading, hints, width);
+            focus,
+            removable: model?.HasRemovableRow ?? false,
+            resettable: resettable,
+            room: ScreenChrome.HeaderRoom(" " + heading, width));
+        return SpreadTitle(" " + heading, hints, width);
     }
 
     /// <summary>
-    /// The action bar: where the cursor is in the options list on the left, cancel/save on the right.
-    /// It used to be an inventory (<c>5 options · 2 sections</c>); the section count was noise — the
-    /// headings are on screen and counting them tells nobody anything — and the option count answered a
-    /// different question from every other screen's footer. It now names the cursor's position and the
-    /// section it is standing in, which is F2's <c>trigger 1/4 · set Comms</c> in this screen's nouns.
-    /// The selected row comes from <paramref name="focus"/>, the only thing that knows it.
+    /// The action bar: where the cursor is in the options list on the left — <c>option 4/15 · COLOUR &amp;
+    /// LEGIBILITY</c>, or a row's own words (<c>meter 2/3</c>) — and the actions on the right.
     /// </summary>
     internal static string FooterLine(IReadOnlyList<OptionRow> rows, int width, ScreenFocus? focus = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
-        var options = rows.Count(r => !IsSpacer(r) && !IsSection(r));
+        var options = rows.Count(IsNavigable);
         var context = string.Empty;
         if (options > 0)
         {
             var selected = Math.Clamp(focus?.Pane == 0 ? focus.Value.Index : 0, 0, options - 1);
+            var row = rows.Where(IsNavigable).ElementAt(selected);
             context = ScreenChrome.Context(
-                ScreenChrome.Position("option", selected, options), SectionOf(rows, selected));
+                row.Where is { } where ? Escape(where) : ScreenChrome.Position("option", selected, options),
+                SectionOf(rows, selected));
         }
 
         return SpreadLR(" " + context, ScreenChrome.Actions(focus: focus), width);
@@ -138,7 +184,7 @@ internal static class OptionsScreenRenderer
                 continue;
             }
 
-            if (IsSpacer(row))
+            if (!IsNavigable(row))
             {
                 continue;
             }
@@ -154,7 +200,7 @@ internal static class OptionsScreenRenderer
 
     /// <summary>
     /// The options list itself — one line per row, in order. The row under the keyboard cursor is
-    /// drawn on a cursor bar padded to <paramref name="width"/>; spacers and section headers are
+    /// drawn on a cursor bar padded to <paramref name="width"/>; spacers, headings and static rows are
     /// skipped when counting, so the cursor index matches <see cref="Model"/>'s row order.
     /// </summary>
     internal static List<string> BodyColumn(
@@ -167,14 +213,17 @@ internal static class OptionsScreenRenderer
         var navigable = 0;
         foreach (var row in rows)
         {
-            if (IsSpacer(row) || IsSection(row))
+            if (!IsNavigable(row))
             {
-                lines.Add(RenderRow(row, null));
+                lines.Add(row.Draw is { } draw ? draw(null, width) : RenderRow(row, null));
                 continue;
             }
 
-            var line = RenderRow(row, cursor.EditOn(0, navigable, 0));
-            lines.Add(ScreenChrome.Cursor(line, cursor.IsOn(0, navigable), width));
+            var on = cursor.IsOn(0, navigable);
+            var line = row.Draw is { } drawn
+                ? drawn(on ? cursor.Edit : null, width)
+                : RenderRow(row, cursor.EditOn(0, navigable, 0));
+            lines.Add(ScreenChrome.Cursor(line, on, width));
             navigable++;
         }
 
@@ -183,29 +232,59 @@ internal static class OptionsScreenRenderer
 
     /// <summary>
     /// How wide a dropdown may run on a screen rendered without a width — the merged
-    /// <see cref="Render(OptionsScreen)"/> path the unit tests use. The live view always passes a real
-    /// width, so this only keeps the width-agnostic fallback from letting a list run unbounded.
+    /// <see cref="Render(OptionsScreen)"/> path the unit tests use.
     /// </summary>
     private const int ChoiceListWidth = 60;
 
     /// <summary>
-    /// The screen's one navigable pane: every row that isn't a spacer or a section header, in display
-    /// order, each carrying whatever config bindings it was built with — the checkbox Space flips and
-    /// the value ⏎ opens.
+    /// The screen's one navigable pane: every row that is a cursor stop, in display order, each carrying
+    /// whatever it was built with — the checkbox Space flips, the values ⏎ opens, the button ⏎ runs, the
+    /// reset <c>r</c> runs — and, when there is one, the removal Delete runs as a hidden trailing button.
     /// </summary>
     internal static ScreenModel Model(OptionsScreen screen)
     {
         var rows = screen.Rows
-            .Where(r => !IsSpacer(r) && !IsSection(r))
-            .Select(r => r.Edit is { } field ? new ScreenRow(r.Bind, new[] { field }) : new ScreenRow(r.Bind))
-            .ToArray();
+            .Where(IsNavigable)
+            .Select(r => new ScreenRow(
+                r.Bind,
+                r.Fields ?? (r.Edit is { } field ? new[] { field } : null),
+                r.Button,
+                r.Reset))
+            .ToList();
+        if (screen.Remove is { } remove)
+        {
+            rows.Add(ScreenRow.Of(remove));
+        }
+
         return new ScreenModel(rows);
+    }
+
+    /// <summary>Where the row drawing a declared field sits among the cursor stops, or -1.</summary>
+    internal static int IndexOf(OptionsScreen screen, string fieldId)
+    {
+        var navigable = 0;
+        foreach (var row in screen.Rows)
+        {
+            if (!IsNavigable(row))
+            {
+                continue;
+            }
+
+            if (string.Equals(row.FieldId, fieldId, StringComparison.Ordinal))
+            {
+                return navigable;
+            }
+
+            navigable++;
+        }
+
+        return -1;
     }
 
     /// <summary>
     /// One row: its checkbox column (a box, or the blank that keeps the labels in one column), its
-    /// label, the value it holds if it holds one, and its hint. A row can carry both a checkbox and a
-    /// value, which is the shape F4's bindings use one layer down.
+    /// label, the value it holds if it holds one, its hint, and <see cref="ChangedMark"/> when it differs
+    /// from its default.
     /// </summary>
     private static string RenderRow(OptionRow row, ScreenFieldEdit? edit)
     {
@@ -227,202 +306,694 @@ internal static class OptionsScreenRenderer
         };
 
         var hint = row.Hint is null ? string.Empty : $"[dim] — {Escape(row.Hint)}[/]";
+        var changed = row.Reset is null ? string.Empty : Changed();
         var hasValue = row.Value is not null || edit is not null;
         var label = Escape(row.Label);
+
         // A checkbox row's label *is* its content, so it keeps the primary ink; a label/value row's
         // label is the secondary half of a pair, so it dims and lets the value carry the weight.
         if (!hasValue)
         {
-            return $"{box}{label}{hint}";
+            return $"{box}{label}{hint}{changed}";
         }
 
         var value = ScreenChrome.Field(Escape(row.Value ?? string.Empty), edit);
-        return $"{box}[dim]{label.PadRight(LabelWidth - AffordanceWidth)}[/] {value}{hint}";
+        return $"{box}[dim]{label.PadRight(LabelWidth - AffordanceWidth)}[/] {value}{hint}{changed}";
     }
 
-    /// <summary>A blank separator carrying no label, value, or toggle.</summary>
+    private static string Changed() => $"  [{Accent}]{ChangedMark}[/]";
+
+    /// <summary>A blank separator carrying nothing at all.</summary>
     private static bool IsSpacer(OptionRow row) =>
-        row.Label.Length == 0 && row.Value is null && row.Toggle is null;
+        row.Label.Length == 0 && row.Value is null && row.Toggle is null && row.Draw is null
+        && row.Button is null && row.Fields is null;
 
     /// <summary>A dim group heading, marked by the branch glyph the screens prefix them with.</summary>
     private static bool IsSection(OptionRow row) => row.Label.StartsWith("├ ", StringComparison.Ordinal);
 
+    /// <summary>Whether a row is a cursor stop.</summary>
+    private static bool IsNavigable(OptionRow row) => !row.Static && !IsSpacer(row) && !IsSection(row);
+
     /// <summary>
-    /// The F7 "Text &amp; ANSI" screen, reflecting — and writing back to — the app's
-    /// <see cref="TextSettings"/>. Called without arguments it projects the defaults, which is what
-    /// the unit tests and the width-agnostic fallback want.
+    /// The F7 screen over the defaults — or over the given settings, written back to as the rows are used.
+    /// <paramref name="sound"/> null leaves the SOUND group out, which is how a caller that has no sound
+    /// settings to hand gets the rest of the screen.
     /// </summary>
-    internal static OptionsScreen TextAnsiScreen(TextSettings? text = null, SoundSettings? sound = null)
+    internal static OptionsScreen TextAnsiScreen(TextSettings? text = null, SoundSettings? sound = null) =>
+        TextAnsiScreen(
+            new AppConfiguration { Text = text ?? new TextSettings(), Sound = sound ?? new SoundSettings() },
+            includeSound: sound is not null);
+
+    /// <summary>
+    /// The F7 screen, drawn from <paramref name="section"/> (the declared <see cref="BuiltInSettings.Text"/>
+    /// unless a host passes the registry's) over <paramref name="config"/>.
+    /// </summary>
+    /// <param name="config">Where the values are read from and written to.</param>
+    /// <param name="includeSound">Whether the SOUND group is drawn.</param>
+    /// <param name="data">The focused session's game data, which the meter table reads its <c>now</c> column from.</param>
+    /// <param name="cursor">Which cursor stop the keyboard is on, which decides whether the received-data box shows.</param>
+    /// <param name="section">The declared section.</param>
+    internal static OptionsScreen TextAnsiScreen(
+        AppConfiguration config,
+        bool includeSound = true,
+        GameDataStore? data = null,
+        int cursor = -1,
+        SettingsSectionContribution? section = null)
     {
-        var settings = text ?? new TextSettings();
-
-        var rows = new List<OptionRow>
-        {
-            new("├ COLOUR", null, null),
-            new("strip incoming ANSI colour", null, settings.StripIncomingColour, null,
-                ScreenToggle.Bind(() => settings.StripIncomingColour, v => settings.StripIncomingColour = v)),
-
-            // Directly under the row above, because the two are answers to one question — what to do
-            // about a colour this terminal cannot show well — and they are the ends of its range: that
-            // one discards every colour the server sent, this one keeps them all and moves only the few
-            // that cannot be read. Unticking it is not "no policy"; it is the policy this client had
-            // before anything was measured.
-            new("keep text legible", null, settings.KeepTextLegible, null,
-                ScreenToggle.Bind(() => settings.KeepTextLegible, v => settings.KeepTextLegible = v)),
-            new("allow blink", null, settings.AllowBlink, null,
-                ScreenToggle.Bind(() => settings.AllowBlink, v => settings.AllowBlink = v)),
-            new("underline hyperlinks", null, settings.UnderlineHyperlinks, null,
-                ScreenToggle.Bind(() => settings.UnderlineHyperlinks, v => settings.UnderlineHyperlinks = v)),
-
-            // Under COLOUR because it sits with the row above it — that one says how a link looks, this
-            // one says what counts as a link — even though neither is strictly about colour. The pair
-            // reads as one idea, which a LINKS section of two rows would not improve.
-            new("detect links in output", null, settings.DetectLinks, null,
-                ScreenToggle.Bind(() => settings.DetectLinks, v => settings.DetectLinks = v)),
-            new(string.Empty, null, null),
-            new("├ WHITESPACE", null, null),
-
-            // A count, not a checkbox, and its own section rather than an extra row under COLOUR: it is
-            // the only thing on this screen that changes how wide a line *is* rather than how it looks.
-            // Zero is a real answer — it deletes tabs — so the field's floor is 0, not 1.
-            new("tab width (spaces)", settings.TabWidth.ToString(CultureInfo.InvariantCulture), null, null, null,
-                ScreenField.Integer(
-                    "tab width (spaces)", () => settings.TabWidth, v => settings.TabWidth = v,
-                    0, TextSettings.MaxTabWidth)),
-            new(string.Empty, null, null),
-            new("├ UNICODE", null, null),
-            new("emoji substitution", null, settings.EmojiSubstitution, null,
-                ScreenToggle.Bind(() => settings.EmojiSubstitution, v => settings.EmojiSubstitution = v)),
-            new(string.Empty, null, null),
-            new("├ BACKGROUND", null, null),
-
-            // Its own section, beside ACTIVITY's reasoning: it describes the client's chrome rather than
-            // how a world's text is drawn. A percentage and not a checkbox, and zero is off — it only looks
-            // right on a terminal set to draw its background translucent, which this client cannot see.
-            new("background transparency (%)",
-                settings.BackgroundTransparency.ToString(CultureInfo.InvariantCulture), null, null, null,
-                ScreenField.Integer(
-                    "background transparency (%)",
-                    () => settings.BackgroundTransparency, v => settings.BackgroundTransparency = v,
-                    0, TextSettings.MaxBackgroundTransparency)),
-            new(string.Empty, null, null),
-            new("├ ACTIVITY", null, null),
-
-            // Seconds, and its own section: it is the only row on this screen describing the client's own
-            // chrome rather than how a world's text is drawn. Zero is a real answer — it retires the bar
-            // as soon as it has been read past, which is what this client did before the floor existed —
-            // so the field's floor is 0, as the tab width's is.
-            new("activity bar holds for (seconds)",
-                settings.ActivityBarSeconds.ToString(CultureInfo.InvariantCulture), null, null, null,
-                ScreenField.Integer(
-                    "activity bar holds for (seconds)",
-                    () => settings.ActivityBarSeconds, v => settings.ActivityBarSeconds = v,
-                    0, TextSettings.MaxActivityBarSeconds)),
-            new(string.Empty, null, null),
-            new("├ STATUS ROW", null, null),
-
-            // One line, `label=value/max; …`, each path allowed `|` alternatives. A list editor would be
-            // friendlier and is a screen of its own; this is the whole of the setting, typed where it is read,
-            // and a part that does not parse is dropped rather than refused so a half-typed meter costs nothing.
-            new("meters", MeterSummary(settings.StatusMeters), null, null, null,
-                ScreenField.Optional(
-                    "meters",
-                    () => settings.StatusMeters.Count == 0 ? null : StatusMeter.Format(settings.StatusMeters),
-                    v => settings.StatusMeters = StatusMeter.Parse(v))),
-        };
-
-        if (sound is not null)
-        {
-            rows.AddRange(SoundRows(sound));
-        }
-
-        return new OptionsScreen("Text & ANSI", "F7", rows);
+        ArgumentNullException.ThrowIfNull(config);
+        return FromSection(
+            section ?? BuiltInSettings.Text,
+            config,
+            data,
+            cursor,
+            includeSound ? null : BuiltInSettings.SoundGroup);
     }
 
-    /// <summary>
-    /// F7's SOUND rows: game sound on or off, the three levels, and captions. Drawn on every host, because
-    /// captions are text and are the one thing a host with no audio device can still do with a sound.
-    /// </summary>
-    private static IEnumerable<OptionRow> SoundRows(SoundSettings sound)
-    {
-        yield return new(string.Empty, null, null);
-        yield return new("├ SOUND", null, null);
-        yield return new("game sound", null, sound.Enabled, null,
-            ScreenToggle.Bind(() => sound.Enabled, v => sound.Enabled = v));
-        yield return Level("master volume (%)", () => sound.MasterVolume, v => sound.MasterVolume = v);
-        yield return Level("sound volume (%)", () => sound.SoundVolume, v => sound.SoundVolume = v);
-        yield return Level("music volume (%)", () => sound.MusicVolume, v => sound.MusicVolume = v);
-
-        // A caption is a line of text for a sound, so it is the one SOUND row that matters with sound off.
-        yield return new("sound captions", null, sound.Captions, null,
-            ScreenToggle.Bind(() => sound.Captions, v => sound.Captions = v));
-
-        static OptionRow Level(string label, Func<int> get, Action<int> set) =>
-            new(label, get().ToString(CultureInfo.InvariantCulture), null, null, null,
-                ScreenField.Integer(label, get, set, 0, SoundSettings.MaxVolume));
-    }
+    /// <summary>The F8 screen over the defaults, or over the given settings.</summary>
+    internal static OptionsScreen InputScreen(InputSettings? input = null) =>
+        InputScreen(new AppConfiguration { Input = input ?? new InputSettings() });
 
     /// <summary>
-    /// What the meters row shows when it is not being edited: the labels, in order. The full line is long —
-    /// every alternative path of every meter — and a row clipped at the screen's edge says less than this.
-    /// </summary>
-    private static string MeterSummary(IReadOnlyList<StatusMeter> meters) =>
-        meters.Count == 0 ? "none" : string.Join(" · ", meters.Select(m => m.Label)) + "  (⏎ edits the paths)";
-
-    /// <summary>
-    /// The F8 "Input" screen, reflecting — and writing back to — the app's
-    /// <see cref="InputSettings"/>.
-    /// <para>
-    /// It was "Input &amp; spellcheck" and had a SPELLCHECK section holding <c>check spelling</c> and
-    /// <c>dictionary</c>. Both are gone: this client has no speller, so the checkbox promised a check
-    /// that never ran and the dictionary named a file nothing opened. The rule they broke is the one
-    /// the header hints already follow: a screen may not advertise a key, or a setting, that does
-    /// nothing.
-    /// </para>
+    /// The F8 "Input" screen, drawn from its declared section.
     /// <para>
     /// <c>keep logins out of history</c> is the one row here that is about a secret rather than a
     /// convenience: with history browsable and searchable (⌃R), a hand-typed
-    /// <c>connect &lt;name&gt; &lt;password&gt;</c> recorded in it is a password on display. It is
-    /// bash's <c>HISTIGNORE</c>, on by default, and the verbs it recognises are
-    /// <see cref="HistorySecrets.Verbs"/>. Nothing writes history to disk either way.
+    /// <c>connect &lt;name&gt; &lt;password&gt;</c> recorded in it is a password on display. It is bash's
+    /// <c>HISTIGNORE</c>, on by default, and the verbs it recognises are <see cref="HistorySecrets.Verbs"/>.
     /// </para>
     /// <para>
-    /// There is still no <c>newline key</c> row, and now for the opposite reason to the one that took
-    /// it away. The command line wraps and grows, so a newline can be typed — but only on chords this
-    /// host delivers, and the interesting answers (Shift+⏎, Ctrl+⏎) are ones no Unix terminal reports
-    /// distinctly through SharpConsoleUI's parser. A field offering them would be the same empty
-    /// promise as the speller. The chord is fixed and named where the keys are named.
+    /// There is no spellcheck section and no <c>newline key</c> row: a setting with nothing behind it is the
+    /// empty promise these screens are held against, and the newline chord is fixed per host and named where
+    /// the keys are named.
     /// </para>
     /// </summary>
-    internal static OptionsScreen InputScreen(InputSettings? input = null)
+    internal static OptionsScreen InputScreen(AppConfiguration config, SettingsSectionContribution? section = null)
     {
-        var settings = input ?? new InputSettings();
-
-        return new OptionsScreen("Input", "F8", new List<OptionRow>
-        {
-            new("├ INPUT", null, null),
-            new("local echo", null, settings.LocalEcho, null,
-                ScreenToggle.Bind(() => settings.LocalEcho, v => settings.LocalEcho = v)),
-            new("keep per-tab drafts", null, settings.KeepDrafts, null,
-                ScreenToggle.Bind(() => settings.KeepDrafts, v => settings.KeepDrafts = v)),
-            new("keep logins out of history", null, settings.ExcludeCredentials, null,
-                ScreenToggle.Bind(() => settings.ExcludeCredentials, v => settings.ExcludeCredentials = v)),
-            new(string.Empty, null, null),
-            new("├ COMMAND LINE", null, null),
-            new("height (lines)", settings.Rows.ToString(CultureInfo.InvariantCulture), null, null, null,
-                ScreenField.Integer(
-                    "height (lines)", () => settings.Rows, v => settings.Rows = v,
-                    InputSettings.MinRows, InputSettings.MaxRowCeiling)),
-            new("grows to (lines)", settings.MaxRows.ToString(CultureInfo.InvariantCulture), null, null, null,
-                ScreenField.Integer(
-                    "grows to (lines)", () => settings.MaxRows, v => settings.MaxRows = v,
-                    InputSettings.MinRows, InputSettings.MaxRowCeiling)),
-            new("second bar on new windows", null, settings.SecondBar, null,
-                ScreenToggle.Bind(() => settings.SecondBar, v => settings.SecondBar = v)),
-        });
+        ArgumentNullException.ThrowIfNull(config);
+        return FromSection(section ?? BuiltInSettings.Input, config, null, -1, null);
     }
 
-    /// <summary>The F7 "Text &amp; ANSI" screen body.</summary>
+    /// <summary>
+    /// A declared section as an options screen: a heading wherever the group changes, then one row per
+    /// field, drawn by kind. <paramref name="skipGroup"/> leaves one group out.
+    /// </summary>
+    internal static OptionsScreen FromSection(
+        SettingsSectionContribution section,
+        AppConfiguration config,
+        GameDataStore? data,
+        int cursor,
+        string? skipGroup)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        ArgumentNullException.ThrowIfNull(config);
+
+        var rows = new List<OptionRow>();
+        ScreenButton? remove = null;
+        string? preview = null;
+        string? group = null;
+        var navigable = 0;
+        foreach (var field in section.Fields)
+        {
+            if (skipGroup is not null && string.Equals(field.Group, skipGroup, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!string.Equals(field.Group, group, StringComparison.Ordinal))
+            {
+                if (rows.Count > 0)
+                {
+                    rows.Add(new OptionRow(string.Empty, null, null));
+                }
+
+                group = field.Group;
+                if (group is not null)
+                {
+                    rows.Add(new OptionRow("├ " + group.ToUpperInvariant(), null, null));
+                }
+            }
+
+            if (field is ListField { Id: BuiltInSettings.MetersField, Binding: SettingBinding<List<StatusMeter>> meters })
+            {
+                remove = MeterRows(rows, config, meters, data, cursor, ref navigable) ?? remove;
+                continue;
+            }
+
+            if (field is ThemeField { Binding: SettingBinding<string> theme })
+            {
+                preview = ThemeRows(rows, config, field, theme, cursor, ref navigable) ?? preview;
+                continue;
+            }
+
+            rows.Add(Row(field, config));
+            navigable++;
+        }
+
+        return new OptionsScreen(section.Title, section.Key ?? string.Empty, rows, remove, preview);
+    }
+
+    /// <summary>What the theme picker's caption says of the theme in use.</summary>
+    internal const string ThemeInUse = "in use";
+
+    /// <summary>The width a preview is drawn at when the screen is rendered without one (the unit tests' merged path).</summary>
+    private const int PreviewFallbackWidth = 76;
+
+    /// <summary>
+    /// F7's theme picker, appended to <paramref name="rows"/>: one cursor stop per theme (⏎ uses it, through the
+    /// screen's edits and so the save funnel), then the preview of the theme under the cursor — or of the theme in use,
+    /// while the cursor is elsewhere. Returns the theme under the cursor, which the screen is painted in while it is
+    /// there; Esc closes the screen with nothing committed, which is the revert.
+    /// </summary>
+    private static string? ThemeRows(
+        List<OptionRow> rows,
+        AppConfiguration config,
+        SettingsField field,
+        SettingBinding<string> binding,
+        int cursor,
+        ref int navigable)
+    {
+        var cards = ThemePreviews.Cards(config);
+        var current = binding.Get(config);
+        var reset = binding.IsDefault(config) ? null : (Action)(() => binding.Reset(config));
+        string? under = null;
+        for (var i = 0; i < cards.Count; i++)
+        {
+            var card = cards[i];
+            rows.Add(new OptionRow(
+                card.Name, null, null,
+                Button: UseTheme(binding, config, card.Name),
+                Reset: reset,
+                FieldId: i == 0 ? field.Id : null,
+                Where: ScreenChrome.Position("theme", i, cards.Count),
+                Draw: (_, width) => ThemeRow(card, current, reset is not null && i == 0)));
+            if (navigable == cursor)
+            {
+                under = card.Name;
+            }
+
+            navigable++;
+        }
+
+        var shown = cards.FirstOrDefault(c => string.Equals(c.Name, under ?? current, StringComparison.OrdinalIgnoreCase))
+            ?? cards[0];
+        var caption = under is null || string.Equals(under, current, StringComparison.OrdinalIgnoreCase)
+            ? $"[dim]preview · {Escape(shown.Name)} · {ThemeInUse}[/]"
+            : $"[dim]preview · {Escape(shown.Name)} · ⏎ or Space uses it, Esc keeps {Escape(current)}[/]";
+        rows.Add(new OptionRow(string.Empty, null, null, Static: true, Draw: (_, _) => new string(' ', AffordanceWidth) + caption));
+        for (var line = 0; line < PreviewRows; line++)
+        {
+            var at = line;
+            rows.Add(new OptionRow(string.Empty, null, null, Static: true,
+                Draw: (_, width) => PreviewLines(shown.Preview, width > 0 ? width : PreviewFallbackWidth)[at]));
+        }
+
+        return under;
+    }
+
+    /// <summary>⏎ on a theme: make it the theme, with the old one as the undo.</summary>
+    private static ScreenButton UseTheme(SettingBinding<string> binding, AppConfiguration config, string name) => new(
+        "use",
+        () =>
+        {
+            var before = binding.Get(config);
+            binding.Set(config, name);
+            return new ScreenPress(() => binding.Set(config, before));
+        },
+        ScreenButtonKind.Apply,
+        name);
+
+    /// <summary>One theme's row: the in-use mark, its name, a strip of its planes, and what kind of theme it is.</summary>
+    private static string ThemeRow(ThemeCard card, string current, bool changed)
+    {
+        var inUse = string.Equals(card.Name, current, StringComparison.OrdinalIgnoreCase);
+        var mark = inUse ? $"[{Accent}]●[/]   " : new string(' ', AffordanceWidth);
+        var preview = card.Preview;
+        var strip = string.Concat(
+            new[] { preview.Backdrop, preview.Panes[0].Plane, preview.Panes[1].Plane, preview.Panes[2].Plane, preview.CommandLine.Band }
+                .Select(p => $"[{p.ToHex()}]██[/]"));
+        var kind = $"{(card.IsDark ? "dark" : "light")} · {(card.IsCustom ? "your own" : "built in")}";
+        var name = Escape(card.Name).PadRight(LabelWidth - AffordanceWidth - 12);
+        var label = inUse ? $"[{Value}]{name}[/]" : name;
+        return $"{mark}{label} {strip}  [dim]{kind}[/]{(inUse ? $"  [{Accent}]{ThemeInUse}[/]" : string.Empty)}"
+            + (changed ? Changed() : string.Empty);
+    }
+
+    /// <summary>How many rows a preview takes under its caption: the tab strips, five lines, the command line.</summary>
+    internal const int PreviewRows = 7;
+
+    /// <summary>
+    /// A preview as <see cref="PreviewRows"/> rows of markup, <paramref name="width"/> wide: three panes on the
+    /// backdrop, each with its tab strip, and the command line across them. Every colour is the model's own, so the
+    /// window's cards and these rows say the same thing.
+    /// </summary>
+    internal static IReadOnlyList<string> PreviewLines(ThemePreview preview, int width)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        var indent = new string(' ', AffordanceWidth);
+        var room = Math.Max(3 * 8 + 4, width - AffordanceWidth - 1);
+        var paneWidth = (room - 4) / 3;
+        var full = (paneWidth * 3) + 4;
+        var backdrop = preview.Backdrop.ToHex();
+        var gap = $"[on {backdrop}] [/]";
+
+        var lines = new List<string>(PreviewRows);
+        var strips = new List<string>();
+        foreach (var pane in preview.Panes)
+        {
+            strips.Add(TabStrip(pane, paneWidth, backdrop));
+        }
+
+        lines.Add(indent + gap + string.Join(gap, strips) + gap);
+        var depth = preview.Panes.Max(p => p.Lines.Count);
+        for (var row = 0; row < Math.Min(depth, PreviewRows - 2); row++)
+        {
+            var cells = preview.Panes.Select(p => PaneLine(p, row, paneWidth));
+            lines.Add(indent + gap + string.Join(gap, cells) + gap);
+        }
+
+        while (lines.Count < PreviewRows - 1)
+        {
+            lines.Add(indent + gap + string.Join(gap, preview.Panes.Select(p => $"[on {p.Plane.ToHex()}]{new string(' ', paneWidth)}[/]")) + gap);
+        }
+
+        var line = preview.CommandLine;
+        var band = line.Band.ToHex();
+        var prompt = Clip(line.Prompt, full - 2);
+        var typed = Clip(line.Text, Math.Max(0, full - 3 - prompt.Length));
+        var used = prompt.Length + 1 + typed.Length;
+        lines.Add(indent + gap
+            + $"[{line.PromptInk.ToHex()} on {band}]{Escape(prompt)}[/][on {band}] [/]"
+            + $"[{line.Ink.ToHex()} on {band}]{Escape(typed)}[/]"
+            + $"[on {band}]{new string(' ', Math.Max(0, full - 2 - used))}[/]" + gap);
+        return lines;
+    }
+
+    private static string TabStrip(PreviewPane pane, int width, string backdrop)
+    {
+        var markup = new System.Text.StringBuilder();
+        var used = 0;
+        foreach (var tab in pane.Tabs)
+        {
+            var title = $" {tab.Title}";
+            var badge = tab.Badge is null ? string.Empty : $" {tab.Badge}";
+            var cost = title.Length + badge.Length + 1;
+            if (used + cost > width)
+            {
+                break;
+            }
+
+            var chip = tab.Chip.ToHex();
+            var weight = tab.Selected ? "bold " : string.Empty;
+            markup.Append($"[{weight}{tab.Ink.ToHex()} on {chip}]{Escape(title)}[/]");
+            if (tab.Badge is { } count && tab.BadgeInk is { } ink)
+            {
+                markup.Append($"[{ink.ToHex()} on {chip}]{Escape(" " + count)}[/]");
+            }
+
+            markup.Append($"[on {chip}] [/]");
+            used += cost;
+        }
+
+        if (used < width)
+        {
+            markup.Append($"[on {backdrop}]{new string(' ', width - used)}[/]");
+        }
+
+        return markup.ToString();
+    }
+
+    private static string PaneLine(PreviewPane pane, int row, int width)
+    {
+        var plane = pane.Plane.ToHex();
+        var markup = new System.Text.StringBuilder($"[on {plane}] [/]");
+        var used = 1;
+        if (row < pane.Lines.Count)
+        {
+            foreach (var run in pane.Lines[row])
+            {
+                var text = Clip(run.Text, width - 1 - used);
+                if (text.Length == 0)
+                {
+                    break;
+                }
+
+                var weight = run.Bold ? "bold " : string.Empty;
+                markup.Append($"[{weight}{run.Ink.ToHex()} on {plane}]{Escape(text)}[/]");
+                used += text.Length;
+            }
+        }
+
+        markup.Append($"[on {plane}]{new string(' ', Math.Max(0, width - used))}[/]");
+        return markup.ToString();
+    }
+
+    private static string Clip(string text, int width) =>
+        width <= 0 ? string.Empty : text.Length <= width ? text : width == 1 ? "…" : text[..(width - 1)] + "…";
+
+    /// <summary>One declared field as a row, by kind. A field with no binding the row understands is shown read-only.</summary>
+    private static OptionRow Row(SettingsField field, AppConfiguration config)
+    {
+        var reset = field.Binding is { } binding && !binding.IsDefault(config)
+            ? () => binding.Reset(config)
+            : (Action?)null;
+
+        switch (field)
+        {
+            case BoolField when field.Binding is SettingBinding<bool> flag:
+                return new OptionRow(
+                    field.Label, null, flag.Get(config), null,
+                    ScreenToggle.Bind(() => flag.Get(config), v => flag.Set(config, v)),
+                    Reset: reset, FieldId: field.Id);
+
+            case NumberField number when field.Binding is SettingBinding<int> count:
+                return new OptionRow(
+                    field.Label, count.Get(config).ToString(CultureInfo.InvariantCulture), null, null, null,
+                    ScreenField.Integer(
+                        field.Label, () => count.Get(config), v => count.Set(config, v), number.Minimum, number.Maximum),
+                    Reset: reset, FieldId: field.Id);
+
+            case ChoiceField choice when field.Binding is SettingBinding<string> named:
+                return new OptionRow(
+                    field.Label, named.Get(config), null, null, null,
+                    ScreenField.Choice(field.Label, () => named.Get(config), v => named.Set(config, v), choice.ChoicesIn(config)),
+                    Reset: reset, FieldId: field.Id);
+
+            case TextField when field.Binding is SettingBinding<string?> text:
+                return new OptionRow(
+                    field.Label, text.Get(config) ?? string.Empty, null, null, null,
+                    ScreenField.Optional(field.Label, () => text.Get(config), v => text.Set(config, v)),
+                    Reset: reset, FieldId: field.Id);
+
+            default:
+                return new OptionRow(
+                    field.Label, field.Binding?.Text(config) ?? string.Empty, null, Reset: reset, FieldId: field.Id);
+        }
+    }
+
+    /// <summary>The cells the meter table's label column takes (a label is at most eight).</summary>
+    private const int MeterLabelWidth = StatusMeter.MaxLabelLength + 1;
+
+    /// <summary>The cells its colour column takes: <c>magenta</c> and a cell.</summary>
+    private const int MeterColourWidth = 8;
+
+    /// <summary>The cells its <c>now</c> column takes: <c>1000/1000</c> and a cell.</summary>
+    private const int MeterNowWidth = 11;
+
+    /// <summary>The gap between two of its columns.</summary>
+    private const int MeterGap = 2;
+
+    /// <summary>How many received paths the box under the table lists before it says how many more there are.</summary>
+    internal const int ReceivedRows = 6;
+
+    /// <summary>What the received-data box is called, and the path fields' dropdown with it.</summary>
+    internal const string ReceivedCaption = "received on this connection";
+
+    /// <summary>What the <c>now</c> column says of a meter whose value has not arrived.</summary>
+    internal const string Waiting = "waiting";
+
+    /// <summary>
+    /// F7's meter table, appended to <paramref name="rows"/>: the column headings, one row per meter, the
+    /// add button, and — while the cursor is on one of those — the box of paths this connection has
+    /// received. Returns the removal Delete runs, when the cursor is on a meter.
+    /// </summary>
+    private static ScreenButton? MeterRows(
+        List<OptionRow> rows,
+        AppConfiguration config,
+        SettingBinding<List<StatusMeter>> binding,
+        GameDataStore? data,
+        int cursor,
+        ref int navigable)
+    {
+        var meters = binding.Get(config);
+        var reset = binding.IsDefault(config) ? null : (Action)(() => binding.Reset(config));
+        var received = data is null ? Array.Empty<(string Path, string Value)>() : ReceivedPaths(data);
+        var first = navigable;
+
+        rows.Add(new OptionRow(string.Empty, null, null, Static: true, FieldId: BuiltInSettings.MetersField,
+            Draw: (_, width) => MeterHeading(width, reset is not null)));
+
+        ScreenButton? remove = null;
+        for (var i = 0; i < meters.Count; i++)
+        {
+            var meter = meters[i];
+            var index = i;
+            var fields = new[]
+            {
+                ScreenField.Text("label", () => meter.Label, v => meter.Label = StatusMeter.Clip(v)),
+                PathField("value path", () => meter.Value, v => meter.Value = v ?? string.Empty, received, required: true),
+                PathField("maximum path", () => meter.Max, v => meter.Max = v, received, required: false),
+                ColourField(() => MeterColours.Label(meter), v => meter.Colour = v),
+            };
+            rows.Add(new OptionRow(
+                meter.Label, null, null,
+                Fields: fields,
+                Reset: reset,
+                FieldId: i == 0 ? BuiltInSettings.MetersField : null,
+                Where: ScreenChrome.Position("meter", index, meters.Count),
+                Draw: (edit, width) => MeterRow(meter, data, edit, width)));
+            if (navigable == cursor)
+            {
+                remove = ScreenButton.Remove(meters, index, first, $"meter {meter.Label}");
+            }
+
+            navigable++;
+        }
+
+        var addAt = navigable;
+        rows.Add(new OptionRow(
+            "[+ meter]", null, null,
+            Button: ScreenButton.Add("+ meter", meters, () => new StatusMeter { Label = "new" }, first),
+            Reset: reset,
+            FieldId: meters.Count == 0 ? BuiltInSettings.MetersField : null,
+            Draw: (_, _) => new string(' ', AffordanceWidth) + $"[{Accent}][[+ meter]][/]"));
+        navigable++;
+
+        if (cursor >= first && cursor <= addAt)
+        {
+            rows.AddRange(ReceivedBox(received));
+        }
+
+        return remove;
+    }
+
+    /// <summary>
+    /// A meter's value or maximum path: free text, with every path this connection has received offered
+    /// in the dropdown beside what it holds now. The current value heads the list, so opening the field
+    /// shows the whole list with it marked rather than narrowing to nothing.
+    /// </summary>
+    private static ScreenField PathField(
+        string label,
+        Func<string?> get,
+        Action<string?> set,
+        IReadOnlyList<(string Path, string Value)> received,
+        bool required)
+    {
+        var current = get();
+        var choices = new List<string>();
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            choices.Add(current);
+        }
+
+        choices.AddRange(received.Select(r => r.Path).Where(p => !string.Equals(p, current, StringComparison.Ordinal)));
+        var notes = received.ToDictionary(r => r.Path, r => r.Value, StringComparer.Ordinal);
+
+        return new ScreenField(
+            label,
+            () => get() ?? string.Empty,
+            value => required && string.IsNullOrWhiteSpace(value) ? $"{label} cannot be empty" : null,
+            value => set(string.IsNullOrWhiteSpace(value) ? null : value.Trim()),
+            choices.Count > 0 ? choices : null,
+            ChoiceNotes: notes,
+            ChoiceCaption: ReceivedCaption);
+    }
+
+    /// <summary>
+    /// A meter's colour: <see cref="MeterColours.Auto"/> (its label's default) or a highlight palette name, stepped with
+    /// ↑↓ or typed — <c>#rrggbb</c> too, as F2's highlight takes it. Stored through <see cref="MeterColours.TryNormalise"/>.
+    /// </summary>
+    private static ScreenField ColourField(Func<string> get, Action<string?> set) =>
+        new(
+            "colour",
+            get,
+            value => MeterColours.TryNormalise(value, out _) ? null : $"{value.Trim()} is not a colour",
+            value => set(MeterColours.TryNormalise(value, out var stored) ? stored : null),
+            MeterColours.Choices);
+
+    /// <summary>How wide the table's two path columns are at <paramref name="width"/>.</summary>
+    private static (int Value, int Max) PathWidths(int width)
+    {
+        var room = (width > 0 ? width : 100) - AffordanceWidth - MeterLabelWidth - MeterColourWidth - MeterNowWidth - (4 * MeterGap);
+        room = Math.Max(16, room);
+        return (room / 2, room - (room / 2));
+    }
+
+    private static string MeterHeading(int width, bool changed)
+    {
+        var (value, max) = PathWidths(width);
+        var gap = new string(' ', MeterGap);
+        var line = new string(' ', AffordanceWidth)
+            + "label".PadRight(MeterLabelWidth) + gap
+            + "value path".PadRight(value) + gap
+            + "maximum path".PadRight(max) + gap
+            + "colour".PadRight(MeterColourWidth) + gap
+            + "now";
+        return $"[dim]{line}[/]" + (changed ? Changed() : string.Empty);
+    }
+
+    /// <summary>
+    /// One meter: its three fields in their columns and what it reads now. While one of its fields is open
+    /// that field takes the rest of the row, so a long path is typed where it can be seen.
+    /// </summary>
+    private static string MeterRow(StatusMeter meter, GameDataStore? data, ScreenFieldEdit? edit, int width)
+    {
+        var (valueWidth, maxWidth) = PathWidths(width);
+        var gap = new string(' ', MeterGap);
+        var line = new System.Text.StringBuilder(new string(' ', AffordanceWidth));
+        var cells = new[]
+        {
+            (meter.Label, MeterLabelWidth), (meter.Value, valueWidth), (meter.Max ?? string.Empty, maxWidth),
+            (MeterColours.Label(meter), MeterColourWidth),
+        };
+        for (var i = 0; i < cells.Length; i++)
+        {
+            var (text, cell) = cells[i];
+            if (edit is { } open && open.Field == i)
+            {
+                var room = Math.Max(8, (width > 0 ? width : 100) - VisibleLength(line.ToString()) - 2);
+                line.Append(ScreenChrome.Field(string.Empty, Scrolled(open, room)));
+                return line.ToString();
+            }
+
+            var shown = string.IsNullOrEmpty(text) ? "—" : text;
+            var display = Escape(ElidePlain(shown, cell - 1).PadRight(cell - 1));
+            var ink = i == 3 ? MeterColourInk(meter) : ScreenPalette.Value;
+            line.Append(PadVisible(ScreenChrome.Field($"[{ink}]{display}[/]", null), cell)).Append(gap);
+        }
+
+        line.Append(Now(meter, data));
+        return line.ToString();
+    }
+
+    /// <summary>
+    /// The colour column's ink: the colour the meter is drawn in (its own, or <c>auto</c>'s default), held to the floor on
+    /// the field's well, so the name is its own sample; the value ink for a meter that takes the accent.
+    /// </summary>
+    private static string MeterColourInk(StatusMeter meter) =>
+        MeterColours.For(meter) is { } hex
+            ? Contrast.Legible(ToRgb(hex), ToRgb(ScreenPalette.FieldBg)).ToHex()
+            : ScreenPalette.Value;
+
+    private static Core.Text.Rgb ToRgb(string hex) => new(
+        Convert.ToByte(hex.Substring(1, 2), 16), Convert.ToByte(hex.Substring(3, 2), 16), Convert.ToByte(hex.Substring(5, 2), 16));
+
+    /// <summary>The <c>now</c> column: <c>412/500</c>, <c>412</c> with no maximum, or <see cref="Waiting"/>.</summary>
+    internal static string Now(StatusMeter meter, GameDataStore? data) =>
+        NowText(meter, data) is { } text
+            ? $"[bold {ScreenPalette.Value}]{Escape(text)}[/]"
+            : $"[{Muted}]{Waiting}[/]";
+
+    /// <summary>The <c>now</c> column as plain text, or null while the meter's value has not arrived.</summary>
+    internal static string? NowText(StatusMeter meter, GameDataStore? data)
+    {
+        if (data is null || StatusMeter.Read(data, meter.Value) is not { } value)
+        {
+            return null;
+        }
+
+        var max = string.IsNullOrWhiteSpace(meter.Max) ? null : StatusMeter.Read(data, meter.Max);
+        return StatusMeter.Fit(value, 5) + (max is null ? string.Empty : "/" + StatusMeter.Fit(max, 5));
+    }
+
+    /// <summary>
+    /// An open edit whose buffer is longer than <paramref name="room"/>, cut to the stretch around the caret
+    /// so the caret is always drawn — the buffer itself is untouched.
+    /// </summary>
+    private static ScreenFieldEdit Scrolled(ScreenFieldEdit edit, int room)
+    {
+        if (edit.Text.Length < room)
+        {
+            return edit;
+        }
+
+        var start = Math.Clamp(edit.Caret - room + 2, 0, edit.Text.Length);
+        var length = Math.Min(room - 1, edit.Text.Length - start);
+        return edit with { Text = edit.Text.Substring(start, length), Caret = edit.Caret - start };
+    }
+
+    private static string ElidePlain(string text, int width) => MarkupText.ElidePlain(text, width);
+
+    /// <summary>The box of received paths under the table, drawn while the cursor is in it.</summary>
+    private static IEnumerable<OptionRow> ReceivedBox(IReadOnlyList<(string Path, string Value)> received)
+    {
+        var indent = new string(' ', AffordanceWidth);
+        var widest = received.Count == 0 ? 0 : Math.Min(40, received.Max(r => r.Path.Length));
+        yield return Line($"{indent}[{Label}]┌ {ReceivedCaption}[/]");
+        if (received.Count == 0)
+        {
+            yield return Line($"{indent}[{Label}]│[/] [{Muted}]nothing yet — a meter shows once its value arrives[/]");
+        }
+
+        foreach (var (path, value) in received.Take(ReceivedRows))
+        {
+            yield return Line(
+                $"{indent}[{Label}]│[/] [{ScreenPalette.Value}]{Escape(ElidePlain(path, widest).PadRight(widest))}[/]"
+                + $"  [{Muted}]{Escape(ElidePlain(value, 20))}[/]");
+        }
+
+        var more = received.Count - ReceivedRows;
+        yield return Line(more > 0
+            ? $"{indent}[{Label}]└ {more.ToString(CultureInfo.InvariantCulture)} more · open a path and ↑↓ to pick one[/]"
+            : $"{indent}[{Label}]└ open a path and ↑↓ to pick one[/]");
+
+        static OptionRow Line(string markup) => new(string.Empty, null, null, Static: true, Draw: (_, _) => markup);
+    }
+
+    /// <summary>
+    /// Every value this connection's game data holds, as a path a meter can name and its text now: the
+    /// scalar fields of each GMCP package (and MSDP and MXP variables), objects walked a few levels deep and
+    /// arrays left out — a list of channels is not something a meter shows. Sorted by path.
+    /// </summary>
+    internal static IReadOnlyList<(string Path, string Value)> ReceivedPaths(GameDataStore data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        var found = new List<(string, string)>();
+        foreach (var entry in data.Entries)
+        {
+            Walk(entry.Package, entry.Data, 0);
+        }
+
+        return found.OrderBy(f => f.Item1, StringComparer.OrdinalIgnoreCase).ToList();
+
+        void Walk(string path, System.Text.Json.Nodes.JsonNode? node, int depth)
+        {
+            if (found.Count >= 512)
+            {
+                return;
+            }
+
+            switch (node)
+            {
+                case System.Text.Json.Nodes.JsonObject obj when depth < 4:
+                    foreach (var (key, child) in obj)
+                    {
+                        Walk(path + "." + key, child, depth + 1);
+                    }
+
+                    break;
+                case System.Text.Json.Nodes.JsonValue:
+                    if (data.GetText(path) is { } text)
+                    {
+                        found.Add((path, text));
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    /// <summary>The F7 screen body.</summary>
     public static List<string> TextAnsi() => Render(TextAnsiScreen());
 
     /// <summary>The F8 "Input" screen body.</summary>

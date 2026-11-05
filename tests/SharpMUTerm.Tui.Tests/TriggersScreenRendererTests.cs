@@ -117,7 +117,7 @@ public class TriggersScreenRendererTests
     {
         var lines = TriggersScreenRenderer.Render(Scene(), selectedTrigger: 0, routeTargets: Array.Empty<string>());
 
-        var heading = lines.Single(l => l.Contains("highlight") && !l.Contains("fg") && !l.Contains("bg"));
+        var heading = lines.Single(l => l.Contains("[dim]highlight[/]"));
         await Assert.That(heading).Contains("recoloured");
         await Assert.That(heading).DoesNotContain("[[x]]");
         await Assert.That(heading).DoesNotContain("[[ ]]");

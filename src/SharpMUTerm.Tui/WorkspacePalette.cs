@@ -113,25 +113,43 @@ internal static class WorkspacePalette
     internal static Rgb Tint(Theme theme, PaneTint tint)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Tinted(Surface(theme), tint, TintDepth);
+        return Tinted(Surface(theme), TintGround(theme), tint, TintDepth);
     }
 
     /// <summary>
     /// One plane wearing one character's colour: re-lit to <paramref name="depth"/> of its own
     /// luminance, then mixed toward the tint's hue at that same luminance. The two callers pass
     /// different depths, which is the whole composition rule — a pane takes the step down, the command
-    /// line takes hue only.
+    /// line takes hue only. <paramref name="ground"/> is the hue the tint is laid over
+    /// (<see cref="TintGround"/>); only its hue counts, since it is re-lit to the plane.
     /// </summary>
-    private static Rgb Tinted(Rgb plane, PaneTint tint, double depth)
+    private static Rgb Tinted(Rgb plane, Rgb? ground, PaneTint tint, double depth)
     {
         if (Anchor(tint) is not { } anchor)
         {
             return plane;
         }
 
-        var lit = AtLuma(plane, Luma(plane) * depth);
+        var lit = AtLuma(ground ?? plane, Luma(plane) * depth);
         return Mix(lit, AtLuma(anchor, Luma(lit)), TintStrength);
     }
+
+    /// <summary>
+    /// The hue a tint is laid over, when it is not the plane's own (null). The built-in Dark theme's planes are the
+    /// mockups' navy, and the ten anchors were picked against the near-neutral grey its surface used to be: laid over
+    /// navy, the residual blue drew the tints together for a dichromat (Moss and Ochre to 1.6 under protanopia, Teal
+    /// and Jade to 1.7 under deuteranopia, against a floor of 1.9). So on Dark a tinted plane keeps that grey's hue
+    /// (<see cref="DarkTintGround"/>), at its own luminance as before — every tinted plane, and the step between them,
+    /// is what it was; only the untinted plane is navy. Every other theme lays its tints over its own plane, and so does
+    /// the command line on every theme: it takes hue only, and its band is not one of the ten-plus-one a reader compares.
+    /// </summary>
+    private static Rgb? TintGround(Theme theme) =>
+        theme.Background == DarkBackground ? DarkTintGround : null;
+
+    private static readonly Rgb DarkBackground = ThemeLibrary.Dark().Background;
+
+    /// <summary>The Dark theme's surface before it was navy, whose hue its tints are laid over.</summary>
+    private static readonly Rgb DarkTintGround = new(0x18, 0x18, 0x1b);
 
     /// <summary>
     /// How far below the untinted surface a tinted pane sits. <b>Bounded from below by the focus step,
@@ -156,19 +174,30 @@ internal static class WorkspacePalette
     /// plane it is going onto, so what is fixed here is hue and saturation. Ten, spread around the wheel,
     /// so two characters' colours are recognised rather than compared; saturated, because chroma is
     /// bounded by luminance and these are re-lit onto a dark plane.
+    /// <para>
+    /// <b>Picked for colour-blind readers as well</b> (<c>TintColourVisionTests</c>): searched, within
+    /// 40° of each name's hue, for the set whose closest pair — among the ten and the untinted plane, on
+    /// all three themes — is furthest apart under simulated protanopia, deuteranopia and tritanopia,
+    /// without the closest pair for typical vision getting any closer and without the light theme's planes
+    /// leaving pastel. Worst pair, CIEDE2000: 2.05 protan, 2.22 deutan, 2.00 tritan on Dark (were 1.74,
+    /// 0.28, 0.83), 1.99 deutan on Solarized Dark; typical vision 3.96 (was 3.71). That is "two panes side
+    /// by side differ", not "a pane is recognised alone": ten planes at one luminance near L* 7 cannot be,
+    /// for a dichromat — the best found with the names ignored was about 2.2 — which is why a tinted
+    /// character's rail row and tab say the colour by name.
+    /// </para>
     /// </summary>
     private static Rgb? Anchor(PaneTint tint) => tint switch
     {
-        PaneTint.Slate => new Rgb(0x1e, 0x5c, 0xe0),
-        PaneTint.Teal => new Rgb(0x00, 0xa0, 0x94),
-        PaneTint.Moss => new Rgb(0x3f, 0xa8, 0x18),
-        PaneTint.Ochre => new Rgb(0xd4, 0x96, 0x00),
-        PaneTint.Ember => new Rgb(0xd8, 0x33, 0x1c),
-        PaneTint.Plum => new Rgb(0xb0, 0x2c, 0xd4),
-        PaneTint.Indigo => new Rgb(0x5a, 0x3c, 0xf0),
-        PaneTint.Azure => new Rgb(0x00, 0x90, 0xd8),
-        PaneTint.Jade => new Rgb(0x00, 0xb0, 0x60),
-        PaneTint.Rose => new Rgb(0xe0, 0x30, 0x7a),
+        PaneTint.Slate => new Rgb(0x17, 0x57, 0xe0),
+        PaneTint.Teal => new Rgb(0x2e, 0xa0, 0x7f),
+        PaneTint.Moss => new Rgb(0x48, 0xa8, 0x30),
+        PaneTint.Ochre => new Rgb(0xa1, 0x32, 0x00),
+        PaneTint.Ember => new Rgb(0xd8, 0x00, 0x18),
+        PaneTint.Plum => new Rgb(0x60, 0x2f, 0xa1),
+        PaneTint.Indigo => new Rgb(0x40, 0x40, 0xff),
+        PaneTint.Azure => new Rgb(0x00, 0x89, 0xce),
+        PaneTint.Jade => new Rgb(0x07, 0xb0, 0x6e),
+        PaneTint.Rose => new Rgb(0xc6, 0x17, 0x84),
         _ => null,
     };
 
@@ -216,7 +245,7 @@ internal static class WorkspacePalette
     internal static Rgb IdleBand(Theme theme, PaneTint tint)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Tinted(Scale(theme.StatusBackground, IdleBandScale), tint, depth: 1.0);
+        return Tinted(Scale(theme.StatusBackground, IdleBandScale), ground: null, tint, depth: 1.0);
     }
 
     /// <summary>
@@ -252,19 +281,102 @@ internal static class WorkspacePalette
     /// <summary>
     /// The plane everything that is not a pane sits on: the rail, the status line, and the gaps a split
     /// leaves between panes.
+    /// <para>
+    /// A light theme takes a shallower step (<see cref="LightBackdropScale"/>): the backdrop's ratio taken off a
+    /// near-white surface landed at mid-grey (<c>#b7b7b9</c>, L* 75, 21 L* under the panes), and a rail and status
+    /// row that grey read as disabled. The step on Light is now about 4 L*, Solarized Dark's size.
+    /// </para>
     /// </summary>
-    internal static Rgb Backdrop(Theme theme) => Recessed(Surface(theme));
+    internal static Rgb Backdrop(Theme theme)
+    {
+        var surface = Surface(theme);
+        return Contrast.RelativeLuminance(surface) < LightPlaneLuminance ? Recessed(surface) : Scale(surface, LightBackdropScale);
+    }
+
+    /// <summary>The backdrop as a fraction of a light theme's surface: about L* 91 under Light's L* 96 panes.</summary>
+    private const double LightBackdropScale = 0.95;
 
     /// <summary>
     /// One step behind a plane — the backdrop's step, reused for the chips of a tab strip's unselected
     /// tabs. A chip states one fact relative to its own strip: the selected tab is painted the plane its
     /// page is painted on, its siblings are recessed from it. Pane focus is not a term, because it is
     /// already in the plane.
+    /// <para>
+    /// A light plane takes a shallower step (<see cref="LightRecessScale"/>), for the backdrop's reason: the dark
+    /// themes' step off a near-white pane landed unselected chips and resting strip panels on a mid-grey (L* 75) that
+    /// read as disabled. Twice the light backdrop's step (about 9 L*), so a recessed chip or strip is still a step below
+    /// the pane and a step apart from the backdrop beside it.
+    /// </para>
     /// </summary>
-    internal static Rgb Recessed(Rgb plane) => Scale(plane, BackdropScale);
+    internal static Rgb Recessed(Rgb plane) =>
+        Scale(plane, Contrast.RelativeLuminance(plane) < LightPlaneLuminance ? BackdropScale : LightRecessScale);
+
+    /// <summary>
+    /// The plane the history half of a pane split by scrolling back is drawn on (the terminal mockup's <c>#1a1a20</c> over a
+    /// <c>#1e1e24</c> live tail): one small step <em>away from the text</em> off the pane's own plane — deeper on a dark
+    /// plane, toward white on a light one — so the rows being read and the rows still arriving are two planes, and the
+    /// step can only widen the contrast <see cref="ReadingPlane"/> already guarantees.
+    /// <para>
+    /// <b>A light plane with no room above it steps down instead</b> (<see cref="LightHistoryScale"/>): Light's focused pane
+    /// is white, so toward white was no step at all and the history was the pane (the wave 27 report), and its unfocused
+    /// pane had 2.7 L* of room. Where lifting gives less than <see cref="HistoryMinStep"/> L* the history is a 0.96 step
+    /// darker (about 3.5 L*). It never reaches the reading plane: only a pane near white lacks the room, and the reading
+    /// plane is the darkest (tinted, unfocused) pane, which has plenty and is lifted, so text still clears the floor on it
+    /// (<c>WorkspacePaletteTests.TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane</c>).
+    /// </para>
+    /// </summary>
+    internal static Rgb History(Rgb plane)
+    {
+        if (Contrast.RelativeLuminance(plane) < LightPlaneLuminance)
+        {
+            return Scale(plane, HistoryScale);
+        }
+
+        var lifted = Mix(plane, new Rgb(0xff, 0xff, 0xff), HistoryLift);
+        return Lightness(lifted) - Lightness(plane) >= HistoryMinStep ? lifted : Scale(plane, LightHistoryScale);
+    }
+
+    /// <summary>The history's step on a dark plane: the terminal mockup's ratio.</summary>
+    private const double HistoryScale = 0.87;
+
+    /// <summary>The history's step toward white on a light plane.</summary>
+    private const double HistoryLift = 0.6;
+
+    /// <summary>The least L* a light plane's history may differ from it by; below it the history steps down.</summary>
+    private const double HistoryMinStep = 3;
+
+    /// <summary>The history's step down on a light plane with no room above it: about 3.5 L* off white.</summary>
+    private const double LightHistoryScale = 0.96;
+
+    /// <summary>CIE L*: lightness as the eye reads it, even across the range.</summary>
+    private static double Lightness(Rgb rgb)
+    {
+        var y = Contrast.RelativeLuminance(rgb);
+        return y > 0.008856 ? (116 * Math.Cbrt(y)) - 16 : 903.3 * y;
+    }
+
+    /// <summary>The recess as a fraction of a light plane: about L* 87 under Light's L* 96 panes.</summary>
+    private const double LightRecessScale = 0.90;
 
     /// <summary>The one-cell hairline a split draws between two panes, and beside the rail.</summary>
     internal static Rgb Rule(Theme theme) => Mix(Surface(theme), theme.Border, RuleLift);
+
+    /// <summary>
+    /// The band a docked panel's heading is drawn on (<c>HERE</c>, <c>COMPOSE</c>, <c>VITALS</c>), the terminal mockups'
+    /// heading bar, and the scrolled-back band between a split pane's two viewports: the rule leaned toward
+    /// <see cref="Theme.Prompt"/>, so it is past every pane plane, the focused one included (a step above on a dark theme,
+    /// below on a light one), and a hue apart from the divider rule it may sit beside.
+    /// </summary>
+    internal static Rgb HeadingBand(Theme theme) => Mix(Rule(theme), theme.Prompt, HeadingLean);
+
+    /// <summary>How far <see cref="HeadingBand"/> leans from the rule toward the prompt colour.</summary>
+    private const double HeadingLean = 0.2;
+
+    /// <summary>A heading's words: the theme's text, held to body-text contrast (4.5:1) on <see cref="HeadingBand"/>.</summary>
+    internal static Rgb HeadingInk(Theme theme) => Contrast.Legible(theme.Foreground, HeadingBand(theme), HeadingFloor);
+
+    /// <summary>The floor a heading's words and accent are held to: small text, the status row's 4.5:1.</summary>
+    internal const double HeadingFloor = 4.5;
 
     /// <summary>
     /// A divider under the pointer, or being dragged: the hairline leaned toward the prompt colour, the anchor
@@ -273,20 +385,105 @@ internal static class WorkspacePalette
     internal static Rgb RuleHover(Theme theme) => Mix(Rule(theme), theme.Prompt, RuleHoverLean);
 
     /// <summary>
-    /// The chrome the header ribbon's character segment sits on — the chrome band lifted toward its own
-    /// foreground, so the segment reads as a chip against the band it ends on.
+    /// The floor the header's text is held to — WCAG AA for body text. The header is the one row every frame carries,
+    /// and its segment labels are names a reader looks for, not de-emphasis; <see cref="Contrast.Floor"/> (3:1) is for
+    /// the workspace's own chrome and left Light's ribbon at exactly 3.01:1.
     /// </summary>
-    internal static Rgb HeaderChip(Theme theme)
+    internal const double HeaderTextFloor = 4.5;
+
+    /// <summary>
+    /// A header ribbon segment's fill for <paramref name="theme"/>. A dark theme keeps the segment's own neon (the
+    /// identity the ribbon exists to show, inked in the dark background). A light theme gets a <em>deep</em> fill of the
+    /// same hue — darkened until the theme's own light background reads on it at <see cref="HeaderTextFloor"/> — and is
+    /// inked light, because Dark's neon with ink driven down to the floor read washed out. Both hosts read it: the cell
+    /// header and the native one (<c>ChromePalette.Brand</c>).
+    /// </summary>
+    internal static Rgb HeaderFill(Theme theme, Rgb fill)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Mix(theme.StatusBackground, theme.Foreground, ChipLift);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance
+            ? fill
+            : Contrast.Legible(fill, theme.Background, HeaderTextFloor);
     }
 
     /// <summary>
-    /// How far the header chip is lifted toward the theme's ink: enough that the wedge between the two
-    /// reads as a shape, no further, since this is a background for a name and not a highlight.
+    /// The ink on a header segment's fill: the theme's own background (dark on a dark theme's neon, light on a light
+    /// theme's deep fill), held to <see cref="HeaderTextFloor"/> against the fill it lands on.
     /// </summary>
-    private const double ChipLift = 0.22;
+    internal static Rgb HeaderInk(Theme theme, Rgb fill)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(theme.Background, fill, HeaderTextFloor);
+    }
+
+    /// <summary>
+    /// A notice's quiet text on the status row: the framework's <c>[dim]</c> grey, which is fixed and fell to 2.4:1 on
+    /// Light, replaced by the same grey held to <see cref="HeaderTextFloor"/> on <paramref name="plane"/>.
+    /// </summary>
+    internal static Rgb NoticeMuted(Theme theme, Rgb plane)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(new Rgb(0x80, 0x80, 0x80), plane, HeaderTextFloor);
+    }
+
+    /// <summary>The header's quiet text (the counts, the log state), held to <see cref="HeaderTextFloor"/> on its band.</summary>
+    internal static Rgb HeaderMuted(Theme theme) => HeaderMuted(theme, theme?.StatusBackground ?? throw new ArgumentNullException(nameof(theme)));
+
+    /// <summary>The header's quiet text held to <see cref="HeaderTextFloor"/> on <paramref name="plane"/>.</summary>
+    internal static Rgb HeaderMuted(Theme theme, Rgb plane)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(Mix(plane, theme.StatusForeground, MutedLean), plane, HeaderTextFloor);
+    }
+
+    /// <summary>
+    /// The plane a host draws its native header (and its footer and the command line's strip) on. A dark theme lifts the
+    /// panels' plane a step (<see cref="NativeChromeLift"/>), the mockups' header over its navigation. A light theme's status band is a tinted grey (Light's lavender
+    /// <c>#dcdce6</c>) that sat beside the neutral rail and footer as a third, unrelated grey; there the header shares the
+    /// backdrop with the rail and the footer, and the rule under it is the boundary. Native only: the cell header keeps
+    /// its band.
+    /// </summary>
+    internal static Rgb NativeHeaderPlane(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance ? Scale(Surface(theme), NativeChromeLift) : Backdrop(theme);
+    }
+
+    /// <summary>
+    /// The plane a host draws its native sidebar on. A dark theme gives it the panels' plane — the unfocused pane's
+    /// surface, the mockups' <c>#141822</c> navigation beside a <c>#171b24</c> header — and a hairline is its edge; a light
+    /// theme keeps the backdrop. Native only: the cell rail keeps the backdrop.
+    /// </summary>
+    internal static Rgb NativeRailPlane(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance ? Surface(theme) : Backdrop(theme);
+    }
+
+    /// <summary>
+    /// How far a dark theme's native header, footer and command-line strip are lifted off the panels' plane: Dark's
+    /// <c>#151921</c> to the mockups' <c>#171b24</c>.
+    /// </summary>
+    private const double NativeChromeLift = 1.1;
+
+    /// <summary>
+    /// The low cue on a meter (a vital below <c>StatusMeterRenderer.LowShare</c>): its bar, its value and its <c>low</c>
+    /// mark, in both hosts — the settings screens' warning red (<see cref="ScreenPalette.Warn"/>, the mockups' low mana)
+    /// held to <see cref="HeaderTextFloor"/> on <paramref name="plane"/>. It was the notice amber on a dark theme until
+    /// meters had colours of their own: movement is gold, and an amber low cue said nothing beside it. A red pushed down
+    /// to a light plane's floor stays red, where the amber turned olive (UX audit #29).
+    /// </summary>
+    internal static Rgb Low(Theme theme, Rgb plane)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.Legible(LowBase, plane, HeaderTextFloor);
+    }
+
+    /// <summary>The low cue before the plane has said how deep it must be.</summary>
+    private static readonly Rgb LowBase = new(0xff, 0x6b, 0x6b);
+
+    /// <summary>How far the header's quiet text leans from its band toward its ink before the floor is applied.</summary>
+    private const double MutedLean = 0.55;
 
     /// <summary>
     /// Every plane a pane's output can be painted on — the untinted surface and all ten tints, each
@@ -317,6 +514,16 @@ internal static class WorkspacePalette
     {
         ArgumentNullException.ThrowIfNull(theme);
         return Extreme(PanePlanes(theme), Surface(theme));
+    }
+
+    /// <summary>
+    /// Whether a theme's panes are dark — a foreground on them is lifted rather than darkened. The map's area colours
+    /// take their dark or light set by this (<c>MapAreaPalette.For</c>).
+    /// </summary>
+    internal static bool DarkPanes(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(Surface(theme)) < LightPlaneLuminance;
     }
 
     /// <summary>

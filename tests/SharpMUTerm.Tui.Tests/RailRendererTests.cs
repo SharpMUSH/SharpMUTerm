@@ -33,10 +33,14 @@ public class RailRendererTests
     }
 
     [Test]
-    public async Task Render_WorldCarriesAccentSpine()
+    public async Task Render_WorldIsABoldNameInTheCharacterColumnWithNoSpine()
     {
+        // The terminal mockup's rail: the world's accent is its characters' dots, and its name lines up with their ▸.
         var lines = RailRenderer.Render(Scene());
-        await Assert.That(lines.Any(l => l.Contains("#00f5b7") && l.Contains("Aetherfall"))).IsTrue();
+        var world = lines.Single(l => l.Contains("Aetherfall"));
+        await Assert.That(world).DoesNotContain("▚");
+        await Assert.That(MarkupText.Plain(world)).StartsWith("  Aetherfall");
+        await Assert.That(MarkupText.Plain(lines[0])).IsEqualTo("  CONNECTIONS");
     }
 
     [Test]
@@ -85,7 +89,7 @@ public class RailRendererTests
     {
         var lines = RailRenderer.RenderCollapsed(Scene());
         // Two world separators (▚), and Corvid's initial with a connected dot + unread count.
-        await Assert.That(lines.Count(l => l.Contains("▚"))).IsEqualTo(2);
+        await Assert.That(lines.Count(l => l.Contains(RailRenderer.CollapsedWorldMark))).IsEqualTo(2);
         await Assert.That(lines.Any(l => l.Contains("●") && l.Contains("C") && l.Contains("5"))).IsTrue();
         await Assert.That(lines.Any(l => l.Contains("○") && l.Contains("R"))).IsTrue();
     }

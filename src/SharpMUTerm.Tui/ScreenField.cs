@@ -44,6 +44,11 @@ namespace SharpMUTerm.Tui;
 /// chrome's, applied at the last moment before markup (see <c>ScreenChrome.Field</c>), so the plaintext
 /// never exists in a rendered frame that a snapshot, a screenshot or a shoulder could read.
 /// </param>
+/// <param name="ChoiceNotes">
+/// A dim note drawn beside a choice in the dropdown, by choice — what a game-data path holds right now, on
+/// F7's meter editor. The note is never part of the value: ↑↓ still put only the choice in the buffer.
+/// </param>
+/// <param name="ChoiceCaption">What the dropdown is called in place of <c>suggestions</c>, or null.</param>
 internal readonly record struct ScreenFieldEdit(
     int Field,
     string Text,
@@ -53,7 +58,9 @@ internal readonly record struct ScreenFieldEdit(
     IReadOnlyList<string>? Choices = null,
     bool ClosedChoices = false,
     bool Capture = false,
-    bool Masked = false)
+    bool Masked = false,
+    IReadOnlyDictionary<string, string>? ChoiceNotes = null,
+    string? ChoiceCaption = null)
 {
     /// <summary>Whether the open field knows any values at all, whatever the buffer currently is.</summary>
     internal bool HasChoices => Choices is { Count: > 0 };
@@ -129,7 +136,9 @@ internal readonly record struct ScreenField(
     bool ClosedChoices = false,
     bool Capture = false,
     bool Masked = false,
-    Func<int>? Follow = null)
+    Func<int>? Follow = null,
+    IReadOnlyDictionary<string, string>? ChoiceNotes = null,
+    string? ChoiceCaption = null)
 {
     /// <summary>Longest rejection message kept; regex parser errors run to several lines otherwise.</summary>
     private const int MaxErrorLength = 44;
@@ -572,6 +581,27 @@ internal readonly record struct ScreenField(
         return new ScreenField(label, get, ValidatePattern, set);
     }
 
+    /// <summary>
+    /// A trigger's pattern, refused unless it can be used as the kind the rule reads it as — only a regex
+    /// can fail to parse, and the plain kinds refuse only the patterns that would match every line
+    /// (<see cref="TriggerPatterns.Validate"/>).
+    /// </summary>
+    internal static ScreenField TriggerPattern(
+        string label, Func<string> get, Action<string> set, Func<TriggerMatchType> type)
+    {
+        ArgumentNullException.ThrowIfNull(get);
+        ArgumentNullException.ThrowIfNull(set);
+        ArgumentNullException.ThrowIfNull(type);
+
+        return new ScreenField(
+            label,
+            get,
+            value => TriggerPatterns.Validate(type(), value) is { } reason
+                ? (reason.Length > MaxErrorLength ? string.Concat(reason.AsSpan(0, MaxErrorLength - 1), "…") : reason)
+                : null,
+            set);
+    }
+
     /// <summary>A <see cref="Pattern"/> that may be blank, held as null when it is: a pattern a world need not have.</summary>
     internal static ScreenField OptionalPattern(string label, Func<string?> get, Action<string?> set)
     {
@@ -738,7 +768,7 @@ internal readonly record struct ScreenField(
     /// </summary>
     /// <param name="taken">Names the binding already holding a descriptor, or null when it is free.</param>
     internal static ScreenField Key(
-        string label, Func<string> get, Action<string> set, Func<string, string?> taken)
+        HostKeys keys, string label, Func<string> get, Action<string> set, Func<string, string?> taken)
     {
         ArgumentNullException.ThrowIfNull(get);
         ArgumentNullException.ThrowIfNull(set);
@@ -747,7 +777,7 @@ internal readonly record struct ScreenField(
         return new ScreenField(
             label,
             get,
-            value => MacroKeys.Verdict(value) is { Fires: false } verdict ? verdict.Reason : taken(value),
+            value => MacroKeys.Verdict(keys, value) is { Fires: false } verdict ? verdict.Reason : taken(value),
             value => set(MacroKey.Canonicalise(value) ?? value.Trim()),
             Capture: true);
     }

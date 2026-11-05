@@ -167,6 +167,14 @@ internal static class MacroKeys
         // So ⌥G is the whole repeat, and no surface advertises a chord that goes back — going back is
         // ⌃F again, which is one keystroke more and is a key that exists.
         new(ConsoleModifiers.Alt, ConsoleKey.G, "goes to the next search hit"),
+        // The layouts list (⌃P ▸ Layouts). ⌥M is `ESC m`, a printable byte after ESC, so it arrives as one Alt
+        // chord like ⌥D/⌥R/⌥F; nothing in the framework or the command line's key table takes it, and the
+        // window host does not keep it for itself (HostKeys.Reserved holds ⌥⏎ and the paste chords).
+        new(ConsoleModifiers.Alt, ConsoleKey.M, "opens Layouts"),
+        // The connection sidebar from the keyboard (⌃P ▸ Move into the connection sidebar). ⌥C is `ESC c`, a printable
+        // byte after ESC, so one Alt chord in the terminal; the window reports it whole and keeps nothing on it
+        // (HostKeys.Reserved is ⌥⏎ and the paste chords). C for CONNECTIONS, the sidebar's own heading.
+        new(ConsoleModifiers.Alt, ConsoleKey.C, "moves the keyboard into the connection sidebar"),
         // The character cycle. Letters and not digits because the digit row is spent (⌥N windows, ⌃B N
         // panes) and there is no third digit-bearing modifier this terminal delivers: read off a pty,
         // kitty writes ⌥⇧1 as `CSI 49;4u` and ⌃⇧N as `CSI 110;6u` — kitty-keyboard-protocol sequences
@@ -175,6 +183,9 @@ internal static class MacroKeys
         // are read off.
         new(ConsoleModifiers.Alt, ConsoleKey.J, "goes to the next character"),
         new(ConsoleModifiers.Alt, ConsoleKey.K, "goes to the previous character"),
+        // The send group's line (⌃P ▸ Send to group). ⌥S is `ESC s`, one Alt chord like the rest; nothing here, in the
+        // framework or in the window's HostKeys.Reserved takes it. S for send; ⌃S is the composer's own send.
+        new(ConsoleModifiers.Alt, ConsoleKey.S, "sends the command line to the send group"),
         // F1 is the composer and not a settings screen, which is why it sits ahead of the F2–F9 block
         // rather than in it: those keys all open the same overlay from one table, and this one opens a
         // different surface. It is claimed here for the same reason they are — F4 reads this list to say
@@ -185,7 +196,7 @@ internal static class MacroKeys
         new((ConsoleModifiers)0, ConsoleKey.F4, "opens this screen"),
         new((ConsoleModifiers)0, ConsoleKey.F5, "opens Worlds"),
         new((ConsoleModifiers)0, ConsoleKey.F6, "opens Timers"),
-        new((ConsoleModifiers)0, ConsoleKey.F7, "opens Text & ANSI"),
+        new((ConsoleModifiers)0, ConsoleKey.F7, "opens Text & display"),
         new((ConsoleModifiers)0, ConsoleKey.F8, "opens Input"),
         new((ConsoleModifiers)0, ConsoleKey.F9, "opens the character's log"),
         // F10 is Packages, the composer's case: a different surface, claimed so F4 says so.
@@ -194,6 +205,67 @@ internal static class MacroKeys
 
     /// <summary>The claimed chords by canonical descriptor, built once from <see cref="AppShortcuts"/>.</summary>
     private static readonly Dictionary<string, string> Claimed = BuildClaims();
+
+    /// <summary>
+    /// What the app's own global shortcut on this descriptor does, or null when no shortcut holds it. A macro
+    /// on such a chord never runs: a global shortcut is tried before any window sees the key, which is why
+    /// <see cref="Verdict"/> reports it <see cref="MacroKeyDelivery.Taken"/>.
+    /// </summary>
+    internal static string? ClaimedBy(string? descriptor) =>
+        MacroKey.Canonicalise(descriptor) is { } canonical && Claimed.TryGetValue(canonical, out var does) ? does : null;
+
+    /// <summary>
+    /// What the client does with this chord <em>after</em> <c>DispatchMacro</c> has had it, or null when
+    /// nothing does. A macro bound here runs and the client's own action does not — the chord is the user's
+    /// once they bind it, which is why <see cref="Verdict"/> reports these as firing. F4 marks such a binding
+    /// as a warning rather than a fault (<see cref="KeyClashes"/>).
+    /// <para>
+    /// The list is the main window's key chain below <c>DispatchMacro</c>, in its order: the pane resize
+    /// (<c>TryResizeKey</c>), copy, pane selection (<c>TryFocusKey</c>), scrollback (<c>TryScrollKey</c>),
+    /// recall (<c>TryRecallKey</c>), then the command line's own table (<c>InputBarControl.ProcessKey</c>).
+    /// Unmodified keys are not here: a macro cannot be bound to one (the prompt has them).
+    /// </para>
+    /// </summary>
+    internal static string? YieldedBy(string? descriptor) =>
+        MacroKey.Canonicalise(descriptor) is { } canonical && Yielded.TryGetValue(canonical, out var does) ? does : null;
+
+    private static readonly Dictionary<string, string> Yielded = BuildYielded();
+
+    private static Dictionary<string, string> BuildYielded()
+    {
+        var yielded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string key, bool ctrl, bool alt, bool shift, string does) =>
+            yielded[MacroKey.Describe(key, ctrl, alt, shift)] = does;
+
+        foreach (var arrow in new[] { "Left", "Right", "Up", "Down" })
+        {
+            Add(arrow, ctrl: false, alt: true, shift: true, "resizes the pane");
+            Add(arrow, ctrl: true, alt: false, shift: false, "moves between panes");
+        }
+
+        Add("C", ctrl: true, alt: false, shift: false, "copies the selection");
+        Add("Home", ctrl: true, alt: false, shift: false, "scrolls to the oldest output");
+        Add("End", ctrl: true, alt: false, shift: false, "goes back to live output");
+        Add("Up", ctrl: false, alt: false, shift: true, "scrolls the pane");
+        Add("Down", ctrl: false, alt: false, shift: true, "scrolls the pane");
+        Add("Up", ctrl: false, alt: true, shift: false, "recalls history");
+        Add("Down", ctrl: false, alt: true, shift: false, "recalls history");
+        Add("Left", ctrl: false, alt: true, shift: false, "moves a word");
+        Add("Right", ctrl: false, alt: true, shift: false, "moves a word");
+        foreach (var key in new[] { "Left", "Right", "Home", "End" })
+        {
+            Add(key, ctrl: false, alt: false, shift: true, "selects in the command line");
+        }
+
+        Add("A", ctrl: true, alt: false, shift: false, "selects the command line");
+        Add("X", ctrl: true, alt: false, shift: false, "cuts the selection");
+        Add("E", ctrl: true, alt: false, shift: false, "goes to the end of the line");
+        Add("K", ctrl: true, alt: false, shift: false, "deletes to the end of the line");
+        Add("U", ctrl: true, alt: false, shift: false, "deletes to the start of the line");
+        Add("Z", ctrl: true, alt: false, shift: false, "undoes");
+        Add("Y", ctrl: true, alt: false, shift: false, "redoes");
+        return yielded;
+    }
 
     /// <summary>
     /// The canonical descriptor for a keystroke, whatever it is worth — what the capture mode writes
@@ -216,10 +288,9 @@ internal static class MacroKeys
     /// test rather than trusted — a list of candidates that drifted from the verdicts would hand out
     /// keys that cannot be reached, which is the exact defect it exists to prevent.
     /// </summary>
-    internal static IReadOnlyList<string> Bindable { get; } = BuildBindable();
-
-    private static List<string> BuildBindable()
+    internal static IReadOnlyList<string> Bindable(HostKeys keys)
     {
+        ArgumentNullException.ThrowIfNull(keys);
         var candidates = new List<string>();
         for (var f = 1; f <= 12; f++)
         {
@@ -231,7 +302,7 @@ internal static class MacroKeys
             candidates.Add(MacroKey.Describe($"F{f}", ctrl: true));
         }
 
-        return candidates.FindAll(c => Verdict(c).Fires);
+        return candidates.FindAll(c => Verdict(keys, c).Fires);
     }
 
     /// <summary>
@@ -240,21 +311,36 @@ internal static class MacroKeys
     /// <see cref="Capture"/> filtered by <see cref="Verdict"/> so that the rows F4 draws as live are
     /// precisely the ones this returns for.
     /// </summary>
-    internal static string? Descriptor(ConsoleKeyInfo key) =>
-        Capture(key) is { } descriptor && Verdict(descriptor).Fires ? descriptor : null;
+    internal static string? Descriptor(HostKeys keys, ConsoleKeyInfo key) =>
+        Capture(key) is { } descriptor && Verdict(keys, descriptor).Fires ? descriptor : null;
 
     /// <summary>
-    /// What a stored descriptor is worth on this host. Every answer is a fact about the parser, the app's
-    /// own shortcuts, or the prompt — never a guess — and the reason is short enough to print on the
-    /// binding's own row.
+    /// What a stored descriptor is worth on the host whose keys are <paramref name="keys"/>. Every answer is a
+    /// fact about the host's input (what its terminal writes, or what its window reports), the chords the host
+    /// keeps, the app's own shortcuts, or the prompt — never a guess — and the reason is short enough to print on
+    /// the binding's own row. The terminal and the window differ: in a window ⌃digit, ⌃⇧letter and ⌥O arrive, and
+    /// ⌥⏎ never reaches the client at all.
     /// </summary>
-    internal static MacroKeyVerdict Verdict(string? descriptor)
+    internal static MacroKeyVerdict Verdict(HostKeys keys, string? descriptor)
     {
+        ArgumentNullException.ThrowIfNull(keys);
         if (!MacroKey.TryParse(descriptor, out var parts))
         {
             return Never("not a key this client knows");
         }
 
+        // The host acts on these before the client sees the key, so nothing the client holds can outrank them.
+        if (keys.ReservedFor(parts) is { } reserved)
+        {
+            return new MacroKeyVerdict(MacroKeyDelivery.Taken, $"{reserved.Chord.Glyph} {reserved.Action}");
+        }
+
+        if (keys.IsNewline(parts))
+        {
+            return new MacroKeyVerdict(MacroKeyDelivery.Taken, $"{keys.Newline.Glyph} is the newline");
+        }
+
+        var whole = keys.ReportsChordsWhole;
         var canonical = MacroKey.Describe(parts.Key, parts.Ctrl, parts.Alt, parts.Shift);
         if (Claimed.TryGetValue(canonical, out var does))
         {
@@ -264,14 +350,16 @@ internal static class MacroKeys
         if (parts.Key.Length == 4 && parts.Key.StartsWith("Num", StringComparison.Ordinal)
             && char.IsAsciiDigit(parts.Key[3]))
         {
-            // No DECKPAM is ever sent and no application-keypad SS3 is decoded, so the numpad either
-            // reports as the main row's digits or is dropped. Either way this descriptor never arrives.
-            return Never("no numpad key ever arrives");
+            // A window reads the physical key (HostKeys.DeliversNumpad). A terminal is sent no DECKPAM and no
+            // application-keypad SS3 is decoded, so its numpad either reports as the main row's digits or is
+            // dropped. Either way this descriptor never arrives there.
+            return keys.DeliversNumpad ? new MacroKeyVerdict(MacroKeyDelivery.Fires) : Never("no numpad key ever arrives");
         }
 
         if (parts.Ctrl && parts.Alt)
         {
-            return Never("Ctrl+Alt arrives as two keys");
+            // A window hands Ctrl+Alt to the keyboard layout as AltGr, which types a character instead.
+            return Never(whole ? "Ctrl+Alt is AltGr here: it types a character" : "Ctrl+Alt arrives as two keys");
         }
 
         if (IsFunction(parts.Key))
@@ -281,7 +369,7 @@ internal static class MacroKeys
 
         if (IsLetter(parts.Key) || IsDigit(parts.Key))
         {
-            return Chord(parts);
+            return Chord(parts, whole);
         }
 
         if (Navigation.Contains(parts.Key))
@@ -293,7 +381,7 @@ internal static class MacroKeys
             // the pane-resize chord was on it, was reported dead, and moved to Alt+Shift because of this.
             // The vertical pair is not listed: kitty_mod+up/down is scroll_line_up/down, which returns
             // "passthrough" while the alternate screen is up, so those do arrive.
-            if (parts.Ctrl && parts.Shift && !parts.Alt && parts.Key is "Left" or "Right")
+            if (!whole && parts.Ctrl && parts.Shift && !parts.Alt && parts.Key is "Left" or "Right")
             {
                 return Never("the terminal keeps ⌃⇧←/→ for its tabs");
             }
@@ -307,7 +395,8 @@ internal static class MacroKeys
         // letter, and it is here rather than in Chord() because Chord() only sees letters and digits.
         if (parts.Ctrl && ControlBytes.TryGetValue(parts.Key, out var spentOn))
         {
-            return Never($"the terminal sends {spentOn} instead");
+            // A window reports ⌃Tab as itself.
+            return whole ? new MacroKeyVerdict(MacroKeyDelivery.Fires) : Never($"the terminal sends {spentOn} instead");
         }
 
         return Never("only F-keys and Ctrl/Alt chords arrive");
@@ -322,11 +411,17 @@ internal static class MacroKeys
     /// which is why the window-jump chords are on it — <see cref="AppShortcuts"/> then reports ⌥1–⌥9 as
     /// taken through <see cref="Claimed"/>, and ⌥0 stays free for a macro.
     /// </summary>
-    private static MacroKeyVerdict Chord(MacroKeyParts parts)
+    private static MacroKeyVerdict Chord(MacroKeyParts parts, bool whole)
     {
         if (!parts.Ctrl && !parts.Alt)
         {
             return new MacroKeyVerdict(MacroKeyDelivery.Taken, "plain keys type into the prompt");
+        }
+
+        // A window reports the key and its modifiers as pressed: no control byte, no ESC prefix, no SS3.
+        if (whole)
+        {
+            return new MacroKeyVerdict(MacroKeyDelivery.Fires);
         }
 
         if (parts.Ctrl)
@@ -432,6 +527,9 @@ internal static class MacroKeys
 
         return claims;
     }
+
+    /// <summary>The descriptor name of a <see cref="ConsoleKey"/>, or null (see <see cref="Name"/>).</summary>
+    internal static string? NameOf(ConsoleKey key) => Name(key);
 
     /// <summary>
     /// The descriptor name of a <see cref="ConsoleKey"/>, or null for one a binding cannot be written

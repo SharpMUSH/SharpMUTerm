@@ -18,8 +18,11 @@ public class NewlineKeyTests
         await Assert.That(before.Caret.Y).IsEqualTo(draftRow);
 
         // Still drafted, not sent, and the caret has gone down a row to the start of the new one.
+        // Below 100 columns the empty bar is one row and grows upwards by the row the newline added, so the draft is
+        // read off the frame after the key rather than assumed to have stayed where it was.
         await Assert.That(ClientResizeTests.Rows(after).Count(r => r.Contains("say hello there"))).IsEqualTo(1);
-        await Assert.That(after.Caret.Y).IsEqualTo(draftRow + 1);
+        var draftAfter = Array.FindIndex(ClientResizeTests.Rows(after), r => r.Contains("say hello there"));
+        await Assert.That(after.Caret.Y).IsEqualTo(draftAfter + 1);
         await Assert.That(after.Caret.X).IsLessThan(before.Caret.X);
     }
 }

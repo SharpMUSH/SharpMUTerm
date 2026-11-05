@@ -9,7 +9,8 @@ public readonly record struct PaneRect(int X, int Y, int Width, int Height)
 
 /// <summary>
 /// Turns a <see cref="LayoutNode"/> split tree into concrete per-pane rectangles for a given
-/// bounding area, reserving one cell for the divider between siblings and honouring each split's
+/// bounding area, reserving one cell for the divider between siblings (where <see cref="PaneExtent.DividerRows"/>
+/// says a stacked split draws one) and honouring each split's
 /// fractional <see cref="SplitNode.Sizes"/>. Pure and deterministic; the SharpConsoleUI layer maps
 /// the resulting <see cref="PaneRect"/>s onto views. When a pane is zoomed it fills the whole area.
 /// </summary>
@@ -54,8 +55,9 @@ public static class LayoutSolver
         var isRow = split.Direction == SplitDirection.Row;
 
         var span = isRow ? rect.Width : rect.Height;
-        var forChildren = Math.Max(0, span - (DividerThickness * (count - 1)));
-        var sizes = Distribute(forChildren, split.Sizes);
+        var forChildren = Math.Max(0, span - PaneExtent.Dividers(split));
+        // Rows honour a pane's declared height (a strip is as tall as its content); columns are always shares.
+        var sizes = isRow ? Distribute(forChildren, split.Sizes) : PaneExtent.DistributeRows(forChildren, split);
 
         var cursor = isRow ? rect.X : rect.Y;
         for (var i = 0; i < count; i++)
@@ -64,7 +66,7 @@ public static class LayoutSolver
                 ? new PaneRect(cursor, rect.Y, sizes[i], rect.Height)
                 : new PaneRect(rect.X, cursor, rect.Width, sizes[i]);
             Place(split.Children[i], childRect, result);
-            cursor += sizes[i] + DividerThickness;
+            cursor += sizes[i] + (i + 1 < count ? PaneExtent.DividerRows(split, i) : 0);
         }
     }
 

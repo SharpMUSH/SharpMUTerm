@@ -42,7 +42,10 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
 
         using var fill = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
 
-        // Backgrounds, as runs: one rectangle per stretch of a row sharing a colour.
+        // Backgrounds, as runs: one rectangle per stretch of a row sharing a colour. A row's last run is carried on to the
+        // canvas's right edge: a window is rarely a whole number of cells wide, and the pixels past the last column would
+        // otherwise be a strip of the default background beside whatever pane ends there.
+        var right = canvas.LocalClipBounds.Right;
         for (var y = 0; y < frame.Height; y++)
         {
             var start = 0;
@@ -58,7 +61,8 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
                 if (current != DefaultBackground)
                 {
                     fill.Color = current;
-                    canvas.DrawRect(start * cw, y * ch, (x - start) * cw, ch, fill);
+                    var width = x == frame.Width ? Math.Max((x - start) * cw, right - (start * cw)) : (x - start) * cw;
+                    canvas.DrawRect(start * cw, y * ch, width, ch, fill);
                 }
 
                 start = x;
@@ -239,14 +243,14 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
         }
     }
 
-    private SKColor Background(GridCell cell)
+    internal SKColor Background(GridCell cell)
     {
         var colour = (cell.Decorations & TextDecoration.Invert) != 0 ? cell.Foreground : cell.Background;
         var fallback = (cell.Decorations & TextDecoration.Invert) != 0 ? DefaultForeground : DefaultBackground;
         return Resolve(colour, fallback);
     }
 
-    private SKColor Foreground(GridCell cell)
+    internal SKColor Foreground(GridCell cell)
     {
         var inverted = (cell.Decorations & TextDecoration.Invert) != 0;
         var colour = Resolve(inverted ? cell.Background : cell.Foreground, inverted ? DefaultBackground : DefaultForeground);
@@ -267,6 +271,12 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
     /// plane handed to the terminal's background (F7's transparency fallback), which a window has no
     /// translucency behind to show — so it is the default background too.
     /// </summary>
+    /// <summary>A cell's background colour as drawn, for a native view laid over the cells (the command line's field).</summary>
+    public SKColor Background(Color colour) => Resolve(colour, DefaultBackground);
+
+    /// <summary>A cell's ink as drawn, before any dimming.</summary>
+    public SKColor Foreground(Color colour) => Resolve(colour, DefaultForeground);
+
     private static SKColor Resolve(Color colour, SKColor fallback) =>
         colour.IsDefault || colour.A == 0 ? fallback : new SKColor(colour.R, colour.G, colour.B);
 }

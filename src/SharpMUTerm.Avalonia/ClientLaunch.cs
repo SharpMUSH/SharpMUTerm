@@ -1,4 +1,5 @@
 using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Text;
 using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Avalonia;
@@ -14,6 +15,10 @@ namespace SharpMUTerm.Avalonia;
 /// </summary>
 internal static class ClientLaunch
 {
+    // The live client's passwords: the OS credential store first, secrets.json behind it. Made by the live load and
+    // handed to the live run, whose saves need what the load learned; the demo has none and touches neither.
+    private static CredentialVault? _vault;
+
     public static AppConfiguration LoadConfiguration(WindowOptions options, List<string> notices)
     {
         if (options.Demo)
@@ -25,7 +30,8 @@ internal static class ClientLaunch
 
         // --theme is for the demo only: the live configuration is saved on the way out, and a flag given for one
         // launch must not become the user's theme.
-        return Tui.Program.LoadConfiguration(notices.Add);
+        _vault = Tui.Program.LiveVault();
+        return Tui.Program.LoadConfiguration(notices.Add, _vault);
     }
 
     /// <summary>Runs the client on <paramref name="driver"/> until it quits; blocks the calling thread.</summary>
@@ -37,13 +43,17 @@ internal static class ClientLaunch
             return app.Run([]);
         }
 
-        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard));
+        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard, options.Chrome), vault: _vault);
     }
 
     /// <summary>The demo client, with its <c>--view</c> scene laid out and not yet running.</summary>
     public static SharpMUTermApp Demo(WindowOptions options, AppConfiguration config, AvaloniaConsoleDriver driver, Action<string>? clipboard)
     {
-        var app = new SharpMUTermApp(config, WindowHost.Create(driver, clipboard));
+        // The installed dictionary, read-only: the demo's ⌥W adds a word for the run and writes no user-words file.
+        var app = new SharpMUTermApp(
+            config,
+            WindowHost.Create(driver, clipboard, options.Chrome),
+            spelling: () => SpellChecker.Find(SpellChecker.SearchFolders(null), SpellChecker.PreferredLanguage(), null));
 
         // The snapshot's scene builder is the demo: it pours the demo output in and opens the named view. What
         // it returns is the headless driver's capture, which on this driver is empty and not wanted. It is queued

@@ -41,6 +41,21 @@ public sealed class Theme
     /// </summary>
     public List<Rgb>? Palette16 { get; set; }
 
+    /// <summary>A copy that shares nothing with this theme, so editing one never edits the other.</summary>
+    public Theme Clone() => new()
+    {
+        Name = Name,
+        Foreground = Foreground,
+        Background = Background,
+        StatusForeground = StatusForeground,
+        StatusBackground = StatusBackground,
+        Border = Border,
+        SystemMessage = SystemMessage,
+        LocalEcho = LocalEcho,
+        Prompt = Prompt,
+        Palette16 = Palette16 is null ? null : [.. Palette16],
+    };
+
     /// <summary>Resolves a palette index (0-255) honouring any <see cref="Palette16"/> override.</summary>
     public Rgb ResolveIndex(int index)
     {

@@ -58,7 +58,7 @@ fallbacks) for inline images/maps.
 
 ## Repository state
 
-**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all twelve projects on
+**M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all fifteen projects on
 `net10.0`, with the full test suite passing. In place:
 
 - **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
@@ -106,6 +106,21 @@ fallbacks) for inline images/maps.
   - **A rebuild clears the engines' runtime rules first** (`ClearRuntime`), or a reload doubles every
     `trigger.add`. `SaveConfiguration` rebuilds only when a session's file list changed (`SyncFiles`),
     since a rebuild restarts script timers; ⌃P ▸ *Reload scripts* always rebuilds and re-reads.
+  - **Scripts are edited in the composer's script mode** (`ScriptFiles`, Scripting; `SharpMUTermApp.ScriptEdit.cs`;
+    `ComposerEdit.Script`; ⌃P ▸ *Edit script…* / *New script…*, the console's ⌃E, `/script edit|new`; the `script-list`
+    and `script-edit` views). The files are ⌃P entries (`script:open:<name>`, a family listed only once asked for, map
+    find's rule). Names go through `ScriptFiles.Check` and then `SessionScripts.Resolve`; a save is a temp file in the same
+    folder and a rename, refused through a link and outside the root. Lines verbatim (no `%r`, no escaping, no spelling,
+    line numbers, monospace). ⌃S saves, reloads that character's scripts and says the first error (`file:line`) in the
+    header and the console; the editor stays open. Esc keeps unsaved text per file for the run. `package:` scripts open
+    read only. The demo saves nothing.
+  - **The error's line is one model field, `ComposerEdit.ErrorLine`** (Client `ScriptErrors.LineIn`, the one reader of
+    `file.lua:(N,…)`, also behind ⌃P's `! line N`; `ScriptEdit.Said(status)` sets it from a `! …` status naming this file
+    and clears it on anything else). The cell editor puts that line on a band (`MultilineEditControl.SetLineHighlight`,
+    `ComposeOverlay.ErrorBand`: warn 28% over the well — a syntax token carries a foreground only); the window numbers
+    lines in a gutter (`ComposerView.LineGutter`, read off the `TextBox`'s own layout via `ComposerEditor.LineSpans`) and
+    flags the line there and with a band over the text (`DrawMarks`). The gutter re-measures only when its digits or face
+    change: the editor's layout raises `MarksMoved`, and measuring on each was an infinite layout loop.
 - **GMCP and MSDP data is held per session in `GameDataStore`, and three things read it**: the status row's
   meters (`StatusMeter`, F7 ▸ `meters`), ⌃P ▸ *Show game data* (`GameDataOverlay`) and Lua (`gmcp.get`,
   `msdp.get`). GMCP packages are stored by name with objects merged key by key, because IRE and Aardwolf send
@@ -118,6 +133,14 @@ fallbacks) for inline images/maps.
   - **A meter is drawn only once its value has arrived, and from then its fields are reserved** (value and
     max five cells each, `StatusMeter.Fit` scales past that). A world with no game data costs the row
     nothing; one with it never reflows the row as numbers change.
+  - **Each meter has a colour** (`StatusMeter.Colour`, null = `DefaultColour(label)`: hp green, mp blue, mv gold, else the
+    accent; no schema bump, absent means default; the one-line form writes ` @name`). Client `MeterColours` turns a palette
+    name into a *meter shade* (the mockups' `#4cc38a`/`#5aa9e6`, not web green/blue), `VitalsMeter.Colour` and
+    `VitalsTarget.Colour` (`#ff8a65`) carry it, and each host holds it on its own plane: the cell strip and card
+    (`VitalsStripRenderer.Ink.For`/`Hold`) and the native gauges (`VitalsGauges.FillFor`) to 3:1 on the pane, the status row's
+    label (`StatusMeterInk`) to 4.5:1 on the row. **Low is the warning red in all three** (`WorkspacePalette.Low` =
+    `ScreenPalette.Warn` held to 4.5:1, every theme): it was the notice amber, which said nothing beside a gold movement bar.
+    F7's meter table has a colour column (`auto` + the highlight palette, typed `#rrggbb` too) in both hosts.
 - **Maps** (`Core/Mapping`: `WorldMap`, `MapRoom`, `PathFinder`, `MapStore`). Mudlet's room model (id, area,
   x/y/z, exits by direction and by command, room and exit weights, locks). `MapStore` keeps one file per
   **endpoint** under `maps/` (`MsspCache`'s reasoning), memory-only with no directory, never overwrites a
@@ -130,11 +153,37 @@ fallbacks) for inline images/maps.
     `CommandSent` carries player commands only — never the login line or on-connect commands.
   - Maps are written on disconnect, session removal and exit, not per room (`IsDirty`). MXP room tags wait
     for `<!ELEMENT>` (Phase 5a).
+  - **The cell map names rooms on the grid when the level fits** (`MapRenderer.Labelling`): the column step becomes
+    name + 6 (`[ ] name──[ ]`), the longest name up to 16 at which the whole level fits, the block centred rather than the
+    room; else 8 on a grid ≥100 wide; else the plain `[ ]` grid (every test map is narrower than `LabelFromWidth`). The
+    exits list is always under the grid, above the legend; the side column is edit mode's inspector only. Edit mode's
+    keys are one laddered row at the foot (`KeysLine`, `KeyDrop`); `?` (in `MapEditing.Keys`) opens `/help` ▸ Maps
+    (`HelpTopics.MapTopic`), which lists every key.
   - **The map window is a window, not a pane control** (`map:<SessionKey>`, `WindowKind.Auxiliary`, owned by
     the session; `MapRenderer`, Tui). It is drawn from the recorder on `Changed` and whenever its pane's box
     changes (`SyncMapSizes` on `PostBufferPaint`), never fed from a line buffer, so its control lives in
     `_mapControls` and not `_panes`. Its `LinkClicked` is its own and answers only `mux:map:<id>` —
     the output panes' handler never sees a map link, and the map's never sees a send.
+  - **Both hosts draw the map from one `MapViewModel`, which carries the colours** (`MapAreaPalette`, Client;
+    `MapRenderer` cells, `MapCanvas` native). Each area's colour is picked by a stable hash of its name (FNV-1a,
+    so the same area is the same colour every run and in both hosts) from one of two eight-hue sets, dark-pane
+    and light-pane (`WorkspacePalette.DarkPanes`), because no fixed hex clears 3:1 on both kinds of theme; every
+    entry clears the floor on its themes' reading planes (`MapAreaPaletteTests`), and the cells still pass each
+    colour through `Contrast.Legible`. `Areas` lists the drawn area first, then areas reached by an exit. A room
+    carries `Up`/`Down` (an up/down exit or stub, or an exit to a room on another level) and `Elsewhere` (the
+    other area an exit leads to). The cells draw a one-line legend on the last row from 6 rows up — words go
+    first, then names shorten, then areas are counted (`+2`); it never wraps. The window opens fitted (`MapCanvas.Fit`: the
+    rooms within 6 steps of the character's, up to a 90 px step, the mockup's) and refits on a new model until the player zooms or pans
+    (`Fitted`; a double-click or another level or area fits again); rooms are the mockup's 32 px (`RoomTarget`) wherever the
+    step leaves a line between boxes (`RoomSize`: at most 0.56 of a step). It names rooms whenever a step is 40 px or more
+    (`NamesFromStep`), the current room always, plus the hovered name on a plate, stairs triangles, a halo on the
+    current room and a legend plate. **Names are laid out, not centred blindly** (`Labels`/`LayOutNames`, cached per view):
+    the character's room first, then nearest first, each whole (up to `NameMaxWidth`) at the first place covering no room,
+    no placed name and no line the map draws, staying between the look buttons and the legend — under, over, beside, else
+    pulled aside — then elided to the widest that fits one of those places, else hover only (under `NameMinWidth`). **A
+    name never crosses a line** (wave 27): every exit of the view and every area spur is an obstacle (`ExitSegments`, not
+    only the room's own or those on screen), tested on the plate as drawn (`PlateOf`) after snapping; `MapNameExitTests`
+    lays out the demo streets and a dense 9×9 grid at five panes and five zooms and fails on any crossing.
   - **A speedwalk sends one step and waits for the map to say it arrived** (`Speedwalk`); it goes through
     `SendCommandAsync`, so the recorder sees the step. It stops off the path, on the world's
     `WalkFailurePattern`, after `StepTimeout` with no room, and on disconnect.
@@ -142,6 +191,35 @@ fallbacks) for inline images/maps.
     read off the UI thread: every such read takes `MapRecorder.SyncRoot`, which the recorder holds while it
     changes the map and never while it raises `Changed` (a handler can end in the alias engine, which takes
     the script host's lock). A change a script asks for (`map.walk`, a lock) is posted to the UI thread.
+  - **The map names rooms, and is edited by hand in both hosts** (`WorldMap.Rename`/`SetArea`/`SetExit`/`Remove`/…, Core;
+    `MapRecorder.Edit(label, touched, change)`, `LinkNext`, `Undo`; Client `MapEditing`, `MapEdit`; Tui
+    `SharpMUTermApp.MapEdit.cs`; Avalonia `MapInspector`; the `map-edit` view; `map-level`, `map-area`, `map-find` and `map-mine` show looking up a level, another area, a find and
+    a hand-renamed room in edit mode). The cell title is the current room's name,
+    and `MapViewModel.Nearby` (each exit and where it leads) fills a side column from 64 cells or the rows under the grid
+    from 18. Every edit is a `MapEdit` through `ApplyMapEdit` → `MapEditing.Apply` → `MapRecorder.Edit`, on the UI thread
+    under `SyncRoot`, dirty and saved like a recorded room; undo snapshots the rooms an edit touches (10 deep, areas it
+    created go too). **Selection is client state per map window and selecting takes the keys** in both hosts (⌃P ▸ Edit
+    map, a cell click while editing, the canvas's right-click menu or click), so `SurfaceParityTests` compares
+    `MapDigest()`. Cell keys are `MapEditing.Keys`; the ones that need words put a `/map …` command on the command line
+    and put back what was being typed once it runs. "Next" on an exit links it to the next room walked into, never its
+    own. Deleting the room you are in is refused.
+  - **A hand edit is kept from the server** (`MapRoom.HandEdited`, `MapFields`: name, area, exits, position). Each edit
+    marks the fields it changed; `MapRecorder` skips those fields on every later report (the rest still follow the
+    server), and keeps each room's last report this run (`_served`). **Reset to server** (`MapEdit.ResetToServer`;
+    inspector button, menu entry, cell `R`, `/map reset`) clears the marks through `Edit`, so it undoes, and re-applies
+    that report at once if there is one; otherwise the next report wins. Undo restores the marks with the room.
+    `MapStore` is format 2 (`handEdited` per room); a version-1 file migrates on read, and unknown field names are dropped.
+  - **A map window can look at another level or area** (Client `MapLooking`, `MapViewpoint`, `MapLook`; Tui
+    `SharpMUTermApp.MapView.cs`; `LookMap`, a `PanelOverlay` callback and a surface action). The look is client state per
+    window (`_mapLooks`), handed to `MapViewModel.From(…, look)`, which anchors on the room there nearest the current
+    room's x/y and sets `Viewing`, `Levels`, `LevelAbove`/`Below` and `AreaChoices` (64 at most). Looking where you are
+    clears it. Walking still targets the real room. Ways in: cell title `▲ ▼ ⌂ here` and legend area links
+    (`MapRenderer.LookPrefix`), edit keys PgUp/PgDn/`v`/`h`, the canvas's Up/Down/Areas/Back buttons and ⇧wheel,
+    ⌃P `map:level-up`/`-down`/`next-area`/`here`, and `/map level|view|here`. Nearby is hidden while viewing.
+  - **A room is dragged on the canvas while editing**: snapped to the grid, one `MapEdit.Move` per drop (the cells'
+    ⇧arrows' edit), ghost outline while held; a drag outside editing still pans.
+  - **`/map find <text>`** (⌃P ▸ *Find room…* puts it on the command line) lists up to 20 rooms by name, then area, as
+    chrome lines in the session window with `/walk <id>`, and points the map at the first.
 - **Sound** (`Core/Media`: `MediaCommand`, `MediaQueue`, `MediaCache`, `IAudioOutput`). MCMP's
   `Client.Media.*` is read with TNC.Gmcp's typed records into `MediaCommand`s (`WorldSession.MediaReceived`),
   and one `MediaQueue` per connection applies the specification's rules — priority halts and refuses lower,
@@ -181,12 +259,24 @@ fallbacks) for inline images/maps.
     character's own, so an update replaces them wholesale and never touches the player's edits; `c` on F10
     copies them into the player's sets to edit. The only thing saved is `DisabledPackages`.
   - **The review is the consent step**: nothing is written until ⏎, and it leads with what can act as the
-    player (rules that send, scripts that run). Downloads are https only, capped while streaming.
+    player (rules that send, scripts that run). Downloads are https only, capped while streaming. The review is one
+    `PackageReviewModel` (Client) drawn by both hosts, and F10 itself is declared in Client
+    (`BuiltInSettings.Packages`); see *F10 is a package manager page* under the native settings window.
   - **Scripts are `package:<id>/<file>`** and `SessionScripts` resolves them only under that package's
     `scripts/`, through `PackageStore.ResolveScript`. They still need the scripts root, like any script.
   - One folder per package (`packages/<id>/`, beside `config.json`), swapped in through a `.id.new` staging
     folder; a snapshot's store has no folder and writes nothing. F10 is claimed (`opens Packages`); GNOME
     Terminal may take it for its menu, so ⌃P ▸ *Packages* is the way in that always works.
+  - **A `ListOverlay` is as tall as its lines *wrapped*** (`ListOverlay.Rows`, measured by the framework's own
+    `MarkupControl.MeasureDOM` at the modal's inner width), not as its line count: F10's header wraps at 80 columns,
+    and counting lines made the modal a row short, so it scrolled its close key out of sight at 80×24. F10 always
+    emits its two confirm rows (blank when idle), so the modal sized once at open still fits a confirmation.
+  - **A consent screen's keys are pinned, not scrolled** (`ListOverlay.Open(footer:, scrollKeys:)`): the body goes in a
+    `ScrollablePanelControl` and the footer rows are a sticky-bottom control, so a body taller than 80×24 scrolls under
+    them (↑↓ PgUp PgDn Home End, answered before the caller's key handler). The import review uses it (`ImportReview.Footer`:
+    passwords question + keys); `Lines` is body then footer. So does the package review (`PackageScreen.ReviewFooter`: a rule,
+    then ⏎ install · ↑↓ scroll · Esc cancel laddered, the "nothing is written" note only where it fits); a modal with a
+    footer stops 4 rows short of the desktop, so the command line stays in view at 80×24.
   - **The index** (`PackageIndex`; ⌃P ▸ *Browse packages*, `b` on F10) is `{"packages":[…]}`, each entry a
     manifest plus an https `url` and a `sha256`, at `AppConfiguration.PackageIndexUrl`. **It is fetched only
     when the player opens it, never at start.** An entry that breaks a rule is dropped and counted, not
@@ -194,6 +284,78 @@ fallbacks) for inline images/maps.
     the review opens, so the review is never shown for bytes the index did not name. The focused window's
     world (its session's, else its owner's, never `_active`) sorts its own packages first; a `*` package does
     not count as the world's own. The default index repository does not exist yet.
+- **Worlds and automation can be imported from MUSHclient, Mudlet and TinTin++** (`Core/Import`: `ClientImport`,
+  `MushclientImport`, `MudletImport`, `TinTinImport`, `ImportPlan`; Client `ImportReviewModel`/`ImportReviewSession`;
+  Tui `SharpMUTermApp.Import.cs`, `ImportReview`; Avalonia `ImportReviewView`; `/import <path>`, ⌃P ▸ *Import from another
+  client…*, the welcome's last row; the `import-review` view). Formats: a MUSHclient `.mcl`, a Mudlet XML package or
+  profile save, a Mudlet profile folder (newest `current/*.xml` plus its `url`/`port`/`login`/`password` files), a
+  `.mpackage`/`.zip` (read in memory, never extracted), and a TinTin++ script. Decisions not to relitigate:
+  - **The file is untrusted text meeting the configuration.** Read by sniffing content, not the extension; XML with no
+    DTD and no resolver; bounded (16 MiB, 5,000 rules, 100 worlds, 4 KiB a field, 512 zip entries, depth 32). A rule
+    that cannot be carried over exactly is skipped and listed with its reason (`ImportSkip`), never approximated: script
+    code (Lua, VBScript, a MUSHclient `script=`, a Mudlet chain or colour trigger, a TinTin `#` command in a body) is
+    listed as left out and never executed; a rule whose command survives keeps it and lists its script as a `part`.
+  - **Nothing is written before ⏎, and nothing is overwritten.** `ImportPlan.For` decides on the client's thread what
+    is new: a world at an existing endpoint gains only characters it lacks, a clashing name gets ` (2)`, and the rules go
+    into one new set `Imported from <client>` (suffixed if taken), listed on the *new* characters only. `Apply` re-plans
+    and refuses if the configuration moved since the review. Saved through `SaveConfiguration`.
+  - **Passwords are off unless asked.** The review says how many the file holds; `p` (the window's check box) stores
+    them on the new characters, which the vault then takes. They never appear in a model, a notice or a log.
+  - **The review is the package review's shape**: `WHAT CAN ACT AS YOU` first, then `WHAT IT ADDS`, then `LEFT OUT (n)`;
+    one model drawn by `ImportReview.Render` (cells, a `ListOverlay`) and the native card (`SurfaceCatalog.Import`).
+  - **`ClientHost.FilePicker` (`IFilePicker?`, required)** is the window's native open dialog; null in the terminal and
+    headless, where ⌃P puts `/import ` on the command line instead. `--plain` answers with `/import yes|no|passwords`.
+  - Not done: Potato and BeipMU (formats not verified), MUSHclient time-of-day timers and colour-changing triggers,
+    Mudlet multi-line/colour/chain triggers, TinTin `#regex`/`#if` blocks.
+- **The shared client shell** (`SharpMUTerm.Client`; `ContributionRegistry`). UI-agnostic, references Core only
+  (`ClientAssemblyTests` fails on a SharpConsoleUI or Avalonia reference). The registry holds six kinds —
+  commands, panels, settings sections (field descriptors only), status cells (reserved width, drop order),
+  overlays, output decorators — each with a stable id unique within its kind and an owner (built-in or a
+  package id, so `RemoveOwnedBy` takes a package's contributions with it). Order is registration order unless
+  the kind defines one, ties by registration. Only **commands** are live so far:
+  - **⌃P's catalog is the registry's.** `BuiltInCommands.Register` (Client) says what each entry is called,
+    its group, its key per host (`KeyHint`, `HostKey.Newline` resolved from `HostKeyGlyphs`) and when it is
+    offered; the work is the Tui's `RunBuiltInCommand`, handed in as `run`. `CommandPalette`, the pointer menu
+    (`AddCommands`, key from the contribution) and `DispatchCommand` all read `SharpMUTermApp.Contributions`.
+    Entries generated from live state (characters, windows, panes, settings screens, the send group) are a
+    `CommandFamily` owning an id prefix; a single command's id may not fall under one. Dispatch ignores
+    availability (a rail row or the other half of a stateful pair still runs). A new ⌃P command is a
+    contribution in `BuiltInCommands` plus a case in `RunBuiltInCommand`; Core's `CommandCatalog` keeps only
+    `CharacterCycle`.
+- **⌃P's ranking and grouping are the Client's, so both hosts list the same rows** (`CommandPaletteModel`,
+  `FuzzyMatch`, `RecentCommands`, `KeyGlyphs` in `Client/Palette`; the Tui only draws, `CommandSurfaceRenderer`).
+  Core's `CommandMatcher` is gone. The surface is called *Command palette* everywhere (title, the native header's
+  search box, its automation name), and the group of output commands is `OUTPUT`. Decisions not to relitigate:
+  - **Matching is subsequence, word by word, in order**, scored per character: +1 matched, +8 at a word start,
+    +6 straight after the previous match, +4 on the first character, −1 per skipped character (−4 at most
+    per gap), +20 when the title starts with the whole query. Each word is aligned by dynamic programming,
+    falling back to the earliest-ending alignment. **A query word of `FuzzyMatch.StrictLength` (5) letters or
+    fewer must start at a word start and continue in runs or at word starts** (`layo` no longer finds "Clear
+    window, say you"; `scene` no longer finds Import or Packages); a longer word may match as any subsequence. A title match always
+    lists above a match on the detail, the key or the group's name; ties keep catalog order. Groups keep
+    their headers but are ordered by their best entry, so the best match is the first row.
+  - **An empty query lists RECENT, then SUGGESTED, then the groups**, each entry once. SUGGESTED is read off
+    `CommandContext` flags alone (selection → copy and make-a-trigger, frozen, scrolled back, walking,
+    zoomed, clashes) — not a guess at habit, which is RECENT's job. ⌃P refuses over the composer and the
+    settings screens are modal, so there is no "screen open" mode for it to adapt to.
+  - **Recents are in memory for the run** (eight, newest first, `SharpMUTermApp._recentCommands`). The only
+    view state that outlives a run goes into `config.json`, and which menu entries were clicked is not
+    configuration; command-line history, the nearest relative, is in memory too. Recorded when chosen on ⌃P
+    (`CommandPalette.Commit`, `RunFromPalette`), never on a key or a rail click.
+  - **A `CommandItem` carries `Key` and `Detail` apart from `Subtitle`**; `Subtitle` stays the joined line
+    for the pointer menu and the tests that read it. Keys are shown through `KeyGlyphs.Normalize`, so the
+    host's `Alt+⏎`/`Ctrl+⏎` read `⌥⏎`/`⌃⏎` in the column while `--help` keeps the words. The key column is
+    right-aligned at the widest key; a narrow surface drops the detail, then elides the title, never the key.
+  - **The cell palette is as tall as what it lists** (`CommandPalette.FitHeight`): the whole catalog's height (capped above
+    the command line) while the query is empty, the matching rows' once something is typed, at least `FilteredMinHeight` (10)
+    and never taller than it opened; the top edge stays put, so the prompt does not move.
+  - **Clashes come from `MacroKeys`, never a second table** (`KeyClashes`, Tui). `ClaimedBy` (a global
+    shortcut: the client wins, `Verdict` already says Taken) and `YieldedBy` (what the main window does with a
+    chord only after `DispatchMacro` declined it: the binding wins, a warning). `YieldedBy`'s list mirrors the
+    window chain below `DispatchMacro` and the bar's key table, and must move with them. Two bindings on one
+    chord resolve as `MacroEngine.Resolve` does — the first answers even disabled. F4 marks a binding that wins
+    with an amber `△` (`ScreenPalette.Caution`) in the key's own well, a loser with `▲`, and says which side
+    wins in the footer; ⌃P lists `Key clashes (N)` only while N > 0, and it opens F4.
 - **Tui** — **SharpConsoleUI** app: a `TabControl` of output windows (main + trigger-routed **spawn
   windows** + web view, with unread badges), each a `MarkupControl` in a `ScrollablePanelControl`
   viewport (PgUp/PgDn, Shift+↑/↓, ⌃Home/⌃End, wheel; unread badges count output arriving below a
@@ -202,8 +364,9 @@ fallbacks) for inline images/maps.
   command line (wrapping, auto-growing, per-window drafts, plus an optional per-window second bar),
   status line, `Ctrl+Q` quit, per-pane NAWS (every connected session is told its own pane's output
   rectangle, on every resize and layout change, rate-limited to four writes a second with a trailing
-  flush). The tab/pane set is driven by the tested `Core.Workspaces` model, with **splits** (thin
-  single-line dividers) and the **connection rail** now rendered as well — and **clickable**: a world,
+  flush). The tab/pane set is driven by the tested `Core.Workspaces` model, with **splits** (a thin
+  single-cell divider column side by side; stacked, a divider row only where nothing else marks the
+  boundary — see *No divider row where a tab strip or a strip panel already marks it* below) and the **connection rail** now rendered as well — and **clickable**: a world,
   character or window row switches to it, dispatched through the rail control's *own* `LinkClicked`
   (never the output panes' handler, so a world cannot drive the client's UI from the wire).
 - **Panes come back after a restart, and the log that does it is keyed by *window*** (`RestoreLog`,
@@ -250,6 +413,8 @@ fallbacks) for inline images/maps.
     mid-word cannot split a match and `#ff0000` cannot find every red line (`UrlDetector`'s rule, one
     layer down) — and it is computed once at append, because the surface refilters over every line of
     every window on every keystroke. Chrome rows carry none, so a search cannot find its own bars.
+    It is the line's span text (`StyledLine.Text`), not the stripped markup: the `▌ ` a highlight rule draws
+    is markup only, so `^\[public\]` matches in ⌃F and in F2's live test as it does in the engine.
   - **Case is ignored in both modes**, matching `HistorySearch`; `(?-i)` is the way back, which is why
     there is no third toggle. An invalid pattern is a *state* (a regex is unparseable most of the time it
     is being typed), and there is a match timeout, because this runs on the UI thread per keystroke.
@@ -267,6 +432,32 @@ fallbacks) for inline images/maps.
   - **Two kinds of client chrome now live in the line buffers**, so `InsertChromeRow`/`RemoveChromeRow`
     are the one place that fixes up everything indexing into one — the freeze point, the pending
     boundary, the activity bar and the search bar move together or none of them do.
+  - **A bar's rule is sized to its pane** (`BarRule.Fit`): each bar's `Bar` closure reads `BarWidth(windowId)` (the
+    viewport width) when drawn, the label elides before the rule shrinks, and `SyncChromeBarWidths` (on
+    `PostBufferPaint`) redraws a window's bars in place when its width moves. Width 0 (not arranged) draws 48 cells.
+    ⌃F's footer is a drop ladder (`SearchPrompt.HintLadder`), so the surface fits from 44 columns.
+  - **⌥H searches older history too** (`ScrollbackSearch`, Core; `SharpMUTermApp.DeepSearch.cs`; `ScrollbackViewModel`,
+    Client; `ScrollbackViewSurface`, Tui; `ScrollbackView`, Avalonia; the `search-older` and `search-history` views). Only
+    a session window has any: its session's `ScrollbackBuffer`, ring and spill, walked newest first in ranged reads of
+    `MaxRangeLines` off the UI thread (inline headless, so frames are deterministic), cancelled by the next query or by
+    closing, `OutputSearch.Match`'s timeout per line, at most 500 hits. Lines the pane still holds are skipped by
+    reference (a session window's `PaneLine.Source` is the ring's instance). Older rows list after the pane's, their
+    window column saying how far back (`SearchModel.AgeLabel`: `1.6k lines ago` — the scrollback keeps no clock) and the
+    pane's rows `here` (`SearchModel.LabelFor`, both hosts). **Both counts are one row** (`CountText`: `this window 3 of 39 ·
+    older 4 of 6,000`, `older 2… 1,200 of 6,000 read` while it reads; `OlderFound`/`OlderSearched`/`OlderTotal`); the note
+    says only what is not a count (an error, captures keep no older history). ⏎ on one goes to the pane if it holds the
+    line, else opens the **history view**: a modal page, every move a ranged read, never inserted into a pane buffer. ⌥G
+    stays pane-only. **The page size is the model's** (`ScrollbackViewModel.PageRows`, from `PageRowsFor(rows, columns)` at
+    open: the modal ends above the command line, 13 at 80×24, at most 20), title and position on two rows below 100 columns
+    (`TwoTitleRows`), keys pinned with `ListOverlay.Open(footer:)` (`KeysLadder`); the window reads the same page. It opens
+    **centred on the hit** (`TopFor(…, page)`, clamped at the ends), and `Role(line)` makes the `ContextRows` (3) either side
+    context: body ink behind a `│` in cells, a rule in the window; the rest of the page muted/dim. The demo's history is
+    stamped 18:00–22:59 and only moves forward (`DemoHistoryStamp`).
+  - **⌥H is offered on the status line, not in a modal, only while the pane cap trimmed what ⌃F searched**
+    (`SearchModel.OlderLines`/`OlderSource`/`OffersOlder`: a query, ⌥H off, and the session scrollback holding lines the pane
+    does not). `OlderHintLadder` is four rungs, all starting `⌥H`; the cells take the longest that fits beside the count
+    (`NoteFor(room)`, chord in bold accent), the window shows the first in words, accent, and a click on it is ⌥H. Nothing
+    trimmed, nothing said. `FooterFitTests` pins the offer and the count on one row at 80×24.
   - **The demo scene loads with `_watching` off.** It pours a spawn window's whole history in before the
     first frame, and every line would otherwise count as missed — so any frame that later made such a
     window visible carried an activity bar reporting the client's own setup as news.
@@ -458,6 +649,116 @@ fallbacks) for inline images/maps.
     it. A window that gained nothing gets no bar.
   - **`SimulateKey` used to discard a global shortcut's result** and swallow the key either way. Harmless
     while every claim returned true; wrong the moment one declined, and it now honours the decline.
+- **Scrolling a pane back splits it** (`SharpMUTermApp.ScrollSplit.cs`, `ScrollSplitBarRenderer`; F7 ▸
+  SCROLLBACK ▸ `split the pane when scrolled back`, on by default; the `scrollback-up`/`scrollback-split` views).
+  History on top, a band (`── scrolled back 120 rows · End returns · ⌥F freezes ──`), the live tail below.
+  Decisions not to relitigate:
+  - **It is freeze's layout, not a third way of drawing a pane** — one more arm of `BuildTabContent`, the same
+    two-viewport grid as `BuildFrozenContent`. But the halves are the other way round: the window's *own*
+    control and its *own* `_paneScrolls[windowId]` viewport stay on top, so the scroll position, the
+    scrollback keys, the wheel, `ScrollTarget`, `RevealSearchBar`/`RevealAwayBar` and the status row's segment
+    all keep addressing the viewport they always did. The bottom (`tail:<id>`) is a *copy* of the buffer's
+    last `TailLines` (64) lines, re-fed by `RefreshScrollTail` wherever the window's control is told about a
+    change (`AppendWindowLine`, `RepaintPane`, `InsertImageRows`). It indexes nothing, so no chrome row, trim
+    or picture has a split point to move — which is why it is not built on `_freezePoints`.
+  - **Opened and closed in `SyncScrollbackState`**, where every scroll route lands: open while the window's
+    viewport is detached (`!AutoScroll`) and scrollable, closed once it re-attaches — scrolling the history down
+    to its end, ⌃End, or bare End. **Bare End is claimed only while a split is open and the command line's
+    caret is already at its end** (`CaretAtEnd`), where End has nothing left to do in the editor and where a
+    caret rests after typing; anywhere else End is the editor's and a second press returns. Also closed by ⌥F
+    (freeze takes over and splits at its freeze point, as it always does), by a frozen pane, and with the setting off.
+  - **The tail is half of what the band leaves, the odd row to it, at least 3 rows, and the history keeps at least 3**
+    (`TailRowsFor(rows, band)`; wave 25, after both mockups, which give the arriving rows at least the history's room;
+    it was 30%); a pane shorter than 7 rows does not split. Fixed when the split opens (a `Cells` row), not re-derived
+    per frame.
+  - **The history is a plane of its own** (`WorkspacePalette.History`: ×0.87 on a dark plane, toward white on a light
+    one, so it only widens the contrast `ReadingPlane` guarantees; the terminal mockup's `#1a1a20` over `#1e1e24`). A light
+    plane with under 3 L* of room above it (Light's white focused pane, its L* 96 unfocused one) steps *down* ×0.96 instead
+    (wave 27: the history was the pane); only near-white panes lack the room, the reading plane never does, so it is never
+    passed (`TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane`, all three themes). The
+    history viewport is wrapped in a grid wearing it (`_scrollHistorySurfaces`, re-coloured in `RefreshPaneFocus`); the
+    tail keeps the pane's plane. Where the host keeps a gutter, `PaintScrollHistoryGutters` paints the blank gutter and
+    pad-row cells beside it after the frame, and the window's overlay scrollbar runs beside the history alone.
+  - **The window's band is two rows** (`ScrollBandRows`: 2 under `HostChrome.Tabs`, else 1; the second row is blank band),
+    published across the gutter with `ScrollBandOverlay.Inset`, so `ScrollBandView` lines its words up with the output
+    and keeps its button as far from the right edge — the mockup's 40 px band with a real button. Still `rows`, not the
+    mockup's `lines`: a buffer index is not a viewport row.
+  - **Inside the pane rectangle, so NAWS never moves**: the band and the tail are rows of the tab's content;
+    `PaneOutputRects` is unchanged (`ScrollingBackSplitsThePane…` pins it).
+  - **A split pane is not "scrolled back" for the workspace** (`SetScrolledBack(…, !AutoScroll && !split)`):
+    its new lines are on screen in the tail, so they badge nothing and record no `NEW` boundary.
+  - **The band's count is the status row's figure** (display rows below the history viewport, capped through
+    `UnreadBadge` in a reserved field), refreshed on `PostBufferPaint` with the status row repainted beside it
+    when it moves, so the two surfaces never disagree. It says *rows*, not lines: a buffer index is not a
+    viewport row.
+- **Below 100 columns the layout is narrow** (`SharpMUTermApp.Narrow.cs`; `NarrowColumns`, `ShortRows`;
+  `NarrowLayoutTests`). The rail folds itself to its strip, and below 100 columns *or* 30 rows an empty command line
+  is one row (`SyncInputHeights`: `MinRows` becomes `InputSettings.MinRows`; it still grows to `MaxRows` as it wraps).
+  At 80×24 that is a 72-column pane instead of 60 and two more output rows. **`InputSettings.Rows` now defaults to 1
+  too**, so a fresh client's command line is one row everywhere and grows as it wraps; a saved value is kept.
+  **The window's native sidebar folds by the same rule** (verified under Xvfb at `--size 60x24` and on a live resize): at
+  `--size 80x24` the window is ~102 columns wide with its sidebar, so it stays open and the pane is the 80 columns the
+  rule protects. Decisions not to relitigate:
+  - **100 because of the server's wrap width**: the open rail and its divider cost ~20 columns, so 100 still
+    leaves the pane 80; below it a world's 80-column text orphans a word on every other row. 30 rows because above it
+    the output keeps 24 rows with a three-row bar. Height never folds the rail.
+  - **The automatic fold acts only on a crossing** (`_narrowSeen`) and once at start, never on a resize that stays on
+    one side, so ⌃B b / ⌃P / the window sidebar's fold button win until the width next crosses 100. It is the same
+    `_railCollapsed` those toggle, published as `SidebarModel.Collapsed`, so whichever rail is drawn folds.
+  - **The window measures its whole width, not its cells** (`LayoutColumns`; `IPointerPresenter.WindowColumns`, set by
+    `TerminalView` before each grid resize as the view's width plus its margin, in cells). Folding a sidebar the host
+    draws widens the cells; measured on them, the fold would cross back over the line and undo itself. A host that
+    says nothing (the terminal, every test presenter) is measured on its cells.
+  - **A growing bar takes back the editor's scroll** (`InputBarControl.MeasureDOM`, `_verticalScrollOffset` by
+    reflection). The editor scrolls to keep the caret on a row the viewport does not have yet and never scrolls back
+    when the viewport grows, so a newline in a one-row bar drew the new row and a blank. The three-row floor had hidden
+    it; `NewlineKeyTests` caught it.
+- **A cell key row never wraps; it ladders** (`KeyLadder`, `LadderKey`, Tui). Rungs: full labels, parentheticals cut,
+  `Short` labels, then keys dropped lowest `Drop` first (reading order is not drop order); `LadderKey.Keep` (the way
+  out, the accept) is never dropped. F1 (`ComposeOverlay.FooterKeys`; the header no longer repeats the `⌥W` chip), the
+  script console (per state: Del is named only on the store list), the map's edit row, the import review and F10's
+  header use it. `FooterFitTests` renders every cell modal/footer view at 80×24 and fails unless its first and last
+  hints share one painted row — add a view there when it gains a key row. Settings screen headers go through it too
+  (`ScreenChrome.Hints(…, room)`, `HeaderRoom`): `{F}/Esc close` and an edit's ⏎/Esc are `Keep`, the pane and select
+  keys go first; `FooterFitTests.SettingsHeaders` fails on a `…` in any F2–F10 header at 80×24.
+- **Wave 19's terminal sweep** (every `SnapshotViews.All` view at 80×24 and 120×32, Dark and Light; `TerminalAuditWave19Tests`).
+  Cell pop-ups take `WithPadding(1, 0, 0, 0)` (ListOverlay, quit, ⌃B, ⌃F, ⌃R, game data, messages; not ⌃P, whose `├`
+  headings join the frame): each already laid its lines out a cell or two narrower than its inside, so the padding spends
+  that slack, and ⌃F/⌃R grew one column where they had none. A `ListOverlay` with pinned keys (`footer:`) is at most `desktop − 4`
+  rows, so a centred one never covers the command line; one without keeps `desktop − 2`, since its keys are its last rows. The `❄ FROZEN` bar is sized to its pane like every other bar (`_freezeBars`, redrawn
+  in `SyncChromeBarWidths` and on a theme switch). The header's brand is `SharpMUTerm` unless the row would then not fit,
+  where it is `muterm` (`BrandWord`/`ShortBrandWord`). A notice whose words already name its action's way gets no
+  `· ⌥R Reconnect` after them (`NamesWay`).
+- **The status row names the keys of the mode you are in** (`ModeHints`/`StatusMode`, Client;
+  `SharpMUTermApp.ModeHints.cs`). Composer armed > search bar in the focused window > frozen > split > scrolled back;
+  while one holds, its hints replace `FocusHints` (`End returns · ⌥F freezes`, `⌥F thaws`, `⌥G next hit · ⌃F searches
+  again`, `⌃S sends · Esc releases · F1 full screen`). The keys are `KeyHint`s resolved through the host's
+  `HostKeyGlyphs` and written through `KeyGlyphs.Normalize`; `HostParityTests.TheStatusRowNamesEachModesKeysAsThisHost…`
+  reads each mode's row once per host at 80 and 120 columns. The longest candidate goes in that fits once as few of the
+  encoding and `⌃P palette` cells as it needs are given up; meters and the scrollback segment are never given up for
+  it, and nothing may wrap the row (the D1 lesson). A change of mode alone repaints the row: `SyncStatusMode` rides
+  `PostBufferPaint` as well as freeze, the composer's bands and the scroll path.
+- **F5 ▸ `join wraps` joins the lines a server hard-wrapped** (`ServerWrapJoiner`, Core; `WorldSession.Reflow`;
+  `WorldDefinition.JoinWrappedLines`, off by default; the `reflow` view). **A false join is worse than a missed
+  one**, so every condition is a reason not to join: the wrap column is known (third-longest of the last 128
+  non-blank lines, at least 8 seen, at least 40); neither line is a prompt, blank, rule-coloured, interactive
+  (MXP), or holds a three-space run (a column layout); the first row is *full* — within `Slack` (max(8, col/6))
+  of the column, no longer than it, and the next line's first word would not have fitted (one cell of
+  tolerance) — and ends in a letter, digit or comma (never a hyphen); the next starts unindented with a
+  lower-case letter; the style at the break is the same on both sides. Joined with one space; a paragraph
+  chains, each decision against the previous *physical* row. Decisions not to relitigate:
+  - **Ingest-time, in Core, before the triggers** — so a trigger matches the line the player reads, including
+    a phrase the server split. Like `strip incoming colour`, it changes the next line and never history.
+  - **A full row is held until the next line says whether it continues**, and released after
+    `ReflowHold` (250 ms) of quiet, by a prompt, a blank line, a parser swap or a disconnect — so nothing is
+    shown out of order and only the last full row of a burst is ever late (a paragraph's last row is short and
+    never held). The read loop and that timer share `_ingestGate`; nothing on the UI thread or in a script takes
+    it, so it cannot close a cycle with the script host's lock. Rebuilt per connection, like the parser.
+  - **Suggested, never switched on** (`SharpMUTermApp.JoinWraps.cs`). While a pane reported to a server is more than
+    two columns narrower than its wrap column (`NoteRaggedWraps`, on each NAWS report; `RaggedWrap`, Core), ⌃P lists
+    *Join server wraps for <world>* under SUGGESTED (`CommandContext.RaggedWraps`) and F5's `join wraps` row reads
+    `off · recommended · wraps at 78, pane is 60` (the `join-wraps`/`join-wraps-f5` views); the once-per-world notice
+    stays. Joining, or the pane catching up, clears it.
 - **Every server's MSSP report is kept, and the INFO screen reads it** (`MsspCache`, Core; `mssp.json`
   beside `config.json`, keyed by `host:port`; F5 ▸ `i`). Fourth of the `save:`/`logRoot:`/`restore:`
   family with **one deliberate difference**: the constructor parameter is null by default like the
@@ -499,7 +800,65 @@ fallbacks) for inline images/maps.
   in that order and then dials them **concurrently**: focus is taken by the first before any packet
   leaves, so several auto-connects always land you in the same place, and a black-holed host cannot hold
   the other worlds' windows hostage. `ConnectAtStartup` is *not* `AutoLogin` — one opens the socket, the
-  other sends the connect line once one is open, and either is useful alone.
+  other sends the connect line once one is open, and either is useful alone. **`StartAsync` runs once per app**
+  (`_startupRan`): the window's demo lays out a scene that may itself start up (the welcome does) before `Run` schedules
+  startup, and running it twice said every startup notice twice — two identical toasts.
+- **A client with no worlds opens on a welcome, and the first connect of a new configuration leaves a key tour**
+  (`WelcomeSurface`, `SharpMUTermApp.Welcome.cs`; `/welcome`, ⌃P ▸ *Welcome* / *Key tour*). The welcome is a
+  `ListOverlay` over a pure model (the `QuitPrompt` split): *Connect to a host* (a form: host, port 4000, TLS, an
+  optional character, a password reminder), *Browse worlds* (mu*index, below; with no https
+  `WorldDirectoryUrl` it says so on the row instead), *Open settings* (F5), the
+  `/connect` example, and a starting layout. Decisions not to relitigate:
+  - **Its words live on `WelcomeModel`** (headings, intro, field labels, key rows), so both hosts say the same thing;
+    the client calls a game a *world* on every surface of it.
+  - **The form goes through `ConnectCommand`**, with a `shape` callback that adds the character — so it can do
+    nothing `/connect` cannot. Esc on the form goes back to the menu; on the menu it closes, leaving
+    `NoWorldsNotice` (short enough for an 80-column row, and it names `/welcome`), and nothing reopens it that
+    run. The menu and the form are drawn at **one height in one window**: reopening the overlay to resize it
+    worked headlessly and left the old window in front under the window host's loop.
+  - **The layout row's default is *suggested*, which writes nothing**, so `LayoutSuggester` still applies at the
+    first connect; Roleplay or Combat is written to `WorldDefinition.Layout`. It applies to the first world a
+    configuration gains however it is added, so a `/connect` typed under the welcome gets it too.
+  - **`--plain` gets lines, not a modal** (`ClientHost.ScreenIsSeen`, false only there): a modal on a screen
+    nobody reads would take the reader's typing. The choices are announced as commands, and `/welcome layout
+    roleplay|combat|suggested` stands in for the arrows. A host with an announcer hears the lines either way.
+  - **The tour is owed, not "shown"** (`AppConfiguration.KeyTourPending`): set on the way to a save
+    (`PersistConfiguration` → `NoteFirstWorld`) once a configuration that started the run empty has a world, and
+    cleared when the tour row is put up on the next `Connected`. A configuration from before the tour has
+    worlds and never gets it, with no migration; a new player who quits before connecting still gets it next
+    run. The row is chrome (`AppendWindowLine`), found again by its markup, and hidden or shown by ⌃P ▸
+    *Key tour* — not by a link, because the panes' link handler is scheme-tagged server text and a client action
+    there would be a new trust path.
+- **Browse worlds lists mu*index, and a pick only fills in the welcome's connect form** (`WorldDirectory`, Core
+  `WorldIndex/`; `WorldBrowseModel`/`WorldBrowseSession`, Client; `WorldBrowseSurface`, `SharpMUTermApp.WorldBrowse.cs`,
+  `DemoWorldDirectory`, Tui; `WorldBrowseView`, Avalonia; the welcome's Browse row, ⌃P ▸ *Browse worlds…*, `/browse
+  [words]`, `/browse N`, `/browse N M`; surface `browse-worlds`; the `browse-worlds`, `-failed`, `-picked` and `-endpoints`
+  views). Decisions:
+  - **Asked only when opened**, through `worldFetch:` (the `save:` family: null in tests and snapshots, which say they asked
+    nothing; `Program` passes `WorldDirectory.DownloadAsync`; the demo answers from `DemoWorldDirectory`, made-up worlds on
+    `.example` hosts). https only (`AppConfiguration.WorldDirectoryUrl`, default `https://mu-index.com/api`), 2 MiB capped
+    while streaming, 15 s, 200 rows, 8 addresses a game; an answer from a stale request (newer question, or closed) is
+    dropped by generation. Every list asks `unnamed=!yes` (MUIndex's facet that leaves out games listed only by host:port).
+  - **The directory is the authority on its own data; the client does not second-guess it.** Rows are shown in its order,
+    archived, repeated, unnamed or id-less included (an id-less pick says so), with its player count and its label (`~`
+    declared, `?` unlabelled); addresses in its order, leaving out only `gone` and kinds this client cannot dial (websocket,
+    http). What stays is safety: the caps above, and every text is server text, bounded and stripped of control, format
+    (bidi), private-use and unassigned characters (`WorldDirectory.Clean`).
+  - **A pick asks `GET /games/{id}`.** One address goes straight to the form; several are a choice in the same surface
+    (`WorldBrowseModel.Choosing`, a `WorldGame`): `host:port`, TLS or plain, active or stale, the first connectable one
+    selected; Esc goes back to the list (`LeaveWorldChoice`), ⏎ is `ChooseWorldEndpoint`. An address `ConnectEndpoint.Parse`
+    refuses is listed `not connectable` and refused out loud, never put in the form. Then Browse closes and the welcome's
+    form opens prefilled (`WelcomeSurface.Prefill`: host, port, TLS, `WorldName`, `Encoding`); nothing is saved or dialled
+    until its ⏎, which goes through `ConnectFromWelcome` → `ConnectCommand` and names the world as listed (name and encoding
+    dropped if the host is edited).
+  - **Charset is the game's, not an address's.** mu*index's `GameView` has no per-endpoint charset; the only one is
+    `fields.CHARSET` (the precedence winner of a game field: handshake-measured or MSSP-declared, with `source`/`measured`
+    beside it). The choice says it once, for the whole game. A world is saved with an encoding only when that names a charset
+    F5 offers that is not UTF-8 or ASCII (`WorldDirectory.EncodingFor`: ISO-8859-1, CP1252, CP437); otherwise `auto`.
+  - ⏎ on a search none of the held rows match asks the directory (`AsksDirectory`). Every listing shows the CC BY 4.0
+    credit (`AttributionLine`). `--plain` says the rows as numbered lines; `/browse N` says the `/connect` line, or the
+    addresses numbered when there are several, and `/browse N M` says address M's.
+  - *Browse packages* is unchanged; the welcome no longer leads there. The live API has not been exercised from here.
 - **The URLs a world prints as plain text are marked up by this client, because the terminal's own
   detection cannot survive a pane** (`UrlDetector`, Core; F7 ▸ `detect links in output`, default on).
   Kitty, WezTerm and Ghostty all find URLs in the cells they paint — across the terminal **row**. A pane
@@ -575,7 +934,7 @@ fallbacks) for inline images/maps.
   - **Drafts are per character and in memory only**, for the life of the run. Not on disk deliberately: a
     post is a few minutes' work, and a file would be a fourth thing this client writes, a purge entry, a
     `--help` line and somebody's unsent post in their home directory. Keyed by the *window's* owner, never
-    `_active`; a window belonging to no connection keeps none. **`Close()` raises `Closed`, which is what
+    `_active`; a window belonging to no connection keeps none. The header names that owner even while it is offline. **`Close()` raises `Closed`, which is what
     stores the draft, so a send must close first and forget after** — the other order posts the text and
     hands it straight back next time the window opens.
   - **F1 is claimed in `MacroKeys.AppShortcuts` but is not a settings screen**, so `ShortcutAction` answers
@@ -587,14 +946,26 @@ fallbacks) for inline images/maps.
     named only while a dictionary is open.
   - **Spelling is a colour, not an underline** (`SpellChecker`, Core; `SpellingHighlighter`, Tui). The marks
     go through `MultilineEditControl.SyntaxHighlighter`, whose tokens carry a foreground and nothing else;
-    an underline needs a styling hook upstream. Hunspell via WeCantSpell.Hunspell, **no dictionary
+    an underline needs a styling hook upstream (the window's native editor draws a real one, see below). Hunspell via WeCantSpell.Hunspell, **no dictionary
     bundled**: `dictionaries/` beside `config.json`, then the system folders, chosen by the POSIX locale
     variables — not `CultureInfo`, because the build is `InvariantGlobalization` and every culture is the
     invariant one. The dictionary is opened the first time F1 opens, never at startup, and the app takes a
     `Func<SpellChecker?>` that is null by default, so a test and a snapshot read none and their header says
     `no dictionary`. A MOO edit is not checked (its buffer is code as often as prose). `%`-codes, a word
     before `(`, and any word with a digit or an inner capital are skipped. ⌥W appends to
-    `dictionaries/user-words.txt`.
+    `dictionaries/user-words.txt`. With no dictionary F1's header reads `no dictionary · ⌥W gets one` (the docked panel
+    says only `no dictionary`), and the window's chip is a button (`ComposerView.DictionaryChip`) that opens the same
+    offer through `ComposerSession.GetDictionary`. **A command token is skipped** (one starting `+ @ & /`, up to its first `=`), and so
+    is **every name the client knows** (`SpellChecker.KnowNames`: configured worlds and characters, each session's
+    `CompletionIndex.Names()`), refreshed each time F1 opens and held for the run, never written to disk.
+  - **With no dictionary, ⌥W offers to download one** (`DictionaryDownload`, Core; `DictionaryOfferModel`, Client;
+    `DictionaryOffer`/`SharpMUTermApp.Help.cs`, Tui; `DictionaryOfferView`, Avalonia; ⌃P *Get a spelling dictionary…*;
+    the `dictionary-offer` view). F1 closes (keeping the draft), the offer says what is fetched from where and saved
+    where, and F1 comes back when it closes. **Only on ⏎**, https only, each file capped at 8 MB while streaming, and
+    both checked against a **pinned SHA-256** before anything is written (LibreOffice's `en_US`/`en_GB` at tag
+    `libreoffice-24.8.4.2`; `For(locale)` picks GB for en_GB/IE/AU/NZ/ZA/IN). Written as `.new` and renamed, `.aff`
+    first. `dictionaries:` is a constructor root of the `save:`/`logRoot:` family, null by default, so a test and a
+    snapshot fetch nothing and the offer says nothing can be saved.
 - **An MXP `<IMAGE>` is drawn in the output pane as rows of markup under the line that named it**
   (`MxpParser.HandleImage` + `MxpImageSource`, Core; `InlineImageHost`/`InlineImageRows`/`InlineImageLayout`,
   Tui; the `mxp-image` view). The parser emits a `[image: name]` span whose `SpanInteraction.Image` carries
@@ -711,9 +1082,10 @@ fallbacks) for inline images/maps.
   - **A span carrying a background is measured against *it*.** That plane is known exactly and a
     highlight's pair must be judged as a pair; a span with the default background emits none and takes
     the pane, so it is measured against the reading plane. `reverse` swaps first.
-  - **`ScreenPalette` is deliberately not built this way.** Those constants sit on the settings screens'
-    own fixed backdrop, which no theme moves; measuring them against a theme plane would be measuring
-    them against a plane they are never painted on. `ChromeInk` is the other four — `Accent`, `Notice`,
+  - **`ScreenPalette` is not built this way either, but it does follow the theme** (`ScreenTheme`, Tui;
+    defect D6). The settings screens are their own backdrop, so their inks are measured against their own
+    planes rather than a pane's; but the planes themselves move with the theme. See the *settings screens
+    follow the theme* entry below. `ChromeInk` is the other four — `Accent`, `Notice`,
     `Draft`, `Marker` — and it carries **the plane it was resolved against**, so a renderer can hold a
     colour it was *handed* (a world's accent) to the same floor.
   - **A fill is not text.** A ribbon segment's accent, a pane tint and F2's swatch are identity or
@@ -723,14 +1095,50 @@ fallbacks) for inline images/maps.
   - **The audit that found most of this is a test** (`FrameContrastTests`): every emitted SGR pair over
     24 views × 3 themes. Reading the source found four of the offenders; the paint found nine. It exempts
     the powerline wedges and box-drawing rules (fill boundaries and dividers), the solid blocks (a swatch
-    is a colour sample shown as the *pane* will paint it), and the framework's `[dim]`. **The half blocks
+    is a colour sample shown as the *pane* will paint it), and nothing else. **The half blocks
     are not exempt** — `▌` is the trigger left-rule and the focus marker, and one of them was a real
     defect this caught.
-  - **One thing is outside the floor's reach and is named rather than hidden.** SharpConsoleUI resolves
-    `[dim]` to a fixed `#808080` through no option we hold: 4.01:1 on Dark, **2.52:1** on Solarized Dark's
-    focused pane. Reaching it means giving up `[dim]` across every renderer for an explicit floor-checked
-    grey — a sweep, for a near miss on one theme. The exemption is a named predicate with the number in
-    it, so whoever does that sweep can delete it and watch the test pass.
+  - **The framework's `[dim]` is no longer exempt.** It is faint on the inherited ink, or a fixed `#808080`
+    with none; it once measured 2.52:1 on Solarized Dark's focused pane. The panes have since deepened, the
+    status row swaps it (`StatusInk`), and a light settings screen rewrites a bare `[dim]` to a held grey
+    (`ScreenTheme.Tag`, light planes only, so Dark and Solarized frames are unchanged), so every `[dim]` cell in
+    every view clears the floor. A new one that does not fails like any other ink. The workspace's own `[dim]`s
+    (rail, popups) were not swept, because they did not need to be.
+  - **Small text on a light settings screen is held to 4.5:1** (`ScreenTheme.FloorOn`, `LightTextFloor`); 3:1
+    stays the floor on dark planes. Light's L*-mirrored greys left labels at about 3.2:1, which read as disabled.
+    `ScreenThemeTests.ALightSettingsScreensTextClearsBodyTextContrast` walks the frames.
+- **The settings screens follow the theme, and the renderers do not know it** (`ScreenTheme`, Tui; defect
+  D6). `ScreenPalette`'s constants are *roles* spelt as the Dark theme's values; renderers keep writing
+  `[{Label}]…` in them, and the views resolve the markup and every control colour through one immutable
+  `ScreenTheme` the app builds from its theme (`ScreenTheme.For`, held in `_screens`, handed to
+  `SettingsOverlay`, `ComposeOverlay`, `ListOverlay` and `EditReviewOverlay`, and to every `*ScreenView.Build`
+  as a **required** parameter). Decisions not to relitigate:
+  - **Resolve at the view, not in the renderers.** A palette parameter on every renderer function is every
+    screen and every renderer test rewritten for a value only the last step needs; a mutable `ScreenPalette`
+    is global state the parallel suites race on. `ScreenChrome.Panel`/`Band`/`VerticalRule(scheme)` and
+    `ScreenTheme.Colour` are the only ways a role reaches a control. A view that hands a renderer's lines
+    straight to a `MarkupControl` is a dark island on Light — legible, so `FrameContrastTests` cannot see it;
+    `ScreenThemeTests.NoLightSettingsFramePaintsADarkPlane` can.
+  - **Dark resolves to the constants byte for byte** (`IsIdentity`), so no Dark frame moved. A dark theme
+    keeps each role's lightness and takes its background's hue shift; a light one mirrors L* (100 − L*) and
+    keeps the tint, the menu shadow is placed below the darkest plane, and every ink is then held to
+    `Contrast.Floor` on the planes it is drawn on (`PlanesUnder`: a label never sits on the menu's selected
+    row). The wells are the *lightest* thing on a light screen — the input-field convention there.
+  - **`Paint` rewrites colours and nothing else**: escaped `[[`/`]]` and `link=` targets are text; a run of
+    `█░▒▓` is a colour *sample* and keeps its hex even when it equals a role's (F2's swatch of a highlight
+    that happens to be `#00f5b7`); a foreground that is no role (a world's accent) is held to the floor on
+    the plane it lands on, except on Dark, which stays as it was.
+  - A bordered modal's title, border and unstyled text are the framework's cyan and `#eeeeee`, 1.4:1 on a
+    light backdrop; `ScreenTheme.Frame` recolours them off Dark, and on Dark gives the border and title the label/value
+    inks (the terminal mockups' grey frame, wave 23) while the text stays the framework's. **The workspace popups follow it too** (⌃P, quit, ⌃B panel,
+    search, game data, message log, history): each has a `Scheme` the app sets in `SchemePopups()` (on
+    `ApplyTheme`), paints its plane with `Scheme.Colour(MenuBg)`, its lines with `Scheme.Lines` and its frame
+    with `Scheme.Frame`; ⌃P's prompt well takes `EditBg` off Dark. Dark is byte for byte unchanged.
+  - **The header's fills are derived per theme** (`WorkspacePalette.HeaderFill`/`HeaderInk`/`HeaderMuted`): on a
+    light theme a segment's fill is deepened until light ink clears 4.5:1 on it, and the muted right cluster is
+    held to 4.5:1 on the status plane; a dark theme's fills are as they were. The native header reads the same
+    inks through `ChromePalette.BrandInk`/`HeaderMuted`. The low-vitals cue is `WorkspacePalette.Low`: the notice
+    ink on dark, a deep orange held to 4.5:1 on light, in the status row, the vitals strip and the gauges.
 - **A trigger's `route` says three things, and the third is "nothing"** (`TriggerActions.MainWindow`,
   Core; F2's `route` list). `SpawnTarget = null` has always meant *this rule adds no destination — the
   line follows whatever the other matched rules decided*, which is exactly what a highlight rule wants.
@@ -836,6 +1244,35 @@ fallbacks) for inline images/maps.
     (`PaneResize.DragBorder`, which changes only the two children either side), a double-click evens the
     split (`PaneResize.Even`). A recolour costs no cell and moves no pane rectangle — the NAWS rule. While a
     drag is held the 100 ms bare-press repeat is read as "the pointer is here".
+  - **No divider row where a tab strip or a strip panel already marks it** (`PaneExtent.DividerRows`, read by
+    `LayoutSolver`, `PaneExtent`, `PaneResize.Minimum` and `BuildLayoutNode` alike). Stacked, there is no row
+    above a pane that draws its own tab strip (`PaneNode.DrawsHeader`, host-derived by `PanelSizing.Apply`
+    like `FixedRows`, false until then): that strip is the boundary, and its empty run past the last tab is
+    registered as the divider (`DividerSlot.HeaderPaneId`, `HeaderFill`) — the same hover, `DragBorder` drag,
+    double-click and tooltip, lit by recolouring those cells after the paint (`PaintHeaderDividers`; the
+    control's own background is what its content inherits, so it cannot be set there). A tab, its `×` and the
+    `│` between tabs stay the framework's, and `PaneDragSurface.IsDragHandle` keeps the run from starting a
+    window drag. There is no row either side of a fixed strip panel; it sits flush, and an *unfocused* strip is
+    recessed (`SurfaceToneIn`), so it is never the same plane as an unfocused pane. `WorkspacePalette.Recessed`
+    is the backdrop's step on a dark plane and a shallower 0.90 on a light one (`LightRecessScale`, about L* 87
+    under Light's L* 96 panes, twice the light backdrop's step), so Light's background chips and strips are not
+    the deep grey a dark theme's step gives. Side by side, nothing changed. The
+    freed row went to the panes, which is the point and a NAWS change; `StackedDividerTests` and the
+    `split-stacked` view are the pins.
+  - **A panel's heading band is a boundary too, in the cells** (`PaneNode.DrawsHeading`, set by `ApplyHeadingPanes`
+    after `ApplyAll` for a lone composer or who-here pane, `PanelSizing.DrawsHeadingBand`; `HeaderPanes` counts it).
+    Roleplay's composer over who-here has no divider row; the HERE band's empty run is the handle (`HeadingFill`),
+    **read off the paint** (`MeasureHeadingRuns`, before `PaintHeaderDividers`: the longest blank run on the band's or
+    the lit rule's plane), because three renderers lay their headings out three ways. Who-here draws its band before
+    the roster arrives, so the boundary never comes and goes. **Not in the window** (`HostChrome.Strips`): its native
+    panels lie over that row and take its presses, so it keeps the divider row. `HeadingDividerTests`.
+    **Under `Strips` the cells draw no band at all** (`PanelHeadingInk` is null, the bare accent label): the window
+    paints each half of a divider row in the plane read off the cell beside it, so a band under a native panel's heading
+    was read as that pane's plane and drew a filled bar across the seam (wave 23's regression).
+  - **The rail is `rail │ panes`: the spacer column after the rule went to the panes in wave 24** (NAWS +1 column).
+    Measured, not preferred (`RailEdgeTests`): the mockup lets the planes carry the rail's edge (~6 L*), but here an
+    unfocused pane is 2.9 L* above the backdrop on Dark (a tinted one less) and the rule 15.9, so the rule stays and
+    the rail-coloured spacer beside it separated nothing. Pane text meets the rule as at any pane divider.
   - **The menu is the ⌃P catalog's own entries** (`AddCommands`), so it cannot offer an action the keyboard
     lacks, and each says its key (`ShortHint`). A right-click on a link or output focuses that pane first,
     and on a tab activates it, so the entries act on what was clicked.
@@ -854,14 +1291,548 @@ fallbacks) for inline images/maps.
     without taking them.
   - Screenshots of the window's cues come from a real window under Xvfb, driven with XTest; `--render-png`
     has no pointer and cannot show them.
+- **The window draws native views over the cells, and the cells stay** (`DesktopLayer`, `HeaderButton`,
+  `VitalsGauges`, `MapCanvas`, `WhoHereList`, `QuickBarButtons`, `NativeMenu` in Avalonia; `SharpMUTermApp.Desktop.cs`;
+  Client `VitalsModel`, `MapViewModel`, `WhoHereModel`, `QuickBarModel`, `LayoutCommands`). A Layouts button in the
+  header, native vitals gauges, a native map, a native who-here list and native quick-bar buttons. Decisions not
+  to relitigate:
+  - **An overlay, never a cell.** The layer is a `Canvas` above `TerminalView` in the window's root panel; the
+    client paints every cell exactly as in a terminal underneath, so no pane rectangle moves (NAWS), the parity
+    test (which compares cells) does not see it, and a host that draws nothing native loses nothing. A native
+    view covers its pane's output rectangle and paints the pane's own plane, read off the frame's cell there, so
+    tint and focus show through without the client saying them twice.
+  - **The channel is `IPointerPresenter`**, the one the scrollbars ride, with two default-implemented members
+    (`Panels`, `HeaderActions`) so the terminal and the test presenters need no change. `PublishPanels` runs on
+    `PostBufferPaint` and publishes only on change; a panel is on screen when its window is a realised pane's
+    front tab **and no modal is open**. A settings screen, ⌃P or F1 is drawn in cells over the panes and a native
+    view would sit on top of it; a modal covering the whole window leaves the main window unpainted, so
+    `ModalStateService.StateChanged` publishes too (`TheEditLinkDispatchesTheF4ScreenAndNoNativePanelCoversIt`). The map's model is rebuilt only when `RenderMap` has run since (`_mapRevisions`), and its walk
+    callback is one instance per window so an overlay compares equal frame to frame.
+  - **Data is a view-model both hosts draw.** `ReadVitals` builds the `VitalsModel` that `VitalsStripRenderer`
+    draws as cells and the gauges draw natively; `VitalsModel.LowShare` is the one low threshold
+    (`StatusMeterRenderer.LowShare` reads it). `MapViewModel.From` is the current room's area and level, nearest
+    first, at most 1,500 rooms, names bounded. `ReadWhoHere` builds the `WhoHereModel` and `QuickBarEntries` the
+    `QuickBarModel` that `WhoHereRenderer`/`QuickBarRenderer` draw as cells; row or item N is the same person or
+    binding in both, and the empty/unknown sentences and the `F4 edits keys` hint live on the models.
+  - **The window never builds a command.** The Layouts menu is `LayoutsMenuItems()`, built on the client's thread
+    (`HeaderAction.Menu`), each entry a registry dispatch: `layout:lib:apply:<id>`, `…save`, `…save-new`,
+    `…use-world`, `…use-character` (a `CommandFamily` that lists nothing on ⌃P — ⌥M is the keyboard's list), plus
+    `layout:layouts` for *Manage layouts…*. Those ids run the ⌥M list's own methods, which now return a
+    `LayoutActionResult` the list shows as its status and a command shows as a notice. A map click is
+    `PanelOverlay.WalkTo` → `WalkFromMap`, the method a cell map's `mux:map:` link ends in. A who-here or quick-bar
+    click is `PanelOverlay.Pick(index)`: the client reads row N back from the overlay it *published* for that
+    window (out of range is nothing) and runs `OfferLook` / `RunQuickMacro`, the cell links' own methods, on the
+    window's own character. `F4 edits keys` is `PanelOverlay.Dispatch(QuickBarModel.EditCommand)`
+    (`screen:keypad`). One pick callback per window (`_panelPickers`), for the map walker's reason.
+  - **Input, by view.** The header button is the window's alone: press, release, wheel and movement stop at it,
+    a right press included, and nothing reaches the client (`ThePressOnTheLayoutsButtonNeverReachesTheClient…`).
+    It never takes focus. It sits over the header's last three cells, which the header always leaves blank
+    (`right` ends in three spaces), clear of the 5 px resize band, and stands down if any of them holds text.
+    The vitals gauges are `IsHitTestVisible = false`: every pointer event goes to the cells, so focus, the
+    pane's menu and selection are the terminal's. The map takes the pointer (wheel zooms about the pointer,
+    drag pans from the character's room, double-click re-centres, click walks) and hands a right click on to
+    the client as a right click on the cell (`TerminalView.ForwardRightClick`). The who-here list and the quick bar
+    take the pointer the same way (hover plate, tooltip, left click is a pick, right click forwarded, wheel
+    swallowed) and are `Focusable = false`, as the map is: the keyboard stays on the client's command line. The
+    quick bar lays out the cells' rule in pixels — the link first, then bindings in order, `+N` for the rest, whose
+    `NativeMenu` entries pick by the same index. Every binding is drawn alike; only a key that does not fire is dim.
+  - **Gauges choose their arrangement from the pane's height alone**: stacked blocks when every meter and the
+    target fit as name-over-bar, else side by side, where the words shrink (`Mana · low 23 / 120`, then
+    `mp! 23/120`, then `mp 23`) before a bar goes under 24 px. The UI font, not the cell font: this is the window's
+    presentation. `hp`/`mp`/`mv` read as Health/Mana/Movement (`VitalsMeter.Title`).
+  - **Not done**: no animation on a
+    gauge change; the map draws one level and area (other levels show only as stairs marks, other areas only as
+    a coloured spur), with no room symbols beyond the game's own; the button's icon is the only header action. The window's menu is Avalonia's `ContextMenu`, which needs a second
+    click under a WM-less X server to take the first item (seen under Xvfb only).
+
+- **The header and the sidebar are data, and the window draws them natively beside the cells** (Client
+  `Chrome/HeaderModel`, `Chrome/SidebarModel`; Tui `Hosting/ClientHost.cs` `HostChrome`, `Pointer/SharpMUTermApp.Chrome.cs`,
+  `ChromeOverlay`; Avalonia `NativeChrome.cs`: `NativeHeader`, `NativeSidebar`; `DesktopLayer`'s `NativeLayout`).
+  Decisions not to relitigate:
+  - **One model per surface, and the cells render from it.** `BuildHeaderModel()` feeds `HeaderMarkup(model)`;
+    `BuildSidebar()` feeds `BuildRail()` (`SidebarModel.Rows()` is Core's `RailModel.Build` over the same tree).
+    `SidebarModel` wraps Core's `RailWorld`/`RailCharacter`/`RailWindow` tree rather than duplicating it, adding the
+    selected window, collapsed, targets and value equality. It is not called `RailModel` because Core's `RailModel`
+    is the row projection. The header's presence dot reads `ConnectedCharacters()`, the same answer as the rail's
+    dot and the fraction. While ⌃B is armed `HeaderModel.Prefix` carries `PrefixPanel.Entries` (key, title, why it
+    is blocked) and the exit, so the native header shows the keymap where the cell header shows its strip.
+  - **`ClientHost.Chrome` (`HostChrome(Header, Rail, Tabs)`, required) says which chrome the host draws, and the client
+    leaves no cell for it.** `HostChrome.None` for the terminal, the snapshot, `--plain` and the tests;
+    `Desktop` (header, rail, status row and field) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
+    `Native` (header, rail and tab strips) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
+    `--render-png` say None). It is a flag per part, not a size: the space is the host's own business (44 px, 244 + 8 px,
+    `NativeLayout`), and the client is only told the part is not its to draw. With `Header` the header control is
+    `Visible = false` — a hidden sticky band takes no row — and `ChromeRows()` counts no header row, so the
+    input-height veto (`SyncInputHeights`) and the layout agree. With `Rail` `BuildWorkspaceRow` builds the pane area
+    alone (no rail column or divider; `_railColumn` is null, so `ApplyRailWidth` does nothing). Everything
+    else follows from arranged bounds: `PaneOutputRects` and so per-pane NAWS are the panes the cells really hold.
+    `HostChromeLayoutTests` pins rows, rectangles, NAWS and the veto at 80×6.
+  - **The window moves the cells out of the way; nothing native sits over a cell.** `DesktopLayer` spans the window
+    and sets `TerminalView.Margin` to `NativeLayout.Insets` (header height on top, sidebar width plus an 8 px gutter of
+    the sidebar's plane on the left; the slim width while `Sidebar.Collapsed`), so the view, the grid it hands the
+    driver and every pane are what is left. `MainWindow` sizes the window as the `--size` grid plus the insets.
+    Panels and the cell-mode header buttons are placed from `DesktopLayer.CellOrigin`; scrollbars, hovers, tooltips
+    and pointer-to-cell mapping are the view's own coordinates and needed no offset. The window's resize band is
+    measured against the *window* (`TerminalView.EdgeAt` translates), so it works over the header and sidebar too
+    (`ResizeFromChrome`, `EdgeCursorFromChrome`); a blank cell on row 0 moves the window only while
+    `CellsHoldHeader` (row 0 is a tab strip otherwise). The native palette (`PaletteOverlay`) is the root panel's last
+    child and centres over the whole window, its card starting under the header (`ThePaletteCentresOverTheWhole…`).
+  - **The channel is `IPointerPresenter.Chrome(ChromeOverlay)`**, published only to a host whose `Chrome.Any`, on
+    `PostBufferPaint`, the main window's `Activated`/`Deactivated`, and every `RefreshHeader`/`RefreshRail`/`ToggleRail`
+    (`PublishHostChrome`): with no cell of either a change may paint no frame. Only on change. It carries no
+    rectangles; `ChromePalette` carries the planes (`HeaderPlane`, `RailPlane`, `Ink`) and the notice voice, because
+    there is no cell to read them off.
+  - **A click hands back a target the client put in the model**, and `ActivateChromeTarget` refuses one the last
+    overlay did not offer (a rail target is offered only when `Drawn.Rail`). Rail targets go to `DispatchRailTarget`,
+    the search box and brand to `HeaderModel.PaletteTarget` (opens ⌃P, never toggles it shut), *Add a game* to
+    `term:welcome`, the header's sidebar toggle to `SidebarModel.CollapseTarget` (`ToggleRail`, what ⌃B b runs). Never
+    `OnLinkClicked`, and the host spells no command.
+  - **A modal does not hide the chrome.** ⌃P, a settings screen, the composer and the quit prompt are drawn in the
+    cells, which no longer reach under the header or sidebar, so the chrome stays where a desktop app's stays, under
+    a veil, and takes no click (`ChromeOverlay.Interactive`, `MainWindowInFront`; refused client-side too). The
+    settings screens and F1 size to the driver's screen, which is the cell area, so they fit and centre there.
+  - **The fold button is the header's** (wave 33, `NativeHeader.Toggle`): a 16 px sidebar glyph (column shaded while open) in a
+    28 px square left of the brand, centred over the folded strip, offered only under `Drawn.Rail`, open or folded.
+  - **Folded, the sidebar is a 48 px strip**: an accent mark per world, a disc with the initial
+    per character (filled while connected, an unread dot), "+" at the foot; names in tooltips.
+    The cell rail's folded strip marks each world with an accent `▌` row and gives characters two letters where two
+    share an initial (`RailRenderer.CollapsedWorldMark`, `InitialLength`).
+  - **Input**: every press, release and wheel over the native views is the window's (`NativeChromeView`); a right
+    press does nothing (there is no cell under it to forward to), and nothing is focusable. A left press on empty
+    header space calls `TerminalView.WindowGestureFromChrome`: edge band resizes, the rest moves the window,
+    double-click maximises. The header leaves the header buttons' slots clear; with a native header the buttons sit
+    in it, 30 px, right-aligned.
+  - **Parity is cells against cells under the same `HostChrome`.** `HostParityTests` draws every view three times inline —
+    both hosts told `None`, `HeaderAndRail`, then `Native` (tabs too) — and the looping pass with `Native`, comparing every
+    cell. Telling both hosts the same arrangement keeps the comparison a comparison of drivers (the guarantee it
+    exists for), and covering both arrangements means the layout a person actually runs in the window is held to
+    the terminal's cell for cell, rather than compared below an offset or skipped. What the native header and
+    sidebar *say* is held to the cells by the shared models (`NativeChromeModelTests`), not by pixels.
+  - **An overlong sidebar scrolls** under the title and above the foot button, with the wheel or the panes' overlay
+    bar (4 px, 8 px under the pointer, dragged by its thumb); rows are laid out unscrolled, the scroll clamped, and
+    a row half under the title is clickable only where it shows (hit areas intersect the list).
+  - **⌥C moves the keyboard into the sidebar, in both hosts** (`SharpMUTermApp.RailKeys.cs`; `SidebarModel.Cursor`;
+    ⌃P `layout:rail-keys`; the `rail-keys` view). ↑↓ Home End walk `NavigableRows()`, ⏎ goes where a click goes
+    (`DispatchRailTarget`), Esc or ⌥C hands the keys back, and any other key hands them back *and* does what it does
+    on the command line. Focus never moves: the cursor is client state `HandleWindowKey` reads first (`TryRailKey`),
+    the way an armed ⌃B is, and every other global shortcut leaves it before acting. The cell rail draws the row on
+    the armed band padded to the rail's widest row (no cell spent; inks re-held to the floor on the band,
+    `RailRenderer.OnBand`); the native sidebar draws an accent ring and scrolls the row into view. ⌥C because it
+    is `ESC c` (one Alt chord in a terminal), C names CONNECTIONS, and nothing claimed it — not `AppShortcuts`, the
+    bar's table, nor the window's `HostKeys.Reserved`. **While the sidebar holds the keys both command lines wear the
+    idle band** (`SyncComposerBands` reads `_railCursor`, and `UpdateInputChrome` repaints the prompt to match): ⏎ goes
+    to a row, not to the game. The window's command line is cells, so it follows with nothing of its own.
+  - **A right click on a sidebar row opens the client's menu for that row** (`SidebarRowMenu`, `RunSidebarMenuEntry`;
+    `ChromeOverlay.RowMenu`/`RunRowMenu`; the cell rail's pointer menu reads the same method). Entries are registry
+    commands with their keys (switch, connect/disconnect, edit in F5/F9, go to, close, clear), each offered only if
+    the registry resolves it; running one brings the row forward first, and an id the menu did not offer is refused.
+  - **Not done**: no animation when the sidebar folds; the command line keeps its armed band while the sidebar holds
+    the keys; the terminal has no row menu (no pointer menus there), its entries are ⌃P's.
+
+- **The window draws each pane's tab strip and the scrolled-back band natively, over rows the cells keep**
+  (`HostChrome.Tabs`, `HostChrome.Native` = all three, the window's default; Client `TabStripModel`/`TabChipModel`,
+  `ScrollBandModel`; Tui `Pointer/SharpMUTermApp.PaneChrome.cs`, `PaneChromeOverlay`; Avalonia `PaneChromeViews.cs`:
+  `NativeTabStrip`, `ScrollBandView`; surfaces `tab-strip` (`NativeChrome`) and `scroll-band` (`CellsUnderNative`)).
+  Decisions not to relitigate:
+  - **Unlike the header and rail, the strip keeps its cell rows.** One cell grid cannot be inset per pane; the client
+    paints the strip rows blank in the pane's recessed plane after the frame (`BlankNativeTabStrips`, `PostBufferPaint`)
+    and the native strip lies on them. **Under `Tabs` a strip is two rows** (`TabHeaderStyle.Separator`, `TabStripRows`),
+    the mockup's ~40 px with 14 px labels centred in the tabs; `PaneOutputRects` reads `TabHeaderHeight`, so NAWS is the
+    pane less two rows, never a native view over a row of output. The band needs no blanking: its cells stay under it.
+  - **`HostChrome.PaneGutter` (the window) gives every pane two blank columns either side** (`tabs.Margin`,
+    `PaneGutterColumns`) **and a blank row above an output window's first line** (the content's `Margin`,
+    `PaneGutterRowsFor`; none for a panel or a map, drawn natively over the whole pane), in the pane's plane, so output
+    starts the mockup's ~20 px in from the pane's edges rather than one cell's 8.
+    The columns are lost by the pane: `PaneOutputRects` subtracts the margin and NAWS follows. A native panel is
+    published over its output rectangle *and* the gutter (`PublishPanels`), since those cells hold nothing and the panel
+    pads itself. The terminal has no gutter. `NativeTabStripTests.TheStripTakesTwoRows…` pins both against the cells.
+  - **The selected tab is the mockup's card** (wave 33, `NativeTabStrip.Render`): the pane's plane, a hairline on three
+    sides, radius 8 at the top, open onto the pane; no accent bar. In the focused pane that hairline is `NativeTokens.Focus`
+    (the command line's focus edge), the only focus cue the strip adds: the pane's plane already says it, but two strips side
+    by side read alike. Underline, accent top edge and pill looks were tried in a real window and dropped
+    (`ux-wave33b/tabs/`).
+  - **One model per strip, and the cells title from it**: `BuildPaneTabs`/`RetitlePane` build `StripModelFor` through
+    `Drawing(TabStrip, paneId, …)` and `TabTitles.Strip` writes the titles; the band is recorded in
+    `RefreshScrollSplitBar`. Published through `IPointerPresenter.PaneChrome` (default member) on `PostBufferPaint`
+    and modal changes, only on change, never while a modal or the native F1 covers the panes. Bands go to every host
+    with a presenter; strips only where `Tabs`.
+  - **Every gesture ends in the cell one's method, and is refused unless offered**: a tab → `ActivateStripTab` (what
+    `OnTabChanged` runs), its × → `CloseStripTab` (what the cell × runs; only where `Closable`), a right click →
+    `OpenTabMenu` (`AddTabMenu`, the cell tab's menu), `+N ▾` → `OpenTabOverflow` with the recorded `MenuModel`, the
+    band's button → `ReturnToLiveTail` (End's and ⌃End's path).
+  - **Presses**: the views hit only their tabs and buttons (`ICustomHitTest`); a press on the strip's empty run goes to
+    the cells, where the strip row is the stacked divider (`HeaderFill` returns the whole row under `Tabs`) and
+    `TakesNativeStripPress` strikes the button flags after the client's own handlers, so the framework never selects
+    or closes a tab under the native one. `PaneTargetAt` says Nothing on a strip row.
+  - **A native tab drags** (`SharpMUTermApp.TabDrag.cs`; Avalonia `DesktopLayer.TabDrag.cs`, `TabDragView`; Client
+    `TabDragModel`, `TabDragStep`). A press pulled 5 px off a tab hands the pointer to the *layer* (the client tears the
+    strips down for its drop preview, which would lose a strip's capture); each move goes to `TabStripOverlay.Drag` as a
+    desktop cell, plus the slot among the strip's tabs (frozen at begin) while over that strip — the only thing the window
+    works out. The client does the rest with the cell drag's pieces: frozen `PaneSnapshot`, `DropZones`, the cells' drop
+    preview (the target pane drawn blank under `Tabs`, so the native wash is the only zone; `BuildDragPane`) and
+    `DRAG … → …` prompt, and on release `DropWindowOnPane` (the cell commit's method too: edge splits, centre
+    joins). Over its own strip it is `ReorderStripTab` → `ReorderFocusedTab`, the method ⌃B &lt;/&gt; end in (declared
+    `CellsVia: prefix`, the ⌃B keymap's `< >` row). A slot is used only on that strip's row and in range; a drag the strip
+    did not offer is refused; Esc abandons it. What it would do is published back (`PaneChromeOverlay.Drag`): the layer
+    washes the zone (`TabDragModel.ZoneOf`: the half a split takes, or the pane) with the prompt's words, carries a card
+    under the pointer, and the strip draws an insertion bar. `SurfaceParityTests` holds a native drag to an edge against
+    the terminal's mouse drag, and a reorder against ⌃→ then ⌃B &gt;, by `WorkspaceDigest()`.
+  - **Not done**: a cell tab still drags only to panes (no reorder by dragging in a terminal: ⌃B &lt;/&gt;); no hover
+    plate on the empty run.
+
+- **Layouts are realised as panes, one per panel that has data** (`Core/Layouts`: `LayoutFold` →
+  `LayoutRealiser` → `WorkspaceLayout.ReplaceTree`, `LayoutCapture` for the way back; Tui `SharpMUTermApp.Layouts.cs`,
+  `TerminalPanels.cs`; ⌥M / ⌃P ▸ *Layouts*; F5 `layout` rows; the `layouts`, `layout-combat` and `layout-roleplay` views). The layout's
+  name is shown nowhere on the main screen. Decisions not to relitigate:
+  - **A panel is a window.** `output` is the session's window, `chat` its spawn windows, `map` `map:<key>`, and
+    every other panel a window `panel:<panelId>:<key>` (`TerminalPanels.WindowId`) whose control comes from the
+    factory registered for that id (`Panels.Register(id, ctx => control)`, from `partial void
+    RegisterTerminalPanels()`), built once and re-parented like the map's. So panels get tabs, focus,
+    `Activate`/`SendTarget` (a panel window is owned by its session) and persistence for nothing.
+  - **A panel window is furniture, not a destination** (`WindowKind.Panel`). `Workspace.WindowsFor` leaves it out,
+    so it has no `⌥N` and pushes no map or capture window to a later digit; `BuildRailWindows` lists no row for it;
+    ⌃P has no `Go to …` entry for it, because each panel's own entry (*Show vitals*, *Dock the composer*) goes to it.
+    ⌃O, the ⌃arrows and a click still reach it — it is a pane like any other.
+  - **A strip is as tall as its content** (`PanelSizing`, `PaneExtent`; `PaneNode.FixedRows`/`MinRows`). Vitals and
+    the quick bar are one row; the composer has a floor (`PanelSizing.ComposerMinRows` plus its tab strip). Region
+    shares are proportional, so the height is a pane property instead: `BuildWorkspaceRow` derives it from each
+    pane's tabs on every rebuild (never persisted — a strip handed an ordinary window stops being one), the grid
+    gives a fixed child `GridLength.Cells` and a floored one `Star(min:)`, and `LayoutSolver` shares rows the same
+    way (`PaneExtent.DistributeRows`; if every child is fixed the last shares, in both). A pane holding **one panel and
+    nothing else draws no tab strip** (`PanelSizing.ShowsTabStrip`, applied as `PaneNode.DrawsHeader` →
+    `TabControl.ShowTabHeader`, which `PaneOutputRects` already reads) and offers no drag handle: every panel titles
+    itself (COMPOSE, HERE, VITALS, a strip's row), as the mockups draw the composer and who-here columns, and the row
+    goes to the panel. A panel pane holding a window or a second tab keeps its strip; the map is a window and keeps it. Only
+    rows: a strip's width is a share. No divider row is drawn beside a fixed pane (it sits flush, on a recessed
+    plane), and a drag of that border returns `PaneResizeOutcome.FixedSize`, and ⌥⇧↑/↓ take rows from a sharing pane beyond the strip or
+    pass to the next split up, refusing out loud when only a strip could pay.
+  - **The built-ins are the mockups' arrangements** (`BuiltInLayouts`). Roleplay: the output with chat as tabs behind
+    it, and a side column (35%) of the composer (3) over who-here (2). Combat: the output with the quick bar under it,
+    and a side column of the vitals card over the map, chat collapsed behind the map (a collapsed panel never joins a
+    strip's pane, `LayoutRealiser`). **Below 100 columns a built-in folds its narrow arrangement**
+    (`BuiltInLayouts.ForWidth`, same id and name; `ApplyLayout`/`RefoldLayout` read `IsNarrow()`, and
+    `SyncNarrowLayout` re-folds on a crossing): Roleplay's composer goes under the output, Combat's vitals become a
+    one-row strip across the top so the column's rows go to the map. Only `IsBuiltIn` layouts swap; a saved copy of
+    a built-in (a new id) is drawn as saved, and an old copy keeps the old arrangement.
+  - **A vitals pane under half the window's width is a card** (`PanelSizing.ApplyAll`, `WidthShares`,
+    `CardBelowWidthShare`; `VitalsCardRows` = 2 a meter + 6: heading, the target's rows reserved): it draws its own VITALS heading
+    (no tab strip, above), the cells draw name and numbers over a full-width bar (`VitalsStripRenderer.RenderCard`, chosen by box
+    height ≥ 3), and at 20 px rows the window's gauges stack in it, headed. Decided from the tree on every rebuild, so a
+    player's own layout gets it too; the terminal mockup's top strip is the narrow arrangement, not the wide one.
+    **Where the host draws strips (`HostChrome.Strips`, the window) the card is as tall as its gauges**
+    (`VitalsGaugeCardRows` = 2 a meter + 4, + 2 only while a target is named; `SharpMUTermApp.MapColumn.cs`), so the map
+    gets the rows. **The window answers the rows from the gauges' pixels** (`IPointerPresenter.VitalsCardRows`, default null;
+    `WindowPointer` from the cell height `TerminalView` writes, `VitalsGauges.CardRows` = `NeededHeight` rounded up), and
+    the gauges spread the rest of the last row over their gaps (`GapGrowth`, ≤ 8 px a gap), so the last bar ends 16 px
+    (the mockup's padding) above the map; with no view measured (tests, the parity harness) the row rule stands; a target arriving or a meter appearing re-lays the pane area (`ResizeVitalsCard`, on the panel's game
+    data change, only when the rows differ). The column is beside the output, so no NAWS moves. The terminal keeps the
+    reserved card. **There too a pane holding the map window alone draws no tab strip** (`ApplyLoneMapPanes`, under
+    `HostChrome.Tabs`): the native map's heading names it. The terminal keeps its strip (the cell map's drag handle and ×).
+  - **The status row leaves its meters out while the vitals strip shows them** (`VitalsStripShowing`: the status
+    row's character's vitals window is the front tab of a drawn pane, zoom included). `SyncStatusMeters` repaints
+    the row only when that flips (on a rebuild or an activation), so a notice is not displaced for nothing. The
+    rest of the row's width rules are untouched: the meters were already the optional part. An id with no
+    factory counts as having no data (`DrawableAvailability`), so an unbuilt panel is *Waiting* and costs no cell.
+  - **Applying never closes a window.** Windows no panel places stay in the pane they were in if its id survives,
+    else in the output pane; a collapsed panel's windows are background tabs of the first pane in its region.
+  - **A restored workspace wins at startup.** The first bind of a character whose windows the resumed workspace
+    holds keeps that arrangement; any other bind applies the resolved layout; ⌥M ⏎ always applies. Only the live
+    entry point applies on its own (`autoLayout:`, the `save:`/`logRoot:` family), so no test or snapshot that
+    binds a session has its panes rearranged.
+  - **Re-folding is gated twice.** Inputs (game data, the map recorder, a new spawn window) arm one 500 ms timer
+    (`LayoutRefoldDelay`), and the re-fold rebuilds only if `LayoutRealiser.FoldShape` changed — a burst of GMCP
+    that draws the same panels reflows nothing (`PaneAreaRebuilds` is the pin). It stands down for good once the
+    tree's shape (`TreeShape`: pane ids and nesting) is not the one it applied: the player split, closed or
+    moved a pane and the arrangement is theirs. A divider dragged is not a shape change and is reset by the next
+    re-fold. A new spawn window goes into the live layout's chat pane, not the focused one.
+  - **⌥M renames (`r`) and deletes (`d`, then `y`) saved layouts** through `LayoutLibrary.Rename`/`Delete`; both
+    are refused for a built-in and the footer names them only over a layout of the player's own. The name is typed
+    in the list itself; Esc leaves the rename or the question before it closes anything (`ListOverlay`'s `escape:`
+    hook). Every footer row is always emitted, blank when idle, because the modal is sized once when it opens.
+    Deleting the live layout hands the panes to the player (`_liveLayout = null`) rather than re-folding them.
+  - **Saving captures geometry, not intent.** `LayoutCapture` reads regions off the solved rectangles (above the
+    output = top strip, right of it = side, below = bottom); panels not on screen keep their old placement.
+    Saving changes to a built-in saves a copy and points the character (or the world using it) at the copy.
+  - **Layout saves go through `PersistConfiguration`**, never `SaveConfiguration`, which re-periodises timers.
+    F5's rows commit through `SaveConfiguration` like every screen and it re-applies a live layout whose owner
+    now resolves differently.
+  - **The suggestion is taken once per world** (`AcceptedLayoutSuggestion`), 5 s after a connect or at once when
+    vitals arrive, said in one notice, and only by the live entry point.
+- **Four panels plug into that seam** (`SharpMUTermApp.Panels.cs`, `Tui/Panels/`: `WhoHereRenderer`,
+  `VitalsStripRenderer`, `QuickBarRenderer`, `DockedComposer`; Core `RoomOccupants`, `CombatTarget`; ⌃P `panel:*`;
+  the `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer` views). The first three are one `MarkupControl`
+  each, drawn from the session's stores on change and sized from `PaneOutputRects` on `PostBufferPaint`
+  (`SyncPanelSizes`), so a panel's content is a function of its own pane and moves no other cell. Decisions:
+  - **A panel's links are its own.** Each panel control has its own `LinkClicked`, the payload is an *index* into
+    what that panel last drew (`mux:who:N`, `mux:quick:N`), and the action runs on the panel's own session
+    (`context.SessionKey`), never `_active` — the map window's rule. A who-here click puts `look <name>` on the
+    command line through `PlaceGrab` and sends nothing (the name is the game's text); a quick-bar click runs
+    `WorldSession.HandleKeyAsync(descriptor)`, the path the key itself takes.
+  - **The roster is server text, bounded** (`RoomOccupants`: 200 rows, 64-character names, no whitespace or
+    control characters in a player name, so a click cannot become a second command). `Room.Players` replaces,
+    `AddPlayer`/`RemovePlayer` edit, and creatures come from `Char.Items.*` with `location: room` and an `m`
+    attribute. Cleared on connect with the game data.
+  - **The vitals strip reserves every field**, the status row's rule: value and max `StatusMeterRenderer.ValueWidth`
+    each, the low mark's cells whether shown or not, the target name padded. The level of detail (bar length,
+    word or `!` low mark, gap, target bar, then percentages) is chosen from the width alone, so it changes only
+    when the pane does. It reads F7's meters through `StatusMeterRenderer.Read`; the meter model is unchanged.
+  - **The quick bar elides, never wraps**: `+N` counts what did not fit and `F4 edits keys` goes first.
+  - **The docked composer shares F1's draft** (`_composeDrafts`, per character, in memory) and sends through
+    `ComposeMessage.Build`, so ⌃S, ⌥L and the `%r` join are F1's exactly. F1 from it opens the same buffer full
+    screen; F1's close writes the draft back into the docked copy (`SyncDockedComposers`).
+  - **Composer focus is one fact: *armed*.** Armed means the focused pane's front window is a composer and it has
+    not been released (`_composerReleased`). While armed, `PinFocusToArmedBar` pins the framework's focus to the
+    *editor* instead of the bar — so typing, paste and the caret all land there by the pin's existing rule — and
+    both command lines wear the idle band. `HandleWindowKey` hands an armed composer's keys to
+    `HandleComposerKey` (macros, resize, ⌃C/⌃X, ⌃S, ⌥L, Esc, the ⌃arrows, else the editor). **Esc releases** (the
+    bar arms and ⏎ sends from it, to the same character); the ⌃↑/⌃↓ ladder releases too; **arriving** at the
+    composer's pane (⌃O, ⌃arrows, a tab, a click in the editor — `ArmClickedComposer` on `FocusChanged`, guarded by
+    `_pinningFocus` so the pin's own focus moves never count) arms it again. `ArmBar` does **not** release: it is
+    re-asserted on every layout change, and releasing there disarmed the composer the moment its pane was built.
+    ⌥⏎ arrives as Esc then Enter, so an Enter within 50 ms of the releasing Esc re-arms and inserts a newline
+    (`TryComposerAltEnter`). `DockedComposerTests` covers each of these.
+- **The window can pop a native panel out into a window of its own** (map, vitals, who-here, quick bar;
+  `SharpMUTermApp.Floating.cs`, Avalonia `FloatingPanels.cs`: `FloatingPanelPresenter`, `FloatingPanelWindow`,
+  `PopOutButton`; Core `FloatingBounds`; Client `PanelFloatCommands`, `FloatingPanelModel`; ⌃P `panel:popout:<window>`
+  and `panel:dock:<window>`; the `floating-panel` surface). Three ways out — the button in the docked view's top-right
+  corner, the pane's right-click menu, ⌃P — and three ways back: the floating window's Dock, closing it, ⌃P. Decisions:
+  - **Floating is a fact about the panel's *window*** (`WorkspaceWindow.Floating`, screen pixels; `Unplaced` = the host
+    picks), so it is saved with the workspace, and a layout says the same per panel (`PanelPlacement.Floating`,
+    captured by `LayoutCapture` from `FloatingPanelsOf`). **The fold never reads it**: region, order and size stay the
+    place it docks back to, and a host that cannot float folds the layout exactly as if it said nothing.
+  - **The host fact is `ClientHost.FloatingPanels` (`IFloatingPanels?`, required, null in the terminal and headless)**,
+    not `HostChrome`. `HostChrome` says which chrome a host draws *instead of cells*; floating is a channel the client
+    publishes to (models out, moves and docks back), the `IPointerPresenter`/`INativeModals` shape, and a null member
+    is the one "this host cannot" every other optional channel already uses. `CanFloatPanels` reads it; ⌃P's families
+    list nothing without it (`CommandContext.Floats` null), the pane menu adds no entry, a docked overlay carries no
+    `PopOut`, and `PopOutPanel` refuses out loud. The catalog's actions say `OnlyOn: Window` with `CellsVia` the ⌃P id.
+  - **The pane goes through the workspace's own operations, and no cell is spent.** While the live layout owns the
+    panes, a pop out or a dock re-applies it (`RearrangeLiveLayout` → `ApplyLayout(adoptFloating: false)`) with the
+    floating window withheld (`DockedWindows`), so the panes are exactly the layout without that panel — the rectangles,
+    and so NAWS, are equal (`APoppedOutPanelLeavesThePanesALayoutWithoutItWouldHave`). Otherwise `RemoveWindow`/`AddWindow`
+    (back into the pane it left). An explicit apply takes the layout's floating state (`AdoptFloating`); a re-fold keeps
+    what is floating now. `OpenPanel`/`ShowMap` dock a floating panel: asking for it in a pane means the pane.
+  - **A floating panel is published like a docked one, from the same function** (`OverlayFor(…, docked: false)`): the
+    same model and the same callbacks, so a walk, a look or a quick key from the floating window runs the same method
+    on the panel's own character. Its control is made if it never had a pane (`EnsureFloatingControl`), and a redraw of
+    it republishes (`PanelView.Refreshed`, `RenderMap` → `NoteFloatingContent`), since no frame paints for it.
+  - **Resumed by either host**: `SettleRestoredFloating` takes a floating window out of its pane where the host floats,
+    and puts one back in a pane where it cannot, keeping the flag for the next host that can. A floating window has no
+    rail row (it would read `closed`).
+  - **The window**: owned by the main window, `ShowActivated = false`, not in the taskbar; first placed beside the main
+    window (left when the right has no room), later where the player left it, **clamped to the screens there are now**
+    (`FloatingBounds.ClampTo`: unchanged when wholly on a screen, else the screen holding most of it or the nearest, shrunk
+    to fit). Moves are reported after 300 ms of quiet. Every key and every typed character goes to `TerminalView`'s
+    handlers, so typing lands on the command line. Its plane is the character's pane tint on the theme, its ink the
+    theme's text. Closing it docks; the client closing it (a dock, the main window going) docks nothing.
+  - **Fixed on the way**: `PaneOutputRects` called before the main window existed threw, so a resumed workspace holding
+    any panel or map pane threw in the constructor; it now answers "nothing arranged yet".
+  - **Not done**: one floating window per panel window, not per panel kind across characters; no snapping or
+    always-on-top choice; the composer does not float; positions on a mixed-DPI desktop are assumed to be in the main
+    window's scaling.
+
+- **Wave 18 tidy-up.** The script entries (reload, console, edit, new, the files) are under HELP & SETUP; Edit and New
+  and the file entries are offered together, only while scripts are on or the files are listed (`ScriptsEditable`). The
+  cell ⌃P stops above the command line (`CommandPalette.KeepClearBelow` = `InputBandRows`), so at 80×24 its border is a row
+  above the prompt. F5's columns are fitted with `MarkupText.FitVisible` (elided with `…`, trailing blanks cut silently),
+  and `highlight names`' help inks each colour in itself, held to the floor. An overflowed tab keeps 3 letters and `…`
+  (`TabStripFit.MinimumName` 4); the tab the chip would leave shorter than that (`ChipReserve`) is counted under the chip.
+  In the window a pop-out button shows only while the pointer is over its panel (`DesktopLayer.SyncPopOutHover`), and a
+  one-row strip gives the button its right end (`ReservesPopOut`: the native control is narrowed, the corner painted the
+  pane's plane), so the button never sits on a strip's text.
+- **Wave 22 combat strips (`HostChrome.Strips`, the window's `Desktop`; terminal frames unchanged).** The quick bar is
+  `PanelSizing.QuickBarStripRows` (3) rows there (`ApplyAll(…, quickBarRows)`), drawn as 34 px buttons (`QuickBarButtons.ButtonHeight`,
+  key cap in `KeyFace`, a rule on top). `Macro.Danger` (F4 `style`: normal/danger, presentation only; the engine never reads it) is
+  `QuickBarItem.Danger`, drawn in `ScreenPalette.Warn` held legible (`DangerInk`) in both hosts. A collapsed panel gets a pane of
+  its own (`LayoutRealiser.Realise(collapsedAsBars:)`, `collapsed:<panel>`, below its region's first pane) drawn as a bar
+  (`SharpMUTermApp.CollapsedBars.cs`, `CollapsedPanelModel`, `CollapsedBarRenderer`, `CollapsedBarView`; surface `collapsed-panel`):
+  `CollapsedBarRows` (1 under `Input`, else 2), no tab strip, its windows marked scrolled back so the unread reads `N new`. A click,
+  or `Activate` of a window in it, is `ExpandCollapsedBar` (for the run; an explicit apply clears it). `DesktopLayer.BelowGrid`
+  stretches a native view at the foot of a column over the field reserve where the band does not reach.
+- **Wave 23 terminal (cells only; the window's native views are unchanged).** A docked panel's heading is a band
+  across the panel (`HeadingBand.Row`, Tui `Panels/`; `WorkspacePalette.HeadingBand` = the rule leaned 0.2 toward
+  `Theme.Prompt`, `HeadingInk` and the accent held to 4.5:1 on it): `HERE`, `COMPOSE` (the armed `▌` in the band's first
+  cell) and the vitals card's `VITALS`. The renderers take the band as an optional `Ink` member, so a renderer test with
+  none still gets the bare accent label. The scrolled-back band is filled with the same band (`ScrollSplitBarRenderer.Bar(…,
+  fill)`): it divides two viewports rather than sitting in a buffer, unlike the freeze/away/NEW bars, which stay rules.
+  The header's character is ` ● Corvid` in the world's colour on the band, no chip (`HeaderChip` is gone). The vitals
+  card draws its rule only above a target. The welcome's `/connect` example is in the accent.
+- **Wave 29 terminal audit (cells; both hosts' cells move together, the window's native views are unchanged).** Measured
+  against the four `Terminal-*.dc.html` mockups at their own grid (138×34: 1160 px of 14 px JetBrains Mono, 20 px rows) and
+  at 80×24 (`ux-wave29/terminal-audit/`). The rail's heading is `  CONNECTIONS` and a world row a bold name in the ▸
+  column, with no `┌ ⏻` and no `▚` spine (the world's accent is its characters' dots). Under a heading band who-here's
+  rows and the vitals card's blocks keep a cell of margin either side (`MarginFromWidth`/`CardMarginFromWidth` 16; a
+  renderer with no band is unchanged); the quick bar keeps one at each end from 24 cells, its keys in the held muted ink
+  (`HeaderMuted` on the reading plane) and the names in the body ink, not bold accent. A bar's empty part is solid `█` in
+  `WorkspacePalette.Rule` (a fill, exempt like every solid block), not lifted `░`. The docked composer's text is on the
+  well (`FieldBg`), a cell in from the rule. The filled scrolled-back band says everything in the band's ink. With no
+  world the header reads ` no connection` after the brand, where the row has room (dropped before the brand shortens).
+  The settings search's nav has a `SECTIONS` heading, titles in the body ink, the tally before the key, and a query
+  well 24 cells wide (narrowed to what the hints leave). **`ScreenChrome.Split`'s body runs to the action bar**, so the
+  hairline is full height on every two-column screen (it ended under a short list). Left as they are: the output's left
+  padding (a cell there is NAWS; the terminal has no gutter, decided), the rail's own width and cell 2 indent, the
+  Combat mockup's top vitals strip and no rail (the narrow arrangement; ⌃B b folds the rail), the map tab strip beside
+  Chat (a pane with two windows keeps its strip), area-coloured map rooms (`MapAreaPalette`), `rows` not `lines`, the
+  `Corvid · Aetherfall` spelling, `›` as the resting prompt, the cell settings screens having no permanent nav (only the
+  search lists sections). The nav's plane came in wave 30 (below).
+- **Wave 30 terminal map and nav (cells; both hosts' cells move together, the window's native map is unchanged).**
+  Measured against `Terminal-Combat`'s map and `Terminal-Settings`' nav (`ux-wave30/terminal-map-and-nav/`). The cell map's
+  title is a heading band where the panels have one (`MapRenderer.Ink.Band` = `PanelHeadingInk()`, null under
+  `HostChrome.Strips`), its look controls at the band's far end in the band's accent. A plain grid takes the mockup's
+  `[ ]───[ ]` step (`WideCellWidth` 6) when every room of the level lands in the box centred on the current room, else
+  `CellWidth` 4; a plain way west fills the gap too, a stub stays one cell, a diagonal sits mid-gap. From
+  `InsetFromWidth` (24) the title, exits, hint and legend keep a cell from the pane's edge. A tall pane (≥
+  `UnderFromHeight`) says `MapViewModel.Hint` over the legend, only whole. The settings search's section list is on
+  `ScreenPalette.NavBg` (`#141822`, a text plane `ScreenTheme` mirrors and holds inks on; `ScreenChrome.Nav` pads it to
+  the body's rows so the plane reaches the action bar), the selected section bold in the value ink. Left as they are:
+  area-coloured rooms (decided), the map's tab strip beside Chat, the title naming the room rather than `MAP` (decided),
+  the solid one-cell `Split` rule (shared by every two-column screen), and the mockup's target `◆` (no model carries it).
+- **Wave 19 panels and welcome (window only; the cells are unchanged).** Each docked native panel draws a heading from
+  its model (`PanelHeading.For`, Client; `PanelText.Heading`); `VitalsModel.Source` names where the meters came from
+  (`SourceOf`, set in `ReadVitals`), a mixture names nothing. The docked composer's footer (summary, Preview, Send) ends
+  in `ComposerSession`: Preview is `PreviewDocked` → F1 with `_composer.Preview` on (surface action `preview`). The quick
+  bar and the vitals row leave 22–30 px at the right for the pop-out button. The native welcome is a page
+  (`WelcomeView`): its Find card attaches a `WorldBrowseSession` to the welcome (`WelcomeSession.FindWorlds` →
+  `FindWorldsInWelcome`, actions `find`/`add`), fetched only on Show worlds, forgotten when the welcome closes; Add is the
+  browse pick, which reopens the welcome with the form filled.
+- **Wave 25 first run: both welcomes are drawn to `Desktop-FirstRun`/`Terminal-FirstRun`.** The window's is a **full page**
+  (`IModalView.FullPage`, default false): `ModalOverlay` paints `Well` over the whole window, header and sidebar included,
+  with no card, edge or scrim, and a press on its ground (`ModalOverlay.GroundTag`) moves the window, resizes it at an
+  edge, double-click maximises — never dismisses. The page is a 1,040 px column 56 px down, cards on `Card` at 3 : 2,
+  the first world row `Raised` with the `Focus` edge, the chosen layout `Raised` with a 2 px accent edge; `Display` is 28.
+  The cells' is a `ListOverlay` opened `flush` on `plane: PanelBg` (both additive parameters, popups unchanged): no frame
+  title and no padding, the heading on a `HeaderBg` band and the keys on a `FooterBg` band edge to edge
+  (`WelcomeSurface.Render`, body indented 2), the frame in `Rule`, the selected row on `CursorBg`, and the layout note
+  beside the chips once the row holds both (`PreferredWidth` 78, so from 82 columns). Not taken from the mockups: their
+  genre chips and *Package* tag (mu*index gives neither), example data (port 4201, TLS on), the "games" noun, and the
+  mockup's suggested-layout card (nothing is known before the first connect, so *suggested* stays a third state).
+- **Wave 31 first connect: welcome → Browse → address → form → connect, walked in both hosts** (`ux-wave31/first-connect-flow/`).
+  The raised world row is the one selected (`WelcomeView._worldSelected`), so ↑↓ in the search move it and ⏎ adds it (`FindOrAdd`;
+  a query the held rows do not match still asks the directory). In an address choice the keyboard is on the address row (focus
+  posted at `Loaded`, since rows are not in the tree until laid out), not on Back. A form a pick filled in starts in Character
+  and says which world it is and its charset (`FormIntroLine`, both hosts). **Every Esc goes back one step** in the cells: from a
+  picked form to the list as it was left (`ReturnToWorldBrowse`, which re-uses the last model and fetches nothing), and from a
+  Browse the welcome opened to the welcome on its Browse row (`_browseFromWelcome`; from ⌃P it still closes). **The tour row
+  goes under `connected to …`** (`ShowOwedKeyTour`, on the `ConnectionNoted` CONNECT note, because `StateChanged` Connected
+  comes before that row). The `welcome` demo scene starts empty (`_startedEmpty`), so it owes the tour as a real first run does.
+  Cell notes wrap to two rows rather than eliding (`WorldBrowseSurface.AddNote`); the form's intro wraps to the frame.
+- **Wave 32 first connect at 80×24 and 60×20 (cells, both hosts; terminal frames moved)** (`ux-wave32/terminal-first-connect-80x24/`).
+  **The tour row ladders** (`KeyTourKeys`, `KeyTourMarkup(width)`): it is a bar row (`PaneLine.Bar`, redrawn at the pane's width
+  by `SyncChromeBarWidths`, found again by its bar delegate `_tourBar`), full where it fits, short labels then ⌥M, F5, F1 given
+  up; ⌃P and `hide: ⌃P ▸ Key tour` stay. As chrome it is no longer found by ⌃F. **The welcome fits the desktop**
+  (`WelcomeSurface.MaxRows` = desktop − 6, so centred it clears the command line): every sentence is broken to the body, a
+  choice's detail is elided to its row, and over the rows spacers then the `/connect` example go (`Line.Drop`). Browse's
+  notes take up to 3 rows from the list (never below 3 list rows, `NoteRows`), and a refusal wraps. The header drops its
+  connected count when the shortened brand still does not fit (60 columns wrapped it); `NoWorldsNoticeFor(width)` shortens
+  the empty notice's words, never its commands. `FooterFitTests.TheFirstConnectViewsFitA60x20Terminal` and
+  `WorldBrowseTests.TheFirstConnectFitsASmallTerminalAtEveryStep` (real keys, 80×24 and 60×20) are the pins.
+- **Wave 32 window welcome backtrack (window; terminal frames unchanged)** (`ux-wave32/window-welcome-backtrack/`). Esc goes back
+  one step in the window too, through the cells' method (`StepBackFromWelcome`, surface action `back`): a form native Browse
+  filled in goes back to that list as it was left (`WorldBrowseSession.Place`/`StartAt`, `WorldListPlace`: query, order, row;
+  `ReturnToWorldBrowse` reopens it without fetching); a pick from the page's own list fills the form *in place* (the list stays),
+  so Esc gives the pick back (`WelcomeSurface.ForgetPick`) and the keyboard returns to the search; a hand-typed form's Esc goes to
+  the search; only then does Esc close. Native Browse opened from the welcome has a Back button and Esc back
+  (`ReturnToWelcomeWith`, `CanReturnToWelcome`, `WelcomeKeys`; action `welcome` → `ReturnToWelcome`, now both hosts). The find
+  card's heading has *Browse all worlds* (`WelcomeModel.BrowseAllButton`), the page's door to it. The page fits without a scroll:
+  bottom margin `Space16`, and a compact tier (`WelcomeView.FitPage`: top 24, gaps 16/12, card padding 18) when the natural
+  height would not fit (the default window). The added-world notice is one model (`WorldNotices.Added`): F5 once (no key chip,
+  the words name it), the encoding in brackets when one was saved, and no endpoint (the CONNECT rows say it; with one the row did not fit 60 columns).
+- **Wave 33 client text at 80 and 60 columns (cells, both hosts; terminal frames moved)** (`ux-wave33/terminal-client-text-80/`).
+  Text the client words is fitted by **choosing a shorter wording, never by eliding**: `FirstFitting(room, forms…)` (notices:
+  `NoticeRoom(chip)` is the row less a key chip or source label; `NothingAtStartNoticeFor`, `SwitchedNotice`, `NothingToSendTo`,
+  the no-session notice, the map's edit-keys notice), `DropHint` for the move/drag prompts (⏎ and Esc last), `BarRule.Fit(fixed,
+  forms, width)` for bars and client rows (NEW, AWAY, RESTORED, `ReconnectLines`; `AppendClientRow(…, params forms)`), F1's header
+  as a ladder of headers (field words, then spelling), and the docked composer's keys through `KeyLadder` (⌃S, Esc kept). Every
+  form keeps every key and command; a form may drop the owner's name. The key tour already fit with the timestamp gutter on: a
+  bar carries no stamp, so the gutter costs it nothing (pinned). `ClientTextFitTests` reads each fixed row off the frame at
+  80×24 and 60×20. Left as they are: a list row's detail column (⌃P, help, Browse, F10, the welcome's choices: it gives way by
+  design), server and mu*index text, a script error's engine text in the script header, the message log's rows, F5's world
+  column and trigger-set descriptions at 80×24, and the settings action bar's context line and F7's search/undo header at 60
+  columns (the settings screens are held to 80×24).
+- **Wave 33 B display scaling (window only; terminal frames unchanged)** (`ux-wave33/window-display-scaling/`; Xvfb with
+  `AVALONIA_GLOBAL_SCALE_FACTOR` 1, 1.25, 1.5 on 1920×1080). **A first size fits its screen** (`WindowFit`): the main window
+  is the `--size` grid plus every inset (the footer's 28 px was left out) and, if that is more than the working area less
+  `ScreenMargin` (24) each side, loses whole columns and rows and is centred (`MainWindow`, after `TerminalView.PrepareScale`,
+  so the cell is measured at the screen's scale; `Screens.Primary` is null under Xvfb, so the first screen); the settings
+  window is clamped the same way (`WindowFit.Within`, never under its minimum). **A hairline the view draws is one device
+  pixel** (`TerminalView.DeviceHairline`: dividers, the strip's top rule, the field's edge), never the scale (1.5 px blurred
+  two rows). **The grid's leftover pixels** (the view less a whole number of cells, under one cell) belong to the last
+  column: a tab strip, band, panel or pop-out button ending there is widened over them (`DesktopLayer.RightOfGrid`), a
+  field band ending there measures its right inset from the view's edge (`FieldRect(…, viewWidth)`), and a stacked divider
+  reaching it runs on over them (`DrawDividers`; the cells' last background, the rule's, showed as a block at the edge). The docked composer's
+  summary is a `FittedText` (`ComposerModel.SummaryForms`: the longest wording that fits, else `N words`), and the view
+  draws no overlay scrollbar over a window a native panel covers (`TerminalView.CoveredWindows`). The welcome has a third,
+  short tier (`WelcomeView.Short`: the `/connect` example and the layout cards' details go, the details into tooltips).
+  `DisplayScalingTests`. Not fixed: under Xvfb an Avalonia `ContextMenu` at 1.25/1.5 opens a popup a few pixels smaller than
+  the menu and scrolls (seen before this wave; not reproducible off X11 here).
+- **Wave 34 terminal completion audit (cells, both hosts; terminal frames moved)** (`ux-wave34/terminal-completion-audit/`).
+  Every `SnapshotViews.All` view read off the frame at 120×32 and 80×24, the four terminal mockups at 138×34, Light and
+  Solarized samples. **A `ListOverlay` with pinned keys lays its body out one column narrower** (`_barColumns`): the scroll
+  panel's bar takes a column, and laid out at the full inner width every line that filled it wrapped (the history view drew
+  each line twice and a scroll bar at 80×24, and wrapped its title at 120). **A web page is laid out at its pane's width**
+  (`WebRenderWidth`: the web window's viewport, else the focused pane's), not the screen's less 4, which wrapped it twice.
+  Every settings screen's title is one cell in (the list screens had two; F7/F8 and the mockup one). **A cut plain text gives
+  back the blanks before its mark** (`MarkupText.ElidePlain`, which the map, Browse, F10, game data, the options screens and
+  the history view now share: `Aetherfall…`, never `Aetherfall …`). The deletions question has the popups' left cell. The
+  settings search's section titles take the cells the row had spare (`width - 10`), so `Triggers & spawn routing` is whole at
+  80×24. `TerminalAuditWave34Tests`. Left as they are: list detail columns, F5's descriptions and the message log at 80×24,
+  server text, the map's room labels and legend (laddered by design), ⌃P's reserved key column and its scroll bar on the
+  frame (the window is the framework's scrollable one), F4's capture prompt widening its row (`CaptureWidth`, decided), the
+  tab strip's grey `─` (upstream), and a number and its unit split by a wrap (the framework breaks at any space).
+- **Wave 34 A window completion audit (window only; terminal frames unchanged)** (`ux-wave34/window-completion-audit/`, 1440×900
+  and 1280×800 at 125%: the four mockups plus ⌃P, F1, ⌃F, a toast, quit, two tinted characters, Light). The sidebar is the
+  mockups': `CONNECTIONS` tracked (`NativeSidebar.Tracked`, letters one by one, since `FormattedText` has no spacing), a world
+  is its name alone, a character a 4 px dot in the world's accent (ring offline), a window's chord in mono `Small` at the
+  right with its unread count as bold accent text before it, not a pill. ⌃P rows share one pitch (`ModalParts.ChipHeight`
+  floor). A card's content is clipped inside its edge (`ModalParts.InsideEdge`), so a foot band no longer covers the rounded
+  hairline; ⌃P/⌃F/⌃R/help's band sits flush under the list rule. **The field stays drawn under a native modal**
+  (`InputBandNow` drops it only for a *cell* modal). F1's title is `Compose`/`Edit`/`Script`/`Read only` as the docked one,
+  its chips outlined and its key row `ModalParts.Chip` caps. The welcome's key line sits under its column. Left as it is:
+  a panel's heading rule or a strip's seam stops ~4 px short of a divider's hairline, because the hairline is centred in
+  the divider cell and a native view covers only its pane; moving the hairline or the view fails where both sides are
+  native, or narrows the divider's grab area.
+- **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
+  - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
+    walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the
+    ordinals tests navigate by) follows it, security checkboxes excepted. Labels are the declared ones, not shortenings.
+  - **⌃P's groups are `CommandGroup`'s nine** (Go to, Connection, Output, Writing, Map, Panels, Windows & panes, Help & setup,
+    Settings); `PaletteGroupsTests` keeps OUTPUT at 16 or fewer. `CommandContext.NewConfiguration` (no worlds, or a tour
+    owed) puts Help, Welcome and Import first in SUGGESTED.
+  - **`/map find` is a ⌃P family, not links in a pane** (`map:walk-to:<id>`, `CommandContext.MapFound`; the palette opens on
+    `walk to `). A link in a pane is answered by the panes' handler, which is scheme-tagged server text; a palette entry is
+    the client's own list, in both hosts, with no new trust path. `--plain` gets client rows instead.
+  - **What the client says in a session window is a client row** (`ClientRowRenderer`, `AppendClientRow`: a bar function
+    and no `Plain`), never a `***` session line: reconnect countdowns and stops reach no transcript, restore, scene log or ⌃F.
+    Core's own connection notes are too: `WorldSession.ConnectionNoted` (`ConnectionNote`: CONNECT/FAILED/LOST/CLOSED)
+    replaces the `*** Connecting/Connection lost/failed` lines, `BindSession` draws them as client rows and announces them.
+  - **The status row names a notice's action** (`NoticeActionHints`): `⌥R Reconnect` when the command has a key, else
+    `⌃P ▸ <palette title>`, else the action's shorter label; added whole after ` · ` only if the row still fits, never cut.
+  - **Help topics are blocks** (`HelpPage`, Client): a paragraph or line opening `Label: ` is a heading, keys are spans
+    (glyph runs, F-keys, Esc, PgUp…), two-space-indented lines stay rows. The cells draw bold headings and accent keys;
+    the window draws headings and key chips (`NativeKeys.Words`). The cell topic header is one elided row.
+  - **F5's world column at 80×24 drops its group headings** when the fields do not fit, naming the top row's group on the
+    column's first row (`├ WORLD · CONNECTION`, `⌃ 12 more · MAP`) — re-read at every scroll step from the first field
+    shown, which `SearchAndScriptWaveTests` walks with ⇥ (checked in wave 18: it was already right); while a world field is focused the character form and
+    trigger sets are capped to a third of the height. ⇥ order is unchanged. An open `highlight names` edit draws the
+    syntax and colours under its well (`NamesHelpRows`; `ScreenChrome.Window(…, keepBelow)` keeps them on screen); the
+    window's field help is `HighlightColours.NamesHelp`, the same words.
+  - **The native modal scrim is `NativeTokens.Scrim`, shared with ⌃P and settings**, raised to 0x73 dark / 0x4d light;
+    `NativeModalTests.EveryModalIsVeiledByTheOneScrimOverTheWholeWindow` pins it.
+  - **A scene recording is marked** (`● REC` status cell, `HeaderModel.Recording`), and the saved notice carries two actions
+    (`NoticeModel.Second`): `scene:open:N` and `scene:copy:N`, by index into this run's saved scenes, never a path. Open goes
+    through `ClientHost.OpenFile` (required; null headless), which takes only an existing absolute `.html/.htm/.txt/.log`
+    (`ExternalBrowser.TryParseOpenableFile`), and only under the log root.
+  - **`Notice(..., toast: false)`** draws the status row without a toast: map edits that worked and map hints use it.
+  - The parity harness's window host has `FloatingPanels = null`, like the terminal, or ⌃P's catalog differs by the pop-out entries.
 
 ## One client, several hosts — and how they are kept the same
 
 The terminal (`sharpmuterm`), the desktop window (`sharpmuterm-window`) and the headless snapshot all run the
 one `SharpMUTermApp`; a host is only the place it runs. What differs between hosts is a **`ClientHost`**
-(`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, focus reporting, keys
+(`src/SharpMUTerm.Tui/Hosting/`): driver, capabilities, clipboard, URL opener, file opener, focus reporting, keys
 (`HostKeys`: the newline chord, and the chords the host keeps for itself), whether there is a main loop,
-the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
+the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, null for none), whether it draws the declared settings natively (`INativeSettings`, null for the cell screens), and whether it
+draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draws the composer with its own editor (`INativeComposer`, null for cells), whether it draws the quit prompt, ⌃F, ⌃R, ⌥M, the welcome, help and the dictionary offer itself (`INativeModals`, null for cells), where the title for what is in front goes (`IWindowTitle`: the window's title bar, the terminal's OSC 2, null headless), whether it can pop a panel out into a window of its own (`IFloatingPanels`, null for none), whether it has a native file picker (`IFilePicker`, null for none), how it asks for attention while the player is elsewhere (`IAttention`, null headless), and which chrome it draws itself beside the cells (`HostChrome`: the header and the rail, which the client then leaves out of the grid). Built by `ClientHost.Terminal`, `ClientHost.Headless`/`Snapshot` and
 `WindowHost.Create` (Avalonia). Four things keep a feature from landing in one host only:
 
 - **Every `ClientHost` and `HostKeys` member is `required`**, so a member added there does not compile until
@@ -876,7 +1847,8 @@ the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, nul
   `ClientHost`. Don't use `WarningsAsErrors` for it: that ignores the folder's `severity = none`.
 - **Every snapshot view is drawn through both drivers and compared cell for cell**, glyph and background
   (`HostParityTests.EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal`, Avalonia suite), with the same
-  capabilities and keys, so a difference can only be the driver. The list is `SnapshotViews.All`, and
+  capabilities, keys and `HostChrome` — with the chrome in cells, with the header and rail drawn by the host, and with
+  the tab strips drawn by it too, as the window runs — so a difference can only be the driver. The list is `SnapshotViews.All`, and
   `EveryViewTheSnapshotKnowsIsInTheParityList` reads `RenderSnapshot`'s source and fails when it learns a
   view the list does not name. The harness drag goes through `IMouseInjector` so `drag` draws in both. A second
   pass (`EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning`) draws each view with the window's loop
@@ -884,6 +1856,166 @@ the Sixel cell size, and what it does with the pointer (`IPointerPresenter`, nul
   came out as an empty frame — ⌃P and F1 blank — while the inline pass was green. The scene is now queued for
   the loop's first tick (`ClientLaunch.Demo`). That pass skips the bottom row (a live client has been through
   startup) and the two timestamp views (a loop reads the clock).
+- **Every native view is a declared surface, drawn from the model the cells drew** (`SurfaceCatalog`, Client
+  `Surfaces/`). A surface (header, sidebar, the folded rail strip, the armed ⌃B keymap, each panel, settings, the
+  Layouts menu, ⌃P) is declared once: id,
+  Client model, actions (each naming the client method it ends in), per host `Cells`/`Native`/`Both`, its cell
+  renderer and its native views. Three suites hold the hosts to it: `SurfaceCatalogTests` (Client: the
+  declaration's own rules), `SurfaceCellTests` (Tui: the renderer takes the model, every action's method exists,
+  every command resolves) and `SurfaceParityTests` (Avalonia: every `Control` in the window assembly is declared;
+  each native model equals `DrawnModel` — what the cell renderer recorded through `Drawing(...)` in the same frame;
+  each native action and its cell link leave two identical clients in the same state, and not the state before).
+  A door only the native view offers says where the cells offer it (`CellsVia`: another surface or a ⌃P command —
+  which is why the sidebar's fold button has `layout:toggle-rail` beside ⌃B b). The ⌃B keymap is one model
+  (`PrefixPanel.Model` → `HeaderPrefix`) for the cell panel and the native header, exit hint included.
+  The window never builds a command: a menu is a `MenuModel` of entries the client offered, and a choice comes
+  back through `HeaderAction.Dispatch` and is refused if it was not offered. **To add a native surface**: put its
+  model in Client, draw its cells from it through `Drawing(...)`, publish the same instance to the host, declare
+  it in `SurfaceCatalog.All`, and add its model and action probes to `SurfaceParityTests`, whose coverage guards
+  fail until you do.
+- **A notice is a model, drawn as the status row's text in both hosts and as a toast in the window**
+  (`NoticeModel`/`NoticeSeverity`/`NoticeAction`, Client `Chrome/`; a notice carries a chord `Key` *or* a `Source`
+  label from `NoticeModel.Sources` — Packages, Map, Sound — drawn `Sound:` on the row and as a caption on a toast, never
+  in the key chip; a lowercase word passed as `key:` is a test failure; `SharpMUTermApp.Notices.cs`; `NoticeToasts`,
+  Avalonia; surface `notice`, `CellsUnderNative`; the `notices` view). `Notice(...)` builds one model per call
+  (`Drawing`), draws the row from it with the same markup as before (`NoticeMarkup`; terminal frames are
+  byte-identical) and publishes it through `IPointerPresenter.Notice`. Decisions not to relitigate:
+  - **The window keeps the status-row copy in cells.** The toast is an overlay above the cells, never a
+    replacement: `HostParityTests` compares cells, the row is what a screen reader and a keyboard user read
+    (the announcer speaks the same notice), and the row has rules of its own (reserved fields, drop order) a
+    toast must not fork. The cost is one notice said in two places in the window, for six seconds.
+  - **A toast never takes focus and nothing on it reaches the client**: not focusable, every press on a card is
+    the window's, a press beside the stack goes to the cells. The stack is bottom-right inside the cell area,
+    ending above the row the pane area ends at (`NoticeOverlay.AboveRow`), newest at the bottom, four at most.
+    It fades after `NoticeModel.Duration`, held while hovered (plus a 2 s grace). Right click dismisses.
+    **While the pointer is on a toast the stack is frozen** (`NoticeToasts.Frozen`): every toast keeps its place as the
+    ones around it fade, so the card under the pointer never slides out from under it; a toast arriving meanwhile
+    stacks above, and the freeze ends when the pointer leaves or the window resizes. **The stack is lifted clear of
+    the map's legend** (`NoticeToasts.Avoid`, from `MapCanvas.LegendRect`), which sits in the same corner.
+  - **An action is a registry command the client offered**: a click runs `NoticeOverlay.Run` →
+    `RunNoticeAction`, which refuses a command no recent notice carried, then `DispatchCommand`. The cells' way to
+    the same door is ⌃P (`CellsVia: term:messages`). Three notices carry one so far: the layout suggestion
+    (*Change layout*), "switched to … · offline" (*Reconnect*) and the orphan trigger-set notice (*Open F5*).
+  - **Severity is mapped from `MessageSeverity`**: Info → info, Error → warning (a failure), Warning → refusal
+    (the default voice of `Notice`). The card is `NativeTokens.Card` (rule `Edge`, text `Text`) of the theme the overlay
+    carries (`NoticeOverlay.Theme`); the edge colours — accent, `ScreenPalette.Warn`, the notice ink — are held to
+    `TextFloor` on that card, because they also ink the key chip and the action line (`NoticeToasts.ColoursOf`).
+  - The message log (⌃P ▸ *Show client messages*) stays the history; a toast keeps nothing.
+  - **A notice said again while it is still on the row is said once** (`Notice` compares text, key, severity and action
+    with `_noticeShown`): the timer restarts, nothing is logged, announced or published twice. That was the audit's
+    "notices show twice" — the row-plus-toast pair is the design above, the repeat was not.
+  - **The row is elided to its width in both hosts** (`StatusModel.Fit` in `PaintStatus`), so no notice can wrap it
+    (`NoticeFitTests`, 80×24 down to 40×12).
+  - **Toasts stay off what is being used and are hidden under a modal.** Besides the map's legend, `SyncToasts` avoids the
+    native quick bars and docked composers; `DesktopLayer.ToastsHidden` (set by `MainWindow`: settings window, ⌃P, a
+    native modal or the quit prompt) hides the stack rather than leaving it clipped under a window. F1 keeps them (it
+    sits under the layer). The toast keeps its clock while hidden.
+- **The window draws the status row and the command line's field too** (`HostChrome.Status`/`Input`, `HostChrome.Desktop`
+  = all four, the window's default; `SharpMUTermApp.Footer.cs`; Client `StatusModel`; Avalonia `NativeFooter`, `TerminalView`'s
+  field; surface `status`). Decisions not to relitigate:
+  - **The model comes first and the cells are drawn from it**: `StatusBarRow`, `NotConnectedRow`, `NoticeSegment` and the
+    move/drag prompts build a `StatusModel` (left and right `StatusSegment`s with a `StatusRole`, each a list of
+    `StatusRun`s; a null ink is the row's own, so the cells write no tag for it), `PaintStatus` records it (`Drawing`) and
+    writes `StatusRowMarkup(model.Fit(width))`, and the footer draws the same instance. Terminal frames are byte for byte
+    what the markup-first row wrote; there is no markup parser. The palette hint and a notice's action hints carry targets. `IPointerPresenter.Status`, published from `PaintStatus` and `PostBufferPaint`, only on change.
+    A click is `ActivateStatusTarget`: refused unless offered, the palette through `OpenMenu`, an action through
+    `RunNoticeAction`. With `Status` the row is `Visible = false` and `ChromeRows` counts none. Toasts sit above it.
+  - **The command line stays the cell editor; the host draws the field around it.** The bars get `HostFieldPad` (4)
+    band-coloured columns either side (`InputBarControl.LeadingPad` + right margin), the client publishes an `InputBand`
+    (rows, pad, prompts, hint) on `PostBufferPaint`, `Flush` snapshots it into the `ScreenFrame` it belongs to, and
+    `TerminalView` draws the rows above it, the strip, a rounded field filled with the band colour read off the cells (so
+    armed, idle and the tint are the cells'), the bars' rows `FieldTop` px lower inside it, the prompt in semibold Inter
+    over its cells and the newline hint over blank cells. The grid gives up `FieldReserve` px, never a row, so panes and
+    NAWS are a terminal's told the same chrome. Null under a modal. Rebuilding it on a `TextBox` would fork every key rule
+    above.
+  - **The typed text meets the prompt by drawing, not by cells** (`TerminalView.BarsOf`, `FieldBar`). The Inter prompt is
+    narrower than its cells, so each bar's text is drawn `Shift` px left (to one mono space after the measured prompt), the
+    caret with it, and `Cell` maps a press there back to the cell under it; the right padding the shift uncovers is the
+    field's fill. The gutter, the caret's cell and every key are unchanged, so parity needs nothing.
+  - **In the window the command line is a row of the output's column** (`HostChrome.InputInColumn`, on in `Desktop`;
+    `InputColumn.Target`/`Anchor`, Core; `WithInputBars`/`DetachInputBars`). The prompt row and both bars leave the window's
+    sticky band and become Auto rows of a grid wrapped round one node of the pane tree, so the side column runs to the
+    status row as in the mockups. The node: from the root, into the anchor's child of a side-by-side split unless another
+    child holds a character's own window (two characters share the bars), into a stacked split only through its last child,
+    else that split (the output and its quick bar). The anchor is the live layout's output pane, else the first pane holding
+    a `Main` window — **never focus**, so moving the selection moves no pane (`InputColumnLayoutTests`).
+    **The column has a floor** (`InputColumn.MinimumColumns`, 54: pad 3+3, a 22-cell prompt, 26 to type): the walk never goes
+    into a side-by-side child narrower than that (measured with `LayoutSolver.Distribute` over `PaneAreaColumns()`), and the
+    split is the answer — the widest node on the way that fits, else the root. Half the default 120-column grid keeps its
+    column; the wave-25 three-pane drop (29 each) gives the bars the left half. It reads widths, never focus; `SyncInputColumn`
+    (on `OnResize`) rebuilds when a resize crosses it. A rebuild takes the
+    bars out of the old grid before it is disposed. `InputBand` carries `Left`/`Columns`; the view draws the strip, the
+    field, the row shift and the press mapping only in those columns, and carries the panes and dividers beside it down
+    through the `FieldReserve` pixels. NAWS is the arranged rectangles. The terminal keeps the full-width band (`None`),
+    so its frames and the parity harness (which tells both hosts the same chrome) are unchanged.
+  - **At rest the footer draws the row's compact form** (wave 22; `StatusOverlay.Compact`/`Shown`, `CompactStatus`): left the
+    identity segment (the cell row's instance), `UTF-8` (`CompactEncoding`) and `Log off`/`Log html` (`HeaderLogFormat`,
+    `StatusRole.Log`); right scrolled back (not in a split, whose native band says it), `● REC`, `♪ muted`, then one hint —
+    the mode's keys (not `SplitScrollback`) else `2 new in Chat` (`UnreadHint`, `StatusRole.Activity`, the active
+    character's windows by unread). A notice or a move/drag prompt sets it null and the footer draws `Model` whole. The cells
+    keep the full row (meters, room, count, focus keys): the window draws those as panels, tabs and its search box. `Model`
+    is still what `Drawing` recorded; parity probes compare it, `TheFootersCompactRowIsTheRowsFactsInTheMockupsWords` pins
+    the compact one. **The native header draws no counts** (`1/3 characters · LOG off`): the brand, the sunk search box
+    (`NativeChromeView.Sunk`) and the character pill, as the mockups; `HeaderModel` still carries them for the cell ribbon.
+- **The native map is the mockup's** (wave 22, `MapCanvas`). Rooms are the pane's plane a step lighter (`Mix(plane, text,
+  0.07)`) with a rule round them (`RuleColour`, 0.24), half a step wide; exits are that rule; the character's room is the
+  accent at 20% with a 2 px accent ring and `@` (`YouGlyph`) in mono when the game gives no symbol. The area colour is the
+  heading's mark, the legend and the spurs only. The look buttons are `ControlHeightSmall` with `RadiusControl`. The
+  legend is a wrapped strip at the foot above `MapViewModel.Hint` (`WalkHint`/`EditHint`, Client, null while walking or with
+  one room), and the fit reserves both and the buttons (`TopReserve`/`BottomReserve`), so nothing covers a fitted room
+  (`TheFittedRoomsAreClearOfTheButtonsTheLegendAndTheHint`). The current-room line under the heading is gone (its name is
+  under its box). The cell map is unchanged.
+- **The window draws pane dividers as the panes meeting at a hairline** (`IPointerPresenter.Dividers`,
+  `PaneDividerOverlay`, `DividersNow`; `ScreenFrame.Dividers`; `TerminalView.FrameDraw.DrawDividers`). The client publishes
+  each divider control's cells and whether it is lit (never a tab strip standing in for one, nothing under a modal) on
+  `PostBufferPaint`, `Flush` keeps them with the frame, and the window paints each half of the cell in the plane beside it
+  (read off the frame) with `NativeTokens.Rule` 1 px in the middle; lit, the cells' own `RuleHover`, 3 px. The cells, the
+  hit area and NAWS are the terminal's.
+  - `HostParityTests` draws every view under `none`, `header-rail` and `desktop`.
+  - **Rules meet the hairline** (wave 35, `SeamRules`/`IEdgeRules`; `ux-wave35/divider-seams/`). A native view covers only its
+    pane, so its full-width rules (strip foot, scroll band, panel headings, strip seams, collapsed bar) stopped half a divider
+    cell short; each view says its rules (`EdgeRules(size)`) and an unhittable `SeamRules` layer draws the half cell to
+    `TerminalView.VerticalHairlines()`. `DrawDividers` runs a horizontal divider and the field strip's top rule on to a vertical
+    hairline the same way. Presses there are the cells' (grab area unchanged); no cell or NAWS moves. `DividerSeamTests`.
+- **The window bundles its faces** (`BundledFonts`, Avalonia; `Fonts/README.md`). Inter 4.1 (four static weights, 1.67 MB)
+  and JetBrains Mono are registered as `fonts:SharpMUTerm`, Inter is Avalonia's default family and the bare names map onto
+  the bundle, so every view resolves them from the file on every OS; installed faces are only the fallback for glyphs the
+  bundle lacks (emoji, CJK, neither bundled). One token each: `NativeTokens.UiFont`/`MonoFont`/`CellFace`. The cells default
+  to the bundled JetBrains Mono at 10 pt unless `--font` names an installed family; `--line-height` (default 1.12) adds
+  leading by making the cell taller and centring the glyph, so a row is still one cell. No F7 face picker: the cell face is
+  a launch option of the window, read before the client exists, and not a declared setting. **The eight faces are made
+  once per process** and every `BundledFonts` adds the same `GlyphTypeface`s, re-implementing `IDisposable` as a no-op:
+  the headless suite sets up an app (and a font manager that disposes its collections) per test, and remaking and
+  disposing the faces per test is what made a test now and then fail to find Inter.
+- **A pane narrower than its server's wrap is told about join wraps, once per world per run** (`SuggestJoinWraps`,
+  `SharpMUTermApp.JoinWraps.cs`; `WorldSession.ServerWrapColumn`, now learnt whether or not the world joins). Checked on
+  every pane-size report; the notice's action is `world:join-wraps:<world>`. **Suggested, never on by default**: a false
+  join is invisible and worse than a missed one, and whether a world's output is prose is the player's call.
+- **A strip that cannot draw every tab shows `+N ▾` at its right edge** (`SharpMUTermApp.TabOverflow.cs`;
+  `SurfaceCatalog.TabOverflow`, a `MenuModel`). Hidden tabs are read off `FrameworkHitTests.TabAt` over the strip just
+  painted, and the chip is painted after the frame over the strip's own last (clipped) cells, so no cell, pane or NAWS
+  moves. A click opens a native menu in the window (`IPointerPresenter.ShowMenu(cell, MenuModel, dispatch)`) and a cell
+  list (`_sendMenu`, digits) in a terminal; each entry is `win:<id>` through `RunTabOverflowEntry`, which refuses what
+  the list did not offer. The keyboard's way to a hidden tab is ⌃P *Go to …* or ⌃N. **A press on the chip is taken
+  away from the framework** (`TakesTabOverflowPress`, in `OnDriverMouseEvent` on the input thread): the chip can sit
+  over the tail of a tab the framework drew, name or `×`, and the framework (subscribed later, inside `Run()`) would
+  select or close it on the same click. The button flags are struck from the shared list, leaving a movement; the chip
+  rects are a snapshot array published per frame. Both hosts go through that handler (`AClickOnTheChipDoesNotAlso…`).
+- **A post is a command field and a text, in one model** (`ComposerModel.Verb`, `HasCommandField`, `HeadingVerb`;
+  `ComposeMessage.Build(command, body, escaping)`/`Join`/`CleanCommand`, Core; Tui `ComposerCommandRow`, a one-row
+  editor F1 and `DockedComposer` place above the text; `ComposeResult.Verb`; `ComposerSession.EditedCommand`; Avalonia
+  `ComposerView`'s command box). The body is built exactly as before and the command is put in front **unescaped**, one
+  space between (none after `=` or a lone punctuation shorthand); a blank command is the old single buffer, so a text
+  starting with its verb still sends as it did. ⇥/⇧⇥ move between the fields and ⏎ in the command moves to the text
+  (`DockedComposer.InCommand`/`Focused`, which the focus pin and `HandleComposerKey` follow; where the caret is is never
+  in the model). The command survives a send (`ForgetComposeText`), so a verb-only draft is kept and the quit prompt
+  does not count it. An edit has no command field. The window's docked panel is the mockup's: Command over its box,
+  Text over the well (both shown from 232 px), summary without the chars (in its tooltip). `SurfaceParityTests` sends
+  the same post from both hosts' two fields.
+- **The composer says how long the post is as sent, and ⌥P shows it** (`ComposerModel.Characters`/`SentLength`, the
+  escaped and `%r`-joined command; a MOO edit counts its text). F1 and the docked panel carry the `N chars` cell in both
+  hosts; ⌥P toggles an *as sent* band under F1 (`ComposeOverlay.Preview`, run-wide, shared with the native editor via
+  `ComposerSession.TogglePreview`; not for a MOO edit). The `compose-preview` view.
 - **Every surface that names a key is read once per host** (`EverySurfaceNamesThisHostsKeys`): ⌃P and
   `--help` must name the host's newline and none of the chords the host keeps (`HostKeys.Reserved`, which
   `TerminalView` acts on, so the window's chords and the list are one). The help page is one writer
@@ -901,9 +2033,20 @@ turned into the window by `AppRun` itself rather than by the hand-off, because a
 program it started exits and the hand-off exits at once. The installer is Inno Setup, per-user by default, with
 an optional PATH entry so `sharpmuterm` runs from any terminal.
 
-**Not covered yet**: F4's verdicts (`MacroKeys.Verdict`) describe the terminal only. In the window ⌃digit
-does arrive (F4 says it cannot), and ⌥⏎ never reaches a macro. Making it per host means threading `HostKeys`
-through `MacroKeys`, `ScreenField` and the keypad renderer.
+**F4 and the quick bar read the host's keys** (`MacroKeys.Verdict(HostKeys, …)`, threaded through `ScreenField`,
+`KeyClashes`, the keypad renderer and `QuickBarRenderer`). `HostKeys.ReportsChordsWhole` says whether the host
+delivers a modified key as itself (the window: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O fire) or as the terminal's bytes;
+a chord in `HostKeys.Reserved` or the host's newline is *Taken* with the host's own reason (the window's ⌥⏎
+maximises). `SurfaceCellTests.F4TellsTheTerminalsTruth` and `SurfaceParityTests.F4TellsTheWindowsTruth` pin each.
+`HostKeys.DeliversNumpad` (true in the window, whose `KeyMapper` maps `NumPad0–9`) makes a `Num…` binding fire there;
+the terminal still says *no numpad key ever arrives*. F4 and the quick bar print keys through `KeyGlyphs.Normalize`.
+
+**A character is named one way on every surface: `Corvid · Aetherfall`** (Client `CharacterNames`; Tui
+`DisplayName(sessionKey)`, open sessions first, then the configuration, so a dotted world still splits). The quit
+prompt, ⌃P's *acting on*, ⌥M, F10, refusals and notices read it; the dotted session key is an address and is never
+shown. The prompt (`Corvid · Aetherfall ›`, `StatusFormatter.NameSeparator`, which `CharacterNames.Separator` reads),
+the window title (`Corvid · Aetherfall — SharpMUTerm`) and a tab's owner prefix (`Corvid · Chat`,
+`CharacterNames.Window`) use the same spelling; there is no `@` or ` - ` left (`WindowTitleTests`).
 
 ## Building and testing
 
@@ -915,8 +2058,8 @@ through `MacroKeys`, `ScreenField` and the keypad renderer.
   ```bash
   dotnet run -c Release --project tests/SharpMUTerm.Core.Tests </dev/null
   ```
-  There are six: Core, Graphics, Scripting, Web, Tui, Avalonia. Primary signal is
-  `dotnet build SharpMUTerm.slnx` plus all six green and warning-free.
+  There are seven: Core, Client, Graphics, Scripting, Web, Tui, Avalonia. Primary signal is
+  `dotnet build SharpMUTerm.slnx` plus all seven green and warning-free.
 - **Building against the local SharpConsoleUI clone surfaces 2 NuGet advisory warnings** for
   AngleSharp. They are the framework's, not ours; a build against the package has none.
 
@@ -958,9 +2101,20 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   holds the two sides together; when you add state the demo fakes, pin it against the live writer the
   same way.
 - **Views:** `worlds`/`settings`, `triggers`, `route`, `highlight`, `aliases`, `timers`, `keypad`,
-  `set`, `textansi`, `input`, `logging`, `password`, `startup`, `freeze`, `spawn`, `split`, `move`, `drag`,
+  `set`, `textansi`, `input`, `settings-search` (F7, `/`, `meter` typed: the search with its section
+  list and match counts), `settings-themes`/`settings-themes-solarized`/`settings-themes-used` (F7's theme
+  picker with the cursor on Light and on Solarized Dark — the screen painted in the previewed theme — and Light
+  used with ⏎), `settings-meters`/`settings-meters-pick` (the meter table over the demo's game
+  data, the cursor on a meter with the received-data box under it, and the same meter's value path open with
+  its dropdown of received paths), `settings-undo` (that, then ⌃Z: the header saying `Undid tab width (spaces).`), `settings-changed` (F7 after two real edits: the `● changed` marks and
+  `r reset`), `logging`, `password`, `startup`, `freeze`, `spawn`, `split`,
+  `split-stacked` (the same split stacked through the real ⌃B -, where the lower pane's tab strip is the
+  boundary and no divider row is drawn), `move`, `drag`,
   `history`, `history-search`, `history-search-filter`, `draft`, `draft2`, `menu`, `menu-split`,
-  `messages`, `quit`, `connections` (**two connections on one world** — the one view where the header's
+  `menu-fuzzy` (`trig sel` typed into ⌃P after a real drag, so the trigger builder's entry is offered — the
+  frame showing a two-word fuzzy match highlighted), `menu-recent` (⌃P opened empty after two commands ran
+  through the palette's own path, `RunFromPalette` — RECENT at the top, newest first, listed once),
+  `messages`, `notices` (two notices with a refusal and a `Sound` source notice between them, the first carrying an action — the window shows them as toasts over the same cells), `quit`, `connections` (**two connections on one world** — the one view where the header's
   fraction, the rail's dots and the quit prompt's count are all visible together and all have to agree;
   every other view has at most one character connected per world, which is what hid a header dividing
   connections by *worlds* and a quit prompt reducing them to distinct world names), `characters` (**two
@@ -990,7 +2144,11 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
-  `rail-long`, `scrollback`, `scrollback-up`, `freeze-scrollback`,
+  `rail-long`, `scrollback`, `scrollback-up` (now the split opening, since split scrollback is on by default),
+  `scrollback-split` (the split doing its job: scrolled back, then more output arriving in the live tail under
+  the band while the history stays put), `reflow` (one room as a server wrapping at 78 sends it, then the same
+  rows through `ServerWrapJoiner` — ragged short of the edge at 120 columns, wrapping twice at 80),
+  `freeze-scrollback`,
   `links` (a URL too long for the pane it arrived in — a split, so the pane is narrower than the
   terminal, which is the whole defect; the frame shows one underlined span running to the pane's edge
   and continuing on the next row), `away`/`away-scrollback` (the bar marking where the reader was when they tabbed away from the
@@ -1020,6 +2178,8 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   own hit test rather than a highlight posed by hand — the only frame carrying `WorkspacePalette.SelectionBand`,
   which is why it is in `FrameContrastTests`' list: the band is the one plane this client invents rather
   than derives from a pane, and its ink replaces the world's own on every selected cell),
+  `trigger-builder` (a real drag across a line of output and the real ⌃P *Make a trigger from the
+  selection*, so F2 opens on the suggested wildcard rule with its regex and the live test counting),
   `prefix-panel` (the ⌃B which-key
   panel — the state `prefix` becomes a few hundred milliseconds later, if no key has arrived),
   `focus`/`focus-moved` (a split *and* a second command line — the one geometry showing a focused pane
@@ -1031,7 +2191,21 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `tabs-many` (**more tabs than the strip can hold** — five of one character's captures in a split pane,
   which is the state every other tab view is too small to reach. Without eliding, that pane draws two
   tabs and half of a third and says nothing about the rest), plus the
-  default workspace
+  `layouts` (the ⌥M list over the demo, through the registered shortcut), `layout-combat` (the Combat layout
+  applied over the demo's game data and recorded streets: a one-row vitals strip across the top, the map beside
+  the output with Chat as a tab under it, a one-row quick bar under the output, and no meters on the status row)
+  and `layout-roleplay` (the Roleplay layout over the demo's room roster: who is here beside the output with Chat
+  behind it, and the composer under the output at its floor), `panel-who`/`panel-vitals`/`panel-quickbar`/`panel-composer`
+  (each panel in a pane of its own over the demo's game data; the composer over who-here, armed, with a draft
+  typed through its real key path), `welcome`/`welcome-connect` (the first-run welcome over an **emptied**
+  configuration and a main window alone — `--demo-config` has worlds, and the welcome never opens over them — and
+  its connect form filled in by real keys), `tour` (the key tour row at the end of the demo's main window), `reconnect` (Corvid dropped, the second try
+  counting down on the status row),
+  `help`/`help-topic` (in-app help's list, and its *Reading output* page), `dictionary-offer` (the spelling dictionary
+  offer, in a run that keeps no folder), `browse-worlds`/`browse-worlds-failed`/`browse-worlds-picked` (Browse worlds over
+  the demo's directory, one whose directory does not answer, and the connect form a pick leaves) and `join-wraps`/`join-wraps-f5` (a ragged world suggested on ⌃P, and
+  recommended on F5 — the row is under `14 more` below about 50 rows), plus
+  the default workspace
   (no `--view`). Any settings screen also takes a `-edit` suffix, which opens it and drives real
   keys in so the frame shows a field mid-edit. State toggles: `collapsed`, `prefix`, `timestamps`,
   and `timestamps-toggled` — the same column reached the *other* way, by dispatching the real ⌃P entry
@@ -1064,7 +2238,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   `LogFolder` or a fake sink would have passed all along. It also let a pile of per-test
   `character.Logging = new LoggingSettings()` workarounds be deleted — with them gone the suite exercises
   the gate, and an unfixed build leaks seven files a run instead of three.
-- **Four views have more output than a pane holds** — `scrollback`, `scrollback-up`,
+- **Five views have more output than a pane holds** — `scrollback`, `scrollback-up`, `scrollback-split`,
   `freeze-scrollback` and `away-scrollback`. Name them, rather than saying "the `scroll*` views": the
   prefix has now twice lagged behind the set it claimed to describe, and a reader looking for a
   long-output view goes by the list. (`away` is the shallow one and fits.) Every other view fits too,
@@ -1103,8 +2277,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   **StbImageSharp reads no WebP**, and the bump silently turned every WebP picture (all of SharpMUSH's)
   back into its label. `ImageDecoder` is the one decode path for panes and the web view: the framework
   first, then ImageSharp 3.1 configured with the **WebP module only and metadata skipped**. That narrowing
-  is what keeps the 3.1.12 advisories (TIFF codecs, ICC/EXIF) unreachable and is why they are
-  `NuGetAuditSuppress`ed by id; 4.x fixes them but will not build without a Six Labors license key.
+  is what keeps the 3.1.12 advisories (TIFF codecs including the fax tile decoder, ICC/EXIF) unreachable
+  and is why they are `NuGetAuditSuppress`ed by id (`Directory.Packages.props`; a new one is NU1903 until listed); 4.x fixes them but will not build without a Six Labors license key.
 - **Controls default to `HorizontalAlignment.Left`, which self-sizes to content** instead of filling
   the slot. This is the single biggest cause of "why doesn't this fill the width?" Use
   `.WithAlignment(HorizontalAlignment.Stretch)`. A `.Flex(n)` column only fills if the grid is
@@ -1159,6 +2333,469 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
 - **`PromptControl` is not the command line** — `InputBarControl` is, built on `MultilineEditControl`.
   2.7 gave `PromptControl` an opt-in multiline mode (`Multiline`, `MinRows`/`MaxRows`, `EnterBehavior`),
   but it has no undo and no gutter for the prompt.
+- **Settings are declared in Client, and F7 and F8 are drawn from the declarations**
+  (`SharpMUTerm.Client/Settings/BuiltInSettings.cs`; `SettingBinding`, `SettingsSearch`; Tui
+  `OptionsScreenRenderer.FromSection`, `SettingsSearchSurface`, `SharpMUTermApp.Settings.cs`). A section is a
+  settings screen (id, title, key, order) registered in `ContributionRegistry.SettingsSections`; every screen
+  F2–F10 is one, and the screen table (`SettingsScreens`) reads its titles from them, so ⌃P, the header and the
+  search say one name. **To add a field**: add a descriptor to its section with a `Group` (a heading, never a
+  screen) and a `SettingBinding<T>` over the configuration property. The screen draws it, `/` finds it, and
+  `● changed` and `r reset` work on it with nothing else written. Things not to relitigate:
+  - **A default is never written in a declaration.** It is what the binding reads off a fresh
+    `AppConfiguration`, so the configuration types stay the one place a default is decided; a list default is
+    re-read per reset, so two configurations never share one.
+  - **`r` resets, and only where it would do something.** A row carries a reset only while it differs from
+    its default (`ScreenRow.Reset`), so the header names `r reset` exactly there. It goes through
+    `ScreenEdits.Apply`, the save funnel. On the meter table `r` resets the whole list (the field is the list).
+  - **`/` is the overlay's, not a screen's**, and only while the screen is navigating — inside a field it is a
+    character. The search is drawn in the same window in place of the screen (content-swapping, the
+    `_behind` reason); Esc puts the screen back untouched, ⏎ goes through `SettingsOverlay.Show`, which swaps
+    the screen in place. It matches label, group, help and keywords, and a section's title only when none of
+    its fields matched, so an undeclared screen is still found by name.
+  - **The meter table is F7's one non-row field.** A meter is a row of three fields (label, value path,
+    maximum path); `now` reads `SendTarget()`'s game data (never `_active`'s); Delete on a meter row is a hidden
+    trailing Remove button added only while the cursor is on one; the received-data box shows only while the
+    cursor is in the table; path fields offer the received paths with their values as `ChoiceNotes`.
+  - F7 and F8 are windowed to the screen height (`ScreenChrome.Window`), because F7 is taller than 24 rows. F5 too:
+    the window centres on the *caret* (an open edit or a key capture) before the cursor band, because on F5 the band
+    stays on the WORLDS row while a world field is typed in (`WorldFieldScrollTests`, 120×32 and 80×24;
+    `--view settings-edit` edits the deepest field).
+  - **F5's world fields and F9's character fields are declared, with scoped bindings** (`BuiltInSettings.World`
+    and `.Character`; `SettingScope`, `SettingTarget`, `SettingBinding<T>.ForWorld`/`ForCharacter`;
+    `WorldFieldValues`, `TextRules`; Tui `DeclaredFields`). A binding reads a `SettingTarget` (the configuration
+    plus a world and a character, implicitly just the configuration), and a section's `Scope` says which it needs.
+    A target that does not reach the scope reads as default, shows `per world`/`per character`, and resets nothing.
+    Defaults come off a fresh `WorldDefinition`/`CharacterDefinition`, the rule above. Identity fields (name, host,
+    port, character name, password) are declared not resettable. **The cell F5 is not drawn by `FromSection`**: its
+    world row, security checkboxes and character row are built from the declarations through `DeclaredFields`, in
+    the order `WorldFieldOrder`/`SecurityFieldOrder`/`CharacterFieldOrder` name, because ⇥ order and the field
+    ordinals tests navigate by are the cell screen's, while the declaration's order is the window's grouping. A
+    `TextRule` (Required, Name, Pattern, Secret, Defaulted) is the one rule both the cell field and
+    `SettingsForm.SetText` apply. The lists (characters, trigger sets, adding and deleting) stay the cell screen's.
+    `DeclaredWorldSettingsTests` holds the two surfaces' field lists together.
+  - **The theme is F7's first field, a `ThemeField`** (`ThemeChoices`, `ThemePreview`/`ThemeCard`, Client;
+    `ThemePreviews`, `SharpMUTermApp.Theme.cs`, Tui; `ThemeCardView`, Avalonia). One Client model per theme: three
+    panes (ANSI, focused with a tab strip, tinted) and the armed command line, every colour resolved by
+    `ThemePreviews.Preview` the way the workspace paints it and held to the floor. The cell picker draws a row per
+    theme (an `Apply` button: `ScreenButtonKind.Apply`, `[⏎] Use`) and a seven-row preview of the theme under the
+    cursor; the window draws the same cards natively. **Moving the cursor previews by painting the screen in that
+    theme** (`OptionsScreen.Preview` → `SchemeFor`), so Esc closing with nothing committed is the revert; ⏎ commits
+    through `ScreenEdits.Apply`. F7 opens with the cursor on the theme in force. **A theme change is noticed in
+    `SaveConfiguration`** (`ApplyThemeIfChanged`, by colour signature) and `ApplyTheme` re-derives the chrome, the
+    formatters, every overlay's `Scheme` and the panes' planes. **Output already in a pane is repainted too**
+    (`RestylePaneLines`, the `theme-switched` view): a `PaneLine` keeps the `StyledLine` it was formatted from
+    (`Source`) and a chrome bar the function that draws it (`Bar`), and the switch formats each again against the new
+    reading plane *in place*, so no index moves — freeze point, away/missed/search bars, picture anchors (a reserved
+    picture's pieces through `PictureSlots.Cuts`/`Restyle`) — and the selection is kept (`keepSelection`), since only
+    colours changed. Rows nothing holds a source for (a picture's own rows, the restore replay) keep their markup.
+    Measured at the 2,000-line pane cap: ~106 ms for the switch, ~743 KiB of `StyledLine`s for a window whose lines
+    are not shared with the session's ring (a spawn window; a session window shares the ring's instances).
+    Space on a theme row does what ⏎ does (`SettingsSession.Toggle` on an `Apply` button). A customised theme replaced by the picker is kept in `AppConfiguration.CustomThemes` (no schema
+    bump), and listed. Unstyled text on a settings screen takes the scheme's ink (`ScreenChrome.Panel`/`Band`
+    set `ForegroundColor`), not the window's, because the window is still the theme in force while one is previewed.
+  - **F2, F3, F4 and F6 are list sections** (`SettingsCollection`/`SettingsCollection<TItem>`, `SettingsContext`,
+    `SettingsItemGroup`, Client; `BuiltInSettings.Triggers`/`Aliases`/`Keypad`/`Timers` in `BuiltInLists.cs`). A
+    list section has `Scope = SettingScope.Item` and a `Collection`: the noun, the item fields (ordinary descriptors
+    whose bindings are `SettingBinding<T>.ForItem`, reading `SettingTarget.Item`, defaults off a fresh item), and how
+    to list, make, copy, rename, add, delete, move within a set (`Move`) and move to another set (`MoveTo`, a
+    `ChoiceField` with `MovesItem`). Every list operation **replaces** the set's list rather than editing it, the
+    reads-cross-threads rule below. New kinds for item fields: `DecimalField` (timer interval), `HighlightField`
+    (`HighlightColours`, the palette F2's picker offers), `FlagsField` (`FlagWords`), `KeyField` (a chord), and
+    `TextRule` gains `RequiredPattern`, `TriggerPattern` (checked against the rule's own match kind), `Template`,
+    `Lines` and `Window`. `TextField.Suggest` gives the route its windows and the script its callbacks. Decisions:
+    - **A package's set is listed, read-only, and never written.** `SettingsForm.Groups` lists the player's sets,
+      then each installed package's (`set · Package`), and every write to one of those items is refused
+      (`ReadOnlyRefusal`); `CopyToEdit` copies the set into the player's own through the commit, F10's `c`.
+    - **What a list needs from the host is a `SettingsContext`** built on the client's thread (`ListContext`): the
+      route targets, the panes' recent lines (`TriggerTestLines`, so `SettingsForm.Preview` is the cell live test's
+      `TriggerPreview` over the same corpus), and the host's own answer to which chords a binding can have
+      (`MacroKeys.Verdict(Host.Keys, …)`, `MacroKeys.Bindable(Host.Keys)`). F4's key field is refused in the window
+      for what the *window* cannot deliver; `SetKey` also refuses a chord another binding holds.
+    - **The cell screens build their rows from the declarations** (`DeclaredFields.Item`, which maps each
+      descriptor to the cell field it always was), in the order `RowFieldOrder`/`EditorFieldOrder` name, so the
+      ordinals, ⇥ order and every frame are unchanged: F2's match kind is still field 10 on the heading row.
+      `DeclaredListScreensTests.EachCellScreenDrawsExactlyTheDeclaredFields` holds the two lists together.
+    - **⌥↑/⌥↓ move an item within its set on the cell screens** (`ScreenRow.Move`, `ScreenLists.Mover`,
+      `SettingsSession.Reorder`), saved only when it moved, the cursor following; a `⌥↑↓ moves …` hint row sits
+      under `Del removes …`. That is the one cell row this added. Order is meaning for a trigger (first stop wins).
+    - The search searches item fields too (`SettingsSearch.Searchable`), F10's package fields included.
+- **In the window, a declared section opens a native settings window, generated from the declarations**
+  (`ClientHost.NativeSettings` → `INativeSettings`; Client `SettingsForm`; Avalonia `SettingsWindow`,
+  `SettingsPresenter` on the driver; `OpenSettingsScreen`/`TryOpenNativeSettings` in `SharpMUTermApp.Settings.cs`).
+  The terminal, the snapshot, the tests and the parity harness pass null, so their cells do not change. Decisions
+  not to relitigate:
+  - **The frame is the window's own** (`WindowDecorations.None`: title, ✕, Esc, drag the title to move), **so is the
+    resize border**: `WindowChrome.WithResizeBands` lays a 5 px band along each edge that begins `BeginResizeDrag`, the
+    main window's rule. The size the player leaves the centred window at is reused for the run
+    (`SettingsPresenter.RememberedSize`, never saved); docked beside the output (trigger builder) is not remembered.
+    Opening or closing it calls `OpenedOrClosed` → `DesktopLayer.Sync`, so toasts hide and return at once (another OS
+    window paints no frame here). Under Xvfb with no window manager `BeginResizeDrag` does nothing; untried under a WM.
+  - **Every way in goes through `OpenSettingsScreen`**: the F-key, ⌃P's `screen:` entries and the cell search's ⏎
+    (`GoToSetting`). A section with fields goes native and any open cell screen is closed first. A section with
+    none is a cell screen as before. In the window's list it carries `↗`, and choosing it calls
+    `SettingsForm.OpenScreen`, which closes the window and opens the cell screen through `GoToSetting`.
+  - **The window only draws; the client commits.** `SettingsForm` reads values through each field's
+    `SettingBinding` and sends every write through one delegate. The app's delegate runs
+    `ScreenEdits(SaveConfiguration).Apply` on its own thread (`OnUiThread`), so a native edit is saved and re-syncs
+    bars, panels and automation exactly as an F7 edit does. `Changed` is raised after the change lands, and the
+    window re-reads values and marks. A number is clamped to its field's bounds and a text to its length, the cell
+    field's rules. Reset is `binding.Reset`, the default `r` uses.
+  - **Reads cross threads, so lists are replaced and never edited.** The window reads the live configuration on
+    Avalonia's thread. A declared value is a scalar or a list, so `SetMeters` builds a new list every time.
+  - **The meter table reads the game data of the window focused when the form opened**, captured on the client's
+    thread. `GameDataStore` is locked, but the focus is not safe to read from another thread. The `now` column is
+    re-read each second (`OptionsScreenRenderer.NowText`). The received paths feed each path box's auto-complete
+    and a list below it; clicking a path fills the path box last used.
+  - **A scoped section (F5, F9) has a subject picker and a door.** `SettingsForm.Subjects`/`Choose` pick the world
+    or character its fields edit; the form opens on the focused window's (`FocusedSubject`, resolved on the client's
+    thread). A write captures the subject at the moment it is made. `Open the F5 screen ↗` (`OpenScreen`) is the way
+    to the lists, and opens the *cell* screen: `OpenSectionScreen` calls `GoToSetting(…, native: false)`, or the door
+    would reopen this window. With no world there are no fields, only a sentence and the door. A text the rule
+    refuses is put back with the reason as a tooltip. A field may carry a per-world note the cell row shows
+    (`SettingsForm.WorldNotes`, by field id then world, built on the client's thread; `Note` shows it only while the
+    field is at its default): `join wraps` carries `recommended · wraps at 78, pane is 60`, one string from
+    `WorldFieldValues.JoinWrapsAdvice` for both hosts.
+  - **Search is `SettingsSearch.Find` and nothing else**, so the two surfaces always find the same fields. While
+    searching, the page shows only matched fields, and if the section on show has none it moves to the first that
+    has some.
+  - **Fluent is applied to this window only** (`Styles.Add(new FluentTheme())`), and `RequestedThemeVariant`
+    follows the client's theme (`SettingsForm.IsDark`, read live), so a theme card clicked here flips the window's
+    variant and rebuilds the page. The rest of the window stays on the Simple theme the native menu and tooltips
+    were built against.
+  - **A list section is a master-detail editor** (`ListEditorView`, Avalonia; `SettingsWindow.ListEditor`): the
+    sets and their items on the left (an enable check box per item, `+ Add`/`Copy`/`Delete`/`↑`/`↓` over it, ⌥↑/⌥↓,
+    Delete and Space on the list), the item's declared fields on the right, grouped. It fills the page below the
+    title and scrolls in its two halves. A package's set is drawn read-only with *Copy to edit*. F2's pattern field
+    has the live test under it, re-run on every keystroke, each matching line with the match marked. A text field
+    with suggestions (F2's route) is an editable `ComboBox` listing them all, so the windows are seen without typing. The trigger
+    builder opens it on the rule it made (`TryOpenNativeSettings(section, item)`); with no window it opens the cell
+    F2 as before. **Each list keeps its selection for the run** (`SettingsForm.Selections`, the app's
+    `_listSelections`, by section id; never saved): switching section and back, or closing and reopening the window,
+    lands on the item last chosen while it still exists. An item the form was opened on wins.
+  - **The window takes the keyboard when it opens and gives it back when it closes** (`SettingsWindow.FocusFirst`
+    on `Opened` and when an open window is reused; `SettingsPresenter.Refocus` → `DesktopLayer.FocusArmedComposer`
+    after `Owner.Activate()`), as a cell screen does.
+  - **F10 is a package manager page** (`PackagePageView`, Avalonia; Client `PackageCollection`, `PackageManager`,
+    `PackageReviewModel`, `PackageBrowseModel`; `SharpMUTermApp.Packages.cs`). F10 is declared as a list of
+    installed packages (`SettingsSectionContribution.Packages`): one `BoolField` (`enabled`, whose binding replaces
+    `DisabledPackages`, the one thing it writes) and read-only `InfoField`s (name, version, games, by, about, sets,
+    scripts, media, update, characters), plus four actions (Space, `c`, Del, `b`). The cell modal
+    (`PackageScreen.List`) and the page draw the same fields in the same order
+    (`PackagePageTests.ThePageDrawsTheDeclaredFieldsTheCellScreenDraws`). Decisions:
+    - **Every gesture goes to the client** through `IPackageHost` (`PackageHostCalls`, marshalled with `OnUiThread`):
+      on/off (`SetPackageEnabled`, one `SaveConfiguration`), remove, copy sets, fetch the index, install, accept,
+      cancel. The page writes nothing; `PackageManager` is what the client publishes for it to read
+      (`PublishIndex`/`PublishReview`/`PublishStatus`, `Changed`).
+    - **One consent path in both hosts**: `ReviewPackage` checks the SHA-256, id and version, then builds one
+      `PackageReviewModel`; the cell overlay draws it with `PackageScreen.Review`, the window as a card over the page.
+      Both end in `AcceptPackage(model)`, which refuses a model that is not the pending one, so a stale review
+      cannot install. It leads with `WHAT CAN ACT AS YOU`.
+    - **The index is fetched only from the Browse tab's button** (or `b`/⌃P ▸ *Browse packages*, which bring the tab
+      forward through `BrowseRequests`), never when the page opens. The browse list is `PackageBrowseModel`, the
+      focused world's packages first, as on the cells.
+    - The `--demo-config` scene installs two fake packages and serves a fake index from memory (`DemoFetch`, real
+      SHA-256s); screenshots `ux-wave8/packages-window-*.png` and `packages-terminal-*.png`.
+  - **A settings `--view` opens the native window when the host has one** (`RenderSnapshot`: a declared screen with
+    no `-edit` goes through `TryOpenNativeSettings`, as do `packages`/`package-browse`/`package-review`). The parity
+    harness passes `NativeSettings = null`, so its cells are still compared.
+  - **Committed edits undo per section, for the run** (Client `SettingsHistory`; `ScreenEdits.Track`/`Undo`/`Redo`;
+    `SettingsForm.CommitAs`/`UndoRedo`/`HistoryNote`/`Showing`; the `settings-undo` view). `ScreenEdits` captures the
+    configuration as JSON before each change and records it after the save, under the section it was made on (the cell
+    overlay's F-key, the window's page); 50 a section, a new edit clears redo, a no-op is not recorded. An undo writes the
+    *before* values back only at the paths that step changed, onto the configuration as it is now (an F5 edit made since
+    survives an F7 undo), merged into the live objects: an unchanged list element stays its instance, a changed list is
+    replaced. The snapshot carries the password (an ignored scalar), never `lastSession`/`version`/`keyTourPending`. It is
+    saved through the funnel. A deletion undone leaves the closing review; redone, it rejoins it. F10's on/off switch is
+    recorded under `packages` too (`SetPackageEnabled` → `PackageEdits`, saved through `SavePackageChange`, which re-syncs
+    the packages; the cell F10 list takes ⌃Z/⌃Y itself, `StepPackageHistory`). Cells: ⌃Z / ⌃Y (⌃⇧Z
+    where reported) only while navigating, the note in the header in place of the verbs until the next key, `⌃Z undo` a
+    low-drop ladder key (F10's list header too, while a package is listed). Window: a tunnel handler leaves the chord to a
+    `TextBox` only while it has typing **not yet committed** — every change landing empties the focused box's own history
+    (`ForgetTyping`), so after ⏎ or with a value the page put there Ctrl+Z is the section's, and a step taken from a
+    focused box refreshes that box too (`Rewritable`, `ListEditorView.Refresh(focusedToo)`). The
+    footer reads `Undo Ctrl+Z · Redo …` (the mockup's) and shows the note on the left.
+  - Not done: the window is not modal. Screenshots come from a real window under Xvfb, driven with XTest
+    (`ux-wave4/native-settings-*.png`, `ux-wave6/settings-themes-window-*.png`, `ux-wave7/lists-*.png`).
+- **In the window, ⌃P is a native palette over the window, listing the cell palette's rows** (`ClientHost.NativePalette`
+  → `INativePalette`; Client `PaletteSession`; Avalonia `PaletteOverlay`, `PalettePresenter` on the driver;
+  `SharpMUTermApp.NativePalette.cs`). The terminal, the snapshot, the tests and the parity harness pass null. Decisions
+  not to relitigate:
+  - **One funnel**: `ToggleMenu` (⌃P, the header ☰ link) and `OpenMenu` (the native header's search box and brand
+    through `ActivateChromeTarget`, the pointer menu's last entry *More commands…*, the `menu*` snapshot views) ask
+    `TryOpenNativePalette` first. ⌃P is a toggle in both. The composer refusal is `ToggleMenu`'s, so it holds for both.
+    `PaletteIsOpen` (either palette) feeds `AnyOverlayOpen`, `OpenOverlayName`, `MenuIsOpen` and the header's caret.
+  - **The session is captured on the client's thread** — catalog, recents, suggestions, `acting on`, dark or light,
+    an opening query — so the window filters with `CommandPaletteModel.Build` on its own thread and locks nothing.
+    The rows are therefore the cell palette's for the same query (`NativePaletteTests.TheRowsAreTheModelsForTheSameQuery`).
+  - **Running goes back through the session**: `Run` closes, then the client runs `RunFromPalette` on its own thread,
+    so recents are recorded exactly as from the cells. A session runs once and closes once; a session an earlier
+    opening left behind is ignored when it reports closing.
+  - **It is an overlay, not a window**: `PalettePresenter.Attach(root, refocus)` from `MainWindow`, and the overlay is
+    added as the root panel's *last* child when it opens, so it lies over the cells, `DesktopLayer`'s panels and the
+    native chrome. A scrim covers the rest; a press on it closes. Closing gives the keyboard back to `TerminalView`,
+    which is the client's command line by the focus pin. Fluent is applied to the card alone (`ThemeVariantScope`),
+    in the client's variant.
+  - **Keys are words** (`NativeKeys.Words`, the rule every native surface follows — see below). A sequence (`⌃B |`)
+    is one chip per key.
+  - **Hover selects on movement only** (`PointerMoved`, not `PointerEntered`), so the row that opens under a resting
+    pointer is not chosen. ↑↓ wrap as in the cells; PgUp/PgDn stop at the ends.
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave5/native-palette-*.png`).
+- **In the window, the composer is a native editor: F1 over the cells, and the docked panel over its pane**
+  (`ClientHost.NativeComposer` → `INativeComposer`; Client `ComposerModel`, `ComposerMarks`, `ComposerSession`;
+  Avalonia `ComposerView`, `ComposerEditor`, `ComposerOverlay`, `ComposerPresenter` on the driver;
+  `SharpMUTermApp.NativeComposer.cs`). A `TextBox`: wrapping, undo and redo, selection, IME, paste and the platform's
+  caret, with a monospace face by default and a proportional one from its right-click menu (for the run). Decisions
+  not to relitigate:
+  - **One model, both hosts.** `ComposerModel` (target, draft, escaping, MOO edit, dictionary, marks as ranges, the
+    key row) is what the cell F1 (`ComposeOverlay.Render(model)`), the cell panel (`DockedComposer.Render(model)`) and
+    the native views draw. `ComposeOverlay.ModelFor` is the F1 model in both hosts; `DescribeDocked` is the panel's,
+    recorded as drawn (`SurfaceCatalog.Compose`, `PanelIds.Composer`). The marks are `SpellChecker.Misspellings` per
+    line, the call the cell highlighter makes, so both hosts mark the same words.
+  - **F1 goes through one funnel** (`OpenComposer`/`CloseComposer`): the key, ⌃P, a MOO edit arriving and the demo
+    views. With an available host editor it opens there and the cell modal is never built; `ComposerOpen` (either)
+    feeds every refusal the cell modal fed (`AnyOverlayOpen`, the quit facts, `MainWindowInFront`, the panes being
+    covered). Closing keeps the draft through `KeepComposeDraft`, exactly as the cell window's `Closed` does, so a send
+    still closes first and forgets after. `Available` is false until the main window attaches the presenter, so
+    `--render-png`, the parity harness and any test without a window get the cells.
+  - **Every gesture goes back through the session**, on the client's thread (`OnUiThread`): ⌃S to `SendComposed` /
+    `SendDocked` (a MOO edit saves its lines), ⌥L, ⌥W (the word at the caret, `ComposerMarks.WordAt`), Esc (F1 closes
+    keeping the draft; the panel releases to the command line), a click (the panel arms, `ArmComposer`). A session the
+    client has ended passes nothing on. The window never builds a command.
+  - **The draft is the client's; the editor keeps its own caret.** The host hands its text back as it changes; the
+    client's text replaces the editor's only when `ComposerModel.Revision` moved — a send clearing it, F1 closing over
+    the panel, a key the cells took. `DockedComposer.SetFromHost` writes without moving it.
+  - **The docked editor lies over its cells, which stay the draft** (`CellsUnderNative`): it rides the panel channel
+    (`PanelOverlay.Composer`/`ComposerSession`) and `DesktopLayer` places it like any panel. It takes the keyboard when
+    the model says armed and gives it to `TerminalView` when it says not. It hands the client the chords it has no
+    use for (`ComposerView.ReachesTheClient`: F-keys, ⌃P, ⌃O, ⌃↑/↓, ⌃←/→, ⌥J/K, ⌥digits) through the driver, as its
+    cells would receive them; ⌃A/C/X/V/Z/Y, word movement and typing stay the editor's. While F1 is open natively the
+    panels are not published, so F1 is never under a docked editor.
+  - **F1 is an overlay over the cell area, under the desktop layer**, so the native header and sidebar stay (inert, as
+    under a modal) and a toast is still seen over it. ⌥⏎ is the window's (it maximises); ⏎, ⌃⏎ and ⇧⏎ are newlines.
+    ⌃Q in F1 goes to the client and leaves F1 open: the native quit prompt is drawn in front of it, and Stay comes back
+    to the post. (A host with the native F1 but no native modals closes F1 first, keeping the draft, so the cell prompt
+    is not hidden — `ToggleQuit`.)
+  - **The misspelling is a real wavy line**, drawn by a layer over the editor (`ComposerView.MarkLayer`) from the
+    editor's own text layout (`TextLayout.HitTestTextRange`), so it follows wrapping and scrolling. The right-click menu
+    offers WeCantSpell's suggestions (`SpellChecker.Suggest`, six at most), Add to dictionary, the editor's edits and the
+    face. Its colour is the settings screens' warning, which the cell editor marks in (`ComposerInk`).
+  - **Parity**: `HostParityTests` builds both drivers with no attached presenter, so the cells it compares are the cell
+    composer's in both. The native side is held by `SurfaceParityTests` instead — F1's model equals the cell window's
+    for `compose`, `compose-literal` and `moo-edit`, the panel's equals the cells' in `panel-composer`, and ⌃S from the
+    native session puts the same command on a `RecordingTelnetSession` as the cell keys do, as typed and literal, one
+    line and several paragraphs. `NativeComposerRoutingTests` (Tui) and `NativeComposerTests` (Avalonia, headless)
+    drive the routing and the editor.
+  - **The face is the character's** (`CharacterDefinition.ComposerProportional`, false by default with no migration):
+    the right-click menu's choice goes `ComposerSession.ChooseFace` → `ChooseComposerFace`, which saves through
+    `PersistConfiguration` (a view preference; `SaveConfiguration` would re-periodise timers), and each composer reads
+    it live (`ComposerCallbacks.Proportional`), so F1 and the docked panel of one character agree.
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave7/composer-*.png`). `--demo-config` in the
+    window opens the installed dictionary read-only. Not done: no find bar, and
+    the window's ⌥W adds to the run's dictionary in the demo only (a live client writes `user-words.txt` as F1 does).
+- **Help is one Client model drawn by both hosts** (`HelpModel`/`HelpSession`, `SlashCommands`, `HelpTopics`, Client;
+  `HelpSurface`, Tui; `HelpView`, Avalonia; `/help [words]`, ⌃P ▸ *Help*; surface `help`). Rows: how-to pages, then
+  the slash commands from **`SlashCommands.All`, the one table `--help` prints too** (`ClientUsage`), then every
+  registry command with a key for this host (`KeyGlyphs.Normalize`) and the host's own chords (`HostKeys`). The search
+  is `HelpModel.View` in both hosts (every word, in a row or in a page's text). ⏎ on a slash command **places** it on
+  the command line (`PlaceGrab`) and sends nothing; on a key it runs the registry command; on a how-to it opens the
+  page (Esc back). `--plain` says the matching rows instead. Native as an `INativeModals` session like ⌃F. Pages are
+  `HelpTopic.Lines` joined into `Paragraphs` and wrapped by each host. `HelpTests.EverySlashCommand…` ties the table
+  to the command line's handlers.
+- **In the window, the quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals** (`ClientHost.NativeModals` →
+  `INativeModals`; Client `Modals/`: `ModalSession`, `QuitModel`/`QuitSession`, `SearchModel`/`SearchSession`,
+  `HistoryModel`/`HistorySession`, `LayoutsModel`/`LayoutsSession`, `WelcomeModel`/`WelcomeSession`; Avalonia
+  `ModalPresenter` on the driver, `ModalOverlay`, `QuitView`, `SearchView`, `HistoryView`, `LayoutsView`, `WelcomeView`,
+  `ModalParts`; `SharpMUTermApp.NativeModals.cs`). Decisions not to relitigate:
+  - **One host member for five modals**, not five. What they share is the hard part — stacking (the quit prompt in
+    front of everything), giving the keyboard back, the theme — and one presenter decides it once. A session per modal
+    carries its model and the gestures; `Available` is false until the main window attaches it, so `--render-png`, the
+    parity harness and every test without a window get the cells.
+  - **The model is the cell modal's.** `QuitPrompt.Render(QuitModel)`, `SearchPrompt.Render(SearchModel)`,
+    `HistorySearchPrompt.Render(HistoryModel, …)`, `LayoutsListLines(LayoutsModel)` and `WelcomeSurface.Render(WelcomeModel)`
+    draw the same records the views draw. ⌃F's hits come from one function (`SearchModelFor`, which the cell surface
+    asks too); ⌃R's rows are `HistoryModel.View` (= `HistorySearch.Match`) in both.
+  - **Every gesture ends in the cell key's method**: Y → `Quit`; ⏎ on a hit → `GoToSearchHit(model, index)`; ⏎ in ⌃R →
+    `InsertHistoryEntry`; every ⌥M key and button → `RunLayoutsVerb`, which returns the `LayoutActionResult` both lists
+    show as their status; the welcome's choices → `RunWelcomeAction`, and its form → `WelcomeSurface.Submit(form)` →
+    `ConnectFromWelcome` → `ConnectCommand`. The views read keys through the pure prompts' `Interpret`, so a key means
+    the same in both hosts; ⌥M's ↑↓ stop at the ends as the cell list does.
+  - **The quit prompt is never refused and always ends in front.** `ModalPresenter` adds it last, moves it back to the
+    end when anything is added to the root after it (⌃P, F1, a toast), activates the main window over the settings
+    window, and opens any other modal under it. ⌃Q from inside another modal is forwarded to the client, which opens
+    the prompt over it; Stay returns to what was open. The client funnels are `ToggleQuit`, `ToggleSearch`,
+    `ToggleHistorySearch`, `ShowLayouts`, `ShowWelcome`; each closes its own native modal on its chord.
+  - **Fluent scoped to the card** (the palette's rule), in the client's dark or light variant (`ModalColours.Dark`/
+    `Light`, the palette's colours and accent). A press on the scrim is Esc (the quit prompt: Stay). Focus goes back to
+    what had it when the modal opened if it is still on screen, else to the cells, whose pin puts it on the command line.
+  - **Parity**: `HostParityTests` has no presenter attached, so it compares the cell modals. `SurfaceParityTests`
+    holds the native side: the session's model equals the cell modal's for `quit`, `search`, `search-regex`,
+    `search-all`, `history-search` (and the filtered rows), `layouts`, `welcome` and `welcome-connect`; and quit Y/N,
+    search ⏎ / ⌥A / ⌥E, history ⏎, layouts apply / save as new / rename / delete, and the welcome's connect and
+    layout+settings end in the same `Outcome` as the cell keys. `NativeModalRoutingTests` (Tui) and `NativeModalTests`
+    (Avalonia, headless) drive the routing, the stacking and the views. The `search*` and `history-search` snapshot
+    views open the native surface when there is one (that is how the window's screenshots are taken):
+    `history-search-filter` opens ⌃R with its query typed (`HistorySession.InitialQuery`), and `search-landed` lands
+    through the native search's own close and `GoToSearchHit`, so the cells it leaves match the terminal's.
+  - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`).
+- **The window has one design language: `NativeTokens`** (Avalonia). Planes (card, raised, selected, scrim), edge
+  and rule, inks (text, dim, header, accent, warn, notice, accent and key inks), radii `RadiusS/M/L` 4/8/12 and
+  the type ramp `Small/Body/Title/Heading` 11/13/14/18 (`Miniature` 9 only for a theme card's preview). Derived
+  from the client's `Theme` the `ScreenTheme` way: a canonical Dark (the mockup's: `#171b24` card) and Light (white) set, the
+  theme background's hue shift added, every ink held to `TextFloor` 4.5:1 on each plane it is drawn on; the
+  accent is the client's teal, never Fluent's blue. `Apply` sets the Fluent keys on a scope and `ApplySimple`
+  the Simple theme's (menus). The settings window, list editor, package page, theme cards, menus, palette and
+  modals all read it; sessions carry the theme (`ModalSession.Theme`, `PaletteSession.Theme`,
+  `SettingsForm.Theme`). `NativeTokenTests.NoViewWritesALiteralFontSizeOrColour` fails on a literal
+  `FontSize =` number or `Color.Parse("#` anywhere in the window's assembly outside `NativeTokens.cs`; widen its
+  allow-list only with a reason. A quiet line is the `Dim` ink, never an opacity (an opacity is not floor-checked).
+  - **The floating surfaces are the mockup's cards** (wave 19, `ux-mockups/Main.dc.html`). Dark's canon is the mockup's
+    palette: card `#171b24`, raised `#1d2333`, `Well` `#10131a` (the ground an input sits in), `Edge` `#2c3447`, `Focus`
+    `#3a4f73`, selected `#1f3a3a`, ink `#d7deec`/`#9aa4b8`, `#0f1620` on the accent. Every ⌃P and modal search box is sunk
+    (`ModalParts.Sunk`: the well, a rule turning to `Focus`, a magnifier); a key is a cap in the cells' mono
+    (`ModalParts.Chip`, `NativeTokens.KeyFace`); a selected row is the selected plane plus a `MarkWidth` accent bar on its
+    left (`ModalParts.Mark`); a modal's key line is a band on the card's foot in the well (`ModalParts.Footer`). Toasts are
+    rounded on `ShadowSmall` with the severity as an inset bar, still on the client's `NoticePalette` plane; menus take
+    the palette's row height, keys in the mono and the dim ink, and the popup's own window shows the card's plane in the
+    rounded corners where it cannot be transparent.
+  - **The settings window is the palette's modal**: undecorated with its own title bar (title, ✕, Esc, drag to
+    move), the tokens' card and edge, and a scrim over the main window (`SettingsPresenter.Scrim`; a press on it
+    closes). Opened from the trigger builder (`SettingsForm.BesideOutput`) it is docked to the main window's right
+    half with no scrim, so the line the rule came from stays in view. Still a separate OS window, not an overlay.
+  - **It is laid out as the Desktop-Settings mockup, on page tokens** (`NativeTokens.Page` → `PageTokens`, in
+    `NativeTokens.Page.cs`: ground, nav, card, rule, field, focus edge, button, popup, inks, link, search mark; the Dark
+    set is the mockup's hexes, Light mirrors it, other themes get the card's shift, every ink held to `TextFloor` on
+    every page plane; `PageTokens.Apply` lays them over `Apply` for Fluent). A 56 px header (title, search box with
+    glass and `N settings`, the scoped section's subject as *Applies to*, ✕), a 232 px nav (accent row for the section
+    in front, counts while searching, a note at its foot), a 36 px footer, and the page: a 20 px title, a line saying
+    what it shows (*Showing settings that match “x”. Show all N*, which clears the search; F5/F9's door is a link
+    there), then **one card per declared group** with its fields as rows (label in the label weight with search words
+    marked, `● Changed`, help under it; *Reset to default* link and the control on the right). A group whose name is its
+    only field's label draws no heading, nor does a one-field card while searching (the mockup's result cards; the meter
+    table's label then heads the card at `CardTitle`). List and package pages put both halves in cards. Still generated
+    from the declarations; nothing is placed by hand. Fonts are inherited (the window sets no UI family).
+    **Wave 28 measured it against the mockup at 1440×900** (`ux-wave28/settings-audit/`): the nav is 232 px *inside* its
+    padding (252 with the window's edge, so the page title sits at x 293 as the mockup's), the search box is 480 px plus
+    padding 16 px after the title with the mockup's 24-unit glass at 14 px, small text (count, column headings, row help,
+    `Changed`, reset link, nav note, footer) is `PageSmall` 12, the meter grid is inset 4 px with rows 12 px apart (label
+    box 32, path boxes 34, padding 8), the received-paths panel is 360 px under the value column with `x = v` and the
+    focused path box's alternatives marked, and a live value wears its meter's colour (low: `WorkspacePalette.Low`) held on
+    the card (`PageTokens.OnCard`). A list or package page is sized from the measured title, so the page never scrolls
+    beside the editor. Left as they are: section titles (the declared names the cells and ⌃P share), the drag handle
+    (meters have no reorder), the Colour column (the mockup predates meter colours), `412/500` unspaced (the cells' text),
+    *Open config.json* (no client action), the mark's rounded padding (a `Run` has none).
+- **The window lays out on one spacing scale and on device pixels** (`NativeTokens.Spacing.cs`; wave 21B). Insets are
+  `Space2…Space32` (a 4 px grid plus the mockups' 6/10/14 control half-steps; nothing odd, an odd logical pixel is half a
+  device pixel at 150%), `PanelInset` (16: the header's brand, the sidebar's title, world names and foot button, every
+  panel's heading, rows and footer, the quick bar's first button), `ModalInset`, `PageInset`; heights `ControlHeight` 32,
+  `ControlHeightSmall` 28, `FieldHeight` 38 (the command line's field and the welcome's inputs and Connect). Decisions:
+  - **Chrome sizes are multiples of 4** (`NativeLayout`: header 44, sidebar 232 + 8, footer 28, the field's strip 40 +
+    rows), because 4 logical pixels are whole device pixels at 100/125/150/200%: the cells start on a device pixel at
+    every Windows scale, so a view placed from `CellOrigin` meets them with no blended row. The old 42 px header put
+    every rule below it on a half pixel at 125%.
+  - **A drawn hairline is one device pixel, filled**: `NativeTokens.HorizontalRule`/`VerticalRule`/`StrokeRect`/
+    `HairlinePen` read the visual's `RenderScaling`; the header's rule, the tab strips, the scroll band, panel headings
+    (`PanelText.Heading(rule:)`), the search box, key caps and the quick bar's plates use them. `Border` hairlines are
+    already rounded by layout rounding (on by default) and need nothing.
+  - **Every panel heading is 44 px** (`PanelText.PanelHeadingHeight`, the docked composer's `Border` too), whatever the
+    cell height, so the side column's rules line up. Only the character in front wears the sidebar's selected plate;
+    its window in front is the accent mark. The field sits `NativeLayout.FieldSide` (20) in from the grid as far as the
+    prompt's padding columns allow (`FieldRect`, edges rounded to device pixels).
+  - `NativeTokenTests.NoViewWritesALiteralMarginPaddingOrSpacing` fails on a number in a `new Thickness(…)` or a
+    `Spacing =` outside the tokens (allow-list: the tokens, `TerminalView`, the footer, the toasts, with reasons);
+    `TheSpacingScaleAndTheChromeSizesAreWholeDevicePixels…` pins the multiples of 4. Not done: the quick bar is still one
+    cell row (the mockup's is a 56 px strip of 34 px buttons), and panel internals' font sizes are not on the scale.
+
+- **Wave 23 B (Light window, settings window).** The native header's plane is `WorkspacePalette.NativeHeaderPlane`: the
+  panels' plane ×1.1 on a dark theme (wave 28; it was the status band), the backdrop on a light one (Light's status band is a lavender that sat beside the neutral
+  rail and footer as a third grey); `HeaderMuted(theme, plane)` holds the quiet ink on it. Native only — the cell header
+  keeps its band. `LightCanon`'s `Edge`/`Rule` are `#c4c8d2`/`#dcdfe6`, the dark set's ~1.4:1 step mirrored, so a field on
+  Light's side column has an edge. The welcome's search and form fields are `ModalParts.Sunk` (Fluent's default text
+  background is `Raised`, the cards' own plane). Settings: a section with no match shows no count (not a greyed `0`);
+  page monospace is `NativeTokens.Code` (12); the received-paths panel scrolls past `MeterPathsMaxHeight`; list-editor
+  combos stretch like the text boxes; a disabled button keeps the button plane with a `Rule` edge.
+- **Wave 28 roleplay audit (window only; terminal frames unchanged).** The window measured against `Main.png` at 1440×900
+  (the `roleplay-scrolled` view: Roleplay, a drafted post, scrolled back with more arriving). The window's UI text is the
+  mockups' 13 px: `NativeChromeView.FontSize` and `PanelText.Size` are `Body` (they were 14), the brand `Title`, panel
+  labels, buttons, the footer and the scrolled-back band `NativeTokens.Caption` (12); the vitals gauges, quick bar and
+  collapsed bars keep 14 (`Title`), measured last wave. The sidebar is 244 + 8 (the mockups' 252), its rows span the gutter
+  with 10 px insets, 30 px rows, and a hairline in its last pixel is its edge. On a dark theme the sidebar is the panels'
+  plane (`WorkspacePalette.NativeRailPlane` = `Surface`) and the header, footer and command-line strip are that ×1.1
+  (`NativeHeaderPlane`; `NativeFooter.Plane`, inks re-held to `TextFloor` there); the strip's top edge is the panes' rule.
+  The header's search box is 320 px with its chord as plain text after the label, the pill 26 px, the Layouts button bare
+  at rest. Tabs start 12 px in, at 13 px. The composer's game text is the cells' size (`TerminalView.CellTextSize`, not a
+  share of the row) at the row's pitch. A row's last background run reaches the canvas's right edge (`CellRenderer`), so a
+  window that is not a whole number of cells wide shows no strip of the theme background. Left as decided or not ours: the
+  side column's share (a layout property both hosts read), the focused pane's lifted plane and the history plane (the focus
+  cue), 20 px rows and two-column gutters (cells), the accent bar on the focused tab, `main`, `world`, `Ctrl+Enter`,
+  *Command palette*, the pane's leftover pixels under the command line.
+- **Wave 29 combat and first-run audit (window only; terminal frames unchanged).** Measured against `Desktop-Combat` and
+  `Desktop-FirstRun` at 1440×900 (`ux-wave29/combat-firstrun-audit/`; the combat mockup rendered without its open menu).
+  **Under `HostChrome.Strips` a strip panel is not recessed** (`SurfaceToneIn`): the vitals card, quick bar and collapsed
+  bar are the panels' plane like the map, and a strip draws a hairline on each edge another pane meets
+  (`PanelOverlay.RuleAbove`/`RuleBelow`, from the whole pane rectangles in `PublishPanels`; `VitalsGauges`/`QuickBarButtons`
+  `.Seams`). The terminal keeps the recessed step, having no hairline. The vitals card's names are `Caption` and its numbers
+  the mono face at that size; the quick bar's labels and the collapsed bar's title are `Body` (wave 28's "keep 14" was not
+  a measurement). The welcome's layout cards centre their words, and its check boxes are 24 px rows (Fluent fixes 32).
+  Left as they are: the combat mockup has no sidebar or tab strip (the window keeps both, as `Main.png` draws them), panel
+  headings (the two mockups disagree: one 44 px heading with its context beside the title is decided), the look buttons,
+  room names and legend, movement in gold and low in `WorkspacePalette.Low`, the map's shades as mixes of the pane's plane
+  and ink, the collapsed bar running over the field's strip (`BelowGrid`), output starting at the top (cells), the footer's
+  bright name (the row's model), and the welcome's chips, *Package* tag, `world` noun, third *suggested* state and Fluent's
+  20 px check box.
+- **Wave 30 map shades and Chat bar (window only; terminal frames unchanged).** `ux-wave30/window-map-and-bars/`. The native
+  map's shades lean toward the tokens' focus edge (`MapCanvas.Lean`, `DesktopLayer.MapLean`: `NativeTokens.For(theme).Focus`,
+  `NativeTokens.LeanFor(plane)` in a floating window): a room's fill steps the pane's plane toward the edge itself
+  (`RoomShade × FillLean`), a rule toward the pane's ink leaned `LeanShare` (0.7) to it (`LeanedRuleShade`), so Dark lands on
+  `Desktop-Combat`'s `#1d2333`/`#3a4257` and Light/Solarized/tints stay steps of their own plane; with no lean the old neutral
+  steps. This replaces wave 29's "shades as mixes of plane and ink". The collapsed bar draws only its bottom
+  `CollapsedBarView.BarHeight` (38, the mockup's) as the bar — rule, words, hover, hand cursor, tooltip and the click — and
+  the rest of what it covers is the column's plane; `BelowGrid` now also takes the view's leftover pixels under the grid
+  (under a row), so a panel at the foot of a beside-the-field column meets the footer. Cells and NAWS do not move. Panel
+  headings were checked against `Main.png` and already match (context beside the title), so nothing changed there.
+- **Wave 31 fine pixels (window only; terminal frames unchanged).** `ux-wave31/window-fine-pixels/`, against `Desktop-Combat`
+  and `Main.png` at 1440×900. **The window's text is lightly hinted** (`NativeTokens.ApplyTextRendering`, set on `MainWindow`,
+  `SettingsWindow`, `FloatingPanelWindow` and, through a class handler in `App`, every `PopupRoot`): Avalonia's default hinting
+  drew Inter's capitals 11 rows tall at 13 px (the mockup's are 9–10) and 1.5 px above a line box's middle, so every native
+  line read a size heavier and every panel heading's words sat high. The metrics are balanced (Inter's capitals centre in its
+  line box), so no offset is added anywhere. The cells draw their own glyphs and do not change. **Map exits are
+  `NativeTokens.MapExit` (2) wide** from `NamesFromStep` up, thinner zoomed out, never under a device pixel (`ExitWidth`,
+  `NativeTokens.LineWidth`), and a level or upright exit is moved ≤ half a device pixel onto the pixel grid (`AlignExit`,
+  `NativeTokens.LineCentre`), so it is two crisp pixels as the mockup's; `PenAllowance` is 1.5 for that move. The docked
+  composer's mode chip is the mockup's outline (`OutlinedChip`: 11 px, `RadiusControl`, the panel's rule) and its Command box
+  has 8 px padding (34 px tall). Left as they are: the header is 44 px with its rule, the mockup's 45 (chrome on the 4 px
+  grid); the quick bar's three-row strip (60 px, the mockup's 55) and the scrolled-back band's two rows (40, the mockup's 37)
+  are cells; the pane's leftover pixels under the field (wave 28); the divider row between the composer and who-here
+  (`HostChrome.Strips` keeps it); the Here heading is every panel's 44 px (the mockup's is 41 without a chip).
+- **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
+  `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
+  `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them
+  well; whatever it hands a native view — menu keys, a toast's chip and text, palette details and chips, the
+  composer's key row, modal footers and sentences, settings help, tooltips — goes through `Words` on the way to the
+  screen. `NativeKeySpellingTests` reads every native surface at run time and scans the Avalonia sources for a glyph
+  literal outside `NativeKeys`. **The cells keep their glyphs**, the window's cell status row included: parity
+  compares cells, so that row says `⌥9` beside a toast saying `Alt+9`.
+- **Every focusable native control is named, ringed and reached by Tab** (`NativeTokens.Focus.cs`: `FocusRing`,
+  `FocusRingStyle`, `NamedParts`; `NativeFocusAuditTests`). Decisions not to relitigate:
+  - **One ring, from the tokens**: `ApplyFocusRing(scope)` (called wherever `Apply` is: palette, modals, settings window,
+    composer, map inspector) gives every control in the scope `FocusAdorner` = `FocusRing`: `Focus` held to
+    `FocusRingFloor` 3:1 (WCAG non-text) on every plane (`FocusRingInk`), 2 px, with a card hairline inside so it reads on
+    the accent too, rounded as the control. Avalonia shows it only for keyboard focus. **It is drawn inside the control's
+    edge**: the adorner layer clips an adorner to what is visible of its control, so a ring outside was never seen.
+  - **Overlays cycle** (`KeyboardNavigationMode.Cycle` on `ModalOverlay`, `PaletteOverlay`, `ComposerOverlay`): Tab
+    never leaves for the cells behind. A list or tab strip is entered once and walked with arrows.
+  - **A part takes its control's name** (`NamedParts`, a `TemplateApplied` class handler: a number box's text field and
+    spinner, `Increase …`/`Decrease …`, an editable combo's text): the keyboard lands on the part. List rows are named
+    from the model (section title, item title, package name).
+  - **Enter and Space on a focused button are the button's** (`ModalParts.FocusedButtonTakes`, first in every modal's
+    tunnel key handler); a surface's own Enter (go, run, connect) applies everywhere else. Browse worlds' sort button is
+    no Tab stop, because Tab is its key. The quit prompt's ←→/Tab move the focus with the ring.
+  - **A modal re-takes the keyboard once laid out** (`ModalPresenter`, posted at `Loaded`): the welcome's first field
+    refused the focus before layout, so its keys went to the command line underneath.
+  - The views that never take the keyboard (header, sidebar, tab strips, toasts, panels) are still named for a screen
+    reader (`Tabs: Corvid (in front), Chat`). `NativeFocusAuditTests` opens ⌃P, F1, the docked composer, ⌃F, ⌃R, ⌥M,
+    help, welcome, browse, the dictionary offer, quit and F7/F2/F5/F10 in Dark and Light and fails on a focusable control
+    with no name (a type name counts as none) or no ring, a Tab stop real Tab presses never reach, Tab leaving the
+    surface, or no ring drawn. Not tried with a real screen reader.
 - **Settings screens have no `IPasteTarget` and cannot easily have one.** They are markup rebuilt
   wholesale every key, with the edited field a buffer in `SettingsSession`. `SettingsOverlay`
   listens at `IConsoleDriver.Paste` instead. That can't double-fire *only* because no control on
@@ -1276,7 +2913,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     (`WindowNumberingTests.AWindowOpenedIntoAClosedOnesSlotStillTakesTheLastNumber` is the pin, and it
     took a four-window fixture to expose: with fewer, both orders agree).
     Only **placed** windows are numbered — one no pane holds is drawn `closed` and a digit for it would
-    name nowhere to go.
+    name nowhere to go — and never a layout panel (`WindowKind.Panel`), which is furniture and has no rail row.
   - **⌃B 1–⌃B 9 go to a pane.** It was ⌥N until windows took that; it is on the prefix because that is
     where the rest of the pane keymap lives, and it is kept rather than dropped because the pane
     numbering does not go away with the chord — move mode badges each pane with it, the move and drag
@@ -1439,7 +3076,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   draw it in *and* the strip has keyboard focus (which it never has here: focus is pinned to the armed
   command line). Measured: five captures in a split pane drew two tabs and half of a third.
   - **The owner prefix goes first, and goes for the whole strip.** A pane full of one character's
-    captures repeats `Corvid - ` on every tab; it is the cheapest thing there is to lose and the most
+    captures repeats `Corvid · ` on every tab; it is the cheapest thing there is to lose and the most
     there is of it, and what it said is still said twice over — by the chip the tab is painted on, and by
     the `⌁` a window belonging to another character wears. Dropping it alone is often the whole fix.
   - **Then names share by water-filling, not in proportion.** A cap is lowered until the strip fits and
@@ -1531,6 +3168,18 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   chroma distance on the darkened surface: nearest pair Teal/Jade at 7.8, against that test's floor of 6.
   The yellow-greens were tried and rejected — an olive measured 5.9 from `Ochre`, a lime 6.5 from `Moss` — and
   `TintStrength` went from 0.75 to 0.85 with the darkening, for the same chroma-is-bounded reason.
+  **The ten anchors were then re-picked for colour-blind readers** (`ColourVision`, Core: Machado 2009
+  dichromat matrices on linear sRGB, CIEDE2000; `TintColourVisionTests`). Searched within 40° of each
+  name's hue for the set whose closest pair — the ten *and* the untinted plane, all three themes — is
+  furthest apart under protanopia, deuteranopia and tritanopia, on condition that typical vision's closest
+  pair got no closer and the Light planes stayed pastel. Worst pair went from 0.28 (deutan, Moss/Ember on
+  Dark) to 1.99 (deutan, Moss/Ochre on Solarized Dark); typical vision 3.71 → 3.96. The floors are 1.9
+  (dichromat) and 3.5 (typical). **That is "side by side they differ", not "alone it is recognised"**,
+  and it cannot be more: ten planes at one luminance near L* 7, seen on one hue axis, top out around 2.2
+  even with the names ignored. So the name is the second cue, where it costs no cell: a tinted character's
+  rail row and tab tooltips say `pane colour: moss` (`TintLine`), and F5's `tint` row already names it.
+  **Names are stored, so they were kept**; `Ochre` is now a red ochre (hue 18°) and `Ember` a red, and the
+  enum's doc says so. Do not add a migration for a hue change — the name is the setting.
   **It says nothing on a monochrome terminal, deliberately** — the
   cue that must survive a lost hue is focus, and the rail and the tab title still name the character in
   words — and it is a **truecolor** cue, which is unacceptable for focus and is why
@@ -1553,6 +3202,30 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     used to be `#222226`. A light theme is left alone: darkening it makes a grey theme, and its focus step
     clamps at white either way. The cost is the pane-over-backdrop step, a ratio, which is fewer L* points
     a range lower (Dark 4.0 → 2.8); `EveryThemeGetsARaisedSurfaceOverARecessedBackdrop` now measures L*.
+  - **The built-in Dark theme is the mockups' navy, and its values were solved for, not picked** (`ThemeLibrary.Dark`,
+    wave 21C). Background `#222835`, StatusBackground `#13161e`, Border `#495573`, Prompt `#3f61a3`, so the derived planes
+    land on the mockup: pane `#151921`, focused `#212835`, backdrop `#10131a` (the ground), header `#13161e`, armed band
+    `#233049` (Prompt is whatever lean lands it there), idle band a step below, rule `#2c3446`. Three constraints bound the
+    choice and each is a test: the armed−idle luma step > 28 (`TheNewStepIsMoreThanTwice…`, which is why the header is so
+    dark), pane-over-backdrop > 2.5 L* (why the pane is not the mockup's darker `#12161f`), and the colour-vision floors
+    (why it is not bluer: a bluer untinted plane meets Azure under protanopia, a greyer one meets Rose under deuteranopia).
+    **Dark's tints are laid over the old grey's hue** (`WorkspacePalette.TintGround`, `#18181b`): the anchors were
+    searched against it, and a navy residual pulled Moss/Ochre and Teal/Jade under the floor; every other theme, and the
+    command line's hue-only tint, still uses its own plane. The settings screens and `NativeTokens` were already navy, so
+    their hue shift treats the Dark background as the reference (`ScreenTheme.ShiftedBackground`) and nothing moved there.
+    The window's field edge is its fill ×1.6 on a dark fill (`TerminalView.FieldEdge`: `#3a4f73` on `#233049`); the dark
+    canon's `Rule` is the mockup's `#2c3447`, which the pane hairlines read. A selected sidebar row is one row
+    (`SidebarModel.Plated`: the character while its own `main` is in front, else that window; `RailWindow.Own`), on a teal
+    plate. A strip whose tabs share one owner drops the owner prefix (`TabStripModel.OneOwner`, both hosts; a lone tab keeps it).
+  - **A light theme's backdrop takes a shallower step** (`LightBackdropScale` 0.95, `Backdrop` only — `Recessed`, the
+    chips' step, is unchanged): the dark ratio off a near-white surface put the rail and status row at mid-grey
+    `#b7b7b9` (L* 75), which read as disabled. Light's backdrop is `#e6e6e9` now, about 4 L* under the panes.
+  - **The status row and ⌃P's selected row are small text, held to 4.5:1** (`FrameContrastTests.TheStatusRowAndThe…`).
+    A notice's inks are held on the backdrop (`NoticeMarkup`, `WorkspacePalette.NoticeMuted`), and every bare `[dim]`
+    on the row is swapped for that held grey as it is painted (`StatusInk`); ⌃P's band is `Ink on Accent`, both roles,
+    so a light theme re-inks the pair. The native chrome's secondary ink (`NativeChromeView.SecondaryInk`) is opaque and
+    held to `NativeTokens.TextFloor`. `FrameContrastTests` also walks 80×24 (F2/F4/search draw one column there, through
+    `ScreenChrome.Panel` like every other column), and `ScreenThemeTests` checks 80-column Light settings frames.
   - **F7 ▸ `background transparency (%)` (0, off, by default) is a level only kitty can honour**
     (`TextSettings.BackgroundTransparency`; `KittyTransparentColours`, `SyncTransparentColours`). A
     translucent terminal draws translucent only cells on its *default* background (`SGR 49`), at the
@@ -1932,8 +3605,92 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   framework is handed `TextReader.Null`, and the pump is started from the loop (`RunLive`'s `ready`), because a
   key raised before `Run()` has no listener and is lost. The window (`WindowAnnouncer`) uses two hidden live
   regions: output is polite and notices are assertive, posted to Avalonia's thread. This was built against the
-  API and has not been tried with NVDA or Orca. Not done: no speech engine of our own, and no per-line
-  automation peer on `TerminalView`.
+  API and has not been tried with NVDA or Orca. Not done: no speech engine of our own.
+  - **The window's output view has an automation peer** (`TerminalViewAutomationPeer`): a read-only `Document` named
+    `SharpMUTerm output: <window>`, whose Value pattern holds the front window's newest 50 lines, oldest first. Fed by
+    `IAnnouncer.Reading` (a default-implemented member, so `--plain` ignores it), said on `Activate` and on every line
+    landing in the front window, quiet or not — read from `PaneLine.Plain`, so chrome rows are left out and it is the
+    text ⌃F searches. A change raises the Value property's change. Avalonia 12 has no text pattern (`ITextProvider`),
+    so this is a value, not a caret-navigable text range. Pinned through Avalonia's headless peers
+    (`OutputAutomationTests`); **not tried with NVDA, Narrator, VoiceOver or Orca.**
+- **`telnet://` and `telnets://` links connect, and do nothing else** (`TelnetLink`, `ConnectEndpoint`, Core;
+  `SharpMUTermApp.OpenLink`; `LinkHandoff`, `ClientOptions.NarrowToLink`, Tui). A link is server text. Decisions not to
+  relitigate:
+  - **One reader with `/connect`** (`ConnectEndpoint.Parse`): a link reaches no host `/connect host port` would refuse.
+    Default ports are telnet's 23 and telnets' 992, not `/connect`'s 4000. Refused, not tidied: user information
+    (it would be a login the link chose), any path/query/fragment past a lone `/`, any control character, space,
+    non-ASCII, `%` or `\`, a port not 1–65535 in plain digits, an unbracketed IPv6 address, over 512 characters.
+  - **Matched on the endpoint, never a name.** A world already configured for the same host, port and TLS is dialled;
+    otherwise one is added with **no character**, so nothing logs in. An existing world logs in as its own
+    configuration says — that is the player's world, not the link's choice.
+  - **`--open-link <link>` drops every other argument** before anything reads them. Windows builds the handler's
+    command line by pasting the link into quotes, and a link holding a quote could add `--render-png` and write a file.
+  - **A second launch hands its link to the first** over a Unix domain socket (`$XDG_RUNTIME_DIR/sharpmuterm/links.sock`,
+    else beside `config.json`; `0600`), one line, acknowledged with `ok`, and exits. The receiver re-reads it through
+    `OpenLink(string)`. Nobody listening, or a stale socket: the launch runs its own client and listens. Only the live
+    entry point listens (`RunLive`); the window's `Program` and the terminal's hand off before building anything.
+    Verified between two `--plain` clients and two windows under Xvfb on Linux; Windows' AF_UNIX path is untried.
+  - **Registration is the package's, never the program's** — the `.desktop` file's `MimeType=` and an unchecked Inno
+    Setup task (`HKA\Software\Classes\telnet[s]`). See `docs/PACKAGING.md`.
+- **Passwords go to the OS credential store, with `secrets.json` behind it** (`ICredentialStore`, `CredentialVault`,
+  Core; `CredentialStores` in `Hosting/`). The `passwordRef` GUID is unchanged and is the key in both places.
+  - **One vault per run, from the live entry points only** (`Program.LiveVault`, `ClientLaunch`): a snapshot, a test
+    and the demo window never make one, so no test reads or writes a real keychain — `CredentialVaultTests` uses a fake.
+    `ConfigurationStore.Load/Save` without a vault are `secrets.json` alone, exactly as before.
+  - **The vault remembers what the store holds**, so a save that changed nothing spawns no `secret-tool` (saves happen
+    on every committed edit). A store that does not answer (`CredentialLookup.Unavailable`: no Secret Service over ssh)
+    **keeps the reference through a save** — otherwise the first save of such a run would forget every password.
+  - Migration is at load: a `secrets.json` entry the store accepts is moved and the file rewritten without it; one it
+    refuses stays. A changed password the store refuses goes to the file under a **new** reference, because the store,
+    read first, would otherwise win with the old one.
+  - Windows: `CredWriteW/CredReadW/CredDeleteW`, generic credentials `SharpMUTerm/<guid>` (built, never run). Linux:
+    `secret-tool` with `application=sharpmuterm ref=<guid>`, password on stdin (exercised against gnome-keyring on a
+    private D-Bus). macOS: `security`, the write through `security -i` on stdin so the password is not on a command
+    line (built, never run). Each call is bounded at 30 s so an unanswered unlock prompt does not hold the start.
+- **The title says who is in front** (`WindowTitle`, Client; `SharpMUTermApp.Title.cs`; `ClientHost.Title`).
+  `Character@World — SharpMUTerm`, worked out from the header's own `HeaderModel` whenever the header is built, so the
+  two cannot disagree (a command-line world that is not in the configuration names no world in either). Nothing is
+  written before `Run` (`StartTitle`). The terminal (`TerminalTitle`) pushes the title stack (`CSI 22;2t`), writes
+  OSC 2 through the `?1004` raw write, and pops it after the loop; the window sets `Window.Title`. Control
+  characters are stripped twice (names, then the sequence). Not a surface in `SurfaceCatalog`: nothing draws it in
+  cells and it hands nothing back.
+- **Attention while the player is elsewhere is a host member** (`ClientHost.Attention` → `IAttention`, `Hosting/`;
+  Core `AttentionMatcher`, `AttentionThrottle`; `SharpMUTermApp.Attention.cs`). A trigger's `alert` flag, or on a world
+  with F5 ▸ `alert on` a line naming the character (whole word, not the line's first) or paging/telling/whispering
+  them (`WorldSession.AttentionRequested`, raised after the line is shown, never for a prompt or a gagged line). The
+  client asks only with F7 ▸ `alert when away` on, the host not in front, and one per 10 s. The window
+  (`WindowAttention`, `DesktopAlert`, which decides through an `IDesktopNative` seam tests fake) knows its focus.
+  Windows: `FlashWindowEx`, plus a toast only where the installer registered the AUMID `SharpMUTerm.Window`
+  (`HKA\Software\Classes\AppUserModelId\…`; the shortcuts carry it too; the process adopts it in `Program`),
+  shown by `powershell.exe -EncodedCommand` reaching WinRT (`net10.0` has no WinRT), the text base64 inside a fixed
+  script; built, never run on Windows. macOS: `/usr/bin/osascript`, argv; never run. Linux: `notify-send`, and on an
+  `XID` handle the urgency hint (`X11Urgency`: `WM_HINTS` UrgencyHint and `_NET_WM_STATE_DEMANDS_ATTENTION` via a
+  root client message, own Xlib connection, 64-bit only), taken back on `Activated`. Seen under Xvfb + openbox (a
+  page from a fake server sets both, activation clears both); Avalonia has no Wayland back end, so Wayland is
+  XWayland's mapping of the hint, untried. **Page alerts are on for a new world, name alerts off**
+  (`WorldDefinition.AlertOnPage = true`, `AlertOnName` false and still covering pages; F5 ▸ `alert on`: off / pages /
+  name & pages): a page is addressed to the player, a name comes up in every scene. A saved world lacking the field
+  gets `false` at load (`ConfigurationMigrator.AdoptPageAlerts`, every load, no schema step), so nobody's existing
+  world changes. A terminal cannot tell focus-out, so `TerminalAttention.Focused` is null:
+  kitty gets OSC 99 with `o=unfocused` (kitty filters), WezTerm/Ghostty/foot OSC 777, anything else BEL, and those last
+  two only after 30 s with no input (`AwayAfter`). Text is stripped of control characters and base64'd for OSC 99.
+  While a host that knows its focus is behind, the title leads with the count of lines that arrived (`(3) …`,
+  `WindowTitle.WithUnread`). Null in tests, snapshots and the parity harness.
+- **A dropped connection is dialled again only where F5 ▸ `reconnect` says so** (`AutoReconnect`, Core, one per
+  session; `SharpMUTermApp.Reconnect.cs`). `WorldSession.LastClose` says who closed: `Player` (Disconnect, quit,
+  dispose) never reconnects; `Failed` (an error) does; `Server` (orderly close) does **unless a command was sent in
+  the 10 s before** (`LogoutWindow`) — that is a `QUIT`, and dialling back would log the player in again. Waits 5, 15,
+  30, 60, 60 s, then gives up; a connection that lasted 60 s (`StableAfter`) starts the count over. A dial is
+  `ConnectAsync`, so auto-login applies exactly as by hand. Each try prints a line and a notice (action: Stop); the
+  status row reads `reconnecting in 12 s · ⌥R now` (two-digit field) once the notice has gone, ticked by a one-shot
+  timer re-armed each second. ⌥R dials at once, ⌥D and ⌃P ▸ *Stop reconnecting* (offered only while one waits) cancel.
+  The `reconnect` view fakes it with the same writers (`ReconnectLine`, `ReconnectState`).
+- **Command stacking is per world and off by default** (`WorldDefinition.CommandSeparator`, F5 ▸ `command stacking`:
+  off, `;`, `|`, `;;`; `TypedCommands`, Core; `WorldSession.SendTypedAsync`). Off because `;` is a MUSH's own
+  character. Only a line typed on the command line (and the send group) is split: the composer, a grab, a script's
+  `world.send`, a macro and a raw send never are. `\` before the separator keeps it; pieces are trimmed and empties
+  dropped; `#N cmd` repeats (1–100) within a piece; a line past 100 commands, or a repeat out of range, sends nothing
+  and says why. Each piece goes through the alias engine; the typed line is echoed once.
 - **Discord presence is a host member and a per-world opt-in** (`ClientHost.Presence`, a lazy
   `Func<IPresence?>?`; `GamePresence`/`DiscordIpc`, Core; F5 ▸ `discord`, off by default). The world asks for
   `External.Discord 1`. `WorldSession.GamePresence` folds `Info` (application id: digits only) and `Status`
@@ -1943,6 +3700,30 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   `DiscordIpc.Show` never blocks: a worker sends only the newest value, reads and discards each reply (bounded
   in size and time), and on a failed connect does not retry until the next update. The application id is the
   game's; this client registers none. The snapshot and every test host have `Presence = null`.
+- **The trigger builder makes a plain-language rule from selected output** (`TriggerMatchType`,
+  `TriggerPatterns`, `TriggerSuggestion`, `TriggerPreview`, Core; `SharpMUTermApp.TriggerBuilder.cs`; ⌃P
+  `term:trigger-from-selection`; the `trigger-builder` view). Decisions not to relitigate:
+  - **Every match kind compiles to one regex** (`TriggerPatterns.ToRegex`), so the engine, captures and the
+    timeout are unchanged. `Regex` is the enum's first member and so the default: a rule with no `matchType`
+    means what it always meant, and the schema version did not move. A `*` wildcard is a capture (lazy, the
+    last one greedy) and matches anywhere in the line, like *contains*; `\*` is a literal asterisk.
+  - **The suggestion guesses three things and nothing else**: numbers, the inside of double quotes, and the
+    GMCP player names `CompletionIndex.Names()` holds, as whole words. A line with nothing variable, or only
+    variable, becomes *contains the text*, never a pattern of bare `*`.
+  - **The rule is made at once, then F2 opens on it with the pattern field open** (`SettingsSession.OpenField`).
+    It has no actions, so it changes nothing until given one. It goes in the selection window's character's
+    first listed set, else the first set, else a new `My triggers` set listed on that character. Package
+    sets are never written to.
+  - **The live test is `OutputSearch`'s corpus and safeguards**: every window a pane holds (focused window
+    last, so its lines count as newest), the newest 2,000, a 100 ms match timeout, and an invalid pattern as a
+    muted state. Unlike ⌃F a zero-width match counts, because the engine fires on one. It always draws four
+    rows so typing never moves the rows below.
+  - **The match kind is field 10, appended**, though it is drawn on the `match pattern` heading row: that
+    keeps every ordinal and costs no row in a pane that already fills a 24-row screen. Switching *to* a
+    regex rewrites the pattern as the regex it meant, so the rule keeps matching what it matched
+    (`BuiltInSettings.SetMatchType`, the one both surfaces call).
+  - **In the window the rule opens in the native F2** (`TryOpenNativeSettings(Section("triggers"), trigger)`), selected,
+    with its live test; elsewhere the cell F2 opens with the pattern being typed.
 - **The send group is session keys in memory** (`SendGroup`, Core; `SharpMUTermApp.SendGroup.cs`; ⌃P `group:`
   ids). It is never saved, because a saved group would be a standing order to send one line to several worlds.
   It is offered once two characters are open. Members are marked on the rail by swapping the dot for ◆/◇ in
@@ -1950,8 +3731,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   each member's `SendUserInputAsync`, so aliases and echo apply per character, once each. A disconnected member
   gets nothing and is named in the notice. A closed session leaves the group. `world.sendTo(name, cmd)` resolves
   through `SendGroup.Find`: an exact `World.Character` key, else a unique character name. It refuses an
-  ambiguous or disconnected name and sends raw, like `world.send`. Not done: no ⌃P chord, and no rail gesture
-  to toggle membership.
+  ambiguous or disconnected name and sends raw, like `world.send`. ⌃P ▸ *Send to group* is ⌥S (`BuiltInCommands.SendGroupKey`,
+  in `MacroKeys.AppShortcuts`); `g` on a row while ⌥C holds the sidebar toggles that row's character and keeps the keys
+  there (`ToggleGroupAtRailCursor`).
+- **⌃P ▸ *Recent alerts* lists every character's pages and alerts this run** (`SharpMUTermApp.RecentAlerts.cs`; kept from
+  `AttentionRequested` whether or not the host was asked, 20, newest first, in memory, never saved). The entry opens the
+  palette on `alert ` (`AlertQuery`), the only time the `alert:go:<id>` family lists anything (`CommandContext.Alerts`), and
+  an entry goes through `CommandIds.Character`, the id a ⌃P *Switch to …* runs. An id no longer kept refuses. The
+  `menu-alerts` view.
 - **NEW-ENVIRON is answered as MNES** (`TelnetSessionOptions.MnesIdentity`; the library's `NewEnvironProtocol`).
   The variables are `CLIENT_NAME`, `CLIENT_VERSION`, `TERMINAL_TYPE` and `MTTS`, read from the same TTYPE list,
   so the two channels cannot disagree (`MTTS 2845`, which now includes MNES 512). It answers a server's `DO` and
@@ -1964,6 +3751,42 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   so a late offer cannot log in twice. The on-connect commands go after whichever login was sent. The password
   goes only to `SendGmcpAsync`; `Char.Login.Result` is printed, bounded to one line. Not done: a server that
   never negotiates GMCP still costs the five seconds, because `TelnetSession` raises nothing on a refusal.
+- **The script console is one per character, and a line runs on the UI thread** (`ScriptHost.EvaluateConsole`,
+  Scripting; `ScriptConsoleModel`/`ScriptConsoleLog`/`ScriptConsoleSession`, Client; `ScriptConsoleSurface`,
+  `SharpMUTermApp.ScriptConsole.cs`, Tui; `ScriptConsoleView`, Avalonia; ⌃P `world:script-console`; the `script-console`
+  view). A line is tried as `return <line>` first, then as a statement, in a coroutine under the host's `_gate` with an
+  instruction budget (2,000,000) and a time budget (500 ms), so a loop typed there cannot hang the screen; a Lua function
+  called *inside* a library call cannot be preempted. Files load under their own chunk name, so an error says
+  `main.lua:(3,…)`. Lines and history are in memory for the run (`SessionScripts.Printed`, `ReportScript`), never saved.
+  The prompt exists only with a scripts root whose folder exists and a window with a character; otherwise the model's
+  `Unavailable` says which. Every gesture ends in `RunConsoleLine`/`DeleteStoreKey`/`ReloadConsoleScripts` (surface
+  `script-console`, parity-probed). The demo scene has its own sandbox (`_demoScripts`), so the snapshot's prompt runs.
+  - **An error row naming `file.lua:(N,…)` is a link to that line** (`ScriptConsoleModel.ErrorAt`, `ScriptErrors.At`): in
+    cells `[link=mux:script-error:N]`, N an index into the lines drawn, answered by the console's own `ListOverlay` link
+    handler (`Open(link:)`), never the panes'; in the window an underlined row (`ScriptConsoleSession.OpenError`). Both end
+    in `OpenConsoleError`: the file is matched against `ScriptFileRefs()`, the console closes, and `OpenScriptAt` (⌃P's
+    `Script …` path) opens it with the caret and `ErrorLine` on N; Esc returns to the console. The demo's error is one
+    constant, `DemoScriptError`, in the console and the `script-edit` header.
+  - **The cell console is sized to what it holds when it opens** (`ScriptConsoleSurface.RowsFor`, at least `MinBodyRows`
+    of log), so its log is not drawn under blank padding; then the size is fixed and the log scrolls, newest above the prompt.
+- **GMCP channels go to a window per channel through `SpawnLine`** (`ChannelCapture`, Core;
+  `WorldDefinition.CaptureChannels`, F5 ▸ `channels`: off/copy/move, off by default). `Comm.Channel.Text`'s `channel`
+  names the window (letters, digits, space, `-`, `_`, 24 at most); its `text` is parsed through `AnsiParser`. `move`
+  gags the main-window echo by exact text, only when it arrives within 3 s of the GMCP (32 pending at most). An echo
+  that arrives *before* its GMCP is caught when both are in one socket read: in `move` a line no pending GMCP expects
+  is held (`WorldSession.EchoHold`, ≤250 ms, under `_ingestGate`) until the read ends (`ITelnetSession.ReceiveBatchEnded`,
+  raised after each `InterpretByteArrayAsync`), a channel message, a prompt, a parser swap or a disconnect, then
+  released in order, so nothing is reordered. A GMCP in a *later* read than its echo still leaves the copy in main.
+- **Highlighted names are an ingest-time restyle** (`NameHighlights`, Core; `WorldDefinition.HighlightNames`, F5 ▸
+  `names`, `TextRule.NameHighlights`). `Name=colour` from `HighlightColours`, gold by default, 64 names; one whole-word,
+  case-insensitive regex with a 50 ms timeout, applied before emoji and links and to captured channel lines. Only the
+  foreground is set, so the formatter's floor still applies. Like `join wraps`, it changes the next line, never history.
+- **A scene log is the focused window's lines into a file of its own** (`SceneLog`/`ScenePoses`, Core;
+  `SharpMUTermApp.SceneLog.cs`; ⌃P `term:scene-on`/`term:scene-off`; F7 ▸ Scene log: HTML or plain, poses or every line).
+  Under `<logRoot>/scenes/`, `scene-<window title>-<stamp>`, never overwriting, through `HtmlLogSink`/`PlainTextLogSink`. Fed at
+  `OnLine`/`OnSpawnLine`, the restore log's seam, so chrome is never recorded. A pose is a line that starts with a
+  present name or has the say-shape; present is the room roster plus the character, named in the header. **No log root,
+  no scene log**: refused out loud, the `logRoot` gate.
 - **Lua's `store.*` is one JSON file per character** (`ScriptStore`, Scripting; `script-data/<session key>.json`
   beside `config.json`, `0600`). The `scriptStoreRoot:` constructor parameter is null by default, the
   `save:`/`logRoot:` family, but the host's store never is: with no folder it is memory-only by construction, the
@@ -2082,9 +3905,10 @@ Planned solution layout:
 |---|---|
 | `SharpMUTerm.Core` | Transport, telnet, ANSI/MXP/Pueblo parsers, GMCP/MSDP routing, scrollback, engines, logging (no UI deps) |
 | `SharpMUTerm.Graphics` | Kitty/Sixel encoders, capability probe, half-block fallback, `InlineImagePolicy` (no UI deps) |
+| `SharpMUTerm.Client` | The shared client shell: the contribution registry and (later) view-models both hosts read. References Core only — no SharpConsoleUI, no Avalonia |
 | `SharpMUTerm.Scripting` | MoonSharp host + scripting API |
 | `SharpMUTerm.Tui` | SharpConsoleUI application |
-| `*.Tests` (Core, Graphics, Scripting, Web, Tui) | TUnit |
+| `*.Tests` (Core, Client, Graphics, Scripting, Web, Tui, Avalonia) | TUnit |
 
 ## Milestone M1 — first task (delivered)
 
@@ -2099,7 +3923,7 @@ Kept for context; **M1 is done** (see *Repository state* above). As originally s
 
 ## Verification
 
-- Primary signal: `dotnet build SharpMUTerm.slnx` plus all six suites (see *Building and testing*).
+- Primary signal: `dotnet build SharpMUTerm.slnx` plus all seven suites (see *Building and testing*).
   Keep coverage in `SharpMUTerm.Core.Tests` — ANSI/SGR parser, telnet round-trips, engines.
 - **The TUI is verifiable headlessly** via the snapshot pipeline above; a claim about layout or
   chrome should be backed by a rendered frame you actually looked at, not by reading the markup.

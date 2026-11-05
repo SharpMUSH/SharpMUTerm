@@ -36,7 +36,7 @@ public class AwayDividerTests
     {
         var (app, session, _) = Bound();
         session.PrintSystem("*** before you left");
-        app.SimulateKey(Key(ConsoleKey.End)); // the reader is here; this is the boundary
+        app.SimulateKey(Key(ConsoleKey.LeftArrow)); // the reader is here; this is the boundary
 
         session.PrintSystem("*** while you were away");
         session.PrintSystem("*** and again");
@@ -61,7 +61,7 @@ public class AwayDividerTests
     {
         var (app, session, _) = Bound();
         session.PrintSystem("*** before you left");
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
 
         app.SimulateReturnFromAway(TimeSpan.FromHours(2));
 
@@ -75,11 +75,11 @@ public class AwayDividerTests
     public async Task ASecondReturnReplacesTheFirstBar()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** first absence");
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(5));
 
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** second absence");
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(9));
 
@@ -100,7 +100,7 @@ public class AwayDividerTests
     public async Task TheBarSurvivesTheFrameItIsDrawnIn()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(12));
         app.RenderWholeFrame();
@@ -112,12 +112,12 @@ public class AwayDividerTests
     public async Task TheBarGoesOnceItHasBeenSeenAndTheReaderTouchesSomething()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(12));
         app.RenderWholeFrame();
 
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
 
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
         await Assert.That(app.PaneLines(Main).Any(r => r.Contains(AwayBarRenderer.Label))).IsFalse();
@@ -142,7 +142,7 @@ public class AwayDividerTests
     public async Task ADeepAbsenceScrollsThePaneSoTheBarIsOnScreen()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         for (var i = 0; i < 200; i++)
         {
             session.PrintSystem($"*** while you were away {i}");
@@ -166,7 +166,7 @@ public class AwayDividerTests
     public async Task ADeepAbsenceKeepsItsBarUntilTheReaderReadsDownToTheTail()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         for (var i = 0; i < 200; i++)
         {
             session.PrintSystem($"*** while you were away {i}");
@@ -177,13 +177,13 @@ public class AwayDividerTests
         app.RenderWholeFrame();
 
         // Typing where you landed does not clear it — you have read the top of what you missed, not all.
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
 
         // ⌃End is the way back to live output, and arriving there is the gap being crossed.
         app.SimulateKey(Key(ConsoleKey.End, ctrl: true));
         app.RenderWholeFrame();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
 
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
@@ -196,7 +196,7 @@ public class AwayDividerTests
     public async Task AShallowAbsenceLeavesThePaneOnItsLiveTail()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
         app.RenderWholeFrame();
 
@@ -205,7 +205,7 @@ public class AwayDividerTests
         await Assert.That(Painted(app.RenderWholeFrame())).IsTrue();
 
         // Still at the tail, so one keystroke is all it takes to be done with it.
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
 
@@ -223,7 +223,7 @@ public class AwayDividerTests
     public async Task ASecondReturnToAQuietWindowTakesTheOldBarOffTheScreen()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         for (var i = 0; i < 200; i++)
         {
             session.PrintSystem($"*** while you were away {i}");
@@ -249,7 +249,7 @@ public class AwayDividerTests
     public async Task TheBarIsNotCountedAsUnread()
     {
         var (app, session, _) = Bound();
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
 
         var before = app.UnreadOf(Main);
@@ -273,7 +273,7 @@ public class AwayDividerTests
         config.PaneLines = 40;
         var (app, session, _) = Bound(config);
 
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(12));
         await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
@@ -295,7 +295,7 @@ public class AwayDividerTests
     public async Task ATabAfterAQuietGapDrawsTheBar()
     {
         var (app, session, time) = Bound(focusReporting: true);
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
 
         time.Advance(TimeSpan.FromMinutes(12));
@@ -323,7 +323,7 @@ public class AwayDividerTests
     {
         var (app, session, _) = Bound(focusReporting: true);
         ToggleSecondBar(app);
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** a line");
 
         await Assert.That(app.SecondBarArmed).IsTrue().Because("raising the second bar arms it");
@@ -338,7 +338,7 @@ public class AwayDividerTests
     {
         var (app, session, time) = Bound();
         ToggleSecondBar(app);
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
 
         time.Advance(TimeSpan.FromHours(3));

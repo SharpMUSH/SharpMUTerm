@@ -33,7 +33,9 @@ namespace SharpMUTerm.Tui;
 /// <param name="Markup">The line's own Spectre-style markup, with no gutter attached.</param>
 /// <param name="Stamp">When the line arrived, pre-formatted for the gutter, or null for no gutter.</param>
 /// <param name="Plain">
-/// The text the markup puts on the screen (<see cref="MarkupText.Plain"/>) — what ⌃F searches.
+/// The text the line says — what ⌃F searches and F2's live test matches. A world's line is its spans' text
+/// (<see cref="Core.Text.StyledLine.Text"/>), never the composed markup, which carries the client's decoration (the
+/// trigger left rule <c>▌ </c>); any other row is the text its markup puts on the screen (<see cref="MarkupText.Plain"/>).
 /// <para>
 /// Held rather than derived, because the search surface refilters on every keystroke over every line of
 /// every window: stripping thousands of lines eight times while somebody types a word is the difference
@@ -57,9 +59,24 @@ namespace SharpMUTerm.Tui;
 /// drawn there and <see cref="Markup"/> is rebuilt from these; <see cref="Plain"/> keeps the text the
 /// server sent, so a search still finds the picture's label.
 /// </param>
+/// <param name="Source">
+/// The world's line this markup was formatted from, or null when the row is not one (client replies, a picture's
+/// rows, the numbered demo scene). Held so the colour decision is a <b>render-time</b> one, like the gutter: a theme
+/// change re-formats every line that has one against the new theme's reading plane
+/// (<c>SharpMUTermApp.RestylePaneLines</c>), where markup alone would keep the colours the old theme resolved —
+/// faint greys on a light theme until they scrolled away. A spawn window's history exists nowhere else, so it has to
+/// be kept here rather than re-read from <c>WorldSession.Scrollback</c>. For a session window the instance is usually
+/// the one the session's ring already holds, so it costs a reference.
+/// </param>
+/// <param name="Bar">
+/// For a chrome row (the restore, away, activity and search bars), how to draw it again in a given accent, so a
+/// theme change recolours the bars as well as the lines between them. Null on every other row.
+/// </param>
 internal readonly record struct PaneLine(
     string Markup,
     string? Stamp = null,
     string Plain = "",
     long ImageAnchor = 0,
-    PictureSlots? Pictures = null);
+    PictureSlots? Pictures = null,
+    Core.Text.StyledLine? Source = null,
+    Func<string, string>? Bar = null);

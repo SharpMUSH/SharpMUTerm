@@ -1,11 +1,17 @@
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// The colours the full-screen settings screens (F2–F9) are built from. Renderers interpolate them
-/// into markup tags; the views hand the same hexes to <see cref="SharpConsoleUI.Color"/> as control
-/// backgrounds, so the bands a renderer writes text for and the panel a view paints agree by
-/// construction. Screen files pull these in with
-/// <c>using static SharpMUTerm.Tui.ScreenPalette;</c>.
+/// The colour <em>roles</em> the full-screen settings screens (F1–F10) are built from, spelt as the Dark
+/// theme's values. Renderers interpolate them into markup tags; the views resolve that markup, and the
+/// control backgrounds, through a <see cref="ScreenTheme"/> for the active theme — so the bands a renderer
+/// writes text for and the panel a view paints agree by construction, on every theme. On Dark the two are
+/// the same bytes. Screen files pull these in with <c>using static SharpMUTerm.Tui.ScreenPalette;</c>.
+/// <para>
+/// A view must never hand one of these to a control directly (<c>new Color(ScreenPalette.EditBg)</c>, or a
+/// renderer's lines straight into a <c>MarkupControl</c>): that is a dark island on a light theme, defect
+/// D6. <see cref="ScreenChrome.Panel"/>, <see cref="ScreenChrome.Band"/> and
+/// <see cref="ScreenTheme.Colour"/> are the ways in.
+/// </para>
 /// </summary>
 internal static class ScreenPalette
 {
@@ -17,6 +23,13 @@ internal static class ScreenPalette
 
     /// <summary>Default text on the backdrop.</summary>
     internal const string PanelFg = "#c8d0e0";
+
+    /// <summary>
+    /// The navigation column a screen lists its sections in (the settings search's <c>SECTIONS</c>): a step below the
+    /// backdrop, the terminal mockup's <c>#141822</c> nav beside its <c>#171b24</c> page, so the list reads as a column of
+    /// its own rather than as more of the page. Text on it is held to the floor like on every other plane.
+    /// </summary>
+    internal const string NavBg = "#141822";
 
     /// <summary>The header band behind the title and keyboard hints.</summary>
     internal const string HeaderBg = "#232b3d";
@@ -93,4 +106,11 @@ internal static class ScreenPalette
     /// palette that shouts at every risky-looking row teaches the eye to skip the colour.
     /// </summary>
     internal const string Warn = "#ff6b6b";
+
+    /// <summary>
+    /// A binding that works and costs something: F4's <c>△</c> on a macro that hides one of the client's own
+    /// keys or another binding on its chord. Amber rather than <see cref="Warn"/>, because nothing here is
+    /// refused — the binding runs, and the colour only says what it is standing in front of.
+    /// </summary>
+    internal const string Caution = "#e8b04a";
 }

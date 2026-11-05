@@ -25,6 +25,9 @@ public sealed class WorldSession : IAsyncDisposable
     private static readonly TextStyle SystemStyle =
         new(TerminalColor.FromIndex(6), TerminalColor.Default, TextAttributes.Italic);
 
+    /// <summary>The style of the client's own lines in a session's window (<see cref="PrintSystem"/>), for a demo that writes one by hand.</summary>
+    public static TextStyle SystemLineStyle => SystemStyle;
+
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
     private ILineParser _parser;
     private EmojiSubstitutor? _emoji;
@@ -330,9 +333,15 @@ public sealed class WorldSession : IAsyncDisposable
             return;
         }
 
-        if (_parser.Flush() is { } tail)
+        lock (_ingestGate)
         {
-            ProcessOutputLine(tail);
+            ReleaseHeldLine();
+            if (_parser.Flush() is { } tail)
+            {
+                ProcessOutputLine(tail);
+            }
+
+            ReleaseEchoHeld();
         }
 
         _parser = NewParser(format);
@@ -390,6 +399,21 @@ public sealed class WorldSession : IAsyncDisposable
 
     public event EventHandler<StyledLine>? LinePrinted;
 
+    /// <summary>
+    /// What the session says about its own connection — dialling, connected, could not connect, lost, closed. Not a
+    /// line: the client draws it as one of its own rows in the session's window, so it reaches no transcript, restore
+    /// log, scene log, trigger or search (it used to be a <c>***</c> line printed into all of them as if the game had
+    /// said it). Raised on whichever thread the change happened on; also written to the diagnostics at debug level (the app already reports a failure as a notice, which the message log keeps).
+    /// </summary>
+    public event EventHandler<ConnectionNote>? ConnectionNoted;
+
+    /// <summary>Says <paramref name="text"/> about the connection (<see cref="ConnectionNoted"/>) and keeps it in the diagnostics.</summary>
+    private void NoteConnection(string label, string text)
+    {
+        Logger.LogDebug("{World}: {Label} {Text}", World.Name, label, text);
+        ConnectionNoted?.Invoke(this, new ConnectionNote(label, text));
+    }
+
     public event EventHandler<StyledLine?>? PromptChanged;
 
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
@@ -409,6 +433,12 @@ public sealed class WorldSession : IAsyncDisposable
     /// previous connection held says nothing about this one.
     /// </summary>
     public GameDataStore GameData { get; } = new();
+
+    /// <summary>
+    /// Who is in the room with this character, from GMCP <c>Room.Players</c> and its relatives (the who-here
+    /// panel). Emptied on connect, with <see cref="GameData"/>.
+    /// </summary>
+    public RoomOccupants Occupants { get; } = new();
 
     /// <summary>
     /// This connection's map, when the client keeps one: set by the client as the session opens, read by the
@@ -589,16 +619,28 @@ public sealed class WorldSession : IAsyncDisposable
         // negotiated again to take it back off ANSI.
         _parser = NewParser(World.ContentFormat);
 
+        // No lock: the old connection's read loop has ended (its transport is disposed above), and a release
+        // timer still pending checks it is releasing for this joiner before it does anything.
+        _reflowRelease?.Dispose();
+        _wrapJoiner = new ServerWrapJoiner();
+        _serverWrapColumn = 0;
+        _echoRelease?.Dispose();
+        _echoRelease = null;
+        _echoHeld.Clear();
+
         // Re-read with the parser, so an F5 change to the world's emoji switches reaches the next connection.
         _emoji = NewEmoji(World.Emoji);
 
+        _closingByPlayer = false;
         SetState(ConnectionState.Connecting, null);
-        PrintSystem($"*** Connecting to {World.Host}:{World.Port}...");
+        NoteConnection(ConnectionNote.Connect, $"dialling {World.Host}:{World.Port}…");
 
         var telnet = _sessionFactory(World.ToConnectionOptions());
         _telnet = telnet;
         telnet.OutputReceived += OnOutputReceived;
         GameData.Clear();
+        Occupants.Clear();
+        _channels.Clear();
         lock (_metersGate)
         {
             _mxpMeters = [];
@@ -609,6 +651,7 @@ public sealed class WorldSession : IAsyncDisposable
             // Stored before the event, so a handler reading GameData sees the message that raised it.
             GameData.SetGmcp(e.Package, e.Json);
             Completions.ObserveGmcp(e.Package, e.Json);
+            Occupants.Apply(e.Package, e.Json);
             OnGmcpLogin(e.Package, e.Json);
             if (World.DiscordPresence
                 && e.Package.StartsWith("External.Discord.", StringComparison.OrdinalIgnoreCase)
@@ -619,6 +662,7 @@ public sealed class WorldSession : IAsyncDisposable
                 GamePresenceChanged?.Invoke(this, EventArgs.Empty);
             }
             GmcpReceived?.Invoke(this, e);
+            CaptureChannel(e.Package, e.Json);
             if (e.Package.StartsWith("Client.Media", StringComparison.Ordinal)
                 && Media.MediaCommand.FromGmcp(e.Package, e.Json) is { } media)
             {
@@ -637,6 +681,13 @@ public sealed class WorldSession : IAsyncDisposable
         telnet.MxpEnabled += OnMxpEnabled;
         _mspActive = false;
         telnet.MspChanged += (_, active) => _mspActive = active;
+        telnet.ReceiveBatchEnded += (_, _) =>
+        {
+            lock (_ingestGate)
+            {
+                ReleaseEchoHeld();
+            }
+        };
         telnet.PuebloEnabled += OnPuebloEnabled;
         McpStatus = null;
         GamePresence = null;
@@ -652,14 +703,14 @@ public sealed class WorldSession : IAsyncDisposable
         {
             await telnet.ConnectAsync(cancellationToken).ConfigureAwait(false);
             SetState(ConnectionState.Connected, null);
-            PrintSystem("*** Connected.");
+            NoteConnection(ConnectionNote.Connect, $"connected to {World.Host}:{World.Port}");
             await SendLoginAsync(cancellationToken).ConfigureAwait(false);
             StartTimers();
         }
         catch (Exception ex)
         {
             SetState(ConnectionState.Faulted, ex);
-            PrintSystem($"*** Connection failed: {ex.Message}");
+            NoteConnection(ConnectionNote.Failed, $"could not connect to {World.Host}:{World.Port} · {ex.Message}");
             Logger.LogWarning(ex, "Connect to {Host}:{Port} failed", World.Host, World.Port);
             throw;
         }
@@ -667,8 +718,108 @@ public sealed class WorldSession : IAsyncDisposable
 
     private void OnOutputReceived(object? sender, TelnetOutputEventArgs e)
     {
+        lock (_ingestGate)
+        {
+            IngestOutput(e);
+        }
+    }
+
+    /// <summary>
+    /// The joiner for <see cref="WorldDefinition.JoinWrappedLines"/>, rebuilt per connection like the parser:
+    /// the wrap column it has learnt and any line it holds belong to one stream.
+    /// </summary>
+    private ServerWrapJoiner _wrapJoiner = new();
+
+    /// <summary>
+    /// The column this connection's server wraps its text at, as <see cref="ServerWrapJoiner.WrapColumn"/> has learnt it
+    /// (whether or not this world joins), or null while it is unknown. Written on the read loop, read on any thread.
+    /// </summary>
+    public int? ServerWrapColumn => Volatile.Read(ref _serverWrapColumn) is > 0 and var column ? column : null;
+
+    private int _serverWrapColumn;
+
+    /// <summary>
+    /// Serialises the read loop (output, a parser swap, the disconnect) against the timer that releases a held
+    /// line (<see cref="ReflowHold"/>). Nothing on the UI thread or in a script takes it, so it cannot close a
+    /// cycle with the script host's lock, which a trigger script takes from inside it.
+    /// </summary>
+    private readonly object _ingestGate = new();
+
+    /// <summary>The pending release of a held line, or null when nothing is held.</summary>
+    private IDisposable? _reflowRelease;
+
+    /// <summary>
+    /// How long a line that might continue waits for the next before it is shown as it is. Short, because the
+    /// only line ever held is a <em>full</em> row at the end of a burst — the rows of a paragraph arrive in
+    /// one write, and its last row is short and is never held.
+    /// </summary>
+    public TimeSpan ReflowHold { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Hands a completed line on, through the joiner when this world joins the server's wraps. Every
+    /// ordinary line of output goes through here; a prompt, a deliberate blank line and a parser swap release
+    /// what is held first (<see cref="ReleaseHeldLine"/>), so nothing is ever shown out of order.
+    /// </summary>
+    private void Reflow(StyledLine line)
+    {
+        if (!World.JoinWrappedLines)
+        {
+            ReleaseHeldLine();
+            _wrapJoiner.Observe(line);
+            _serverWrapColumn = _wrapJoiner.WrapColumn ?? 0;
+            ProcessOutputLine(line);
+            return;
+        }
+
+        foreach (var ready in _wrapJoiner.Push(line))
+        {
+            ProcessOutputLine(ready);
+        }
+
+        _serverWrapColumn = _wrapJoiner.WrapColumn ?? 0;
+
+        if (_wrapJoiner.Holding)
+        {
+            CancelReflowHold();
+            var joiner = _wrapJoiner;
+            _reflowRelease = Scheduler.After(ReflowHold, () =>
+            {
+                lock (_ingestGate)
+                {
+                    if (ReferenceEquals(joiner, _wrapJoiner))
+                    {
+                        ReleaseHeldLine();
+                    }
+                }
+            }, "reflow-hold");
+        }
+        else
+        {
+            CancelReflowHold();
+        }
+    }
+
+    /// <summary>Shows the line the joiner is holding, unjoined, if it is holding one. Call under <see cref="_ingestGate"/>.</summary>
+    private void ReleaseHeldLine()
+    {
+        CancelReflowHold();
+        if (_wrapJoiner.Flush() is { } held)
+        {
+            ProcessOutputLine(held);
+        }
+    }
+
+    private void CancelReflowHold()
+    {
+        _reflowRelease?.Dispose();
+        _reflowRelease = null;
+    }
+
+    private void IngestOutput(TelnetOutputEventArgs e)
+    {
         if (e.IsPrompt)
         {
+            ReleaseHeldLine();
             _parser.Feed(e.Text);
             var flushed = _parser.Flush();
             var raw = flushed ?? StyledLine.Empty;
@@ -695,18 +846,19 @@ public sealed class WorldSession : IAsyncDisposable
         var emitted = false;
         foreach (var completed in _parser.Feed(e.Text))
         {
-            ProcessOutputLine(completed);
+            Reflow(completed);
             emitted = true;
         }
 
         var tail = _parser.Flush();
         if (tail is not null)
         {
-            ProcessOutputLine(tail);
+            Reflow(tail);
             emitted = true;
         }
         else if (!emitted && _parser is not MxpParser { LineSwallowed: true })
         {
+            ReleaseHeldLine();
             ProcessOutputLine(StyledLine.Empty);
         }
     }
@@ -754,7 +906,127 @@ public sealed class WorldSession : IAsyncDisposable
         return true;
     }
 
+    /// <summary>Messages whose printed echo a world that moves channels keeps out of the main window.</summary>
+    private readonly ChannelCapture _channels = new();
+
+    /// <summary>The highlight-names list last compiled, and what it compiled to.</summary>
+    private (List<NameHighlight>? Source, int Count, NameHighlights.Matcher? Matcher) _nameMatcher;
+
+    /// <summary>The world's highlight names, compiled once per list (F5 replaces the list whole, so its identity is the key).</summary>
+    private NameHighlights.Matcher? NameMatcher()
+    {
+        var names = World.HighlightNames;
+        var cached = _nameMatcher;
+        if (ReferenceEquals(cached.Source, names) && cached.Count == (names?.Count ?? 0))
+        {
+            return cached.Matcher;
+        }
+
+        var matcher = NameHighlights.Compile(names);
+        _nameMatcher = (names, names?.Count ?? 0, matcher);
+        return matcher;
+    }
+
+    /// <summary>
+    /// GMCP <c>Comm.Channel.Text</c> into a window per channel, when the world captures channels: raised as
+    /// <see cref="SpawnLine"/>, the event a capture rule raises, so the restore log, search and the unread badge see a
+    /// captured line. Runs on the read loop, in arrival order with the output it belongs beside.
+    /// </summary>
+    internal void CaptureChannel(string package, string json)
+    {
+        if (World.CaptureChannels == ChannelCaptureMode.Off
+            || !string.Equals(package, "Comm.Channel.Text", StringComparison.OrdinalIgnoreCase)
+            || ChannelCapture.Read(json) is not { } message)
+        {
+            return;
+        }
+
+        if (World.CaptureChannels == ChannelCaptureMode.Move)
+        {
+            // Lines held since the read began may be this message's echo, printed just before it: they are let go
+            // now, against the message, in the order they arrived.
+            lock (_ingestGate)
+            {
+                _channels.ExpectEcho(message.Lines);
+                ReleaseEchoHeld();
+            }
+        }
+
+        foreach (var line in message.Lines)
+        {
+            var shown = ApplyLinks(ApplyEmoji(NameHighlights.Apply(line, NameMatcher())));
+            Completions.ObserveLine(shown.Text);
+            SpawnLine?.Invoke(this, new SpawnLineEventArgs(message.Window, shown));
+        }
+    }
+
+    /// <summary>
+    /// Lines waiting, under <see cref="ChannelCaptureMode.Move"/>, for the rest of the read they arrived in: a server
+    /// that prints a channel line before the GMCP message for it, in the same write, still has its echo kept out of the
+    /// main window. Released in order at the end of the read (<see cref="ITelnetSession.ReceiveBatchEnded"/>), when a
+    /// channel message arrives, before a prompt or any other line not held, on a parser swap and on a disconnect, and
+    /// after <see cref="EchoHold"/> at the latest. Touched only under <see cref="_ingestGate"/>.
+    /// </summary>
+    private readonly List<StyledLine> _echoHeld = [];
+
+    /// <summary>The pending release of <see cref="_echoHeld"/>, or null when nothing is held.</summary>
+    private IDisposable? _echoRelease;
+
+    /// <summary>
+    /// The longest a line waits for its read's GMCP under <c>move</c> when the session says nothing of where a read
+    /// ends: the cap, not the usual wait, since a real connection lets the lines go as soon as the read is done.
+    /// </summary>
+    public TimeSpan EchoHold { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// A completed line on its way to the engines and the windows. Under <c>move</c> an ordinary line that is not
+    /// already a waiting message's echo is held to the end of its read (<see cref="_echoHeld"/>); anything else lets
+    /// whatever is held go first, so nothing is ever shown out of order. Call under <see cref="_ingestGate"/>.
+    /// </summary>
     private void ProcessOutputLine(StyledLine line, bool isPrompt = false)
+    {
+        if (isPrompt || World.CaptureChannels != ChannelCaptureMode.Move)
+        {
+            ReleaseEchoHeld();
+            ProcessOutputLineNow(line, isPrompt);
+            return;
+        }
+
+        if (_echoHeld.Count == 0 && _channels.Expects(line.Text))
+        {
+            ProcessOutputLineNow(line);
+            return;
+        }
+
+        _echoHeld.Add(line);
+        _echoRelease ??= Scheduler.After(EchoHold, () =>
+        {
+            lock (_ingestGate)
+            {
+                ReleaseEchoHeld();
+            }
+        }, "echo-hold");
+    }
+
+    /// <summary>Lets every held line go, in order. Call under <see cref="_ingestGate"/>.</summary>
+    private void ReleaseEchoHeld()
+    {
+        _echoRelease?.Dispose();
+        _echoRelease = null;
+        if (_echoHeld.Count == 0)
+        {
+            return;
+        }
+
+        var held = _echoHeld.ToArray();
+        _echoHeld.Clear();
+        foreach (var line in held)
+        {
+            ProcessOutputLineNow(line);
+        }
+    }
+
+    private void ProcessOutputLineNow(StyledLine line, bool isPrompt = false)
     {
         // An MSP trigger is the server asking for a sound, and is taken out before anything else sees the
         // line — but only on a connection that agreed MSP. Anywhere else it is text a player can type.
@@ -795,8 +1067,14 @@ public sealed class WorldSession : IAsyncDisposable
         // rather than before it, so a link's target is exactly the text under it — a span whose visible
         // text and destination disagree is the shape of a phishing link, and this client should not be
         // in the business of manufacturing one.
-        var shown = ApplyLinks(ApplyEmoji(result.Line)).WithPrompt(isPrompt);
-        if (result.RouteMain || !result.Suppress || result.SpawnTargets.Count > 0)
+        var shown = ApplyLinks(ApplyEmoji(NameHighlights.Apply(result.Line, NameMatcher()))).WithPrompt(isPrompt);
+
+        // A channel line whose GMCP copy has already gone to its own window is kept out of this one when the world
+        // moves channels (F5 ▸ capture channels). It is a gag in every other respect: a destination a rule asked for,
+        // `main` included, still gets it.
+        var suppress = result.Suppress
+            || (!isPrompt && World.CaptureChannels == ChannelCaptureMode.Move && _channels.TakeEcho(line.Text));
+        if (result.RouteMain || !suppress || result.SpawnTargets.Count > 0)
         {
             Completions.ObserveLine(shown.Text); // only what is shown somewhere: a gagged word was never read
         }
@@ -817,11 +1095,32 @@ public sealed class WorldSession : IAsyncDisposable
         // true of the main window too. So `route: main` plus `gag` keeps the line here and nowhere else,
         // where before it deleted the line — because `main` was the F2 screen's label for the *absence*
         // of a route rather than a route.
-        if (result.RouteMain || !result.Suppress)
+        if (result.RouteMain || !suppress)
         {
             Print(shown);
         }
+
+        // Asked for by a rule (shown or not: the rule said so), or by the world for a line that mentions the
+        // character or pages them — only a line someone will see, and never a prompt.
+        var shownSomewhere = result.RouteMain || !suppress || result.SpawnTargets.Count > 0;
+        AttentionReason? reason = result.Matched.Any(t => t.Actions.Alert)
+            ? AttentionReason.Trigger
+            : (World.AlertOnName || World.AlertOnPage) && shownSomewhere && !isPrompt
+                && AttentionMatcher.Classify(shown.Text, Character?.Name) is { } matched && World.Alerts(matched)
+                ? matched
+                : null;
+        if (reason is { } why)
+        {
+            AttentionRequested?.Invoke(this, new AttentionEventArgs(why, shown.Text));
+        }
     }
+
+    /// <summary>
+    /// Raised on the read loop when a line asks for the player's attention: a trigger marked <c>alert</c> matched,
+    /// or (with <see cref="WorldDefinition.AlertOnName"/>) the line names the character or pages them. Whether that
+    /// reaches the desktop — the player away, F7's switch, the rate limit — is the host's to decide.
+    /// </summary>
+    public event EventHandler<AttentionEventArgs>? AttentionRequested;
 
     /// <summary>
     /// Marks the plain-text URLs in a line clickable when F7's <c>detect links</c> is on; a no-op
@@ -848,9 +1147,36 @@ public sealed class WorldSession : IAsyncDisposable
     public async Task SendUserInputAsync(string input, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
+        Echo(input);
+        await ExpandAndSendAsync(input, cancellationToken).ConfigureAwait(false);
+    }
 
-        var expansion = Aliases.Expand(input);
+    /// <summary>
+    /// Handles a line the player <em>typed</em> on the command line: the world's command stacking first
+    /// (<see cref="Input.TypedCommands"/> — <c>n;e;e</c>, <c>#3 kill rat</c>), then each command through
+    /// <see cref="SendUserInputAsync"/>'s alias expansion. The line is echoed once, as typed. A composed post, a
+    /// grab and a script go through <see cref="SendUserInputAsync"/> or <see cref="SendRawAsync"/> instead, so a
+    /// <c>;</c> in a post is never a command boundary.
+    /// </summary>
+    public async Task SendTypedAsync(string input, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var stacked = Input.TypedCommands.Expand(input, World.CommandSeparator);
+        Echo(input);
+        if (stacked.Refusal is { } refusal)
+        {
+            PrintSystem($"*** {refusal}");
+            return;
+        }
 
+        foreach (var command in stacked.Commands)
+        {
+            await ExpandAndSendAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private void Echo(string input)
+    {
         // Two switches, and both have to be on: the world's (some servers echo for you, some don't)
         // and F8's app-wide one. The app-wide one is read per line, not captured, so unticking it
         // stops the echo on the next command rather than the next session.
@@ -858,7 +1184,11 @@ public sealed class WorldSession : IAsyncDisposable
         {
             Print(StyledLine.FromText(input, EchoStyle));
         }
+    }
 
+    private async Task ExpandAndSendAsync(string input, CancellationToken cancellationToken)
+    {
+        var expansion = Aliases.Expand(input);
         if (expansion.Matched)
         {
             if (expansion.Alias?.ScriptCallback is { Length: > 0 } callback && expansion.Match is { } match)
@@ -1227,11 +1557,21 @@ public sealed class WorldSession : IAsyncDisposable
 
     private void OnDisconnected(object? sender, SessionDisconnectedEventArgs e)
     {
+        lock (_ingestGate)
+        {
+            ReleaseHeldLine();
+            ReleaseEchoHeld();
+        }
+
         CancelGmcpLogin();
         StopTimers();
         ClearPrompt();
+        LastClose = _closingByPlayer ? SessionClose.Player : e.IsClean ? SessionClose.Server : SessionClose.Failed;
+        _closingByPlayer = false;
         SetState(e.IsClean ? ConnectionState.Disconnected : ConnectionState.Faulted, e.Error);
-        PrintSystem(e.IsClean ? "*** Disconnected." : $"*** Connection lost: {e.Error?.Message}");
+        NoteConnection(
+            e.IsClean ? ConnectionNote.Closed : ConnectionNote.Lost,
+            e.IsClean ? "disconnected" : $"connection lost · {e.Error?.Message}");
     }
 
     /// <summary>
@@ -1264,6 +1604,7 @@ public sealed class WorldSession : IAsyncDisposable
     {
         if (_telnet is not null)
         {
+            _closingByPlayer = true;
             await SendLeavingAsync().ConfigureAwait(false);
             await _telnet.DisconnectAsync().ConfigureAwait(false);
         }
@@ -1357,8 +1698,18 @@ public sealed class WorldSession : IAsyncDisposable
             });
     }
 
+    /// <summary>
+    /// How the last connection ended, set before the state change that reports it: the player closed it
+    /// (Disconnect, Reconnect, quitting), the server closed it in an orderly way, or it failed. <see cref="SessionClose.None"/>
+    /// until a connection has ended. What <see cref="AutoReconnect"/> reads to tell a drop from a goodbye.
+    /// </summary>
+    public SessionClose LastClose { get; private set; }
+
+    private volatile bool _closingByPlayer;
+
     public async ValueTask DisposeAsync()
     {
+        _closingByPlayer = true;
         StopTimers();
         Scheduler.Dispose();
         DetachLog(); // flushes what the session logged before closing the file behind it

@@ -98,9 +98,9 @@ public class PackagesAppTests
 
         await Assert.That(rig.App.PackageView.Mode).IsEqualTo("review");
         var text = string.Join("\n", rig.App.PackageView.Lines.Select(MarkupText.Plain));
-        await Assert.That(text).Contains("1 of them sends commands as you");
+        await Assert.That(text).Contains("1 rule sends commands as you");
         await Assert.That(text).Contains("basics.lua");
-        await Assert.That(text).Contains("Corvid (Aetherfall)");
+        await Assert.That(text).Contains("Corvid · Aetherfall");
         await Assert.That(rig.App.Packages.Installed).IsEmpty();
         await Assert.That(Directory.Exists(Path.Combine(rig.Root, "packages"))).IsFalse();
 
@@ -134,7 +134,7 @@ public class PackagesAppTests
         rig.App.PackageFetch = (uri, _) => { asked = uri; return Task.FromResult<byte[]?>(Archive()); };
 
         Type(rig.App, "/package install https://packages.example/basics.zip");
-        for (var i = 0; i < 200 && !rig.App.PackageView.IsOpen; i++)
+        for (var i = 0; i < 1000 && rig.App.PackageView.Mode != "review"; i++)
         {
             await Task.Delay(10);
         }

@@ -1,5 +1,9 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Modals;
+using SharpMUTerm.Client.Palette;
+using SharpMUTerm.Client.Surfaces;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -50,7 +54,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private readonly AppConfiguration _config;
     private readonly SessionManager _sessions = new();
     private readonly TerminalCapabilities _capabilities;
-    private readonly Theme _theme;
+    private Theme _theme;
+
+    /// <summary>
+    /// The settings screens' palette, resolved from <see cref="_theme"/> once (<see cref="ScreenTheme"/>).
+    /// Handed to every surface built from <see cref="ScreenPalette"/>'s roles — F1–F10, the deletion review
+    /// and the package and send lists — so they follow a Light theme instead of staying dark.
+    /// </summary>
+    private ScreenTheme _screens;
 
     /// <summary>
     /// The colours this client paints in its own voice, resolved from <see cref="_theme"/> and held to
@@ -58,9 +69,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// hexes written into the markup at each use site, each picked against a dark theme and then painted
     /// on whatever plane the workspace happened to have.
     /// </summary>
-    private readonly ChromeInk _ink;
-    private readonly MarkupFormatter _formatter;
-    private readonly MarkupFormatter _promptFormatter;
+    private ChromeInk _ink;
+    private MarkupFormatter _formatter;
+    private MarkupFormatter _promptFormatter;
     private readonly Workspace _workspace;
     private readonly Dictionary<string, MarkupControl> _panes = new(StringComparer.Ordinal);
 
@@ -79,6 +90,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// the pinned half is precisely the half a reader scrolls through.
     /// </summary>
     private readonly Dictionary<string, MarkupControl> _frozenPanes = new(StringComparer.Ordinal);
+
+    /// <summary>Each frozen window's <c>❄ FROZEN</c> bar and the pane width its rule was drawn for (SyncChromeBarWidths).</summary>
+    private readonly Dictionary<string, (MarkupControl Bar, int Width)> _freezeBars = new(StringComparer.Ordinal);
     private readonly DraftStore _drafts;
     private readonly InputBarVisibility _secondBars;
 
@@ -181,7 +195,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly MarkupControl _promptRow;
     private readonly MarkupControl _rail;
-    private readonly MarkupControl _railSpacer = new(new List<string>());
     private readonly Dictionary<string, TabControl> _paneTabs = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -280,6 +293,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     private readonly CommandPalette _palette;
     private readonly SettingsOverlay _settings;
+
+    /// <summary>
+    /// Undo and redo of committed settings edits for the run, one history per section, shared by the cell screens and the
+    /// native settings window so ⌃Z on either undoes the section's last edit wherever it was made. Never saved.
+    /// </summary>
+    private readonly Client.Settings.SettingsHistory _settingsHistory;
 
     /// <summary>The F1 composer — a full editor for a post, sent as one line. See <see cref="ComposeOverlay"/>.</summary>
     private readonly ComposeOverlay _composer;
@@ -502,6 +521,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private readonly Action<string>? _openUrl;
 
+    /// <summary>The host's file opener for a saved scene (<see cref="ClientHost.OpenFile"/>), or null.</summary>
+    private readonly Action<string>? _openFile;
+
     /// <summary>
     /// Where a copied selection goes, or null when this app may not reach a clipboard at all.
     /// <para>
@@ -678,7 +700,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MediaCache? media = null,
         PackageStore? packages = null,
         string? scriptStoreRoot = null,
-        Func<SpellChecker?>? spelling = null)
+        Func<SpellChecker?>? spelling = null,
+        string? dictionaries = null)
         : this(
             config,
             ClientHost.ForHarness(capabilities, driver, focusReporting, openUrl, clipboard),
@@ -693,7 +716,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             media,
             packages,
             scriptStoreRoot,
-            spelling)
+            spelling,
+            dictionaries: dictionaries)
     {
     }
 
@@ -715,14 +739,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MediaCache? media = null,
         PackageStore? packages = null,
         string? scriptStoreRoot = null,
-        Func<SpellChecker?>? spelling = null)
+        Func<SpellChecker?>? spelling = null,
+        bool autoLayout = false,
+        string? dictionaries = null,
+        Func<Uri, CancellationToken, Task<byte[]?>>? worldFetch = null)
     {
         _spelling = spelling;
+        _worldFetch = worldFetch;
+        _dictionariesRoot = string.IsNullOrWhiteSpace(dictionaries) ? null : dictionaries;
+        _autoLayout = autoLayout;
         var capabilities = host.Capabilities;
         Host = host;
         _config = config;
+        _startedEmpty = config.Worlds.Count == 0;
         _save = save;
         _openUrl = host.OpenUrl;
+        _openFile = host.OpenFile;
         _clipboard = host.Clipboard;
         _pointer = host.Pointer;
         _logRoot = string.IsNullOrWhiteSpace(logRoot) ? null : logRoot;
@@ -733,7 +765,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sessions.SessionRemoved += OnSessionRemoved;
         _inlineImages = new InlineImageHost(
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
-            OnUi);
+            OnImageUi);
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
         _media = media ?? new MediaCache();
@@ -752,7 +784,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _ownsDiagnostics = diagnostics is null;
         _messages = _diagnostics.Messages;
         _sessions.Logger = _diagnostics.For("SharpMUTerm.Session");
-        _theme = ResolveTheme(config);
+        _theme = SharpMUTerm.Client.Settings.ThemeChoices.Resolve(config);
         _ink = WorkspacePalette.Chrome(_theme);
         _formatter = new MarkupFormatter(_theme, config.Text);
 
@@ -773,6 +805,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Resume the last session's workspace (panes/windows/focus) when the config carries one;
         // otherwise start with a single main window. Real startup and the demo share this path.
         _workspace = ResumeOrNew(config);
+        NoteRestoredOwners();
+        SettleRestoredFloating();
+        RegisterTerminalPanels();
+        AnnounceHeaderActions();
 
         var headless = host.RunsInline;
         _headless = headless;
@@ -814,14 +850,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // these two handlers is UI-thread state. OnUiThread runs inline when it already is one.
         _focus.Input += at => OnUiThread(() => NoteReaderInput(at));
         _focus.Returned += away => OnUiThread(() => MarkWhereTheReaderLeft(away));
+        WireAttention();
 
         _header = Controls.Markup(HeaderMarkup()).StickyTop().Build();
         _header.LinkClicked += (_, e) => OnChromeLinkClicked(e.Url);
         _header.BackgroundColor = ToColor(_theme.StatusBackground); // the menu bar is a distinct chrome band
         // Keep the clickable brand button on-brand (violet) instead of the driver's default link highlight.
         var brand = AccentPalette[2];
-        _header.FocusedLinkBackgroundColor = ToColor(new Rgb(brand.R, brand.G, brand.B));
+        _header.FocusedLinkBackgroundColor = ToColor(WorkspacePalette.HeaderFill(_theme, new Rgb(brand.R, brand.G, brand.B)));
         _header.FocusedLinkForegroundColor = ToColor(_theme.Resolve(TerminalColor.Default, isBackground: true));
+
+        // A host that draws the header (the window) gets no header row at all: hidden, a sticky band takes no row,
+        // so the workspace starts at row 0 and every count of the chrome below follows (ChromeRows).
+        _header.Visible = !host.Chrome.Header;
 
         var main = NewPaneControl(MainWindowId);
 
@@ -832,8 +873,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // The pane area renders the workspace's split tree (one TabControl per leaf pane). It's built
         // from the model and rebuilt whenever the layout changes; the initial row goes into the window.
-        _workspaceRow = BuildWorkspaceRow();
-
+        // A narrow terminal starts with the rail folded (SyncNarrowLayout), so the first row is built that way.
         // The input area is one or two bars pinned above the status line. Each paints its own full-width
         // band (see InputBarControl), so the row reads as solid from the prompt to the right edge with
         // no gap where a label ends. Draft-safe history is ours (InputHistory) and per bar.
@@ -841,14 +881,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         SetUpBar(_second, InputBar.Secondary);
         _second.Visible = false;
 
-        _statusBar = Controls.Markup("[dim]not connected[/]").StickyBottom().Build();
-
         // Sticky-bottom, added ahead of the bars so it sits above them, and hidden until a prompt
         // arrives: most sessions never see one, and a permanently blank row would cost every pane a
         // row for nothing.
         _promptRow = Controls.Markup(PromptRowRenderer.Empty).StickyBottom().Build();
         _promptRow.HorizontalAlignment = HorizontalAlignment.Stretch;
         _promptRow.Visible = false;
+
+        // A host that puts the command line in the output's column (the window) gets the prompt row and the bars as rows
+        // of the pane area instead (see WithInputBars), so they are built before it.
+        if (host.Chrome.InputInColumn)
+        {
+            _promptRow.StickyPosition = StickyPosition.None;
+        }
+
+        SyncNarrowLayout();
+        _workspaceRow = BuildWorkspaceRow();
+
+        _statusBar = Controls.Markup("[dim]not connected[/]").StickyBottom().Build();
+
+        // A host that draws the status row itself (the window's footer) gets no cell for it: a hidden sticky band takes
+        // no row, and ChromeRows counts none, so the bars and the panes have the row.
+        _statusBar.Visible = !host.Chrome.Status;
 
         // The window paints the backdrop, not the text background: everything that is not a pane — the
         // connection rail, the status line, the gaps a split leaves — sits on it, so the panes read as
@@ -878,11 +932,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             .WithColors(fg, bg)
             .AddControl(_header)
             .AddControl(_workspaceRow)
-            .AddControl(_promptRow)
-            .AddControl(_input)
-            .AddControl(_second)
-            .AddControl(_statusBar)
             .Build();
+
+        // The bars are the window's sticky band across every pane, unless the host puts them in the output's column, where
+        // the pane area holds them (WithInputBars). The status row is sticky either way.
+        if (!host.Chrome.InputInColumn)
+        {
+            _window.AddControl(_promptRow);
+            _window.AddControl(_input);
+            _window.AddControl(_second);
+        }
+
+        _window.AddControl(_statusBar);
 
         // Nothing in this window scrolls as a window — every pane scrolls inside its own viewport — and a
         // frameless scrollable window reserves a scrollbar column whenever its content is taller than it is.
@@ -892,16 +953,38 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // short with the input bar a row up, for good.
         _window.IsScrollable = false;
 
-        _palette = new CommandPalette(_system, BuildCatalog, () => _active?.SessionKey, id => DispatchCommand(id));
+        RegisterBuiltInContributions();
+        RegisterBuiltInSettings();
+        _palette = new CommandPalette(
+            _system,
+            BuildCatalog,
+            () => _active is { } acting ? DisplayName(acting.SessionKey) : null,
+            id => DispatchCommand(id),
+            _recentCommands,
+            () => CommandPaletteModel.Suggested(CommandState()))
+        {
+            KeepClearBelow = InputBandRows,
+        };
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
-        _settings = new SettingsOverlay(_system);
-        _composer = new ComposeOverlay(_system, _spelling);
-        _packageView = new ListOverlay(_system);
-        _sendMenu = new ListOverlay(_system);
+        _screens = ScreenTheme.For(_theme);
+        _settingsHistory = new Client.Settings.SettingsHistory(_config, id => _contributions.SettingsSections.Find(id)?.Title);
+        _settings = new SettingsOverlay(_system, _screens)
+        {
+            SearchHost = SettingsSearchHost(),
+            History = _settingsHistory,
+            SectionOf = key => SectionForKey(key)?.Id,
+        };
+        _composer = new ComposeOverlay(_system, ComposerSpelling, _screens);
+        _packageView = new ListOverlay(_system, _screens);
+        _sendMenu = new ListOverlay(_system, _screens);
+        _layoutsView = new ListOverlay(_system, _screens);
+        _welcomeView = new ListOverlay(_system, _screens);
+        _helpView = new ListOverlay(_system, _screens);
+        _composer.DictionaryWanted += (_, _) => OnUiThread(OfferDictionary);
         _composer.Send += (_, result) => SendComposed(result);
         _composer.Closed += (_, result) => KeepComposeDraft(result);
-        _quit = new QuitOverlay(_system, QuitFactsNow, Quit);
+        _quit = new QuitOverlay(_system, QuitFactsNow, Quit, QuitPromptClosed);
 
         // The ⌃B which-key panel. Its facts are read at the moment it opens, so it explains the workspace
         // the user is actually looking at, and the key that ends it goes back through the very consumer a
@@ -916,7 +999,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             HistoryBarLabel,
             InsertHistoryEntry);
 
-        _search = new SearchSurface(_system, SearchableWindows, GoToSearchHit);
+        _search = new SearchSurface(_system, SearchModelFor, GoToSearchHit, CancelDeepSearch);
+        SchemePopups();
 
         _window.OnResize += (_, _) =>
         {
@@ -924,7 +1008,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // *old* window's arranged rectangles — the new ones don't exist until the next frame is
             // laid out — so a report made here would announce a size that was already wrong. The
             // repaint this resize forces reports them once they are real; see ReportPaneSizes.
-            _header.SetContent(new List<string> { HeaderMarkup() }); // re-align the status cluster to the new width
+            RefreshHeader(); // re-align the status cluster to the new width
+            SyncNarrowLayout(); // fold or unfold the rail if the width crossed the narrow line
+            SyncInputColumn(); // move the command line to a wider column, or back, if its floor was crossed
             SyncInputWidth(); // keep the input band spanning the full row after a resize
             SyncInputBars();  // and re-derive how tall the bars may grow in the new window
         };
@@ -953,7 +1039,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // line, and this puts it back the instant anything takes it, which is what makes "which bar ⏎
         // sends from", "which control the framework will paste into" and "where the caret is drawn" one
         // fact rather than three that agree until they don't.
-        _window.FocusManager.FocusChanged += (_, _) => PinFocusToArmedBar();
+        _window.FocusManager.FocusChanged += (_, _) =>
+        {
+            // A click in a docked composer's editor is a request to write there, not focus drifting: arm it.
+            ArmClickedComposer();
+            PinFocusToArmedBar();
+        };
         _window.PreviewKeyPressed += OnWindowKey;
 
         // NAWS rides the frame. Pane rectangles exist only while an arranged layout does, and every
@@ -969,9 +1060,36 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ReportPaneSizes();
             SyncTabStripWidths();
             SyncTransparentColours();
+            MeasureHeadingRuns(buffer);
+            PaintHeaderDividers(buffer);
+            PaintTabOverflow(buffer);
+            BlankNativeTabStrips(buffer);
+            PaintScrollHistoryGutters(buffer);
             DrawSixelOverlay(buffer);
             PublishScrollbars();
+            PublishPanels();
+            PublishFloating();
+            PublishChrome();
+            PublishInputBand();
+            PublishDividers();
+            PublishStatus();
             SyncMapSizes();
+            SyncPanelSizes();
+            SyncCollapsedBars();
+            SyncScrollSplitBars();
+            SyncChromeBarWidths();
+            SyncStatusMode();
+            PublishPaneChrome();
+        };
+
+        // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
+        // panels are now under it; the modal stack changing says it instead.
+        _system.ModalStateService.StateChanged += (_, _) =>
+        {
+            PublishPanels();
+            PublishInputBand();
+            PublishDividers();
+            PublishPaneChrome();
         };
         if (_sixel is not null)
         {
@@ -980,6 +1098,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _window.Activated += (_, _) => _sixel.Invalidate();
             _window.Deactivated += (_, _) => _sixel.Invalidate();
         }
+
+        // The native chrome stands down while another window is in front, and that window repaints, not this one.
+        _window.Activated += (_, _) => { PublishChrome(); PublishInputBand(); PublishDividers(); PublishStatus(); };
+        _window.Deactivated += (_, _) => { PublishChrome(); PublishInputBand(); PublishDividers(); PublishStatus(); };
 
         // Pane drag-and-drop listens at the driver, not at a control: SharpConsoleUI delivers mouse
         // frames to the control that was pressed (it captures on Button1Pressed), so a control-level
@@ -1014,11 +1136,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Here and not in the constructor: this is the one method that means "there is a live terminal
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
+        StartTitle();
         var exitCode = _system.Run();
 
         // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
         // output translucent wherever it happens to use one of them.
         ResetTransparentColours();
+
+        // The terminal's own title goes back to the shell's, as the colours do.
+        Host.Title?.Restore();
         return exitCode;
     }
 
@@ -1083,9 +1209,30 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // one of them would count as missed, so any frame that later made such a window visible (a split,
         // a tab change) would carry an activity bar reporting the client's own setup as news. Same
         // reasoning as `_watching` itself, which the restore replay needs for the same shape of reason.
+        // The first-run welcome is what a client with *no* worlds opens on, so it is drawn over an empty
+        // configuration whatever the caller loaded — --demo-config has worlds, and the welcome never opens
+        // over them.
+        if (view is not null && view.StartsWith(WelcomeView, StringComparison.OrdinalIgnoreCase))
+        {
+            return RenderWelcomeSnapshot(view);
+        }
+
         _watching = false;
         LoadDemoScene();
         _watching = true;
+
+        // A dropped connection waiting to dial again: the status row counts down in place of "faulted".
+        if (string.Equals(view, "reconnect", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowDemoReconnect();
+        }
+
+        // The key tour row, as the first connect of a new configuration leaves it at the end of the window.
+        if (string.Equals(view, "tour", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowKeyTour(MainWindowId);
+            SettleScroll();
+        }
 
         // The reported bug, as a frame: the scene is already on screen with the column off, and *then*
         // the real ⌃P entry is dispatched. Under the old append-time gutter this frame was identical to
@@ -1100,6 +1247,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
             RebuildPaneArea();
             DispatchCommand("term:timestamps-on");
+        }
+
+        // A theme switched while the scene is on screen, over a split so a session window and a spawn window are
+        // both in the frame: every line already there is formatted again against Light (PaneLine.Source), so this
+        // frame's output matches what `--theme Light` draws from the start. Before the repaint the history kept the
+        // colours it arrived in, and the white and grey lines were faint on the light planes.
+        if (string.Equals(view, "theme-switched", StringComparison.OrdinalIgnoreCase))
+        {
+            PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
+            RebuildPaneArea();
+            Client.Settings.ThemeChoices.Apply(_config, "Light");
+            SaveConfiguration();
+            SettleScroll();
+        }
+
+        // The sidebar holding the keys (⌥C), its cursor walked one row down by a real ↓: the cell rail draws the row on
+        // the armed command line's band, padded to the rail's width, so the frame shows where ⏎ will go and that no
+        // cell moved. The window's sidebar draws the same cursor as a ring. Nothing when the rail has no rows.
+        if (string.Equals(view, "rail-keys", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateKey(new ConsoleKeyInfo('c', ConsoleKey.C, false, true, false));
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
         }
 
         // Bring the Chat spawn window to the front, so one frame shows a *routed* window as the active tab
@@ -1122,25 +1291,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // live writer by ComposeWindowTests, which asserts that a real session's composer header reads
         // what SessionTitle produces. The body is prose with a '%' and brackets in it on purpose — it is
         // the text whose two renderings differ.
+        //
+        // compose-preview is the literal post with ⌥P's as-sent band under it, which shows the escapes and %r joins the
+        // header's length cell is counting.
         if (string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase))
+            string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(view, "compose-preview", StringComparison.OrdinalIgnoreCase))
         {
-            _composer.Toggle(
+            _composer.Preview = string.Equals(view, "compose-preview", StringComparison.OrdinalIgnoreCase);
+            OpenComposer(
                 DemoScene.MainCharacterName,
-                "+bbpost 12=The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
+                "The Long Winter\n\nThe caravan reached the pass at dusk, 100% frozen and\n"
                 + "short two horses. [Nobody] said what everyone was thinking.\n\n"
                 + "  -- Corvid, scribe",
-                string.Equals(view, "compose-literal", StringComparison.OrdinalIgnoreCase)
+                !string.Equals(view, "compose", StringComparison.OrdinalIgnoreCase)
                     ? ComposeEscaping.Literal
                     : ComposeEscaping.AsTyped,
-                canSend: true);
+                canSend: true,
+                verb: "+bbpost 12=");
         }
 
         // The composer holding a MOO verb to edit: the header names it and its type, and the footer offers a
         // save and no escaping. The demo has no MCP session, so the edit is handed in as the composer takes it.
         if (string.Equals(view, "moo-edit", StringComparison.OrdinalIgnoreCase))
         {
-            _composer.Toggle(
+            OpenComposer(
                 DemoScene.MainCharacterName,
                 "\"Usage: look [object]\";\nif (!args)\n  player:tell(this.location:description());\n  return 1;\nendif\n"
                 + "thing = player:my_match_object(argstr);\nthing:look_self();",
@@ -1275,6 +1450,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RebuildPaneArea();
         }
 
+        // The same split stacked, through the real ⌃B - keys: Chat lands in the lower pane, whose tab strip is the
+        // boundary between the two — there is no divider row above a pane that draws its own tab strip.
+        if (string.Equals(view, "split-stacked", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateKey(Stroke('\u0002', ConsoleKey.B, ctrl: true));
+            SimulateKey(Stroke('-', ConsoleKey.OemMinus));
+        }
+
         // More tabs than the strip can hold, which is the state every other tab view is too small to
         // show. The channels are named the way a real client's are — a character's captures, carrying
         // their owner as a prefix — and there are seven of them in a split pane, so the strip wants far
@@ -1371,7 +1554,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 foreach (var line in parser.Feed(text + "\n"))
                 {
-                    AppendWindowLine(MainWindowId, _formatter.ToMarkup(line), StampNow());
+                    AppendWindowLine(MainWindowId, line, StampNow());
                 }
             }
         }
@@ -1398,6 +1581,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RenderWholeFrame(); // the grid has to be painted before a hit test can land on it
             SimulatePaneDrag(MainWindowId, 0, 1, 46, 3);
             ReArmWholeFrame();
+        }
+
+        // The trigger builder: a real drag across a line of output, then the real ⌃P entry, so the frame is
+        // F2 opened on the rule it made — the suggested pattern being typed, the regex behind it, and the
+        // live test counting the lines it already matches.
+        if (string.Equals(view, "trigger-builder", StringComparison.OrdinalIgnoreCase))
+        {
+            StageTriggerBuilder();
         }
 
         // A selection in the command line: the same band on the bar the panes use, made by a real drag
@@ -1460,6 +1651,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         }
 
+        // Split scrollback (F7 ▸ SCROLLBACK): the same long buffer scrolled back with real PgUp keys, and then
+        // more output arriving — which lands in the live tail under the band while the history the reader
+        // scrolled to stays exactly where it was. `scrollback-up` shows the split opening; this one shows it
+        // doing its job.
+        if (string.Equals(view, "scrollback-split", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadLongScene(MainWindowId, ScrollbackSceneLines);
+            SettleScroll();
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SettleScroll();
+            LoadLongScene(MainWindowId, 4, first: ScrollbackSceneLines + 1);
+            SettleScroll();
+            ReArmWholeFrame();
+        }
+
+        // F5 ▸ join wraps: one room as a server wrapping at 78 sends it, then the same rows joined. In a pane
+        // wider than 80 the first block stops short of the edge; in a narrower one its rows wrap again.
+        if (string.Equals(view, "reflow", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadReflowScene();
+            SettleScroll();
+            ReArmWholeFrame();
+        }
+
         // The bar marking where the reader was when they tabbed away from the terminal. Two views,
         // because the two states it has are the two ends of the consumption rule. `away` is a shallow
         // absence: the bar and everything below it are on screen at once, which is the frame where the
@@ -1491,6 +1707,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // what the real filter produced rather than an impression of it.
         if (view is not null && view.StartsWith("search", StringComparison.OrdinalIgnoreCase))
         {
+            // `search-older` is ⌥H over the demo's own older history (an evening of the same streets, thousands of lines
+            // past the pane's), and `search-history` is ⏎ on its first older hit: the read-only history view.
+            var olderView = string.Equals(view, "search-older", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(view, "search-history", StringComparison.OrdinalIgnoreCase);
+            var historyView = string.Equals(view, "search-history", StringComparison.OrdinalIgnoreCase);
+            _deepInline = true;
+
             // A split first, so the pane is narrower than the terminal. That is the geometry that catches
             // a landing scrolled to the wrong row — a buffer index is not a viewport row, and in a narrow
             // pane almost every line wraps.
@@ -1521,27 +1744,69 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             AppendWindowLine(DemoScene.ChatWindowId, MarkupText.Escape("<OOC> Ana: the goblin room is bugged"));
             SettleScroll();
 
-            OpenSearchForSnapshot();
-            if (string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase))
+            // In a host that draws ⌃F itself, the same query through the native surface's session (the window's
+            // screenshots); the parity harness and the terminal have none and take the cell path below.
+            // `search-landed` goes there too: ↓ then ⏎ on the native list is the second hit's row handed to
+            // GoToSearchHit, the method the cell ⏎ ends in, so the frame left behind is the cells' landing.
+            if (TryOpenNativeSearch())
             {
-                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
-            }
+                var all = string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase);
+                var regex = string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase);
+                NativeSearch!.Search(regex ? @"gobl\w+ (corpse|for)" : "goblin", regex, all, olderView);
+                if (historyView && NativeSearch is { } older && older.Model.HeldRows < older.Model.Rows.Count)
+                {
+                    var hits = older.Model;
+                    CloseNativeModal(older);
+                    GoToSearchHit(hits, hits.HeldRows);
+                }
 
-            if (string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase))
-            {
-                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
-                SimulateSearchTyping(@"gobl\w+ (corpse|for)");
+                if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase) && NativeSearch is { } landing && landing.Model.Rows.Count > 0)
+                {
+                    var hits = landing.Model;
+                    CloseNativeModal(landing);
+                    GoToSearchHit(hits, Math.Min(1, hits.Rows.Count - 1));
+                    SettleScroll();
+                }
             }
             else
             {
-                SimulateSearchTyping("goblin");
-            }
+                OpenSearchForSnapshot();
+                if (string.Equals(view, "search-all", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.A, false, true, false));
+                }
 
-            if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
-            {
-                SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
-                SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
-                SettleScroll();
+                if (string.Equals(view, "search-regex", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.E, false, true, false));
+                    SimulateSearchTyping(@"gobl\w+ (corpse|for)");
+                }
+                else
+                {
+                    SimulateSearchTyping("goblin");
+                }
+
+                if (olderView)
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.H, false, true, false));
+                }
+
+                if (historyView)
+                {
+                    for (var i = 0; i < (_search.Model?.HeldRows ?? 0); i++)
+                    {
+                        SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                    }
+
+                    SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                }
+
+                if (string.Equals(view, "search-landed", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimulateSearchKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                    SimulateSearchKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                    SettleScroll();
+                }
             }
 
             ReArmWholeFrame();
@@ -1632,10 +1897,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // seeded here on purpose: the frame is where "the password is not in the list" is visible.
             HistoryFor(InputBar.Primary).Add("connect Corvid hunter2");
 
-            _historySearch.OpenForSnapshot();
-            if (view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase))
+            // A host that draws ⌃R itself filters in its own box, so there the query is handed over as the box's
+            // opening text — `menu-fuzzy`'s way with the native palette — and the frame is filtered in both hosts.
+            var filter = view.EndsWith("-filter", StringComparison.OrdinalIgnoreCase) ? "north" : string.Empty;
+            if (!TryOpenNativeHistory(filter))
             {
-                _historySearch.SimulateTyping("north");
+                _historySearch.OpenForSnapshot();
+                if (filter.Length > 0)
+                {
+                    _historySearch.SimulateTyping(filter);
+                }
             }
         }
 
@@ -1669,7 +1940,154 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 RebuildPaneArea();
             }
 
-            _palette.Toggle();
+            OpenMenu();
+        }
+
+        // The command surface searched: a real drag across the output first, because "Make a trigger from
+        // the selection" is offered only while something is selected, then `trig sel` typed into it — the
+        // frame that shows a fuzzy match across two words, its characters highlighted, at the top.
+        if (string.Equals(view, "menu-fuzzy", StringComparison.OrdinalIgnoreCase))
+        {
+            RenderWholeFrame();
+            SimulatePaneDrag(MainWindowId, 0, 1, 46, 3);
+            ReArmWholeFrame();
+            OpenMenu("trig sel");
+        }
+
+        // The command surface opened with nothing typed after two commands were run through the palette's
+        // own path: RECENT at the top, newest first, and neither entry listed a second time in its group.
+        if (string.Equals(view, "menu-recent", StringComparison.OrdinalIgnoreCase))
+        {
+            RunFromPalette("layout:split-right");
+            RunFromPalette("layout:cycle");
+            OpenMenu();
+        }
+
+        // ⌃P ▸ Recent alerts over three kept pages and alerts, two characters', oldest first in time: the entry itself runs,
+        // so the palette opens on them the way it does live, each with its character and how long ago.
+        if (string.Equals(view, "menu-alerts", StringComparison.OrdinalIgnoreCase))
+        {
+            SimulateAlert("Aetherfall.Rookery", SharpMUTerm.Core.Automation.AttentionReason.Page,
+                "Merrow pages: are you coming to the crypt?", TimeSpan.FromMinutes(14));
+            SimulateAlert("Grapevine.Thistle", SharpMUTerm.Core.Automation.AttentionReason.Name,
+                "Ashlyn says, \"Thistle, the herbs came in.\"", TimeSpan.FromMinutes(3));
+            SimulateAlert(DemoScene.ActiveSessionKey, SharpMUTerm.Core.Automation.AttentionReason.Page,
+                "Rivane pages: meet at the north gate");
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.RecentAlertsCommand);
+        }
+
+        // Help, opened by the ⌃P entry itself: the list, and a how-to page (the one that names join wraps).
+        if (string.Equals(view, "help", StringComparison.OrdinalIgnoreCase))
+        {
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.HelpCommand);
+        }
+
+        if (string.Equals(view, "help-topic", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowHelp(topic: "reading");
+        }
+
+        // The script console, through its ⌃P entry, over the demo's own sandbox: a value, a print, a store read and a loop
+        // the limit stopped, run through the console's one path before it opens.
+        if (string.Equals(view, "script-console", StringComparison.OrdinalIgnoreCase))
+        {
+            RunConsoleLine("store.get('kills') + 1");
+            RunConsoleLine("print('hello from ' .. world.name)");
+            RunConsoleLine("map.current().name");
+            RunConsoleLine("while true do end");
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptConsoleCommand);
+            if (CellConsole is { } console)
+            {
+                foreach (var c in "store.keys()")
+                {
+                    console.Key(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+                }
+
+                _helpView.Repaint();
+            }
+        }
+
+        // The script editing loop over the demo's scripts: ⌃P's list of them (`script-list`), and the demo's corvid.lua
+        // open in the composer's script mode with the caret on the line a reload's error named (`script-edit`). The demo
+        // saves nothing, so the header's error is the one a live save of this file would put there.
+        if (string.Equals(view, "script-list", StringComparison.OrdinalIgnoreCase))
+        {
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptEditCommand);
+        }
+
+        if (string.Equals(view, "script-edit", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenScript("corvid.lua", 14);
+            SetScriptStatus("! " + DemoScriptError);
+        }
+
+        // GMCP channel capture, the highlight-names list and a scene log, over the demo (scripting wave).
+        if (RenderScriptingWaveScene(view) is { } scriptingFrame)
+        {
+            return scriptingFrame;
+        }
+
+        // Browse worlds over the demo's directory (answered from memory): the list through its ⌃P entry; `-failed` with a
+        // directory that does not answer; `-picked` after a pick of a world with one address (Lanternport), so the frame is
+        // the welcome's connect form filled in; `-endpoints` after a pick of Aetherfall, which answers at three addresses
+        // and names a charset, so the frame is the address choice.
+        if (string.Equals(view, "browse-worlds", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "browse-worlds-failed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "browse-worlds-endpoints", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(view, "browse-worlds-failed", StringComparison.OrdinalIgnoreCase))
+            {
+                WorldFetch = static (_, _) => Task.FromResult<byte[]?>(null);
+            }
+
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.BrowseWorldsCommand);
+            if (string.Equals(view, "browse-worlds-picked", StringComparison.OrdinalIgnoreCase))
+            {
+                PickWorld(_worldModel, 1);
+            }
+
+            if (string.Equals(view, "browse-worlds-endpoints", StringComparison.OrdinalIgnoreCase))
+            {
+                PickWorld(_worldModel, 0);
+            }
+        }
+
+        // The spelling dictionary offer, through its ⌃P entry. The demo keeps no dictionaries folder, so the offer says
+        // nothing can be saved in this run — the text a live client shows names the folder instead.
+        if (string.Equals(view, "dictionary-offer", StringComparison.OrdinalIgnoreCase))
+        {
+            DispatchCommand(SharpMUTerm.Client.Commands.BuiltInCommands.DictionaryCommand);
+        }
+
+        // The review of an import from another client, over a MUSHclient world file the demo carries: what can act as
+        // the player, what it adds, what it leaves out (a script function, a plugin, a time-of-day timer), and the
+        // password it holds, not stored.
+        if (string.Equals(view, "import-review", StringComparison.OrdinalIgnoreCase))
+        {
+            ReviewImport(SharpMUTerm.Core.Import.ClientImport.Parse(DemoImport.Mushclient, DemoImport.MushclientName).Result!);
+        }
+
+        // A pane narrower than its game wraps, recorded through the writer the live size report uses: ⌃P suggests
+        // joining the world's wraps; `join-wraps-f5` is F5 recommending it beside the setting.
+        if (string.Equals(view, "join-wraps", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "join-wraps-f5", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_config.Worlds.Count > 0)
+            {
+                NoteRaggedWraps(_config.Worlds[0].Name, 78, 60);
+            }
+
+            if (string.Equals(view, "join-wraps", StringComparison.OrdinalIgnoreCase))
+            {
+                OpenMenu();
+            }
+            else
+            {
+                _settings.OpenForSnapshot(ConsoleKey.F5, WorldsScreen());
+                SyncInputWidth();
+                return RenderFrame();
+            }
         }
 
         // The ⌃B which-key panel over the demo workspace: what the arming timer opens when no key has
@@ -1680,7 +2098,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (string.Equals(view, "prefix-panel", StringComparison.OrdinalIgnoreCase))
         {
             _prefixArmed = true;
-            _header.SetContent(new List<string> { HeaderMarkup() });
+            RefreshHeader();
             _prefixPanel.Open();
         }
 
@@ -1691,18 +2109,36 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             RefusePrefix(PrefixPanel.NoSplitRefusal);
             RefuseCommand("nothing to reconnect — pick a character first (⌃P ▸ Switch to …)");
-            Notice("switched to Corvid · offline — Alt+R (⌃P ▸ Reconnect) connects it", MessageSeverity.Info, "⌃P");
-            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, "⌃P");
+            Notice(
+                SwitchedNotice("Corvid", connected: false),
+                MessageSeverity.Info,
+                action: new NoticeAction("world:reconnect", "Reconnect"));
+            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error);
             _messageLog.Toggle();
+        }
+
+        // Three notices over the demo workspace and no modal: in a terminal the status row carries the last of them,
+        // as it always has; in the window each is a toast as well, stacked over the cells, the first offering its
+        // action as a click. One of each severity, in the order a session might say them.
+        if (string.Equals(view, "notices", StringComparison.OrdinalIgnoreCase))
+        {
+            Notice(
+                "Using the Combat layout for Aetherfall: the game sends vitals. ⌥M changes it.",
+                MessageSeverity.Info,
+                "⌥M",
+                new NoticeAction(Client.Commands.LayoutCommands.Manage, "Change layout"));
+            RefusePrefix(PrefixPanel.NoSplitRefusal);
+            Notice("muted.", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Sound);
+            Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error, action: ShowMessagesAction);
         }
 
         // The map window, over the demo's recorded streets: opened through the real ⌃P entry; `map-walking`
         // starts a walk to the docks through the real `/walk`, so the path ahead is marked; `map-split` puts
         // the map beside the output, the way it is meant to be read.
-        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split")
+        if (view?.ToLowerInvariant() is "map" or "map-walking" or "map-split" or "map-edit" or "map-level" or "map-area" or "map-find" or "map-mine")
         {
             LoadDemoMap();
-            var split = string.Equals(view, "map-split", StringComparison.OrdinalIgnoreCase);
+            var split = view.ToLowerInvariant() is not ("map" or "map-walking");
             if (split)
             {
                 // Split first, so the map opens in front in the right-hand pane, then hand the focus back to
@@ -1726,6 +2162,39 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 Activate(MainWindowId);
                 RefreshRail();
             }
+
+            // `map-edit`: the real ⌃P ▸ Edit map, → to the market through the map's own keys, a note through `/map note`,
+            // and l to lock it — so the frame shows the room being edited, its inspector and the keys that edit it.
+            if (string.Equals(view, "map-edit", StringComparison.OrdinalIgnoreCase))
+            {
+                DispatchCommand("map:edit");
+                SimulateMapKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, false));
+                MapCommand(MainWindowId, "map", "note 4210 Spice traders gather here at dawn");
+                SimulateMapKey(new ConsoleKeyInfo('l', ConsoleKey.L, false, false, false));
+            }
+
+            // `map-level`: the real ⌃P ▸ Map: level up, so the frame shows the bell tower's floor with the way back offered.
+            // `map-area`: the legend's link to the docks clicked, so the frame shows the other area drawn in its colour.
+            // `map-find`: `/map find temple` typed, listing the rooms and pointing the map at the first.
+            // `map-mine`: the market renamed by hand, then edited, so the side column says what the server will leave alone.
+            var mapWindow = MapWindowId(DemoScene.ActiveSessionKey);
+            switch (view.ToLowerInvariant())
+            {
+                case "map-level":
+                    DispatchCommand("map:level-up");
+                    break;
+                case "map-area" when _mapViews.TryGetValue(mapWindow, out var drawn):
+                    OnMapLinkClicked(mapWindow, MapRenderer.LookPrefix + "area:" + drawn.Model.Areas.ToList().FindIndex(a => !a.Drawn));
+                    break;
+                case "map-find":
+                    MapCommand(MainWindowId, "map", "find temple");
+                    break;
+                case "map-mine":
+                    MapCommand(MainWindowId, "map", "rename 4210 Market Row of Lanterns");
+                    DispatchCommand("map:edit");
+                    SimulateMapKey(new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, false));
+                    break;
+            }
         }
 
         // The Packages screen with two installed (one switched off), the review an install opens with, and
@@ -1733,6 +2202,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (view?.ToLowerInvariant() is "packages" or "package-review" or "package-browse")
         {
             LoadDemoPackages(view.ToLowerInvariant());
+        }
+
+        // The panels a layout places, each opened through its real ⌃P entry over the demo's game data, which is
+        // written through the calls the wire makes. See LoadDemoPanels for what each frame is for.
+        if (string.Equals(view, "panel-who", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "panel-vitals", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "panel-quickbar", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "panel-composer", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoPanels(view!.ToLowerInvariant());
         }
 
         // The status row's meters and the game data inspector, over the demo's game data — written through
@@ -1748,6 +2227,56 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         }
 
+        // Layouts. `layouts` is the ⌥M list over the demo, opened through the registered shortcut itself;
+        // `layout-combat` is the demo with the Combat layout realised through the same ApplyLayout ⌥M ⏎ runs, over
+        // the demo's game data (vitals, so the meters have values), its recorded streets (so the map has rooms) and
+        // a few function-key bindings (so the quick bar has buttons).
+        // Panels nothing draws yet stay out, which is the data gating the frame is there to show.
+        if (string.Equals(view, "layouts", StringComparison.OrdinalIgnoreCase))
+        {
+            _shortcuts[(ConsoleModifiers.Alt, ConsoleKey.M)]();
+        }
+
+        if (string.Equals(view, "layout-combat", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            LoadDemoMap();
+            LoadDemoBindings();
+            ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Combat);
+        }
+
+        // `layout-roleplay` is the same for the Roleplay layout: who is here beside the output (the room's roster,
+        // so it has data) with Chat as a tab behind it, and the docked composer under the output at its floor.
+        if (string.Equals(view, "layout-roleplay", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            LoadDemoOccupants();
+            ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Roleplay);
+        }
+
+        // `roleplay-scrolled` is the state the desktop mockup (Main) draws: the Roleplay layout, a post drafted in the
+        // docked composer through its real keys and released with Esc, then the output scrolled back with real PgUp keys
+        // while more arrives, so the split's band and live tail are on screen beside the composer and who-here.
+        if (string.Equals(view, "roleplay-scrolled", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            LoadDemoOccupants();
+            ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Roleplay);
+            Activate(TerminalPanels.WindowId(Core.Layouts.PanelIds.Composer, DemoScene.ActiveSessionKey));
+            SimulateComposerTyping("\t+pose\tCorvid tips his hat to the guard as he passes, then falls into step beside Rivane.\n\n"
+                + "\"Round is longer, but I'd rather arrive dry than not at all.\"");
+            SimulateKey(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
+            Activate(MainWindowId);
+            LoadLongScene(MainWindowId, ScrollbackSceneLines);
+            SettleScroll();
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SettleScroll();
+            LoadLongScene(MainWindowId, 4, first: ScrollbackSceneLines + 1);
+            SettleScroll();
+            ReArmWholeFrame();
+        }
+
         // The ⌃Q confirmation, over a workspace that has something to lose: a second world marked
         // connected (the demo scene's own way of saying so, and what the header's "n/m characters" reads),
         // a line typed into the command line through the bar's real change notification, and then the
@@ -1757,7 +2286,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (_config.Worlds.ElementAtOrDefault(1) is { Characters.Count: > 0 } second)
             {
                 _demoConnectedKeys.Add($"{second.Name}.{second.Characters[0].Name}");
-                _header.SetContent(new List<string> { HeaderMarkup() }); // the band counts them: 2/3
+                RefreshHeader(); // the band counts them: 2/3
             }
 
             _input.SetAndNotify("say back in a moment — kettle's on");
@@ -1932,6 +2461,88 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return RenderFrame();
         }
 
+        // The settings search and F7's meter editor, reached by the keys a reader would press: F7, `/`,
+        // `meter`. `settings-meters` then takes ⏎ to the field and ↓ onto the second meter, where the
+        // received-data box is drawn; `-pick` opens that meter's value path, so its dropdown lists what the
+        // demo's game data holds. The game data is written through SetGmcp, the call the wire makes.
+        // `settings-changed` is F7 after two real edits — Space on `emoji substitution`, and `8` typed into
+        // the tab width — so the frame carries the `● changed` marks and the header's `r reset`.
+        // `settings-themes` is F7 opened and ↓ pressed once: the cursor on the second theme, so the screen is painted
+        // in it and its preview is drawn — the theme picker's live preview, before anything is committed.
+        // `settings-themes-solarized` presses ↓ twice. `settings-themes-used` presses ⏎ on the second theme, so the
+        // frame is the client after a theme was committed live.
+        if (view is not null && view.StartsWith("settings-themes", StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
+            var downs = view.EndsWith("-solarized", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+            for (var down = 0; down < downs; down++)
+            {
+                _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
+            }
+
+            if (view.EndsWith("-used", StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            }
+
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
+        if (string.Equals(view, "settings-changed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "settings-undo", StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
+
+            // Past the theme picker's rows first, then down to `emoji substitution`.
+            var themes = SharpMUTerm.Client.Settings.ThemeChoices.Names(_config).Count;
+            for (var down = 0; down < themes + 5; down++)
+            {
+                _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
+            }
+
+            _settings.SimulateKey(Stroke(' ', ConsoleKey.Spacebar));
+            _settings.SimulateKey(Stroke('\0', ConsoleKey.UpArrow));
+            _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            _settings.SimulateKey(Stroke('\b', ConsoleKey.Backspace));
+            _settings.SimulateKey(Stroke('8', ConsoleKey.D8));
+            _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+            if (string.Equals(view, "settings-undo", StringComparison.OrdinalIgnoreCase))
+            {
+                // ⌃Z: the tab width goes back, and the header says what was undone.
+                _settings.SimulateKey(new ConsoleKeyInfo('\u001a', ConsoleKey.Z, false, false, true));
+            }
+
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
+        if (string.Equals(view, "settings-search", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "settings-meters", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(view, "settings-meters-pick", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            _settings.OpenForSnapshot(ConsoleKey.F7, TextAnsiScreen());
+            foreach (var c in "/meter")
+            {
+                _settings.SimulateKey(Stroke(c, c == '/' ? ConsoleKey.Oem2 : ConsoleKey.NoName));
+            }
+
+            if (!string.Equals(view, "settings-search", StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+                _settings.SimulateKey(Stroke('\0', ConsoleKey.DownArrow));
+                if (view!.EndsWith("-pick", StringComparison.OrdinalIgnoreCase))
+                {
+                    _settings.SimulateKey(Stroke('\r', ConsoleKey.Enter));
+                    _settings.SimulateKey(Stroke('\t', ConsoleKey.Tab));
+                }
+            }
+
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
         // Settings screens (composed-control or markup — SettingsView hands back a control factory
         // either way) open over the workspace for their --view name. A "<name>-edit" view opens the
         // same screen and then drives real keys into it, so the frame shows a field genuinely mid-edit
@@ -1940,6 +2551,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var screenView = editing ? view![..^EditViewSuffix.Length] : view;
         if (screenView is not null && SettingsView(screenView) is { } screen)
         {
+            // A host with its own settings window (the desktop's demo) shows a screen's --view there, the way its
+            // F-key would; an -edit view drives cell keys, so it stays a cell screen. The snapshot and the parity
+            // harness attach no settings window, so their frames are the cells as before.
+            if (!editing && TryOpenNativeSettings(SectionForKey(screen.Key)))
+            {
+                SyncInputWidth();
+                return RenderFrame();
+            }
+
             _settings.OpenForSnapshot(screen.Key, screen.Open());
             if (editing)
             {
@@ -1963,7 +2583,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// hung/OOM'd.) A frame also arranges the layout, so control bounds are only real after one has
     /// been rendered.
     /// </summary>
-    private string RenderFrame() => HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
+    private string RenderFrame()
+    {
+        DrainHeadlessImageWork();
+        return HeadlessFrameCapture.Capture(_system.ConsoleDriver, _system.ForceRender);
+    }
 
     /// <summary>
     /// Renders one more frame, the way a test drives the client on past a change it has just made —
@@ -2069,7 +2693,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void AppendDemoLine(string windowId, StyledLine line)
     {
         var shown = _config.Text.DetectLinks ? UrlDetector.ApplyToLine(line) : line;
-        AppendWindowLine(windowId, _formatter.ToMarkup(shown), StampNow());
+        AppendWindowLine(windowId, shown, StampNow());
     }
 
     private void LoadDemoScene()
@@ -2098,13 +2722,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             new StyledSpan("  ", TextStyle.Default),
             Link("east"),
         });
-        AppendWindowLine(MainWindowId, _formatter.ToMarkup(exits), StampNow());
+        AppendWindowLine(MainWindowId, exits, StampNow());
 
         // A trigger-highlighted line: carries a left-rule colour, so it gets the 2-col rule treatment.
         var highlighted = new StyledLine(
             new[] { new StyledSpan("[public] Rivane: to the crypt, then!", TextStyle.Default) },
             TerminalColor.FromRgb(0x00, 0xf5, 0xb7));
-        AppendWindowLine(MainWindowId, _formatter.ToMarkup(highlighted), StampNow());
+        AppendWindowLine(MainWindowId, highlighted, StampNow());
 
         // The Chat spawn window already exists (opened by the resumed session); feed its backlog and
         // leave it in the background with unread, as if lines arrived while another tab was focused.
@@ -2119,7 +2743,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             foreach (var line in chatParser.Feed(text + "\n"))
             {
-                AppendWindowLine(chatId, _formatter.ToMarkup(line), StampNow());
+                AppendWindowLine(chatId, line, StampNow());
             }
 
             _workspace.NoteActivity(chatId); // each line accrues unread while Chat is in the background
@@ -2131,8 +2755,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // server agreed to UTF-8, which the row draws unqualified. A world that pinned an encoding
         // would read "utf-8 forced" and a server that never negotiated "utf-8 assumed".
         _demoEncoding = new SessionEncoding(Encoding.UTF8, EncodingSource.Negotiated);
-        _statusBar.SetContent(new List<string> { StatusBarMarkup("Corvid", "connected") });
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        _statusModel = StatusBarRow("Corvid", "connected");
+        _statusBar.SetContent(new List<string> { StatusRowMarkup(_statusModel) });
+        RefreshHeader();
         _input.SetAndNotify("say hello there");
         RebuildPaneArea(); // realise the Chat spawn tab, then refresh badges
     }
@@ -2254,14 +2879,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
             foreach (var line in window.Lines)
             {
-                AppendWindowLine(windowId, _formatter.ToMarkup(line.Line), line.Stamp);
+                AppendWindowLine(windowId, line.Line, line.Stamp);
             }
 
             // The boundary marker carries no stamp: it did not arrive, it was drawn, and a timestamp
             // gutter beside it would be claiming a time for a row the game never sent.
+            var restored = window.Lines.Count;
+            var written = window.LastWritten;
             AppendWindowLine(
                 windowId,
-                RestoreBarRenderer.Bar(window.Lines.Count, window.LastWritten, FrozenAccentHex()));
+                RestoreBarRenderer.Bar(restored, written, FrozenAccentHex(), BarWidth(windowId)),
+                bar: accent => RestoreBarRenderer.Bar(restored, written, accent, BarWidth(windowId)));
 
             restoredWindows++;
             restoredLines += window.Lines.Count;
@@ -2393,6 +3021,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void InitDemoRuntimeState()
     {
+        // The demo's world directory answers from memory, so Browse worlds lists and picks without a byte leaving.
+        WorldFetch ??= DemoWorldFetch;
+
         foreach (var (world, character) in StartupConnections.Resolve(_config))
         {
             var key = $"{world.Name}.{character?.Name ?? world.Name}";
@@ -2435,16 +3066,39 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(startup);
 
+        // A launch has one startup pass. The window's demo lays its scene out on the loop's first tick and the
+        // welcome scene runs this pass itself, and then Run schedules its own — which raised the empty
+        // configuration's notice twice, two identical toasts stacked in the window. The second is the one ignored.
+        if (_startupRan)
+        {
+            return;
+        }
+
+        _startupRan = true;
+
         if (startup.Count == 0)
         {
             // Two different states, and telling them apart is the whole value of the message: nothing
             // configured is a client with nothing to do yet, while worlds configured and none marked is
             // a client doing exactly what it was told. The second is Info for that reason — and neither
             // carries a key chip, because no surface refused anything; the text names the keys instead.
+            // The demo scene declares its connections without dialling them (_demoConnectedKeys), so the header and
+            // the rail already say Corvid is connected: "nothing connects at start" under them contradicted the frame.
             var empty = _config.Worlds.Count == 0;
-            Notice(
-                empty ? NoWorldsNotice : NothingAtStartNotice,
-                empty ? MessageSeverity.Warning : MessageSeverity.Info);
+            if (empty || _demoConnectedKeys.Count == 0)
+            {
+                Notice(
+                    empty ? NoWorldsNoticeFor(HeaderWidth()) : NothingAtStartNoticeFor(HeaderWidth()),
+                    empty ? MessageSeverity.Warning : MessageSeverity.Info);
+            }
+
+            // And the first run gets somewhere to start from: the welcome, over the notice it leaves behind
+            // when it is closed.
+            if (empty)
+            {
+                ShowWelcome();
+            }
+
             return;
         }
 
@@ -2470,9 +3124,29 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         await Task.WhenAll(opened.Select(o => DialAtStartupAsync(o.Session))).ConfigureAwait(false);
     }
 
-    /// <summary>The empty-workspace message when there is nothing to connect because there is nothing at all.</summary>
+    /// <summary>
+    /// The empty-workspace message when there is nothing to connect because there is nothing at all. It is what
+    /// the welcome leaves behind when it is closed, so it names the welcome's way back as well as the two ways
+    /// in; and it is short enough for an 80-column status row, which a longer one wrapped onto a second row.
+    /// </summary>
+    /// <summary>Set by the first <see cref="StartAsync"/>; a launch runs its startup pass once.</summary>
+    private bool _startupRan;
+
     internal const string NoWorldsNotice =
-        "No world configured. Pass a host/port on the command line, or add one on F5.";
+        "No world configured · /connect <host> <port> · F5 adds one · /welcome";
+
+    /// <summary>
+    /// <see cref="NoWorldsNotice"/>, or a shorter spelling of the same three ways in where the status row is narrower than
+    /// it (60 columns elided <c>/welcome</c> away): the words go, never a command or a key.
+    /// </summary>
+    internal static string NoWorldsNoticeFor(int width) =>
+        new[]
+        {
+            NoWorldsNotice,
+            "No world · /connect <host> <port> · F5 adds one · /welcome",
+            "No world · /connect <host> <port> · F5 · /welcome",
+            "/connect <host> <port> · F5 · /welcome",
+        }.FirstOrDefault(text => width <= 0 || text.Length <= width) ?? "/connect · F5 · /welcome";
 
     /// <summary>
     /// And when there are worlds but none of their characters is marked. It is the ordinary state of a
@@ -2481,6 +3155,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal const string NothingAtStartNotice =
         "nothing connects at start — ⌃P ▸ Switch to …, then Reconnect · F5 ▸ at start marks one";
+
+    /// <summary>
+    /// <see cref="NothingAtStartNotice"/>, or a shorter spelling of the same two ways out where the status row is narrower
+    /// than it (84 cells were elided at 80 columns): the words go, never <c>⌃P ▸ Switch to …</c>, Reconnect or
+    /// <c>F5 ▸ at start</c>.
+    /// </summary>
+    internal static string NothingAtStartNoticeFor(int width) =>
+        FirstFitting(
+            width,
+            NothingAtStartNotice,
+            "nothing connects at start · ⌃P ▸ Switch to …, then Reconnect · F5 ▸ at start",
+            "none at start · ⌃P ▸ Switch to …, then Reconnect · F5 ▸ at start",
+            "⌃P ▸ Switch to …, Reconnect · F5 ▸ at start",
+            "⌃P ▸ Switch to … · F5 ▸ at start");
 
     /// <summary>
     /// One startup dial, whose failure is this connection's own business. Awaited separately from its
@@ -2505,7 +3193,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             OnUi(() => Notice(
                 $"could not connect {SessionTitle(session)} — {Snippet(ex.Message)}",
                 MessageSeverity.Error,
-                "⌃P"));
+                action: ShowMessagesAction));
         }
     }
 
@@ -2570,7 +3258,59 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal Func<string, CancellationToken, Task<byte[]?>>? ImageFetch { get; set; }
 
     /// <summary>Completes when every MXP picture asked for so far has been delivered or given up on.</summary>
-    internal Task InlineImagesSettled => _inlineImages.Pending;
+    internal Task InlineImagesSettled => _headless ? SettleHeadlessImagesAsync() : _inlineImages.Pending;
+
+    /// <summary>
+    /// UI work the picture host hands back, held until whoever drives a headless app collects it.
+    /// <para>
+    /// The host fetches and decodes on the thread pool and hands its results to <see cref="OnImageUi"/>.
+    /// A headless app has no UI thread, and <see cref="OnUiThread"/> there runs the action inline — which
+    /// for these callers means <em>on the pool thread</em>, at the same moment the test or snapshot is
+    /// appending the next line on its own. <see cref="DrawReservedPicture"/> and the append that reads
+    /// <see cref="ReservedPicture.Drawn"/> then raced over the same buffer: the picture set
+    /// <c>Drawn</c> and scanned the lines a moment before the next line landed, that line read
+    /// <c>Drawn</c> a moment before it was set, and the row was left blank for ever. That was the
+    /// intermittent <c>APictureStopsAtTheFirstLineWithoutItsCells</c>. So a headless app queues the work
+    /// and runs it on the driving thread: at the next frame, or while <see cref="InlineImagesSettled"/>
+    /// is awaited — which is also what lets a Kitty transmit, itself UI work the load waits on, finish.
+    /// A real run marshals onto the loop exactly as before.
+    /// </para>
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _headlessImageWork = new();
+
+    private void OnImageUi(Action action)
+    {
+        if (_headless)
+        {
+            _headlessImageWork.Enqueue(action);
+            return;
+        }
+
+        OnUiThread(action);
+    }
+
+    private void DrainHeadlessImageWork()
+    {
+        while (_headlessImageWork.TryDequeue(out var action))
+        {
+            action();
+        }
+    }
+
+    private async Task SettleHeadlessImagesAsync()
+    {
+        while (true)
+        {
+            DrainHeadlessImageWork();
+            var pending = _inlineImages.Pending;
+            if (pending.IsCompleted && _headlessImageWork.IsEmpty)
+            {
+                return;
+            }
+
+            await Task.WhenAny(pending, Task.Delay(5)).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Waits for a snapshot scene's pictures — headless only. A Kitty picture is transmitted on the UI thread,
@@ -2582,7 +3322,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (_headless)
         {
-            _inlineImages.Pending.GetAwaiter().GetResult();
+            SettleHeadlessImagesAsync().GetAwaiter().GetResult();
         }
     }
 
@@ -2702,10 +3442,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         PaneContentFor(windowId, session.World.Name);
         foreach (var line in session.Scrollback.Snapshot())
         {
-            AppendWindowLine(windowId, _formatter.ToMarkup(line));
+            AppendWindowLine(windowId, line);
         }
 
         session.LinePrinted += (_, line) => OnUi(() => OnLine(session, windowId, line));
+
+        // What the session says about its connection is the client's row in this window, never a line of the session:
+        // no transcript, restore log, scene log, trigger or ⌃F sees it (ClientRowRenderer). A reader with no rows hears it.
+        session.ConnectionNoted += (_, note) => OnUi(() =>
+        {
+            AppendClientRow(windowId, note.Label, note.Text);
+            AnnounceLine(windowId, note.ToString());
+            ShowOwedKeyTour(windowId, note);
+        });
         session.PromptChanged += (_, _) => OnUi(() =>
         {
             UpdateStatus();
@@ -2728,6 +3477,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 // after this transition, so a server that does publish overwrites nothing: it adds a
                 // report beside a connection time that is already here.
                 _mssp.RecordConnection(session.World.Host, session.World.Port, _time.GetUtcNow());
+                ScheduleLayoutSuggestion(session);
+                OnFirstRunConnected(session, windowId);
             }
 
             UpdateStatus();
@@ -2741,14 +3492,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         session.MsspReceived += (_, e) => OnUi(() => CaptureMssp(session.World, e.Data));
         // The meters read the session's game data, which the session has already stored by the time this is
         // raised. Only the session the status row describes repaints it.
-        session.GameData.Changed += (_, _) => OnUi(() =>
+        session.GameData.Changed += (_, package) => OnUi(() =>
         {
             if (ReferenceEquals(session, _active))
             {
                 RefreshStatusBar();
             }
+
+            // A panel can have just got its data (vitals, who is here); re-folding is rate-limited and a no-op
+            // when nothing drawn changes, so this costs a dictionary lookup per message.
+            NoteLayoutInput(session.SessionKey);
+            NoteSuggestionSignal(session, package);
         });
         session.SpawnLine += (_, e) => OnUi(() => OnSpawnLine(session, e.Target, e.Line));
+        session.AttentionRequested += (_, e) => OnUi(() => OnAttentionRequested(session, e));
         session.MooEditReceived += (_, edit) => OnUi(() => ReceiveMooEdit(session, edit));
         session.EditGrabbed += (_, text) => OnUi(() => ReceiveGrab(session, windowId, text));
         session.McpStatusChanged += (_, _) => OnUi(() =>
@@ -2772,6 +3529,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         session.EncodingChanged += (_, _) => OnUi(UpdateStatus);
         RefreshTabTitles();
         UpdateStatus();
+        ApplyLayoutOnBind(session);
     }
 
     /// <summary>
@@ -2813,7 +3571,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Notice(
                 $"{who} is assigned a trigger set called {orphan}, and no such set exists — F2 defines sets, F5 assigns them",
                 MessageSeverity.Warning,
-                "⌃P");
+                "⌃P",
+                new NoticeAction("screen:worlds", "Open F5"));
         }
     }
 
@@ -2899,7 +3658,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             if (FindCharacter(sessionKey) is not { } found)
             {
-                Notice($"no character called {sessionKey} is configured — F5 adds one", key: "⌃P");
+                Notice($"no character called {Snippet(DisplayName(sessionKey))} is configured — F5 adds one");
                 return;
             }
 
@@ -2917,10 +3676,33 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         UpdateStatus();
         UpdateInputChrome();
 
-        var state = session.IsConnected
-            ? "connected"
-            : "offline — Alt+R (⌃P ▸ Reconnect) connects it";
-        Notice($"switched to {SessionTitle(session)} · {state}", MessageSeverity.Info, "⌃P");
+        Notice(
+            SwitchedNotice(SessionTitle(session), session.IsConnected),
+            MessageSeverity.Info,
+            action: session.IsConnected ? null : new NoticeAction("world:reconnect", "Reconnect"));
+    }
+
+    /// <summary>
+    /// What a switch says, fitted to the status row: the words shorten (<c>switched to</c>, then the ⌃P path behind the
+    /// key) and the key that reconnects stays.
+    /// </summary>
+    private string SwitchedNotice(string title, bool connected)
+    {
+        if (connected)
+        {
+            return FirstFitting(NoticeRoom(), $"switched to {title} · connected", $"{title} · connected");
+        }
+
+        var key = CommandKey("world:reconnect");
+        var hint = ReconnectHint();
+        var way = key ?? "⌃P ▸ Reconnect";
+        return FirstFitting(
+            NoticeRoom(),
+            $"switched to {title} · offline — {hint} connects it",
+            $"switched to {title} · offline — {way} connects it",
+            $"{title} · offline — {way} connects it",
+            $"{title} · offline — {way} connects",
+            $"offline — {way} connects it");
     }
 
     /// <summary>
@@ -2981,6 +3763,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         MarkupFormatter.WithTimestamp(line.Markup, ShowTimestamps ? line.Stamp : null);
 
     /// <summary>
+    /// Appends one of a world's lines to a window, formatted against the theme in force and kept beside its markup
+    /// (<see cref="PaneLine.Source"/>) so a theme change can format it again.
+    /// </summary>
+    private void AppendWindowLine(string windowId, StyledLine line, string? stamp = null) =>
+        AppendWindowLine(windowId, _formatter.ToMarkup(line), stamp, source: line);
+
+    /// <summary>
     /// Appends one already-formatted markup line to a window: records it in the scrollback buffer and,
     /// if the window has a live control, paints it. A frozen pane's live control is its tail region, so
     /// new lines land below the <c>▲ FROZEN ⌥F</c> bar while the pinned scrollback stays put.
@@ -2994,7 +3783,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         string markup,
         string? stamp = null,
         long imageAnchor = 0,
-        PictureSlots? pictures = null)
+        PictureSlots? pictures = null,
+        StyledLine? source = null,
+        Func<string, string>? bar = null)
     {
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
@@ -3020,8 +3811,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         // The plain text is computed here, once, and not on demand: ⌃F refilters on every keystroke over
-        // every line of every window (see PaneLine.Plain).
-        buffer.Add(new PaneLine(markup, stamp, MarkupText.Plain(markup), imageAnchor, pictures));
+        // every line of every window (see PaneLine.Plain). A world's line is read from its spans, not from the
+        // markup: the markup carries the client's own decoration (a highlight's `▌ ` left rule), and a search or a
+        // trigger's live test that saw it would miss `^[public]` on the very line that rule highlighted.
+        // A chrome row (one drawn by a bar function) carries no plain text, so ⌃F never finds the client's own rows.
+        buffer.Add(new PaneLine(markup, stamp, bar is not null ? string.Empty : source?.Text ?? MarkupText.Plain(markup), imageAnchor, pictures, source, bar));
 
 
         // Cap what the pane holds, and trim its control with it. The control re-parses every line it
@@ -3093,6 +3887,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             control.AppendLine(Compose(buffer[^1]));
         }
+
+        RefreshScrollTail(windowId);
     }
 
     /// <summary>The most lines a pane's buffer (and so its control) is trimmed back to.</summary>
@@ -3221,7 +4017,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// Keep new callers going through here rather than touching a control's content directly.
     /// </para>
     /// </summary>
-    private void FeedRange(MarkupControl control, List<PaneLine> buffer, int from, int count)
+    private void FeedRange(MarkupControl control, List<PaneLine> buffer, int from, int count, bool keepSelection = false)
     {
         var start = Math.Clamp(from, 0, buffer.Count);
         var length = Math.Clamp(count, 0, buffer.Count - start);
@@ -3240,7 +4036,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         //
         // MarkupControl.SetContent does not do this itself — only its append path does
         // (OnContentAppended) — so it cannot be left to the framework.
-        control.ClearSelection();
+        //
+        // The one exception is a re-feed that changes colours and nothing else (a theme change,
+        // RestylePaneLines): every row holds the same text in the same place, so the selection still
+        // describes exactly what was dragged across, and dropping it would punish a reader for opening F7.
+        if (!keepSelection)
+        {
+            control.ClearSelection();
+        }
+
         control.SetContent(markup);
     }
 
@@ -3290,11 +4094,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// no arrival times and have no gutter to gain.
     /// </para>
     /// </summary>
-    private void RepaintPanes()
+    private void RepaintPanes(bool keepSelection = false)
     {
         foreach (var windowId in _lines.Keys)
         {
-            RepaintPane(windowId);
+            RepaintPane(windowId, keepSelection);
         }
     }
 
@@ -3305,7 +4109,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// (<see cref="AwayBarRenderer"/>) is one — it happens when the reader comes back and when they have
     /// read what they missed, not per line and not per frame.
     /// </summary>
-    private void RepaintPane(string windowId)
+    private void RepaintPane(string windowId, bool keepSelection = false)
     {
         // Skipped for the reason RepaintPanes gives: the web view's pane is not fed from this buffer at
         // all, so re-feeding it would replace the page with whatever last printed into that window.
@@ -3320,12 +4124,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var split = Math.Clamp(point, 0, buffer.Count);
             if (_frozenPanes.TryGetValue(windowId, out var frozen))
             {
-                FeedRange(frozen, buffer, 0, split);
+                FeedRange(frozen, buffer, 0, split, keepSelection);
             }
 
             if (_panes.TryGetValue(windowId, out var tail))
             {
-                FeedRange(tail, buffer, split, buffer.Count - split);
+                FeedRange(tail, buffer, split, buffer.Count - split, keepSelection);
             }
 
             return;
@@ -3333,8 +4137,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (_panes.TryGetValue(windowId, out var control))
         {
-            FeedRange(control, buffer, 0, buffer.Count);
+            FeedRange(control, buffer, 0, buffer.Count, keepSelection);
         }
+
+        RefreshScrollTail(windowId);
     }
 
     /// <summary>
@@ -3375,6 +4181,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void NoteReaderInput(long at)
     {
+        NoteAttended();
         foreach (var (windowId, buffer) in _lines)
         {
             _awayBoundary[windowId] = _awayPending.GetValueOrDefault(windowId);
@@ -3405,7 +4212,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void MarkWhereTheReaderLeft(TimeSpan away)
     {
-        var accent = FrozenAccentHex();
         foreach (var windowId in _lines.Keys.ToArray())
         {
             if (string.Equals(windowId, WebWindowId, StringComparison.Ordinal))
@@ -3446,7 +4252,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            InsertChromeRow(windowId, at, AwayBarRenderer.Bar(missed, away, accent));
+            InsertChromeRow(windowId, at, ink => AwayBarRenderer.Bar(missed, away, ink, BarWidth(windowId)));
 
             var mark = new AwayMark { Index = at, DrawnAfter = _focus.InputCount, DrawnAt = _time.GetUtcNow() };
             _awayMarks[windowId] = mark;
@@ -3517,7 +4323,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 at = Math.Clamp(at, 0, buffer.Count);
             }
 
-            InsertChromeRow(windowId, at, AwayBarRenderer.Missed(buffer.Count - at, FrozenAccentHex()));
+            var count = buffer.Count - at;
+            InsertChromeRow(windowId, at, accent => AwayBarRenderer.Missed(count, accent, BarWidth(windowId)));
 
             var mark = new AwayMark
             {
@@ -3772,9 +4579,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         else
         {
             slots.Sort((a, b) => a.Start.CompareTo(b.Start));
+            var cuts = slots.Select(slot => (slot.Start, slot.Columns)).ToArray();
             pictures = new PictureSlots(
-                _formatter.ToMarkupPieces(line, slots.Select(slot => (slot.Start, slot.Columns)).ToArray()),
-                slots.Select(slot => (slot.Picture, slot.Row, slot.Columns)).ToArray());
+                _formatter.ToMarkupPieces(line, cuts),
+                slots.Select(slot => (slot.Picture, slot.Row, slot.Columns)).ToArray())
+            {
+                Cuts = cuts,
+            };
             foreach (var picture in arrived)
             {
                 pictures.Draw(picture.Id, picture.Drawn!);
@@ -3783,7 +4594,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             markup = pictures.Compose();
         }
 
-        AppendWindowLine(windowId, markup, stamp, anchor, pictures);
+        AppendWindowLine(windowId, markup, stamp, anchor, pictures, line);
 
         IGraphicsProtocol? Kitty() => WebGraphicsSurface().CanPlaceKitty ? _system.ConsoleDriver as IGraphicsProtocol : null;
         if (anchor != 0)
@@ -3871,7 +4682,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // picture by its name.
         if (first && empty)
         {
-            buffer[at] = buffer[at] with { Markup = rows[0] };
+            buffer[at] = buffer[at] with { Markup = rows[0], Source = null };
             InsertImageRows(windowId, anchor, rows.Skip(1).ToArray(), repaint: true);
         }
         else if (empty && at + 1 < buffer.Count && buffer[at + 1].ImageAnchor == -anchor)
@@ -3879,13 +4690,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // The last label of a line holding only pictures, with the earlier ones already under it. This
             // picture cannot take the line, or it would sit above them; the first row under the line moves
             // up into it instead, so no blank row is left above the pictures.
-            buffer[at] = buffer[at] with { Markup = buffer[at + 1].Markup };
+            buffer[at] = buffer[at] with { Markup = buffer[at + 1].Markup, Source = buffer[at + 1].Source };
             RemoveChromeRow(windowId, at + 1);
             InsertImageRows(windowId, anchor, rows, repaint: true);
         }
         else
         {
-            buffer[at] = buffer[at] with { Markup = _formatter.ToMarkup(rest) };
+            buffer[at] = buffer[at] with { Markup = _formatter.ToMarkup(rest), Source = rest };
             InsertImageRows(windowId, anchor, rows, repaint: true);
         }
     }
@@ -4209,6 +5020,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 control.AppendLine(row);
             }
+
+            RefreshScrollTail(windowId);
         }
         else
         {
@@ -4231,7 +5044,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The row carries no plain text, so a search cannot find it (see <see cref="PaneLine.Plain"/>).
     /// </para>
     /// </summary>
-    private void InsertChromeRow(string windowId, int at, string markup)
+    private void InsertChromeRow(string windowId, int at, Func<string, string> bar)
     {
         if (!_lines.TryGetValue(windowId, out var buffer))
         {
@@ -4239,7 +5052,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         at = Math.Clamp(at, 0, buffer.Count);
-        buffer.Insert(at, new PaneLine(markup));
+        buffer.Insert(at, new PaneLine(bar(FrozenAccentHex()), Bar: bar));
 
         if (_freezePoints.TryGetValue(windowId, out var freeze) && freeze > at)
         {
@@ -4359,9 +5172,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// a search bar was on screen, which is a defect nobody would connect to search.
     /// </para>
     /// </summary>
-    private void GoToSearchHit(SearchRow row, string query, int ordinal, int total)
+    private void GoToSearchHit(SearchModel model, int index)
     {
-        _lastSearch = (query, _search.Regex, _search.AllWindows);
+        if (model.Rows[index].IsOlder)
+        {
+            // A hit in older history: the pane if it still holds the line, else the read-only history view.
+            GoToOlderHit(model, model.Rows[index]);
+            return;
+        }
+
+        GoToSearchHit(model.Rows[index], model.Query, model.Regex, model.AllWindows, index + 1, model.HeldRows);
+    }
+
+    /// <summary>Goes to <paramref name="row"/>, the <paramref name="ordinal"/>th of <paramref name="total"/> hits for a search.</summary>
+    private void GoToSearchHit(SearchRow row, string query, bool regex, bool all, int ordinal, int total)
+    {
+        _lastSearch = (query, regex, all);
 
         var previous = RemoveSearchBar();
         if (previous is { } cleared && !string.Equals(cleared, row.WindowId, StringComparison.Ordinal))
@@ -4385,7 +5211,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var at = Math.Clamp(row.LineIndex, 0, buffer.Count);
-        InsertChromeRow(row.WindowId, at, SearchBarRenderer.Bar(query, ordinal, total, FrozenAccentHex()));
+        var searchWindow = row.WindowId;
+        InsertChromeRow(row.WindowId, at, accent => SearchBarRenderer.Bar(query, ordinal, total, accent, BarWidth(searchWindow)));
         _searchMark = (row.WindowId, at);
 
         RepaintPane(row.WindowId);
@@ -4449,7 +5276,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             next = current >= 0 ? (current + 1) % rows.Count : 0;
         }
 
-        GoToSearchHit(rows[next], last.Query, next + 1, rows.Count);
+        GoToSearchHit(rows[next], last.Query, last.Regex, last.All, next + 1, rows.Count);
     }
 
     /// <summary>
@@ -4525,7 +5352,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(windowId, line, stamp);
         RecordForRestore(session, windowId, WindowTitle(windowId), line, stamp);
+        RecordForScene(windowId, line);
         AnnounceLine(windowId, line.Text);
+        NoteUnseenLine();
 
         if (!_workspace.IsCaughtUp(windowId))
         {
@@ -4585,7 +5414,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var stamp = StampNow();
         AppendSessionLine(window.Id, line, stamp);
         RecordForRestore(session, window.Id, window.Title, line, stamp);
+        RecordForScene(window.Id, line);
         AnnounceLine(window.Id, line.Text);
+        NoteUnseenLine();
 
         // A first-seen destination adds a tab to its pane, so rebuild; otherwise just refresh badges.
         if (existed)
@@ -4594,6 +5425,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
         else
         {
+            PlaceNewSpawnWindow(session, window.Id);
             RebuildPaneArea();
         }
     }
@@ -4609,10 +5441,58 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _workspace.SetUnsentInput(windowId, AnyBarHasText());
         RefreshTabTitles();
 
+        // `/help [words]` opens help, searched for the words.
+        if (command.StartsWith("/help", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 5 || command[5] == ' '))
+        {
+            HelpCommand(command[5..]);
+            return;
+        }
+
         // `/web <url>` opens the in-TUI web view; everything else goes to the world.
         if (command.StartsWith("/web ", StringComparison.OrdinalIgnoreCase))
         {
             OpenWeb(windowId, command[5..].Trim());
+            return;
+        }
+
+        // `/connect` opens a world by name, or adds one from a host and dials it.
+        if (command.StartsWith("/connect", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            ConnectCommand(windowId, command[8..].Trim());
+            return;
+        }
+
+        // `/browse [words]` opens Browse worlds (mu*index); `/browse N` picks a row it said as lines.
+        if (command.StartsWith("/browse", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 7 || command[7] == ' '))
+        {
+            BrowseCommand(command[7..]);
+            return;
+        }
+
+        // `/welcome` shows the first-run welcome again; `/welcome layout …` picks its starting layout.
+        if (command.StartsWith("/welcome", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 8 || command[8] == ' '))
+        {
+            WelcomeCommand(command[8..].Trim());
+            return;
+        }
+
+        // `/import <path>` reads another client's setup and opens its review; nothing is written before ⏎.
+        if (command.StartsWith("/import", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 7 || command[7] == ' '))
+        {
+            ImportCommand(command[7..]);
+            return;
+        }
+
+        // `/script edit|new <name>` opens a script file from the scripts folder in the editor.
+        if (command.StartsWith("/script", StringComparison.OrdinalIgnoreCase)
+            && (command.Length == 7 || command[7] == ' '))
+        {
+            ScriptCommand(command[7..].Trim());
             return;
         }
 
@@ -4673,7 +5553,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // by the line quietly going to whichever world was active before you navigated.
         if (SendTarget() is { } target)
         {
-            _ = target.SendUserInputAsync(command);
+            _ = target.SendTypedAsync(command);
             return;
         }
 
@@ -4722,15 +5602,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Any surface, not just a settings screen. The settings screens are the case with teeth — see the
         // paste reasoning above — but the rule this app already states is that a modal surface owns the
         // screen, and the composer is one, so it may not be stacked on top of another.
-        if (!_composer.IsOpen && AnyOverlayOpen)
+        if (!ComposerOpen && AnyOverlayOpen)
         {
             RefuseCommand($"close {OpenOverlayName()} first — the composer cannot open over it");
             return;
         }
 
-        if (_composer.IsOpen)
+        if (ComposerOpen)
         {
-            _composer.Close();
+            CloseComposer();
             return;
         }
 
@@ -4743,13 +5623,46 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 ? kept
                 : new ComposeResult(string.Empty, ComposeEscaping.AsTyped);
 
-        _composer.Toggle(
-            session is null ? string.Empty : SessionTitle(session),
+        // The target is resolved the way the docked composer's is (DescribeDocked): the session's title, else the
+        // window's owner by name, with nothing sendable. "no connection" is left for a window that belongs to nobody.
+        var target = session is not null
+            ? SessionTitle(session)
+            : _workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner
+                ? FindCharacter(owner)?.Character.Name ?? string.Empty
+                : string.Empty;
+        OpenComposer(
+            target,
             draft.Body,
             draft.Escaping,
-            canSend: session is not null,
-            draft.Edit);
+            canSend: ComposerCanSend(session, key),
+            draft.Edit,
+            verb: draft.Verb ?? string.Empty);
     }
+
+    /// <summary>
+    /// A post was sent: its text is forgotten and its command kept (with its escaping), so the next post from that
+    /// character starts on the same verb. A post with no command leaves no draft at all.
+    /// </summary>
+    private void ForgetComposeText(string key, ComposeEscaping escaping, string verb)
+    {
+        if (verb.Length == 0)
+        {
+            _composeDrafts.Remove(key);
+        }
+        else
+        {
+            _composeDrafts[key] = new ComposeResult(string.Empty, escaping, Verb: verb);
+        }
+    }
+
+    /// <summary>
+    /// Whether a composer for <paramref name="ownerKey"/>'s window offers a send: it has a session, or — in the demo
+    /// scene, which opens no sockets — the scene declares that character connected (<see cref="ConnectedCharacters"/>),
+    /// so the composer's footer never says "nothing connected" under a header and rail saying the opposite.
+    /// </summary>
+    private bool ComposerCanSend(WorldSession? session, string? ownerKey) =>
+        session is not null
+        || (_sessions.Sessions.Count == 0 && ownerKey is not null && _demoConnectedKeys.Contains(ownerKey));
 
     /// <summary>
     /// Which character a composed post belongs to: the window's own owner, never <c>_active</c>. Null for
@@ -4784,6 +5697,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void SendComposed(ComposeResult result)
     {
+        // A script is saved to disk, not sent: it needs no connection, only the scripts folder.
+        if (result.Script is { } script)
+        {
+            SaveScriptEdit(script, result.Body);
+            return;
+        }
+
         var windowId = ActiveWindowId();
         if (WindowSession(windowId) is not { } session)
         {
@@ -4797,7 +5717,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (ComposeMessage.Build(result.Body, result.Escaping) is not { } line)
+        if (ComposeMessage.Build(result.Verb, result.Body, result.Escaping) is not { } line)
         {
             // An empty buffer is not a blank command to send: a MUSH answers a blank line, and some log
             // it. Said out loud rather than closing quietly, so ⌃S on an empty window is not mistaken
@@ -4809,8 +5729,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Close first, then forget: closing raises Closed, which is what keeps a draft, so a removal
         // before it is undone by the very act of shutting the window — the post came back next time it
         // was opened, already sent.
-        _composer.Close();
-        _composeDrafts.Remove(session.SessionKey);
+        CloseComposer();
+        ForgetComposeText(session.SessionKey, result.Escaping, result.Verb ?? string.Empty);
+        SyncDockedComposers(session.SessionKey);
         HistoryFor(BarKind(ActiveBar())).Add(line);
         _ = session.SendUserInputAsync(line);
     }
@@ -4821,6 +5742,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void KeepComposeDraft(ComposeResult result)
     {
+        // A script's unsaved text is kept by file, apart from the post drafts and the MOO edits.
+        if (result.Script is { } script)
+        {
+            KeepScriptBuffer(script, result.Body);
+            return;
+        }
+
         if (ComposeDraftKey(ActiveWindowId()) is not { } key)
         {
             return;
@@ -4833,13 +5761,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (result.Body.Trim().Length == 0)
+        if (result.Body.Trim().Length == 0 && string.IsNullOrEmpty(result.Verb))
         {
             _composeDrafts.Remove(key);
-            return;
+        }
+        else
+        {
+            _composeDrafts[key] = result;
         }
 
-        _composeDrafts[key] = result;
+        SyncDockedComposers(key);
     }
 
     /// <summary>The composer, for the tests and the snapshot views.</summary>
@@ -4856,14 +5787,29 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var window = _workspace.FindWindow(windowId);
         if (window?.SessionKey is { Length: > 0 } owner)
         {
-            return $"{owner} has no open session — ⌃P ▸ Switch to it opens one; nothing was sent";
+            var name = Snippet(DisplayName(owner));
+            return FirstFitting(
+                NoticeRoom("⌃P"),
+                $"{name} has no open session — ⌃P ▸ Switch to it opens one; nothing was sent",
+                $"{name} has no open session — ⌃P ▸ Switch to it; nothing was sent",
+                $"{name}: no session — ⌃P ▸ Switch to it; nothing was sent",
+                "no session — ⌃P ▸ Switch to it; nothing was sent",
+                "no session · ⌃P ▸ Switch to; nothing sent");
         }
 
         // Through Snippet: a window's title can be a world's own text (the web view is titled from the
         // page it loaded), and the status row is no place for an unbounded string off the wire.
         return _sessionWindows.Count == 0
-            ? "nothing is connected — ⌃P ▸ Switch to a character; nothing was sent"
-            : $"{Snippet(window?.Title ?? windowId)} belongs to no connection — nothing was sent";
+            ? FirstFitting(
+                NoticeRoom("⌃P"),
+                "nothing is connected — ⌃P ▸ Switch to a character; nothing was sent",
+                "nothing connected — ⌃P ▸ Switch to; nothing was sent",
+                "⌃P ▸ Switch to; nothing sent")
+            : FirstFitting(
+                NoticeRoom("⌃P"),
+                $"{Snippet(window?.Title ?? windowId)} belongs to no connection — nothing was sent",
+                "this pane belongs to no connection — nothing was sent",
+                "no connection here — nothing was sent");
     }
 
     /// <summary>
@@ -5026,12 +5972,21 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        if (NativeModalOf(SurfaceCatalog.History) is { } open)
+        {
+            CloseNativeModal(open);
+            return;
+        }
+
         if (AnyOverlayOpen || _moveMode)
         {
             return;
         }
 
-        _historySearch.Toggle();
+        if (!TryOpenNativeHistory())
+        {
+            _historySearch.Toggle();
+        }
     }
 
     /// <summary>
@@ -5041,8 +5996,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// how the framework happens to dispatch, and the next surface may not be modal.
     /// </summary>
     private bool AnyOverlayOpen =>
-        _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-        || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen;
+        PaletteIsOpen || _settings.IsOpen || _quit.IsOpen || NativeModalOpen || _messageLog.IsOpen || _historySearch.IsOpen
+        || _prefixPanel.IsOpen || ComposerOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen || _sendMenu.IsOpen
+        || _layoutsView.IsOpen || _welcomeView.IsOpen || _helpView.IsOpen;
 
     /// <summary>
     /// Opens the ⌃F search surface, or closes it when the chord arrives again.
@@ -5061,7 +6017,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (_composer.IsOpen)
+        if (NativeModalOf(SurfaceCatalog.Search) is { } open)
+        {
+            CloseNativeModal(open);
+            return;
+        }
+
+        if (ComposerOpen)
         {
             RefuseCommand("close the composer first — search cannot open over it");
             return;
@@ -5072,7 +6034,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        _search.Toggle();
+        if (!TryOpenNativeSearch())
+        {
+            _search.Toggle();
+        }
     }
 
     /// <summary>
@@ -5136,7 +6101,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private bool ComposerIsInTheWay(string surface)
     {
-        if (!_composer.IsOpen)
+        if (!ComposerOpen)
         {
             return false;
         }
@@ -5152,8 +6117,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private string OpenOverlayName() =>
         _settings.IsOpen ? "the settings screen"
-        : _palette.IsOpen ? "the command surface"
+        : PaletteIsOpen ? "the command surface"
         : _quit.IsOpen ? "the quit prompt"
+        : NativeModalName is { } native ? native
         : _messageLog.IsOpen ? "the client messages"
         : _gameData.IsOpen ? "the game data"
         : _packageView.IsOpen ? "the packages"
@@ -5161,6 +6127,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         : _historySearch.IsOpen ? "the history search"
         : _search.IsOpen ? "the search surface"
         : _prefixPanel.IsOpen ? "the pane keys panel"
+        : _welcomeView.IsOpen ? "the welcome"
+        : _helpView.IsOpen ? (_helpView.Mode switch { "dictionary" => "the dictionary offer", "import" => "the import review", "script-console" => "the script console", "history-view" => "the history view", "browse-worlds" => "Browse worlds", _ => "help" })
         : "what is open";
 
     /// <summary>Whether either bar is holding unsent text — what the <c>✎</c> tab marker means.</summary>
@@ -5174,7 +6142,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void SetUpBar(InputBarControl bar, InputBar kind)
     {
-        bar.StickyPosition = StickyPosition.Bottom;
+        // A row of the output's column where the host puts the bars there (WithInputBars), else the window's sticky band.
+        bar.StickyPosition = Host.Chrome.InputInColumn ? StickyPosition.None : StickyPosition.Bottom;
         bar.HorizontalAlignment = HorizontalAlignment.Stretch;
         // Both bands come from the theme through WorkspacePalette, so the armed bar is lit by the very
         // same tone as the focused pane and the idle one sits on the same recessed plane as the rest of
@@ -5187,6 +6156,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // and the first chrome refresh.
         PaintInputBands(PaneTint.None);
         bar.HasSibling = () => _second.Visible;
+
+        // A host that draws the field (the window) gets band-coloured padding inside it at both ends of every row: the
+        // gutter's leading columns on the left, a margin the editor does not wrap into on the right.
+        if (Host.Chrome.Input)
+        {
+            bar.LeadingPad = InputLayout.HostFieldPad;
+            bar.Margin = new Margin(0, 0, InputLayout.HostFieldPad, 0);
+        }
         bar.Complete = CompleteWord;
         bar.Entered += text => OnCommandEntered(kind, text);
         bar.Changed += text => OnInputChanged(kind, text);
@@ -5208,8 +6185,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void ArmBar(InputBarControl bar)
     {
         _armed = bar.Visible ? bar : _input;
-        _input.Armed = ReferenceEquals(_armed, _input);
-        _second.Armed = ReferenceEquals(_armed, _second);
+        // A docked composer holding the keyboard keeps it: this is re-asserted on every layout change, and only
+        // the explicit gestures (the ⌃↑/⌃↓ ladder, ⇥ between bars, Esc) hand it back — see ReleaseComposer.
+        SyncComposerBands();
         _window.FocusControl(_armed);
         UpdateInputChrome();
     }
@@ -5231,7 +6209,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        var bar = ActiveBar();
+        // The armed composer, when one holds the keyboard, is what typing, paste and the caret follow instead.
+        IInteractiveControl bar = ArmedComposer()?.Focused ?? (IInteractiveControl)ActiveBar();
         if (ReferenceEquals(_window.FocusManager.FocusedControl, bar))
         {
             return;
@@ -5318,9 +6297,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void SyncInputHeights(bool secondShown)
     {
         var room = InputLayout.Room(HeaderHeight(), ChromeRows(), secondShown ? 2 : 1);
+
+        // A narrow or short window starts an empty command line at one row; it still grows to MaxRows as it wraps.
+        var rows = CompactInput() ? InputSettings.MinRows : _config.Input.Rows;
         foreach (var bar in new[] { _input, _second })
         {
-            bar.MinRows = Math.Min(_config.Input.Rows, room);
+            bar.MinRows = Math.Min(rows, room);
             bar.MaxRows = Math.Min(_config.Input.MaxRows, room);
         }
     }
@@ -5331,9 +6313,26 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// count is arithmetic on the text rather than a reading of the last frame: the veto has to be right
     /// on the first frame too, and nothing has been arranged yet when the window is built.
     /// </summary>
+    /// <summary>
+    /// The rows from the top of the input band (the prompt row, then the command lines) to the desktop's foot, as last
+    /// arranged — what a popup must leave uncovered so the line being typed stays in view. Zero before anything is
+    /// arranged.
+    /// </summary>
+    private int InputBandRows()
+    {
+        var tops = new[] { (IWindowControl)_promptRow, _input, _second }
+            .Where(c => c.Visible)
+            .Select(c => BoundsOf(c))
+            .Where(b => b is { Height: > 0 })
+            .Select(b => b!.Value.Y - _system.DesktopUpperLeft.Y)
+            .ToList();
+        return tops.Count == 0 ? 0 : Math.Max(0, _system.DesktopDimensions.Height - tops.Min());
+    }
+
     private int ChromeRows() =>
-        InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth())
-        + InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth())
+        // No row for a header the host draws: it is not in the cells, so the bars may have the row it would take.
+        (_header.Visible ? InputLayout.WrappedRows(MarkupWidth(_header.Text), HeaderWidth()) : 0)
+        + (_statusBar.Visible ? InputLayout.WrappedRows(MarkupWidth(_statusBar.Text), HeaderWidth()) : 0)
         // One, not WrappedRows: the prompt row is elided to a single row by construction, precisely so
         // that a long prompt cannot take a second row off the panes. See PromptRowRenderer.
         + (_promptRow.Visible ? 1 : 0);
@@ -5624,6 +6623,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Up out of the second command line before anything else — it is the station above it.
         if (move == PaneDirection.Up && ReferenceEquals(_armed, _second) && _second.Visible)
         {
+            _composerReleased = true;
             ArmBar(_input);
             return true;
         }
@@ -5637,6 +6637,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Down off the last pane lands on the command lines, which are drawn below them.
         if (move == PaneDirection.Down && _second.Visible && ReferenceEquals(_armed, _input))
         {
+            _composerReleased = true;
             ArmBar(_second);
             return true;
         }
@@ -6036,6 +7037,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return false;
         }
 
+        if (TryEndReturnsFromSplit(e))
+        {
+            return true;
+        }
+
         Action<ScrollablePanelControl>? scroll = (key, ctrl, shift) switch
         {
             (ConsoleKey.PageUp, false, _) => panel => panel.ScrollVerticalBy(-PageRows(panel)),
@@ -6149,8 +7155,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void SyncScrollbackState(string? windowId = null)
     {
         windowId ??= ActiveWindowId();
+
+        // A split pane is not one whose new lines go unseen — they are arriving in its live tail — so it is
+        // not "scrolled back" for the unread badge or the activity bar, whatever its history viewport says.
+        SyncScrollSplit(windowId);
         if (_paneScrolls.GetValueOrDefault(windowId) is { } live
-            && _workspace.SetScrolledBack(windowId, !live.AutoScroll))
+            && _workspace.SetScrolledBack(windowId, !live.AutoScroll && !IsScrollSplit(windowId)))
         {
             RefreshTabTitles();
         }
@@ -6177,11 +7187,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// sign that a pane is not showing its newest line, because the panes deliberately carry no
     /// scrollbar (see <see cref="ScrollViewFor"/>), so it has to be right rather than decorative.
     /// </summary>
-    private string ScrollbackStatus()
+    private StatusSegment? ScrollbackStatus()
     {
         if (ScrollTarget() is not { CanScrollDown: true } panel)
         {
-            return string.Empty;
+            return null;
         }
 
         // Kept short on purpose. The row right-aligns a cluster of five segments and only guarantees a
@@ -6198,7 +7208,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // segment is the same width whatever it says.
         var below = Math.Max(1, panel.TotalContentHeight - panel.ViewportHeight - panel.VerticalScrollOffset);
         var distance = UnreadBadge.Format(below).PadLeft(UnreadBadge.FieldWidth);
-        return $"[{_ink.Notice}]{Glyphs.Scrollback} scrollback[/] [dim]{distance} · ⌃End live[/]";
+        return Segment(StatusRole.Scrollback, Run($"{Glyphs.Scrollback} scrollback", _ink.Notice), Run(" "), Dim($"{distance} · ⌃End live"));
     }
 
     /// <summary>
@@ -6215,12 +7225,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         SetStatus(_statusIdentity is { } id
-            ? StatusBarMarkup(id.Character, id.State)
-            : NotConnectedMarkup());
+            ? StatusBarRow(id.Character, id.State)
+            : NotConnectedRow());
     }
 
     /// <summary>
-    /// Refreshes the input region: each bar's character-bound prompt (<c>Corvid@Aetherfall ›</c>) and
+    /// Refreshes the input region: each bar's character-bound prompt (<c>Corvid · Aetherfall ›</c>) and
     /// the status bar (which carries the live character count now that the gutter is gone). The armed
     /// bar's prompt is the bright one and ends in <c>›</c>; the other is dimmed and ends in <c>·</c>,
     /// so which line ⏎ will send is readable without hunting for the caret.
@@ -6409,7 +7419,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        SetStatus(StatusBarMarkup(id.Character, id.State));
+        SetStatus(StatusBarRow(id.Character, id.State));
     }
 
     /// <summary>The <c>world.character</c> key of the character whose windows the rail expands.</summary>
@@ -6437,18 +7447,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private IReadOnlyList<SettingsScreen> SettingsScreens() => new SettingsScreen[]
     {
-        new(ConsoleKey.F2, "Triggers & spawn routing", new[] { "triggers", "route", "highlight", "set" }, TriggersScreen),
-        new(ConsoleKey.F3, "Aliases", new[] { "aliases" }, AliasesScreen),
-        new(ConsoleKey.F4, "Keypad & hotkeys", new[] { "keypad" }, KeypadScreen),
-        new(ConsoleKey.F5, "Worlds & Characters", new[] { "worlds", "settings" }, WorldsScreen),
-        new(ConsoleKey.F6, "Timers", new[] { "timers" }, TimersScreen),
-        new(ConsoleKey.F7, "Text & ANSI", new[] { "textansi" }, TextAnsiScreen),
-        new(ConsoleKey.F8, "Input", new[] { "input" }, InputScreen),
+        new(ConsoleKey.F2, SectionTitle("triggers"), new[] { "triggers", "route", "highlight", "set" }, TriggersScreen),
+        new(ConsoleKey.F3, SectionTitle("aliases"), new[] { "aliases" }, AliasesScreen),
+        new(ConsoleKey.F4, SectionTitle("keypad"), new[] { "keypad" }, KeypadScreen),
+        new(ConsoleKey.F5, SectionTitle("worlds"), new[] { "worlds", "settings" }, WorldsScreen),
+        new(ConsoleKey.F6, SectionTitle("timers"), new[] { "timers" }, TimersScreen),
+        new(ConsoleKey.F7, SectionTitle("text"), new[] { "textansi" }, TextAnsiScreen),
+        new(ConsoleKey.F8, SectionTitle("input"), new[] { "input" }, InputScreen),
         // "password" and "startup" are further --view names for the same character-pane screen, the way
         // F2 carries four: the screen is identical, only the -edit script differs, and each names a
         // state a still frame is the only way to look at — a masked buffer mid-edit, and the two-entry
         // dropdown over `at start`, which is drawn *downward* over the rows beneath it.
-        new(ConsoleKey.F9, "Character logging", new[] { "logging", "password", "startup" }, CharacterLoggingScreen),
+        new(ConsoleKey.F9, SectionTitle("logging"), new[] { "logging", "password", "startup" }, CharacterLoggingScreen),
     };
 
     /// <summary>
@@ -6462,7 +7472,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         .ToList();
 
     /// <summary>The command-surface id prefix for "open this settings screen".</summary>
-    private const string ScreenCommandPrefix = "screen:";
+    private const string ScreenCommandPrefix = CommandIds.ScreenPrefix;
 
     /// <summary>
     /// Binds every chord the app claims globally: the window/pane commands, and each settings screen's
@@ -6493,6 +7503,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 var claimed = action;
                 action = () => { DisarmPrefix(); return claimed(); };
+            }
+
+            // And every one but ⌥C itself hands the keys back from the sidebar: a chord that opens a surface leaves
+            // the reader somewhere else, and arrows arriving later must not walk a sidebar nobody is looking at.
+            if (claim.Modifiers != ConsoleModifiers.Alt || claim.Key != ConsoleKey.C)
+            {
+                var claimed = action;
+                action = () => { LeaveRailKeys(); return claimed(); };
             }
 
             _system.RegisterGlobalShortcut(claim.Modifiers, claim.Key, action);
@@ -6573,7 +7591,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 if (!ComposerIsInTheWay("a settings screen"))
                 {
-                    _settings.Toggle(key, open);
+                    OpenSettingsScreen(key, open);
                 }
 
                 return true;
@@ -6613,12 +7631,30 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return () => { CycleCharacter(-1); return true; };
             }
 
+            // ⌥S sends the command line to the send group, as ⌃P ▸ Send to group does.
+            if (claim.Key == ConsoleKey.S)
+            {
+                return () => { SendToGroup(); return true; };
+            }
+
             // ⌥G walks to the next hit of the last search, so a reader following a name down a transcript
             // presses one key rather than reopening the surface for each. There is no backward chord —
             // see MacroKeys, where the measurement that rules ⌥⇧G out is recorded.
             if (claim.Key == ConsoleKey.G)
             {
                 return () => { NextSearchHit(); return true; };
+            }
+
+            // ⌥M opens the layouts list. ESC m, like the rest of the Alt letters.
+            if (claim.Key == ConsoleKey.M)
+            {
+                return () => { ShowLayouts(); return true; };
+            }
+
+            // ⌥C moves the keyboard into the connection sidebar, and back. ESC c, like the rest.
+            if (claim.Key == ConsoleKey.C)
+            {
+                return () => { ToggleRailKeys(); return true; };
             }
 
             // ⌥F freezes and resumes the focused pane. It was ⌃F, and moved so that search could have the
@@ -6649,7 +7685,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // ⌃Q asks first. A second ⌃Q dismisses the question rather than answering it — the same
             // toggle every other surface in this client is on, and the only reading under which a held
             // or twice-fumbled chord cannot quit on its own. See QuitPrompt.
-            ConsoleKey.Q => () => { _quit.Toggle(); return true; },
+            ConsoleKey.Q => () => { ToggleQuit(); return true; },
             // Next window. ⌃Tab used to be listed here as a second spelling "where the terminal reports
             // it"; no terminal does — it writes 0x09, which is a bare Tab — so the arm was dead and the
             // claim behind it was telling F4 a chord was taken that cannot arrive. ⌃N is the chord.
@@ -6689,7 +7725,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// holding an OOC line is exactly the draft a per-window count would hide.
     /// </para>
     /// </summary>
-    private QuitFacts QuitFactsNow()
+    private QuitModel QuitFactsNow()
     {
         var activeId = ActiveWindowId();
         var holding = _workspace.Windows.Where(w => w.HasUnsentInput).ToList();
@@ -6703,16 +7739,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The open composer's *own* character is then excluded from the stored count, because after Esc
         // and F1 that post is in both places at once: the dictionary kept it on the way out and the
         // window is holding it again. Counting both said "2 unsent drafts" for one post.
-        var openKey = _composer.IsOpen ? ComposeDraftKey(activeId) : null;
-        var posts = _composeDrafts.Count(d => d.Key != openKey)
-            + (_composer.IsOpen && _composer.Body.Trim().Length > 0 ? 1 : 0);
+        var openKey = ComposerOpen ? ComposeDraftKey(activeId) : null;
+        // A command kept with no text (the verb a sent post leaves behind) is no unsent post.
+        var posts = _composeDrafts.Count(d => d.Key != openKey && d.Value.Body.Trim().Length > 0)
+            + (ComposerOpen && ComposerBody.Trim().Length > 0 ? 1 : 0);
         var drafts = holding.Count(w => w.Id != activeId) + bars + posts;
 
         // An open settings screen is deliberately not among the facts. It used to contribute "F5 is open
         // — 3 unsaved edits", which was true while closing a screen could throw its edits away; now every
         // committed value is already written to disk when it is committed, so the count is always zero and a
         // line that could never appear is a line to delete rather than to leave hanging.
-        return new QuitFacts(ConnectedCharacters(), drafts, holding.Select(w => w.Title).ToList());
+        return new QuitModel(ConnectedCharacters().Select(DisplayName).ToList(), drafts, holding.Select(w => w.Title).ToList());
     }
 
     /// <summary>
@@ -6829,6 +7866,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal void SaveConfiguration()
     {
+        // F7's theme picker (or the desktop's theme cards): a new theme is put into force first, so everything
+        // repainted below is painted in it. See SharpMUTermApp.Theme.cs.
+        ApplyThemeIfChanged();
+
         // F8 edits the live InputSettings, so a committed height applies to the bars immediately rather
         // than at the next launch.
         SyncInputBars();
@@ -6836,6 +7877,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // And F2/F3/F4/F5 edit the trigger sets, so a rule added or a set assigned applies to the next
         // line rather than the next reconnect. See ReloadAutomation.
         ReloadAutomation();
+
+        // The quick bar lists the macros just committed, and the vitals the meters.
+        RefreshPanels();
 
         // F5 also adds and removes worlds and characters, which are what the header's fraction and the
         // rail are drawn from. Neither is repainted by anything else here, so a world added on F5 used to
@@ -6856,6 +7900,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // And F7's sound levels, and F5's per-world download switch, which a playing queue holds a copy of.
         ApplySoundMix();
+
+        // And F5's layout rows: a live layout whose owner now resolves to another one is re-applied. No timers.
+        ReapplyLayoutAfterSettings();
 
         PersistConfiguration();
     }
@@ -6880,6 +7927,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void PersistConfiguration()
     {
+        NoteFirstWorld();
         if (_save is null)
         {
             return;
@@ -7049,6 +8097,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             observation,
             _time.GetUtcNow(),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7080,7 +8129,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             selection.SelectionIn(WorldsScreenRenderer.WorldsPane),
             selection.SelectionIn(WorldsScreenRenderer.CharactersPane),
             selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
-            OpenMsspScreen),
+            OpenMsspScreen,
+            Layouts.All),
             SaveConfiguration);
         session.Selection.Seed(WorldsScreenRenderer.WorldsPane, ActiveWorldIndex());
         session.Selection.Seed(WorldsScreenRenderer.CharactersPane, ActiveCharacterIndex());
@@ -7095,11 +8145,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             session.Selection.SelectionIn(WorldsScreenRenderer.WorldsPane),
             session.Selection.SelectionIn(WorldsScreenRenderer.CharactersPane),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             fkey,
             session.Selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
             _system.DesktopDimensions.Height,
-            info: true));
+            info: true,
+            layouts: Layouts.All,
+            joinWrapsAdvice: JoinWrapsAdvice));
     }
 
     /// <summary>
@@ -7108,20 +8161,33 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// buttons, and the cursor has to leave the list to press one. The selection is what the editor
     /// pane and the <c>[[- del]]</c> row are about, and it stays on the rule the user was looking at.
     /// </summary>
-    private ScreenBinding TriggersScreen()
+    private ScreenBinding TriggersScreen() => TriggersScreen(editPattern: null);
+
+    /// <param name="editPattern">
+    /// A rule to open with its pattern field already being typed into — the trigger builder's landing —
+    /// as its index in the flattened list, or null to open the screen as F2 does.
+    /// </param>
+    private ScreenBinding TriggersScreen(int? editPattern)
     {
         var session = new SettingsSession(selection =>
             TriggersScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0), RouteTargets()),
             SaveConfiguration);
+        if (editPattern is { } rule)
+        {
+            session.Selection.Seed(0, rule);
+            session.OpenField(TriggersScreenRenderer.PatternField);
+        }
 
         return new ScreenBinding(session, () => TriggersScreenView.Build(
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             RouteTargets(),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height,
-            _theme));
+            _theme,
+            TriggerTestLines()));
     }
 
     /// <summary>Opens the F3 Aliases screen: the alias list, then the alias's toggles.</summary>
@@ -7135,6 +8201,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7147,14 +8214,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private ScreenBinding KeypadScreen()
     {
         var session = new SettingsSession(selection =>
-            KeypadScreenRenderer.Model(Macros(), _config.TriggerSets, selection.SelectionIn(0)),
+            KeypadScreenRenderer.Model(Host.Keys, Macros(), _config.TriggerSets, selection.SelectionIn(0)),
             SaveConfiguration);
 
         return new ScreenBinding(session, () => KeypadScreenView.Build(
+            Host.Keys,
             Macros(),
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
@@ -7170,28 +8239,54 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
             _system.DesktopDimensions.Width,
+            _screens,
             session.Focus(),
             _system.DesktopDimensions.Height));
     }
 
-    /// <summary>Opens the F7 Text &amp; ANSI screen, bound to the app's text preferences.</summary>
-    private ScreenBinding TextAnsiScreen() =>
-        OptionsScreen(() => OptionsScreenRenderer.TextAnsiScreen(_config.Text, _config.Sound));
+    /// <summary>Opens the F7 Text &amp; display screen, drawn from its declared section.</summary>
+    private ScreenBinding TextAnsiScreen()
+    {
+        // The cursor opens on the theme in force, so opening F7 previews nothing but what is already on screen.
+        var binding = OptionsScreen(TextProjection);
+        var names = SharpMUTerm.Client.Settings.ThemeChoices.Names(_config);
+        var current = SharpMUTerm.Client.Settings.ThemeChoices.Current(_config);
+        var row = names.ToList().FindIndex(n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase));
+        if (row > 0)
+        {
+            binding.Session.Selection.Seed(0, row);
+        }
 
-    /// <summary>Opens the F8 Input screen, bound to the app's input preferences.</summary>
-    private ScreenBinding InputScreen() =>
-        OptionsScreen(() => OptionsScreenRenderer.InputScreen(_config.Input));
+        return binding;
+    }
+
+    /// <summary>Opens the F8 Input screen, drawn from its declared section.</summary>
+    private ScreenBinding InputScreen() => OptionsScreen(_ => InputProjection());
 
     /// <summary>
     /// The shared open path for the single-list option screens (F7/F8). <paramref name="screen"/> is
-    /// re-projected from config on every key, so a flipped checkbox shows up in both the row it lives
-    /// on and the model the next keystroke navigates.
+    /// re-projected from config on every key, and handed the cursor, so a flipped checkbox shows up in both
+    /// the row it lives on and the model the next keystroke navigates — and F7's received-data box follows the
+    /// cursor into and out of the meter table.
     /// </summary>
-    private ScreenBinding OptionsScreen(Func<OptionsScreenRenderer.OptionsScreen> screen)
+    private ScreenBinding OptionsScreen(Func<int, OptionsScreenRenderer.OptionsScreen> screen)
     {
-        var session = new SettingsSession(_ => OptionsScreenRenderer.Model(screen()), SaveConfiguration);
-        return new ScreenBinding(session, () => OptionsScreenView.Build(
-            screen(), _system.DesktopDimensions.Width, session.Focus()));
+        var session = new SettingsSession(
+            selection => OptionsScreenRenderer.Model(screen(selection.CursorIn(0))), SaveConfiguration);
+        return new ScreenBinding(session, () =>
+        {
+            var focus = session.Focus();
+            var shown = screen(session.Selection.CursorIn(0));
+
+            // On the theme picker the screen is painted in the theme under the cursor: the live preview. Nothing is
+            // committed until ⏎, so Esc closes on the theme in force.
+            return OptionsScreenView.Build(
+                shown,
+                _system.DesktopDimensions.Width,
+                SchemeFor(shown.Preview),
+                focus,
+                _system.DesktopDimensions.Height);
+        });
     }
 
     /// <summary>The <c>--view</c> suffix that opens a settings screen with a field being typed into.</summary>
@@ -7266,6 +8361,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // this is the frame that shows a dropdown drawn *downward* over the rows under it — the
             // opposite of the `logging` view's, which has nowhere below to go and opens upward.
             for (var i = 0; i < WorldsScreenRenderer.StartupField; i++)
+            {
+                yield return Stroke('\t', ConsoleKey.Tab);
+            }
+
+            yield break;
+        }
+
+        if (string.Equals(view, "settings", StringComparison.OrdinalIgnoreCase))
+        {
+            // F5 under its second name: the world's last field, far below the fold on an ordinary terminal,
+            // so the frame shows the detail column windowed to the field being typed in.
+            for (var i = 0; i < WorldsScreenRenderer.HighlightNamesField; i++)
             {
                 yield return Stroke('\t', ConsoleKey.Tab);
             }
@@ -7428,19 +8535,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// A world's accent as a <em>fill</em> — the header ribbon's segments. Deliberately <b>not</b> lifted:
     /// a fill is identity, the same reasoning the pane tints are built on, and holding one to a floor
     /// against a plane it covers rather than sits on would flatten the ribbon's own hues to a row of
-    /// near-identical pastels. What has to clear the floor is the text on it, which is <see cref="Ink"/>.
+    /// near-identical pastels. What has to clear the floor is the text on it, which is <see cref="SegmentInk"/>.
+    /// A light theme deepens it (<see cref="WorkspacePalette.HeaderFill"/>) so its ink can be light.
     /// </summary>
     private string FillHex(TerminalColor accent) =>
-        accent.Kind == TerminalColorKind.Rgb
-            ? new Rgb(accent.R, accent.G, accent.B).ToHex()
-            : _ink.Accent;
+        WorkspacePalette.HeaderFill(
+            _theme,
+            accent.Kind == TerminalColorKind.Rgb ? new Rgb(accent.R, accent.G, accent.B) : ParseHex(_ink.Accent)).ToHex();
 
-    /// <summary>
-    /// Text on a known fill, held to the floor against <em>that fill</em> rather than against any plane —
-    /// the ribbon's segment labels and the ● that wears the world's colour on the character chip.
-    /// </summary>
-    private static string Ink(string inkHex, string fillHex) =>
-        ChromeInk.On(ParseHex(inkHex), ParseHex(fillHex));
+    /// <summary>The ink on a header segment's <paramref name="fillHex"/>, held to the header's floor.</summary>
+    private string SegmentInk(string fillHex) => WorkspacePalette.HeaderInk(_theme, ParseHex(fillHex)).ToHex();
 
     /// <summary>A <c>#rrggbb</c> markup colour back as a colour.</summary>
     private static Rgb ParseHex(string hex) => new(
@@ -7454,7 +8558,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// character — the workspace's windows with their unread/unsent detail and their own chords.
     /// Ranking/markup stays in the tested Core/renderer.
     /// </summary>
-    private IReadOnlyList<RailRow> BuildRail()
+    private IReadOnlyList<RailRow> BuildRail() => BuildSidebar().Rows();
+
+    /// <summary>
+    /// The sidebar as a view-model (<see cref="SidebarModel"/>): the tree <see cref="BuildRail"/>'s rows are projected
+    /// from, plus the window in front and whether the rail is collapsed. The cell rail and the window's native sidebar
+    /// are both drawn from this, so it is the one place either learns what the sidebar says.
+    /// </summary>
+    internal SidebarModel BuildSidebar()
     {
         var activeKey = ActiveCharacterKey();
 
@@ -7499,7 +8610,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             index++;
         }
 
-        return RailModel.Build(worlds);
+        var sidebar = new SidebarModel(worlds, ActiveWindowId(), _railCollapsed);
+        return _railCursor is { } cursor && sidebar.NavigableRows().Any(r => SidebarModel.KeyOf(r) == cursor)
+            ? sidebar with { Cursor = cursor }
+            : sidebar;
     }
 
     /// <summary>
@@ -7521,8 +8635,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var windows = new List<RailWindow>();
         foreach (var window in _workspace.Windows)
         {
+            // A layout panel is not listed: it is furniture of the layout, not a window you go to, and it carries
+            // no ⌥N (Workspace.WindowsFor) — so the rail and the numbering stay one list.
             var mine = string.Equals(window.SessionKey, owner, StringComparison.Ordinal);
-            if (window.SessionKey is not null && !mine)
+            if (window.Kind == WindowKind.Panel || window.SessionKey is not null && !mine)
+            {
+                continue;
+            }
+
+            // Nor is a panel popped out into a window of its own: it is not in a pane to go to (it would read
+            // "closed"), and its own window is on screen with the way back on it.
+            if (FloatsHere(window.Id))
             {
                 continue;
             }
@@ -7533,7 +8656,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 chords.GetValueOrDefault(window.Id),
                 window.Unread,
                 window.HasUnsentInput,
-                Closed: _workspace.Layout.FindWindow(window.Id) is null));
+                Closed: _workspace.Layout.FindWindow(window.Id) is null,
+                Own: mine && window.Kind == WindowKind.Main));
         }
 
         return windows;
@@ -7668,6 +8792,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var lines = RenderRailLines();
         _rail.SetContent(lines);
         ApplyRailWidth(RailWidth(lines));
+        PublishHostChrome(); // a rail the host draws has no cell to repaint (RefreshHeader's reason)
     }
 
     /// <summary>
@@ -7684,9 +8809,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// the SETTINGS group from that table is that the two cannot disagree, and only a test that reads
     /// both can say so.
     /// </summary>
-    internal IReadOnlyList<CommandItem> BuildCatalog()
+    internal IReadOnlyList<CommandItem> BuildCatalog() => _contributions.Commands.Catalog(CommandEnvironment());
+
+    /// <summary>The stateful flags the catalog's labels read, as they stand now.</summary>
+    private CommandContext CommandState()
     {
-        var context = new CommandContext(
+        var mapState = MapCommandState();
+        return new CommandContext(
             LoggingOn: _active?.IsLogging == true,
             Zoomed: _workspace.Layout.ZoomedPaneId is not null,
             Frozen: _workspace.Layout.FocusedPane.Frozen,
@@ -7696,10 +8825,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             NewlineChord: Host.Keys.Newline.Glyph,
             ScriptsOn: _scriptsRoot is not null,
             Walking: SendTarget() is { } walker && _recorders.TryGetValue(walker, out var map) && map.Walk.IsWalking,
+            MapUndo: MapOf(SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey)?.Recorder.UndoLabel,
+            MapLevels: mapState.Levels,
+            MapAreas: mapState.Areas,
+            MapViewing: mapState.Viewing,
+            Reconnecting: _reconnects.Values.Any(r => r.IsActive),
             Sound: CanPlaySound ? !_muted : null,
-            Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()));
-        return CommandCatalog.Build(
-            _workspace, BuildCharacterRefs(), _active?.SessionKey, context, SettingsCommands());
+            Announced: Host.Announcer is null ? null : IsAnnounced(ActiveWindowId()),
+            OutputSelected: HasOutputSelection,
+            KeyClashes: KeyClashes.Count(Host.Keys, Macros()),
+            Floats: FloatRefs(),
+            RaggedWraps: RaggedWraps(),
+            NoDictionary: NoOwnDictionary,
+            SceneLogging: _sceneLogs.ContainsKey(ActiveWindowId()),
+            NewConfiguration: _config.Worlds.Count == 0 || _config.KeyTourPending,
+            MapFound: MapFoundRooms(),
+            RecentAlerts: _recentAlerts.Count,
+            Alerts: _alertsListed ? AlertRefs() : null,
+            ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }
 
     /// <summary>
@@ -7802,7 +8945,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal IReadOnlyList<string> WindowIds() => _workspace.Windows.Select(w => w.Id).ToArray();
 
     /// <summary>Whether the ⌃P command surface is up — the header's ☰ opens it, and only the header may.</summary>
-    internal bool MenuIsOpen => _palette.IsOpen;
+    internal bool MenuIsOpen => PaletteIsOpen;
 
     /// <summary>
     /// Clicks the connection rail at a cell measured from the rail's own top-left, the way the framework
@@ -7947,9 +9090,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal bool MessageLogIsOpen => _messageLog.IsOpen;
 
     /// <summary>
-    /// Runs a command-surface entry by its id, doing what the current shell supports. Internal so a
-    /// headless test can dispatch an id the way the palette does, without opening the surface and
-    /// typing at it.
+    /// Does the work for a built-in command id: the <c>run</c> every contribution
+    /// <c>BuiltInCommands.Register</c> makes is handed. <see cref="DispatchCommand"/> reaches it through the
+    /// registry, which is what lets a package's or a host's command sit beside these.
     /// <para>
     /// Returns <see langword="false"/> for an id nothing here implements. That is not a nicety: the
     /// catalog is generated from live state and this is a hand-written switch, so the two drift in
@@ -7958,10 +9101,62 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// fails on a false, which is the only thing that makes them stay in step.
     /// </para>
     /// </summary>
-    internal bool DispatchCommand(string id)
+    private bool RunBuiltInCommand(string id)
     {
+        if (id.StartsWith(SharpMUTerm.Client.Commands.LayoutCommands.Prefix, StringComparison.Ordinal))
+        {
+            return RunLayoutCommand(id);
+        }
+
         if (DispatchGroupCommand(id))
         {
+            return true;
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.ScriptOpenPrefix, StringComparison.Ordinal))
+        {
+            return OpenScriptFromPalette(id[SharpMUTerm.Client.Commands.BuiltInCommands.ScriptOpenPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.AlertPrefix, StringComparison.Ordinal))
+        {
+            return GoToAlert(id[SharpMUTerm.Client.Commands.BuiltInCommands.AlertPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.MapWalkPrefix, StringComparison.Ordinal))
+        {
+            return WalkToFoundRoom(id[SharpMUTerm.Client.Commands.BuiltInCommands.MapWalkPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SceneOpenPrefix, StringComparison.Ordinal))
+        {
+            return OpenSavedScene(id[SceneOpenPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SceneCopyPrefix, StringComparison.Ordinal))
+        {
+            return CopySavedScenePath(id[SceneCopyPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Commands.BuiltInCommands.JoinWrapsPrefix, StringComparison.Ordinal))
+        {
+            return JoinWrapsFor(id[SharpMUTerm.Client.Commands.BuiltInCommands.JoinWrapsPrefix.Length..]);
+        }
+
+        // Before the panels' own prefix, which they share: panel:popout:<window> and panel:dock:<window>.
+        if (id.StartsWith(SharpMUTerm.Client.Panels.PanelFloatCommands.PopOutPrefix, StringComparison.Ordinal))
+        {
+            return PopOutPanel(id[SharpMUTerm.Client.Panels.PanelFloatCommands.PopOutPrefix.Length..]);
+        }
+
+        if (id.StartsWith(SharpMUTerm.Client.Panels.PanelFloatCommands.DockPrefix, StringComparison.Ordinal))
+        {
+            return DockPanel(id[SharpMUTerm.Client.Panels.PanelFloatCommands.DockPrefix.Length..]);
+        }
+
+        if (id.StartsWith(PanelCommandPrefix, StringComparison.Ordinal))
+        {
+            ShowPanel(id[PanelCommandPrefix.Length..]);
             return true;
         }
 
@@ -8014,7 +9209,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var view = id[ScreenCommandPrefix.Length..];
             if (SettingsScreens().FirstOrDefault(s => s.Views[0] == view) is { Open: not null } screen)
             {
-                _settings.Toggle(screen.Key, screen.Open);
+                OpenSettingsScreen(screen.Key, screen.Open);
                 return true;
             }
 
@@ -8024,6 +9219,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         switch (id)
         {
+            case "settings:key-clashes":
+                // The keypad screen is where each clash is marked and explained; this entry is its way in.
+                return RunBuiltInCommand(ScreenCommandPrefix + "keypad");
             case "layout:zoom":
             case "layout:unzoom":
                 _workspace.Layout.ToggleZoom();
@@ -8074,6 +9272,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "layout:next-tab":
                 NextWindow(); // refuses out loud on a pane with one tab, the same as the chord does
                 return true;
+            case "layout:toggle-rail":
+                ToggleRail(); // ⌃B b's fold, and the window sidebar's fold button
+                return true;
+            case Client.Commands.BuiltInCommands.RailKeysCommand:
+                ToggleRailKeys(); // ⌥C
+                return true;
             case "term:newline":
                 // The same edit Alt+⏎ makes, through the same key table, so the surface cannot drift from
                 // the chord it advertises.
@@ -8090,6 +9294,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:copy":
                 return CopySelection();
+            case "term:trigger-from-selection":
+                return MakeTriggerFromSelection();
             case "term:messages":
                 if (!ComposerIsInTheWay("the client messages"))
                 {
@@ -8099,6 +9305,30 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:map":
                 ShowMap();
+                return true;
+            case "map:edit":
+                ToggleMapEdit();
+                return true;
+            case "map:level-up":
+            case "map:level-down":
+            case "map:next-area":
+            case "map:here":
+            case "map:find":
+                RunMapViewCommand(id);
+                return true;
+            case "map:undo":
+                if ((SendTarget()?.SessionKey ?? _workspace.FindWindow(ActiveWindowId())?.SessionKey) is { } undoKey && MapOf(undoKey) is not null)
+                {
+                    ApplyMapEdit(MapWindowId(undoKey), SharpMUTerm.Client.Panels.MapEdit.Undo);
+                }
+                else
+                {
+                    RefuseCommand("no map here — pick a character first (⌃P ▸ Switch to …)");
+                }
+
+                return true;
+            case "layout:layouts":
+                ShowLayouts();
                 return true;
             case "term:mute":
             case "term:unmute":
@@ -8132,6 +9362,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case "term:package-browse":
                 BrowsePackages();
+                return true;
+            case "term:welcome":
+                ShowWelcome();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.BrowseWorldsCommand:
+                ShowWorldBrowse();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.ImportCommand:
+                StartImport();
+                return true;
+            case "term:tour":
+                ToggleKeyTour();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.HelpCommand:
+                ShowHelp();
+                return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.DictionaryCommand:
+                OfferDictionary();
                 return true;
             case "term:package-install":
                 ActiveBar().SetAndNotify("/package install ");
@@ -8167,8 +9415,29 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "world:disconnect":
                 Disconnect();
                 break;
+            case StopReconnectCommand:
+                StopReconnectCommandRun();
+                break;
             case "world:reload-scripts":
                 ReloadScripts();
+                break;
+            case Client.Commands.BuiltInCommands.ScriptConsoleCommand:
+                ShowScriptConsole();
+                break;
+            case Client.Commands.BuiltInCommands.RecentAlertsCommand:
+                ShowRecentAlerts();
+                break;
+            case Client.Commands.BuiltInCommands.ScriptEditCommand:
+                ListScriptsToEdit(fromConsole: false);
+                break;
+            case Client.Commands.BuiltInCommands.ScriptNewCommand:
+                PlaceGrab(ActiveBar(), "/script new ");
+                break;
+            case Client.Commands.BuiltInCommands.SceneStartCommand:
+                StartSceneLog();
+                break;
+            case Client.Commands.BuiltInCommands.SceneStopCommand:
+                StopSceneLog();
                 break;
             default:
                 // On the status line, never through _active: an unwired command is exactly what you hit
@@ -8199,6 +9468,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// afterwards, and it is echoed into the output window so a missed one is still findable.
     /// </summary>
     private void RefuseCommand(string reason) => Notice(reason, MessageSeverity.Warning, "⌃P");
+
+    /// <summary>
+    /// A failure's action: the message log, where the whole story is. In place of a bare <c>⌃P</c> chip, which named a key
+    /// and not what it would do.
+    /// </summary>
+    private static readonly NoticeAction ShowMessagesAction = new("term:messages", "Show messages");
 
     /// <summary>
     /// The task the last dispatched command started, or a completed one when it ran synchronously.
@@ -8234,6 +9509,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         WatchPresence(session);
+        StartReconnecting(session);
         StartMapping(session);
         StartSound(session);
         if (_scriptsRoot is null || _scripts.ContainsKey(session))
@@ -8242,6 +9518,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var scripts = new SessionScripts(session, _scriptsRoot, text => ReportScript(session, text), _packages.ResolveScript, _scriptStoreRoot, ScriptSendTo);
+        scripts.Printed += text => NoteConsole(session, Client.Modals.ScriptConsoleKind.Output, text);
         _scripts[session] = scripts;
         scripts.Reload();
     }
@@ -8249,6 +9526,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void OnSessionRemoved(object? sender, WorldSession session)
     {
         StopSound(session);
+        StopReconnecting(session);
         _sendGroup.Remove(session.SessionKey);
         if (_scripts.Remove(session, out var scripts))
         {
@@ -8308,6 +9586,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             RenderMap(MapWindowId(session.SessionKey));
             RefreshStatusBar();
+            NoteLayoutInput(session.SessionKey); // the first room recorded is the map panel's data
         };
         walk.Changed += (_, reason) => OnWalkChanged(session, reason);
         session.StateChanged += (_, e) =>
@@ -8388,6 +9667,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _workspace.OpenWindow(windowId, "Map", WindowKind.Auxiliary, key);
             RebuildPaneArea();
         }
+        else if (IsFloating(windowId))
+        {
+            DockPanel(windowId); // asked for in a pane: a map in a window of its own docks back
+        }
 
         Activate(windowId);
         RenderMap(windowId);
@@ -8419,15 +9702,43 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnMapLinkClicked(string windowId, string url)
     {
-        if (MapRenderer.ParseLink(url) is not { } room
-            || MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
+        // The title's level arrows and "here", and the legend's areas: a look, by index into the view last drawn.
+        if (_mapViews.TryGetValue(windowId, out var drawn) && MapRenderer.ParseLook(url, drawn.Model) is { } look)
+        {
+            LookMap(windowId, look);
+            return;
+        }
+
+        if (MapRenderer.ParseLink(url) is not { } room)
+        {
+            return;
+        }
+
+        // While the map is being edited a click selects the room; otherwise it walks there, as it always has.
+        if (_mapSelection.ContainsKey(windowId))
+        {
+            SelectMapRoom(windowId, room);
+        }
+        else
+        {
+            WalkFromMap(windowId, room);
+        }
+    }
+
+    /// <summary>
+    /// Walks a map window's own character to a room: a cell map's click and the window's native map both end here,
+    /// so there is one walk and one refusal.
+    /// </summary>
+    private void WalkFromMap(string windowId, long room)
+    {
+        if (MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
         {
             return;
         }
 
         if (map.WalkTo(room) is { } problem)
         {
-            Notice($"Cannot walk there: {problem}.", key: "map");
+            Notice($"cannot walk there: {problem}.", source: NoticeModel.Sources.Map);
         }
     }
 
@@ -8444,18 +9755,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         var (width, height) = MapBox(windowId);
         _mapSizes[windowId] = (width, height);
+        _mapRevisions[windowId] = _mapRevisions.GetValueOrDefault(windowId) + 1;
         if (MapOf(_workspace.FindWindow(windowId)?.SessionKey) is not { } map)
         {
             control.SetContent(new List<string> { "[dim]No map: this character is not connected.[/]" });
             return;
         }
 
-        var walking = map.Walk.IsWalking ? $"walking, {map.Walk.Remaining} to go" : null;
-        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft);
-        var lines = MapRenderer.Render(
-            map.Map, map.Recorder.CurrentRoomId, map.Walk.RoomsAhead, width, height, ink, walking);
+        // One model per drawing, and the window's native map is handed this same instance (MapViewFor), so the two
+        // cannot disagree about where the character is, which level is shown or whether a walk is under way.
+        var view = Drawing(Core.Layouts.PanelIds.Map, windowId, BuildMapView(windowId, map));
+        _mapViews[windowId] = (_mapRevisions[windowId], view);
+        var ink = new MapRenderer.Ink(_ink.Accent, _ink.Accent, _ink.Notice, _ink.Draft, WorkspacePalette.ReadingPlane(_theme), "bold " + RailCursorBand(), PanelHeadingInk());
+        var lines = MapRenderer.Render(view, map.Map, width, height, ink, keysHeld: _mapKeys == windowId);
         _mapMarkup[windowId] = lines;
         control.SetContent(lines.ToList());
+        NoteFloatingContent(windowId);
     }
 
     /// <summary>What a map window was last drawn as, for a test to read.</summary>
@@ -8500,7 +9815,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         RenderMap(MapWindowId(session.SessionKey));
         if (reason is not null)
         {
-            Notice($"Walk {reason}.", MessageSeverity.Info, key: "map");
+            Notice($"walk {reason}.", MessageSeverity.Info, source: NoticeModel.Sources.Map);
         }
     }
 
@@ -8528,6 +9843,23 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 problem = map.WalkTo(argument);
             }
+        }
+        else if ((WindowSession(windowId)?.SessionKey ?? _workspace.FindWindow(windowId)?.SessionKey) is { } owner
+            && SharpMUTerm.Client.Panels.MapEditing.CommandVerbs.Contains(argument.Split(' ', 2)[0].ToLowerInvariant()))
+        {
+            MapEditCommand(windowId, map, owner, argument);
+            return;
+        }
+        else if (argument.Trim().Equals("edit", StringComparison.OrdinalIgnoreCase))
+        {
+            ToggleMapEdit();
+            return;
+        }
+        else if ((WindowSession(windowId)?.SessionKey ?? _workspace.FindWindow(windowId)?.SessionKey) is { } viewer
+            && argument.Split(' ', 2)[0].ToLowerInvariant() is "level" or "view" or "here" or "find")
+        {
+            MapViewCommand(windowId, map, viewer, argument);
+            return;
         }
         else
         {
@@ -8560,6 +9892,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private void ReportScript(WorldSession session, string text)
     {
         session.PrintSystem($"*** {text}");
+        NoteConsole(session, Client.Modals.ScriptConsoleKind.Error, text);
         OnUi(() => Notice($"{SessionTitle(session)}: {text}"));
     }
 
@@ -8672,24 +10005,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             [4203] = ("Temple of the Tide", [("south", 4202)]),
             [4210] = ("Market Row", [("west", 4201), ("east", 4211), ("southeast", 4212)]),
             [4211] = ("Spice Stall", [("west", 4210)]),
-            [4212] = ("Docks Gate", [("northwest", 4210), ("south", null)]),
+            [4212] = ("Docks Gate", [("northwest", 4210), ("south", 4300)]),
             [4199] = ("Lantern Street", [("north", 4201), ("south", null), ("southwest", 4198)]),
             [4198] = ("Old Well", [("northeast", 4199)]),
             [4220] = ("Guildhall", [("east", 4201), ("west", null)]),
+
+            // A floor up and an area next door, so the map has stairs and a second area colour to show.
+            [4250] = ("Bell Tower", [("down", 4202)]),
+            [4300] = ("The Quay", [("north", 4212), ("east", null)]),
         };
         void Arrive(long id) => recorder.Apply(new RoomObservation(
             id,
             rooms[id].Name,
             rooms[id].Exits.Select(e => new ObservedExit(e.Item1, e.Item2)).ToList())
         {
-            Area = "Aetherfall",
+            Area = id >= 4300 ? "Saltmarsh Docks" : "Aetherfall",
         });
 
         Arrive(4201);
         foreach (var (command, to) in new (string, long)[]
         {
-            ("n", 4202), ("n", 4203), ("s", 4202), ("s", 4201), ("e", 4210), ("e", 4211), ("w", 4210),
-            ("se", 4212), ("nw", 4210), ("w", 4201), ("s", 4199), ("sw", 4198), ("ne", 4199), ("n", 4201),
+            ("n", 4202), ("n", 4203), ("s", 4202), ("u", 4250), ("d", 4202), ("s", 4201), ("e", 4210), ("e", 4211), ("w", 4210),
+            ("se", 4212), ("s", 4300), ("n", 4212), ("nw", 4210), ("w", 4201), ("s", 4199), ("sw", 4198), ("ne", 4199), ("n", 4201),
             ("w", 4220), ("e", 4201),
         })
         {
@@ -8726,6 +10063,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        // A try waiting to dial is this key's job done sooner: the wait goes, and the dial is this one.
+        CancelReconnect(session);
         LastCommand = ReconnectAsync(session);
     }
 
@@ -8735,7 +10074,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             if (session.State is ConnectionState.Connected or ConnectionState.Connecting)
             {
-                session.PrintSystem("*** Reconnecting...");
+                SayInSessionWindow(session, ReconnectLabel, "dialling again");
                 await session.DisconnectAsync().ConfigureAwait(false);
             }
 
@@ -8763,7 +10102,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             OnUi(() => Notice(
                 $"could not connect to {session.World.Host}:{session.World.Port} — {ex.Message}",
                 MessageSeverity.Error,
-                "⌃P"));
+                action: ShowMessagesAction));
         }
     }
 
@@ -8781,6 +10120,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (!session.IsConnected)
         {
+            // Not connected but waiting to dial again: Disconnect means "stay disconnected".
+            if (CancelReconnect(session))
+            {
+                SayInSessionWindow(session, ReconnectLabel, "stopped · ⌥R dials again");
+                Notice($"stopped reconnecting {SessionTitle(session)} — ⌥R dials it", MessageSeverity.Info, "⌥R");
+                return;
+            }
+
             RefuseCommand($"{SessionTitle(session)} is not connected");
             return;
         }
@@ -8902,6 +10249,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var windowId = pane.ActiveTab ?? MainWindowId;
         _workspace.Layout.ToggleFreezeFocused();
 
+        // Freeze is the other split, and takes over from a scrollback one: the pane splits at the freeze
+        // point, as ⌥F always does, and the scrollback split is forgotten rather than drawn inside it.
+        CloseScrollSplit(windowId);
+
         if (pane.Frozen)
         {
             _freezePoints[windowId] = _lines.TryGetValue(windowId, out var buf) ? buf.Count : 0;
@@ -8916,6 +10267,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         RebuildPaneArea();
+        SyncStatusMode(); // ⌥F thaws, or the scrollback keys again
     }
 
     /// <summary>The custom link scheme the header's <c>☰</c> affordance uses to open the menu.</summary>
@@ -8924,13 +10276,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Opens/closes the command surface (⌃P or the header ☰ menu) and flips the header caret.</summary>
     private void ToggleMenu()
     {
+        // The host's palette is a toggle too: ⌃P reaches here only when the host passes it on.
+        if (_nativePaletteSession is not null)
+        {
+            CloseNativePalette();
+            return;
+        }
+
         if (ComposerIsInTheWay("the command surface"))
         {
             return;
         }
 
-        _palette.Toggle();
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        // The alert entries are listed only in the palette Recent alerts opened, so they never crowd any other.
+        if (!_palette.IsOpen)
+        {
+            _alertsListed = _openingQuery == Client.Commands.BuiltInCommands.AlertQuery;
+        }
+
+        // A host that draws ⌃P itself gets it, unless the cell popup is already up (then this closes that).
+        if (_palette.IsOpen || !TryOpenNativePalette())
+        {
+            _palette.Toggle();
+        }
+
+        RefreshHeader();
     }
 
     /// <summary>
@@ -9095,11 +10465,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnTabChanged(string paneId, TabPage? newTab)
     {
-        _workspace.Layout.Focus(paneId);
         if (newTab?.Tag is string id)
         {
-            Activate(id);
+            ActivateStripTab(paneId, id);
+            return;
         }
+
+        _workspace.Layout.Focus(paneId);
     }
 
     /// <summary>
@@ -9171,9 +10543,25 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _ = LoadWebAsync(owner, url);
     }
 
+    /// <summary>
+    /// The width a web page is laid out at: the web window's viewport, else the focused pane's (where a new web window
+    /// opens), else the screen less a margin before anything is arranged. Laid out at the screen's width, a page in a pane
+    /// beside the rail was wrapped twice — by the renderer and again by the pane — leaving a word alone on every other row.
+    /// </summary>
+    private int WebRenderWidth()
+    {
+        var width = BarWidth(WebWindowId);
+        if (width <= 0 && PaneOutputRects().TryGetValue(_workspace.Layout.FocusedPane.Id, out var rect))
+        {
+            width = rect.Width;
+        }
+
+        return Math.Max(20, width > 0 ? width : _window.Width - 4);
+    }
+
     private async Task LoadWebAsync(WorldSession? owner, string url)
     {
-        var width = Math.Max(20, _window.Width - 4);
+        var width = WebRenderWidth();
         try
         {
             var page = await _fetcher.FetchAsync(url, width).ConfigureAwait(false);
@@ -9322,7 +10710,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             "</body></html>";
 
         var rendered = new SharpMUTerm.Web.HtmlStyledRenderer(url)
-            .RenderDocument(html, Math.Max(20, _window.Width - 4));
+            .RenderDocument(html, WebRenderWidth());
 
         ShowWeb(new SharpMUTerm.Web.WebPage(
             url, SharpMUTerm.Web.HtmlStyledRenderer.GetTitle(html), rendered.Lines, rendered.Images));
@@ -9702,14 +11090,30 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _paneSurfaces.Clear();
+        _scrollHistorySurfaces.Clear();
         _dividers.Clear();
 
 
+        // Each pane's height claim, from what it holds: a strip panel is as tall as its content and an editor has a
+        // floor. Derived here on every rebuild rather than stored, so a pane handed an ordinary window stops being a
+        // strip at once.
+        // A vitals pane in a side column is a card, its height from the character's meters.
+        Core.Layouts.PanelSizing.ApplyAll(
+            _workspace.Layout.Root, PanelIdOfWindow, TabStripRows, VitalsMetersOfWindow,
+            Host.Chrome.Strips ? Core.Layouts.PanelSizing.QuickBarStripRows : 1,
+            VitalsCardRowsRule());
+        ApplyCollapsedBars();
+        ApplyLoneMapPanes();
+        ApplyHeadingPanes();
+
         // When a pane is zoomed, render just that pane full-area; otherwise render the whole tree.
         var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
+        DetachInputBars();
+        _inputTarget = InputTargetNow(zoomed);
         var paneArea = zoomed is not null
-            ? OnSurface(BuildPaneTabs(zoomed), zoomed.Id)
+            ? WithInputBars(OnSurface(BuildPaneTabs(zoomed), zoomed.Id), zoomed)
             : BuildLayoutNode(_workspace.Layout.Root);
+        PublishHeaderDividers();
 
         // Size the rail to what its rows actually need (clamped), so it never hogs width nor clips.
         var railLines = RenderRailLines();
@@ -9717,17 +11121,32 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var railWidth = RailWidth(railLines);
         _railWidth = railWidth;
 
-        // rail │ thin divider │ 1-col spacer (breathing room) │ output — a solid 1-col bar in the
-        // border colour instead of the framework's double-line splitter, for a calmer single-line look.
+        // rail │ thin divider │ output — a solid 1-col bar in the border colour instead of the framework's double-line
+        // splitter, for a calmer single-line look. There used to be a rail-coloured spacer column after the bar; it was
+        // given back to the panes (wave 24). The bar stays: the rail is the backdrop, and an unfocused pane is only
+        // ~2.8 L* above it on Dark (a tinted one less still), so the plane step alone would not carry the edge
+        // (RailEdgeTests). The rail's own margin cell is the breathing room on its side; the pane's text meets the
+        // rule as it meets every divider between two panes.
         // Stretch (control default is Left) so the window arranges the whole row at the full console
         // width; without it the row floats at content width and the Flex pane column can't claim the
         // space to the right edge. (SharpConsoleUI docs/patterns.md — sidebar+content layouts.)
+        // A host that draws the rail itself (the window) gets the pane area alone: no rail column, no divider and no
+        // spacer, so the panes start at column 0 and are as wide as the cells really are — which is what NAWS reports.
+        if (Host.Chrome.Rail)
+        {
+            _railColumn = null;
+            return Controls.HorizontalGrid()
+                .WithAlignment(HorizontalAlignment.Stretch)
+                .WithVerticalAlignment(VerticalAlignment.Fill)
+                .Column(c => c.Flex(1).Add(paneArea))
+                .Build();
+        }
+
         var row = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Width(railWidth).Add(_rail))
             .Column(c => c.Width(1).Add(Divider()))
-            .Column(c => c.Width(1).Add(_railSpacer))
             .Column(c => c.Flex(1).Add(paneArea))
             .Build();
 
@@ -9841,12 +11260,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// Only the body. The tab chips keep <see cref="PaneSurfaceTone"/>, so the selected chip still carries
     /// the focused pane's lift: the plane behind the text is the one cue that can be given up, because the
     /// chip, the <c>▌</c> and the armed command line all say the same thing. A tinted pane stays painted —
-    /// its colour says whose pane it is, and nothing else on the plane says that. On kitty none of this
+    /// its colour says whose pane it is, and nothing else on the plane says that. So does a strip panel: no divider
+    /// row separates it from its neighbour, and its recessed plane is the only thing that does. On kitty none of this
     /// applies: every plane stays painted and is named to the terminal instead (<see cref="SyncTransparentColours"/>).
     /// </para>
     /// </summary>
     private SColor PaneBodyColor(string? paneId) =>
-        HandsPlanesToTheTerminal && PaneTintOf(paneId) == PaneTint.None
+        HandsPlanesToTheTerminal && PaneTintOf(paneId) == PaneTint.None && !IsStripPane(paneId)
             ? SColor.Transparent
             : ToColor(PaneSurfaceTone(paneId));
 
@@ -10056,8 +11476,23 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private Rgb SurfaceToneIn(string? paneId, PaneTint tint)
     {
         var plane = WorkspacePalette.Tint(_theme, tint);
-        return paneId is not null && IsFocusedPane(paneId) ? WorkspacePalette.Focus(plane) : plane;
+        if (paneId is not null && IsFocusedPane(paneId))
+        {
+            return WorkspacePalette.Focus(plane);
+        }
+
+        // A fixed strip (vitals, the quick bar) sits flush against its neighbour with no divider row between them
+        // (PaneExtent.DividerRows), so an unfocused one is recessed the backdrop's step: two unfocused panes are
+        // otherwise one plane, and the strip would run straight into the output under it. Focused, it takes the
+        // focus lift like any pane — recessed strip, then unfocused pane, then the focused one, in luminance.
+        // Where the host draws the strips (HostChrome.Strips, the window) each native strip draws a hairline where it meets
+        // a pane (PanelOverlay.RuleAbove/RuleBelow), so it keeps the panels' plane, as the combat mockup's side column does.
+        return IsStripPane(paneId) && !Host.Chrome.Strips ? WorkspacePalette.Recessed(plane) : plane;
     }
+
+    /// <summary>Whether a pane is a fixed-height strip panel (<see cref="PaneNode.FixedRows"/>, derived on every rebuild).</summary>
+    private bool IsStripPane(string? paneId) =>
+        paneId is not null && _workspace.Layout.FindPane(paneId) is { FixedRows: not null };
 
     /// <summary>
     /// The chip an <em>unselected</em> tab is painted on: its own character's plane, recessed the same
@@ -10128,6 +11563,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             surface.BackgroundColor = PaneBodyColor(paneId);
         }
 
+        RefreshScrollHistoryPlanes();
+
         lock (_paneTabsLock)
         {
             foreach (var (paneId, tabs) in _paneTabs)
@@ -10146,10 +11583,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private List<string> RenderRailLines()
     {
-        var rows = BuildRail();
-        return _railCollapsed
-            ? RailRenderer.RenderCollapsed(rows, _ink)
-            : RailRenderer.Render(rows, RailMaxWidth - RailMargin, _ink);
+        return RailRenderer.Render(
+            Drawing(SurfaceCatalog.Sidebar, string.Empty, BuildSidebar()), RailMaxWidth - RailMargin, _ink, RailCursorBand());
+    }
+
+    /// <summary>
+    /// Folds the rail to its narrow strip, or opens it again: ⌃B b, and the native sidebar's own fold button. With the
+    /// rail in the cells that is a rebuild of the row it shares with the panes; with the rail the host's, the cells do
+    /// not change at all and only the host is told — its sidebar narrows, and the cell grid it hands the driver widens.
+    /// </summary>
+    private void ToggleRail()
+    {
+        _railCollapsed = !_railCollapsed;
+        RebuildPaneArea();
+        PublishHostChrome();
     }
 
     /// <summary>The narrowest the expanded sidebar goes, so a sparse rail still reads as a column.</summary>
@@ -10160,8 +11607,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Breathing room between the widest row and the divider beside it. One cell, not two: the divider
-    /// column and the <c>_railSpacer</c> beside it (see <see cref="BuildWorkspaceRow"/>) already separate
-    /// the rail from the panes, so a second margin cell is a column taken off every pane to no effect.
+    /// column (see <see cref="BuildWorkspaceRow"/>) already separates the rail from the panes, so a second
+    /// margin cell is a column taken off every pane to no effect.
     /// </summary>
     private const int RailMargin = 1;
 
@@ -10221,7 +11668,119 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <see cref="SplitNode"/> becomes a proportional grid (columns for a row split, rows for a
     /// column split) with a draggable splitter between children.
     /// </summary>
-    private IWindowControl BuildLayoutNode(SharpMUTerm.Core.Workspaces.LayoutNode node)
+    private IWindowControl BuildLayoutNode(SharpMUTerm.Core.Workspaces.LayoutNode node) =>
+        WithInputBars(BuildLayoutNodeAlone(node), node);
+
+    /// <summary>
+    /// The node the command line sits under, for a host that puts it in the output's column
+    /// (<see cref="HostChrome.InputInColumn"/>); null for one that keeps it across the window. Set on every rebuild.
+    /// </summary>
+    private SharpMUTerm.Core.Workspaces.LayoutNode? _inputTarget;
+
+    /// <summary>
+    /// The node the command line goes under for the arrangement as it is now: the zoomed pane, else
+    /// <see cref="InputColumn.Target(SharpMUTerm.Core.Workspaces.LayoutNode, string?, Func{PaneNode, bool}, int, int)"/>
+    /// over the pane area's width, so a column narrower than <see cref="InputColumn.MinimumColumns"/> gives the bars a
+    /// wider ancestor; null for a host that keeps the bars across the window.
+    /// </summary>
+    private SharpMUTerm.Core.Workspaces.LayoutNode? InputTargetNow(PaneNode? zoomed) =>
+        Host.Chrome.InputInColumn
+            ? zoomed ?? InputColumn.Target(_workspace.Layout.Root, InputAnchorPane(), HoldsOutput, PaneAreaColumns())
+            : null;
+
+    /// <summary>
+    /// The pane area's width in cells: the window's, less the cell rail and its rule where the client draws them (the last
+    /// build's rail width, which is all a rebuild can know before it lays the rail out).
+    /// </summary>
+    private int PaneAreaColumns() => HeaderWidth() - (Host.Chrome.Rail ? 0 : _railWidth + 1);
+
+    /// <summary>
+    /// Rebuilds the pane area when a resize has moved the command line's column across its floor, so the bars go back under
+    /// the output's column, or out to a wider one, without waiting for the next layout change. Returns whether it rebuilt.
+    /// Internal for tests, which have no resize to raise.
+    /// </summary>
+    internal bool SyncInputColumn()
+    {
+        if (!Host.Chrome.InputInColumn || _workspaceRow is null)
+        {
+            return false;
+        }
+
+        var zoomed = _workspace.Layout.ZoomedPaneId is { } zid ? _workspace.Layout.FindPane(zid) : null;
+        if (ReferenceEquals(InputTargetNow(zoomed), _inputTarget))
+        {
+            return false;
+        }
+
+        RebuildPaneArea();
+        return true;
+    }
+
+    /// <summary>The grid holding the bars under <see cref="_inputTarget"/>, so a rebuild can take them out before it is disposed.</summary>
+    private GridControl? _inputColumn;
+
+    /// <summary>
+    /// The pane the output is in: the live layout's output pane while it owns the panes, else the first pane holding a
+    /// character's own window. Read by <see cref="InputColumn.Target"/>, never focus, so moving the selection moves no pane.
+    /// </summary>
+    private string? InputAnchorPane() =>
+        InputColumn.Anchor(
+            _workspace.Layout,
+            _liveLayout?.PanelPanes.GetValueOrDefault(SharpMUTerm.Core.Layouts.PanelIds.Output),
+            HoldsOutput);
+
+    /// <summary>Whether a pane holds a character's own window: output, as opposed to a panel, the map or a capture.</summary>
+    private bool HoldsOutput(PaneNode pane) =>
+        pane.Tabs.Any(id => _workspace.FindWindow(id) is { Kind: WindowKind.Main });
+
+    /// <summary>
+    /// <paramref name="control"/>, with the prompt row and the command lines as rows under it when <paramref name="node"/>
+    /// is <see cref="_inputTarget"/>: the output's column ends in the bars, and every pane beside it runs down to the
+    /// status row. The rows are the bars' own measure (Auto), so a bar growing as it wraps takes rows from this column
+    /// only, and the pane rectangles — and so NAWS — are what is arranged.
+    /// </summary>
+    private IWindowControl WithInputBars(IWindowControl control, SharpMUTerm.Core.Workspaces.LayoutNode node)
+    {
+        if (_inputTarget is null || !ReferenceEquals(node, _inputTarget))
+        {
+            return control;
+        }
+
+        var grid = Controls.Grid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Rows(GridLength.Star(1), GridLength.Auto(), GridLength.Auto(), GridLength.Auto())
+            .Columns(GridLength.Star(1));
+        grid.Place(control, 0, 0, 1, 1);
+        grid.Place(_promptRow, 1, 0, 1, 1);
+        grid.Place(_input, 2, 0, 1, 1);
+        grid.Place(_second, 3, 0, 1, 1);
+        var built = grid.Build();
+        built.BackgroundColor = BackdropColor();
+        _inputColumn = built;
+        return built;
+    }
+
+    /// <summary>
+    /// Takes the prompt row and the bars out of the grid that held them, ahead of a rebuild: the old pane area is disposed
+    /// once it is swapped out, and the bars live for the life of the app.
+    /// </summary>
+    private void DetachInputBars()
+    {
+        if (_inputColumn is not { } grid)
+        {
+            return;
+        }
+
+        foreach (var control in new IWindowControl[] { _promptRow, _input, _second })
+        {
+            grid.RemoveControl(control);
+        }
+
+        _inputColumn = null;
+    }
+
+    private IWindowControl BuildLayoutNodeAlone(SharpMUTerm.Core.Workspaces.LayoutNode node)
     {
         if (node is PaneNode pane)
         {
@@ -10241,14 +11800,35 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var children = split.Children.Select(BuildLayoutNode).ToList();
 
         // Interleave a thin 1-cell divider between children (a solid border-colour bar) instead of the
-        // framework's double-line splitter, so splits read as a single calm line.
+        // framework's double-line splitter, so splits read as a single calm line — but only where
+        // PaneExtent.DividerRows says one is drawn. Stacked, there is none above a pane whose tab strip is its top
+        // row (that strip is the boundary, and its empty run is registered as the divider's handle) and none beside a
+        // fixed strip, which sits flush on a plane of its own. LayoutSolver reads the same rule, so the panes nothing
+        // has arranged yet are solved to the same rectangles.
+        // A stacked split gives a strip pane exactly its rows (Cells) and an editor its floor (Star's min); the rest
+        // share by weight. PaneExtent.DistributeRows is the same rule, for the panes nothing has arranged yet.
+        var stacked = split.Direction == SplitDirection.Column;
+        var fixedRows = stacked ? PaneExtent.FixedChildren(split) : new int?[children.Count];
         var tracks = new List<GridLength>();
+        var cells = new List<IWindowControl>();
         for (var i = 0; i < children.Count; i++)
         {
-            tracks.Add(GridLength.Star(Math.Max(0.01, split.Sizes[i])));
+            var floor = stacked ? PaneExtent.MinRows(split.Children[i]) : 0;
+            tracks.Add(fixedRows[i] is { } rows
+                ? GridLength.Cells(rows)
+                : GridLength.Star(Math.Max(0.01, split.Sizes[i]), min: floor > 0 ? floor : null));
+            cells.Add(children[i]);
             if (i < children.Count - 1)
             {
-                tracks.Add(GridLength.Cells(1));
+                if (PaneExtent.DividerRows(split, i) > 0)
+                {
+                    tracks.Add(GridLength.Cells(1));
+                    cells.Add(PaneDivider(split, i));
+                }
+                else
+                {
+                    RegisterHeaderDivider(split, i);
+                }
             }
         }
 
@@ -10258,30 +11838,49 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (split.Direction == SplitDirection.Row)
         {
             grid.Columns(tracks.ToArray()).Rows(GridLength.Star(1));
-            for (var i = 0; i < children.Count; i++)
+            for (var i = 0; i < cells.Count; i++)
             {
-                grid.Place(children[i], 0, i * 2, 1, 1);
-                if (i < children.Count - 1)
-                {
-                    grid.Place(PaneDivider(split, i), 0, i * 2 + 1, 1, 1);
-                }
+                grid.Place(cells[i], 0, i, 1, 1);
             }
         }
         else
         {
             grid.Rows(tracks.ToArray()).Columns(GridLength.Star(1));
-            for (var i = 0; i < children.Count; i++)
+            for (var i = 0; i < cells.Count; i++)
             {
-                grid.Place(children[i], i * 2, 0, 1, 1);
-                if (i < children.Count - 1)
-                {
-                    grid.Place(PaneDivider(split, i), i * 2 + 1, 0, 1, 1);
-                }
+                grid.Place(cells[i], i, 0, 1, 1);
             }
         }
 
         return grid.Build();
     }
+
+    /// <summary>
+    /// The rows the framework's tab strip takes over a pane: one for the classic header, two for the separator style a
+    /// host that draws the strips itself is given (<see cref="HostChrome.Tabs"/>).
+    /// </summary>
+    private int TabStripRows => Host.Chrome.Tabs ? 2 : 1;
+
+    /// <summary>
+    /// The blank columns either side of a pane's content where the host asks for a gutter (<see cref="HostChrome.PaneGutter"/>):
+    /// two, so output starts the mockup's ~20 px in from the pane's edge rather than one cell's 8.
+    /// </summary>
+    private const int PaneGutterColumns = 2;
+
+    /// <summary>
+    /// The blank row above an output window's first line where the host asks for a gutter: the mockup's padding under the
+    /// tab strip. None for a layout panel or a map, which the host draws natively over the whole pane.
+    /// </summary>
+    private int PaneGutterRowsFor(string? windowId) =>
+        Host.Chrome.PaneGutter && windowId is not null && PanelIdOfWindow(windowId) is null && !IsMapWindow(windowId) ? 1 : 0;
+
+    /// <summary>The layout panel a window draws, or null for an ordinary window.</summary>
+    private static string? PanelIdOfWindow(string windowId) =>
+        TerminalPanels.TryParseWindowId(windowId, out var panelId, out _) ? panelId : null;
+
+    /// <summary>How many meters the character behind a vitals panel window draws: the height of its card.</summary>
+    private int VitalsMetersOfWindow(string windowId) =>
+        TerminalPanels.TryParseWindowId(windowId, out _, out var sessionKey) ? PanelMeters(sessionKey).Count : 0;
 
     /// <summary>Whether a pane is the one every workspace keystroke is aimed at.</summary>
     private bool IsFocusedPane(string paneId) =>
@@ -10326,29 +11925,51 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Builds a leaf pane's tab strip from its window ids, tracking it under its pane id.</summary>
     private IWindowControl BuildPaneTabs(PaneNode pane)
     {
+        if (IsCollapsedBar(pane))
+        {
+            return BuildCollapsedBar(pane);
+        }
+
         var builder = Controls.TabControl();
         var ids = new List<string>();
-        var focused = IsFocusedPane(pane.Id);
-        foreach (var windowId in pane.Tabs)
+
+        // ▌ is the focus half of the signal and bold is the selection half; both read on a monochrome
+        // terminal, where a luminance step does not. The titles are the strip's model drawn as cells, the model the
+        // window's native strip draws (SurfaceCatalog.TabStrip).
+        var strip = Drawing(SurfaceCatalog.TabStrip, pane.Id, StripModelFor(pane.Id, pane.Tabs, pane.ActiveTab, ActiveCharacterKey()));
+        var titles = TabTitles.Strip(strip, _ink, ChipOf(pane.Id));
+        for (var i = 0; i < strip.Tabs.Count; i++)
         {
-            if (_workspace.FindWindow(windowId) is not { } window)
+            var windowId = strip.Tabs[i].WindowId;
+            var content = BuildTabContent(pane, windowId, _workspace.FindWindow(windowId)!);
+            if (Host.Chrome.PaneGutter)
             {
-                continue;
+                // The gutter's row under the strip, for output only: a panel or a map is drawn natively over its pane and
+                // pads itself. Set every time, because a window's control is kept and re-parented across rebuilds.
+                content.Margin = new Margin(0, PaneGutterRowsFor(windowId), 0, 0);
             }
 
-            // ▌ is the focus half of the signal and bold is the selection half; both read on a monochrome
-            // terminal, where a luminance step does not.
-            var selected = string.Equals(pane.ActiveTab, windowId, StringComparison.Ordinal);
-            builder.AddTab(
-                TabTitles.For(
-                    window, ActiveCharacterKey(), focused && selected, selected, _ink, ChipFor(pane.Id, window)),
-                BuildTabContent(pane, windowId, window));
+            builder.AddTab(titles[i], content);
             ids.Add(windowId);
         }
 
         // Stretch so the tab strip + content fill their pane column to the right edge; the control
         // default is Left, which self-sizes to content and leaves the pane short (docs/patterns.md §12).
         var tabs = builder.Fill().WithAlignment(HorizontalAlignment.Stretch).Build();
+
+        // Where the host draws the strips it gets two rows to draw them in, and where it asks for a gutter every pane
+        // gives up a column either side. Both are cells the pane really loses, so PaneOutputRects (TabHeaderHeight and
+        // the margin) and NAWS follow.
+        if (Host.Chrome.Tabs)
+        {
+            tabs.HeaderStyle = TabHeaderStyle.Separator;
+        }
+
+        if (Host.Chrome.PaneGutter)
+        {
+            tabs.Margin = new Margin(PaneGutterColumns, 0, PaneGutterColumns, 0);
+        }
+
         for (var i = 0; i < ids.Count; i++)
         {
             tabs.TabPages[i].Tag = ids[i];
@@ -10361,6 +11982,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         PaintTabChips(tabs, PaneSurfaceTone(pane.Id));
+
+        // A pane holding one panel and nothing else draws no tab strip: the panel titles itself (PanelSizing.ShowsTabStrip,
+        // which ApplyAll has just applied). PaneOutputRects reads TabHeaderHeight, so the rectangle it reports follows.
+        tabs.ShowTabHeader = pane.DrawsHeader;
 
         var paneId = pane.Id;
         tabs.TabChanged += (_, e) => OnTabChanged(paneId, e.NewTab);
@@ -10393,6 +12018,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return BuildFrozenContent(windowId, window.Title);
         }
 
+        if (pane.ActiveTab == windowId && _scrollSplits.ContainsKey(windowId))
+        {
+            return BuildScrollSplitContent(windowId, window.Title);
+        }
+
         if (windowId == WebWindowId)
         {
             return BuildWebContent(window.Title);
@@ -10403,6 +12033,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var map = MapControlFor(windowId);
             RenderMap(windowId);
             return map;
+        }
+
+        // A layout panel drawn by a control of its own (TerminalPanels). An unregistered one falls through to an
+        // empty output view rather than vanishing, so a window restored from a build that had the panel still shows.
+        if (TerminalPanels.TryParseWindowId(windowId, out var panelId, out var panelOwner)
+            && Panels.GetOrCreate(new TerminalPanelContext(panelId, panelOwner, FindSession(panelOwner), windowId)) is { } panel)
+        {
+            return panel;
         }
 
         return OutputViewFor(windowId, window.Title);
@@ -10437,7 +12075,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var frozen = FrozenContentFor(windowId);
         FeedRange(frozen, buffer, 0, split);
 
-        var bar = new MarkupControl(new List<string> { FreezeBarRenderer.Bar(FrozenAccentHex()) });
+        var barWidth = BarWidth(windowId);
+        var bar = new MarkupControl(new List<string> { FreezeBarRenderer.Bar(FrozenAccentHex(), barWidth) });
+        _freezeBars[windowId] = (bar, barWidth);
 
         var live = PaneContentFor(windowId, title);
         FeedRange(live, buffer, split, buffer.Count - split);
@@ -10488,12 +12128,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Rebuilds the pane area from the model and swaps it into the live window.</summary>
     private void RebuildPaneArea()
     {
+        PaneAreaRebuilds++;
         var row = BuildWorkspaceRow();
         _window.RemoveContent(_workspaceRow);
         _window.InsertControl(WorkspaceRowIndex, row);
         _workspaceRow = row;
         RefreshTabTitles();
+        SyncStatusMeters();
     }
+
+    /// <summary>How many times the pane area has been torn down and rebuilt; a test counts the reflows a change cost.</summary>
+    internal int PaneAreaRebuilds { get; private set; }
 
     /// <summary>The TabControl of the focused pane, or null if none is realised.</summary>
     private TabControl? FocusedTabs() => _paneTabs.GetValueOrDefault(_workspace.Layout.FocusedPaneId);
@@ -10560,7 +12205,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _prefixArmed = true;
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
         _prefixTimer ??= _time.CreateTimer(
             _ => OnUiThread(ShowPrefixPanel), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _prefixTimer.Change(PrefixPanelDelay, Timeout.InfiniteTimeSpan);
@@ -10581,7 +12226,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _prefixArmed = false;
         _prefixTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _prefixPanel.Close();
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
     }
 
     /// <summary>
@@ -11018,7 +12663,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal string StatusMarkup => _statusBar.Text;
 
     /// <summary>Whether the ⌃Q confirmation is up.</summary>
-    internal bool QuitPromptOpen => _quit.IsOpen;
+    internal bool QuitPromptOpen => _quit.IsOpen || _nativeQuit is not null;
 
     /// <summary>What the ⌃Q confirmation is asking — the rendered markup, for a headless test to read.</summary>
     internal IReadOnlyList<string> QuitPromptLines => _quit.Lines;
@@ -11043,7 +12688,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal void SimulateReviewKey(ConsoleKeyInfo key) => _settings.Review.SimulateKey(key);
 
     /// <summary>Whether the ⌃R history surface is up.</summary>
-    internal bool HistorySearchOpen => _historySearch.IsOpen;
+    internal bool HistorySearchOpen => _historySearch.IsOpen || NativeModalOf(SurfaceCatalog.History) is not null;
 
     /// <summary>What the ⌃R surface is showing — the rendered markup, for a headless test to read.</summary>
     internal IReadOnlyList<string> HistorySearchLines => _historySearch.Lines;
@@ -11063,7 +12708,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal void SimulateHistorySearchKey(ConsoleKeyInfo key) => _historySearch.SimulateKey(key);
 
     /// <summary>Whether the ⌃F search surface is up.</summary>
-    internal bool SearchIsOpen => _search.IsOpen;
+    internal bool SearchIsOpen => _search.IsOpen || NativeModalOf(SurfaceCatalog.Search) is not null;
 
     /// <summary>What the search surface is currently listing — what ↑↓ walk and ⏎ picks from.</summary>
     internal IReadOnlyList<SearchRow> SearchRows => _search.Rows;
@@ -11117,6 +12762,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private string? HandleWindowKey(KeyPressedEventArgs e)
     {
+        NoteAttended();
         if (_moveMode)
         {
             HandleMoveKey(e);
@@ -11125,7 +12771,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Escape abandons a mouse drag. A terminal that loses the button-up (the pointer left the
         // window, the terminal dropped a frame) would otherwise strand the preview over the panes.
-        if (_dragActive && e.KeyInfo.Key == ConsoleKey.Escape)
+        if ((_dragActive || _tabDrag is not null) && e.KeyInfo.Key == ConsoleKey.Escape)
         {
             e.Handled = true;
             _paneDrag.Reset(); // no mouse frame ends this one, so the gesture has to be dropped here
@@ -11140,6 +12786,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // here because "a macro must not fire while a screen is open" is a rule of this app, not a
             // consequence of how the framework happens to dispatch, and the next surface may not be modal.
             if (AnyOverlayOpen)
+            {
+                return null;
+            }
+
+            // ⌥C put the keys on the connection sidebar: its arrows, ⏎ and Esc come first, and anything else hands
+            // the keys back and carries on down this chain (SharpMUTermApp.RailKeys.cs).
+            if (TryRailKey(e))
+            {
+                return null;
+            }
+
+            // ⌃P ▸ Edit map put the keys on a map: its arrows and edit keys come first, and anything else ends editing
+            // and carries on down this chain (SharpMUTermApp.MapEdit.cs).
+            if (TryMapKey(e))
+            {
+                return null;
+            }
+
+            // A docked composer holding the keyboard takes the keys an editor takes; see HandleComposerKey.
+            if (ArmedComposer() is { } composer)
+            {
+                return HandleComposerKey(composer, e);
+            }
+
+            if (TryComposerAltEnter(e))
             {
                 return null;
             }
@@ -11301,24 +12972,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 break;
 
             case 'b':
-                _railCollapsed = !_railCollapsed;
-                RebuildPaneArea();
+                ToggleRail();
                 break;
 
             case '<':
             case '>':
                 var tabs = _workspace.Layout.FocusedPane.Tabs.Count;
-                if (_workspace.Layout.ReorderActiveTab(key == '<' ? -1 : 1))
+                if (ReorderFocusedTab(key == '<' ? -1 : 1))
                 {
-                    // The strip has to be rebuilt, not retitled. A reorder changes the *order* of the
-                    // pane's tabs, and `TabControl` has no way to move a page — `TabPages` is a copy and
-                    // the only mutators are Add/Insert — so `RefreshTabTitles`, which repaints each page
-                    // by its own `Tag`, left the strip exactly as it was. That is not a cosmetic lag: the
-                    // model then holds an order the screen does not, and the *refusal* is read against the
-                    // model. Reordering the middle of three tabs looked like nothing happened, and the
-                    // next press — genuinely at the end, in a strip still showing it in the middle — said
-                    // "the tab is already at that end of the strip", which is how it was reported.
-                    RebuildPaneArea();
                     break;
                 }
 
@@ -11408,7 +13069,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // The focused window's session, not _active: a macro key is a keystroke, and a keystroke may not
         // reach a world other than the one whose pane is focused (see SendTarget). A pane with no
         // connection fires no macro and the key falls through the rest of the chain unclaimed.
-        if (SendTarget() is not { } session || MacroKeys.Descriptor(key) is not { } descriptor)
+        if (SendTarget() is not { } session || MacroKeys.Descriptor(Host.Keys, key) is not { } descriptor)
         {
             return null;
         }
@@ -11477,7 +13138,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         RebuildPaneArea();
-        SetStatus(MovePromptMarkup(), displace: true);
+        SetStatus(MovePromptRow(), displace: true);
     }
 
     /// <summary>Handles a key while in move mode: pick pane (1–9), edge (arrows), commit (⏎), cancel (Esc).</summary>
@@ -11505,7 +13166,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             _moveEdge = _moveEdge == edge ? null : edge;
             RebuildPaneArea();
-            SetStatus(MovePromptMarkup(), displace: true);
+            SetStatus(MovePromptRow(), displace: true);
             return;
         }
 
@@ -11517,7 +13178,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             {
                 _moveTargetPaneId = match.Key;
                 RebuildPaneArea();
-                SetStatus(MovePromptMarkup(), displace: true);
+                SetStatus(MovePromptRow(), displace: true);
             }
         }
     }
@@ -11551,12 +13212,34 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The move-mode status prompt.</summary>
-    private string MovePromptMarkup()
+    private StatusModel MovePromptRow()
     {
-        var name = _moveWindowId is { } id && _workspace.FindWindow(id) is { } w ? Escape(w.Title) : "window";
-        return $"[{_ink.Notice}]MOVE[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(_moveTargetPaneId, _moveEdge)}[/]"
-            + "   [dim]1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel[/]";
+        var name = _moveWindowId is { } id && _workspace.FindWindow(id) is { } w ? w.Title : "window";
+        return StatusRowModel(
+        [
+            DropPrompt("MOVE", name, DropLabel(_moveTargetPaneId, _moveEdge)),
+            DropHint(
+                DropPrompt("MOVE", name, DropLabel(_moveTargetPaneId, _moveEdge)),
+                "1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel",
+                "1–9 · ←↑↓→ · ⏎ commit · Esc cancel",
+                "⏎ commit · Esc cancel",
+                "⏎ · Esc"),
+        ]);
     }
+
+    /// <summary>
+    /// The move and drag prompts' key segment: the first of <paramref name="forms"/> that fits beside
+    /// <paramref name="prompt"/> on the row, so a narrow row gives up whole keys (⏎ and Esc last) and never cuts one.
+    /// </summary>
+    private StatusSegment DropHint(StatusSegment prompt, params string[] forms) =>
+        Segment(StatusRole.ModeHint, Dim(FirstFitting(HeaderWidth() - prompt.Width - StatusModel.Separator.Length, forms)));
+
+    /// <summary>The drag prompts' keys, longest first; Esc is given up last.</summary>
+    private static readonly string[] DragHints = ["release to drop · Esc cancel", "release · Esc cancel", "Esc cancel"];
+
+    /// <summary>The move and drag prompts' first segment: <c>MOVE window → where</c>.</summary>
+    private StatusSegment DropPrompt(string verb, string window, string where) =>
+        Segment(StatusRole.Prompt, Run(verb, _ink.Notice), Run(" "), Run(window, bold: true), Run(" "), Dim("→"), Run(" "), Run(where, _ink.Accent));
 
     /// <summary>Human-readable description of a pending drop, for the move prompt and drag preview.</summary>
     private string DropLabel(string? paneId, Edge? edge)
@@ -11626,6 +13309,27 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // thread; the copy is because the driver may reuse its list.
         var frame = flags.ToList();
         OnUiThread(() => OnPointerFrame(frame, point));
+        try
+        {
+            RouteDriverMouseEvent(flags, point);
+        }
+        finally
+        {
+            // A strip row the host draws over: the press is the client's own (the divider, a window drag), never the
+            // framework's, whose labels under it are blank cells. Struck last, so the tracker above saw the frame whole.
+            TakesNativeStripPress(flags, point);
+        }
+    }
+
+    private void RouteDriverMouseEvent(List<MouseFlags> flags, System.Drawing.Point point)
+    {
+
+        // A press on a tab strip's +N ▾ chip opens its list and nothing else: the framework, which reads this same list
+        // after us, is left a pointer movement rather than a click on the tab under the chip.
+        if (TakesTabOverflowPress(flags, point))
+        {
+            return;
+        }
 
         // Overlays own the whole screen while they're up; a drag underneath them would target panes
         // the user can't even see.
@@ -11727,17 +13431,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var rects = new Dictionary<string, PaneRect>(StringComparer.Ordinal);
         var windows = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var (paneId, _, rect) in RealisedPanes())
+        foreach (var (paneId, tabs, rect) in RealisedPanes())
         {
             rects[paneId] = rect;
 
-            if (_workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId)
+            // A pane that draws no tab strip (a one-row strip panel) has no drag handle: its one row is its
+            // content, and a press there belongs to that content's links.
+            if (tabs.ShowTabHeader && _workspace.Layout.FindPane(paneId)?.ActiveTab is { } windowId)
             {
                 windows[paneId] = windowId;
             }
         }
 
-        return new PaneDragSurface(rects, windows);
+        return new PaneDragSurface(rects, windows, HeaderDividerCells());
     }
 
     /// <summary>
@@ -11807,10 +13513,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal IReadOnlyDictionary<string, PaneRect> PaneOutputRects()
     {
         var rects = new Dictionary<string, PaneRect>(StringComparer.Ordinal);
+
+        // A resumed workspace builds its panel and map panes in the constructor, before the main window exists to
+        // measure them in: nothing is arranged yet, and each falls back to its default box until the first frame.
+        if (_window is null)
+        {
+            return rects;
+        }
+
         foreach (var (paneId, tabs, rect) in RealisedPanes())
         {
             var margin = tabs.Margin;
-            var top = margin.Top + tabs.TabHeaderHeight;
+            var pane = _workspace.Layout.FindPane(paneId);
+            var top = margin.Top + tabs.TabHeaderHeight + (IsCollapsedBar(pane) ? 0 : PaneGutterRowsFor(pane?.ActiveTab));
             rects[paneId] = new PaneRect(
                 rect.X + margin.Left,
                 rect.Y + top,
@@ -11845,16 +13560,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 _dragTargetPaneId = result.TargetPaneId;
                 _dragEdge = result.Edge;
                 RebuildPaneArea();
-                SetStatus(DragPromptMarkup(result.WindowId, result.TargetPaneId, result.Edge), displace: true);
+                SetStatus(DragPromptRow(result.WindowId, result.TargetPaneId, result.Edge), displace: true);
                 break;
 
             case PaneDragAction.Commit:
                 if (result.WindowId is { } windowId && result.TargetPaneId is { } paneId)
                 {
-                    if (PaneDrop.Apply(_workspace.Layout, windowId, paneId, result.Edge))
-                    {
-                        _workspace.ActivateWindow(windowId);
-                    }
+                    DropWindowOnPane(windowId, paneId, result.Edge);
                 }
 
                 EndDrag();
@@ -11873,6 +13585,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void EndDrag()
     {
+        _tabDrag = null;
         _dragActive = false;
         _dragTargetPaneId = null;
         _dragEdge = null;
@@ -11881,18 +13594,34 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The status line shown while a pane drag is in flight.</summary>
-    private string DragPromptMarkup(string? windowId, string? targetPaneId, Edge? edge)
+    private StatusModel DragPromptRow(string? windowId, string? targetPaneId, Edge? edge)
     {
-        var name = windowId is { } id && _workspace.FindWindow(id) is { } window ? Escape(window.Title) : "window";
-        return $"[{_ink.Notice}]DRAG[/] [bold]{name}[/] [dim]→[/] [{_ink.Accent}]{DropLabel(targetPaneId, edge)}[/]"
-            + "   [dim]release to drop · Esc cancel[/]";
+        var name = windowId is { } id && _workspace.FindWindow(id) is { } window ? window.Title : "window";
+        return StatusRowModel(
+        [
+            DropPrompt("DRAG", name, DropLabel(targetPaneId, edge)),
+            DropHint(DropPrompt("DRAG", name, DropLabel(targetPaneId, edge)), DragHints),
+        ]);
     }
 
     /// <summary>A pane rendered as a live drop target, sized from the drag's frozen geometry.</summary>
     private IWindowControl BuildDragPane(PaneNode pane)
     {
-        var rect = _paneDrag.Surface?.RectOf(pane.Id) ?? default;
+        // A native tab drag freezes its own geometry (SharpMUTermApp.TabDrag.cs); the cell drag's is the tracker's.
+        var rect = (_tabDrag?.Surface ?? _paneDrag.Surface)?.RectOf(pane.Id) ?? default;
         var hovered = pane.Id == _dragTargetPaneId;
+
+        // A native tab drag on a host that draws the strips washes the zone and says the drop itself (TabDragView), so
+        // the target pane draws neither the zone nor the words under it — the two framed the zone twice. The other
+        // panes still dim to their names, and the status row keeps its prompt. A terminal's mouse drag is unchanged.
+        if (hovered && _tabDrag is not null && Host.Chrome.Tabs)
+        {
+            return new MarkupControl(PaneDropRenderer.Render(string.Empty, string.Empty, rect.Width, rect.Height, false, null))
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+        }
+
         var lines = PaneDropRenderer.Render(
             PaneLabel(pane.Id),
             DropLabel(pane.Id, _dragEdge),
@@ -12001,7 +13730,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         if (tab.Tag is string windowId)
         {
-            OnUiThread(() => CloseWindow(windowId));
+            OnUiThread(() => CloseStripTab(windowId));
         }
     }
 
@@ -12055,6 +13784,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _paneScrolls.Remove(id);              // and its scroll position: a reopened window starts live
         _paneScrolls.Remove(FrozenRegionKey(id));
         _frozenPanes.Remove(id);
+        _freezeBars.Remove(id);
+        ForgetScrollSplit(id);
         _drafts.Forget(id);        // both bars: a closed window keeps neither of its two drafts
         _pendingGrabs.Remove(id);
         _secondBars.Forget(id);    // and a same-id window later starts from F8's default again
@@ -12096,6 +13827,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             return false;
         }
+
+        ExpandBarHolding(id); // a window brought forward is never left in a collapsed panel's bar
 
         // Selecting the tab below raises the framework's own TabChanged, which lands back in
         // OnTabChanged and so back here. The model call above is idempotent, so re-entering is harmless
@@ -12179,11 +13912,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Through Snippet, because a window's title can be a *world's* text — the web view is titled from
         // the page it loaded — and the status row is not a place to paste an unbounded string from the wire.
+        var named = Snippet(owner is { Length: > 0 } ? DisplayName(owner) : _workspace.FindWindow(windowId)?.Title ?? windowId);
         Notice(
             owner is { Length: > 0 }
-                ? $"{owner} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere from this pane"
-                : $"{Snippet(_workspace.FindWindow(windowId)?.Title ?? windowId)} belongs to no connection — " +
-                  "⏎ sends nowhere from this pane");
+                ? FirstFitting(
+                    NoticeRoom(),
+                    $"{named} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere from this pane",
+                    $"{named} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere",
+                    $"{named} has no open session — ⌃P ▸ Switch to it; ⏎ sends nowhere",
+                    $"{named}: no session — ⌃P ▸ Switch to it; ⏎ sends nowhere",
+                    "no session — ⌃P ▸ Switch to it; ⏎ sends nowhere",
+                    "no session · ⌃P ▸ Switch to · ⏎ sends nowhere")
+                : FirstFitting(
+                    NoticeRoom(),
+                    $"{named} belongs to no connection — ⏎ sends nowhere from this pane",
+                    "this pane belongs to no connection — ⏎ sends nowhere from it",
+                    "no connection here — ⏎ sends nowhere"));
     }
 
     /// <summary>
@@ -12226,6 +13970,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         SyncScrollbackState();
         RefreshPromptRow();
         ReportPaneSizes();
+        SyncComposerArm();
+        SyncStatusMeters();
     }
 
     /// <summary>
@@ -12304,58 +14050,80 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         var activeTab = _workspace.Layout.FindPane(paneId)?.ActiveTab;
         var pages = tabs.TabPages;
-        var costs = new List<TabCost>(pages.Count);
-        var windows = new WorkspaceWindow?[pages.Count];
-        var full = new string?[pages.Count];
 
+        // The × follows the active tab, so keep it in step with every title refresh — and it has to be settled before
+        // the strip is costed, because it is one of the cells being counted.
+        var ids = new List<string>(pages.Count);
+        for (var i = 0; i < pages.Count; i++)
+        {
+            if (pages[i].Tag is string id && _workspace.FindWindow(id) is not null)
+            {
+                pages[i].IsClosable = CanCloseTab(id, activeTab);
+                ids.Add(id);
+            }
+        }
+
+        var strip = Drawing(SurfaceCatalog.TabStrip, paneId, StripModelFor(paneId, ids, activeTab, focusedCharacter));
+        var chipOf = ChipOf(paneId);
+        var full = TabTitles.Strip(strip, _ink, chipOf);
+        var costs = new List<TabCost>(pages.Count);
+        var tabAt = new int[pages.Count];
+        var next = 0;
         for (var i = 0; i < pages.Count; i++)
         {
             var page = pages[i];
-            var id = page.Tag as string;
-            var window = id is not null ? _workspace.FindWindow(id) : null;
-            var selected = id is not null && string.Equals(activeTab, id, StringComparison.Ordinal);
-
-            // The × follows the active tab, so keep it in step with every title refresh — and it has to
-            // be settled before the strip is costed, because it is one of the cells being counted.
-            if (id is not null && window is not null)
-            {
-                page.IsClosable = CanCloseTab(id, activeTab);
-            }
-
             var frame = 2 + (page.IsClosable ? 1 : 0) + (i < pages.Count - 1 ? 1 : 0);
-            if (window is null)
+            var selected = page.Tag is string pageId && string.Equals(activeTab, pageId, StringComparison.Ordinal);
+            if (next >= strip.Tabs.Count || !string.Equals(page.Tag as string, strip.Tabs[next].WindowId, StringComparison.Ordinal))
             {
+                tabAt[i] = -1;
                 costs.Add(new TabCost(0, 0, MarkupText.VisibleLength(page.Title) + frame, selected));
                 continue;
             }
 
-            var title = TabTitles.For(
-                window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
-                ChipFor(paneId, window));
-            var name = TabTitles.Name(window).Length;
-
-            windows[i] = window;
-            full[i] = title;
-            costs.Add(new TabCost(
-                name, window.Title.Length, MarkupText.VisibleLength(title) - name + frame, selected));
+            var tab = strip.Tabs[next];
+            tabAt[i] = next;
+            var name = tab.Name.Length;
+            costs.Add(new TabCost(name, tab.Title.Length, MarkupText.VisibleLength(full[next]) - name + frame, selected));
+            next++;
         }
 
         var budgets = TabStripFit.Budgets(costs, _stripWidths.GetValueOrDefault(paneId));
         for (var i = 0; i < pages.Count; i++)
         {
-            if (windows[i] is not { } window)
+            if (tabAt[i] is var t and >= 0)
             {
-                continue;
+                var tab = strip.Tabs[t];
+                pages[i].Title = budgets[i] >= costs[i].NameLength
+                    ? full[t]
+                    : TabTitles.For(tab, strip.Focused && tab.Selected, _ink, chipOf(tab), budgets[i]);
             }
-
-            var selected = costs[i].Selected;
-            pages[i].Title = budgets[i] >= costs[i].NameLength
-                ? full[i]!
-                : TabTitles.For(
-                    window, focusedCharacter, IsFocusedPane(paneId) && selected, selected, _ink,
-                    ChipFor(paneId, window), budgets[i]);
         }
     }
+
+    /// <summary>
+    /// A pane's tab strip as data (<see cref="SurfaceCatalog.TabStrip"/>): one tab per window in <paramref name="windowIds"/>
+    /// that still exists, in strip order. What the cells write into the tab titles and what a host that draws the strips
+    /// (<see cref="HostChrome.Tabs"/>) is handed are this one model.
+    /// </summary>
+    private TabStripModel StripModelFor(string paneId, IEnumerable<string> windowIds, string? activeTab, string? focusedCharacter)
+    {
+        var tabs = new List<TabChipModel>();
+        foreach (var id in windowIds)
+        {
+            if (_workspace.FindWindow(id) is { } window)
+            {
+                var selected = string.Equals(activeTab, id, StringComparison.Ordinal);
+                tabs.Add(TabChipModel.From(window, focusedCharacter, selected, CanCloseTab(id, activeTab)));
+            }
+        }
+
+        return new TabStripModel(paneId, IsFocusedPane(paneId), TabStripModel.OneOwner(tabs));
+    }
+
+    /// <summary>The plane each unselected tab of a pane is drawn on (<see cref="ChipFor"/>), by its model.</summary>
+    private Func<TabChipModel, TabChip?> ChipOf(string paneId) =>
+        tab => _workspace.FindWindow(tab.WindowId) is { } window ? ChipFor(paneId, window) : null;
 
     /// <summary>
     /// Re-measures each strip against the pane it was just arranged into, and re-titles the ones that
@@ -12443,6 +14211,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (!session.IsConnected)
             {
                 _sizeReports.Remove(session);
+                _raggedWraps.Remove(session.World.Name);
                 continue;
             }
 
@@ -12455,6 +14224,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             OfferWindowSize(session, (Math.Max(1, rect.Width), Math.Max(1, rect.Height)), now);
+            SuggestJoinWraps(session, rect.Width);
         }
 
         ArmSizeFlush(now);
@@ -12633,10 +14403,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// took. Re-deriving here rather than in <see cref="SetStatus"/> is what covers the notice case too.
     /// </para>
     /// </summary>
-    private void PaintStatus(string markup)
+    private void PaintStatus(StatusModel model)
     {
-        _statusBar.SetContent(new List<string> { markup });
+        // The model first, the cells from it: cut to the width now (StatusModel.Fit), so a notice never wraps the row.
+        _statusModel = Drawing(SurfaceCatalog.Status, string.Empty, model);
+        _statusBar.SetContent(new List<string> { StatusRowMarkup(model.Fit(HeaderWidth())) });
         SyncInputHeights(_second.Visible);
+        PublishStatus(); // a host's footer has no cell to repaint, so a change may paint no frame (RefreshHeader's reason)
     }
 
     /// <summary>
@@ -12656,7 +14429,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// True for a line that must be seen <em>now</em> — the move and drag prompts, which are a mode the
     /// user just entered rather than a background repaint.
     /// </param>
-    private void SetStatus(string markup, bool displace = false)
+    private void SetStatus(StatusModel markup, bool displace = false)
     {
         _restingStatus = markup;
         if (displace)
@@ -12671,7 +14444,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>What the status row says with no notice over it. Kept in step by <see cref="SetStatus"/>.</summary>
-    private string _restingStatus = "[dim]not connected[/]";
+    private StatusModel? _restingStatus;
 
     /// <summary>
     /// How long a <see cref="Notice"/> holds the status row. tmux's <c>display-time</c> is well under a
@@ -12680,10 +14453,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// five seconds of unhurried reading. Six gives that a margin without a refusal outstaying the thing
     /// it refused. Nothing is lost to it either way: every notice is echoed into the output window.
     /// </summary>
-    internal static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(6);
+    internal static readonly TimeSpan NoticeDuration = NoticeModel.Duration;
 
     /// <summary>The transient message currently laid over the resting row, or null when there is none.</summary>
     private string? _notice;
+    private NoticeModel? _noticeShown;
     private ITimer? _noticeTimer;
 
     /// <summary>
@@ -12714,8 +14488,26 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <param name="text">The message, as plain text — the log keeps this, and the row's markup is built from it.</param>
     /// <param name="severity">How loud it is; the viewer colours and labels rows by this.</param>
     /// <param name="key">An optional leading chip naming the surface that refused (<c>⌃B</c>, <c>⌃P</c>).</param>
-    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null)
+    /// <param name="action">
+    /// A command the notice offers. The status row never draws it (a terminal cell is not a button, and the text
+    /// already names the key); a host that draws notices natively offers it as a click (<see cref="NoticeModel"/>).
+    /// </param>
+    /// <param name="toast">
+    /// False keeps the notice off a host's toast stack: the status row still says it and the message log keeps it. For a
+    /// notice the surface it answers already shows (a map edit, under the window's map inspector).
+    /// </param>
+    /// <param name="second">A second command the notice offers, after <paramref name="action"/>.</param>
+    private void Notice(string text, MessageSeverity severity = MessageSeverity.Warning, string? key = null, NoticeAction? action = null, string? source = null, bool toast = true, NoticeAction? second = null)
     {
+        // The same notice raised again while it is still up is one notice: it keeps the row for another few seconds and
+        // is not said, toasted or announced a second time. Two identical toasts stacked in the window were the report.
+        if (_notice is not null && _noticeShown is { } shown && shown.Text == text && shown.Key == key && shown.Source == source
+            && shown.Severity == NoticeSeverityOf(severity) && shown.Action == action && shown.Second == second)
+        {
+            _noticeTimer?.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
+            return;
+        }
+
         // Through the logger, not straight into the buffer: the client's own messages and the telnet
         // stack's diagnostics then share one ordered history (and one rolling file), which is the point
         // of there being a pipeline at all.
@@ -12727,16 +14519,25 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 _ => LogLevel.Information,
             },
             "{Notice:l}", // :l renders the string literally; the default quotes it, and a quoted sentence reads as data
-            key is null ? text : $"{key} {text}");
+            source is not null ? $"{source}: {text}" : key is null ? text : $"{key} {text}");
 
         AnnounceNotice(text);
-        var body = severity == MessageSeverity.Error
-            ? $"[{ScreenPalette.Warn}]{Escape(text)}[/]"
-            : $"[dim]{Escape(text)}[/]";
-        var markup = key is null ? body : $"[{_ink.Notice}]{Escape(key)}[/] {body}";
+        var model = Drawing(
+            SurfaceCatalog.Notice,
+            string.Empty,
+            new NoticeModel(text, NoticeSeverityOf(severity), source is null ? key : null, action, _time.GetUtcNow(), ++_noticeSequence, source)
+            {
+                Second = action is null ? null : second,
+            });
+        var segment = NoticeSegment(model);
 
-        _notice = markup;
-        PaintStatus(markup);
+        _notice = StatusRowMarkup(segment.Runs);
+        _noticeShown = model;
+        PaintStatus(StatusRowModel([segment], notice: model));
+        if (toast)
+        {
+            PublishNotice(model);
+        }
         _noticeTimer ??= _time.CreateTimer(
             _ => OnUiThread(ClearNotice), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _noticeTimer.Change(NoticeDuration, Timeout.InfiniteTimeSpan);
@@ -12748,6 +14549,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal ClientMessageLog Messages => _messages;
 
+    /// <summary>Lifts the notice off the row now, as its timer would; for a test reading the resting row under it.</summary>
+    internal void ClearNoticeForTest() => ClearNotice();
+
     /// <summary>Lifts the notice off the row, putting the resting line back under it.</summary>
     private void ClearNotice()
     {
@@ -12757,7 +14561,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         ForgetNotice();
-        PaintStatus(_restingStatus);
+        PaintStatus(_restingStatus ?? NotConnectedRow());
     }
 
     /// <summary>Forgets the notice and disarms its timer, without painting — for callers about to paint.</summary>
@@ -12768,11 +14572,30 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>The resting status row of a client with nothing connected.</summary>
-    private string NotConnectedMarkup()
+    private StatusModel NotConnectedRow()
     {
-        var scrollback = ScrollbackStatus();
-        var suffix = scrollback.Length == 0 ? string.Empty : $"   {scrollback}";
-        return $"[dim]not connected · Graphics {Escape(_capabilities.Protocol.ToString())} · ⌃P palette · ⌃Q quit[/]{suffix}";
+        // No graphics readout: which protocol the probe chose is a startup fact (--help and the session's first line say it), and on a
+        // first run it was the one technical word on the screen.
+        var row = new List<StatusSegment>
+        {
+            Segment(StatusRole.Text, Dim("not connected · "), Dim(PaletteHintText, HeaderModel.PaletteTarget), Dim(" · ⌃Q quit")),
+        };
+        if (ScrollbackStatus() is { } scrollback)
+        {
+            row.Add(scrollback);
+        }
+
+        // A client with nothing connected is still read back through, frozen and searched: the mode's keys go on
+        // the end where they fit, the longest that does.
+        var mode = CurrentStatusMode();
+        _statusModeShown = mode;
+        if (mode != StatusMode.None
+            && ModeHintSegments(mode).FirstOrDefault(h => StatusModel.WidthOf(row) + 3 + h.Width <= HeaderWidth()) is { } hint)
+        {
+            row.Add(hint);
+        }
+
+        return StatusRowModel(row);
     }
 
     private void UpdateStatus()
@@ -12783,7 +14606,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // Clear the identity too: leaving a stale one behind means the next RefreshStatusBar
             // repaints a connection that is no longer there.
             _statusIdentity = null;
-            SetStatus(NotConnectedMarkup());
+            SetStatus(NotConnectedRow());
             return;
         }
 
@@ -12793,7 +14616,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var character = session.Character?.Name ?? session.World.Name;
         _statusIdentity = (character, session.World.Host, session.World.Port, session.State.ToString().ToLowerInvariant());
         RefreshStatusBar();
-        _header.SetContent(new List<string> { HeaderMarkup() });
+        RefreshHeader();
         RefreshRail();
     }
 
@@ -12803,7 +14626,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// connected fraction reading the old denominator until the next connect or disconnect happened to
     /// repaint it.
     /// </summary>
-    private void RefreshHeader() => _header.SetContent(new List<string> { HeaderMarkup() });
+    private void RefreshHeader()
+    {
+        _header.SetContent(new List<string> { HeaderMarkup() });
+
+        // A host that draws the header itself has no cell of it to repaint, so a change that moves no cell (⌃B
+        // armed, a world connecting) might paint no frame and the host would not hear of it on PostBufferPaint.
+        PublishHostChrome();
+    }
 
     /// <summary>
     /// The design header row: the brand affordance on the left, the active world (with its accent)
@@ -12811,17 +14641,66 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private string HeaderMarkup()
     {
+        var model = BuildHeaderModel();
+        PublishTitle(model);
+        return HeaderMarkup(model);
+    }
+
+    /// <summary>
+    /// The header as a view-model (<see cref="HeaderModel"/>): what the band says, with no presentation. The cell
+    /// header and the window's native header are both drawn from this.
+    /// </summary>
+    internal HeaderModel BuildHeaderModel()
+    {
+        HeaderWorld? world = null;
+        HeaderCharacter? character = null;
+        if (ActiveWorld() is { } active)
+        {
+            world = new HeaderWorld(active.World.Name, active.Accent);
+            if (active.Character is { } name)
+            {
+                var key = $"{active.World.Name}.{name}";
+                character = new HeaderCharacter(
+                    name,
+                    key,
+                    // The rail's dot and this one are one answer: ConnectedCharacters is what the dot and the fraction
+                    // read, and a session's own state adds only "being dialled".
+                    ConnectedCharacters().Contains(key)
+                        ? CharacterPresence.Online
+                        : PresenceOf.State(_sessions.Find(key)?.State) == CharacterPresence.Connecting
+                            ? CharacterPresence.Connecting
+                            : CharacterPresence.Offline,
+                    active.World.Host,
+                    active.World.Port,
+                    active.World.UseTls,
+                    CommandIds.Character(key));
+            }
+        }
+
+        return new HeaderModel(
+            _palette is { IsOpen: true } || _nativePaletteSession is not null,
+            world,
+            character,
+            ConnectedCharacters().Count,
+            ConfiguredConnections(),
+            _config.Worlds.Count > 0,
+            HeaderLogFormat(),
+            _prefixArmed)
+        {
+            Prefix = _prefixArmed ? PrefixPanel.Model(PrefixFactsNow()) : null,
+            Recording = SceneRecording,
+        };
+    }
+
+    /// <summary>The header row's markup, drawn from <paramref name="model"/> and nothing else it could disagree with.</summary>
+    private string HeaderMarkup(HeaderModel model)
+    {
+        Drawing(SurfaceCatalog.Header, string.Empty, model);
+
         // The menu affordance opens the command surface (caret flips to ▾ while it's open). The whole
         // identity cluster is a powerline ribbon — menu ▸ world ▸ character — flowing accent colours.
-        var caret = _palette is { IsOpen: true } ? "▾" : Glyphs.Menu;
-        var dark = Hex(_theme.Resolve(TerminalColor.Default, isBackground: true));
+        var caret = model.MenuOpen ? "▾" : Glyphs.Menu;
         var headerBg = Hex(_theme.StatusBackground);
-        // The dim chrome the character segment sits on. Derived rather than the literal #3f4859 it was:
-        // the header is painted on the theme's own chrome band, and a fixed dark chip under a *light*
-        // theme is a plane nothing else on the row is measured against — which is how the world accent
-        // came to be drawn on it at 1.53:1.
-        var chipRgb = WorkspacePalette.HeaderChip(_theme);
-        var chip = chipRgb.ToHex();
 
         // Build the ribbon by hand so only the brand "button" is a link (wrapping the whole bar makes
         // the driver's link highlight repaint every segment and flatten the flowing colours).
@@ -12830,29 +14709,58 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // legible is the text *on* it, so each segment's ink is measured against the fill it lands on.
         var brandBg = FillHex(AccentPalette[2]); // violet
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[link={MenuScheme}toggle][bold {Ink(dark, brandBg)} on {brandBg}] {caret} muterm [/][/]");
+        sb.Append($"[link={HeaderModel.PaletteTarget}][bold {SegmentInk(brandBg)} on {brandBg}] {caret} {BrandWord} [/][/]");
 
-        var tail = brandBg;
-        if (ActiveWorld() is { } active)
+        string? tail = brandBg;
+        if (model.World is { } active)
         {
             var worldAccent = FillHex(active.Accent);
             sb.Append($"[{tail} on {worldAccent}]{Glyphs.PowerRight}[/]");
-            sb.Append($"[bold {Ink(dark, worldAccent)} on {worldAccent}] {Escape(active.World.Name)} [/]");
+            sb.Append($"[bold {SegmentInk(worldAccent)} on {worldAccent}] {Escape(active.Name)} [/]");
             tail = worldAccent;
-            if (active.Character is { } name)
+            if (model.Character?.Name is { } name)
             {
-                sb.Append($"[{tail} on {chip}]{Glyphs.PowerRight}[/]");
-
-                // The ● wears the world's colour and is *text* here rather than a fill, so it is the one
-                // place on this row the accent has to clear the floor — against the chip, which is the
-                // plane it actually lands on.
-                sb.Append($"[{Ink(worldAccent, chip)} on {chip}] ● {Escape(name)} [/]");
-                tail = chip;
+                // The character is the ribbon's last word and sits on the band itself, as the terminal mockups draw
+                // it (` ● Corvid ` in the world's colour, no chip): the ribbon ends at the world, and the ● and name
+                // wear the world's colour as *text*, so they are the one place on this row the accent has to clear
+                // the floor — against the band, which is the plane they actually land on.
+                sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
+                sb.Append($"[bold {Contrast.Legible(ParseHex(worldAccent), ParseHex(headerBg), WorkspacePalette.HeaderTextFloor).ToHex()} on {headerBg}] ● {Escape(name)} [/]");
+                tail = null;
             }
         }
 
-        sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
+        if (tail is not null)
+        {
+            sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
+        }
+
         var leftBar = sb.ToString();
+        var right = HeaderRight(model);
+
+        // With no world the ribbon ends at the brand and the band says so in its quiet ink (the terminal first-run
+        // mockup's ` ≡ SharpMUTerm  no connection`), the same words the prompt uses for the same fact — where the row
+        // has room for it; it goes before the brand is shortened, because an overlong header wraps.
+        var none = $"[{WorkspacePalette.HeaderMuted(_theme).ToHex()}] no connection [/]";
+        if (model.World is null && !model.PrefixArmed && MarkupWidth(leftBar + none) + MarkupWidth(right) + 3 <= HeaderWidth())
+        {
+            leftBar += none;
+        }
+
+        // The product's name where the row has room for it beside the ribbon and the right-hand cluster (the mockups'
+        // `≡ SharpMUTerm`); the short `muterm` it always was where it has not, because an overlong header wraps.
+        if (MarkupWidth(leftBar) + MarkupWidth(right) + 3 > HeaderWidth())
+        {
+            var at = leftBar.IndexOf($" {BrandWord} ", StringComparison.Ordinal);
+            leftBar = string.Concat(leftBar.AsSpan(0, at), $" {ShortBrandWord} ", leftBar.AsSpan(at + BrandWord.Length + 2));
+        }
+
+        // Still too wide (a 60-column terminal with a world and a character): the connected count goes next. The rail's
+        // dots say the same fact, and a header that wraps takes a row off every pane.
+        if (MarkupWidth(leftBar) + MarkupWidth(right) + 3 > HeaderWidth())
+        {
+            right = HeaderRight(model, count: false);
+        }
 
         // The ⌃B prefix indicator shows only while armed, and it is the *terse* half of the which-key
         // pair: the keys immediately, the panel a few hundred milliseconds later if nothing was pressed.
@@ -12860,7 +14768,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // cannot drift. It is picked to fit the room the identity ribbon leaves, because the header is one
         // row and an overlong one *wraps*, which costs a row of workspace; the widest spelling ran the
         // eighty-column layout to within four cells of the edge before anything was added to it.
-        if (_prefixArmed)
+        if (model.PrefixArmed)
         {
             var room = HeaderWidth() - MarkupWidth(leftBar) - 2;
             return $"{leftBar}  {PrefixPanel.Strip(room, _ink)}";
@@ -12875,25 +14783,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // graphics readout, which took the 80-column layout to precisely 80 cells; dropping that (see
         // below) gave the width back. InputAreaLayoutTests.TheFirstFrameFitsTheTerminalItIsOn(80) is the
         // test that says so, and anything added here has to keep it passing.
-        var connected = ConnectedCharacters().Count;
-        var conn = _config.Worlds.Count > 0
-            ? $"{connected}/{ConfiguredConnections()} characters   "
-            : string.Empty;
-        var logFormat = HeaderLogFormat();
-        var log = logFormat == LogFormat.None
-            ? $"[dim]{Glyphs.Log} LOG off[/]"
-            : $"[{_ink.Accent}]{Glyphs.Log}[/] [dim]LOG {logFormat.ToString().ToLowerInvariant()}[/]";
+        // The quiet half of the row is held to the header's floor on its band rather than left to the framework's
+        // fixed [dim] grey, which is 3.4:1 on Dark's band and less on Light's.
+        // Right-align the status cluster to the far edge so the menu bar spans the whole console.
+        var gap = Math.Max(3, HeaderWidth() - MarkupWidth(leftBar) - MarkupWidth(right));
+        return $"{leftBar}{new string(' ', gap)}{right}";
+    }
+
+    /// <summary>The product's name on the header's brand button, and the short form a narrow row falls back to.</summary>
+    private const string BrandWord = "SharpMUTerm", ShortBrandWord = "muterm";
+
+    /// <summary>The header's right-hand cluster: the connected fraction and the log cell.</summary>
+    private string HeaderRight(HeaderModel model, bool count = true)
+    {
+        var muted = WorkspacePalette.HeaderMuted(_theme).ToHex();
+        var conn = count && model.HasWorlds ? $"{model.ConnectedText}   " : string.Empty;
+        var log = model.Log == LogFormat.None
+            ? $"[{muted}]{Glyphs.Log} {model.LogText}[/]"
+            : $"[{Contrast.Legible(ParseHex(_ink.Accent), _theme.StatusBackground, WorkspacePalette.HeaderTextFloor).ToHex()}]{Glyphs.Log}[/] [{muted}]{model.LogText}[/]";
         // No graphics readout here. Which protocol the probe settled on is decided once at startup and
         // never changes, so a permanent cell of chrome spends the row's scarcest resource on a fact that
         // cannot become news — and it was already said twice elsewhere: the session prints
         // "*** SharpMUTerm — theme '…', graphics: …" when it opens, and the not-connected status line
         // repeats it. A startup fact belongs where startup facts are read, not in the row that has to
         // fit an identity ribbon and a live count at eighty columns.
-        var right = $"[dim]{conn}[/]{log}   ";
-
-        // Right-align the status cluster to the far edge so the menu bar spans the whole console.
-        var gap = Math.Max(3, HeaderWidth() - MarkupWidth(leftBar) - MarkupWidth(right));
-        return $"{leftBar}{new string(' ', gap)}{right}";
+        return $"[{muted}]{conn}[/]{log}   ";
     }
 
     /// <summary>
@@ -12976,7 +14890,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// you are outlives everything.
     /// </para>
     /// </summary>
-    private string[] FocusHints()
+    private StatusSegment[] FocusHints()
     {
         var panes = _workspace.Layout.Panes.Count > 1 && _workspace.Layout.ZoomedPaneId is null;
         var bars = _second.Visible;
@@ -13000,10 +14914,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         };
 
         var segments = ordered.OfType<(string Text, int Rank)>().ToList();
-        var candidates = new List<string>(segments.Count);
+        var candidates = new List<StatusSegment>(segments.Count);
         while (segments.Count > 0)
         {
-            candidates.Add($"[dim]{string.Join(" · ", segments.Select(s => s.Text))}[/]");
+            candidates.Add(Segment(StatusRole.FocusHint, Dim(string.Join(" · ", segments.Select(s => s.Text)))));
             segments.Remove(segments.MinBy(s => s.Rank));
         }
 
@@ -13020,46 +14934,128 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The cells the status row's room field always takes, whatever the room is called.</summary>
     internal const int RoomCellWidth = 28;
 
+    /// <summary>The most cells the room field grows to on a wide row (<see cref="RoomCellFor"/>).</summary>
+    internal const int RoomCellMaxWidth = 64;
+
+    /// <summary>
+    /// How wide the room field is on this row: <see cref="RoomCellWidth"/>, grown into the row's spare cells up to
+    /// <see cref="RoomCellMaxWidth"/> — after the widest focus hint is set aside, so the field never takes a hint's
+    /// place. A function of the row and never of the room's name, so a walk still moves nothing: at 160 columns the
+    /// cell read <c>The Grand Plaza · Aetherf…</c> with thirty cells free beside it.
+    /// </summary>
+    private int RoomCellFor(int left, int rightBar, StatusMode mode)
+    {
+        var hints = mode == StatusMode.None ? FocusHints().Select(h => h.Width + 3).DefaultIfEmpty(0).Max() : 0;
+        var moo = _active?.McpStatus is null ? 0 : MooStatusCellWidth + 3;
+        var spare = HeaderWidth() - left - 3 - rightBar - MinStatusGap - MeterSlack - hints - moo;
+        return Math.Clamp(spare, RoomCellWidth, RoomCellMaxWidth);
+    }
+
     /// <summary>The room the active connection's map says the character is in, or null.</summary>
     private (long Id, string Name, string? Area)? StatusRoom() =>
         MapOf(_active?.SessionKey ?? (_sessions.Sessions.Count == 0 ? DemoScene.ActiveSessionKey : null))?.Current;
 
     /// <summary><c>⌂ Room · Area</c>, elided and padded to <see cref="RoomCellWidth"/>. The room leads: it is what
     /// changes, and it is what an elision should keep.</summary>
-    internal static string RoomCell(string name, string? area)
+    internal static string RoomCell(string name, string? area, int width = RoomCellWidth) =>
+        $"[dim]{Escape(RoomCellText(name, area, width))}[/]";
+
+    /// <summary><see cref="RoomCell"/>'s text: <c>⌂ Room · Area</c>, elided and padded.</summary>
+    internal static string RoomCellText(string name, string? area, int width = RoomCellWidth)
     {
         var text = string.IsNullOrWhiteSpace(area) ? name : $"{name} · {area}";
-        var room = RoomCellWidth - 2;
+        var room = Math.Max(RoomCellWidth, width) - 2;
         if (text.Length > room)
         {
             text = text[..(room - 1)] + "…";
         }
 
-        return $"[dim]⌂ {Escape(text.PadRight(room))}[/]";
+        return $"⌂ {text.PadRight(room)}";
+    }
+
+    /// <summary>Whether the status row last left its meters out because the vitals strip was showing them.</summary>
+    private bool _statusMetersHidden;
+
+    /// <summary>
+    /// Whether the status row's character (the one its meters read) has its vitals strip on screen: the strip's
+    /// window is the front tab of a pane that is drawn, so the same meters are already in front of the reader.
+    /// </summary>
+    internal bool VitalsStripShowing()
+    {
+        var key = _active?.SessionKey
+            ?? (_sessions.Sessions.Count == 0 ? _demoActiveKey ?? DemoScene.ActiveSessionKey : null);
+        if (key is null)
+        {
+            return false;
+        }
+
+        var windowId = TerminalPanels.WindowId(Core.Layouts.PanelIds.Vitals, key);
+        return _workspace.Layout.FindWindow(windowId) is { } pane
+            && pane.ActiveTab == windowId
+            && (_workspace.Layout.ZoomedPaneId is not { } zoomed || zoomed == pane.Id);
+    }
+
+    /// <summary>
+    /// Repaints the status row when the vitals strip has come onto the screen or left it since the row was drawn,
+    /// so the meters move between the two. Only on a change: a repaint for nothing would displace a notice.
+    /// </summary>
+    private void SyncStatusMeters()
+    {
+        if (VitalsStripShowing() != _statusMetersHidden)
+        {
+            RefreshStatusBar();
+        }
     }
 
     /// <summary>The cells the meters leave free for the typed-character count to grow into.</summary>
     private const int MeterSlack = 4;
 
-    private string StatusBarMarkup(string character, string state)
+    /// <summary>
+    /// The resting status row of a connected client, as a model: every segment by its role, laid out to the row's width
+    /// with the row's reserved fields and drop order. The cells are rendered from it (<see cref="PaintStatus"/>), and the
+    /// window's footer draws the same instance.
+    /// </summary>
+    private StatusModel StatusBarRow(string character, string state)
     {
+        // A dropped connection waiting to dial again says when, in place of "faulted" (SharpMUTermApp.Reconnect.cs).
+        state = ReconnectStatus(_active) ?? state;
         var accent = ActiveWorld() is { } world ? AccentHex(world.Accent) : _ink.Accent;
-        var left = $"[{accent}]●[/] [bold]{Escape(character)}[/] [dim]{Escape(state)}[/]";
-        var meters = StatusMeterRenderer.Render(StatusMeters(), StatusData(), $"{_ink.Notice}");
+        var left = new List<StatusSegment>
+        {
+            Segment(StatusRole.Identity, Run("●", accent), Run(" "), Run(character, bold: true), Run(" "), Dim(state)),
+        };
+        int W(IReadOnlyCollection<StatusSegment> cluster) => StatusModel.WidthOf(cluster);
 
-        var right = new List<string>();
+        // The vitals strip already draws these meters for this character, larger; the row says them only while it
+        // is not on screen. Nothing else on the row moves with it: every other cell is reserved or dropped by width.
+        _statusMetersHidden = VitalsStripShowing();
+        StatusSegment? MeterSegment(bool compact) =>
+            StatusMeterRenderer.Runs(StatusMeters(), StatusData(), LowInk(_theme.StatusBackground), StatusDim, compact, StatusMeterInk) is { Count: > 0 } runs
+                ? new StatusSegment(StatusRole.Meters, runs)
+                : null;
+        var meters = _statusMetersHidden ? null : MeterSegment(compact: false);
+
+        var right = new List<StatusSegment>();
 
         // Leftmost of the right cluster while it is there at all: a pane that is not showing its newest
         // line is the most important thing the row can say, because nothing else on screen says it.
-        if (ScrollbackStatus() is { Length: > 0 } scrollback)
+        var scrollback = ScrollbackStatus();
+        if (scrollback is not null)
         {
             right.Add(scrollback);
+        }
+
+        // While a scene is being recorded (⌃P ▸ Start scene log), in any window: a three-hour scene is easy to forget.
+        // Only by a keystroke, like the mute cell below, so it needs no reserved width; and never given up for room.
+        if (SceneRecording)
+        {
+            right.Add(Segment(StatusRole.Recording, Run(RecordingCell, HeldOn(ScreenPalette.Warn, WorkspacePalette.Backdrop(_theme)))));
         }
 
         // Only while muted, and only by a keystroke: nothing from the wire can make this cell appear.
         if (_muted)
         {
-            right.Add($"[{_ink.Notice}]{MutedCell}[/]");
+            right.Add(Segment(StatusRole.Muted, Run(MutedCell, _ink.Notice)));
         }
 
         // No latency meter. There was one — a heartbeat glyph, a sparkline and a round-trip figure — and
@@ -13084,19 +15080,49 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // "utf-8" means the server agreed, "utf-8 assumed" means nobody said, "iso-8859-1 forced" means
         // you did. With nothing connected there is no fact to report, and the cell is not drawn — the
         // same rule that took the address and the invented latency meter off this row.
+        StatusSegment? encodingCell = null;
         if (EffectiveEncoding() is { } encoding)
         {
-            right.Add($"[dim]{Escape(encoding.Label)}[/]");
+            encodingCell = Segment(StatusRole.Encoding, Dim(encoding.Label));
+            right.Add(encodingCell);
         }
 
         // The character count lives at the bottom now (the input gutter is gone); while recalling
         // history it becomes the "back to draft" hint instead. Both read the armed bar, so a count that
         // moves is always the line ⏎ would send.
         right.Add(HistoryFor(BarKind(ActiveBar())).IsRecalling
-            ? $"[{AccentHex(AccentPalette[0])}]history[/] [dim]· ↓ back to draft[/]"
-            : $"[dim]{ActiveBar().Text.Length} chars[/]");
+            ? Segment(StatusRole.Count, Run("history", AccentHex(AccentPalette[0])), Run(" "), Dim("· ↓ back to draft"))
+            : Segment(StatusRole.Count, Dim($"{ActiveBar().Text.Length} chars")));
 
-        right.Add("[dim]⌃P palette[/]");
+        var paletteCell = Segment(StatusRole.Palette, Dim(PaletteHintText, HeaderModel.PaletteTarget));
+        right.Add(paletteCell);
+
+        // The cluster above is built unconditionally, and at 80 columns a scrolled-back pane's segment
+        // made it one cell too wide: the row wrapped, a pane lost a row and every server was told a new
+        // size. Give cells back until it fits, least useful first — the encoding (a fact that rarely
+        // changes), then the palette hint (⌃P is also on the header's menu button), and only then the
+        // character count. The scrollback segment and the identity are never dropped: they are the
+        // only places those facts are said.
+        //
+        // The meters count here too: on a narrow terminal they are worth more to someone in a fight than
+        // either of those two cells, and they used to be the thing that lost — at 80 columns a world
+        // publishing HP showed none of it.
+        var compactMeters = meters is not null ? MeterSegment(compact: true) : null;
+        var meterCost = compactMeters is not null ? 3 + compactMeters.Width + MeterSlack : 0;
+        foreach (var droppable in new[] { encodingCell, paletteCell })
+        {
+            if (droppable is null || W(left) + MinStatusGap + W(right) + meterCost <= HeaderWidth())
+            {
+                continue;
+            }
+
+            right.Remove(droppable);
+        }
+
+        if (right.Count > 1 && W(left) + MinStatusGap + W(right) > HeaderWidth())
+        {
+            right.RemoveAt(right.Count - 1);
+        }
 
         // The focus hint goes in last and only if it fits. This row is a *sticky* band whose length
         // changes at runtime, and a cluster that overflows the width wraps it onto a second row — which
@@ -13104,50 +15130,86 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // exactly this reason). A hint that quietly costs a row of output on a 100-column terminal is a
         // worse trade than a hint that is only there when there is room for it, and this is the same
         // measurement the header already makes to right-align its own cluster.
-        var rightBar = string.Join("   ", right);
 
         // The meters sit beside the identity they describe, and only when the row has room for them with a
         // few cells to spare: the character count on the right grows as a line is typed, and a cluster that
         // came and went with it would be worse than one that is absent on a narrow terminal.
-        if (meters.Length > 0
-            && MarkupWidth(left) + 3 + MarkupWidth(meters) + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+        if (meters is not null && W(left) + 3 + meters.Width + W(right) + MinStatusGap + MeterSlack > HeaderWidth())
         {
-            left = $"{left}   {meters}";
+            // Too narrow for value/max: the share alone, in a field just as fixed.
+            meters = MeterSegment(compact: true);
+        }
+
+        if (meters is not null && W(left) + 3 + meters.Width + W(right) + MinStatusGap + MeterSlack <= HeaderWidth())
+        {
+            left.Add(meters);
+        }
+
+        // A mode's keys outrank the room and the MOO's status, and the encoding and the palette hint too: while the
+        // pane is scrolled back, frozen, carrying a search bar or a composer holds the keyboard, the way out is the
+        // thing the reader needs from this row. The longest candidate goes in that fits once as few of those two
+        // cells as it needs are given up (the encoding first, as the drop loop above does); a mode is temporary, and
+        // ⌃P is also on the header. The focus hints are not offered at all while a mode holds.
+        var mode = CurrentStatusMode();
+        _statusModeShown = mode;
+        if (mode != StatusMode.None)
+        {
+            bool Fits(StatusSegment hint, IEnumerable<StatusSegment> cluster) =>
+                W(left) + 3 + hint.Width + W(cluster.ToList()) + MinStatusGap <= HeaderWidth();
+
+            var droppables = new[] { encodingCell, paletteCell }.OfType<StatusSegment>().Where(right.Contains).ToList();
+            foreach (var hint in ModeHintSegments(mode))
+            {
+                var given = 0;
+                while (!Fits(hint, right.Except(droppables.Take(given))) && given < droppables.Count)
+                {
+                    given++;
+                }
+
+                if (!Fits(hint, right.Except(droppables.Take(given))))
+                {
+                    continue;
+                }
+
+                right.RemoveAll(c => droppables.Take(given).Contains(c));
+
+                // Leftmost of the cluster but for the scrollback segment, which states the mode the hint answers.
+                right.Insert(right.Count > 0 && scrollback is not null ? 1 : 0, hint);
+                break;
+            }
         }
 
         // Where the character stands, once the map knows. A reserved width, so a walk does not move the right
         // cluster with every room name; a name too long for it is elided, never wrapped.
         if (StatusRoom() is { } here)
         {
-            var cell = RoomCell(here.Name, here.Area);
-            if (MarkupWidth(left) + 3 + RoomCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+            var cell = Segment(StatusRole.Room, Dim(RoomCellText(here.Name, here.Area, RoomCellFor(W(left), W(right), mode))));
+            if (W(left) + 3 + RoomCellWidth + W(right) + MinStatusGap + MeterSlack <= HeaderWidth())
             {
-                left = $"{left}   {cell}";
+                left.Add(cell);
             }
         }
 
         // What the MOO last put in its status line, once it has put anything there this connection. Reserved
         // and elided like the room, for the same reason, and dropped first when the row is short.
         if (_active?.McpStatus is { } mooStatus
-            && MarkupWidth(left) + 3 + MooStatusCellWidth + MarkupWidth(rightBar) + MinStatusGap + MeterSlack <= HeaderWidth())
+            && W(left) + 3 + MooStatusCellWidth + W(right) + MinStatusGap + MeterSlack <= HeaderWidth())
         {
-            left = $"{left}   {MooStatusCell(mooStatus)}";
+            left.Add(Segment(StatusRole.Moo, Dim(MooStatusText(mooStatus))));
         }
 
-        var room = HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar) - MinStatusGap;
-        foreach (var focusHint in FocusHints())
+        var room = HeaderWidth() - W(left) - W(right) - MinStatusGap;
+        foreach (var focusHint in mode == StatusMode.None ? FocusHints() : [])
         {
-            if (MarkupWidth(focusHint) + 3 <= room)
+            if (focusHint.Width + 3 <= room)
             {
                 right.Insert(right.Count - 1, focusHint);
-                rightBar = string.Join("   ", right);
                 break;
             }
         }
 
-        // Right-align the cluster to the far edge; identity stays pinned left.
-        var gap = Math.Max(MinStatusGap, HeaderWidth() - MarkupWidth(left) - MarkupWidth(rightBar));
-        return $"{left}{new string(' ', gap)}{rightBar}";
+        // Right-aligned to the far edge by the model (StatusModel.Row); identity stays pinned left.
+        return StatusRowModel(left, right);
     }
 
     /// <summary>
@@ -13159,19 +15221,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     private static SColor ToColor(Rgb rgb) => new(rgb.R, rgb.G, rgb.B, 255);
 
-    /// <summary>
-    /// Resolves the active theme: a built-in by <see cref="AppConfiguration.ThemeName"/> unless
-    /// the config carries a customised inline <see cref="AppConfiguration.Theme"/>.
-    /// </summary>
-    private static Theme ResolveTheme(AppConfiguration config)
-    {
-        if (config.Theme is { } inline && !string.Equals(inline.Name, config.ThemeName, StringComparison.OrdinalIgnoreCase))
-        {
-            return inline;
-        }
-
-        return ThemeLibrary.Get(config.ThemeName);
-    }
 
     public async ValueTask DisposeAsync()
     {
@@ -13181,6 +15230,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sizeFlushTimer?.Dispose(); // nothing left to tell a server we are shutting down to
         _noticeTimer?.Dispose();    // and no row left to put a notice back on
         _prefixTimer?.Dispose();    // and no window left to float a which-key panel over
+        _reconnectTicker?.Dispose(); // and no status row left to count down on
+        foreach (var reconnect in _reconnects.Values)
+        {
+            reconnect.Dispose();    // before the sessions, so no try dials a session being closed
+        }
+
+        _reconnects.Clear();
+        CloseSceneLogs();           // a scene being recorded is closed with its ending written
         _webImageCts?.Cancel();
         _webImageCts?.Dispose();
         _inlineImages.Dispose();

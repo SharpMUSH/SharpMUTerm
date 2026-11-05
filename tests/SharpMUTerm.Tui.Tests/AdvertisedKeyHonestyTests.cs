@@ -308,7 +308,7 @@ public class AdvertisedKeyHonestyTests
     {
         foreach (var descriptor in new[] { "Ctrl+Left", "Ctrl+Right", "Ctrl+Up", "Ctrl+Down" })
         {
-            await Assert.That(MacroKeys.Verdict(descriptor).Fires)
+            await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, descriptor).Fires)
                 .IsTrue()
                 .Because($"F4 says a macro on {descriptor} fires, so pane navigation must not pre-empt it");
         }

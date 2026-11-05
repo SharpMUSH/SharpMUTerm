@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Core.Commands;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -6,24 +7,34 @@ using SharpConsoleUI.Controls;
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// The command surface (⌃P): a modal search box over a live-generated catalog, ranked with
-/// <see cref="CommandMatcher"/> and rendered grouped by <see cref="CommandSurfaceRenderer"/>. ↑↓
-/// walk the flattened results, ⏎ dispatches the selected id, Esc closes. The catalog and dispatch
-/// are supplied by the app so this stays a thin view over tested logic.
+/// The command surface (⌃P): a modal search box over a live-generated catalog, ordered and grouped by the
+/// shared view-model (<see cref="CommandPaletteModel"/>, in Client, so the window's palette can list the same
+/// rows) and drawn by <see cref="CommandSurfaceRenderer"/>. ↑↓ walk the entries, ⏎ dispatches the selected id
+/// and records it among the recent ones, Esc closes. The catalog, the suggestions and dispatch are supplied by
+/// the app so this stays a thin view over tested logic.
 /// </summary>
 internal sealed class CommandPalette
 {
+    /// <summary>The surface's name: the popup's title here, and what the window's header search box and native palette say.</summary>
+    internal const string Title = "Command palette";
+
     private readonly ConsoleWindowSystem _system;
     private readonly Func<IReadOnlyList<CommandItem>> _catalog;
     private readonly Func<string?> _context;
     private readonly Action<string> _dispatch;
+    private readonly RecentCommands _recent;
+    private readonly Func<IReadOnlyList<string>> _suggested;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private PromptControl? _search;
     private MarkupControl? _results;
-    private IReadOnlyList<RankedCommand> _ranked = Array.Empty<RankedCommand>();
-    private IReadOnlyList<CommandItem> _ordered = Array.Empty<CommandItem>();
-    private int _total;
+    private PaletteView _view = Empty;
     private int _selected;
     private int _contentWidth;
 
@@ -31,15 +42,40 @@ internal sealed class CommandPalette
         ConsoleWindowSystem system,
         Func<IReadOnlyList<CommandItem>> catalog,
         Func<string?> context,
-        Action<string> dispatch)
+        Action<string> dispatch,
+        RecentCommands recent,
+        Func<IReadOnlyList<string>> suggested)
     {
         _system = system;
         _catalog = catalog;
         _context = context;
         _dispatch = dispatch;
+        _recent = recent;
+        _suggested = suggested;
     }
 
+    private static PaletteView Empty { get; } = new([], [], 0);
+
     public bool IsOpen => _window is not null;
+
+    /// <summary>What the surface is listing right now, for a test.</summary>
+    internal PaletteView View => _view;
+
+    /// <summary>The selected entry's index in <see cref="PaletteView.Entries"/>, for a test.</summary>
+    internal int Selected => _selected;
+
+    /// <summary>Types <paramref name="query"/> into the open surface, as if it had been keyed in.</summary>
+    internal void SetQuery(string query)
+    {
+        if (_search is null)
+        {
+            return;
+        }
+
+        _search.SetInput(query);
+        _selected = 0;
+        Refresh(query);
+    }
 
     /// <summary>Opens the surface if closed, closes it if open (bound to ⌃P).</summary>
     public void Toggle()
@@ -54,23 +90,47 @@ internal sealed class CommandPalette
         }
     }
 
+    /// <summary>
+    /// How many rows at the desktop's foot the palette must leave uncovered — the command line and the status row — or
+    /// null for none. Asked each time it opens, since the command line grows.
+    /// </summary>
+    public Func<int>? KeepClearBelow { get; init; }
+
     private void Open()
     {
         _selected = 0;
-        _search = Controls.Prompt("›").Build();
+        var prompt = Controls.Prompt("›");
+        if (!Scheme.IsIdentity)
+        {
+            // Off Dark the framework's own dark-grey well would be a dark island on the themed surface.
+            prompt = prompt
+                .WithInputBackgroundColor(Scheme.Colour(ScreenPalette.EditBg))
+                .WithInputFocusedBackgroundColor(Scheme.Colour(ScreenPalette.EditBg))
+                .WithInputForegroundColor(Scheme.Colour(ScreenPalette.Value))
+                .WithInputFocusedForegroundColor(Scheme.Colour(ScreenPalette.Value));
+        }
+
+        _search = prompt.Build();
         _search.InputChanged += (_, query) => Refresh(query);
         _search.Entered += (_, _) => Commit();
 
         _results = new MarkupControl(new List<string>());
 
         // Size the surface to hug the full (unfiltered) catalog so nothing scrolls and there's no empty
-        // gutter: fit height to the row count and width to the widest row, both capped to the desktop.
-        var catalog = _catalog();
-        var initial = CommandSurfaceRenderer.Render(
-            CommandMatcher.Rank(string.Empty, catalog), 0, catalog.Count, _context());
+        // gutter: fit height to the row count and width to the widest row, both capped to the desktop. A
+        // narrower desktop elides titles and details, never keys (CommandSurfaceRenderer).
+        var initial = Build(string.Empty);
         var desktop = _system.DesktopDimensions;
-        var height = Math.Clamp(initial.Count + 3, 6, Math.Max(6, desktop.Height - 2));
-        _contentWidth = Math.Clamp(CommandSurfaceRenderer.MaxWidth(initial) + 1, 32, Math.Max(32, desktop.Width - 6));
+        // The rows the command line and the status row take at the desktop's foot stay clear (KeepClearBelow), so the
+        // line being typed is never under the palette's bottom border; the palette centres in what is above them.
+        var clear = Math.Clamp(KeepClearBelow?.Invoke() ?? 0, 0, Math.Max(0, desktop.Height - 8));
+        var above = desktop.Height - clear;
+        var height = Math.Clamp(initial.Rows.Count + 1 + 3, 6, Math.Max(6, clear > 0 ? above - 1 : desktop.Height - 2));
+        _fullHeight = height;
+        _contentWidth = Math.Clamp(
+            Math.Max(CommandSurfaceRenderer.NaturalWidth(initial), HeaderWidth(initial)) + 1,
+            32,
+            Math.Max(32, desktop.Width - 6));
         var width = _contentWidth + 2; // + the 1-cell left/right border
 
         // A clean overlay: single border, but no window chrome — no minimize/maximize/close buttons
@@ -80,55 +140,113 @@ internal sealed class CommandPalette
         // Centered() *after* WithSize(): it reads the bounds set so far and falls back to 80x25, so
         // centring first placed the surface as if it were that size — which only became visible once
         // the catalog grew tall enough for the misplacement to push its bottom border off-screen.
-        _window = new WindowBuilder(_system)
-            .WithTitle("Command surface")
+        var builder = new WindowBuilder(_system)
+            .WithTitle(Title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
-            .WithSize(width, height)
-            .Centered()
+            .WithSize(width, height);
+        builder = clear > 0
+            ? builder.AtPosition(Math.Max(0, (desktop.Width - width) / 2), Math.Max(1, (above - height) / 2))
+            : builder.Centered();
+        _window = builder
             .AddControl(_search)
             .AddControl(_results)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
         Refresh(string.Empty);
     }
 
+    private PaletteView Build(string query) =>
+        CommandPaletteModel.Build(query, _catalog(), _recent.Ids, _suggested());
+
+    // The context line ("N of M   acting on X") is measured too, so a long character name is not cut off.
+    private int HeaderWidth(PaletteView view) =>
+        CommandSurfaceRenderer.MaxWidth(CommandSurfaceRenderer.Render(view, -1, _context()).Take(1).ToList());
+
     private void Refresh(string query)
     {
-        var catalog = _catalog();
-        _total = catalog.Count;
-        _ranked = CommandMatcher.Rank(query, catalog);
-        _ordered = CommandSurfaceRenderer.Order(_ranked);
-        _selected = _ordered.Count == 0 ? -1 : Math.Clamp(_selected, 0, _ordered.Count - 1);
+        _view = Build(query);
+        _selected = _view.Entries.Count == 0 ? -1 : Math.Clamp(_selected, 0, _view.Entries.Count - 1);
         Paint();
+        FitHeight(query);
     }
 
-    private void Paint() =>
-        _results?.SetContent(CommandSurfaceRenderer.Render(_ranked, _selected, _total, _context(), _contentWidth));
+    /// <summary>The height the palette opened at: the whole catalog's, capped above the command line.</summary>
+    private int _fullHeight;
 
-    private void Move(int delta)
+    /// <summary>The least a filtered palette shrinks to, so a query matching one row or none is still a surface.</summary>
+    internal const int FilteredMinHeight = 10;
+
+    /// <summary>
+    /// Sizes the palette to what it lists: the whole catalog's height while the query is empty, and the matching rows'
+    /// (at least <see cref="FilteredMinHeight"/>, never past the height it opened at, which is held above the command
+    /// line) once something is typed — a filtered list in a full-height frame was a column of blank. The top edge stays
+    /// where it opened, so the prompt being typed into does not move.
+    /// </summary>
+    private void FitHeight(string query)
     {
-        if (_ordered.Count == 0)
+        if (_window is not { } window || _fullHeight <= 0)
         {
             return;
         }
 
-        _selected = ((_selected + delta) % _ordered.Count + _ordered.Count) % _ordered.Count;
+        var height = query.Length == 0
+            ? _fullHeight
+            : Math.Clamp(_view.Rows.Count + 1 + 3, Math.Min(FilteredMinHeight, _fullHeight), _fullHeight);
+        if (height != window.Height)
+        {
+            var at = new System.Drawing.Point(window.Left, window.Top);
+            window.SetSize(window.Width, height);
+            window.SetPosition(at);
+        }
+    }
+
+    /// <summary>The palette window's height now, or 0 while closed; for a test.</summary>
+    internal int WindowHeight => _window?.Height ?? 0;
+
+    private void Paint() =>
+        _results?.SetContent(Scheme.Lines(CommandSurfaceRenderer.Render(_view, _selected, _context(), _contentWidth), ScreenPalette.MenuBg));
+
+    private void Move(int delta)
+    {
+        var count = _view.Entries.Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        _selected = ((_selected + delta) % count + count) % count;
         Paint();
+    }
+
+    /// <summary>Selects the listed entry with <paramref name="id"/> and commits it, as arrows and ⏎ would; for a test.</summary>
+    internal bool Choose(string id)
+    {
+        var index = _view.Entries.ToList().FindIndex(e => e.Item.Id == id);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _selected = index;
+        Commit();
+        return true;
     }
 
     private void Commit()
     {
-        if (_selected >= 0 && _selected < _ordered.Count)
+        if (_selected >= 0 && _selected < _view.Entries.Count)
         {
-            var id = _ordered[_selected].Id;
+            var id = _view.Entries[_selected].Item.Id;
             Close();
+            _recent.Record(id);
             _dispatch(id);
         }
     }
@@ -169,7 +287,6 @@ internal sealed class CommandPalette
         _window = null;
         _search = null;
         _results = null;
-        _ranked = Array.Empty<RankedCommand>();
-        _ordered = Array.Empty<CommandItem>();
+        _view = Empty;
     }
 }

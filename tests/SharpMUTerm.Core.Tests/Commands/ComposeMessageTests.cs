@@ -93,4 +93,38 @@ public class ComposeMessageTests
 
         await Assert.That(ComposeMessage.Build(body, ComposeEscaping.Literal)).IsEqualTo(body);
     }
+
+    /// <summary>
+    /// The composer's two fields: the command goes in front of the built text, never escaped, and the text is built as a
+    /// whole buffer is — escaped per line, then joined with <c>%r</c>.
+    /// </summary>
+    [Test]
+    public async Task TheCommandGoesInFrontOfTheBuiltTextUnescaped()
+    {
+        var line = ComposeMessage.Build("+pose [x]", "tips his hat; [nods]\n\nwaits", ComposeEscaping.Literal);
+
+        await Assert.That(line).IsEqualTo("+pose [x] tips his hat\\; \\[nods\\]%r%rwaits");
+    }
+
+    [Test]
+    [Arguments("+bbpost 12=", "Title", "+bbpost 12=Title")]
+    [Arguments("page Bob=", "hi", "page Bob=hi")]
+    [Arguments(":", "waves.", ":waves.")]
+    [Arguments("  say  ", "hello", "say hello")]
+    [Arguments("say\nloudly", "hello", "say loudly hello")]
+    public async Task OneSpaceJoinsThemExceptAfterAnEqualsOrAPunctuationShorthand(string command, string body, string expected) =>
+        await Assert.That(ComposeMessage.Build(command, body, ComposeEscaping.AsTyped)).IsEqualTo(expected);
+
+    /// <summary>A blank command is the single buffer it always was: the body is the whole command.</summary>
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("   ")]
+    public async Task ABlankCommandSendsTheBodyAsTheWholeCommand(string? command) =>
+        await Assert.That(ComposeMessage.Build(command, "+bbpost 1=a\nb", ComposeEscaping.Literal))
+            .IsEqualTo(ComposeMessage.Build("+bbpost 1=a\nb", ComposeEscaping.Literal));
+
+    [Test]
+    public async Task ACommandWithNoTextIsNothingToSend() =>
+        await Assert.That(ComposeMessage.Build("+pose", "  \n ", ComposeEscaping.AsTyped)).IsNull();
 }

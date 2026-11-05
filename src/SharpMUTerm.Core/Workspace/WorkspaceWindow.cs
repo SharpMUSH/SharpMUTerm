@@ -11,6 +11,13 @@ public enum WindowKind
 
     /// <summary>An arbitrary auxiliary window (web view, map, notes…).</summary>
     Auxiliary,
+
+    /// <summary>
+    /// A layout panel drawn by a control of its own (who is here, vitals, the quick bar, the docked composer): fixed
+    /// furniture of a layout rather than a place to go, so it has no <c>⌥N</c> and no row on the rail
+    /// (<see cref="Workspace.WindowsFor"/>). It is still a tab, focusable, and reached by its own ⌃P entry.
+    /// </summary>
+    Panel,
 }
 
 /// <summary>
@@ -92,4 +99,12 @@ public sealed class WorkspaceWindow
     /// pane stays visibly tied to its character. Null for a character's own main window.
     /// </summary>
     public string? OwnerLabel { get; set; }
+
+    /// <summary>
+    /// Non-null while this window is a panel popped out into a window of its own, with where that window sits
+    /// (<see cref="FloatingBounds.Unplaced"/> before a host has placed it). Host-neutral: a host that floats panels
+    /// keeps such a window out of the pane tree and draws it apart; a host that cannot keeps it in a pane like any
+    /// other and leaves this alone, so a workspace saved by either host means the same thing to the other.
+    /// </summary>
+    public FloatingBounds? Floating { get; set; }
 }

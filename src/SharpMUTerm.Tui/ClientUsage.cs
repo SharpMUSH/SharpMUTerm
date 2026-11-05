@@ -23,12 +23,35 @@ internal static class ClientOptions
         new("--tls", "Connect over TLS."),
         new("--insecure", "Accept invalid TLS certificates."),
         new("--name <name>", "Display name for the world."),
+        new("telnet://host[:port]", "A telnet:// or telnets:// link: connect to it as '/connect host port' would.",
+            "A client already running is handed the link instead, and this launch exits."),
+        new(OpenLink + " <link>", "What a desktop runs when a link is clicked: the link, and nothing else on the",
+            "command line is read."),
     ];
+
+    /// <summary>
+    /// The flag the desktop's link handlers pass the link after (<c>sharpmuterm-window --open-link %U</c> on Linux,
+    /// <c>"…sharpmuterm-window.exe" --open-link "%1"</c> on Windows).
+    /// </summary>
+    public const string OpenLink = "--open-link";
+
+    /// <summary>
+    /// With <see cref="OpenLink"/> on the command line, only the argument after it — every other argument is dropped,
+    /// before anything reads them. A link is text from a web page, and a Windows handler builds a command line by
+    /// pasting it into quotes: a link holding a quote could close them and add arguments of its own
+    /// (<c>--render-png</c> writes a file). Whatever it adds lands after the link, and is thrown away here. With no
+    /// <see cref="OpenLink"/>, the arguments are returned as they were.
+    /// </summary>
+    public static string[] NarrowToLink(string[] args)
+    {
+        var at = Array.IndexOf(args, OpenLink);
+        return at < 0 ? args : at + 1 < args.Length ? [args[at + 1]] : [];
+    }
 
     /// <summary>The options that take a value, so their value is never mistaken for the host.</summary>
     public static IReadOnlySet<string> TakingValues { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        "--name", "--size", "--view", "--out", "--theme", "--transparency", "--font", "--font-size", "--render-png",
+        "--name", "--size", "--view", "--out", "--theme", "--transparency", "--font", "--font-size", "--line-height", "--render-png", OpenLink,
     };
 
     /// <summary>The arguments that are not an option or an option's value: the host, then the port.</summary>
@@ -119,8 +142,10 @@ internal static class ClientUsage
 
         // Named because it is the file a user has to know about to look after it — and because "where did my
         // password go" should be answerable without reading the source. Config is safe to share; this is not.
-        usage.WriteLine($"Secrets: {SecretsStore.PathFor(ConfigurationStore.DefaultPath)}"
-            + " — character passwords, plain text, owner-only. Not the file to paste.");
+        usage.WriteLine("Passwords: the system's credential store (Windows Credential Manager, the Secret Service");
+        usage.WriteLine("keyring, the macOS Keychain) where there is one that answers; otherwise, and for any it refuses,");
+        usage.WriteLine($"  {SecretsStore.PathFor(ConfigurationStore.DefaultPath)}"
+            + " — plain text, owner-only. Not the file to paste.");
 
         // Named for the same reason: it is a file this client creates in the user's own directory, and
         // "what is this and can I delete it" should be answerable from the help page. It can: it is a
@@ -134,6 +159,14 @@ internal static class ClientUsage
         usage.WriteLine("and the client opens with no connection. A host given here connects instead of them.");
         usage.WriteLine("'at start' only opens the connection. What is typed once one is open follows from the");
         usage.WriteLine("character's saved password and connect line — F5's 'login' row says which.");
+        // The slash commands, from the one table /help lists too (SlashCommands.All).
+        usage.WriteLine();
+        usage.WriteLine("Slash commands (typed on the command line; /help lists them, the keys and how-tos in the app):");
+        foreach (var command in SharpMUTerm.Client.Help.SlashCommands.All)
+        {
+            usage.WriteLine($"  {command.Usage,-38}{command.Summary}");
+        }
+
         usage.WriteLine();
         usage.WriteLine("In-app: Up/Down history · Ctrl+N next tab · Ctrl+W close · Ctrl+P palette · Ctrl+Q quit.");
         usage.WriteLine("Selection: drag across a pane's output to select it, Ctrl+C to copy.");

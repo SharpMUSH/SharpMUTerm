@@ -135,7 +135,10 @@ internal static class TriggerReport
             : $"window '{trigger.Actions.SpawnTarget}'";
         var matches = engine.MatchesFor(trigger);
         var state = trigger.Enabled ? string.Empty : " (disabled)";
-        return $"    {mark} {name}{state}  /{trigger.Pattern}/  → {route}  · "
+        var pattern = trigger.MatchType == TriggerMatchType.Regex
+            ? $"/{trigger.Pattern}/"
+            : $"{TriggerPatterns.Describe(trigger.MatchType)} \"{trigger.Pattern}\"";
+        return $"    {mark} {name}{state}  {pattern}  → {route}  · "
             + $"{Count(matches, "match", "matches")}";
     }
 

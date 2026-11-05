@@ -74,7 +74,8 @@ internal sealed record PointerTarget(PointerKind Kind, PaneRect Area, PointerSha
 /// <param name="Hint">The key that does the same, when there is one, drawn after the label.</param>
 /// <param name="Run">What choosing it does.</param>
 /// <param name="Enabled">False draws it dimmed and unclickable, which says the action exists but not here.</param>
-internal sealed record PointerMenuItem(string Label, string? Hint, Action Run, bool Enabled = true)
+/// <param name="Checked">Whether the entry is the one in force (the layout in use), drawn with a check by a host that can.</param>
+internal sealed record PointerMenuItem(string Label, string? Hint, Action Run, bool Enabled = true, bool Checked = false)
 {
     /// <summary>A rule between groups of entries.</summary>
     public static PointerMenuItem Separator { get; } = new("-", null, () => { }, false);
@@ -115,6 +116,18 @@ internal interface IPointerPresenter
     void ShowMenu(System.Drawing.Point cell, IReadOnlyList<PointerMenuItem> items);
 
     /// <summary>
+    /// A menu the client built as data (<see cref="SharpMUTerm.Client.Commands.MenuModel"/>) asked for at a cell: the tab strip's
+    /// overflow list. A choice is handed back as the entry's command through <paramref name="dispatch"/>, never run by the
+    /// host. A host that draws the plain kind only draws it as that (the default).
+    /// </summary>
+    void ShowMenu(System.Drawing.Point cell, SharpMUTerm.Client.Commands.MenuModel menu, Action<string> dispatch) =>
+        ShowMenu(cell, menu.Entries
+            .Select(e => e.IsSeparator
+                ? PointerMenuItem.Separator
+                : new PointerMenuItem(e.Label, e.Key, () => { if (e.Command is { } command) dispatch(command); }, e.Enabled, e.Checked))
+            .ToList());
+
+    /// <summary>
     /// Whether <see cref="ShowMenu"/> draws anything. Where it does not, the client opens its own chooser for
     /// the one menu a server can ask for, an MXP <c>&lt;SEND&gt;</c> with several commands.
     /// </summary>
@@ -122,4 +135,208 @@ internal interface IPointerPresenter
 
     /// <summary>The panes' scroll positions, whenever one of them changes.</summary>
     void Scrollbars(IReadOnlyList<PaneScrollbar> bars);
+
+    /// <summary>
+    /// The panels on screen that a host may draw natively over their cells, whenever one moves or its content
+    /// changes. The cells stay what they are; a host that draws no native panels ignores this (the default).
+    /// </summary>
+    void Panels(IReadOnlyList<PanelOverlay> panels)
+    {
+    }
+
+    /// <summary>
+    /// The actions a host may offer as native buttons along the header, said once when the app starts. A host
+    /// with no buttons ignores this (the default); every action is also a key and a ⌃P entry.
+    /// </summary>
+    void HeaderActions(IReadOnlyList<HeaderAction> actions)
+    {
+    }
+
+    /// <summary>
+    /// The header band and the connection sidebar, as data, whenever either moves or what it says changes. The cells
+    /// stay what they are; a host that draws no native chrome ignores this (the default).
+    /// </summary>
+    void Chrome(ChromeOverlay chrome)
+    {
+    }
+
+    /// <summary>
+    /// The panes' tab strips (when the host draws them, <see cref="HostChrome.Tabs"/>) and the bands of panes split by
+    /// scrolling back, as data, whenever one moves or what it says changes. A host that draws neither ignores this (the
+    /// default).
+    /// </summary>
+    void PaneChrome(PaneChromeOverlay chrome)
+    {
+    }
+
+    /// <summary>
+    /// How many columns a terminal the size of the host's whole window would have: its cells plus the chrome it draws
+    /// beside them, in cells. Null when the cells are the whole window (the terminal, and the default). The client's
+    /// narrow layout measures this rather than the cells (<c>SharpMUTermApp.LayoutColumns</c>), because folding a
+    /// sidebar the host draws gives the cells its width: measured on the cells, the fold would undo itself.
+    /// </summary>
+    int? WindowColumns => null;
+
+    /// <summary>
+    /// The rows a vitals card of <paramref name="meters"/> meters (and a target, when <paramref name="target"/>) takes where
+    /// this host draws it as native gauges: their pixel height rounded up to whole rows, so the card ends where its gauges
+    /// do. Null when the host does not know (no view measured yet, the terminal, the default), and the row rule applies.
+    /// Asked on the client's thread; only a side column's rows change with it, never an output pane's (NAWS).
+    /// </summary>
+    int? VitalsCardRows(int meters, bool target) => null;
+
+    /// <summary>
+    /// A notice was said, as it is drawn on the status row. The status row's cells carry it in every host; a host that
+    /// draws notices natively (the window's toasts) shows this over the cells and ignores nothing else. It must never
+    /// take focus. A host that draws none ignores this (the default).
+    /// </summary>
+    void Notice(NoticeOverlay notice)
+    {
+    }
+
+    /// <summary>
+    /// The status row, as data, whenever what it says changes — only to a host that draws it
+    /// (<see cref="HostChrome.Status"/>), which the client leaves no cell for. A host that draws none ignores this.
+    /// </summary>
+    void Status(StatusOverlay status)
+    {
+    }
+
+    /// <summary>
+    /// Where the command line's rows are, or null when there is no field to draw (another of the client's windows is in
+    /// front) — only to a host that draws the field (<see cref="HostChrome.Input"/>). Said on the client's thread while
+    /// the main window paints, before the frame it describes is flushed, so a host may keep it with that frame.
+    /// </summary>
+    void InputBand(InputBand? band)
+    {
+    }
+
+    /// <summary>
+    /// The pane dividers on screen, where they are and whether one is lit, or an empty list while another of the client's
+    /// windows or a cell modal is in front of the panes. Said on the client's thread while the main window paints, before
+    /// the frame it describes is flushed, so a host may keep it with that frame and draw those cells its own way (the
+    /// window: the two panes' planes meeting at a hairline). The cells are drawn as in any host; a host that draws them as
+    /// cells ignores this (the default).
+    /// </summary>
+    void Dividers(IReadOnlyList<PaneDividerOverlay> dividers)
+    {
+    }
+}
+
+/// <summary>One pane divider, for a host that draws it rather than its cells.</summary>
+/// <param name="Area">Its cells, in desktop cells: one column between panes side by side, one row between stacked ones.</param>
+/// <param name="Vertical">Whether it is a column (the panes are side by side).</param>
+/// <param name="Lit">Whether it is under the pointer or being dragged: its cells are then <c>WorkspacePalette.RuleHover</c>.</param>
+internal sealed record PaneDividerOverlay(PaneRect Area, bool Vertical, bool Lit);
+
+/// <summary>
+/// One panel on screen, for a host that draws it natively over its pane rather than in cells: where it is and what
+/// it shows. The cells under it are drawn as in any host, so a host that draws nothing loses nothing, and the
+/// terminal-and-window parity, which compares cells, is unaffected.
+/// </summary>
+/// <param name="PanelId">The panel (<c>vitals</c>, <c>map</c>, …; <c>PanelIds</c>).</param>
+/// <param name="WindowId">The window the panel is drawn in, which is the pane's front tab.</param>
+/// <param name="Rect">The pane's output rectangle, in desktop cells — the area the cells of the panel cover.</param>
+/// <param name="Ink">The colours the cells are drawn in, so a native view says the same things in the same hues.</param>
+/// <param name="Vitals">For the vitals panel, its content: the same model its cell strip is drawn from.</param>
+/// <param name="Map">For the map, the rooms around the character, drawn from the recorder the cell map is drawn from.</param>
+/// <param name="WalkTo">
+/// For the map, walks the panel's own character to a room by id, through the speedwalk a click on a cell map uses.
+/// Safe to call from any thread. The same instance for as long as the window lives, so an overlay compares equal.
+/// </param>
+/// <param name="WhoHere">For the who-here panel, its content: the same model its cell rows are drawn from.</param>
+/// <param name="QuickBar">For the quick bar, its content: the same model its cell row is drawn from.</param>
+/// <param name="Pick">
+/// For who-here and the quick bar, does what a click on row or item N of the cells does, on the panel's own
+/// character: who-here puts <c>look</c> and the name on that character's command line, the quick bar runs the
+/// binding through the key's own path. The index is into the model this overlay carries; the client reads the row
+/// back from what it published, so the host never names a person or a command. Safe to call from any thread, and
+/// the same instance for as long as the window lives.
+/// </param>
+/// <param name="Dispatch">
+/// Runs a command id through the client's registry (the quick bar's <c>F4 edits keys</c> is
+/// <see cref="SharpMUTerm.Client.Panels.QuickBarModel.EditCommand"/>). Safe to call from any thread; one instance.
+/// </param>
+/// <param name="Composer">
+/// For the docked composer, its content: the model its cell header, editor and key row are drawn from. Only for a
+/// host with a native composer (<see cref="ClientHost.NativeComposer"/>).
+/// </param>
+/// <param name="ComposerSession">
+/// For the docked composer, the way a native editor's text and keys go back to the client: one instance for as long as
+/// the panel lives, so an overlay compares equal from frame to frame.
+/// </param>
+/// <param name="PopOut">
+/// Pops the panel out into a window of its own (<c>PopOutPanel</c>, what ⌃P's <c>panel:popout:</c> entry runs), for a
+/// host that can float a panel (<see cref="ClientHost.FloatingPanels"/>); null elsewhere, and for a panel that cannot
+/// float. Safe to call from any thread; one instance per window.
+/// </param>
+/// <param name="SelectRoom">
+/// For the map, selects a room for editing (<c>SelectMapRoom</c>), or with null ends editing: what a click on a cell room
+/// does while the cell map is in edit mode. Safe to call from any thread; one instance per window.
+/// </param>
+/// <param name="EditMap">
+/// For the map, makes one edit (<c>ApplyMapEdit</c>), the funnel the cell map's keys and <c>/map</c> commands end in. The
+/// client checks it; the window only builds a <see cref="SharpMUTerm.Client.Panels.MapEdit"/> from its inspector. Safe to
+/// call from any thread; one instance per window.
+/// </param>
+/// <param name="LookMap">
+/// For the map, looks at another level or area, or back at the character (<c>LookMap</c>), the funnel the cell map's look
+/// keys and links end in. Safe to call from any thread; one instance per window.
+/// </param>
+/// <param name="RuleAbove">
+/// For a strip panel where the host draws strips (<see cref="HostChrome.Strips"/>): another pane meets its top edge, so the
+/// native strip draws a hairline there. The strip keeps the panels' plane in that host rather than the recessed step the
+/// cells use to part it from its neighbour.
+/// </param>
+/// <param name="RuleBelow">As <paramref name="RuleAbove"/>, for its bottom edge.</param>
+internal sealed record PanelOverlay(
+    string PanelId,
+    string WindowId,
+    PaneRect Rect,
+    PanelInk Ink,
+    SharpMUTerm.Client.Panels.VitalsModel? Vitals,
+    SharpMUTerm.Client.Panels.MapViewModel? Map = null,
+    Action<long>? WalkTo = null,
+    SharpMUTerm.Client.Panels.WhoHereModel? WhoHere = null,
+    SharpMUTerm.Client.Panels.QuickBarModel? QuickBar = null,
+    Action<int>? Pick = null,
+    Action<string>? Dispatch = null,
+    SharpMUTerm.Client.Composer.ComposerModel? Composer = null,
+    SharpMUTerm.Client.Composer.ComposerSession? ComposerSession = null,
+    Action? PopOut = null,
+    Action<long?>? SelectRoom = null,
+    Action<SharpMUTerm.Client.Panels.MapEdit>? EditMap = null,
+    Action<SharpMUTerm.Client.Panels.MapLook>? LookMap = null,
+    SharpMUTerm.Client.Panels.CollapsedPanelModel? Collapsed = null,
+    Action? Expand = null,
+    bool RuleAbove = false,
+    bool RuleBelow = false);
+
+/// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
+internal sealed record PanelInk(string Bar, string Low, string Track);
+
+/// <summary>
+/// An action a host may draw as a native button in the header, over blank header cells. Its menu is built by the
+/// client, on the client's thread, from the same commands its key runs — a host never builds one of its own.
+/// </summary>
+/// <param name="Id">Which action (<see cref="LayoutsId"/>); a host picks its icon by this.</param>
+/// <param name="Label">What it is, for a tooltip and a screen reader.</param>
+/// <param name="Hint">The key that does the same, for the tooltip.</param>
+/// <param name="Menu">
+/// Builds the menu; safe to call from any thread. The client builds it on its own thread and hands it to the
+/// callback there, so a host marshals in the callback itself.
+/// </param>
+/// <param name="Dispatch">
+/// Runs an entry by the command id the menu carried; safe to call from any thread. An id the last menu built did
+/// not offer is refused, so a host can choose an entry and never name a command of its own.
+/// </param>
+internal sealed record HeaderAction(
+    string Id,
+    string Label,
+    string? Hint,
+    Action<Action<SharpMUTerm.Client.Commands.MenuModel>> Menu,
+    Action<string> Dispatch)
+{
+    /// <summary>The layouts button: built-in and saved layouts, save, and a default for a world or a character.</summary>
+    public const string LayoutsId = "layouts";
 }

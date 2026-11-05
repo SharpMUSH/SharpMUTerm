@@ -30,8 +30,17 @@ public sealed class SpellChecker
 {
     private readonly WordList _words;
     private readonly HashSet<string> _added = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _cache = new(StringComparer.Ordinal);
     private readonly string? _userWordsPath;
+
+    /// <summary>
+    /// Held around every read and write of the word list, the added words and the cache. The terminal asks from the
+    /// client's thread only; the window's native composer marks and suggests from its own thread while the client
+    /// adds a word from the other, and a <see cref="Dictionary{TKey,TValue}"/> written on one thread and read on
+    /// another throws.
+    /// </summary>
+    private readonly Lock _gate = new();
 
     /// <summary>Most cached answers kept; past this the cache is dropped and refilled.</summary>
     private const int CacheLimit = 20_000;
@@ -174,7 +183,38 @@ public sealed class SpellChecker
     /// <summary>Whether a word is spelt right, or was added.</summary>
     public bool Check(string word)
     {
-        if (_added.Contains(word))
+        lock (_gate)
+        {
+            return CheckLocked(word);
+        }
+    }
+
+    /// <summary>
+    /// The proper names never to mark — the configured characters and worlds, and the names the games have reported
+    /// (<c>CompletionIndex</c>). Replaced wholesale on every call, held for the run, never written to disk: a name a
+    /// game reported is not a word the player added.
+    /// </summary>
+    public void KnowNames(IEnumerable<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in names)
+        {
+            foreach (var (start, length) in Runs(name))
+            {
+                known.Add(name.Substring(start, length));
+            }
+        }
+
+        lock (_gate)
+        {
+            _names = known;
+        }
+    }
+
+    private bool CheckLocked(string word)
+    {
+        if (_added.Contains(word) || _names.Contains(word))
         {
             return true;
         }
@@ -221,9 +261,12 @@ public sealed class SpellChecker
             return false;
         }
 
-        if (!_added.Add(word))
+        lock (_gate)
         {
-            return true;
+            if (!_added.Add(word))
+            {
+                return true;
+            }
         }
 
         if (_userWordsPath is { } path)
@@ -240,6 +283,31 @@ public sealed class SpellChecker
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The dictionary's suggestions for <paramref name="word"/>, best first, at most <paramref name="max"/>; empty for a
+    /// word it knows, or one this checker would never mark. Hunspell's suggester is slow beside a check (a few
+    /// milliseconds a word), so this is for a menu opened on one word, never for a whole buffer.
+    /// </summary>
+    public IReadOnlyList<string> Suggest(string word, int max = 6)
+    {
+        ArgumentNullException.ThrowIfNull(word);
+        word = word.Trim();
+        if (word.Length == 0 || max <= 0)
+        {
+            return [];
+        }
+
+        lock (_gate)
+        {
+            if (CheckLocked(word))
+            {
+                return [];
+            }
+
+            return _words.Suggest(word).Take(max).ToArray();
+        }
     }
 
     /// <summary>The word at <paramref name="column"/> on <paramref name="line"/> (or just before it), or null.</summary>
@@ -270,7 +338,7 @@ public sealed class SpellChecker
             }
 
             var end = start + length;
-            if (length < 2 || (end < line.Length && line[end] == '('))
+            if (length < 2 || (end < line.Length && line[end] == '(') || InCommandToken(line, start))
             {
                 continue;
             }
@@ -283,6 +351,27 @@ public sealed class SpellChecker
 
             yield return (start, length);
         }
+    }
+
+    /// <summary>
+    /// Whether the run at <paramref name="start"/> is part of a command word: a whitespace-delimited token that starts
+    /// with <c>+</c>, <c>@</c>, <c>&amp;</c> or <c>/</c> (<c>+bbpost</c>, <c>@emit</c>, <c>&amp;attr</c>, a switch such as
+    /// <c>/new</c>), up to its first <c>=</c>. Every board post starts with one, and it is never a word to correct.
+    /// </summary>
+    private static bool InCommandToken(string line, int start)
+    {
+        var tokenStart = start;
+        while (tokenStart > 0 && !char.IsWhiteSpace(line[tokenStart - 1]))
+        {
+            tokenStart--;
+        }
+
+        if (line[tokenStart] is not ('+' or '@' or '&' or '/'))
+        {
+            return false;
+        }
+
+        return line.IndexOf('=', tokenStart, start - tokenStart) < 0;
     }
 
     /// <summary>Letters, digits and inner apostrophes, the way a word processor splits a line.</summary>

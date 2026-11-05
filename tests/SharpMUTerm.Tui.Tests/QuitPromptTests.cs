@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Tui.Tests;
@@ -23,7 +24,7 @@ public class QuitPromptTests
     /// over two live characters. The unit is the character, matching the header's fraction — see
     /// <c>SharpMUTermApp.ConnectedCharacters</c>.
     /// </summary>
-    private static QuitFacts Busy() => new(
+    private static QuitModel Busy() => new(
         new[] { "Aetherfall.Corvid", "Aetherfall.Rookery" },
         2,
         new[] { "main", "Chat" });
@@ -138,9 +139,9 @@ public class QuitPromptTests
     [Test]
     public async Task WithNothingAtStakeItSaysSo()
     {
-        await Assert.That(QuitPrompt.Consequences(QuitFacts.Nothing)).IsEmpty();
+        await Assert.That(QuitPrompt.Consequences(QuitModel.Nothing)).IsEmpty();
 
-        var rendered = string.Join("\n", QuitPrompt.Render(QuitFacts.Nothing, QuitChoice.Stay));
+        var rendered = string.Join("\n", QuitPrompt.Render(QuitModel.Nothing, QuitChoice.Stay));
         await Assert.That(rendered).Contains("Nothing is connected and nothing is unsent.");
     }
 
@@ -162,7 +163,7 @@ public class QuitPromptTests
     [Test]
     public async Task OneOfEachReadsAsOne()
     {
-        var facts = new QuitFacts(new[] { "Aetherfall.Corvid" }, 1, new[] { "main" });
+        var facts = new QuitModel(new[] { "Aetherfall.Corvid" }, 1, new[] { "main" });
 
         await Assert.That(QuitPrompt.Consequences(facts)).IsEquivalentTo(new[]
         {
@@ -177,7 +178,7 @@ public class QuitPromptTests
     [Test]
     public async Task ALongListIsCappedAndCounted()
     {
-        var facts = QuitFacts.Nothing with { ConnectedCharacters = new[] { "A", "B", "C", "D", "E" } };
+        var facts = QuitModel.Nothing with { ConnectedCharacters = new[] { "A", "B", "C", "D", "E" } };
 
         await Assert.That(QuitPrompt.Consequences(facts)[0]).IsEqualTo("5 characters connected — A, B, C +2 more");
     }
@@ -192,8 +193,8 @@ public class QuitPromptTests
     [Test]
     public async Task AnOpenScreenIsNotAConsequence()
     {
-        await Assert.That(QuitPrompt.Consequences(QuitFacts.Nothing)).IsEmpty();
-        await Assert.That(typeof(QuitFacts).GetProperty("UnsavedEdits")).IsNull();
+        await Assert.That(QuitPrompt.Consequences(QuitModel.Nothing)).IsEmpty();
+        await Assert.That(typeof(QuitModel).GetProperty("UnsavedEdits")).IsNull();
     }
 
     /// <summary>
@@ -218,7 +219,7 @@ public class QuitPromptTests
     [Test]
     public async Task TheButtonsCarryTheirKeys()
     {
-        var rendered = string.Join("\n", QuitPrompt.Render(QuitFacts.Nothing, QuitChoice.Stay));
+        var rendered = string.Join("\n", QuitPrompt.Render(QuitModel.Nothing, QuitChoice.Stay));
 
         await Assert.That(rendered).Contains("Quit  y");
         await Assert.That(rendered).Contains("Stay  n");

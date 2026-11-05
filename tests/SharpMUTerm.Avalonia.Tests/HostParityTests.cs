@@ -1,4 +1,6 @@
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Graphics;
 using SharpMUTerm.Tui;
 using SharpMUTerm.Tui.Tests;
@@ -25,28 +27,48 @@ public partial class HostParityTests
     public static IEnumerable<string> Views() => SnapshotViews.All.Select(v => v ?? "(default)");
 
     /// <summary>
+    /// Every view under each chrome arrangement: the client's chrome in cells (the terminal's, and the window's with
+    /// <c>--cell-chrome</c>), the header and rail drawn by the host, and the window as a person runs it — header, rail,
+    /// status footer, the command line's field and every pane's tab strip drawn by the host (<see cref="HostChrome.Desktop"/>). Both hosts are
+    /// told the same arrangement each time, so the comparison is still of drivers and nothing else, over every cell
+    /// either one draws.
+    /// </summary>
+    public static IEnumerable<(string View, string HostChrome)> ViewsUnderBothChromes() =>
+        from view in Views()
+        from chrome in new[] { "none", "header-rail", "desktop" }
+        select (view, chrome);
+
+    private static HostChrome ChromeFor(string chrome) => chrome switch
+    {
+        "header-rail" => HostChrome.HeaderAndRail,
+        "desktop" => HostChrome.Desktop,
+        _ => HostChrome.None,
+    };
+
+    /// <summary>
     /// A view drawn in the window is the view drawn in the terminal, cell for cell. What this catches is the
     /// driver falling behind the framework — a cell it does not store, a write path it does not implement —
     /// for any view, including the next one added (<c>EveryViewTheSnapshotKnowsIsInTheParityList</c>).
     /// </summary>
     [Test]
-    [MethodDataSource(nameof(Views))]
-    public async Task EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal(string name)
+    [MethodDataSource(nameof(ViewsUnderBothChromes))]
+    public async Task EveryViewDrawsTheSameCellsInTheWindowAsInTheTerminal(string name, string hostChrome)
     {
         var view = name == "(default)" ? null : name;
+        var chrome = ChromeFor(hostChrome);
         Console.SetIn(TextReader.Null);
 
         string ansi;
         using (var headless = new HeadlessConsoleDriver(Width, Height))
         {
-            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps));
+            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps) with { Chrome = chrome });
             ansi = terminal.RenderSnapshot(view);
         }
 
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using (var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, RunsInline = true }))
+            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, NativePalette = null, FloatingPanels = null, RunsInline = true }))
         {
             window.RenderSnapshot(view);
         }
@@ -60,12 +82,14 @@ public partial class HostParityTests
     /// above draws every view inline, with no loop, and that is how a ⌃P menu and an F1 composer that the window
     /// drew as empty frames went unnoticed: inline they were whole. The bottom row is left out — a running client
     /// has been through startup, and says on that row that nothing connects at start, where a snapshot never
-    /// started — and so are the views that read the clock, which a loop does and a snapshot pins.
+    /// started — and so are the views that read the clock, which a loop does and a snapshot pins. Drawn with the
+    /// window's own chrome, because that is how a person runs it; the terminal is told the same.
     /// </summary>
     [Test]
     [MethodDataSource(nameof(Views))]
     public async Task EveryViewDrawsTheSameCellsWhenTheWindowsLoopIsRunning(string name)
     {
+        var chrome = HostChrome.Desktop;
         var view = name == "(default)" ? null : name;
         if (view is "timestamps" or "timestamps-toggled")
         {
@@ -76,14 +100,14 @@ public partial class HostParityTests
         string ansi;
         using (var headless = new HeadlessConsoleDriver(Width, Height))
         {
-            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps));
+            await using var terminal = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps) with { Chrome = chrome });
             ansi = terminal.RenderSnapshot(view);
         }
 
         using var driver = new AvaloniaConsoleDriver(Width, Height);
         await using var window = new SharpMUTermApp(
             DemoScene.Build(),
-            WindowHost.Create(driver, clipboard: null) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null });
+            WindowHost.Create(driver, clipboard: null, chrome) with { Capabilities = Caps, Keys = HostKeys.Terminal, Audio = null, Presence = null, Announcer = null, NativeSettings = null, NativePalette = null, FloatingPanels = null });
         window.OnUiThread(() => _ = window.RenderSnapshot(view));
         var loop = new Thread(() => window.Run([])) { IsBackground = true };
         loop.Start();
@@ -196,6 +220,55 @@ public partial class HostParityTests
                     .Because($"{where} in the {name} names {reserved.Chord.Text}, which the {name} {reserved.Action}");
             }
         }
+    }
+
+    public static IEnumerable<(string Host, string View, StatusMode Mode, int Width, int Height)> ModeViews() =>
+        from host in Hosts()
+        from view in new (string View, StatusMode Mode)[]
+        {
+            ("scrollback-up", StatusMode.SplitScrollback),
+            ("scrollback-split", StatusMode.SplitScrollback),
+            ("freeze", StatusMode.Frozen),
+            ("freeze-scrollback", StatusMode.Frozen),
+            ("search-landed", StatusMode.SearchResult),
+            ("panel-composer", StatusMode.Composer),
+        }
+        from size in new[] { (80, 24), (120, 32) }
+        select (host, view.View, view.Mode, size.Item1, size.Item2);
+
+    /// <summary>
+    /// While a mode holds, the status row names that mode's keys — at least the first, the way out — as this host
+    /// spells them, and none of the chords the host keeps; and the row still fits on one row at 80 columns, where a
+    /// status line that wrapped once took a row off every pane and re-announced every pane's size.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(ModeViews))]
+    public async Task TheStatusRowNamesEachModesKeysAsThisHostSpellsThem(string name, string view, StatusMode mode, int width, int height)
+    {
+        var (keys, _) = HostNamed(name);
+        Console.SetIn(TextReader.Null);
+        using var headless = new HeadlessConsoleDriver(width, height);
+        await using var app = new SharpMUTermApp(DemoScene.Build(), ClientHost.Headless(headless, Caps) with { Keys = keys });
+        var frame = app.RenderSnapshot(view);
+
+        await Assert.That(app.CurrentStatusMode()).IsEqualTo(mode);
+        var glyphs = new SharpMUTerm.Client.Contributions.HostKeyGlyphs(keys.Newline.Glyph);
+        var status = System.Text.RegularExpressions.Regex.Replace(app.StatusMarkup, @"\[[^\]]*\]", string.Empty);
+        await Assert.That(status).Contains(ModeHints.Candidates(mode, glyphs)[^1]);
+        if (width >= 120)
+        {
+            await Assert.That(status).Contains(ModeHints.Candidates(mode, glyphs)[0]).Because("a wide row has room for every key");
+        }
+
+        foreach (var reserved in keys.Reserved)
+        {
+            await Assert.That(status).DoesNotContain(reserved.Chord.Glyph);
+            await Assert.That(status).DoesNotContain(KeyGlyphs.Normalize(reserved.Chord.Glyph));
+        }
+
+        await Assert.That(app.LaidOutRows.Status).IsEqualTo(1).Because("the status row never wraps");
+        await Assert.That(SharpMUTermApp.MarkupWidth(app.StatusMarkup)).IsLessThanOrEqualTo(width);
+        await Assert.That(FrameGrid.Decode(frame, width, height)[height - 1]).Contains(ModeHints.Candidates(mode, glyphs)[^1]);
     }
 
     /// <summary>The chord the window names as its newline is one it hands the client, not one it keeps.</summary>

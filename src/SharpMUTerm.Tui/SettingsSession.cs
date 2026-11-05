@@ -135,7 +135,7 @@ internal sealed class SettingsSession
         Selection.Anchor(model.ListSizes);
         if (!Selection.HasSelection(model.Sizes))
         {
-            return ScreenFocus.None;
+            return ScreenFocus.None with { Note = Note };
         }
 
         var field = _edit is { } at ? model.FieldAt(at.Pane, at.Index, at.Field) : null;
@@ -149,10 +149,12 @@ internal sealed class SettingsSession
                 field?.Choices,
                 field?.ClosedChoices ?? false,
                 field?.Capture ?? false,
-                field?.Masked ?? false)
+                field?.Masked ?? false,
+                field?.ChoiceNotes,
+                field?.ChoiceCaption)
             : (ScreenFieldEdit?)null;
 
-        return new ScreenFocus(Selection.Pane, Selection.Index, edit, Enter(model));
+        return new ScreenFocus(Selection.Pane, Selection.Index, edit, Enter(model), Note);
     }
 
     /// <summary>
@@ -163,9 +165,9 @@ internal sealed class SettingsSession
     private ScreenEnter Enter(ScreenModel model)
     {
         var row = model.RowAt(Selection.Pane, Selection.Index);
-        if (row.Button is not null)
+        if (row.Button is { } button)
         {
-            return ScreenEnter.Add;
+            return button.Kind == ScreenButtonKind.Apply ? ScreenEnter.Apply : ScreenEnter.Add;
         }
 
         return row.FieldCount > 0 ? ScreenEnter.Edit : ScreenEnter.Close;
@@ -193,6 +195,8 @@ internal sealed class SettingsSession
         Selection.Clamp(model.Sizes);
         Selection.Anchor(model.ListSizes);
 
+        // What the last undo said stays in the header until the next key.
+        Note = null;
         if (_edit is not null)
         {
             return HandleEdit(key, model);
@@ -200,11 +204,26 @@ internal sealed class SettingsSession
 
         switch (key.Key)
         {
+            // ⌃Z undoes this screen's last committed edit and ⌃Y (or ⌃⇧Z, where a host reports it) redoes it — only while
+            // navigating: inside a field the keyboard is the field's.
+            case ConsoleKey.Z when key.Modifiers == ConsoleModifiers.Control:
+                return Undone(Edits.Undo());
+
+            case ConsoleKey.Y when key.Modifiers == ConsoleModifiers.Control:
+            case ConsoleKey.Z when key.Modifiers == (ConsoleModifiers.Control | ConsoleModifiers.Shift):
+                return Undone(Edits.Redo());
+
             case ConsoleKey.Escape:
                 return ScreenAction.Close;
 
             case ConsoleKey.Enter:
                 return Activate(model);
+
+            case ConsoleKey.UpArrow when key.Modifiers == ConsoleModifiers.Alt:
+                return Reorder(model, -1);
+
+            case ConsoleKey.DownArrow when key.Modifiers == ConsoleModifiers.Alt:
+                return Reorder(model, 1);
 
             case ConsoleKey.UpArrow:
                 return Changed(Selection.MoveVertically(-1, model.Sizes, model.Layout));
@@ -235,12 +254,28 @@ internal sealed class SettingsSession
             case ConsoleKey.I when key.Modifiers == 0:
                 return Detail(model);
 
+            case ConsoleKey.R when key.Modifiers == 0:
+                return Reset(model);
+
             case ConsoleKey.Spacebar:
                 return Toggle(model);
 
             default:
                 return ScreenAction.None;
         }
+    }
+
+    /// <summary>
+    /// What the last ⌃Z or ⌃Y said (<c>Undid port.</c>, or <c>Nothing to undo in Text &amp; display.</c>), drawn in the
+    /// header in place of its hints until the next key; null otherwise. Refusing out loud is the point: a ⌃Z with nothing
+    /// to undo that did nothing visible would read as a key the screen does not have.
+    /// </summary>
+    internal string? Note { get; private set; }
+
+    private ScreenAction Undone(Client.Settings.SettingsUndoResult result)
+    {
+        Note = result.Note;
+        return ScreenAction.Redraw;
     }
 
     /// <summary>
@@ -310,14 +345,58 @@ internal sealed class SettingsSession
         return ScreenAction.Consumed;
     }
 
+    /// <summary>
+    /// <c>r</c> on a declared setting that differs from its default puts the default back, through
+    /// <see cref="Edits"/> like any other change. A row at its default has no reset and the key is not ours
+    /// there, which is also why the header names <c>r reset</c> only on such a row. A plain letter is safe
+    /// for <see cref="Detail"/>'s reason: an open field edit has taken the whole keyboard long before this.
+    /// </summary>
+    private ScreenAction Reset(ScreenModel model)
+    {
+        if (model.ResetAt(Selection.Pane, Selection.Index) is not { } reset)
+        {
+            return ScreenAction.None;
+        }
+
+        Edits.Apply(reset, model.RowAt(Selection.Pane, Selection.Index).FieldAt(0)?.Label);
+        return ScreenAction.Redraw;
+    }
+
+    /// <summary>
+    /// ⌥↑/⌥↓ on a list screen's item moves that item one place within its set — order is meaning for a trigger,
+    /// since the first rule that stops processing wins — through <see cref="Edits"/>, and the cursor goes with it.
+    /// At either end of its set, and on a row that is not an item, the key is not ours.
+    /// </summary>
+    private ScreenAction Reorder(ScreenModel model, int delta)
+    {
+        if (model.RowAt(Selection.Pane, Selection.Index).Move is not { } move)
+        {
+            return ScreenAction.None;
+        }
+
+        // The move is made inside the funnel, so the history sees the list before it, and saved only if it happened: at
+        // the end of its set nothing changed to save.
+        if (Edits.Apply(() => move(delta), "moving it") is not { } moved)
+        {
+            return ScreenAction.None;
+        }
+
+        Selection.Seed(Selection.Pane, moved);
+        return ScreenAction.Redraw;
+    }
+
     private ScreenAction Toggle(ScreenModel model)
     {
         if (model.ToggleAt(Selection.Pane, Selection.Index) is not { } toggle)
         {
-            return ScreenAction.Consumed;
+            // A choice row (a theme on F7: the cursor already previews it) takes Space as a checkbox does — as
+            // the commit — so Space is ⏎ there. Every other row with nothing to toggle swallows it, as before.
+            return model.RowAt(Selection.Pane, Selection.Index).Button is { Kind: ScreenButtonKind.Apply }
+                ? Activate(model)
+                : ScreenAction.Consumed;
         }
 
-        Edits.Apply(toggle);
+        Edits.Apply(toggle, model.RowAt(Selection.Pane, Selection.Index).FieldAt(0)?.Label);
         return ScreenAction.Redraw;
     }
 
@@ -369,6 +448,17 @@ internal sealed class SettingsSession
 
         Open(model, 0);
         return ScreenAction.Redraw;
+    }
+
+    /// <summary>
+    /// Opens a field of the focused row as though ⏎ and ⇥ had reached it — how a screen opened <em>for</em>
+    /// something (F2 from a selection) lands in the field that something is about.
+    /// </summary>
+    internal void OpenField(int field)
+    {
+        var model = _model(Selection);
+        Selection.Clamp(model.Sizes);
+        Open(model, field);
     }
 
     /// <summary>Opens a field of the focused row, seeding the buffer with its current value.</summary>

@@ -1,3 +1,6 @@
+using SharpMUTerm.Client.Contributions;
+using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Layouts;
 using System.Globalization;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Telnet;
@@ -17,7 +20,7 @@ namespace SharpMUTerm.Tui;
 internal static class WorldsScreenRenderer
 {
     private const int LeftColumnWidth = 28;
-    private const int WorldLabelWidth = 9;
+    private const int WorldLabelWidth = 16;
     private const int CharLabelWidth = 10;
     private const int CharDetailColumnWidth = 40;
 
@@ -66,46 +69,97 @@ internal static class WorldsScreenRenderer
     /// <see cref="WorldDefinition.GmcpModules"/>: the GMCP modules asked for beyond the client's own, as a
     /// comma-separated list of <c>Name Version</c>.
     /// </summary>
-    internal const int GmcpModulesField = 5;
+    internal const int GmcpModulesField = 7;
 
     /// <summary><see cref="WorldDefinition.ContentFormat"/>, as <see cref="ContentChoices"/>.</summary>
     internal const int ContentField = 6;
 
     /// <summary><see cref="WorldDefinition.Emoji"/>'s three switches, as one of <see cref="EmojiChoices"/>.</summary>
-    internal const int EmojiField = 7;
+    internal const int EmojiField = 10;
 
     /// <summary><see cref="MapSettings.RoomNamePattern"/>: the line naming a room, for a game that sends no GMCP room.</summary>
-    internal const int MapRoomField = 8;
+    internal const int MapRoomField = 17;
 
     /// <summary><see cref="MapSettings.ExitsPattern"/>: the line listing a room's exits.</summary>
-    internal const int MapExitsField = 9;
+    internal const int MapExitsField = 18;
 
     /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
-    internal const int WalkFailField = 10;
+    internal const int WalkFailField = 19;
 
     /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
-    internal const int SoundsField = 11;
+    internal const int SoundsField = 20;
 
     /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
-    internal const int GrabField = 12;
+    internal const int GrabField = 13;
 
     /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
-    internal const int GmcpLoginField = 13;
+    internal const int GmcpLoginField = 8;
 
     /// <summary><see cref="WorldDefinition.DiscordPresence"/>, as one of <see cref="DiscordChoices"/>.</summary>
-    internal const int DiscordField = 14;
+    internal const int DiscordField = 9;
+
+    /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
+    internal const int WorldLayoutField = 21;
+
+    /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
+    internal const int JoinWrapsField = 11;
+
+    /// <summary><see cref="WorldDefinition.AutoReconnect"/>, as one of <see cref="ReconnectChoices"/>.</summary>
+    internal const int ReconnectField = 5;
+
+    /// <summary><see cref="WorldDefinition.CommandSeparator"/>, as one of <see cref="SeparatorChoices"/>.</summary>
+    internal const int StackingField = 12;
+
+    /// <summary><see cref="WorldDefinition.AlertOnPage"/> and <see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
+    internal const int AlertOnField = 14;
+
+    /// <summary><see cref="WorldDefinition.CaptureChannels"/>, as one of <see cref="ChannelCaptureChoices"/>.</summary>
+    internal const int CaptureChannelsField = 15;
+
+    /// <summary><see cref="WorldDefinition.HighlightNames"/>: <c>Name=colour, …</c>.</summary>
+    internal const int HighlightNamesField = 16;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.CaptureChannels"/>.</summary>
+    internal static readonly IReadOnlyList<string> ChannelCaptureChoices = WorldFieldValues.ChannelCaptureChoices;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.AutoReconnect"/>.</summary>
+    internal static readonly IReadOnlyList<string> ReconnectChoices = WorldFieldValues.ReconnectChoices;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.CommandSeparator"/>.</summary>
+    internal static readonly IReadOnlyList<string> SeparatorChoices = WorldFieldValues.SeparatorChoices;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.AlertOnName"/>.</summary>
+    internal static readonly IReadOnlyList<string> AlertChoices = WorldFieldValues.AlertChoices;
+
+    /// <summary>F5's words for <see cref="WorldDefinition.JoinWrappedLines"/>: off shows rows as the server sent them.</summary>
+    internal static readonly IReadOnlyList<string> JoinWrapChoices = WorldFieldValues.JoinWrapChoices;
+
+    /// <summary>What a world with no layout of its own reads as: the suggestion it accepted, else Roleplay.</summary>
+    internal const string WorldLayoutDefault = WorldFieldValues.WorldLayoutDefault;
+
+    /// <summary>What a character with no layout of its own reads as.</summary>
+    internal const string CharacterLayoutDefault = WorldFieldValues.CharacterLayoutDefault;
+
+    /// <summary>The layout row's choices: the default word, then every layout by name.</summary>
+    internal static IReadOnlyList<string> LayoutChoices(IReadOnlyList<LayoutDefinition> layouts, string unset) => WorldFieldValues.LayoutChoices(layouts, unset);
+
+    /// <summary>The name of the layout <paramref name="id"/> names, or null for none (or one that is gone).</summary>
+    internal static string? LayoutName(IReadOnlyList<LayoutDefinition> layouts, string? id) => WorldFieldValues.LayoutName(layouts, id);
+
+    /// <summary>The id of the layout called <paramref name="name"/>, or null for the default word.</summary>
+    internal static string? LayoutId(IReadOnlyList<LayoutDefinition> layouts, string name) => WorldFieldValues.LayoutId(layouts, name);
 
     /// <summary>F5's words for <see cref="WorldDefinition.DiscordPresence"/>.</summary>
-    internal static readonly string[] DiscordChoices = ["off", "show status"];
+    internal static readonly IReadOnlyList<string> DiscordChoices = WorldFieldValues.DiscordChoices;
 
     /// <summary>F5's words for <see cref="WorldDefinition.GmcpLogin"/>: how a character with a saved password logs in.</summary>
-    internal static readonly string[] LoginChoices = ["off", "if offered"];
+    internal static readonly IReadOnlyList<string> LoginChoices = WorldFieldValues.LoginChoices;
 
     /// <summary>The prefix the grab row suggests while it is off: AresMUSH's, and the one its /edit commands use.</summary>
     internal const string SuggestedGrabPrefix = "FugueEdit >";
 
     /// <summary>F5's words for <see cref="WorldDefinition.DownloadMedia"/>: on fetches what the game asks for.</summary>
-    internal static readonly string[] SoundChoices = ["download", "cached only"];
+    internal static readonly IReadOnlyList<string> SoundChoices = WorldFieldValues.SoundChoices;
 
     /// <summary>
     /// The character row's field ordinals, in the order ⇥ steps through them — which is the order the
@@ -160,6 +214,9 @@ internal static class WorldsScreenRenderer
     /// <em>appearance</em>: it belongs at the end, where a reader stops looking for behaviour.
     /// </summary>
     internal const int PaneTintField = 9;
+
+    /// <summary><see cref="CharacterDefinition.Layout"/>, appended after the tint: also about how the panes look.</summary>
+    internal const int CharacterLayoutField = 10;
 
     /// <summary>
     /// The trigger-set row's field ordinals. A set's name leads, as every list row's does — and here it
@@ -291,15 +348,16 @@ internal static class WorldsScreenRenderer
     internal static string HeaderLine(
         int width, ScreenModel? model = null, ScreenFocus? focus = null, string fkey = FKey)
     {
-        var title = $"[bold {Value}] Worlds & Characters[/]";
+        var title = $"[bold {Value}]Worlds & Characters[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints,
             fkey,
             model?.HasEditableRow ?? false,
             focus,
             model?.HasRemovableRow ?? false,
-            model?.HasDetailRow ?? false);
-        return SpreadLR(" " + title, hints, width);
+            model?.HasDetailRow ?? false,
+            room: ScreenChrome.HeaderRoom(" " + title, width));
+        return SpreadTitle(" " + title, hints, width);
     }
 
     /// <summary>
@@ -307,8 +365,7 @@ internal static class WorldsScreenRenderer
     /// and is the default: it follows CHARSET negotiation. Every other entry is an <em>override</em> —
     /// used whatever the server says — which is why the detail column labels them as one.
     /// </summary>
-    private static readonly string[] Encodings =
-        { TelnetSessionOptions.AutoEncodingName, "UTF-8", "ISO-8859-1", "ASCII", "CP437", "CP1252" };
+    
 
     /// <summary>The label the WORLDS list's add button carries, and the row the renderer draws for it.</summary>
     internal const string AddWorldLabel = "+ world";
@@ -340,16 +397,16 @@ internal static class WorldsScreenRenderer
     internal const string StartupLabel = "at start";
 
     /// <summary>Marked: this character is dialled when the client launches.</summary>
-    internal const string StartupOn = "connect";
+    internal const string StartupOn = WorldFieldValues.StartupOn;
 
     /// <summary>
     /// Unmarked — the default. It reads <c>off</c> rather than <c>no</c> so it matches the world's
     /// <c>keepalive</c> row four lines above it, the screen's other "this feature is simply not on"
     /// value, and is drawn in the same muted ink for the same reason.
     /// </summary>
-    internal const string StartupOff = "off";
+    internal const string StartupOff = WorldFieldValues.StartupOff;
 
-    private static readonly string[] StartupChoices = { StartupOn, StartupOff };
+    
 
     /// <summary>
     /// The row for <see cref="LoggingSettings.RestoreLog"/>. It says <c>restore</c> and not "restore
@@ -368,15 +425,15 @@ internal static class WorldsScreenRenderer
     internal const string RestoreNote = "panes refill after a restart";
 
     /// <summary>The default: the panes come back.</summary>
-    internal const string RestoreOn = "on";
+    internal const string RestoreOn = WorldFieldValues.RestoreOn;
 
     /// <summary>
     /// Opted out. It reads <c>off</c> to match <c>at start</c> and the world's <c>keepalive</c> row —
     /// the screen's other "this feature is simply not on" values — and is drawn in the same muted ink.
     /// </summary>
-    internal const string RestoreOff = "off";
+    internal const string RestoreOff = WorldFieldValues.RestoreOff;
 
-    private static readonly string[] RestoreChoices = { RestoreOn, RestoreOff };
+    
 
     /// <summary>
     /// The row for <see cref="CharacterDefinition.Tint"/>. One word, because the CHARACTER panel is 48
@@ -446,41 +503,23 @@ internal static class WorldsScreenRenderer
         int selectedWorld,
         int selectedCharacter,
         int selectedSet = 0,
-        Action<int>? info = null)
+        Action<int>? info = null,
+        IReadOnlyList<LayoutDefinition>? layouts = null)
     {
         ArgumentNullException.ThrowIfNull(worlds);
         ArgumentNullException.ThrowIfNull(triggerSets);
+        var all = layouts ?? BuiltInLayouts.All;
 
         (selectedWorld, selectedCharacter) = Resolve(worlds, selectedWorld, selectedCharacter);
 
-        var worldRows = ScreenModel.Rows(worlds, w => ScreenRow.Of(
-            ScreenField.Name("name", () => w.Name, v => w.Name = v),
-            ScreenField.Text("host", () => w.Host, v => w.Host = v),
-            ScreenField.Integer("port", () => w.Port, v => w.Port = v, 1, 65535),
-            ScreenField.Choice("encoding", () => w.Encoding, v => w.Encoding = v, Encodings),
-            ScreenField.Integer("keepalive", () => w.KeepaliveSeconds, v => w.KeepaliveSeconds = v, 0, 86400),
-            ScreenField.Optional("gmcp modules", () => JoinModules(w), v => SplitModules(w, v)),
-            ScreenField.Choice("content", () => ContentName(w.ContentFormat), v => w.ContentFormat = ContentOf(v), ContentChoices),
-            ScreenField.Choice("emoji", () => EmojiName(w.Emoji), v => SetEmoji(w.Emoji, v), EmojiChoices),
-            ScreenField.OptionalPattern("map room", () => w.Map.RoomNamePattern, v => w.Map.RoomNamePattern = v),
-            ScreenField.OptionalPattern("map exits", () => w.Map.ExitsPattern, v => w.Map.ExitsPattern = v),
-            ScreenField.OptionalPattern("walk fail", () => w.Map.WalkFailurePattern, v => w.Map.WalkFailurePattern = v),
-            ScreenField.Choice(
-                "sounds",
-                () => w.DownloadMedia ? SoundChoices[0] : SoundChoices[1],
-                v => w.DownloadMedia = v == SoundChoices[0],
-                SoundChoices),
-            ScreenField.Optional("edit grab", () => w.GrabPrefix, v => w.GrabPrefix = v),
-            ScreenField.Choice(
-                "gmcp login",
-                () => w.GmcpLogin ? LoginChoices[1] : LoginChoices[0],
-                v => w.GmcpLogin = v == LoginChoices[1],
-                LoginChoices),
-            ScreenField.Choice(
-                "discord",
-                () => w.DiscordPresence ? DiscordChoices[1] : DiscordChoices[0],
-                v => w.DiscordPresence = v == DiscordChoices[1],
-                DiscordChoices)))
+        // The world's and character's fields are the declared ones (BuiltInSettings.World/.Character), built into cell
+        // fields through their own bindings, so this screen and the desktop's settings window edit one object one way.
+        // The bindings look a layout up in the configuration, so they are handed one holding these layouts.
+        var context = new AppConfiguration
+        {
+            Layouts = [.. all.Where(l => !BuiltInLayouts.All.Any(b => string.Equals(b.Id, l.Id, StringComparison.Ordinal)))],
+        };
+        var worldRows = ScreenModel.Rows(worlds, w => ScreenRow.Of(DeclaredRow(BuiltInSettings.World, WorldFieldOrder, new SettingTarget(context, w))))
             .Concat(WorldButtons(worlds, selectedWorld, info))
             .ToArray();
 
@@ -493,29 +532,11 @@ internal static class WorldsScreenRenderer
             // Every remaining ScreenToggle in this file is drawn where it is bound; see the security
             // rows and the trigger-set assignments, both of which render a real `[x]`.
             : ScreenModel.Rows(world.Characters, c => ScreenRow.Of(
-                ScreenField.Name("name", () => c.Name, v => c.Name = v),
-                ScreenField.Password("password", () => c.Password, v => c.Password = v),
-                ScreenField.Defaulted(
-                    "connect", () => c.ConnectString, v => c.ConnectString = v, ConnectStringTemplate.Default),
-                ScreenField.Optional("on connect", () => c.OnConnect, v => c.OnConnect = v),
-                ScreenField.Optional("disconnect", () => c.OnDisconnect, v => c.OnDisconnect = v),
-                ScreenField.Choice(
-                    StartupLabel,
-                    () => c.ConnectAtStartup ? StartupOn : StartupOff,
-                    v => c.ConnectAtStartup = string.Equals(v, StartupOn, StringComparison.OrdinalIgnoreCase),
-                    StartupChoices),
-                ScreenField.Enumeration("log", () => c.Logging.Format, v => c.Logging.Format = v),
-                ScreenField.Optional("log folder", () => c.Logging.Directory, v => c.Logging.Directory = v),
-                ScreenField.Choice(
-                    RestoreLabel,
-                    () => c.Logging.RestoreLog ? RestoreOn : RestoreOff,
-                    v => c.Logging.RestoreLog = string.Equals(v, RestoreOn, StringComparison.OrdinalIgnoreCase),
-                    RestoreChoices),
-                ScreenField.Enumeration(TintLabel, () => c.Tint, v => c.Tint = v)))
+                DeclaredRow(BuiltInSettings.Character, CharacterFieldOrder, new SettingTarget(context, world, c))))
                 .Concat(CharacterButtons(world, selectedCharacter))
                 .ToArray();
 
-        var securityRows = world is null ? Array.Empty<ScreenRow>() : SecurityRows(world);
+        var securityRows = world is null ? Array.Empty<ScreenRow>() : SecurityRows(new SettingTarget(context, world));
 
         if (!HasCharacter(worlds, selectedWorld, selectedCharacter))
         {
@@ -581,8 +602,7 @@ internal static class WorldsScreenRenderer
         });
 
     /// <summary>A world's extra GMCP modules as the well shows and edits them, or null for none.</summary>
-    internal static string? JoinModules(WorldDefinition world) =>
-        world.GmcpModules.Count == 0 ? null : string.Join(", ", world.GmcpModules);
+    internal static string? JoinModules(WorldDefinition world) => WorldFieldValues.JoinModules(world);
 
     /// <summary>
     /// Writes the well back: split on commas, and only entries <see cref="GmcpHandshake.Parse"/> accepts are
@@ -591,18 +611,7 @@ internal static class WorldsScreenRenderer
     private static string PatternDetail(string? pattern, string unset) =>
         string.IsNullOrWhiteSpace(pattern) ? $"[{Label}]{unset}[/]" : $"[{Value}]{Escape(pattern)}[/]";
 
-    internal static void SplitModules(WorldDefinition world, string? value)
-    {
-        world.GmcpModules.Clear();
-        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (GmcpHandshake.Parse(part) is { } module
-                && !world.GmcpModules.Any(m => m.StartsWith(module.Name + " ", StringComparison.OrdinalIgnoreCase)))
-            {
-                world.GmcpModules.Add($"{module.Name} {module.Version.ToString(CultureInfo.InvariantCulture)}");
-            }
-        }
-    }
+    internal static void SplitModules(WorldDefinition world, string? value) => WorldFieldValues.SplitModules(world, value);
 
     /// <summary>A set's script files as the well shows and edits them, or null for none.</summary>
     internal static string? JoinScripts(TriggerSet set) =>
@@ -758,12 +767,38 @@ internal static class WorldsScreenRenderer
     /// be one negation away from silently turning verification off.
     /// </para>
     /// </summary>
-    private static ScreenRow[] SecurityRows(WorldDefinition world) => new[]
-    {
-        ScreenRow.Of(ScreenToggle.Bind(() => world.UseTls, v => world.UseTls = v)),
-        ScreenRow.Of(ScreenToggle.Bind(
-            () => world.AllowInvalidCertificates, v => world.AllowInvalidCertificates = v)),
-    };
+    private static ScreenRow[] SecurityRows(SettingTarget world) =>
+    [
+        .. SecurityFieldOrder.Select(id => ScreenRow.Of(DeclaredFields.Toggle(DeclaredFields.Find(BuiltInSettings.World, id), world))),
+    ];
+
+    /// <summary>
+    /// The world row's fields, in the order ⇥ steps through them and the ordinals above number them (<see
+    /// cref="WorldNameField"/> …), by declared id. The declaration's own order is the settings window's grouping; this is
+    /// the cell screen's, which tests and muscle memory address by position.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> WorldFieldOrder =
+    [
+        "name", "host", "port", "encoding", "keepalive", "reconnect",
+        "content", "gmcp-modules", "gmcp-login", "discord",
+        "emoji", "join-wraps", "stacking", "edit-grab",
+        "alert-on", "capture-channels", "highlight-names",
+        "map-room", "map-exits", "walk-fail",
+        "sounds", "layout",
+    ];
+
+    /// <summary>The world's two security checkboxes, drawn in the WORLD block (<see cref="SecurityPane"/>), by declared id.</summary>
+    internal static readonly IReadOnlyList<string> SecurityFieldOrder = ["tls", "invalid-certificates"];
+
+    /// <summary>The character row's fields, in ⇥ order (<see cref="CharacterNameField"/> …), by declared id.</summary>
+    internal static readonly IReadOnlyList<string> CharacterFieldOrder =
+    [
+        "name", "password", "connect", "on-connect", "disconnect", "at-start", "log", "log-folder", "restore", "tint", "layout",
+    ];
+
+    /// <summary>A row of cell fields built from the declared fields <paramref name="order"/> names, editing <paramref name="target"/>.</summary>
+    private static ScreenField[] DeclaredRow(SettingsSectionContribution section, IReadOnlyList<string> order, SettingTarget target) =>
+        [.. order.Select(id => DeclaredFields.Screen(DeclaredFields.Find(section, id), target))];
 
     /// <summary>
     /// The WORLDS pane's buttons, in the order <see cref="ScreenModel.Sizes"/> needs them: the cursor
@@ -899,7 +934,7 @@ internal static class WorldsScreenRenderer
             left.Add(ScreenChrome.Cursor(
                 $"{marker} [{accentHex}]▚[/] {name}", cursor.IsOn(WorldsPane, i), LeftColumnWidth));
             left.Add($"    [{Label}]{Escape(world.Host)}:{world.Port.ToString(CultureInfo.InvariantCulture)}[/]");
-            left.Add($"    [{Label}]{world.Characters.Count.ToString(CultureInfo.InvariantCulture)} chars[/]");
+            left.Add($"    [{Label}]{world.Characters.Count.ToString(CultureInfo.InvariantCulture)} character{Plural(world.Characters.Count)}[/]");
         }
 
         if (worlds.Count == 0)
@@ -938,8 +973,11 @@ internal static class WorldsScreenRenderer
         int selectedCharacter,
         string accent,
         ScreenFocus? focus = null,
-        int height = 0)
+        int height = 0,
+        IReadOnlyList<LayoutDefinition>? layouts = null,
+        Func<WorldDefinition, string?>? joinWrapsAdvice = null)
     {
+        var all = layouts ?? BuiltInLayouts.All;
         var cursor = focus ?? ScreenFocus.None;
         (selectedWorld, selectedCharacter) = Resolve(worlds, selectedWorld, selectedCharacter);
         if (selectedWorld < 0)
@@ -953,81 +991,176 @@ internal static class WorldsScreenRenderer
         // where they are displayed, so it is where an open edit draws its caret. No title strip above
         // them: every token of one would be repeated in the rows underneath and in the WORLDS list beside
         // it, and the rows it cost are rows the CHARACTERS list needs at 100x24.
-        var right = new List<string>
+        // Each world field's cell, by declared id. They are drawn in the declaration's order under its group headings
+        // (BuiltInSettings.World), with the declared labels, so this column and the desktop's settings window read the
+        // same; WorldFieldOrder is that order too, so ⇥ walks down the column rather than jumping about it.
+        var cells = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            $"[{accent}]├ WORLD[/]",
-            WorldField("name", Field(
-                $"[{Value}]{Escape(world.Name)}[/]", cursor, selectedWorld, WorldNameField)),
-            WorldField("host", Field(
-                $"[{Value}]{Escape(world.Host)}[/]", cursor, selectedWorld, HostField)),
-            WorldField("port", Field(
+            ["name"] = Field(
+                $"[{Value}]{Escape(world.Name)}[/]", cursor, selectedWorld, WorldNameField),
+            ["host"] = Field(
+                $"[{Value}]{Escape(world.Host)}[/]", cursor, selectedWorld, HostField),
+            ["port"] = Field(
                 $"[{Value}]{world.Port.ToString(CultureInfo.InvariantCulture)}[/]",
                 cursor,
                 selectedWorld,
-                PortField)),
-        };
-
-        right.AddRange(SecurityColumn(world, cursor));
-        right.AddRange(new[]
-        {
-            WorldField("encoding", Field(
-                EncodingDetail(world.Encoding), cursor, selectedWorld, EncodingField)),
-            WorldField("keepalive", Field(
+                PortField),
+            ["encoding"] = Field(
+                EncodingDetail(world.Encoding), cursor, selectedWorld, EncodingField),
+            ["keepalive"] = Field(
                 world.KeepaliveSeconds > 0
                     ? $"[{Value}]{world.KeepaliveSeconds.ToString(CultureInfo.InvariantCulture)}s[/]"
                     : $"[{Label}]off[/]",
                 cursor,
                 selectedWorld,
-                KeepaliveField)),
-            WorldField("gmcp", Field(
-                JoinModules(world) is { } modules
-                    ? $"[{Value}]{Escape(modules)}[/]"
-                    : $"[{Label}]defaults[/]",
+                KeepaliveField),
+            ["reconnect"] = Field(
+                world.AutoReconnect
+                    ? $"[{Value}]{ReconnectChoices[1]} · 5 s to 60 s, five tries[/]"
+                    : $"[{Label}]{ReconnectChoices[0]} · ⌥R dials again[/]",
                 cursor,
                 selectedWorld,
-                GmcpModulesField)),
-            WorldField("content", Field(
+                ReconnectField),
+            ["content"] = Field(
                 world.ContentFormat == ContentFormat.Ansi
                     ? $"[{Label}]{ContentName(world.ContentFormat)}[/]"
                     : $"[{Value}]{ContentName(world.ContentFormat)}[/]",
                 cursor,
                 selectedWorld,
-                ContentField)),
-            WorldField("emoji", Field(
+                ContentField),
+            ["gmcp-modules"] = Field(
+                JoinModules(world) is { } modules
+                    ? $"[{Value}]{Escape(modules)}[/]"
+                    : $"[{Label}]defaults[/]",
+                cursor,
+                selectedWorld,
+                GmcpModulesField),
+            ["gmcp-login"] = Field(
+                world.GmcpLogin ? $"[{Value}]{LoginChoices[1]}[/]" : $"[{Label}]{LoginChoices[0]} · connect line[/]",
+                cursor,
+                selectedWorld,
+                GmcpLoginField),
+            ["discord"] = Field(
+                world.DiscordPresence ? $"[{Value}]{DiscordChoices[1]}[/]" : $"[{Label}]{DiscordChoices[0]}[/]",
+                cursor,
+                selectedWorld,
+                DiscordField),
+            ["emoji"] = Field(
                 world.Emoji.Enabled
                     ? $"[{Value}]{EmojiName(world.Emoji)}[/]"
                     : $"[{Label}]{EmojiOff}[/]",
                 cursor,
                 selectedWorld,
-                EmojiField)),
-            WorldField("map room", Field(
-                PatternDetail(world.Map.RoomNamePattern, "from GMCP"), cursor, selectedWorld, MapRoomField)),
-            WorldField("map exits", Field(
-                PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField)),
-            WorldField("walk fail", Field(
-                PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField)),
-            WorldField("sounds", Field(
-                world.DownloadMedia ? $"[{Label}]{SoundChoices[0]}[/]" : $"[{Value}]{SoundChoices[1]}[/]",
+                EmojiField),
+            ["join-wraps"] = Field(
+                world.JoinWrappedLines
+                    ? $"[{Value}]{JoinWrapChoices[1]} lines the server wrapped[/]"
+                    : joinWrapsAdvice?.Invoke(world) is { } advice
+                        ? $"[{Label}]{JoinWrapChoices[0]} · [/][{ScreenPalette.Caution}]{Escape(advice)}[/]"
+                        : $"[{Label}]{JoinWrapChoices[0]} · rows as the server sent them[/]",
                 cursor,
                 selectedWorld,
-                SoundsField)),
-            WorldField("edit grab", Field(
+                JoinWrapsField),
+            ["stacking"] = Field(
+                world.CommandSeparator is { } separator
+                    ? $"[{Value}]{Escape(separator)} splits · #3 repeats[/]"
+                    : $"[{Label}]{SeparatorChoices[0]} · lines go as typed[/]",
+                cursor,
+                selectedWorld,
+                StackingField),
+            ["edit-grab"] = Field(
                 world.GrabPrefix is { } grab
                     ? $"[{Value}]{Escape(grab)}[/]"
                     : $"[{Label}]off · e.g. {Escape(SuggestedGrabPrefix)}[/]",
                 cursor,
                 selectedWorld,
-                GrabField)),
-            WorldField("gmcp login", Field(
-                world.GmcpLogin ? $"[{Value}]{LoginChoices[1]}[/]" : $"[{Label}]{LoginChoices[0]} · connect line[/]",
+                GrabField),
+            ["alert-on"] = Field(
+                world.AlertOnName || world.AlertOnPage
+                    ? $"[{Value}]{WorldFieldValues.AlertName(world)}[/]"
+                    : $"[{Label}]{AlertChoices[0]} · alert triggers only[/]",
                 cursor,
                 selectedWorld,
-                GmcpLoginField)),
-            WorldField("discord", Field(
-                world.DiscordPresence ? $"[{Value}]{DiscordChoices[1]}[/]" : $"[{Label}]{DiscordChoices[0]}[/]",
+                AlertOnField),
+            ["capture-channels"] = Field(
+                world.CaptureChannels switch
+                {
+                    SharpMUTerm.Core.Protocols.ChannelCaptureMode.Copy => $"[{Value}]{ChannelCaptureChoices[1]} · a window per GMCP channel[/]",
+                    SharpMUTerm.Core.Protocols.ChannelCaptureMode.Move => $"[{Value}]{ChannelCaptureChoices[2]} · out of the main window[/]",
+                    _ => $"[{Label}]{ChannelCaptureChoices[0]} · channels stay in the main window[/]",
+                },
                 cursor,
                 selectedWorld,
-                DiscordField)),
+                CaptureChannelsField),
+            ["highlight-names"] = Field(
+                SharpMUTerm.Core.Automation.NameHighlights.Format(world.HighlightNames) is { } names
+                    ? $"[{Value}]{Escape(names)}[/]"
+                    : $"[{Label}]none · e.g. Ashlyn=gold, Merrow=red[/]",
+                cursor,
+                selectedWorld,
+                HighlightNamesField),
+            ["map-room"] = Field(
+                PatternDetail(world.Map.RoomNamePattern, "from GMCP"), cursor, selectedWorld, MapRoomField),
+            ["map-exits"] = Field(
+                PatternDetail(world.Map.ExitsPattern, "from GMCP"), cursor, selectedWorld, MapExitsField),
+            ["walk-fail"] = Field(
+                PatternDetail(world.Map.WalkFailurePattern, "timeout only"), cursor, selectedWorld, WalkFailField),
+            ["sounds"] = Field(
+                world.DownloadMedia ? $"[{Label}]{SoundChoices[0]}[/]" : $"[{Value}]{SoundChoices[1]}[/]",
+                cursor,
+                selectedWorld,
+                SoundsField),
+            ["layout"] = Field(
+                LayoutName(all, world.Layout) is { } worldLayout
+                    ? $"[{Value}]{Escape(worldLayout)}[/]"
+                    : $"[{Label}]{WorldLayoutDefault} · {Escape(LayoutName(all, world.AcceptedLayoutSuggestion) ?? BuiltInLayouts.Roleplay.Name)}[/]",
+                cursor,
+                selectedWorld,
+                WorldLayoutField),
+        };
+
+        var right = new List<string> { $"[{accent}]├ WORLD[/]" };
+
+        // Which group each world row is under, and which rows are the headings: a short column gives the headings up
+        // and names the group of its first drawn row on its top row instead (see the end of this method).
+        var groupOf = new Dictionary<int, string>();
+        var namesHelp = 0;
+        var headings = new HashSet<int>();
+        string? group = null;
+        foreach (var field in BuiltInSettings.World.Fields)
+        {
+            if (field.Group is { } heading && !string.Equals(heading, group, StringComparison.Ordinal))
+            {
+                group = heading;
+                headings.Add(right.Count);
+                right.Add(GroupHeading(heading));
+            }
+
+            var first = right.Count;
+            if (string.Equals(field.Id, SecurityFieldOrder[0], StringComparison.Ordinal))
+            {
+                right.AddRange(SecurityColumn(world, cursor));
+            }
+            else if (cells.TryGetValue(field.Id, out var cell))
+            {
+                right.Add(WorldField(field.Label, cell));
+                if (string.Equals(field.Id, "highlight-names", StringComparison.Ordinal)
+                    && cursor.EditOn(WorldsPane, selectedWorld, HighlightNamesField) is not null)
+                {
+                    var help = NamesHelpRows().ToList();
+                    namesHelp = help.Count;
+                    right.AddRange(help);
+                }
+            }
+
+            for (var i = first; i < right.Count && group is not null; i++)
+            {
+                groupOf[i] = group;
+            }
+        }
+
+        right.AddRange(new[]
+        {
             string.Empty,
             $"[{accent}]├ CHARACTERS[/]   [{Label}]a character is a connection[/]",
         });
@@ -1057,8 +1190,67 @@ internal static class WorldsScreenRenderer
 
         // Compacted, then windowed, then overlaid: the dropdown replaces rows by index, so anything that
         // moves a row has to happen before it is drawn or the list slides off the field it belongs to.
-        return ScreenChrome.Choices(
-            ScreenChrome.Window(ScreenChrome.Compact(right, height), height), cursor.Edit, DetailRowWidth);
+        if (height <= 0 || ScreenChrome.Compact(new List<string>(right), height).Count <= height)
+        {
+            return ScreenChrome.Choices(
+                ScreenChrome.Window(ScreenChrome.Compact(right, height), height, namesHelp), cursor.Edit, DetailRowWidth);
+        }
+
+        // Too short for every row: the group headings go first after the blanks (each costs a row and names no field),
+        // and the group of the first field drawn is named on the column's top row — `├ WORLD · CONNECTION`, or
+        // `⌃ 12 more · MAP` once it scrolls. ⇥ order is the fields' and is untouched.
+        var rows = new List<(string Line, string? Group)>();
+        for (var i = 0; i < right.Count; i++)
+        {
+            if (!headings.Contains(i))
+            {
+                rows.Add((right[i], groupOf.TryGetValue(i, out var g) ? g : null));
+            }
+        }
+
+        var window = ScreenChrome.Window(ScreenChrome.Compact(rows.ConvertAll(r => r.Line), height), height, namesHelp);
+        if (window.Count > 1 && rows.FirstOrDefault(r => string.Equals(r.Line, window[1], StringComparison.Ordinal)).Group is { } top)
+        {
+            window[0] += $"[{Label}] · {Escape(top.ToUpperInvariant())}[/]";
+        }
+
+        return ScreenChrome.Choices(window, cursor.Edit, DetailRowWidth);
+    }
+
+    /// <summary>
+    /// What an open highlight-names edit draws under its well (<see cref="HighlightColours.NameSyntax"/>, then the colours
+    /// it takes, a few to a row): the syntax is not on screen anywhere else. The window says the same as the field's help.
+    /// </summary>
+    internal static IEnumerable<string> NamesHelpRows()
+    {
+        const int room = 28;
+        yield return WorldField(string.Empty, $"[{Label}]{Escape(HighlightColours.NameSyntax.Split(';')[0])}[/]");
+        yield return WorldField(string.Empty, $"[{Label}]{Escape(HighlightColours.NameSyntax.Split(';')[1].Trim())}[/]");
+        // Each colour's name is drawn in that colour, held to the floor on the column's plane (black and grey lift on a
+        // dark screen), so the list is its own sample; the light screens re-hold it on theirs (ScreenTheme.Paint).
+        var plane = RgbJsonConverter.Parse(PanelBg);
+        var line = "colours:";
+        var markup = $"[{Label}]colours:[/]";
+        foreach (var colour in HighlightColours.NameColours)
+        {
+            if (line.Length > 0 && line.Length + 1 + colour.Length > room)
+            {
+                yield return WorldField(string.Empty, markup);
+                line = string.Empty;
+                markup = string.Empty;
+            }
+
+            var ink = HighlightColours.TryParse(colour, out var parsed) && HighlightColours.Hex(parsed) is { } hex
+                ? Contrast.Legible(RgbJsonConverter.Parse(hex), plane).ToHex()
+                : Label;
+            markup += (line.Length == 0 ? string.Empty : " ") + $"[{ink}]{Escape(colour)}[/]";
+            line = line.Length == 0 ? colour : line + " " + colour;
+        }
+
+        if (line.Length > 0)
+        {
+            yield return WorldField(string.Empty, markup);
+        }
     }
 
     /// <summary>
@@ -1144,8 +1336,13 @@ internal static class WorldsScreenRenderer
     /// </para>
     /// </summary>
     internal static List<string> FormColumn(
-        CharacterDefinition character, string accent, ScreenFocus? focus = null, int selectedCharacter = -1)
+        CharacterDefinition character,
+        string accent,
+        ScreenFocus? focus = null,
+        int selectedCharacter = -1,
+        IReadOnlyList<LayoutDefinition>? layouts = null)
     {
+        var all = layouts ?? BuiltInLayouts.All;
         var cursor = focus ?? ScreenFocus.None;
         var form = new List<string>
         {
@@ -1219,6 +1416,14 @@ internal static class WorldsScreenRenderer
                 selectedCharacter,
                 PaneTintField,
                 pane: CharactersPane) + $" [{Label}]{TintNote}[/]"),
+            CharField("layout", Field(
+                LayoutName(all, character.Layout) is { } own
+                    ? $"[{Value}]{Escape(own)}[/]"
+                    : $"[{Label}]{CharacterLayoutDefault}[/]",
+                cursor,
+                selectedCharacter,
+                CharacterLayoutField,
+                pane: CharactersPane)),
         };
 
         // The log format and `restore` both sit near the foot of this block, so their lists are drawn
@@ -1233,50 +1438,23 @@ internal static class WorldsScreenRenderer
     /// The <c>content</c> field's words. <c>auto</c> is <see cref="ContentFormat.Ansi"/>, the stored default,
     /// which starts on ANSI and follows a negotiated MXP; <c>ansi</c> is the deliberate choice not to.
     /// </summary>
-    internal static readonly IReadOnlyList<string> ContentChoices = ["auto", "ansi", "mxp", "pueblo"];
+    internal static readonly IReadOnlyList<string> ContentChoices = WorldFieldValues.ContentChoices;
 
-    internal static string ContentName(ContentFormat format) => format switch
-    {
-        ContentFormat.AnsiOnly => "ansi",
-        ContentFormat.Mxp => "mxp",
-        ContentFormat.Pueblo => "pueblo",
-        _ => "auto",
-    };
+    internal static string ContentName(ContentFormat format) => WorldFieldValues.ContentName(format);
 
-    internal static ContentFormat ContentOf(string name) => name.ToLowerInvariant() switch
-    {
-        "ansi" => ContentFormat.AnsiOnly,
-        "mxp" => ContentFormat.Mxp,
-        "pueblo" => ContentFormat.Pueblo,
-        _ => ContentFormat.Ansi,
-    };
+    internal static ContentFormat ContentOf(string name) => WorldFieldValues.ContentOf(name);
 
-    internal const string EmojiOff = "off";
+    internal const string EmojiOff = WorldFieldValues.EmojiOff;
 
     /// <summary>
     /// The <c>emoji</c> field's words: which of the two substitutions run. Three switches in the
     /// configuration, one field here, because "on, with neither kind" is not a state anybody wants.
     /// </summary>
-    internal static readonly IReadOnlyList<string> EmojiChoices = [EmojiOff, "emoticons", "shortcodes", "both"];
+    internal static readonly IReadOnlyList<string> EmojiChoices = WorldFieldValues.EmojiChoices;
 
-    internal static string EmojiName(EmojiSettings emoji) => (emoji.Enabled, emoji.Emoticons, emoji.Shortcodes) switch
-    {
-        (false, _, _) or (true, false, false) => EmojiOff,
-        (true, true, false) => "emoticons",
-        (true, false, true) => "shortcodes",
-        _ => "both",
-    };
+    internal static string EmojiName(EmojiSettings emoji) => WorldFieldValues.EmojiName(emoji);
 
-    internal static void SetEmoji(EmojiSettings emoji, string name)
-    {
-        var choice = name.ToLowerInvariant();
-        emoji.Enabled = choice != EmojiOff;
-        if (emoji.Enabled)
-        {
-            emoji.Emoticons = choice is "emoticons" or "both";
-            emoji.Shortcodes = choice is "shortcodes" or "both";
-        }
-    }
+    internal static void SetEmoji(EmojiSettings emoji, string name) => WorldFieldValues.SetEmoji(emoji, name);
 
     /// <summary>
     /// What an unset log directory reads as. The field itself holds null — the logger picks a
@@ -1462,7 +1640,10 @@ internal static class WorldsScreenRenderer
     }
 
     private static string WorldField(string label, string value) =>
-        $"  [{Label}]{label.PadLeft(WorldLabelWidth)}[/]  {value}";
+        $"  [{Label}]{Escape(label).PadLeft(WorldLabelWidth)}[/]  {value}";
+
+    /// <summary>A heading over one of the world's declared groups (<c>CONNECTION</c>, <c>MAP</c>), in the label column.</summary>
+    private static string GroupHeading(string group) => $"  [bold {Label}]{Escape(group.ToUpperInvariant())}[/]";
 
     /// <summary>
     /// The encoding cell: <c>auto</c> reads as the unremarkable default it is (dimmed, like keepalive's

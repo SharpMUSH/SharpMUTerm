@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpMUTerm.Client.Modals;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
@@ -22,12 +23,19 @@ internal sealed class QuitOverlay
     private const int MinimumWidth = 34;
 
     private readonly ConsoleWindowSystem _system;
-    private readonly Func<QuitFacts> _facts;
+    private readonly Func<QuitModel> _facts;
     private readonly Action _quit;
+    private readonly Action? _closed;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private MarkupControl? _body;
-    private QuitFacts _current = QuitFacts.Nothing;
+    private QuitModel _current = QuitModel.Nothing;
     private QuitChoice _selected = QuitChoice.Stay;
 
     /// <summary>
@@ -35,14 +43,18 @@ internal sealed class QuitOverlay
     /// about is the state their keystroke arrived in. <paramref name="quit"/> is what a confirmed answer
     /// runs; the overlay never ends the loop itself.
     /// </summary>
-    public QuitOverlay(ConsoleWindowSystem system, Func<QuitFacts> facts, Action quit)
+    public QuitOverlay(ConsoleWindowSystem system, Func<QuitModel> facts, Action quit, Action? closed = null)
     {
+        _closed = closed;
         _system = system;
         _facts = facts;
         _quit = quit;
     }
 
     public bool IsOpen => _window is not null;
+
+    /// <summary>The model the open prompt was drawn from, or null while it is closed.</summary>
+    internal QuitModel? Model => _window is null ? null : _current;
 
     /// <summary>What the prompt is currently showing, for a headless test to read back.</summary>
     internal IReadOnlyList<string> Lines => QuitPrompt.Render(_current, _selected);
@@ -79,7 +91,7 @@ internal sealed class QuitOverlay
         _selected = QuitChoice.Stay;
 
         var lines = QuitPrompt.Render(_current, _selected);
-        _body = new MarkupControl(new List<string>(lines));
+        _body = new MarkupControl(Scheme.Lines(lines, ScreenPalette.MenuBg));
 
         // Hug the content: the question is as tall as it has things to say. Centred *after* WithSize,
         // because the builder reads the bounds set so far and falls back to 80x25 otherwise.
@@ -92,14 +104,16 @@ internal sealed class QuitOverlay
             .WithTitle("Quit")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_body)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -130,7 +144,7 @@ internal sealed class QuitOverlay
                 break;
 
             case QuitAction.Redraw:
-                _body?.SetContent(new List<string>(QuitPrompt.Render(_current, _selected)));
+                _body?.SetContent(Scheme.Lines(QuitPrompt.Render(_current, _selected), ScreenPalette.MenuBg));
                 _window.Invalidate(redrawAll: true);
                 break;
 
@@ -152,5 +166,6 @@ internal sealed class QuitOverlay
     {
         _window = null;
         _body = null;
+        _closed?.Invoke();
     }
 }

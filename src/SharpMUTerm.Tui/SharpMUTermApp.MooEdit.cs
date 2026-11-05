@@ -48,7 +48,7 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void SaveMooEdit(WorldSession session, MooEdit edit, string body)
     {
-        _composer.Close();
+        CloseComposer();
         var key = session.SessionKey;
         var lines = MooEditing.LinesOf(body);
         _ = SaveAsync();
@@ -75,7 +75,10 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary><c>» status</c>, elided and padded to <see cref="MooStatusCellWidth"/>. The text is the server's.</summary>
-    internal static string MooStatusCell(string status)
+    internal static string MooStatusCell(string status) => $"[dim]{Escape(MooStatusText(status))}[/]";
+
+    /// <summary><see cref="MooStatusCell"/>'s text: <c>» status</c>, elided and padded.</summary>
+    internal static string MooStatusText(string status)
     {
         var text = new string([.. status.Select(c => char.IsControl(c) ? ' ' : c)]).Trim();
         var room = MooStatusCellWidth - 2;
@@ -84,6 +87,6 @@ internal sealed partial class SharpMUTermApp
             text = text[..(room - 1)] + "…";
         }
 
-        return $"[dim]» {Escape(text.PadRight(room))}[/]";
+        return $"» {text.PadRight(room)}";
     }
 }

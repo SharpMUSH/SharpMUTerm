@@ -58,7 +58,7 @@ public class MapWindowTests
         await Assert.That(app.WindowOwnerOf(MapId)).IsEqualTo(Ann);
         await Assert.That(app.ActiveWindowId()).IsEqualTo(MapId);
         var plain = app.MapMarkup(MapId).Select(MarkupText.Plain).ToList();
-        await Assert.That(plain[0]).IsEqualTo("Map · Keep · z 0");
+        await Assert.That(plain[0].TrimStart()).StartsWith("Hall · Keep · z 0");
         await Assert.That(plain.Any(l => l.Contains("[@]"))).IsTrue();
         await Assert.That(app.MapMarkup(MapId).Count(l => l.Contains("[link=mux:map:"))).IsGreaterThan(0);
     }
@@ -137,12 +137,49 @@ public class MapWindowTests
         var plain = lines.Select(MarkupText.Plain).ToList();
 
         await Assert.That(plain.All(l => l.Length <= 20)).IsTrue();
-        await Assert.That(plain).Contains(l => l.Contains("[@]─[ ]"));
+        await Assert.That(plain).Contains(l => l.Contains("[@]───[ ]")).Because("a level that fits takes the wide step, the mockup's corridor");
         await Assert.That(plain).Contains(l => l.Trim() == "│");
         await Assert.That(lines).Contains(l => l.Contains("[dim]│[/]"));
         await Assert.That(lines).Contains(l => l.Contains("[link=mux:map:2][#ffff00][[ ]][/][/]"));
         await Assert.That(MapRenderer.ParseLink("mux:map:2")).IsEqualTo(2L);
         await Assert.That(MapRenderer.ParseLink("mux:send:2")).IsNull();
+    }
+
+    /// <summary>
+    /// The wide step is taken only where the level fits at it (a narrow pane keeps <c>[@]─[ ]</c>), a stub stays one cell,
+    /// and a tall pane says the model's hint above the legend, each word line a cell in from the pane's edge.
+    /// </summary>
+    [Test]
+    public async Task ANarrowGridKeepsTheShortStepAndATallOneSaysTheHint()
+    {
+        var map = new WorldMap();
+        map.Add(new MapRoom { Id = 1, Name = "Hall", Exits = { ["east"] = 2 }, Stubs = { "west" } });
+        map.Add(new MapRoom { Id = 2, Name = "Yard", X = 1, Exits = { ["west"] = 1 } });
+        var ink = new MapRenderer.Ink("#ffffff", "#00ff00", "#ffff00", "#ff00ff");
+
+        var narrow = MapRenderer.Render(map, 1, [], 12, 5, ink).Select(MarkupText.Plain).ToList();
+        await Assert.That(narrow).Contains(l => l.Contains("[@]─[ ]"));
+
+        var tall = MapRenderer.Render(map, 1, [], 40, 20, ink).Select(MarkupText.Plain).ToList();
+        await Assert.That(tall).Contains(l => l.Contains("─[@]───[ ]")).Because("the stub west is one cell, the corridor east three");
+        await Assert.That(tall[^2]).IsEqualTo(" " + SharpMUTerm.Client.Panels.MapViewModel.WalkHint);
+        await Assert.That(tall[^1]).StartsWith(" @");
+    }
+
+    /// <summary>Under a panel's heading band the title is the band's row, its controls at the far end in the band's accent.</summary>
+    [Test]
+    public async Task UnderAHeadingBandTheTitleIsTheBand()
+    {
+        var map = new WorldMap();
+        map.Add(new MapRoom { Id = 1, Name = "Hall" });
+        var band = new SharpMUTerm.Tui.Panels.HeadingBand.Ink("#232b3d", "#d7deec", "#00f5b7");
+        var ink = new MapRenderer.Ink("#ffffff", "#00ff00", "#ffff00", "#ff00ff", Band: band);
+
+        var title = MapRenderer.Render(map, 1, [], 30, 6, ink)[0];
+
+        await Assert.That(title).StartsWith("[#d7deec on #232b3d]");
+        await Assert.That(MarkupText.VisibleLength(title)).IsEqualTo(30);
+        await Assert.That(MarkupText.Plain(title).Trim()).StartsWith("Hall");
     }
 
     [Test]
@@ -174,5 +211,20 @@ public class MapWindowTests
         }
 
         app.SimulateKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+    }
+
+    /// <summary>
+    /// On a wide row the room field grows into the spare cells, so a long name is not cut with thirty cells free beside
+    /// it; it is still a fixed width for the row, so a walk moves nothing.
+    /// </summary>
+    [Test]
+    public async Task TheStatusRoomCellGrowsToTheWidthItIsGiven()
+    {
+        var cell = SharpMUTermApp.RoomCell("The Grand Plaza", "Aetherfall Old Town", 48);
+
+        await Assert.That(MarkupText.VisibleLength(cell)).IsEqualTo(48);
+        await Assert.That(MarkupText.Plain(cell)).Contains("Aetherfall Old Town");
+        await Assert.That(MarkupText.VisibleLength(SharpMUTermApp.RoomCell("x", null, 10))).IsEqualTo(SharpMUTermApp.RoomCellWidth)
+            .Because("never narrower than the reserved field");
     }
 }

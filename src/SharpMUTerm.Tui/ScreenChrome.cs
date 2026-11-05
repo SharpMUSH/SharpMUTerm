@@ -30,7 +30,9 @@ internal static class ScreenChrome
         bool editable = false,
         ScreenFocus? focus = null,
         bool removable = false,
-        bool detailed = false)
+        bool detailed = false,
+        bool resettable = false,
+        int room = 0)
     {
         if (focus?.Edit is { } edit)
         {
@@ -43,23 +45,109 @@ internal static class ScreenChrome
                 return $"[{ScreenPalette.Label}]{CaptureHints}[/]";
             }
 
-            var editing = EditingHints
-                + (edit.VisibleChoices.Count > 0 ? ChoiceHint : string.Empty)
-                + (edit.RowFields > 1 ? NextFieldHint : string.Empty);
-            return $"[{ScreenPalette.Label}]{editing} · [/][{ScreenPalette.Accent}]{fkey}[/]"
-                + $"[{ScreenPalette.Label}] close [/]";
+            var editing = new List<LadderKey>
+            {
+                new("⏎", "commit"),
+                new("Esc", "revert"),
+            };
+            if (edit.VisibleChoices.Count > 0)
+            {
+                editing.Add(new LadderKey("↑↓", "pick from list", "pick", Drop: 2));
+            }
+
+            if (edit.RowFields > 1)
+            {
+                editing.Add(new LadderKey("⇥", "next field", "next", Drop: 1));
+            }
+
+            editing.Add(new LadderKey(fkey, "close", Drop: 3));
+            return HintMarkup(KeyLadder.Choose(editing, room), fkey, closesWithEsc: false);
         }
 
-        // Order is a budget, not taste: a header narrower than its hints loses the *tail* of this string
-        // (see the 80-column frames), so whatever is appended last is what a narrow terminal does not
-        // get. `i info` goes after `Del remove` because Delete is the destructive key and must be the
-        // one that survives — and because the INFO key's drawn row (`i  info on Aetherfall`) is on the
-        // screen either way, while a key that removes a world has only this line and its own row.
-        var all = (editable ? verbs + EditHint : verbs)
-            + (removable ? DeleteHint : string.Empty)
-            + (detailed ? DetailHint : string.Empty);
-        return $"[{ScreenPalette.Label}]{all} · [/][{ScreenPalette.Accent}]{fkey}[/][{ScreenPalette.Label}]/[/]"
-            + $"[{ScreenPalette.Accent}]Esc[/][{ScreenPalette.Label}] close [/]";
+        // Fitted by KeyLadder, never cut mid-word: a header narrower than its hints gives up whole keys, lowest Drop
+        // first, and keeps the way out. Del outlasts everything but the close, because Delete is the destructive key and
+        // this line is the only place it is named; `i info` and `/ search` go early, because the INFO row is drawn on
+        // the screen either way and search is the overlay's, not the screen's.
+        var keys = new List<LadderKey>(VerbKeys(verbs));
+        if (editable)
+        {
+            keys.Add(new LadderKey("⏎", "edit", Drop: 6));
+        }
+
+        if (resettable)
+        {
+            keys.Add(new LadderKey("r", "reset", Drop: 5));
+        }
+
+        if (removable)
+        {
+            keys.Add(new LadderKey("Del", "remove", Drop: 8));
+        }
+
+        if (detailed)
+        {
+            keys.Add(new LadderKey("i", "info", Drop: 4));
+        }
+
+        keys.Add(new LadderKey(UndoKey, "undo", Drop: 2));
+        keys.Add(new LadderKey("/", "search", Drop: 1));
+        keys.Add(new LadderKey($"{fkey}/Esc", "close"));
+        if (focus?.Note is { } note)
+        {
+            // What ⌃Z or ⌃Y just did takes the verbs' place until the next key: the undo pair and the way out stay.
+            var undo = new List<LadderKey> { new(UndoKey, "undo", Drop: 2), new(RedoKey, "redo", Drop: 1), new($"{fkey}/Esc", "close") };
+            var said = MarkupText.Escape(note);
+            said = room <= 0 ? said : MarkupText.FitVisible(said, Math.Max(8, room - 24));
+            var rest = room <= 0 ? 0 : Math.Max(1, room - MarkupText.VisibleLength(said) - 3);
+            return $"[{ScreenPalette.Value}]{said}[/][{ScreenPalette.Label}] · [/]"
+                + HintMarkup(KeyLadder.Choose(undo, rest), fkey, closesWithEsc: true);
+        }
+
+        return HintMarkup(KeyLadder.Choose(keys, room), fkey, closesWithEsc: true);
+    }
+
+    /// <summary>
+    /// The cells a header has for its hints once <paramref name="title"/> is drawn in <paramref name="width"/>: what
+    /// <see cref="Hints"/> is fitted to (0 when the caller has no width). One cell for the gap, one for the trailing pad.
+    /// </summary>
+    internal static int HeaderRoom(string title, int width) =>
+        width <= 0 ? 0 : Math.Max(1, width - MarkupText.VisibleLength(title) - 2);
+
+    /// <summary>The chord that undoes a screen's last committed edit (<see cref="SettingsSession"/>).</summary>
+    internal const string UndoKey = "⌃Z";
+
+    /// <summary>The chord that redoes it.</summary>
+    internal const string RedoKey = "⌃Y";
+
+    /// <summary>A verbs string (<see cref="ListHints"/>, <see cref="SingleListHints"/>) as ladder keys, each with its drop rank.</summary>
+    private static IEnumerable<LadderKey> VerbKeys(string verbs)
+    {
+        foreach (var part in verbs.Split(" · ", StringSplitOptions.RemoveEmptyEntries))
+        {
+            var cut = part.LastIndexOf(' ');
+            var key = cut > 0 ? part[..cut] : part;
+            var label = cut > 0 ? part[(cut + 1)..] : string.Empty;
+            yield return new LadderKey(key, label, Drop: label switch
+            {
+                "pane" => 2,
+                "select" => 3,
+                _ => 7,
+            });
+        }
+    }
+
+    /// <summary>
+    /// A header's hints as markup: the keys in the label ink, then the close — its keys in the accent, as every screen
+    /// has drawn them. The close is always the last key <see cref="KeyLadder.Choose"/> kept (it is never dropped).
+    /// </summary>
+    private static string HintMarkup(IReadOnlyList<(string Key, string Label)> keys, string fkey, bool closesWithEsc)
+    {
+        var verbs = string.Join(" · ", keys.Take(keys.Count - 1).Select(k => k.Label.Length == 0 ? k.Key : $"{k.Key} {k.Label}"));
+        var lead = verbs.Length == 0 ? string.Empty : $"[{ScreenPalette.Label}]{verbs} · [/]";
+        var close = closesWithEsc
+            ? $"[{ScreenPalette.Accent}]{fkey}[/][{ScreenPalette.Label}]/[/][{ScreenPalette.Accent}]Esc[/]"
+            : $"[{ScreenPalette.Accent}]{fkey}[/]";
+        return lead + close + $"[{ScreenPalette.Label}] close [/]";
     }
 
     /// <summary>
@@ -93,6 +181,18 @@ internal static class ScreenChrome
     /// </summary>
     internal const string DetailHint = " · i info";
 
+    /// <summary>
+    /// What a screen adds while the focused row is a declared setting that differs from its default — and
+    /// only then, since <c>r</c> does nothing on a row at its default.
+    /// </summary>
+    internal const string ResetHint = " · r reset";
+
+    /// <summary>
+    /// The settings search, which <c>/</c> opens on every settings screen (<see cref="SettingsOverlay"/>).
+    /// Last of the verbs, so a narrow header gives it up before anything the screen itself does.
+    /// </summary>
+    internal const string SearchHint = " · / search";
+
     /// <summary>The hints that replace a screen's own while a field edit is open.</summary>
     internal const string EditingHints = "⏎ commit · Esc revert";
 
@@ -125,6 +225,9 @@ internal static class ScreenChrome
 
     /// <summary>And on one of a pane's building buttons, which is the other row ⏎ acts on.</summary>
     internal const string AddAction = "[[⏎]] Add";
+
+    /// <summary>And on a value to use — a theme in F7's picker.</summary>
+    internal const string UseAction = "[[⏎]] Use";
 
     /// <summary>
     /// And on a row that is neither, where ⏎ leaves the screen. It says <c>Done</c> rather than
@@ -176,6 +279,7 @@ internal static class ScreenChrome
     {
         ScreenEnter.Edit => EditAction,
         ScreenEnter.Add => AddAction,
+        ScreenEnter.Apply => UseAction,
         _ => DoneAction,
     };
 
@@ -251,7 +355,7 @@ internal static class ScreenChrome
     /// with no cursor in it shows its top, where its heading is, and the edges say what they are hiding.
     /// </para>
     /// </summary>
-    internal static List<string> Window(List<string> block, int height)
+    internal static List<string> Window(List<string> block, int height, int keepBelow = 0)
     {
         ArgumentNullException.ThrowIfNull(block);
 
@@ -260,10 +364,19 @@ internal static class ScreenChrome
             return block;
         }
 
-        var focused = block.FindIndex(l => l.Contains(CursorMark, StringComparison.Ordinal));
+        // An open edit is where the keyboard is, so its caret wins over a cursor band: on F5 the band
+        // stays on the WORLDS row while a world field is typed in the column beside it, and windowing
+        // that column by the band alone left a field below the fold being edited where nobody could see.
+        var focused = block.FindIndex(l => l.Contains(CaretMark, StringComparison.Ordinal));
+        if (focused < 0)
+        {
+            focused = block.FindIndex(l => l.Contains(CursorMark, StringComparison.Ordinal));
+        }
+
+        // keepBelow: rows under the focused one that belong to it (an open field's explanation), kept on screen too.
         var start = focused < 0
             ? 0
-            : Math.Clamp(focused - (height / 2), 0, block.Count - height);
+            : Math.Clamp(Math.Max(focused - (height / 2), focused + keepBelow + 2 - height), 0, block.Count - height);
 
         var window = block.GetRange(start, height);
         if (start > 0)
@@ -364,6 +477,9 @@ internal static class ScreenChrome
     /// a list silently showing a third of itself would be worse than no list.
     /// </summary>
     internal const int MaxChoiceRows = 6;
+
+    /// <summary>The longest note drawn beside a choice (<see cref="ScreenFieldEdit.ChoiceNotes"/>).</summary>
+    internal const int MaxNoteLength = 16;
 
     /// <summary>What the dropdown calls itself when the field will take values outside the list.</summary>
     internal const string OpenChoicesCaption = "suggestions";
@@ -474,7 +590,7 @@ internal static class ScreenChrome
     {
         var all = open.Choices!;
         var visible = open.VisibleChoices;
-        var caption = open.ClosedChoices ? ClosedChoicesCaption : OpenChoicesCaption;
+        var caption = open.ChoiceCaption ?? (open.ClosedChoices ? ClosedChoicesCaption : OpenChoicesCaption);
         var entries = new List<(string, string)>();
 
         if (visible.Count == 0)
@@ -491,6 +607,12 @@ internal static class ScreenChrome
         for (var i = first; i < first + take; i++)
         {
             var name = MarkupText.Escape(visible[i]);
+            if (open.ChoiceNotes is { } notes && notes.TryGetValue(visible[i], out var note))
+            {
+                var shortNote = note.Length > MaxNoteLength ? note[..(MaxNoteLength - 1)] + "…" : note;
+                name += $"  [{ScreenPalette.Muted}]{MarkupText.Escape(shortNote)}[/]";
+            }
+
             entries.Add(i == marked
                 ? ($"[{ScreenPalette.Accent}]▸[/] [{ScreenPalette.Value}]{name}[/]", ScreenPalette.MenuSelectedBg)
                 : ($"  [{ScreenPalette.Label}]{name}[/]", ScreenPalette.MenuBg));
@@ -629,8 +751,12 @@ internal static class ScreenChrome
     /// <param name="pane">Which pane these belong to.</param>
     /// <param name="firstIndex">The pane row index of the first button — i.e. the list's length.</param>
     /// <param name="width">How wide the cursor bar runs, matching the pane's other rows.</param>
+    /// <param name="movable">
+    /// Whether the list's items can be moved with ⌥↑/⌥↓; a row under the removal row then says so, naming the same
+    /// item — the key acts on the row the cursor is on, as Delete does, so it is drawn the way Delete's row is.
+    /// </param>
     internal static List<string> Buttons(
-        IReadOnlyList<ScreenRow> buttons, ScreenFocus cursor, int pane, int firstIndex, int width)
+        IReadOnlyList<ScreenRow> buttons, ScreenFocus cursor, int pane, int firstIndex, int width, bool movable = false)
     {
         ArgumentNullException.ThrowIfNull(buttons);
 
@@ -648,6 +774,11 @@ internal static class ScreenChrome
                 ScreenButtonKind.Detail => KeyHintRow(button, InfoWords),
                 _ => Cursor(AddRow(button), cursor.IsOn(pane, firstIndex + i), width),
             });
+
+            if (movable && button.Kind == ScreenButtonKind.Remove)
+            {
+                lines.Add(KeyHintRow(button with { Label = MoveKeyLabel }, MovesWord));
+            }
         }
 
         return lines;
@@ -671,6 +802,12 @@ internal static class ScreenChrome
         $"[{ScreenPalette.Accent}]{MarkupText.Escape(button.Label)}[/]"
         + $"  [{ScreenPalette.Label}]{verb}[/] "
         + $"[{ScreenPalette.Value}]{MarkupText.Escape(button.Target ?? string.Empty)}[/]";
+
+    /// <summary>The keys a list row is moved with, as its hint row names them.</summary>
+    internal const string MoveKeyLabel = "⌥↑↓";
+
+    /// <summary>The verb on the move row.</summary>
+    internal const string MovesWord = "moves";
 
     /// <summary>The verb on a removal row, between the key and what it would take.</summary>
     internal const string RemovesWord = "removes";
@@ -701,12 +838,40 @@ internal static class ScreenChrome
         return joined.Length == 0 ? string.Empty : $"[{ScreenPalette.Label}]{joined}[/]";
     }
 
-    /// <summary>A full-width one-row band — the header or the footer.</summary>
-    internal static MarkupControl Band(string line, string bg) => new(new List<string> { line })
+    /// <summary>
+    /// A full-width one-row band — the header or the footer — in <paramref name="scheme"/>'s colours.
+    /// <paramref name="bg"/> is a <see cref="ScreenPalette"/> role, resolved with the line.
+    /// </summary>
+    internal static MarkupControl Band(string line, string bg, ScreenTheme scheme) =>
+        new(new List<string> { scheme.Paint(line, bg) })
+        {
+            BackgroundColor = scheme.Colour(bg),
+            ForegroundColor = scheme.Colour(ScreenPalette.PanelFg),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+
+    /// <summary>
+    /// A column of a renderer's lines, resolved for <paramref name="scheme"/> and drawn on
+    /// <paramref name="plane"/> (a <see cref="ScreenPalette"/> role: the backdrop unless the column sits on
+    /// a card). The one place a screen's markup becomes a control, so it is the one place it is themed — unstyled
+    /// text included, which takes the scheme's ink rather than the window's: while F7 previews a theme the window
+    /// behind is still the theme in force.
+    /// </summary>
+    internal static MarkupControl Panel(
+        IEnumerable<string> lines, ScreenTheme scheme, string plane = ScreenPalette.PanelBg) =>
+        new(scheme.Lines(lines, plane)) { ForegroundColor = scheme.Colour(ScreenPalette.PanelFg) };
+
+    /// <summary>
+    /// A navigation column (the settings search's section list): <see cref="Panel"/> on <see cref="ScreenPalette.NavBg"/>,
+    /// stretched and filled to the body's height so the plane runs from the header band to the action bar.
+    /// </summary>
+    internal static MarkupControl Nav(IEnumerable<string> lines, ScreenTheme scheme)
     {
-        BackgroundColor = new Color(bg),
-        HorizontalAlignment = HorizontalAlignment.Stretch,
-    };
+        var nav = Stretch(Panel(lines, scheme, ScreenPalette.NavBg));
+        nav.BackgroundColor = scheme.Colour(ScreenPalette.NavBg);
+        nav.VerticalAlignment = VerticalAlignment.Fill;
+        return nav;
+    }
 
     /// <summary>
     /// How many rows a two-column screen's body has: everything but the header band and the action bar.
@@ -718,9 +883,9 @@ internal static class ScreenChrome
     /// The frame every two-column settings screen shares: a header band on the first row, an action bar on
     /// the last, and between them two columns divided by a hairline.
     /// <para>
-    /// The body is <em>sized to its content</em> rather than stretched, so a screen with four rules does
-    /// not draw a thirty-row empty pane under them. The hairline stops where the columns stop and the
-    /// slack below belongs to the backdrop. A caller with no height falls back to filling.
+    /// The body runs to the action bar and the hairline with it, the terminal mockup's full-height divider: the list
+    /// column reads as a column however few rows it holds. (It was sized to its content, which ended the hairline in
+    /// mid-screen under a short list.) <paramref name="content"/> and <paramref name="rows"/> are kept for callers.
     /// </para>
     /// </summary>
     /// <param name="header">The header band.</param>
@@ -730,6 +895,7 @@ internal static class ScreenChrome
     /// <param name="leftWidth">How wide the list column runs (see <see cref="SplitWidth"/>).</param>
     /// <param name="content">How many rows the taller of the two columns holds.</param>
     /// <param name="rows">How many rows the body has to spend, or 0 when the caller has no height.</param>
+    /// <param name="scheme">The theme's palette, for the hairline.</param>
     internal static IWindowControl Split(
         MarkupControl header,
         MarkupControl footer,
@@ -737,13 +903,14 @@ internal static class ScreenChrome
         MarkupControl right,
         int leftWidth,
         int content,
-        int rows)
+        int rows,
+        ScreenTheme scheme)
     {
         var body = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Width(leftWidth).Add(left))
-            .Column(c => c.Width(1).Add(VerticalRule()))
+            .Column(c => c.Width(1).Add(VerticalRule(scheme)))
             .Column(c => c.Width(1).Add(Filler()))
             .Column(c => c.Flex(1).Add(right))
             .Build();
@@ -752,11 +919,40 @@ internal static class ScreenChrome
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill);
 
+        _ = content;
+        _ = rows;
+        root.Rows(GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
+        root.Place(header, 0, 0, 1, 1);
+        root.Place(body, 1, 0, 1, 1);
+        root.Place(footer, 2, 0, 1, 1);
+        return root.Build();
+    }
+
+    /// <summary>
+    /// Whether a two-column screen has too few cells for both columns at their minimums. Below that
+    /// <see cref="SplitWidth"/> still hands the list its minimum, and the column beside it runs off the
+    /// right-hand edge: F2 and F4 lost their editors that way at 80 columns. Such a screen shows one
+    /// column at a time instead (<see cref="Single"/>), the one the keyboard is in.
+    /// </summary>
+    internal static bool TooNarrowForTwo(int width, int minimum, int companion) =>
+        width > 0 && width < minimum + ColumnDivider + companion;
+
+    /// <summary>
+    /// <see cref="Split"/>'s frame with one column in the body, for a screen too narrow for two
+    /// (<see cref="TooNarrowForTwo"/>). Same header, same action bar, same content-sized body.
+    /// </summary>
+    internal static IWindowControl Single(
+        MarkupControl header, MarkupControl footer, MarkupControl column, int content, int rows)
+    {
+        var root = Controls.Grid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill);
+
         if (rows <= 0)
         {
             root.Rows(GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
             root.Place(header, 0, 0, 1, 1);
-            root.Place(body, 1, 0, 1, 1);
+            root.Place(column, 1, 0, 1, 1);
             root.Place(footer, 2, 0, 1, 1);
             return root.Build();
         }
@@ -768,7 +964,7 @@ internal static class ScreenChrome
                 GridLength.Cells(1))
             .Columns(GridLength.Star(1));
         root.Place(header, 0, 0, 1, 1);
-        root.Place(body, 1, 0, 1, 1);
+        root.Place(column, 1, 0, 1, 1);
         root.Place(footer, 3, 0, 1, 1);
         return root.Build();
     }
@@ -785,14 +981,14 @@ internal static class ScreenChrome
     /// to nothing and never paints its background, so the rule is an empty grid instead — a grid's
     /// background covers its whole arranged area, giving a full-height hairline.
     /// </summary>
-    internal static IWindowControl VerticalRule()
+    internal static IWindowControl VerticalRule(ScreenTheme scheme)
     {
         var rule = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Flex(1).Add(Filler()))
             .Build();
-        rule.BackgroundColor = new Color(ScreenPalette.Rule);
+        rule.BackgroundColor = scheme.Colour(ScreenPalette.Rule);
         return rule;
     }
 

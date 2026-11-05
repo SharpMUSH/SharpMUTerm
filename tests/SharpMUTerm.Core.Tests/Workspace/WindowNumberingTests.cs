@@ -235,6 +235,23 @@ public class WindowNumberingTests
     private const string Owner = "W.C";
 
     /// <summary>The window id <see cref="Workspace.RouteSpawn"/> produces for <see cref="Owner"/>.</summary>
+    /// <summary>
+    /// <b>A layout panel is furniture, not a destination.</b> The vitals strip or the quick bar opening must not
+    /// take a digit from the windows a player goes to — the map, a capture — nor push them to later ones; the
+    /// numbering stays contiguous over what is left.
+    /// </summary>
+    [Test]
+    public async Task ALayoutPanelTakesNoNumberAndMovesNoOtherWindowsNumber()
+    {
+        var ws = new Workspace(mainWindowId: "main", mainTitle: "Main", sessionKey: "W.C");
+        ws.OpenWindow("panel:vitals:W.C", "Vitals", WindowKind.Panel, "W.C");
+        ws.RouteSpawn("Chat", "W.C");
+        ws.OpenWindow("panel:quick-bar:W.C", "Quick bar", WindowKind.Panel, "W.C");
+        ws.OpenWindow("map:W.C", "Map", WindowKind.Auxiliary, "W.C");
+
+        await Assert.That(Order(ws)).IsEqualTo($"main,{Spawn("Chat")},map:W.C");
+    }
+
     private static string Spawn(string target) => Workspace.SpawnWindowId(Owner, target);
 
     private static string Order(Workspace workspace) =>

@@ -165,6 +165,18 @@ public sealed class WorldDefinition
     /// </summary>
     public bool DiscordPresence { get; set; }
 
+    /// <summary>
+    /// What GMCP <c>Comm.Channel.Text</c> does (F5 ▸ <c>capture channels</c>): nothing (the default), a copy in a window
+    /// per channel, or the line moved there and kept out of the main window (<see cref="Protocols.ChannelCapture"/>).
+    /// </summary>
+    public Protocols.ChannelCaptureMode CaptureChannels { get; set; }
+
+    /// <summary>
+    /// Names drawn in a colour wherever they appear as whole words in this world's output (F5 ▸ <c>highlight names</c>),
+    /// in the order they were listed. Empty by default (<see cref="Automation.NameHighlights"/>).
+    /// </summary>
+    public List<Automation.NameHighlight> HighlightNames { get; set; } = new();
+
     /// <summary>How the mapper recognises a room on a game that sends no room data (see <see cref="MapSettings"/>).</summary>
     public MapSettings Map { get; set; } = new();
 
@@ -182,10 +194,77 @@ public sealed class WorldDefinition
     public string? GrabPrefix { get; set; }
 
     /// <summary>
+    /// Whether lines this world hard-wrapped at its own column are joined back together, so a paragraph
+    /// reflows to the pane it is read in (F5 ▸ <c>join wraps</c>). Off by default. Read per line at ingest,
+    /// so it changes the next line and never the ones already shown; triggers see the joined line. The rule
+    /// is <see cref="Text.ServerWrapJoiner"/>'s, and it is deliberately conservative.
+    /// </summary>
+    public bool JoinWrappedLines { get; set; }
+
+    /// <summary>
+    /// Whether a connection this world dropped is dialled again on its own (F5 ▸ <c>reconnect</c>). Off by default.
+    /// Only a drop the player did not ask for counts: never after Disconnect, Reconnect or quitting, and never after a
+    /// server closed the connection within <see cref="Session.AutoReconnect.LogoutWindow"/> of a command the player
+    /// sent (a <c>QUIT</c>). The attempts back off (<see cref="Session.AutoReconnect.Delays"/>) and stop after the
+    /// last one; a connection must last <see cref="Session.AutoReconnect.StableAfter"/> before the count starts again,
+    /// so a login the server refuses is not retried for ever.
+    /// </summary>
+    public bool AutoReconnect { get; set; }
+
+    /// <summary>
+    /// What splits a typed line into several commands (F5 ▸ <c>command stacking</c>), or null for nothing, the
+    /// default. While it is set, <c>#N command</c> repeats a command too (<see cref="Input.TypedCommands"/>). Off by
+    /// default because a MUSH spends both: <c>;</c> is a semipose and an attribute separator, and <c>#123 cmd</c> is
+    /// PennMUSH's force shorthand. Applied only to what the player types on the command line, never to a composed
+    /// post, a grab or a script's <c>world.send</c>.
+    /// </summary>
+    public string? CommandSeparator { get; set; }
+
+    /// <summary>
+    /// Whether a line naming this world's character asks for attention while the player is in another window, and a
+    /// page, tell or whisper with it (F5 ▸ <c>alert on</c> ▸ <c>name &amp; pages</c>;
+    /// <see cref="Automation.AttentionMatcher"/>). Off by default: a name is said in every scene the character is in,
+    /// so a name alert is noisy and the player opts in. A trigger can ask for attention with its own <c>alert</c> flag
+    /// on any world.
+    /// </summary>
+    public bool AlertOnName { get; set; }
+
+    /// <summary>
+    /// Whether a page, tell or whisper to the character asks for attention while the player is in another window
+    /// (F5 ▸ <c>alert on</c> ▸ <c>pages</c>). <b>On for a world made now, off for one saved before the field existed</b>:
+    /// a page is addressed to the player and rare, so it is the alert worth having unasked, but a world the player
+    /// already set up is not changed under them — <see cref="ConfigurationMigrator"/> writes <c>false</c> into a saved
+    /// world that lacks the field, with no schema step. <see cref="AlertOnName"/> covers pages as well, as it always did.
+    /// </summary>
+    public bool AlertOnPage { get; set; } = true;
+
+    /// <summary>Whether <paramref name="reason"/> may ask for attention on this world (a trigger's flag always may).</summary>
+    public bool Alerts(Automation.AttentionReason reason) => reason switch
+    {
+        Automation.AttentionReason.Name => AlertOnName,
+        Automation.AttentionReason.Page => AlertOnPage || AlertOnName,
+        _ => true,
+    };
+
+    /// <summary>
     /// The world's accent colour, used to keep its windows traceable to their owner once they
     /// scatter across panes. Default resolves to a theme-derived accent.
     /// </summary>
     public TerminalColor Accent { get; set; } = TerminalColor.Default;
+
+    /// <summary>
+    /// The id of the layout this world's characters use when they name none of their own, or null for none.
+    /// See <see cref="Layouts.LayoutResolver"/>.
+    /// </summary>
+    public string? Layout { get; set; }
+
+    /// <summary>
+    /// The layout the player accepted when the client suggested one for this world
+    /// (<see cref="Layouts.LayoutSuggester"/>), or null when no suggestion was accepted. Below
+    /// <see cref="Layout"/> in <see cref="Layouts.LayoutResolver"/>: a choice the player made outright wins
+    /// over one they only agreed to.
+    /// </summary>
+    public string? AcceptedLayoutSuggestion { get; set; }
 
     /// <summary>The characters that can connect to this world.</summary>
     public List<CharacterDefinition> Characters { get; set; } = new();
@@ -217,8 +296,17 @@ public sealed class WorldDefinition
         Map = Map.Clone(),
         DownloadMedia = DownloadMedia,
         GrabPrefix = GrabPrefix,
+        JoinWrappedLines = JoinWrappedLines,
+        AutoReconnect = AutoReconnect,
+        CommandSeparator = CommandSeparator,
+        AlertOnName = AlertOnName,
+        AlertOnPage = AlertOnPage,
         GmcpLogin = GmcpLogin,
         DiscordPresence = DiscordPresence,
+        CaptureChannels = CaptureChannels,
+        HighlightNames = HighlightNames.ToList(),
+        Layout = Layout,
+        AcceptedLayoutSuggestion = AcceptedLayoutSuggestion,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

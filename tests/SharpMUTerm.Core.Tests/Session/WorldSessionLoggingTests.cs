@@ -32,6 +32,32 @@ public class WorldSessionLoggingTests
     private static WorldSession Session() =>
         new(new WorldDefinition { Name = "T", Host = "h", Port = 1 });
 
+    /// <summary>
+    /// Dialling, connecting and losing the connection are said as <see cref="WorldSession.ConnectionNoted"/>, never as
+    /// lines: nothing reaches the transcript, the scrollback or <see cref="WorldSession.LinePrinted"/>.
+    /// </summary>
+    [Test]
+    public async Task TheConnectionsOwnNotesReachNoTranscriptAndNoScrollback()
+    {
+        var telnet = new FakeTelnetSession();
+        var session = new WorldSession(new WorldDefinition { Name = "T", Host = "h", Port = 1 }, sessionFactory: _ => telnet);
+        var sink = new RecordingSink();
+        session.AttachLog(sink);
+        var notes = new List<ConnectionNote>();
+        var lines = new List<StyledLine>();
+        session.ConnectionNoted += (_, n) => notes.Add(n);
+        session.LinePrinted += (_, l) => lines.Add(l);
+
+        await session.ConnectAsync();
+        await telnet.DisconnectAsync();
+
+        await Assert.That(notes.Select(n => n.Label)).IsEquivalentTo(new[] { ConnectionNote.Connect, ConnectionNote.Connect, ConnectionNote.Closed });
+        await Assert.That(notes[0].Text).IsEqualTo("dialling h:1…");
+        await Assert.That(sink.Lines).IsEmpty();
+        await Assert.That(lines).IsEmpty();
+        await Assert.That(session.Scrollback.Snapshot()).IsEmpty();
+    }
+
     [Test]
     public async Task AttachedMidSession_TheLogTakesSubsequentLines()
     {

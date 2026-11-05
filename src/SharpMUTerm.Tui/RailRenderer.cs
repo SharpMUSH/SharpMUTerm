@@ -1,4 +1,6 @@
+using System.Text;
 using SharpConsoleUI.Parsing;
+using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Workspaces;
 using static SharpMUTerm.Tui.MarkupText;
@@ -17,8 +19,60 @@ namespace SharpMUTerm.Tui;
 /// rail lands on nothing.
 /// </para>
 /// </summary>
-internal static class RailRenderer
+internal static partial class RailRenderer
 {
+    /// <summary>
+    /// The sidebar's cells, drawn from the model the window's native sidebar is drawn from: the collapsed strip
+    /// when the model says collapsed, else the full rail fitted to <paramref name="maxWidth"/>.
+    /// </summary>
+    /// <param name="cursorBand">
+    /// The band the keyboard cursor's row is drawn on while the sidebar holds the keys (<see cref="SidebarModel.Cursor"/>,
+    /// ⌥C): a background, or <c>#ink on #band</c> for the row's unstyled text. The row is padded to the widest row so the band runs the width of the rail and costs no column.
+    /// </param>
+    public static List<string> Render(SidebarModel model, int maxWidth, ChromeInk? ink, string? cursorBand = null)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var rows = model.Rows();
+        var lines = model.Collapsed ? RenderCollapsed(rows, ink) : Render(rows, maxWidth, ink);
+        if (model.Cursor is not { } cursor || cursorBand is null)
+        {
+            return lines;
+        }
+
+        // Which line each row became: one per row expanded, worlds and characters only when folded.
+        var drawn = model.Collapsed ? rows.Where(r => r.Kind is RailRowKind.World or RailRowKind.Character).ToList() : rows.ToList();
+        var at = drawn.FindIndex(r => r.Target is not null && SidebarModel.KeyOf(r) == cursor);
+        if (at >= 0 && at < lines.Count)
+        {
+            var widest = lines.Max(SharpMUTermApp.MarkupWidth);
+            var pad = new string(' ', Math.Max(0, widest - SharpMUTermApp.MarkupWidth(lines[at])));
+            var on = cursorBand.IndexOf(" on ", StringComparison.Ordinal);
+            var band = on < 0 ? cursorBand : cursorBand[(on + 4)..];
+            lines[at] = $"[{(on < 0 ? "on " + cursorBand : cursorBand)}]{OnBand(lines[at], band)}{pad}[/]";
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// The row's inks held to the floor on the band it is drawn on: they were resolved against the rail's plane, and a
+    /// quiet one (`offline`, a chord) can fall under 3:1 on the brighter band. A span with a background of its own
+    /// keeps its pair; escaped text (<c>[[</c>) is never a tag.
+    /// </summary>
+    private static string OnBand(string line, string band)
+    {
+        var plane = Hex(band);
+        return Tag().Replace(line, tag => Ink().Replace(tag.Value, ink => Contrast.Legible(Hex(ink.Value), plane).ToHex()));
+
+        static Rgb Hex(string hex) => new(
+            Convert.ToByte(hex.Substring(1, 2), 16), Convert.ToByte(hex.Substring(3, 2), 16), Convert.ToByte(hex.Substring(5, 2), 16));
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<!\[)\[(?!\[)[^\[\]]*\]")]
+    private static partial System.Text.RegularExpressions.Regex Tag();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<!on )#[0-9a-fA-F]{6}\b")]
+    private static partial System.Text.RegularExpressions.Regex Ink();
 
     /// <param name="rows">The rail's rows, as <see cref="RailModel"/> projects them.</param>
     /// <param name="maxWidth">
@@ -53,8 +107,11 @@ internal static class RailRenderer
 
     private static string RenderRow(RailRow row, bool reserveWindow, bool reserveCharacter, ChromeInk ink) => row.Kind switch
     {
-        RailRowKind.Header => $"[dim]┌ {Glyphs.Connections} CONNECTIONS[/]",
-        RailRowKind.World => Link(row, $"[{Accent(row, ink)}]▚[/] [bold]{Escape(row.Label)}[/]"),
+        // The terminal mockup's rail: a plain heading and bold world names, both lined up with the character rows'
+        // ▸ column. The world's accent is carried by its characters' dots; the ▚ spine and the ┌ ⏻ heading were
+        // marks of a box nothing drew.
+        RailRowKind.Header => "  [dim]CONNECTIONS[/]",
+        RailRowKind.World => Link(row, $"  [bold]{Escape(row.Label)}[/]"),
         RailRowKind.Host => $"{Indent(row)}[dim]{Escape(row.Label)}[/]",
         RailRowKind.Empty => $"{Indent(row)}{Link(row, $"[dim]{Escape(row.Label)}[/]")}",
         RailRowKind.Character => Character(row, reserveCharacter, ink),
@@ -87,25 +144,31 @@ internal static class RailRenderer
     }
 
     /// <summary>
-    /// Renders the collapsed rail (⌃B b): a ~6-col strip of per-world accent separators and, under
+    /// Renders the collapsed rail (⌃B b): a ~6-col strip of per-world accent marks and, under
     /// each, its characters as a status dot + initial + unread count. Both stay clickable — an initial
     /// is the only handle a collapsed rail offers.
+    /// <para>
+    /// A world is a solid <c>▌</c> in its accent, the bar the window's folded sidebar draws (a <c>▚</c> read as a
+    /// glyph glitch at one cell). Characters show one letter, or two for every character once two of them share a
+    /// first letter (<see cref="InitialLength"/>): <c>Ro</c> and <c>Ri</c> rather than two <c>R</c>s nobody can tell
+    /// apart. The length is the whole strip's, so every row keeps one width and it changes only when the set of
+    /// characters does.
+    /// </para>
     /// </summary>
     public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows, ChromeInk? ink = null)
     {
         var voice = ink ?? ChromeInk.Default;
         var lines = new List<string>();
+        var letters = InitialLength(rows.Where(r => r.Kind == RailRowKind.Character).Select(r => r.Label));
         foreach (var row in rows)
         {
             switch (row.Kind)
             {
                 case RailRowKind.World:
-                    lines.Add(Link(row, $"[{Accent(row, voice)}]▚[/]"));
+                    lines.Add(Link(row, $"[{Accent(row, voice)}]{CollapsedWorldMark}[/]"));
                     break;
                 case RailRowKind.Character:
-                    var initial = row.Label.Length > 0
-                        ? Escape(row.Label.EnumerateRunes().First().ToString())
-                        : "?";
+                    var initial = Escape(Initials(row.Label, letters));
                     var dot = row.Connected ? "●" : "○";
                     var name = row.Active ? $"[bold]{initial}[/]" : initial;
 
@@ -117,6 +180,27 @@ internal static class RailRenderer
         }
 
         return lines;
+    }
+
+    /// <summary>The collapsed strip's mark for a world: a solid bar in the world's accent.</summary>
+    internal const string CollapsedWorldMark = "▌";
+
+    /// <summary>
+    /// How many letters the collapsed strip gives each character: 1, or 2 once two names share a first letter
+    /// (case ignored). Two at most — the strip is a handle, and past two letters the tooltip and the open rail say it.
+    /// </summary>
+    internal static int InitialLength(IEnumerable<string> names)
+    {
+        var firsts = names.Select(n => Initials(n, 1).ToUpperInvariant()).ToList();
+        return firsts.Count == firsts.Distinct(StringComparer.Ordinal).Count() ? 1 : 2;
+    }
+
+    /// <summary>The first <paramref name="letters"/> letters of a name, padded so every row is as wide; <c>?</c> for none.</summary>
+    internal static string Initials(string name, int letters)
+    {
+        var runes = name.EnumerateRunes().Where(r => !Rune.IsWhiteSpace(r)).Take(letters).Select(r => r.ToString()).ToList();
+        var text = runes.Count == 0 ? "?" : string.Concat(runes);
+        return text.PadRight(letters);
     }
 
     /// <summary>

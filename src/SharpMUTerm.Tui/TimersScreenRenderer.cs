@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Settings;
 using System.Globalization;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -70,11 +71,11 @@ internal static class TimersScreenRenderer
     /// nobody asked for. A new trigger only reacts to output and a new binding only to a keypress, so
     /// those stay live.
     /// </summary>
-    private const string NewTimerName = "New Timer";
+    private const string NewTimerName = BuiltInSettings.NewTimerName;
 
     private const double NewTimerIntervalSeconds = 60;
 
-    private const string NewTimerCommand = "look";
+    private const string NewTimerCommand = BuiltInSettings.NewTimerCommand;
 
     /// <summary>
     /// Merges every sub-block into one line list (header, timer list | editor, footer). Used by the
@@ -111,10 +112,11 @@ internal static class TimersScreenRenderer
     /// </summary>
     internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
     {
-        var title = $"[bold {Value}] Timers[/]";
+        var title = $"[bold {Value}]Timers[/]";
         var hints = ScreenChrome.Hints(
-            ScreenChrome.ListHints, "F6", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false);
-        return SpreadLR(" " + title, hints, width);
+            ScreenChrome.ListHints, "F6", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
+            room: ScreenChrome.HeaderRoom(" " + title, width));
+        return SpreadTitle(" " + title, hints, width);
     }
 
     /// <summary>
@@ -123,22 +125,31 @@ internal static class TimersScreenRenderer
     /// <see cref="EditorColumn"/> draws them. Both values hang off the list row rather than becoming
     /// rows of their own, so the editor pane's cursor indices keep meaning what they meant.
     /// </summary>
+    /// <summary>F6's declared list (<see cref="BuiltInSettings.Timers"/>), whose item fields the rows are built from.</summary>
+    internal static SettingsCollection Declared => BuiltInSettings.Timers.Collection!;
+
+    /// <summary>The timer row's fields by declared id, in ⇥ order.</summary>
+    internal static IReadOnlyList<string> RowFieldOrder { get; } = ["name", "interval", "command", "set"];
+
+    /// <summary>The editor pane's check boxes by declared id, in the order the pane draws them.</summary>
+    internal static IReadOnlyList<string> EditorFieldOrder { get; } = ["one-shot", "enabled"];
+
     internal static ScreenModel Model(IReadOnlyList<TriggerSet> sets, int selected)
     {
         ArgumentNullException.ThrowIfNull(sets);
 
         var entries = Flatten(sets);
-        var list = ScreenModel.Rows(entries, entry => ScreenRow.Of(
-            ScreenToggle.Bind(() => entry.Timer.Enabled, v => entry.Timer.Enabled = v),
-            ScreenField.Name("name", () => entry.Timer.Name, v => entry.Timer.Name = v),
-            ScreenField.Number(
-                "interval",
-                () => entry.Timer.IntervalSeconds,
-                v => entry.Timer.IntervalSeconds = v,
-                MinIntervalSeconds,
-                MaxIntervalSeconds),
-            ScreenField.Text("command", () => entry.Timer.Command, v => entry.Timer.Command = v),
-            ScreenLists.Owner(sets, s => s.Timers, entry.Timer)))
+        var config = DeclaredFields.Over(sets);
+        var list = ScreenModel.Rows(entries, entry =>
+            {
+                var target = new SettingTarget(config, Item: entry.Timer);
+                return ScreenRow.Of(
+                    DeclaredFields.Toggle(Declared.Field(Declared.EnabledField), target),
+                    RowFieldOrder.Select(id => DeclaredFields.Item(
+                        Declared.Field(id), target, SettingsContext.Empty,
+                        () => ScreenLists.Owner(sets, s => s.Timers, entry.Timer))).ToArray())
+                    with { Move = ScreenLists.Mover(sets, s => s.Timers, entry.Timer) };
+            })
             .Concat(Buttons(sets, selected))
             .ToArray();
 
@@ -148,11 +159,10 @@ internal static class TimersScreenRenderer
         }
 
         var timer = entries[selected].Timer;
-        var editor = new[]
-        {
-            ScreenRow.Of(ScreenToggle.Bind(() => timer.OneShot, v => timer.OneShot = v)),
-            ScreenRow.Of(ScreenToggle.Bind(() => timer.Enabled, v => timer.Enabled = v)),
-        };
+        var selectedTarget = new SettingTarget(config, Item: timer);
+        var editor = EditorFieldOrder
+            .Select(id => ScreenRow.Of(DeclaredFields.Toggle(Declared.Field(id), selectedTarget)))
+            .ToArray();
 
         return new ScreenModel(list, editor);
     }
@@ -162,10 +172,10 @@ internal static class TimersScreenRenderer
     /// is what the Enabled checkbox is for — typing it into the interval would silently turn the timer
     /// off while it still read as on.
     /// </summary>
-    private const double MinIntervalSeconds = 0.1;
+    private const double MinIntervalSeconds = BuiltInSettings.MinIntervalSeconds;
 
     /// <summary>A day; past this the value is far likelier to be a typo than a schedule.</summary>
-    private const double MaxIntervalSeconds = 86400;
+    private const double MaxIntervalSeconds = BuiltInSettings.MaxIntervalSeconds;
 
     /// <summary>
     /// The timer list's buttons. A timer is added to the set that owns the selection, so a new one
@@ -264,7 +274,7 @@ internal static class TimersScreenRenderer
         }
 
         lines.Add(string.Empty);
-        lines.AddRange(ScreenChrome.Buttons(Buttons(sets, selected), cursor, 0, entries.Count, width));
+        lines.AddRange(ScreenChrome.Buttons(Buttons(sets, selected), cursor, 0, entries.Count, width, movable: true));
         lines.Add(string.Empty);
         var picked = selected >= 0 && selected < entries.Count ? entries[selected].Timer : null;
         lines.AddRange(ScreenChrome.Legend(

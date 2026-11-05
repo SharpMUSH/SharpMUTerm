@@ -38,7 +38,30 @@ public static class ConfigurationMigrator
             MigrateV4ToV5(root);
         }
 
+        AdoptPageAlerts(root);
         root["version"] = AppConfiguration.CurrentVersion;
+    }
+
+    /// <summary>
+    /// A world saved before <see cref="WorldDefinition.AlertOnPage"/> existed keeps the alerts it had: the field is
+    /// written as <c>false</c> where it is missing, so only a world made from now on gets page alerts by default. Not a
+    /// schema step: it runs on every load and changes nothing in a file that has the field, because it adds a field
+    /// with the meaning the file already had rather than moving one.
+    /// </summary>
+    private static void AdoptPageAlerts(JsonObject root)
+    {
+        if (root["worlds"] is not JsonArray worlds)
+        {
+            return;
+        }
+
+        foreach (var world in worlds.OfType<JsonObject>())
+        {
+            if (!world.ContainsKey("alertOnPage"))
+            {
+                world["alertOnPage"] = false;
+            }
+        }
     }
 
     /// <summary>

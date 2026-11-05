@@ -37,14 +37,14 @@ public class SnapshotViewEmptyConfigTests
     /// </summary>
     private static readonly string[] Views =
     [
-        "collapsed", "prefix", "prefix-panel", "timestamps", "timestamps-toggled", "spawn", "split",
+        "collapsed", "prefix", "prefix-panel", "timestamps", "timestamps-toggled", "theme-switched", "rail-keys", "spawn", "split",
         "focus", "focus-moved", "freeze", "freeze-scrollback", "move", "drag", "scrollback",
-        "scrollback-up", "away", "away-scrollback", "links", "web", "rail-long", "history", "history-search",
-        "history-search-filter", "draft", "draft2", "menu", "menu-split", "messages", "quit",
+        "scrollback-up", "scrollback-split", "reflow", "away", "away-scrollback", "links", "web", "rail-long", "history", "history-search",
+        "history-search-filter", "draft", "draft2", "menu", "menu-split", "menu-fuzzy", "menu-recent", "messages", "notices", "quit",
         "connections", "characters", "tint", "tint-input", "tint-input-moved",
         "compose", "compose-literal", "deletions", "textansi", "input", "keypad", "password",
         "startup", "logging", "set", "triggers", "route", "highlight", "worlds", "settings", "mssp",
-        "mssp-none", "mssp-never", "mxp-image", "mxp-figure",
+        "mssp-none", "mssp-never", "mxp-image", "mxp-figure", "welcome", "welcome-connect", "tour",
     ];
 
     /// <summary>

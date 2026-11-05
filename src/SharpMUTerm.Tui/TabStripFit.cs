@@ -33,7 +33,7 @@ internal readonly record struct TabCost(int NameLength, int TitleLength, int Fix
 /// </para>
 /// <para>
 /// <b>The owner prefix goes first, and goes for everybody.</b> A pane full of one character's captures
-/// repeats <c>Corvid - </c> on every tab, which is the cheapest thing in the strip to lose and the most
+/// repeats <c>Corvid · </c> on every tab, which is the cheapest thing in the strip to lose and the most
 /// there is of it — dropping it is what turns eight tabs that do not fit into eight tabs that nearly do.
 /// It is dropped across the whole strip rather than per tab, so the tabs stay comparable, and what it
 /// said is still said twice over: by the chip the tab is painted on, and by the <c>⌁</c> a window
@@ -61,12 +61,13 @@ internal readonly record struct TabCost(int NameLength, int TitleLength, int Fix
 internal static class TabStripFit
 {
     /// <summary>
-    /// The fewest cells of name a background tab is cut to. Below three a name is an initial and an
-    /// ellipsis, which identifies nothing; at three there is still a syllable to recognise. It is a floor
-    /// rather than a guarantee — a strip narrower than its tabs at the floor is one the framework will
-    /// clip, and this cannot prevent that, only postpone it.
+    /// The fewest cells of name a background tab is cut to: three letters and the ellipsis. Below that a
+    /// name is an initial or two (<c>Pu…</c>), which identifies nothing; three letters are a syllable to
+    /// recognise. It is a floor rather than a guarantee — a strip narrower than its tabs at the floor is
+    /// one the framework will clip, and a tab it clips below the floor is counted into the overflow chip
+    /// (<c>+N ▾</c>) rather than left showing a letter.
     /// </summary>
-    internal const int MinimumName = 3;
+    internal const int MinimumName = 4;
 
     /// <summary>
     /// The fewest for the tab the pane is showing. Higher than <see cref="MinimumName"/> on purpose: it

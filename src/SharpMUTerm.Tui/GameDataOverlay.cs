@@ -22,6 +22,12 @@ internal sealed class GameDataOverlay
     private readonly TimeProvider _time;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private MarkupControl? _content;
     private IReadOnlyList<GameDataEntry> _entries = [];
     private string _owner = string.Empty;
@@ -51,21 +57,23 @@ internal sealed class GameDataOverlay
         var desktop = _system.DesktopDimensions;
         var width = Math.Max(44, desktop.Width - 8);
         var height = Math.Max(10, desktop.Height - 4);
-        _content = new MarkupControl(Lines(width - 3, height - 2));
+        _content = new MarkupControl(Scheme.Lines(Lines(width - 4, height - 2), ScreenPalette.MenuBg));
 
         // Centered() after WithSize(), for CommandPalette's reason.
         _window = new WindowBuilder(_system)
             .WithTitle("Game data")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_content)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -137,7 +145,7 @@ internal sealed class GameDataOverlay
     {
         if (_window is { } window)
         {
-            _content?.SetContent(Lines(Math.Max(20, window.Width - 3), Math.Max(6, window.Height - 2)));
+            _content?.SetContent(Scheme.Lines(Lines(Math.Max(20, window.Width - 4), Math.Max(6, window.Height - 2)), ScreenPalette.MenuBg));
         }
     }
 
@@ -193,8 +201,7 @@ internal sealed class GameDataOverlay
         _ => $"{(int)age.TotalHours}h ago",
     };
 
-    private static string Elide(string text, int width) =>
-        text.Length <= width ? text : width <= 1 ? "…" : text[..(width - 1)] + "…";
+    private static string Elide(string text, int width) => MarkupText.ElidePlain(text, width);
 
     private static string Escape(string text) => MarkupText.Escape(text);
 }

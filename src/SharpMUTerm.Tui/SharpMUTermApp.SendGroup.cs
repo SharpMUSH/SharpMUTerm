@@ -6,7 +6,7 @@ namespace SharpMUTerm.Tui;
 
 /// <summary>
 /// The send group: characters picked on ⌃P, marked ◆ on the rail, and sent one line together by
-/// ⌃P ▸ <c>Send the command line to the group</c>. Lua reaches the same sessions by name through
+/// ⌃P ▸ <c>Send to group</c>. Lua reaches the same sessions by name through
 /// <c>world.sendTo</c>.
 /// </summary>
 internal sealed partial class SharpMUTermApp
@@ -24,12 +24,12 @@ internal sealed partial class SharpMUTermApp
             var key = id[CommandIds.GroupTogglePrefix.Length..];
             if (_sessions.Find(key) is null && !_sendGroup.Contains(key))
             {
-                RefuseCommand($"{key} is not open");
+                RefuseCommand($"{DisplayName(key)} is not open");
                 return true;
             }
 
             Notice(
-                _sendGroup.Toggle(key) ? $"{key} is in the send group" : $"{key} has left the send group",
+                _sendGroup.Toggle(key) ? $"{DisplayName(key)} is in the send group" : $"{DisplayName(key)} has left the send group",
                 MessageSeverity.Info);
             RefreshRail();
             return true;
@@ -75,7 +75,7 @@ internal sealed partial class SharpMUTermApp
 
         foreach (var session in reachable)
         {
-            _ = session.SendUserInputAsync(command);
+            _ = session.SendTypedAsync(command); // typed on the command line, so each world stacks it its own way
         }
 
         var kind = BarKind(bar);

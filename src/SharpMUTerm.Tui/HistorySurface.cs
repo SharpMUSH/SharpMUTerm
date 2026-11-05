@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Input;
 
 namespace SharpMUTerm.Tui;
@@ -46,8 +47,15 @@ internal sealed class HistorySurface
     private readonly Func<IReadOnlyList<string>> _entries;
     private readonly Func<string> _label;
     private readonly Action<int> _insert;
+    private readonly Action? _closed;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private MarkupControl? _body;
     private IReadOnlyList<string> _snapshot = Array.Empty<string>();
     private IReadOnlyList<HistoryMatch> _matches = Array.Empty<HistoryMatch>();
@@ -71,8 +79,10 @@ internal sealed class HistorySurface
         ConsoleWindowSystem system,
         Func<IReadOnlyList<string>> entries,
         Func<string> label,
-        Action<int> insert)
+        Action<int> insert,
+        Action? closed = null)
     {
+        _closed = closed;
         _system = system;
         _entries = entries;
         _label = label;
@@ -83,7 +93,13 @@ internal sealed class HistorySurface
 
     /// <summary>What the surface is currently showing, for a headless test to read back.</summary>
     internal IReadOnlyList<string> Lines => HistorySearchPrompt.Render(
-        _matches, _query, _selected, _snapshot.Count, _barLabel, _contentWidth - 1, _listRows, _first);
+        Snapshot, _matches, _query, _selected, _contentWidth - 1, _listRows, _first);
+
+    /// <summary>The history and whose it is, as captured when the surface opened.</summary>
+    private HistoryModel Snapshot => new(_snapshot, _barLabel);
+
+    /// <summary>The model the open surface is drawn from, or null while it is closed.</summary>
+    internal HistoryModel? Model => _window is null ? null : Snapshot;
 
     /// <summary>The filter as typed so far.</summary>
     internal string Query => _query;
@@ -154,7 +170,7 @@ internal sealed class HistorySurface
         // instead of leaning on it, and the selected row's bar stops there too.
         _contentWidth = Math.Clamp(
             HistorySearchPrompt.MaxWidth(initial) + 2, MinimumWidth, Math.Max(MinimumWidth, desktop.Width - 6));
-        var width = _contentWidth + 2; // + the 1-cell left/right border
+        var width = _contentWidth + 3; // + the 1-cell left/right border and the cell of padding on the left
         var height = Math.Min(_listRows + ChromeRows + 2, Math.Max(ChromeRows + 3, desktop.Height - 2));
 
         _body = new MarkupControl(new List<string>());
@@ -166,14 +182,16 @@ internal sealed class HistorySurface
             .WithTitle("Command history")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
             .AddControl(_body)
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);
@@ -228,7 +246,7 @@ internal sealed class HistorySurface
         _first = HistorySearchPrompt.Scroll(_first, _selected, _matches.Count, _listRows);
     }
 
-    private void Paint() => _body?.SetContent(new List<string>(Lines));
+    private void Paint() => _body?.SetContent(Scheme.Lines(Lines, ScreenPalette.MenuBg));
 
     private void Close()
     {
@@ -242,5 +260,6 @@ internal sealed class HistorySurface
     {
         _window = null;
         _body = null;
+        _closed?.Invoke();
     }
 }

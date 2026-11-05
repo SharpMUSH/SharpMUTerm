@@ -100,7 +100,7 @@ public class ScreenListButtonTests
 
         // Nor does F4: a copied binding would land on the key its original already holds, and the
         // second macro on a key never fires.
-        var keypad = KeypadScreenRenderer.Model(sets[0].Macros, sets, 0);
+        var keypad = KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0);
         await Assert.That(keypad.ListSizes[0]).IsEqualTo(1);
         await Assert.That(keypad.ButtonAt(0, 1)!.Value.Label).IsEqualTo(KeypadScreenRenderer.AddBindingLabel);
         await Assert.That(keypad.ButtonAt(0, 2)!.Value.Label).IsEqualTo(ScreenButton.RemoveKeyLabel);
@@ -141,7 +141,7 @@ public class ScreenListButtonTests
         await Assert.That(TriggersScreenRenderer.Model(empty, -1).Sizes[0]).IsEqualTo(0);
         await Assert.That(AliasesScreenRenderer.Model(empty, -1).Sizes[0]).IsEqualTo(0);
         await Assert.That(TimersScreenRenderer.Model(empty, -1).Sizes[0]).IsEqualTo(0);
-        await Assert.That(KeypadScreenRenderer.Model(Array.Empty<Macro>(), empty, -1).Sizes[0]).IsEqualTo(0);
+        await Assert.That(KeypadScreenRenderer.Model(HostKeys.Terminal, Array.Empty<Macro>(), empty, -1).Sizes[0]).IsEqualTo(0);
     }
 
     /// <summary>
@@ -212,7 +212,7 @@ public class ScreenListButtonTests
         new ScreenEdits().Apply(
             ButtonNamed(AliasesScreenRenderer.Model(sets, 0), 0, AliasesScreenRenderer.AddAliasLabel));
         new ScreenEdits().Apply(ButtonNamed(
-            KeypadScreenRenderer.Model(sets[0].Macros, sets, 0), 0, KeypadScreenRenderer.AddBindingLabel));
+            KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0), 0, KeypadScreenRenderer.AddBindingLabel));
 
         await Assert.That(sets[0].Timers[^1].Enabled).IsFalse();
         await Assert.That(sets[0].Aliases[^1].Enabled).IsTrue();
@@ -240,7 +240,7 @@ public class ScreenListButtonTests
         edits.Apply(Removal(TimersScreenRenderer.Model(sets, 0), 0));
         await Assert.That(sets[0].Timers).IsEmpty();
 
-        edits.Apply(Removal(KeypadScreenRenderer.Model(sets[0].Macros, sets, 0), 0));
+        edits.Apply(Removal(KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0), 0));
         await Assert.That(sets[0].Macros).IsEmpty();
 
         edits.Revert();
@@ -345,7 +345,7 @@ public class ScreenListButtonTests
     /// <summary>
     /// F4's add button is the one that cannot simply append. A <see cref="Macro"/> is identified by its
     /// <see cref="Macro.Key"/>, so the button claims a free one and says which on its own row. It claims
-    /// from <see cref="MacroKeys.Bindable"/> rather than the numpad: no numpad key ever reaches this
+    /// from <see cref="MacroKeys.Bindable(HostKeys.Terminal)"/> rather than the numpad: no numpad key ever reaches this
     /// client, so a binding born on one could never fire, and a button whose whole job is to name the
     /// key it takes must not name a dead one.
     /// </summary>
@@ -354,21 +354,21 @@ public class ScreenListButtonTests
     {
         var sets = Sets();
         var button = ButtonNamed(
-            KeypadScreenRenderer.Model(sets[0].Macros, sets, 0), 0, KeypadScreenRenderer.AddBindingLabel);
+            KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0), 0, KeypadScreenRenderer.AddBindingLabel);
 
-        var first = MacroKeys.Bindable[0];
+        var first = MacroKeys.Bindable(HostKeys.Terminal)[0];
         await Assert.That(button.Target).IsEqualTo(first);
-        await Assert.That(MacroKeys.Verdict(first).Fires).IsTrue();
+        await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, first).Fires).IsTrue();
 
         new ScreenEdits().Apply(button);
         await Assert.That(sets[0].Macros[^1].Key).IsEqualTo(first);
 
         // The next one takes the next free key, not the same one again.
         var again = ButtonNamed(
-            KeypadScreenRenderer.Model(sets.SelectMany(s => s.Macros).ToList(), sets, 0),
+            KeypadScreenRenderer.Model(HostKeys.Terminal, sets.SelectMany(s => s.Macros).ToList(), sets, 0),
             0,
             KeypadScreenRenderer.AddBindingLabel);
-        await Assert.That(again.Target).IsEqualTo(MacroKeys.Bindable[1]);
+        await Assert.That(again.Target).IsEqualTo(MacroKeys.Bindable(HostKeys.Terminal)[1]);
     }
 
     /// <summary>
@@ -380,13 +380,13 @@ public class ScreenListButtonTests
     public async Task NoBindingCanBeAddedOnceEveryBindableKeyIsTaken()
     {
         var sets = new List<TriggerSet> { new() { Name = "All" } };
-        foreach (var key in MacroKeys.Bindable)
+        foreach (var key in MacroKeys.Bindable(HostKeys.Terminal))
         {
             sets[0].Macros.Add(new Macro { Name = key, Key = key, Command = "look" });
         }
 
-        var model = KeypadScreenRenderer.Model(sets[0].Macros, sets, 0);
-        var bindings = MacroKeys.Bindable.Count;
+        var model = KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, 0);
+        var bindings = MacroKeys.Bindable(HostKeys.Terminal).Count;
 
         // The bindings and nothing else the cursor can reach: the add button is gone because there is no
         // free chord left to claim, and the removal past them is drawn but not a stop (was bindings + 1).
@@ -422,9 +422,9 @@ public class ScreenListButtonTests
         await Assert.That(Removes(AliasesScreenRenderer.ListColumn(sets, 0), "gr")).IsTrue();
         await Assert.That(Removes(TimersScreenRenderer.ListColumn(sets, 0), "ping")).IsTrue();
 
-        var bindings = KeypadScreenRenderer.HotkeysColumn(sets[0].Macros, null, sets, 0);
+        var bindings = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, sets[0].Macros, null, sets, 0);
         await Assert.That(Removes(bindings, "Look")).IsTrue();
-        await Assert.That(bindings.Any(l => l.Contains("[[+ binding]]") && l.Contains(MacroKeys.Bindable[0])))
+        await Assert.That(bindings.Any(l => l.Contains("[[+ binding]]") && l.Contains(MacroKeys.Bindable(HostKeys.Terminal)[0])))
             .IsTrue();
     }
 

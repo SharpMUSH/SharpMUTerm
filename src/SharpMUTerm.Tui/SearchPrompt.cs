@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
 
@@ -21,14 +22,7 @@ internal enum SearchAction
 
 /// <summary>The answer to one keystroke: what to do, and the state it leaves behind.</summary>
 internal readonly record struct SearchDecision(
-    SearchAction Action, string Query, int Selected, bool Regex, bool AllWindows);
-
-/// <summary>
-/// One row of results: which window the line is in, where it sits in that window's buffer, and where the
-/// query landed inside it.
-/// </summary>
-internal readonly record struct SearchRow(
-    string WindowId, string WindowLabel, int LineIndex, string Text, int MatchStart, int MatchLength);
+    SearchAction Action, string Query, int Selected, bool Regex, bool AllWindows, bool Older = false);
 
 /// <summary>
 /// The search surface (⌃F), minus the window: what a keystroke means to it, and what it says. Pure, for
@@ -61,7 +55,25 @@ internal static class SearchPrompt
     /// be widened.
     /// </summary>
     internal const string Hints =
-        "type to search · ↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · Esc cancel · ⌃F closes";
+        "type to search · ↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · ⌥H older history · Esc cancel · ⌃F closes";
+
+    /// <summary>
+    /// The footer's drop-order ladder, longest first: the status row's rule (<c>FocusHints</c>). <see cref="Hints"/>
+    /// is 84 cells and an 80-column surface holds 74, where it used to be cut to a bare <c>⌃F</c>. The prose goes
+    /// first, then the words after the toggles' keys, then Esc (⌃F also closes); every rung still names each key
+    /// that does something different.
+    /// </summary>
+    internal static readonly string[] HintLadder =
+    [
+        Hints,
+        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all windows · ⌥H older history · Esc cancel · ⌃F closes",
+        "↑↓ pick · ⏎ go · ⌥E regex · ⌥A all · ⌥H older · Esc cancel · ⌃F closes",
+        "↑↓ · ⏎ go · ⌥E regex · ⌥A all · ⌥H older · Esc · ⌃F",
+    ];
+
+    /// <summary>The longest rung of <see cref="HintLadder"/> that fits <paramref name="width"/> (all of it when unknown).</summary>
+    internal static string HintsFor(int width) =>
+        width <= 0 ? Hints : FirstFitting(width, HintLadder);
 
     /// <summary>The longest an entry is drawn before it is elided, when no width is supplied.</summary>
     private const int DefaultEntryWidth = 72;
@@ -84,9 +96,9 @@ internal static class SearchPrompt
     /// </para>
     /// </summary>
     internal static SearchDecision Interpret(
-        ConsoleKeyInfo key, string query, int selected, int count, bool regex, bool all)
+        ConsoleKeyInfo key, string query, int selected, int count, bool regex, bool all, bool older = false)
     {
-        var state = new SearchDecision(SearchAction.None, query, selected, regex, all);
+        var state = new SearchDecision(SearchAction.None, query, selected, regex, all, older);
 
         if (key.Modifiers.HasFlag(ConsoleModifiers.Control))
         {
@@ -106,6 +118,10 @@ internal static class SearchPrompt
             {
                 ConsoleKey.E => state with { Action = SearchAction.Redraw, Regex = !regex, Selected = 0 },
                 ConsoleKey.A => state with { Action = SearchAction.Redraw, AllWindows = !all, Selected = 0 },
+
+                // ⌥H: older history too — the sessions' scrollback and its spill, searched off the UI thread and listed
+                // after the pane's rows as they are found. H for history; nothing in the app's shortcuts takes it.
+                ConsoleKey.H => state with { Action = SearchAction.Redraw, Older = !older },
                 _ => state,
             };
         }
@@ -182,37 +198,44 @@ internal static class SearchPrompt
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(query);
+        return Render(new SearchModel(query, regex, all, scope, held, error, rows), selected, width, listRows, first);
+    }
 
-        var labelWidth = all
-            ? Math.Min(MaxLabelWidth, rows.Select(r => r.WindowLabel.Length).DefaultIfEmpty(0).Max())
+    /// <summary>
+    /// The surface for <paramref name="model"/> — the cells of the model the window's native search draws too.
+    /// </summary>
+    /// <param name="model">The query, the toggles, the bound and the matches.</param>
+    /// <param name="selected">Which row the pointer is on.</param>
+    /// <param name="width">The surface's content width, when known.</param>
+    /// <param name="listRows">How many rows the list area holds; zero means "as many as there are".</param>
+    /// <param name="first">Which match is drawn at the top of the list area.</param>
+    internal static List<string> Render(SearchModel model, int selected, int width = 0, int listRows = 0, int first = 0)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var rows = model.Rows;
+        var query = model.Query;
+        var labelWidth = model.Labelled
+            ? Math.Min(MaxLabelWidth, rows.Select(r => model.LabelFor(r).Length).DefaultIfEmpty(0).Max())
             : 0;
         var entryWidth = (width > 0 ? width : DefaultEntryWidth) - 4 - (labelWidth > 0 ? labelWidth + 2 : 0);
 
         var lines = new List<string>
         {
-            SpreadLR($"[{Label}]search[/] {QueryMarkup(query)}", $"[{Label}]{Escape(State(regex, all, scope))}[/]", width),
-            SpreadLR(string.Empty, $"[{Label}]{Escape(Counted(rows.Count, error, held))}[/]", width),
+            SpreadLR($"[{Label}]search[/] {QueryMarkup(query)}", $"[{Label}]{Escape(model.StateText)}[/]", width),
+            SpreadLR(NoteMarkup(model, width), $"[{Label}]{Escape(model.CountText)}[/]", width),
         };
 
         var body = new List<string>();
-        if (error is not null)
+        if (model.EmptyText is { } empty)
         {
-            body.Add($"[{Muted}]  {Escape(error)}[/]");
-        }
-        else if (query.Length == 0)
-        {
-            body.Add($"[{Muted}]  type to search {Escape(all ? "every window" : scope)}[/]");
-        }
-        else if (rows.Count == 0)
-        {
-            body.Add($"[{Muted}]  no matches — ⌫ widens the query[/]");
+            body.Add($"[{Muted}]  {Escape(empty)}[/]");
         }
 
         var top = Math.Clamp(first, 0, Math.Max(0, rows.Count - 1));
         var last = listRows > 0 ? Math.Min(rows.Count, top + listRows - body.Count) : rows.Count;
         for (var i = top; i < last; i++)
         {
-            body.Add(Row(rows[i], i == selected, entryWidth, labelWidth, width));
+            body.Add(Row(rows[i], model.LabelFor(rows[i]), i == selected, entryWidth, labelWidth, width));
         }
 
         while (body.Count < listRows)
@@ -222,8 +245,28 @@ internal static class SearchPrompt
 
         lines.AddRange(body);
         lines.Add(string.Empty);
-        lines.Add($"[{Label}]{Hints}[/]");
+        lines.Add($"[{Label}]{Escape(HintsFor(width))}[/]");
         return lines;
+    }
+
+    /// <summary>
+    /// The status line's left half: older history's note, or — while the pane cap trimmed what this search could see — the
+    /// ⌥H offer, laddered to the room the count leaves (<see cref="SearchModel.NoteFor"/>), its chord in the accent.
+    /// </summary>
+    private static string NoteMarkup(SearchModel model, int width)
+    {
+        var room = width > 0 ? width - VisibleLength(model.CountText) - 2 : 0;
+        if (model.NoteFor(room) is not { } note)
+        {
+            return string.Empty;
+        }
+
+        if (model.OffersOlder && note.StartsWith(SearchModel.OlderKey, StringComparison.Ordinal))
+        {
+            return $"[bold {Accent}]{SearchModel.OlderKey}[/][{Muted}]{Escape(note[SearchModel.OlderKey.Length..])}[/]";
+        }
+
+        return $"[{(model.HistoryRunning ? Accent : Muted)}]{Escape(note)}[/]";
     }
 
     /// <summary>
@@ -242,25 +285,6 @@ internal static class SearchPrompt
     }
 
     /// <summary>
-    /// The two toggles and what they currently mean, in words rather than in glyphs: the surface has to
-    /// be able to say <em>which way they are set</em>, because both change what a query finds and neither
-    /// is visible in the results themselves.
-    /// </summary>
-    private static string State(bool regex, bool all, string scope) =>
-        $"{(regex ? "regex" : "text")} · {(all ? "every window" : scope)}";
-
-    /// <summary>
-    /// How many lines matched out of how many were looked at. The second figure is the bound this search
-    /// actually had — the pane buffer, not a session's whole history — and it is on the frame so a reader
-    /// who cannot find an old line can see why rather than concluding the search is broken.
-    /// </summary>
-    private static string Counted(int shown, string? error, int held)
-    {
-        var searched = $"{held:n0} line{(held == 1 ? string.Empty : "s")} held";
-        return error is not null ? searched : $"{shown} found · {searched}";
-    }
-
-    /// <summary>
     /// The query, with the accent block caret after it — the same caret the settings screens draw on an
     /// open field, so this reads as something being typed into.
     /// </summary>
@@ -269,10 +293,15 @@ internal static class SearchPrompt
             ? $"[{Ink} on {Accent}] [/]"
             : $"[{Value}]{Escape(query)}[/][{Ink} on {Accent}] [/]";
 
-    private static string Row(SearchRow row, bool selected, int entryWidth, int labelWidth, int width)
+    /// <summary>
+    /// One row. <paramref name="rowLabel"/> is the window column (<see cref="SearchModel.LabelFor"/>): the window's name in
+    /// ⌥A scope, how far back an older-history row is and <c>here</c> beside it — the only place a reader can tell a line the
+    /// pane holds from one ⏎ will open in the history view.
+    /// </summary>
+    private static string Row(SearchRow row, string rowLabel, bool selected, int entryWidth, int labelWidth, int width)
     {
         var (text, matchStart, matchLength) = Elide(row, entryWidth);
-        var label = labelWidth > 0 ? LabelCell(row.WindowLabel, labelWidth) : string.Empty;
+        var label = labelWidth > 0 ? LabelCell(rowLabel, labelWidth) : string.Empty;
 
         if (selected)
         {

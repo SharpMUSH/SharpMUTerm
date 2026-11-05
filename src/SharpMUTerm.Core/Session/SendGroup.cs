@@ -1,7 +1,7 @@
 namespace SharpMUTerm.Core.Session;
 
 /// <summary>
-/// The characters one line can be sent to at once (⌃P ▸ <c>Send the command line to the group</c>), and how a
+/// The characters one line can be sent to at once (⌃P ▸ <c>Send to group</c>), and how a
 /// script names another character (<c>world.sendTo</c>). What BeipMU calls puppets: a MUSH player's alts, moved
 /// together.
 /// </summary>

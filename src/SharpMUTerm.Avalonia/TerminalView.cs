@@ -32,6 +32,7 @@ internal sealed class TerminalView : Control
     private readonly DispatcherTimer _repeat;
     private readonly float _fontPoints;
     private readonly string? _family;
+    private readonly float _lineHeight;
     private CellRenderer _renderer;
     private double _scale = 1;
     private int _invalidatePending;
@@ -50,12 +51,14 @@ internal sealed class TerminalView : Control
     private readonly TextBlock _tipText;
     private readonly DispatcherTimer _tipTimer;
 
-    public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family)
+    public TerminalView(AvaloniaConsoleDriver driver, SKColor foreground, SKColor background, float fontPoints, string? family, float lineHeight = 1f)
     {
         _driver = driver;
         _fontPoints = fontPoints;
         _family = family;
-        _renderer = new CellRenderer(new CellFonts(fontPoints, family), foreground, background);
+        _lineHeight = lineHeight;
+        _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
+        _driver.Pointer.CellHeightMeasured = CellSize.Height;
         Focusable = true;
         ClipToBounds = true;
         Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -63,7 +66,7 @@ internal sealed class TerminalView : Control
         _driver.FrameReady += OnFrameReady;
         _repeat = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Input, (_, _) => RepeatPress());
 
-        _tipText = new TextBlock { Foreground = Brush(foreground), FontSize = 12, MaxWidth = 420, TextWrapping = TextWrapping.Wrap };
+        _tipText = new TextBlock { Foreground = Brush(foreground), FontSize = NativeTokens.Body, MaxWidth = 420, TextWrapping = TextWrapping.Wrap };
         _tip = new Popup
         {
             PlacementTarget = this,
@@ -75,7 +78,7 @@ internal sealed class TerminalView : Control
                 Background = Brush(Mix(background, foreground, 0.12f)),
                 BorderBrush = Brush(Mix(background, foreground, 0.35f)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(3),
+                CornerRadius = new CornerRadius(NativeTokens.RadiusS),
                 Padding = new Thickness(7, 4),
                 Child = _tipText,
             },
@@ -91,17 +94,82 @@ internal sealed class TerminalView : Control
             InvalidateVisual();
         });
         pointer.MenuRequested += (_, items) => Dispatcher.UIThread.Post(() => OpenMenu(items));
+        pointer.ModelMenuRequested += (_, menu, dispatch) => Dispatcher.UIThread.Post(() => OpenMenu(NativeMenu.Build(menu, dispatch, PlacementMode.Pointer, this)));
     }
+
+    /// <summary>
+    /// A screen reader finds the window in front's newest lines here, as a read-only document
+    /// (<see cref="TerminalViewAutomationPeer"/>), rather than an unnamed picture of cells.
+    /// </summary>
+    protected override global::Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer() =>
+        new TerminalViewAutomationPeer(this, _driver.Announcer);
+
+    /// <summary>The cell size in logical units, for placing a native view over cells (<see cref="DesktopLayer"/>).</summary>
+    internal Size CellExtent => CellSize;
+
+    /// <summary>The cells' text size in logical units: the size a native view sets game text in to read as the cells do.</summary>
+    internal double CellTextSize => _renderer.Fonts.Size / _scale;
+
+    /// <summary>What draws the cells, for a native view that matches their colours.</summary>
+    internal CellRenderer Renderer => _renderer;
+
+    /// <summary>The driver this view paints.</summary>
+    internal AvaloniaConsoleDriver Driver => _driver;
+
+    /// <summary>
+    /// Whether the client's header is the cells' first row, so a blank cell there moves the window as a title bar
+    /// would. False when the window draws the header itself (<see cref="NativeHeader"/>): the first row is then a
+    /// pane's tab strip, whose blank run is the client's and never a handle.
+    /// </summary>
+    internal bool CellsHoldHeader { get; set; } = true;
+
+    /// <summary>
+    /// Whether this view draws the command line's field around the bars' rows (<see cref="HostChrome.Input"/>): the
+    /// grid is then <see cref="NativeLayout.FieldReserve"/> shorter, and a frame carrying a band
+    /// (<see cref="ScreenFrame.Band"/>) draws its rows that much lower inside a padded, rounded field.
+    /// </summary>
+    internal bool DrawsInputField { get; set; }
+
+    /// <summary>The plane the field's strip is painted on: the backdrop the status row and the sidebar sit on.</summary>
+    internal SKColor? FooterPlane { get; set; }
+
+    /// <summary>
+    /// The hairline a pane divider is drawn as (<see cref="ScreenFrame.Dividers"/>): the native tokens' rule, set with the
+    /// pane chrome. Null until then, when it is a faint step off the cells' background.
+    /// </summary>
+    internal SKColor? DividerRule { get; set; }
+
+    /// <summary>The vertical pixels the field takes beside the rows it frames: none unless the view draws it.</summary>
+    private double FieldReserve => DrawsInputField ? NativeLayout.FieldReserve : 0;
+
+    /// <summary>
+    /// The top of screen row <paramref name="row"/> at <paramref name="column"/> in logical units: rows of a band sit lower
+    /// by the field's top padding, in the columns the band spans (all of them, unless the bars are in the output's column).
+    /// </summary>
+    internal double RowTop(int row, int column)
+    {
+        var top = row * CellSize.Height;
+        var frame = _driver.Frame;
+        return DrawsInputField && frame.Band is { } band && row >= band.Top && band.Spans(column, frame.Width)
+            ? top + NativeLayout.FieldTop
+            : top;
+    }
+
+    /// <summary>
+    /// Raised on the window's thread after a new frame is taken for painting, and when the cell size or the view's
+    /// size changes: when anything placed over cells may need to move.
+    /// </summary>
+    internal event Action? Repainted;
 
     /// <summary>The cell size in logical units, for mapping a pointer position to a cell.</summary>
     private Size CellSize => new(_renderer.Fonts.CellWidth / _scale, _renderer.Fonts.CellHeight / _scale);
 
     /// <summary>The grid a window of <paramref name="size"/> holds, in whole cells.</summary>
     public (int Columns, int Rows) GridFor(Size size) =>
-        (Math.Max(20, (int)(size.Width / CellSize.Width)), Math.Max(8, (int)(size.Height / CellSize.Height)));
+        (Math.Max(20, (int)(size.Width / CellSize.Width)), Math.Max(8, (int)((size.Height - FieldReserve) / CellSize.Height)));
 
     /// <summary>The window size that holds a grid of <paramref name="columns"/> × <paramref name="rows"/>.</summary>
-    public Size SizeFor(int columns, int rows) => new(columns * CellSize.Width, rows * CellSize.Height);
+    public Size SizeFor(int columns, int rows) => new(columns * CellSize.Width, (rows * CellSize.Height) + FieldReserve);
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -116,14 +184,93 @@ internal sealed class TerminalView : Control
     {
         base.OnSizeChanged(e);
         var (columns, rows) = GridFor(e.NewSize);
+
+        // The width a terminal this window's size would have, sidebar and all, said before the grid moves: the
+        // client's narrow layout reads it with the resize, and it does not change when the sidebar folds.
+        _driver.Pointer.WindowColumnsMeasured = Math.Max(columns, (int)((e.NewSize.Width + Margin.Left + Margin.Right) / CellSize.Width));
         _driver.Resize(columns, rows);
+        Repainted?.Invoke();
     }
 
     public override void Render(DrawingContext context)
     {
-        context.Custom(new FrameDraw(new Rect(Bounds.Size), _driver.Frame, _driver.Pictures, _renderer, _scale));
+        var frame = _driver.Frame;
+        var band = DrawsInputField ? frame.Band : null;
+        IReadOnlyList<FieldBar> bars = band is null ? [] : BarsOf(frame, band);
+        _fieldBars = bars;
+        var rule = DividerRule ?? Mix(_renderer.DefaultBackground, _renderer.DefaultForeground, 0.12f);
+        context.Custom(new FrameDraw(
+            new Rect(Bounds.Size), frame, _driver.Pictures, _renderer, _scale, band, FooterPlane ?? Darker(_renderer.DefaultBackground), bars, rule));
+        if (band is not null)
+        {
+            DrawFieldText(context, frame, band, bars);
+        }
+
         DrawHover(context);
         DrawScrollbars(context);
+    }
+
+    /// <summary>
+    /// One command line inside the field: its screen rows, the column its typed text starts at (past the prompt's cells),
+    /// and how far that text is drawn to the left (<paramref name="Shift"/>, logical units) so it starts a mono space after
+    /// the prompt drawn in the UI face, which is narrower than the cells it covers. The cells do not move: only the drawing,
+    /// the caret drawn with it, and the pointer's mapping back to a cell (<see cref="Cell"/>) are shifted.
+    /// </summary>
+    internal readonly record struct FieldBar(int Top, int End, int TextStart, double PromptWidth, double Shift);
+
+    /// <summary>The bars as last drawn, for mapping the pointer: the same shifts the paint used.</summary>
+    private IReadOnlyList<FieldBar> _fieldBars = [];
+
+    private (string Text, double Width) _promptMeasure = ("", 0);
+
+    /// <summary>The prompt's width in the UI face it is drawn in, in logical units; the last one is remembered.</summary>
+    private double PromptWidth(string text)
+    {
+        if (_promptMeasure.Text == text)
+        {
+            return _promptMeasure.Width;
+        }
+
+        var width = PromptText(text, SKColors.White, double.PositiveInfinity).WidthIncludingTrailingWhitespace;
+        _promptMeasure = (text, width);
+        return width;
+    }
+
+    private static FormattedText PromptText(string text, SKColor ink, double maxWidth) =>
+        new(text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(NativeTokens.UiFont, FontStyle.Normal, FontWeight.SemiBold), NativeTokens.Input, Brush(ink))
+        {
+            MaxTextWidth = maxWidth,
+            MaxLineCount = 1,
+            Trimming = TextTrimming.CharacterEllipsis,
+        };
+
+    /// <summary>
+    /// Each bar in <paramref name="band"/>: from its prompt's row to the next prompt's (or the band's end), its text a
+    /// mono space after the prompt as the UI face draws it. Internal for tests.
+    /// </summary>
+    internal IReadOnlyList<FieldBar> BarsOf(ScreenFrame frame, InputBand band)
+    {
+        var cell = CellSize;
+        var end = Math.Min(frame.Height, band.Top + band.Rows);
+        var prompts = band.Prompts.Where(p => p.Row >= band.Top && p.Row < end).OrderBy(p => p.Row).ToList();
+        var bars = new List<FieldBar>(prompts.Count);
+        for (var i = 0; i < prompts.Count; i++)
+        {
+            var prompt = prompts[i];
+            var to = i + 1 < prompts.Count ? prompts[i + 1].Row : end;
+            var start = Math.Min(frame.Width, band.From + band.Pad + prompt.Text.Length);
+            var trimmed = prompt.Text.TrimEnd();
+            var width = trimmed.Length == 0 ? 0 : PromptWidth(trimmed);
+            var room = (start - band.From - band.Pad) * cell.Width;
+            var shift = trimmed.Length == 0 ? 0 : Math.Max(0, room - width - cell.Width);
+
+            // Whole device pixels, so the glyphs land on the pixel grid the unshifted ones would.
+            shift = Math.Round(shift * _scale) / _scale;
+            bars.Add(new FieldBar(prompt.Row, to, start, width, shift));
+        }
+
+        return bars;
     }
 
     /// <summary>
@@ -139,8 +286,20 @@ internal sealed class TerminalView : Control
 
         var cell = CellSize;
         var area = _target.Area;
-        var rect = new Rect(area.X * cell.Width, area.Y * cell.Height, area.Width * cell.Width, area.Height * cell.Height);
+        var rect = new Rect(area.X * cell.Width, RowTop(area.Y, area.X), area.Width * cell.Width, area.Height * cell.Height);
         context.DrawRectangle(Brush(_renderer.DefaultForeground, 0x24), null, rect.Inflate(new Thickness(1, 0)), 2, 2);
+    }
+
+    /// <summary>
+    /// Measures the cells at <paramref name="scale"/> before the view is attached, so a window sized from
+    /// <see cref="SizeFor"/> before it is shown is sized in the cells it will have on its screen.
+    /// </summary>
+    internal void PrepareScale(double scale)
+    {
+        if (scale > 0 && Math.Abs(scale - _scale) > 0.001)
+        {
+            Rescale(scale);
+        }
     }
 
     private void Rescale(double scale)
@@ -149,9 +308,11 @@ internal sealed class TerminalView : Control
         // with them. A change of display scale is rare enough that one set of leaked fonts is the cheaper fix.
         _scale = scale;
         _renderer = new CellRenderer(
-            new CellFonts((float)(_fontPoints * scale), _family),
+            new CellFonts((float)(_fontPoints * scale), _family, _lineHeight),
             _renderer.DefaultForeground,
             _renderer.DefaultBackground);
+        _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        Repainted?.Invoke();
     }
 
     private void OnFrameReady()
@@ -163,6 +324,7 @@ internal sealed class TerminalView : Control
             {
                 Volatile.Write(ref _invalidatePending, 0);
                 InvalidateVisual();
+                Repainted?.Invoke();
             }, DispatcherPriority.Render);
         }
     }
@@ -172,6 +334,15 @@ internal sealed class TerminalView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        HandleKeyDown(e);
+    }
+
+    /// <summary>
+    /// A key, as the cells take it: the window's own chords first, then the client. Also how a key pressed in another of
+    /// the window's windows (a floating panel) reaches the command line, so the player keeps typing.
+    /// </summary>
+    internal void HandleKeyDown(KeyEventArgs e)
+    {
         _swallowText = null;
         var mapped = KeyMapper.FromKeyDown(e.Key, e.KeyModifiers);
 
@@ -194,7 +365,9 @@ internal sealed class TerminalView : Control
         if (mapped is { } key)
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
-            _swallowText = key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control)
+            // So is a numpad digit, which KeyMapper has already sent with its digit.
+            _swallowText = (key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || key.Key is >= ConsoleKey.NumPad0 and <= ConsoleKey.NumPad9
                 ? key.KeyChar
                 : null;
             _driver.RaiseKey(key);
@@ -205,6 +378,12 @@ internal sealed class TerminalView : Control
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
+        HandleTextInput(e);
+    }
+
+    /// <summary>Typed text, as the cells take it; also what a floating panel's window forwards.</summary>
+    internal void HandleTextInput(TextInputEventArgs e)
+    {
         foreach (var key in KeyMapper.FromText(e.Text))
         {
             if (_swallowText is { } swallowed && char.ToLowerInvariant(swallowed) == char.ToLowerInvariant(key.KeyChar))
@@ -258,14 +437,7 @@ internal sealed class TerminalView : Control
         var modifiers = Modifiers(e.KeyModifiers);
         if (button == PointerButton.Right)
         {
-            // The client answers a right press with a menu, which takes the pointer, so this view never sees the
-            // release: the click is sent whole, and nothing is left held to repeat or to turn into a drag.
-            _driver.RaiseMouse(_mouse.Pressed(button, cell, 1, modifiers), cell);
-            if (_mouse.Released(button, cell, modifiers) is { } released)
-            {
-                _driver.RaiseMouse(released, cell);
-            }
-
+            SendRightClick(cell, modifiers);
             e.Handled = true;
             return;
         }
@@ -275,6 +447,25 @@ internal sealed class TerminalView : Control
         _repeat.Start();
         e.Handled = true;
     }
+
+    /// <summary>
+    /// A right click on a cell, sent whole. The client answers a right press with a menu, which takes the pointer, so
+    /// the release would never arrive: nothing is left held to repeat or to turn into a drag.
+    /// </summary>
+    private void SendRightClick(System.Drawing.Point cell, PointerModifiers modifiers)
+    {
+        _driver.RaiseMouse(_mouse.Pressed(PointerButton.Right, cell, 1, modifiers), cell);
+        if (_mouse.Released(PointerButton.Right, cell, modifiers) is { } released)
+        {
+            _driver.RaiseMouse(released, cell);
+        }
+    }
+
+    /// <summary>
+    /// A right click a native view over the cells took and hands on (<see cref="MapCanvas"/>), so the pane's menu is
+    /// the same over a native view as over its cells. <paramref name="position"/> is in this view's coordinates.
+    /// </summary>
+    internal void ForwardRightClick(Point position, KeyModifiers keys) => SendRightClick(Cell(position), Modifiers(keys));
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -347,23 +538,34 @@ internal sealed class TerminalView : Control
         TopLevel.GetTopLevel(this) is Window { WindowDecorations: not WindowDecorations.Full } window ? window : null;
 
     /// <summary>A press that moves or resizes an undecorated window instead of reaching the client (<see cref="WindowChrome"/>).</summary>
-    private bool TryWindowGesture(PointerPressedEventArgs e, Point position)
+    private bool TryWindowGesture(PointerPressedEventArgs e, Point position) => TryWindowGesture(e, position, emptyChrome: false);
+
+    /// <summary>
+    /// A left press on empty space of a native view over the header (<see cref="NativeHeader"/>): the window's edge
+    /// band resizes, as anywhere, and the rest moves the window and double-click maximises — what a blank header cell
+    /// does, whatever cell happens to lie under the native view. Returns false with a title bar, where it does nothing.
+    /// </summary>
+    internal bool WindowGestureFromChrome(PointerPressedEventArgs e) => TryWindowGesture(e, e.GetPosition(this), emptyChrome: true);
+
+    private bool TryWindowGesture(PointerPressedEventArgs e, Point position, bool emptyChrome)
     {
         if (Undecorated is not { } window)
         {
             return false;
         }
 
-        if (window.WindowState == WindowState.Normal && WindowChrome.EdgeAt(position, Bounds.Size) is { } edge)
+        if (EdgeAt(position) is { } edge)
         {
             window.BeginResizeDrag(edge, e);
             return true;
         }
 
-        if (!WindowChrome.IsMoveHandle(_driver.Frame, Cell(position)))
+        if (!emptyChrome && (!CellsHoldHeader || !WindowChrome.IsMoveHandle(_driver.Frame, Cell(position))))
         {
             return false;
         }
+
+        WindowGestures++;
 
         if (e.ClickCount == 2)
         {
@@ -377,7 +579,40 @@ internal sealed class TerminalView : Control
         return true;
     }
 
-    private void ToggleMaximised()
+    /// <summary>
+    /// The window edge a pointer at <paramref name="position"/> (in this view's coordinates, which may lie outside it —
+    /// a native view beside the cells asks with its own pointer) would resize, or null. Measured against the
+    /// <em>window</em>: the view does not reach the window's top or left edge when the window draws its own header
+    /// and sidebar there.
+    /// </summary>
+    private WindowEdge? EdgeAt(Point position) =>
+        Undecorated is { WindowState: WindowState.Normal } window && this.TranslatePoint(position, window) is { } inWindow
+            ? WindowChrome.EdgeAt(inWindow, window.ClientSize)
+            : null;
+
+    /// <summary>The resize cursor for a native view's pointer over a window edge, or null when it is not over one.</summary>
+    internal StandardCursorType? EdgeCursorFromChrome(PointerEventArgs e) =>
+        EdgeAt(e.GetPosition(this)) is { } edge ? WindowChrome.CursorFor(edge) : null;
+
+    /// <summary>
+    /// A left press on a native view beside the cells that lands in the window's resize band: begins the resize, as a
+    /// press on a cell there does. Returns false off the band, and with a title bar.
+    /// </summary>
+    internal bool ResizeFromChrome(PointerPressedEventArgs e)
+    {
+        if (Undecorated is not { } window || EdgeAt(e.GetPosition(this)) is not { } edge)
+        {
+            return false;
+        }
+
+        window.BeginResizeDrag(edge, e);
+        return true;
+    }
+
+    /// <summary>How many presses this view has turned into a move or a maximise. Internal for tests.</summary>
+    internal int WindowGestures { get; private set; }
+
+    internal void ToggleMaximised()
     {
         if (TopLevel.GetTopLevel(this) is Window window)
         {
@@ -391,7 +626,7 @@ internal sealed class TerminalView : Control
     /// </summary>
     private void UpdateCursor(Point position)
     {
-        var edge = Undecorated is { WindowState: WindowState.Normal } && !_mouse.IsHeld ? WindowChrome.EdgeAt(position, Bounds.Size) : null;
+        var edge = !_mouse.IsHeld ? EdgeAt(position) : null;
         var cursor = edge is { } e ? WindowChrome.CursorFor(e)
             : _scrollDrag is not null || _barHovered is not null ? StandardCursorType.Arrow
             : CursorFor(_target.Shape);
@@ -472,44 +707,14 @@ internal sealed class TerminalView : Control
     }
 
     /// <summary>The client's right-click menu, as a native one. Each entry runs on the client's thread by itself.</summary>
-    private void OpenMenu(IReadOnlyList<PointerMenuItem> items)
+    private void OpenMenu(IReadOnlyList<PointerMenuItem> items) => OpenMenu(NativeMenu.Build(items, PlacementMode.Pointer, this));
+
+    private void OpenMenu(ContextMenu menu)
     {
         CloseTip();
-        var menu = new ContextMenu { Placement = PlacementMode.Pointer, PlacementTarget = this };
-        Grid.SetIsSharedSizeScope(menu, true);
-        foreach (var item in items)
-        {
-            if (item.IsSeparator)
-            {
-                menu.Items.Add(new Separator());
-                continue;
-            }
-
-            var entry = new MenuItem { Header = MenuHeader(item), IsEnabled = item.Enabled };
-            entry.Click += (_, _) => item.Run();
-            menu.Items.Add(entry);
-        }
-
         menu.Closed += (_, _) => Focus();
         OpenedMenu = menu;
         menu.Open(this);
-    }
-
-    /// <summary>A menu entry's label with its key after it, the keys lined up in a column of their own.</summary>
-    private static Control MenuHeader(PointerMenuItem item)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "label" });
-        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto) { SharedSizeGroup = "hint" });
-        grid.Children.Add(new TextBlock { Text = item.Label, VerticalAlignment = VerticalAlignment.Center });
-        if (item.Hint is { } hint)
-        {
-            var key = new TextBlock { Text = hint, Opacity = 0.6, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(key, 1);
-            grid.Children.Add(key);
-        }
-
-        return grid;
     }
 
     // ── Scrollbars ──────────────────────────────────────────────────────────────────────────────
@@ -523,9 +728,25 @@ internal sealed class TerminalView : Control
     private sealed record ScrollDrag(string WindowId, double Grab);
 
     /// <summary>A bar's track and thumb in logical pixels, or null when the pane has nothing to scroll.</summary>
+    /// <summary>The windows a native view lies over (<see cref="DesktopLayer"/>): their panes draw no overlay scrollbar.</summary>
+    internal IReadOnlySet<string> CoveredWindows
+    {
+        get => _covered;
+        set
+        {
+            if (!_covered.SetEquals(value))
+            {
+                _covered = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private IReadOnlySet<string> _covered = new HashSet<string>(StringComparer.Ordinal);
+
     private (Rect Zone, Rect Thumb, double Travel)? BarGeometry(PaneScrollbar bar)
     {
-        if (bar.ContentRows <= bar.ViewportRows || bar.ViewportRows <= 0)
+        if (bar.ContentRows <= bar.ViewportRows || bar.ViewportRows <= 0 || _covered.Contains(bar.WindowId))
         {
             return null;
         }
@@ -612,6 +833,23 @@ internal sealed class TerminalView : Control
         (byte)(from.Green + (to.Green - from.Green) * amount),
         (byte)(from.Blue + (to.Blue - from.Blue) * amount));
 
+    /// <summary>
+    /// The command-line field's one-pixel edge for a field filled <paramref name="fill"/>. On a dark fill it is the fill
+    /// lifted by the client's focus step (×1.6), which is how the mockup's <c>#3a4f73</c> sits on its <c>#233049</c> and
+    /// keeps a tinted band's hue; a light fill leans toward the ink instead, since a lift there clamps at white.
+    /// </summary>
+    internal static SKColor FieldEdge(SKColor fill, SKColor ink)
+    {
+        var luma = ((fill.Red * 299) + (fill.Green * 587) + (fill.Blue * 114)) / 1000;
+        if (luma >= 128)
+        {
+            return Mix(fill, ink, 0.22f);
+        }
+
+        static byte Lift(byte c) => (byte)Math.Clamp(Math.Round(c * 1.6), 0, 255);
+        return new SKColor(Lift(fill.Red), Lift(fill.Green), Lift(fill.Blue));
+    }
+
     private void RepeatPress()
     {
         if (_mouse.Repeat() is { } repeat)
@@ -630,6 +868,23 @@ internal sealed class TerminalView : Control
         var frame = _driver.Frame;
         var x = Math.Clamp((int)(position.X / size.Width), 0, Math.Max(0, frame.Width - 1));
         var y = Math.Clamp((int)(position.Y / size.Height), 0, Math.Max(0, frame.Height - 1));
+
+        // Below the panes, the field: its padding is the band's first and last rows, and its rows sit lower.
+        if (DrawsInputField && frame.Band is { } band && position.Y >= band.Top * size.Height && band.Spans(x, frame.Width))
+        {
+            var inside = (position.Y - (band.Top * size.Height) - NativeLayout.FieldTop) / size.Height;
+            y = Math.Clamp(band.Top + (int)Math.Floor(inside), band.Top, Math.Min(frame.Height, band.Top + band.Rows) - 1);
+
+            // The typed text is drawn shifted left to meet the prompt; a press on it is a press on the cell drawn there.
+            foreach (var bar in _fieldBars)
+            {
+                if (y >= bar.Top && y < bar.End && bar.Shift > 0 && position.X >= (bar.TextStart * size.Width) - bar.Shift)
+                {
+                    x = Math.Clamp((int)((position.X + bar.Shift) / size.Width), Math.Min(bar.TextStart, frame.Width - 1), Math.Max(0, frame.Width - 1));
+                }
+            }
+        }
+
         return new System.Drawing.Point(x, y);
     }
 
@@ -639,7 +894,9 @@ internal sealed class TerminalView : Control
         | ((keys & KeyModifiers.Control) != 0 ? PointerModifiers.Ctrl : 0);
 
     /// <summary>One frame, drawn straight onto the compositor's Skia canvas.</summary>
-    private sealed class FrameDraw(Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale)
+    private sealed class FrameDraw(
+        Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale, InputBand? band, SKColor plane,
+        IReadOnlyList<FieldBar> bars, SKColor rule)
         : ICustomDrawOperation
     {
         public Rect Bounds { get; } = bounds;
@@ -647,7 +904,14 @@ internal sealed class TerminalView : Control
         public bool HitTest(Point p) => Bounds.Contains(p);
 
         public bool Equals(ICustomDrawOperation? other) =>
-            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds;
+            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane
+            && draw.Rule == Rule && draw.Bars.SequenceEqual(Bars);
+
+        private SKColor Rule => rule;
+
+        private IReadOnlyList<FieldBar> Bars => bars;
+
+        private SKColor Plane => plane;
 
         private ScreenFrame Frame => frame;
 
@@ -663,12 +927,440 @@ internal sealed class TerminalView : Control
             canvas.Save();
             canvas.ClipRect(new SKRect(0, 0, (float)Bounds.Width, (float)Bounds.Height));
             canvas.Scale((float)(1 / scale));
+            if (band is null)
+            {
+                renderer.Render(canvas, frame, pictures);
+            }
+            else
+            {
+                RenderWithField(canvas, band);
+            }
+
+            DrawDividers(canvas);
+            canvas.Restore();
+        }
+
+        /// <summary>
+        /// Each pane divider's cells as the two panes' planes meeting, read off the cells beside it, with the tokens'
+        /// hairline centred where they meet; a lit divider (hovered or dragged) keeps the cells' own hover colour, wider.
+        /// The cells themselves, and so the divider's hit area, are the client's as in any host. Device pixels.
+        /// </summary>
+        private void DrawDividers(SKCanvas canvas)
+        {
+            var dividers = frame.Dividers;
+            if (dividers.Count == 0)
+            {
+                return;
+            }
+
+            var cw = renderer.Fonts.CellWidth;
+            var ch = renderer.Fonts.CellHeight;
+            var s = (float)scale;
+            var hair = DeviceHairline; // one device pixel at every scale (NativeTokens.Hairline); 1.5 px blurred two rows at 150%
+            var wide = Math.Max(2f, MathF.Round(3 * s));
+            using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+            var meets = new List<(SKRect Rect, SKColor Colour)>();
+            foreach (var divider in dividers)
+            {
+                var x0 = Math.Max(0, divider.Area.X);
+                var y0 = Math.Max(0, divider.Area.Y);
+                var x1 = Math.Min(frame.Width, divider.Area.X + divider.Area.Width);
+                var y1 = Math.Min(frame.Height, divider.Area.Y + divider.Area.Height);
+                if (band is { } field && field.Spans(x0, frame.Width))
+                {
+                    y1 = Math.Min(y1, field.Top);
+                }
+
+                if (x1 <= x0 || y1 <= y0)
+                {
+                    continue;
+                }
+
+                var w = divider.Lit ? wide : hair;
+                var colour = divider.Lit ? renderer.Background(frame[x0, y0]) : rule;
+                if (divider.Vertical)
+                {
+                    float left = x0 * cw, right = x1 * cw;
+                    var at = HairlineAt(left, right, w);
+                    // Beside a band in the output's column the panes run on under the grid, through the field's padding.
+                    var tail = band is { Columns: not null } inColumn && y1 == frame.Height && !inColumn.Spans(x0, frame.Width)
+                        ? Math.Max(0, (float)(Bounds.Height * scale) - (y1 * ch))
+                        : 0;
+                    for (var y = y0; y < y1; y++)
+                    {
+                        var h = y == y1 - 1 ? ch + tail : ch;
+                        // A band's rows beside the divider are the field's strip, not the bar cells under it.
+                        paint.Color = band is { } beside && y >= beside.Top && beside.Spans(x0 - 1, frame.Width)
+                            ? plane
+                            : PlaneBeside(x0 - 1, y, -1, 0);
+                        canvas.DrawRect(left, y * ch, at - left, h, paint);
+                        paint.Color = band is { } after && y >= after.Top && after.Spans(x1, frame.Width)
+                            ? plane
+                            : PlaneBeside(x1, y, 1, 0);
+                        canvas.DrawRect(at + w, y * ch, right - at - w, h, paint);
+                    }
+
+                    paint.Color = colour;
+                    canvas.DrawRect(at, y0 * ch, w, ((y1 - y0) * ch) + tail, paint);
+
+                    // The field's strip beside the divider has the panes' rule along its top (RenderWithField); it runs on
+                    // through this side's half cell to the hairline, as a horizontal divider's does.
+                    if (band is { } strip && strip.Top >= y0 && strip.Top < y1)
+                    {
+                        var stripTop = strip.Top * ch;
+                        if (strip.Spans(x0 - 1, frame.Width))
+                        {
+                            meets.Add((new SKRect(left, stripTop, at, stripTop + hair), rule));
+                        }
+
+                        if (strip.Spans(x1, frame.Width))
+                        {
+                            meets.Add((new SKRect(at + w, stripTop, right, stripTop + hair), rule));
+                        }
+                    }
+                }
+                else
+                {
+                    float top = y0 * ch, bottom = y1 * ch;
+                    var at = HairlineAt(top, bottom, w);
+                    // A divider reaching the grid's last column runs on over the leftover pixels right of the grid, where
+                    // the cells' last background (the rule's) would otherwise show as a block at the window's edge.
+                    var past = x1 == frame.Width ? Math.Clamp((float)(Bounds.Width * scale) - (x1 * cw), 0, cw) : 0;
+                    for (var x = x0; x < x1; x++)
+                    {
+                        var cellWidth = x == x1 - 1 ? cw + past : cw;
+                        paint.Color = PlaneBeside(x, y0 - 1, 0, -1);
+                        canvas.DrawRect(x * cw, top, cellWidth, at - top, paint);
+                        paint.Color = PlaneBeside(x, y1, 0, 1);
+                        canvas.DrawRect(x * cw, at + w, cellWidth, bottom - at - w, paint);
+                    }
+
+                    // A horizontal divider ending beside a vertical one runs on to that one's hairline, through the half of
+                    // its cell this side, so the two rules meet as the mockups' do rather than stopping half a cell short.
+                    var start = (float)(x0 * cw);
+                    var end = (x1 * cw) + past;
+                    if (VerticalHairlineBeside(x0 - 1, y0, s) is { } before)
+                    {
+                        start = before.Right;
+                    }
+
+                    if (VerticalHairlineBeside(x1, y0, s) is { } after)
+                    {
+                        end = after.Left;
+                    }
+
+                    meets.Add((new SKRect(start, at, end, at + w), colour));
+                }
+            }
+
+            // Drawn last, so a vertical divider's planes painted after this one do not cover the run into its cell.
+            foreach (var (rect, colour) in meets)
+            {
+                paint.Color = colour;
+                canvas.DrawRect(rect, paint);
+            }
+        }
+
+        /// <summary>The device-pixel hairline of the vertical divider covering cell (<paramref name="x"/>, <paramref name="y"/>), or null.</summary>
+        private SKRect? VerticalHairlineBeside(int x, int y, float s)
+        {
+            foreach (var divider in frame.Dividers)
+            {
+                if (divider.Vertical && x >= divider.Area.X && x < divider.Area.X + divider.Area.Width
+                    && y >= divider.Area.Y && y < divider.Area.Y + divider.Area.Height)
+                {
+                    return Hairline(divider, renderer.Fonts.CellWidth, renderer.Fonts.CellHeight, frame.Width, frame.Height, s);
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The plane of the pane beside a divider at (<paramref name="x"/>, <paramref name="y"/>), stepping along another
+        /// divider that crosses there (along it, not across it) so a junction takes a pane's plane, not a rule's.
+        /// </summary>
+        private SKColor PlaneBeside(int x, int y, int dx, int dy)
+        {
+            for (var step = 0; step < 4; step++)
+            {
+                x = Math.Clamp(x, 0, frame.Width - 1);
+                y = Math.Clamp(y, 0, frame.Height - 1);
+                var cx = x;
+                var cy = y;
+                if (!frame.Dividers.Any(d => cx >= d.Area.X && cx < d.Area.X + d.Area.Width && cy >= d.Area.Y && cy < d.Area.Y + d.Area.Height))
+                {
+                    break;
+                }
+
+                if (dx != 0)
+                {
+                    y = y > 0 ? y - 1 : y + 1;
+                }
+                else
+                {
+                    x = x > 0 ? x - 1 : x + 1;
+                }
+            }
+
+            return renderer.Background(frame[Math.Clamp(x, 0, frame.Width - 1), Math.Clamp(y, 0, frame.Height - 1)]);
+        }
+
+        /// <summary>
+        /// The panes as they are, then the field: the strip across the bottom on the backdrop, the rounded field in the
+        /// bars' own band colour (read off the cells, so armed, idle and a character's tint are the cells' own), the
+        /// bars' rows drawn inside it lower by its top padding, and a one-pixel edge. Device pixels throughout.
+        /// </summary>
+        private void RenderWithField(SKCanvas canvas, InputBand band)
+        {
+            var ch = renderer.Fonts.CellHeight;
+            var cw = renderer.Fonts.CellWidth;
+            var s = (float)scale;
+            var width = (float)(Bounds.Width * scale);
+            var height = (float)(Bounds.Height * scale);
+            var top = band.Top * ch;
+
+            // The band's columns: the whole grid, or the output's column when the bars are a row of it
+            // (HostChrome.InputInColumn), and then every pane beside it runs on down to the footer.
+            var left = band.From * cw;
+            // A band that ends at the grid's last column runs on over the view's leftover pixels right of it.
+            var right = band.Columns is null || band.To(frame.Width) >= frame.Width ? width : band.To(frame.Width) * cw;
+
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, 0, width, height));
+            canvas.ClipRect(new SKRect(left, top, right, height), SKClipOperation.Difference);
             renderer.Render(canvas, frame, pictures);
             canvas.Restore();
+
+            using var paint = new SKPaint { IsAntialias = true };
+            if (band.Columns is not null && frame.Height > 0)
+            {
+                // Under the grid beside the band, the pixels the field's padding takes: the last row's own planes, carried down.
+                var gridBottom = frame.Height * ch;
+                for (var x = 0; x < frame.Width && gridBottom < height; x++)
+                {
+                    if (!band.Spans(x, frame.Width))
+                    {
+                        paint.Color = renderer.Background(frame[x, frame.Height - 1].Background);
+                        canvas.DrawRect(x * cw, gridBottom, x == frame.Width - 1 ? width - (x * cw) : cw, height - gridBottom, paint);
+                    }
+                }
+            }
+
+            var field = FieldRect(band, cw, ch, frame.Width, s, width);
+            var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.From + band.Pad), band.Top].Background);
+            paint.Color = plane;
+            canvas.DrawRect(left, top, right - left, height - top, paint);
+            // The strip's top edge is the panes' own rule (the mockups' #2c3447), as a divider between two panes is.
+            paint.Color = Rule;
+            canvas.DrawRect(left, top, right - left, DeviceHairline, paint);
+
+            var radius = (float)(NativeTokens.RadiusM * scale);
+            var rounded = new SKRoundRect(field, radius);
+            paint.Color = fill;
+            canvas.DrawRoundRect(rounded, paint);
+
+            canvas.Save();
+            canvas.ClipRoundRect(rounded, SKClipOperation.Intersect, true);
+            canvas.Translate(0, (float)(NativeLayout.FieldTop * scale));
+
+            // The bars' rows only, and not the client's right padding, whose colour is the margin's rather than the band's.
+            var textRight = (band.To(frame.Width) - band.Pad) * cw;
+            if (bars.Count == 0)
+            {
+                canvas.ClipRect(new SKRect(left, top, textRight, (band.Top + band.Rows) * ch));
+                renderer.Render(canvas, frame, pictures);
+            }
+            else
+            {
+                // Each bar in two parts: the prompt's cells as they are (the UI-face prompt is drawn over them), then the
+                // typed text drawn its shift to the left, to start a mono space after the prompt.
+                foreach (var bar in bars)
+                {
+                    var shift = (float)(bar.Shift * scale);
+                    var meet = (bar.TextStart * cw) - shift;
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(left, bar.Top * ch, meet, bar.End * ch));
+                    renderer.Render(canvas, frame, pictures);
+                    canvas.Restore();
+
+                    canvas.Save();
+                    // Short of the right padding by the shift, so what comes in from the right is the field's fill.
+                    canvas.ClipRect(new SKRect(meet, bar.Top * ch, textRight - shift, bar.End * ch));
+                    canvas.Translate(-shift, 0);
+                    renderer.Render(canvas, frame, pictures);
+                    canvas.Restore();
+                }
+            }
+
+            canvas.Restore();
+
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = DeviceHairline;
+            paint.Color = FieldEdge(fill, renderer.DefaultForeground);
+            var edge = rounded;
+            edge.Deflate(paint.StrokeWidth / 2, paint.StrokeWidth / 2);
+            canvas.DrawRoundRect(edge, paint);
         }
 
         public void Dispose()
         {
         }
     }
+
+    /// <summary>
+    /// A hairline the frame draws (a pane divider, the strip's top rule, the field's edge), in device pixels: one at every
+    /// display scale, as <see cref="NativeTokens.Hairline"/> is everywhere else. Scaled with the display, it was 1.5 device
+    /// pixels at 150% and so a blend across two rows, which is what a blurred rule is.
+    /// </summary>
+    internal const float DeviceHairline = 1f;
+
+    /// <summary>Where a divider's hairline of width <paramref name="w"/> starts, centred between two cell edges (device pixels).</summary>
+    internal static float HairlineAt(float start, float end, float w) => MathF.Round(start + ((end - start - w) / 2));
+
+    /// <summary>
+    /// A divider's hairline in device pixels, as <c>DrawDividers</c> draws it (wider while lit), over the divider's whole
+    /// length in cells. Shared with <see cref="VerticalHairlines"/>, so a native view's rule run to it meets it exactly.
+    /// </summary>
+    internal static SKRect Hairline(PaneDividerOverlay divider, int cw, int ch, int columns, int rows, float scale)
+    {
+        var w = divider.Lit ? Math.Max(2f, MathF.Round(3 * scale)) : DeviceHairline;
+        var x0 = Math.Max(0, divider.Area.X);
+        var y0 = Math.Max(0, divider.Area.Y);
+        var x1 = Math.Min(columns, divider.Area.X + divider.Area.Width);
+        var y1 = Math.Min(rows, divider.Area.Y + divider.Area.Height);
+        if (divider.Vertical)
+        {
+            var at = HairlineAt(x0 * cw, x1 * cw, w);
+            return new SKRect(at, y0 * ch, at + w, y1 * ch);
+        }
+
+        var top = HairlineAt(y0 * ch, y1 * ch, w);
+        return new SKRect(x0 * cw, top, x1 * cw, top + w);
+    }
+
+    /// <summary>
+    /// Every vertical pane divider's hairline in this view's logical coordinates, from the frame on screen: where a native
+    /// view's horizontal rule beside a divider runs on to (<see cref="SeamRules"/>), so the two meet with no gap.
+    /// </summary>
+    internal IReadOnlyList<Rect> VerticalHairlines()
+    {
+        var frame = _driver.Frame;
+        var list = new List<Rect>();
+        foreach (var divider in frame.Dividers)
+        {
+            if (!divider.Vertical)
+            {
+                continue;
+            }
+
+            var r = Hairline(divider, _renderer.Fonts.CellWidth, _renderer.Fonts.CellHeight, frame.Width, frame.Height, (float)_scale);
+            if (r.Width > 0 && r.Height > 0)
+            {
+                // A divider reaching the grid's foot runs on below it beside a band in the output's column (DrawDividers'
+                // tail), where a native view at the foot of a column (DesktopLayer.BelowGrid) can meet it too.
+                var bottom = divider.Area.Y + divider.Area.Height >= frame.Height ? Math.Max(r.Bottom / _scale, Bounds.Height) : r.Bottom / _scale;
+                list.Add(new Rect(r.Left / _scale, r.Top / _scale, r.Width / _scale, bottom - (r.Top / _scale)));
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// The field's rectangle in device pixels: inset from the band's edges so the client's band-coloured padding columns
+    /// are its inner padding, from the strip's top padding to below the last row.
+    /// </summary>
+    internal static SKRect FieldRect(InputBand band, int cw, int ch, int columns, float scale, float viewWidth = 0)
+    {
+        // The mockup's 20 px from the grid's edge, as far as the padding columns leave the field its inner padding; every
+        // edge on a whole device pixel, so the field's 1 px border is one crisp pixel at 125% and 150%.
+        var inset = MathF.Round(Math.Max(4 * scale, Math.Min((float)(NativeLayout.FieldSide * scale), (band.Pad * cw) - (float)(NativeTokens.Space8 * scale))));
+        var top = (band.Top * ch) + MathF.Round((float)(NativeLayout.FieldOuter * scale));
+        var bottom = ((band.Top + band.Rows) * ch) + MathF.Round((float)((NativeLayout.FieldTop + NativeLayout.FieldInner) * scale));
+        // A band ending at the grid's last column measures its right inset from the view's edge, past the leftover pixels
+        // right of the grid, so the field sits as far in from the window's edge as from the sidebar's.
+        var end = band.To(columns) >= columns && viewWidth > columns * cw ? MathF.Floor(viewWidth) : band.To(columns) * cw;
+        return new SKRect((band.From * cw) + inset, top, end - inset, bottom);
+    }
+
+    /// <summary>
+    /// The prompt in the UI face, semibold, over the prompt's own cells; and the newline hint at the right of the first
+    /// row while the cells under it are blank — it stands down the moment the typed text reaches it.
+    /// </summary>
+    private void DrawFieldText(DrawingContext context, ScreenFrame frame, InputBand band, IReadOnlyList<FieldBar> bars)
+    {
+        var cell = CellSize;
+
+        // The band's first column inside its padding, and one past its last: the whole grid, or the output's column.
+        var at = band.From + band.Pad;
+        var end = band.To(frame.Width);
+        foreach (var prompt in band.Prompts)
+        {
+            var text = prompt.Text.TrimEnd();
+            if (text.Length == 0 || prompt.Row < 0 || prompt.Row >= frame.Height || at >= end)
+            {
+                continue;
+            }
+
+            var first = frame[at, prompt.Row];
+            var ink = Ink(frame, at, prompt.Row, text.Length);
+            // The plate hides the prompt's mono cells up to where the shifted text begins (BarsOf), never over that text.
+            var cells = Math.Min(text.Length, end - at) * cell.Width;
+            var room = Math.Min(prompt.Text.Length, end - at) * cell.Width;
+            var shift = bars.FirstOrDefault(b => b.Top == prompt.Row).Shift;
+            var plate = new Rect(at * cell.Width, RowTop(prompt.Row, at), Math.Max(0, room - shift), cell.Height);
+            context.FillRectangle(Brush(_renderer.Background(first.Background)), plate);
+            var formatted = PromptText(text, ink, cells + (2 * cell.Width));
+
+            // At the field's inner padding, as the mockup sets it, and the typed text a mono space after it (BarsOf).
+            context.DrawText(formatted, new Point(Math.Round(plate.X), plate.Y + ((cell.Height - formatted.Height) / 2)));
+        }
+
+        if (band.Hint.Length == 0 || band.Top >= frame.Height || at >= end)
+        {
+            return;
+        }
+
+        var hint = new FormattedText(
+            NativeKeys.Words(band.Hint), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(NativeTokens.UiFont), NativeTokens.Small, Brush(SKColors.White));
+        // Moved with the field's edge where the field runs on past the grid's last column (FieldRect).
+        var right = ((end - band.Pad) * cell.Width)
+            + (end >= frame.Width ? Math.Clamp(Bounds.Width - (frame.Width * cell.Width), 0, cell.Width) : 0);
+        var from = Math.Max(0, (int)Math.Floor((right - hint.Width) / cell.Width) - 2);
+        var promptEnd = at + (band.Prompts.FirstOrDefault(p => p.Row == band.Top)?.Text.Length ?? 0);
+        if (from <= promptEnd || frame.Caret is { Visible: true } caret && caret.Y == band.Top && caret.X >= from)
+        {
+            return;
+        }
+
+        for (var x = from; x < end - band.Pad; x++)
+        {
+            if (frame[x, band.Top].Rune.Value != ' ')
+            {
+                return;
+            }
+        }
+
+        var bandColour = _renderer.Background(frame[at, band.Top].Background);
+        hint.SetForegroundBrush(Brush(Mix(bandColour, _renderer.DefaultForeground, 0.6f)));
+        context.DrawText(hint, new Point(right - hint.Width, RowTop(band.Top, at) + ((cell.Height - hint.Height) / 2)));
+    }
+
+    /// <summary>The ink of the first non-blank cell of a run, the run's own colour.</summary>
+    private SKColor Ink(ScreenFrame frame, int x, int y, int length)
+    {
+        for (var i = x; i < Math.Min(frame.Width, x + length); i++)
+        {
+            if (frame[i, y].Rune.Value != ' ')
+            {
+                return _renderer.Foreground(frame[i, y].Foreground);
+            }
+        }
+
+        return _renderer.DefaultForeground;
+    }
+
+    private static SKColor Darker(SKColor colour) => Mix(colour, SKColors.Black, 0.25f);
 }

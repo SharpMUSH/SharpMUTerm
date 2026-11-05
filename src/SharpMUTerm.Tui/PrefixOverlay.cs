@@ -40,6 +40,12 @@ internal sealed class PrefixOverlay
     private readonly Action<ConsoleKeyInfo> _run;
 
     private Window? _window;
+
+    /// <summary>
+    /// The settings screens' palette for the active theme, so this popup follows Light and Solarized as they do
+    /// (<see cref="ScreenTheme"/>): its plane, frame and markup are resolved through it. Set by the app on a theme change.
+    /// </summary>
+    internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private PrefixFacts _current = PrefixFacts.Fresh;
 
     /// <summary>
@@ -67,6 +73,9 @@ internal sealed class PrefixOverlay
     /// <summary>What the panel is showing — or would show if it opened now — for a headless test to read.</summary>
     internal IReadOnlyList<string> Lines => PrefixPanel.Render(Current);
 
+    /// <summary>The model the panel was last opened with, for the surface parity test.</summary>
+    internal SharpMUTerm.Client.Chrome.HeaderPrefix? Drawn { get; private set; }
+
     /// <summary>The keymap it is drawing, or would draw, availability and all.</summary>
     internal IReadOnlyList<PrefixEntry> Entries => PrefixPanel.Entries(Current);
 
@@ -79,7 +88,8 @@ internal sealed class PrefixOverlay
         }
 
         _current = _facts();
-        var lines = PrefixPanel.Render(_current);
+        Drawn = PrefixPanel.Model(_current);
+        var lines = PrefixPanel.Render(Drawn);
 
         // Hug the content, the way QuitOverlay does. Centred *after* WithSize, because the builder reads
         // the bounds set so far and falls back to 80x25 otherwise.
@@ -95,14 +105,16 @@ internal sealed class PrefixOverlay
             .WithTitle("⌃B — pane commands")
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
-            .WithBackgroundColor(new Color(ScreenPalette.MenuBg))
+            .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
             .HideTitleButtons()
             .Resizable(false)
+            .WithPadding(new SharpConsoleUI.Layout.Padding(1, 0, 0, 0)) // a cell between the frame and the words
             .WithSize(width, height)
             .Centered()
-            .AddControl(new MarkupControl(new List<string>(lines)))
+            .AddControl(new MarkupControl(Scheme.Lines(lines, ScreenPalette.MenuBg)))
             .OnClosed((_, _) => Reset())
             .Build();
+        Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
         _system.AddWindow(_window);

@@ -81,7 +81,7 @@ public class TabTitlesTests
         var window = new WorkspaceWindow("w1", "[Chat] room", WindowKind.Spawn) { OwnerLabel = "[Corvid]" };
         var label = TabTitles.For(window);
 
-        await Assert.That(label).IsEqualTo("[[Corvid]] - [[Chat]] room");
+        await Assert.That(label).IsEqualTo("[[Corvid]] · [[Chat]] room");
         await Assert.That(MarkupParser.StripLength(label)).IsEqualTo("[Corvid] - [Chat] room".Length);
     }
 
@@ -119,7 +119,7 @@ public class TabTitlesTests
     public async Task ChildWindow_WithOwner_PrefixesTheConnectionOwner()
     {
         var window = new WorkspaceWindow("w1", "Chat", WindowKind.Spawn) { OwnerLabel = "Corvid" };
-        await Assert.That(TabTitles.For(window)).IsEqualTo("Corvid - Chat");
+        await Assert.That(TabTitles.For(window)).IsEqualTo("Corvid · Chat");
     }
 
     [Test]
@@ -130,7 +130,7 @@ public class TabTitlesTests
         chat.OwnerLabel = "Corvid";
         ws.SetUnsentInput(chat.Id, true);
         await Assert.That(TabTitles.For(chat))
-            .IsEqualTo($"[{UnreadBadge.TintFor(null)}]Corvid - Chat (1)[/] {Glyphs.Draft}");
+            .IsEqualTo($"[{UnreadBadge.TintFor(null)}]Corvid · Chat (1)[/] {Glyphs.Draft}");
     }
 
     [Test]

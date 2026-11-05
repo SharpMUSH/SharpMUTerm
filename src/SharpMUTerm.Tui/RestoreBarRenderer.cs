@@ -23,9 +23,6 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal static class RestoreBarRenderer
 {
-    /// <summary>How long the trailing rule is. The same 48 cells the freeze bar draws, for the same reason.</summary>
-    private const int RuleCells = 48;
-
     /// <summary>The label, kept as a constant so a test can look for the exact words a reader will see.</summary>
     internal const string Label = "RESTORED";
 
@@ -33,7 +30,7 @@ internal static class RestoreBarRenderer
     /// The bar for <paramref name="lines"/> lines last written at <paramref name="when"/>, on an
     /// already-resolved <c>#rrggbb</c> accent.
     /// </summary>
-    public static string Bar(int lines, DateTimeOffset when, string accentHex)
+    public static string Bar(int lines, DateTimeOffset when, string accentHex, int width = 0)
     {
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
@@ -43,8 +40,8 @@ internal static class RestoreBarRenderer
         // a different game). Local time in the same 24-hour form the timestamp gutter uses.
         var count = lines == 1 ? "1 line" : $"{lines} lines";
         var stamp = when.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.CurrentCulture);
-        var rule = new string('─', RuleCells);
+        var (text, rule) = BarRule.Fit(Label.Length + 4, [$"{count} from the previous session · {stamp}", $"{count} · {stamp}", count], width);
         return $"[{accentHex}]{Glyphs.Restored} {Label}[/] "
-            + $"[dim]{MarkupText.Escape($"{count} from the previous session · {stamp}")} {rule}[/]";
+            + $"[dim]{MarkupText.Escape(text)} {BarRule.Rule(rule)}[/]";
     }
 }

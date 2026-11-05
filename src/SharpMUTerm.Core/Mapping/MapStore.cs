@@ -35,8 +35,11 @@ public sealed class MapStore
     /// <summary>What an unreadable map file is renamed with, so a new one can be written.</summary>
     public const string AsideSuffix = ".unreadable";
 
-    /// <summary>This file's schema version.</summary>
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// This file's schema version. 2 added each room's <c>handEdited</c> fields (<see cref="MapRoom.HandEdited"/>); a
+    /// version 1 file reads as a map with nothing edited by hand, and is written back as version 2.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -158,6 +161,7 @@ public sealed class MapStore
                 $"this map was written by a newer SharpMUTerm (map version {version}; this one reads {CurrentVersion})");
         }
 
+        Migrate(document, version);
         var map = new WorldMap();
         foreach (var area in document["areas"]?.Deserialize<MapArea[]>(Json) ?? [])
         {
@@ -170,6 +174,23 @@ public sealed class MapStore
         }
 
         return map;
+    }
+
+    /// <summary>
+    /// Brings an older file's document up to <see cref="CurrentVersion"/>, one revision at a time. 1 → 2: no room was
+    /// marked as edited by hand, because nothing recorded it — every room starts with an empty <c>handEdited</c>.
+    /// </summary>
+    private static void Migrate(JsonObject document, int version)
+    {
+        if (version < 2 && document["rooms"] is JsonArray rooms)
+        {
+            foreach (var room in rooms.OfType<JsonObject>())
+            {
+                room["handEdited"] = new JsonArray();
+            }
+        }
+
+        document["version"] = CurrentVersion;
     }
 
     /// <summary>
@@ -193,6 +214,7 @@ public sealed class MapStore
         room.LockedExits = new HashSet<string>(room.LockedExits ?? [], StringComparer.Ordinal);
         room.Stubs = new HashSet<string>(room.Stubs ?? [], StringComparer.Ordinal);
         room.UserData = new Dictionary<string, string>(room.UserData ?? [], StringComparer.Ordinal);
+        room.HandEdited = new HashSet<string>((room.HandEdited ?? []).Where(MapFields.All.Contains), StringComparer.Ordinal);
         room.Name ??= string.Empty;
         room.Weight = Math.Max(1, room.Weight);
         return room;

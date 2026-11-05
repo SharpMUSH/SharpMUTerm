@@ -33,13 +33,36 @@ internal sealed class MainWindow : Window
     {
         _options = options;
         _lifetime = lifetime;
+        NativeTokens.ApplyTextRendering(this);
         _config = ClientLaunch.LoadConfiguration(options, _notices);
         var (foreground, background) = WindowOptions.DefaultColours(_config);
 
         _driver = new AvaloniaConsoleDriver(options.Columns, options.Rows);
-        _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily);
+        _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily, options.LineHeight);
 
-        Title = "SharpMUTerm";
+        Title = SharpMUTerm.Client.Chrome.WindowTitle.Product;
+
+        // Character@World — SharpMUTerm for what is in front, from the client's own header (WindowTitle).
+        _driver.TitleBar.Changed += title => Dispatcher.UIThread.Post(() => Title = title);
+
+        // Whether the window is in front decides whether an alert is shown at all, and the title's unread count.
+        // Activation also takes back an X11 urgency hint the alert set (DesktopAlert).
+        var alert = DesktopAlert.ForThisMachine();
+        Activated += (_, _) =>
+        {
+            _driver.Attention.SetFocused(true);
+            alert.Clear();
+        };
+        Deactivated += (_, _) => _driver.Attention.SetFocused(false);
+        _driver.Attention.Requested += request => Dispatcher.UIThread.Post(() =>
+        {
+            if (!IsActive)
+            {
+                var handle = TryGetPlatformHandle();
+                alert.Show(request, handle?.Handle, handle?.HandleDescriptor);
+            }
+        });
+        _driver.Settings.Owner = this;
 
         // The window's own pop-ups (tooltips, the right-click menu) follow the client's theme: a light menu
         // over a dark client reads as somebody else's.
@@ -49,11 +72,12 @@ internal sealed class MainWindow : Window
             app.RequestedThemeVariant = luma < 128 ? ThemeVariant.Dark : ThemeVariant.Light;
         }
 
-        // No title bar: the client's own header is the top of the window, as it is the top of a terminal. The
-        // border stays, and the header's blank cells move the window (WindowChrome). --title-bar brings it back.
+        // No title bar: the header is the top of the window — the window's own (NativeHeader), or the client's cells
+        // with --cell-chrome. The border stays, and the header's empty space moves the window (WindowChrome).
+        // --title-bar brings it back.
         WindowDecorations = options.TitleBar ? WindowDecorations.Full : WindowDecorations.BorderOnly;
         Background = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
-        // The view fills the window; the screen-reader regions sit under it, unseen.
+        // The view fills the window past the native chrome; the screen-reader regions sit under it, unseen.
         var root = new Panel();
         foreach (var region in _driver.Announcer.Regions())
         {
@@ -61,9 +85,66 @@ internal sealed class MainWindow : Window
         }
 
         root.Children.Add(_view);
+
+        // The window's native views: the header band and the connections sidebar beside the cells (the layer moves the
+        // view out of their way, so no cell lies under either), the Layouts button, and native panels over their panes.
+        var layer = new DesktopLayer(_view, options.Chrome);
+        root.Children.Add(layer);
+
+        // F1, over the cells and under the layer, so a toast is still seen over it. Closing it gives the keyboard to an
+        // armed docked composer if there is one, else to the cells.
+        _driver.Composer.Attach(root, layer, _view, () => layer.FocusArmedComposer());
+
+        // The settings window takes the keyboard when it opens and hands it back here when it closes.
+        _driver.Settings.Refocus = () => layer.FocusArmedComposer();
+
+        // ⌃P, over everything above; it is added last when it opens, and gives the keyboard back to the cells.
+        _driver.Palette.Attach(root, () => layer.FocusArmedComposer());
+
+        // The modals, over everything; the quit prompt is kept the last child whatever is added after it, and brings
+        // this window forward. ⌃Q from any other modal goes to the client, which opens the prompt over it.
+        _driver.Modals.Attach(this, root, () => layer.FocusArmedComposer(), key => _driver.RaiseKey(key));
+
+        // No toast while settings, ⌃P or a modal is in front of the cells (F1 keeps them: it sits under the layer).
+        layer.ToastsHidden = () => _driver.Settings.Window is not null || _driver.Palette.Overlay is not null
+            || _driver.Modals.Modal is not null || _driver.Modals.Quit is not null;
+
+        // The settings window is a window of its own, so opening or closing it paints no frame here: re-check at once, or
+        // a toast already up stays beside it (seen under Xvfb, where nothing stacks the windows) and one hidden under it
+        // stays hidden after it closes.
+        _driver.Settings.OpenedOrClosed = layer.Sync;
+
+        // Panels popped out into windows of their own, owned by this one so they stay above it and go with it.
+        _driver.Floating.Attach(this, _view);
+        _driver.FilePicker.Attach(this);
+        Closed += (_, _) => _driver.Floating.Detach();
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
-        var size = _view.SizeFor(options.Columns, options.Rows);
+
+        // --size names the grid, so the window is that grid plus the native chrome around it — measured at the scale
+        // of the screen it opens on, and shrunk by whole cells to that screen's working area (WindowFit): at 150% on a
+        // 1080p screen the default grid is taller than the screen, and its command line opened below the edge.
+        var insets = NativeLayout.Insets(options.Chrome, collapsed: false);
+        var screen = Screens is { } screens ? screens.Primary ?? screens.All.FirstOrDefault() : null;
+        if (screen is not null)
+        {
+            _view.PrepareScale(screen.Scaling);
+        }
+
+        var cells = _view.SizeFor(options.Columns, options.Rows);
+        var size = new Size(cells.Width + insets.Left + insets.Right, cells.Height + insets.Top + insets.Bottom);
+        if (screen is not null)
+        {
+            var chrome = new Size(insets.Left + insets.Right, insets.Top + insets.Bottom + _view.SizeFor(0, 0).Height);
+            var fitted = WindowFit.InCells(size, WindowFit.Room(screen.WorkingArea, screen.Scaling), _view.CellExtent, chrome);
+            if (fitted != size)
+            {
+                size = fitted;
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Position = WindowFit.Centre(size, screen.WorkingArea, screen.Scaling);
+            }
+        }
+
         Width = size.Width;
         Height = size.Height;
         _normalSize = size;

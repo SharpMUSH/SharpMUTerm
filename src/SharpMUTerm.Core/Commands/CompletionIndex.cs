@@ -114,6 +114,18 @@ public sealed class CompletionIndex
         }
     }
 
+    /// <summary>
+    /// The player names the game has reported (GMCP), newest first — what a trigger made from a selection
+    /// reads as variable, since a rule about one player's line is nearly always wanted for every player's.
+    /// </summary>
+    public IReadOnlyList<string> Names()
+    {
+        lock (_gate)
+        {
+            return _names.Newest().ToList();
+        }
+    }
+
     /// <summary>Forgets everything, as a new connection does.</summary>
     public void Clear()
     {

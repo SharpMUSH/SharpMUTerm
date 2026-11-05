@@ -29,15 +29,28 @@ internal static class WindowHost
     {
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
         Reserved = [Maximise, .. Paste],
+
+        // Avalonia reports the key and its modifiers: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O arrive as themselves.
+        ReportsChordsWhole = true,
+
+        // KeyMapper reads Key.NumPad0–9 (Num Lock on) and hands the client ConsoleKey.NumPad0–9 with the digit.
+        DeliversNumpad = true,
     };
 
-    public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard) => new()
+    /// <param name="driver">The window's driver.</param>
+    /// <param name="clipboard">Where a copy goes.</param>
+    /// <param name="chrome">
+    /// Which chrome the window draws natively. The header, the rail and the tab strips by default (<see cref="HostChrome.Native"/>), which is the window a person runs;
+    /// <see cref="HostChrome.None"/> for <c>--render-png</c> and <c>--cell-chrome</c>, where the cells carry it all.
+    /// </param>
+    public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard, HostChrome? chrome = null) => new()
     {
         Name = "window",
         Driver = driver,
         Capabilities = WindowOptions.Capabilities,
         Clipboard = clipboard,
         OpenUrl = ExternalBrowser.Open,
+        OpenFile = ExternalBrowser.OpenFile,
 
         // Focus reporting is a terminal escape, and its focus-in arrives disguised as a Tab: in a window it
         // would only ever turn a real Tab after a pause into a "you were away" bar.
@@ -55,5 +68,33 @@ internal static class WindowHost
 
         // A live region a screen reader watches; the terminal has none, and --plain is its answer.
         Announcer = driver.Announcer,
+        ScreenIsSeen = true,
+
+        // F7 and F8 open a native settings window generated from their declarations; the rest stay cell screens.
+        NativeSettings = driver.Settings,
+
+        // The header band and the connections sidebar are the window's own controls, beside the cell grid rather
+        // than over it (MainWindow, DesktopLayer): the client draws neither.
+        Chrome = chrome ?? HostChrome.Desktop,
+        // ⌃P is a native palette over the window, listing the same rows as the cell one.
+        NativePalette = driver.Palette,
+
+        // F1 and the docked composer are a native editor: a proportional or monospace face, IME, native selection and
+        // a real underline under a misspelling. The draft, the send and the keys stay the client's.
+        NativeComposer = driver.Composer,
+
+        // The quit prompt, ⌃F, ⌃R, ⌥M and the welcome are native modals over the window, the prompt always in front.
+        NativeModals = driver.Modals,
+        // The title bar and the taskbar entry say who is in front: Character@World — SharpMUTerm.
+        Title = driver.TitleBar,
+
+        // A panel popped out is a window of its own, owned by the main one, for a second monitor.
+        FloatingPanels = driver.Floating,
+
+        // A page while the window is behind another: a desktop notification and the taskbar's attention state.
+        Attention = driver.Attention,
+
+        // An import from another client starts at the desktop's own file picker.
+        FilePicker = driver.FilePicker,
     };
 }

@@ -20,6 +20,32 @@ public sealed class StatusMeter
     /// <summary>The maximum's path, or null for a meter with none (<c>gold</c>).</summary>
     public string? Max { get; set; }
 
+    /// <summary>
+    /// The colour the meter's bar and label are drawn in: a palette name (<c>green</c>) or <c>#rrggbb</c>, as F2's highlight
+    /// colours are written. Null (absent from a saved file) means the default for the label (<see cref="DefaultColour"/>),
+    /// so a configuration from before the field needs no migration. Every host holds it to the legibility floor on the
+    /// plane it lands on, and a low meter is drawn in the warning colour whatever this says.
+    /// </summary>
+    public string? Colour { get; set; }
+
+    /// <summary>
+    /// The colour a meter with none of its own is drawn in, by the label every MUD shares: health green, mana blue,
+    /// movement gold; null (the client's accent) for anything else.
+    /// </summary>
+    public static string? DefaultColour(string? label) => (label ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "hp" or "health" => "green",
+        "mp" or "sp" or "mana" => "blue",
+        "mv" or "moves" or "move" or "movement" => "gold",
+        "ep" or "en" or "endurance" => "teal",
+        "wp" or "willpower" => "purple",
+        "st" or "sta" or "stamina" => "orange",
+        _ => null,
+    };
+
+    /// <summary>The colour this meter is drawn in: its own, else <see cref="DefaultColour"/> for its label.</summary>
+    public string? EffectiveColour => string.IsNullOrWhiteSpace(Colour) ? DefaultColour(Label) : Colour.Trim();
+
     /// <summary>The longest label the row draws.</summary>
     public const int MaxLabelLength = 8;
 
@@ -81,7 +107,8 @@ public sealed class StatusMeter
         .ToArray();
 
     /// <summary>
-    /// Writes meters as the one-line form F7 edits: <c>hp=Char.Vitals.hp/Char.Vitals.maxhp; gold=Char.Status.gold</c>.
+    /// Writes meters as the one-line form F7 edits: <c>hp=Char.Vitals.hp/Char.Vitals.maxhp; gold=Char.Status.gold</c>,
+    /// a meter's own colour after an <c>@</c> (<c>hp=Char.Vitals.hp @lime</c>).
     /// </summary>
     public static string Format(IEnumerable<StatusMeter> meters)
     {
@@ -97,6 +124,11 @@ public sealed class StatusMeter
             if (!string.IsNullOrWhiteSpace(meter.Max))
             {
                 sb.Append('/').Append(meter.Max);
+            }
+
+            if (!string.IsNullOrWhiteSpace(meter.Colour))
+            {
+                sb.Append(" @").Append(meter.Colour.Trim());
             }
         }
 
@@ -120,6 +152,14 @@ public sealed class StatusMeter
 
             var label = part[..eq].Trim();
             var paths = part[(eq + 1)..];
+            string? colour = null;
+            var at = paths.LastIndexOf(" @", StringComparison.Ordinal);
+            if (at >= 0)
+            {
+                colour = paths[(at + 2)..].Trim();
+                paths = paths[..at];
+            }
+
             var slash = paths.IndexOf('/', StringComparison.Ordinal);
             var value = (slash < 0 ? paths : paths[..slash]).Trim();
             var max = slash < 0 ? null : paths[(slash + 1)..].Trim();
@@ -133,6 +173,7 @@ public sealed class StatusMeter
                 Label = label.Length > MaxLabelLength ? label[..MaxLabelLength] : label,
                 Value = value,
                 Max = string.IsNullOrEmpty(max) ? null : max,
+                Colour = string.IsNullOrEmpty(colour) ? null : colour,
             });
         }
 

@@ -61,7 +61,9 @@ public class TriggersScreenEditingTests
         // The name leads, then everything the editor pane draws, then the set that owns the rule. Every
         // ordinal below is unchanged — each new field is appended, so nothing the screen, the snapshot
         // keys or these tests already address is renumbered.
-        await Assert.That(model.RowAt(0, 0).FieldCount).IsEqualTo(10);
+        await Assert.That(model.RowAt(0, 0).FieldCount).IsEqualTo(11);
+        await Assert.That(model.FieldAt(0, 0, TriggersScreenRenderer.MatchTypeField)!.Value.Get())
+            .IsEqualTo("regular expression");
         await Assert.That(model.FieldAt(0, 0, TriggersScreenRenderer.SetField)!.Value.Get()).IsEqualTo("Comms");
         await Assert.That(model.FieldAt(0, 0, TriggersScreenRenderer.NameField)!.Value.Get()).IsEqualTo("Tell");
         await Assert.That(model.FieldAt(0, 0, TriggersScreenRenderer.PatternField)!.Value.Get()).IsEqualTo("tells you");
@@ -74,8 +76,8 @@ public class TriggersScreenEditingTests
         await Assert.That(model.FieldAt(0, 0, TriggersScreenRenderer.ScriptField)!.Value.Get()).IsEqualTo(string.Empty);
 
         // The editor pane holds only checkbox rows — every value it draws is a field on the rule, not a
-        // cursor stop of its own. It gained the third checkbox (case sensitivity) and nothing else.
-        await Assert.That(model.Sizes[1]).IsEqualTo(3);
+        // cursor stop of its own. It gained the third checkbox (case sensitivity) and the fourth (alert).
+        await Assert.That(model.Sizes[1]).IsEqualTo(4);
     }
 
     [Test]

@@ -1,75 +1,73 @@
 using System.Text;
-using SharpMUTerm.Core.Commands;
+using SharpMUTerm.Client.Palette;
 using static SharpMUTerm.Tui.MarkupText;
 
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// Renders the command surface (⌃P) results to markup lines, grouped GO TO / WORLD / TERMINAL /
-/// LAYOUT / SETTINGS with the selected row highlighted, per the design. The flattened row order matches
-/// <see cref="Order"/> so ↑↓ navigation and dispatch stay in sync. Pure so it's unit-testable.
+/// Draws the command surface (⌃P) from the shared view-model (<see cref="CommandPaletteModel"/>): a context
+/// line, then each group's header and its rows, the selected row highlighted. Every row has three parts — the
+/// title, with the characters the query matched in bold accent; the detail, dimmed; and the key, right-aligned
+/// in a column of its own so every chord on the surface starts and ends in the same place. When the surface is
+/// narrower than a row, the detail goes first and then the title is elided; the key never is, because the key
+/// is the part a reader came to learn. Pure so it is unit-testable.
 /// </summary>
 internal static class CommandSurfaceRenderer
 {
-    private static readonly (CommandGroup Group, string Label)[] Groups =
-    {
-        (CommandGroup.GoTo, "GO TO"),
-        (CommandGroup.World, "WORLD"),
-        (CommandGroup.Terminal, "TERMINAL"),
-        (CommandGroup.Layout, "LAYOUT"),
-        (CommandGroup.Settings, "SETTINGS"),
-    };
+    /// <summary>Cells before the title: <c> ▸ </c> on the selected row, blanks elsewhere.</summary>
+    private const int Lead = 3;
 
-    /// <summary>Flattens ranked results into display order: groups in fixed order, ranked within each.</summary>
-    public static IReadOnlyList<CommandItem> Order(IReadOnlyList<RankedCommand> ranked)
-    {
-        var ordered = new List<CommandItem>(ranked.Count);
-        foreach (var (group, _) in Groups)
-        {
-            foreach (var r in ranked)
-            {
-                if (r.Item.Group == group)
-                {
-                    ordered.Add(r.Item);
-                }
-            }
-        }
+    /// <summary>Cells between the title and its detail.</summary>
+    private const int DetailGap = 3;
 
-        return ordered;
-    }
+    /// <summary>The fewest cells between the text and the key column.</summary>
+    private const int KeyGap = 2;
+
+    /// <summary>The fewest characters of a detail worth showing; below this it is left out rather than cut to a stub.</summary>
+    private const int MinDetail = 4;
+
+    /// <summary>The selected row's band: the popups' selected ink on the accent, both roles, so a light theme re-inks them as a pair.</summary>
+    private const string SelectedBand = ScreenPalette.Ink + " on " + ScreenPalette.Accent;
+
+    /// <summary>A matched character on an unselected row.</summary>
+    private static readonly string MatchInk = $"bold {ScreenPalette.Accent}";
 
     /// <summary>
-    /// Builds the markup lines: a context header, then each group's header and its rows. The row at
-    /// flattened index <paramref name="selected"/> is highlighted. When <paramref name="width"/> &gt; 0
-    /// the selected row's highlight bar is padded to that visible width so it spans the full surface.
+    /// Builds the markup lines. The entry at index <paramref name="selected"/> of <see cref="PaletteView.Entries"/>
+    /// is highlighted. <paramref name="width"/> is the surface's content width; 0 sizes every row to its own
+    /// natural width (<see cref="NaturalWidth"/>), which is what a test reads.
     /// </summary>
-    public static List<string> Render(
-        IReadOnlyList<RankedCommand> ranked, int selected, int total, string? context, int width = 0)
+    public static List<string> Render(PaletteView view, int selected, string? context, int width = 0)
     {
+        ArgumentNullException.ThrowIfNull(view);
+        if (width <= 0)
+        {
+            width = NaturalWidth(view);
+        }
+
         var lines = new List<string>
         {
-            $"[dim]{Escape(ranked.Count.ToString())} of {Escape(total.ToString())}"
+            $"[dim]{Escape(view.Entries.Count.ToString())} of {Escape(view.Total.ToString())}"
             + (string.IsNullOrEmpty(context) ? string.Empty : $"   acting on {Escape(context)}") + "[/]",
         };
 
-        var flatIndex = 0;
-        foreach (var (group, label) in Groups)
+        var keyWidth = view.KeyWidth;
+        var index = 0;
+        foreach (var row in view.Rows)
         {
-            var inGroup = ranked.Where(r => r.Item.Group == group).ToList();
-            if (inGroup.Count == 0)
+            switch (row)
             {
-                continue;
-            }
-
-            lines.Add($"[dim]├ {label}[/]");
-            foreach (var r in inGroup)
-            {
-                lines.Add(Row(r.Item, flatIndex == selected, width));
-                flatIndex++;
+                case PaletteHeader header:
+                    lines.Add($"[dim]├ {Escape(header.Label)}[/]");
+                    break;
+                case PaletteEntry entry:
+                    lines.Add(Row(entry, index == selected, width, keyWidth));
+                    index++;
+                    break;
             }
         }
 
-        if (ranked.Count == 0)
+        if (view.Entries.Count == 0)
         {
             lines.Add("[dim]  no matches[/]");
         }
@@ -77,7 +75,25 @@ internal static class CommandSurfaceRenderer
         return lines;
     }
 
-    /// <summary>The visible width of the widest rendered line — used to size the surface to its content.</summary>
+    /// <summary>
+    /// The width every row fits in without eliding anything: lead, title, detail, and the key column at the
+    /// widest key. The surface sizes itself to this, capped to the desktop.
+    /// </summary>
+    public static int NaturalWidth(PaletteView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        var keyColumn = KeyColumn(view.KeyWidth);
+        var widest = 0;
+        foreach (var entry in view.Entries)
+        {
+            var text = entry.Item.Title.Length + (entry.Detail is null ? 0 : DetailGap + entry.Detail.Length);
+            widest = Math.Max(widest, Lead + text + keyColumn);
+        }
+
+        return widest;
+    }
+
+    /// <summary>The visible width of the widest rendered line.</summary>
     public static int MaxWidth(IReadOnlyList<string> lines)
     {
         var max = 0;
@@ -89,20 +105,66 @@ internal static class CommandSurfaceRenderer
         return max;
     }
 
-    private static string Row(CommandItem item, bool selected, int width)
+    // The key column: the gap, the widest key, and one cell before the edge. With no keys at all, one cell.
+    private static int KeyColumn(int keyWidth) => keyWidth == 0 ? 1 : KeyGap + keyWidth + 1;
+
+    private static string Row(PaletteEntry entry, bool selected, int width, int keyWidth)
     {
-        var title = Escape(item.Title);
-        if (!selected)
+        var room = Math.Max(1, width - Lead - KeyColumn(keyWidth));
+
+        // The title keeps every cell it needs before the detail gets any; past that it is elided.
+        var title = entry.Item.Title;
+        var titleShown = title.Length <= room ? title.Length : Math.Max(1, room - 1);
+        var titleElided = titleShown < title.Length;
+        var used = titleShown + (titleElided ? 1 : 0);
+
+        string? detail = null;
+        if (entry.Detail is { } d && room - used - DetailGap >= Math.Min(MinDetail, d.Length))
         {
-            var sub = item.Subtitle is null ? string.Empty : $"   [dim]{Escape(item.Subtitle)}[/]";
-            return "   " + title + sub;
+            var detailRoom = room - used - DetailGap;
+            detail = d.Length <= detailRoom ? d : string.Concat(d.AsSpan(0, detailRoom - 1), "…");
+            used += DetailGap + detail.Length;
         }
 
-        // Selected: one continuous accent bar across the whole row (title + subtitle), padded to the
-        // surface width so the highlight reads as a full-width band rather than hugging the title.
-        var subtitle = item.Subtitle is null ? string.Empty : $"   {Escape(item.Subtitle)}";
-        var text = $" ▸ {title}{subtitle} ";
-        var pad = width > VisibleLength(text) ? new string(' ', width - VisibleLength(text)) : string.Empty;
-        return $"[#18181c on #00f5b7]{text}{pad}[/]";
+        var pad = new string(' ', Math.Max(0, room - used));
+        var key = entry.Key is null
+            ? new string(' ', KeyColumn(keyWidth))
+            : new string(' ', KeyGap + keyWidth - entry.Key.Length) + entry.Key + " ";
+
+        var titleMarkup = Highlight(title, titleShown, entry.TitleMatches, selected ? "bold underline" : MatchInk)
+            + (titleElided ? "…" : string.Empty);
+
+        if (selected)
+        {
+            var detailPart = detail is null ? string.Empty : new string(' ', DetailGap) + Escape(detail);
+            return $"[{SelectedBand}] ▸ {titleMarkup}{detailPart}{pad}{Escape(key)}[/]";
+        }
+
+        var detailMarkup = detail is null ? string.Empty : $"{new string(' ', DetailGap)}[dim]{Escape(detail)}[/]";
+        var keyMarkup = entry.Key is null ? key : $"[{ScreenPalette.Muted}]{Escape(key)}[/]";
+        return $"   {titleMarkup}{detailMarkup}{pad}{keyMarkup}";
+    }
+
+    /// <summary>The first <paramref name="shown"/> characters of <paramref name="text"/>, matched runs wrapped in <paramref name="style"/>.</summary>
+    private static string Highlight(string text, int shown, IReadOnlyList<TextRange> matches, string style)
+    {
+        var sb = new StringBuilder();
+        var at = 0;
+        foreach (var range in matches)
+        {
+            var start = Math.Min(range.Start, shown);
+            var end = Math.Min(range.Start + range.Length, shown);
+            if (start < at || end <= start)
+            {
+                continue;
+            }
+
+            sb.Append(Escape(text[at..start]));
+            sb.Append('[').Append(style).Append(']').Append(Escape(text[start..end])).Append("[/]");
+            at = end;
+        }
+
+        sb.Append(Escape(text[at..shown]));
+        return sb.ToString();
     }
 }

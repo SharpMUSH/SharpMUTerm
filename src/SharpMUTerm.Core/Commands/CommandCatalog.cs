@@ -1,5 +1,3 @@
-using SharpMUTerm.Core.Workspaces;
-
 namespace SharpMUTerm.Core.Commands;
 
 /// <summary>A character the command surface can switch to, with enough detail to label the entry.</summary>
@@ -39,12 +37,44 @@ public sealed record CharacterRef(
 /// Whether this client runs Lua at all, so <c>Reload scripts</c> is offered only where it can do something.
 /// </param>
 /// <param name="Walking">Whether the focused connection is speedwalking, so <c>Stop walking</c> has a walk to stop.</param>
+/// <param name="Reconnecting">Whether a dropped connection is waiting to dial again, so <c>Stop reconnecting</c> has one to stop.</param>
 /// <param name="Sound">
 /// Null where the client cannot play sound, so no mute is offered; otherwise whether sound is playing
 /// (offer <c>Mute sound</c>) or muted (offer <c>Unmute sound</c>).
 /// </param>
 /// <param name="Announced">
 /// Null where the host has no screen reader to tell; otherwise whether the active window's output is read aloud.
+/// </param>
+/// <param name="OutputSelected">Whether some pane's output is selected, so a trigger can be made from it.</param>
+/// <param name="KeyClashes">
+/// How many F4 bindings share a chord with the client or with each other, so <c>Key clashes (N)</c> is offered
+/// only when there is one to show.
+/// </param>
+/// <param name="Floats">
+/// Null where the host cannot float a panel in a window of its own (the terminal), so nothing is offered; otherwise
+/// every panel that can pop out, docked or floating, so <c>Pop out …</c> and <c>Dock … back</c> name real windows.
+/// </param>
+/// <param name="RaggedWraps">
+/// The worlds whose connected pane is narrower than the column their server wraps at, and which do not join wraps — so
+/// <c>Join server wraps for …</c> is offered (and suggested) only while it would change what the pane shows.
+/// </param>
+/// <param name="SceneLogging">Whether the focused window is being recorded as a scene, so ⌃P offers to stop it.</param>
+/// <param name="NoDictionary">
+/// Whether the client's own dictionaries folder holds none, so <c>Get a spelling dictionary</c> is offered.
+/// </param>
+/// <param name="MapUndo">What the focused character's last map edit was, so <c>Undo map edit</c> is offered only with one.</param>
+/// <param name="MapLevels">How many levels the area the focused character's map shows has (0 with no map).</param>
+/// <param name="MapAreas">How many named areas that map has.</param>
+/// <param name="MapViewing">Whether that map shows somewhere other than where the character is.</param>
+/// <param name="NewConfiguration">
+/// Whether the configuration is new — no world yet, or the key tour still owed — so Help, Welcome and Import are suggested.
+/// </param>
+/// <param name="MapFound">The rooms the last <c>/map find</c> listed, newest search only, so ⌃P offers to walk to each.</param>
+/// <param name="ScriptFiles">The focused character's script files, so ⌃P offers to open each in the editor.</param>
+/// <param name="RecentAlerts">How many pages and alerts this run has kept, across every character, so ⌃P offers <c>Recent alerts</c>.</param>
+/// <param name="Alerts">
+/// Those alerts, newest first, once <c>Recent alerts</c> has opened the palette on them (null before), so each is an entry
+/// that goes to its character's window without crowding every other ⌃P.
 /// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
@@ -56,8 +86,58 @@ public sealed record CommandContext(
     string NewlineChord = "Alt+⏎",
     bool ScriptsOn = false,
     bool Walking = false,
+    bool Reconnecting = false,
     bool? Sound = null,
-    bool? Announced = null);
+    bool? Announced = null,
+    bool OutputSelected = false,
+    int KeyClashes = 0,
+    IReadOnlyList<PanelFloatRef>? Floats = null,
+    IReadOnlyList<RaggedWrap>? RaggedWraps = null,
+    bool NoDictionary = false,
+    string? MapUndo = null,
+    bool SceneLogging = false,
+    int MapLevels = 0,
+    int MapAreas = 0,
+    bool MapViewing = false,
+    bool NewConfiguration = false,
+    IReadOnlyList<FoundRoom>? MapFound = null,
+    IReadOnlyList<ScriptFileRef>? ScriptFiles = null,
+    int RecentAlerts = 0,
+    IReadOnlyList<AlertRef>? Alerts = null);
+
+/// <summary>A page or alert the client kept this run, for ⌃P's <c>Recent alerts</c> entries.</summary>
+/// <param name="Id">Its number this run, which the entry's id carries.</param>
+/// <param name="Who">The character it was for, as every surface names one (<c>Corvid · Aetherfall</c>).</param>
+/// <param name="Why">What it was: <c>page</c>, <c>mentioned you</c> or <c>alert</c>.</param>
+/// <param name="Text">The line, bounded.</param>
+/// <param name="Age">How long ago, in words (<c>just now</c>, <c>4 min ago</c>).</param>
+public sealed record AlertRef(int Id, string Who, string Why, string Text, string Age);
+
+/// <summary>A script file ⌃P offers to open in the editor.</summary>
+/// <param name="Name">Its name under the scripts folder (<c>combat.lua</c>), or <c>package:&lt;id&gt;/&lt;file&gt;</c>.</param>
+/// <param name="Detail">What the entry says about it: where it is, whether it loaded, its last error's line.</param>
+/// <param name="ReadOnly">Whether it can only be read (a package's script).</param>
+public sealed record ScriptFileRef(string Name, string Detail, bool ReadOnly);
+
+/// <summary>A room the last <c>/map find</c> listed, for the command surface's <c>Walk to …</c> entries.</summary>
+/// <param name="Id">The room's id on the map.</param>
+/// <param name="Name">Its name.</param>
+/// <param name="Area">Its area's name, or null.</param>
+/// <param name="Level">Its level (z).</param>
+public sealed record FoundRoom(long Id, string Name, string? Area, int Level);
+
+/// <summary>A world whose pane is narrower than its server's wrap column.</summary>
+/// <param name="World">The world's name.</param>
+/// <param name="Column">The column its server wraps at.</param>
+/// <param name="PaneWidth">How wide its pane is.</param>
+public sealed record RaggedWrap(string World, int Column, int PaneWidth);
+
+/// <summary>A panel window that can pop out into a window of its own, for the command surface's entries.</summary>
+/// <param name="WindowId">The panel's window (<c>map:World.Char</c>, <c>panel:vitals:World.Char</c>).</param>
+/// <param name="Title">What the panel is called (<c>Map</c>, <c>Vitals</c>).</param>
+/// <param name="Character">Whose panel it is, as the entry's detail.</param>
+/// <param name="Floating">Whether it is popped out now: offered to dock back, else to pop out.</param>
+public sealed record PanelFloatRef(string WindowId, string Title, string Character, bool Floating);
 
 /// <summary>
 /// A configuration screen the command surface can open: what it calls itself, the id the host
@@ -68,12 +148,10 @@ public sealed record CommandContext(
 public sealed record SettingsEntry(string Title, string Id, string Shortcut);
 
 /// <summary>
-/// Generates the command-surface catalog from live state, per the design: every non-focused
-/// character becomes a <c>Switch to…</c> entry, every non-active window a <c>Go to…</c> entry
-/// subtitled with its owner and unread count, stateful commands read their current value
-/// (<c>Pause logging</c> vs <c>Start logging</c>, <c>Unzoom pane</c>, <c>Resume scrollback</c>), and
-/// every configuration screen the host offers becomes an <c>Open …</c> entry subtitled with its key.
-/// Pure so the exact catalog is unit-testable; <see cref="CommandMatcher"/> ranks it against a query.
+/// What the command surface's catalog shares with the shell outside it. The catalog itself is no longer
+/// built here: its entries are contributions in <c>SharpMUTerm.Client</c>'s registry
+/// (<c>BuiltInCommands</c>), so a package or a host can add to it. The character cycle stays here because the
+/// shell's ⌥J/⌥K and the rail read it too.
 /// </summary>
 public static class CommandCatalog
 {
@@ -99,315 +177,5 @@ public static class CommandCatalog
     {
         ArgumentNullException.ThrowIfNull(characters);
         return characters.Where(c => c.Open).ToList();
-    }
-
-    public static IReadOnlyList<CommandItem> Build(
-        Workspace workspace,
-        IReadOnlyList<CharacterRef> characters,
-        string? focusedSessionKey,
-        CommandContext context,
-        IReadOnlyList<SettingsEntry>? settings = null)
-    {
-        ArgumentNullException.ThrowIfNull(workspace);
-        ArgumentNullException.ThrowIfNull(characters);
-        ArgumentNullException.ThrowIfNull(context);
-
-        var items = new List<CommandItem>();
-        var activeWindow = workspace.Layout.FocusedPane.ActiveTab;
-
-        // GO TO — switch character, then jump to windows.
-        //
-        // The two neighbours in the character cycle carry its chords. Only those two: ⌥J and ⌥K move one
-        // step, so they are the honest answer for the rows either side of you and a lie for anybody
-        // further away. There is deliberately no direct-selection chord to put on the rest — the digit
-        // row is spent on windows and panes, and every remaining digit-bearing modifier (⌥⇧, ⌃⇧) has no
-        // legacy encoding at all on this terminal, which was measured rather than assumed.
-        var cycle = CharacterCycle(characters);
-        var here = cycle.FindIndex(c => c.SessionKey == focusedSessionKey);
-        var next = here >= 0 && cycle.Count > 1 ? cycle[(here + 1) % cycle.Count].SessionKey : null;
-        var previous = here >= 0 && cycle.Count > 1
-            ? cycle[(here - 1 + cycle.Count) % cycle.Count].SessionKey
-            : null;
-
-        foreach (var character in characters)
-        {
-            if (character.SessionKey == focusedSessionKey)
-            {
-                continue;
-            }
-
-            var state = character.Connected ? "connected" : "offline";
-            var chord = character.SessionKey == next ? "⌥J · "
-                : character.SessionKey == previous ? "⌥K · "
-                : string.Empty;
-            items.Add(new CommandItem(
-                CommandGroup.GoTo,
-                $"Switch to {character.CharacterName}",
-                CommandIds.Character(character.SessionKey),
-                $"{chord}{character.WorldName} · {state}"));
-        }
-
-        // The chord each window's entry names, from the one place windows are numbered — the *focused*
-        // character's list, because that is what ⌥N indexes. A window belonging to somebody else has no
-        // chord from here and correctly gets none: pressing ⌥2 would reach the focused character's second
-        // window, not this entry, and an entry naming a key that goes elsewhere is the defect the
-        // numbering exists to prevent. Built as a lookup rather than read per entry because the entries
-        // walk the whole registry, including windows no pane holds.
-        var windowOrdinals = new Dictionary<string, int>(StringComparer.Ordinal);
-        var reachable = workspace.WindowsFor(focusedSessionKey);
-        for (var i = 0; i < reachable.Count && i < CommandIds.WindowJumpDigits; i++)
-        {
-            windowOrdinals[reachable[i].Id] = i + 1;
-        }
-
-        foreach (var window in workspace.Windows)
-        {
-            if (window.Id == activeWindow)
-            {
-                continue;
-            }
-
-            var owner = window.SessionKey ?? "unowned";
-            var unread = window.Unread > 0 ? $" · {window.Unread} unread" : string.Empty;
-
-            // The chord leads, because it is the part a reader is here to learn — the owner and the count
-            // describe the window and this says how to reach it without the surface at all. Windows past
-            // the ninth get the same subtitle minus the chord, rather than one naming a key that would do
-            // something else.
-            var chord = windowOrdinals.TryGetValue(window.Id, out var ordinal) ? $"⌥{ordinal} · " : string.Empty;
-            items.Add(new CommandItem(
-                CommandGroup.GoTo,
-                $"Go to {window.Title}",
-                CommandIds.Window(window.Id),
-                $"{chord}{owner}{unread}"));
-        }
-
-        // WORLD
-        // Both carry their chord. The surface is where this client is discovered from, and a key nobody
-        // can find is the same as no feature — ⌃L's newline sat unused until it was reported missing.
-        items.Add(new CommandItem(CommandGroup.World, "Reconnect", "world:reconnect", "⌥R"));
-        items.Add(new CommandItem(CommandGroup.World, "Disconnect", "world:disconnect", "⌥D"));
-        // The send group: one line to several characters. Offered once two characters are open, since a
-        // group of one is the command line.
-        var open = characters.Where(c => c.Open).ToList();
-        if (open.Count > 1 || characters.Any(c => c.InGroup))
-        {
-            foreach (var character in open)
-            {
-                items.Add(new CommandItem(
-                    CommandGroup.World,
-                    character.InGroup
-                        ? $"Remove {character.CharacterName} from the send group"
-                        : $"Add {character.CharacterName} to the send group",
-                    CommandIds.GroupToggle(character.SessionKey),
-                    character.WorldName));
-            }
-
-            var members = characters.Count(c => c.InGroup);
-            if (members > 0)
-            {
-                items.Add(new CommandItem(
-                    CommandGroup.World,
-                    "Send the command line to the group",
-                    CommandIds.GroupSend,
-                    members == 1 ? "1 character" : $"{members} characters"));
-                items.Add(new CommandItem(CommandGroup.World, "Clear the send group", CommandIds.GroupClear));
-            }
-        }
-
-        if (context.ScriptsOn)
-        {
-            items.Add(new CommandItem(
-                CommandGroup.World, "Reload scripts", "world:reload-scripts", "re-reads this character's Lua files"));
-        }
-
-        // Only where the host has a screen reader to tell: the window's live region, or --plain.
-        if (context.Announced is { } announced)
-        {
-            items.Add(announced
-                ? new CommandItem(CommandGroup.Terminal, "Stop reading this window aloud", "a11y:toggle-window")
-                : new CommandItem(CommandGroup.Terminal, "Read this window aloud", "a11y:toggle-window"));
-        }
-
-        // TERMINAL — stateful labels.
-        items.Add(context.LoggingOn
-            ? new CommandItem(CommandGroup.Terminal, "Pause logging", "term:log-off")
-            : new CommandItem(CommandGroup.Terminal, "Start logging", "term:log-on"));
-        items.Add(context.Frozen
-            ? new CommandItem(CommandGroup.Terminal, "Resume scrollback", "term:unfreeze")
-            : new CommandItem(CommandGroup.Terminal, "Freeze pane", "term:freeze"));
-        items.Add(new CommandItem(CommandGroup.Terminal, "Clear window", "term:clear"));
-
-        // Scrollback position. Here as well as on the keyboard because this surface is where the client
-        // is discovered from — every other thing you can do to an output window is listed here — and the
-        // subtitles are how the keys get taught: a pane that scrolls and says so nowhere is a pane
-        // nobody scrolls. The "back" entry appears only when there is somewhere to come back from.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Scroll to oldest", "term:scroll-oldest", "⌃Home · PgUp pages back"));
-        if (context.ScrolledBack)
-        {
-            items.Add(new CommandItem(
-                CommandGroup.Terminal, "Back to live output", "term:scroll-live", "⌃End"));
-        }
-
-        // The restore log's one control that is not a settings field. It is listed unconditionally, and
-        // it is listed *here* rather than only on F9, because "delete what this client has written down
-        // about my session" is a thing a person wants to do now — after saying something they would
-        // rather was not on disk — and a purge you have to find in a settings screen is a purge that
-        // happens tomorrow. The per-character switch on F9 is the other half: this one is immediate and
-        // total, that one is a standing preference.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal,
-            "Purge the restore log",
-            "term:restore-purge",
-            "deletes every pane's saved content"));
-
-        // Copying output. Listed unconditionally and subtitled with the *gesture* as well as the chord,
-        // because the gesture is the part nobody can guess: under mouse reporting a plain drag belongs to
-        // the application, so a user who has learnt that their terminal needs ⇧-drag has no reason to try
-        // dragging here. It refuses out loud with nothing selected, which is what earns it a row at all.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Copy the selection", "term:copy", "⌃C · drag across a pane or the command line, or ⇧← ⇧→ there"));
-
-        // The client's own messages — the status-line notices that dismiss themselves — kept out of the
-        // output window (and so out of the session log) and readable here instead.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Show client messages", "term:messages", "status-line notices"));
-
-        // What the server is sending out of band. Listed unconditionally: a meter or a script is written
-        // against a GMCP path, and this is where a player finds out which paths their game has.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Show game data", "term:gamedata", "GMCP and MSDP this connection holds"));
-
-        // The map. Listed unconditionally, like the game data above: a map is recorded from the first room a
-        // game reports, and nothing else on screen says the client keeps one.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Show map", "term:map", "this connection's map · click a room, or /walk <room>"));
-        if (context.Walking)
-        {
-            items.Add(new CommandItem(CommandGroup.Terminal, "Stop walking", "term:walk-stop", "ends the speedwalk"));
-        }
-
-        // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.
-        if (context.Sound is { } playing)
-        {
-            items.Add(playing
-                ? new CommandItem(CommandGroup.Terminal, "Mute sound", "term:mute", "until unmuted or restarted")
-                : new CommandItem(CommandGroup.Terminal, "Unmute sound", "term:unmute", "game sound is muted"));
-        }
-
-        // The command line's own history, browsable and searchable. Named here as well as bound to ⌃R
-        // because a chord nothing mentions is a chord nobody finds — the same reason every settings screen
-        // has a row even though each has an F-key.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Search command history", "term:history", "⌃R"));
-
-        // The composer. Named here as well as bound to F1 for the reason the row above it is: a surface
-        // nobody can find is a surface nobody uses, and this one is not something a reader would guess
-        // at from the command line in front of them.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Compose a post", "term:compose", "F1 · a full editor, sent as one line"));
-
-        // Packages: the list, and the install that starts at the review. F10 can be taken by a terminal's
-        // own menu key (GNOME Terminal), so this surface is the way in that always works.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Packages", "term:packages", "F10 · installed packages, on/off, remove"));
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Install package…", "term:package-install", "from a file or an https link"));
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Browse packages", "term:package-browse", "the package index, this game's first"));
-        items.Add(context.TimestampsOn
-            ? new CommandItem(CommandGroup.Terminal, "Hide timestamps", "term:timestamps-off")
-            : new CommandItem(CommandGroup.Terminal, "Show timestamps", "term:timestamps-on"));
-        items.Add(context.SecondInputOn
-            ? new CommandItem(
-                CommandGroup.Terminal, "Hide second input", "term:input2-off", "this window · ⌃B i")
-            : new CommandItem(
-                CommandGroup.Terminal, "Show second input", "term:input2-on", "this window · ⌃B i"));
-
-        // The newline chord. Here for the same reason the scrollback keys are: a chord that works and is
-        // named nowhere is a chord nobody finds, which is precisely how this one was reported as missing.
-        // The host says which chord it is: a terminal reports Shift+⏎ and Ctrl+⏎ as a bare ⏎, so there it is
-        // Alt+⏎, and a window keeps Alt+⏎ for itself, so there it is Ctrl+⏎.
-        items.Add(new CommandItem(
-            CommandGroup.Terminal, "Insert a newline in the command line", "term:newline", context.NewlineChord));
-
-        // LAYOUT — every entry carries the chord that runs it, because this surface is where the client
-        // is discovered from and the ⌃B keymap is otherwise visible only while the prefix is armed.
-        items.Add(new CommandItem(CommandGroup.Layout, "Split right", "layout:split-right", "⌃B |"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Split down", "layout:split-down", "⌃B -"));
-        items.Add(context.Zoomed
-            ? new CommandItem(CommandGroup.Layout, "Unzoom pane", "layout:unzoom", "⌃B z")
-            : new CommandItem(CommandGroup.Layout, "Zoom pane", "layout:zoom", "⌃B z"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Close pane", "layout:close", "⌃B x"));
-
-        // Directional pane focus. Listed whether or not the workspace has a second pane, deliberately:
-        // this is the surface that teaches the keyboard, and the entries are how a reader learns the
-        // workspace splits at all. Each refuses out loud when there is nothing that way.
-        items.Add(new CommandItem(CommandGroup.Layout, "Focus pane left", "layout:focus-left", "⌃←"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Focus pane right", "layout:focus-right", "⌃→"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Focus pane up", "layout:focus-up", "⌃↑"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Focus pane down", "layout:focus-down", "⌃↓"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Focus the next pane", "layout:cycle", "⌃O · ⌃B o"));
-
-        // The tab cycle, beside the pane cycle it rhymes with. Listed unconditionally for the same reason
-        // the four directional entries above are: this surface is where the keyboard is learnt, and a
-        // reader whose panes each hold one window has no other way to find out that a pane holds tabs at
-        // all. ⌃N has always done this and was named on F4 and nowhere else.
-        //
-        // Listing it obliges it to answer, which the directional entries pay for by refusing out loud and
-        // this one did not — it returned in silence on a pane with one tab, which is what a dead key looks
-        // like. The refusal is the host's (SharpMUTermApp.NextWindow); the entry is only allowed to exist
-        // because it is there.
-        items.Add(new CommandItem(CommandGroup.Layout, "Focus the next tab", "layout:next-tab", "⌃N"));
-
-        // Numbered pane jumps, one entry per pane that exists — the one group here that is *not* listed
-        // unconditionally, because "Go to pane 4" on a workspace with two panes names a place there is no
-        // way to make. The number is the one the move and drag overlays badge each pane with, so the entry
-        // and the digit a user is about to press in move mode are the same number.
-        //
-        // The chord is ⌃B N and no longer ⌥N: ⌥N names a *window* now, and a pane and a window are
-        // different destinations that cannot share one key. ⌃B is where the rest of the pane keymap lives.
-        // Only the first nine carry it, so a tenth pane gets an entry with no subtitle rather than one
-        // naming a key that does something else — the honest shape for a place only the mouse, ⌃O, the
-        // arrows and this entry can reach.
-        var paneCount = workspace.Layout.Panes.Count;
-        if (paneCount > 1)
-        {
-            for (var n = 1; n <= paneCount; n++)
-            {
-                items.Add(new CommandItem(
-                    CommandGroup.Layout,
-                    $"Go to pane {n}",
-                    CommandIds.Pane(n),
-                    n <= CommandIds.PaneJumpDigits ? $"⌃B {n}" : null));
-            }
-        }
-
-        // Pane size, in the plain words the request used ("increase/decrease a pane's horizontal or
-        // vertical character size") rather than in the chord's terms. Listed for the same reason the
-        // directional entries and the newline chord are: ⌥⇧+arrow is not a chord anybody guesses, and a
-        // feature reachable only by a chord nobody knows is the state ⌃L's newline sat in until it was
-        // reported as missing. Listed unconditionally too — each refuses out loud when the focused pane
-        // has no border to move that way, which is how a reader learns the workspace resizes at all.
-        // The arrow names what happens to *this* pane — ↑ taller, ↓ shorter — from either side of the
-        // split; it named the direction the divider travelled until that was reported as inverted.
-        items.Add(new CommandItem(CommandGroup.Layout, "Make this pane wider", "layout:wider", "⌥⇧→"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Make this pane narrower", "layout:narrower", "⌥⇧←"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Make this pane taller", "layout:taller", "⌥⇧↑"));
-        items.Add(new CommandItem(CommandGroup.Layout, "Make this pane shorter", "layout:shorter", "⌥⇧↓"));
-
-        // SETTINGS — one entry per configuration screen, in the order the host lists them (its F-key
-        // order). Every screen or none: a surface offering one of them and hiding the rest would read
-        // as "this is the only thing you can configure", which is the state the surface was in before.
-        if (settings is not null)
-        {
-            foreach (var screen in settings)
-            {
-                items.Add(new CommandItem(CommandGroup.Settings, $"Open {screen.Title}", screen.Id, screen.Shortcut));
-            }
-        }
-
-        return items;
     }
 }

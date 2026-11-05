@@ -70,6 +70,33 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's screen-reader regions; the window adds them beside the view.</summary>
     public WindowAnnouncer Announcer { get; } = new();
 
+    /// <summary>The window's native settings window, which the main window owns (<see cref="SettingsPresenter"/>).</summary>
+    public SettingsPresenter Settings { get; } = new();
+
+    /// <summary>The window's native ⌃P, drawn over everything in the main window (<see cref="PalettePresenter"/>).</summary>
+    public PalettePresenter Palette { get; } = new();
+
+    /// <summary>The window's native F1, drawn over the cells in the main window (<see cref="ComposerPresenter"/>).</summary>
+    public ComposerPresenter Composer { get; } = new();
+
+    /// <summary>
+    /// The window's native quit prompt, ⌃F, ⌃R, ⌥M and welcome, drawn over everything in the main window, the quit prompt
+    /// always in front (<see cref="ModalPresenter"/>).
+    /// </summary>
+    public ModalPresenter Modals { get; } = new();
+
+    /// <summary>The panels popped out into windows of their own (<see cref="ClientHost.FloatingPanels"/>).</summary>
+    public FloatingPanelPresenter Floating { get; } = new();
+
+    /// <summary>The window's title for what is in front, which the main window shows (<see cref="WindowTitleBar"/>).</summary>
+    public WindowTitleBar TitleBar { get; } = new();
+
+    /// <summary>The window's alerts while it is behind another (<see cref="WindowAttention"/>).</summary>
+    public WindowAttention Attention { get; } = new();
+
+    /// <summary>The desktop's file picker, for an import from another client (<see cref="WindowFilePicker"/>).</summary>
+    public WindowFilePicker FilePicker { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────
@@ -90,7 +117,19 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
 
     public void Flush()
     {
-        Volatile.Write(ref _frame, _grid.Snapshot(_caret));
+        // The band the client said while this frame was painted (PostBufferPaint runs before the flush, on this thread).
+        var frame = _grid.Snapshot(_caret);
+        if (Pointer.Band is { } band && band.Top + band.Rows <= frame.Height)
+        {
+            frame = frame.WithBand(band);
+        }
+
+        if (Pointer.Dividers is { Count: > 0 } dividers)
+        {
+            frame = frame.WithDividers(dividers);
+        }
+
+        Volatile.Write(ref _frame, frame);
         Interlocked.Increment(ref _frames);
         FrameReady?.Invoke();
     }
@@ -155,4 +194,28 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     }
 
     public void Dispose() => Pictures.Dispose();
+}
+
+/// <summary>
+/// The window's half of <see cref="IWindowTitle"/>: the client hands it <c>Character@World — SharpMUTerm</c> on its own
+/// thread, and the main window, which subscribes, puts it on the title bar and the taskbar entry on Avalonia's.
+/// </summary>
+internal sealed class WindowTitleBar : IWindowTitle
+{
+    /// <summary>The last title, or null before the client has said one.</summary>
+    public string? Current { get; private set; }
+
+    /// <summary>Raised on the client's thread with each new title.</summary>
+    public event Action<string>? Changed;
+
+    public void Show(string title)
+    {
+        Current = title;
+        Changed?.Invoke(title);
+    }
+
+    /// <summary>A window's title goes with the window; there is nothing to give back.</summary>
+    public void Restore()
+    {
+    }
 }

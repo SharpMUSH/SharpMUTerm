@@ -21,7 +21,18 @@
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Simple" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="SharpConsoleUI" />
+  </ItemGroup>
+
+  <!--
+    Bundled faces (Fonts/README.md): Inter for the native views, JetBrains Mono for the cells unless the font option names another,
+    and Symbols Nerd Font Mono for the chrome's icons. Embedded so a single-file publish carries them; the
+    licences are copied beside the executable so every package ships them.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\*.ttf" LogicalName="Fonts.%(Filename)%(Extension)" />
+    <None Include="Fonts\*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="licenses\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -248,7 +248,7 @@ public class PaneJumpTests
 
         await Assert.That(app.ArmedInputText).Contains("2");
         await Assert.That(app.FocusedPaneId).IsEqualTo(pane);
-        await Assert.That(MacroKeys.Verdict("2").Delivery).IsEqualTo(MacroKeyDelivery.Taken);
+        await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, "2").Delivery).IsEqualTo(MacroKeyDelivery.Taken);
         await Assert.That(MacroKeys.AppShortcuts.Any(s => s.Modifiers == 0 && s.Key == ConsoleKey.D2)).IsFalse();
     }
 

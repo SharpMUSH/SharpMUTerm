@@ -39,7 +39,7 @@ internal static class RenderPng
         }
 
         // Points to pixels at 96 dpi, the scale a window on an unscaled display would use.
-        using var fonts = new CellFonts(options.FontPoints * 96f / 72f, options.FontFamily);
+        using var fonts = new CellFonts(options.FontPoints * 96f / 72f, options.FontFamily, options.LineHeight);
         var frame = driver.Frame;
         var info = new SKImageInfo(frame.Width * fonts.CellWidth, frame.Height * fonts.CellHeight);
         using var surface = SKSurface.Create(info);

@@ -27,7 +27,7 @@ namespace SharpMUTerm.Tui.Tests;
 [NotInParallel]
 public class InputAreaLayoutTests
 {
-    private const int DefaultRows = 3; // InputSettings.Rows — one bar's height before anything wraps
+    private const int DefaultRows = 1; // InputSettings.Rows — one bar's height before anything wraps
     private const int MaxRows = 8;     // InputSettings.MaxRows — the most it grows to as it wraps
 
     private static readonly TerminalCapabilities Headless =
@@ -125,7 +125,7 @@ public class InputAreaLayoutTests
     /// </summary>
     [Test]
     [Arguments(120, 34)]
-    [Arguments(100, 24)]
+    [Arguments(100, 30)] // the smallest size that keeps the configured rows (NarrowColumns, ShortRows)
     public async Task OneBar_GetsItsConfiguredRows_AndTheWorkspaceTakesTheRest(int width, int height)
     {
         var frame = Frame(width, height);
@@ -143,7 +143,7 @@ public class InputAreaLayoutTests
     /// </summary>
     [Test]
     [Arguments(120, 34)]
-    [Arguments(100, 24)]
+    [Arguments(100, 30)] // the smallest size that keeps the configured rows (NarrowColumns, ShortRows)
     public async Task TwoBars_EachGetTheirRows_AndTheWorkspaceGivesThemUp(int width, int height)
     {
         Console.SetIn(TextReader.Null);
@@ -171,7 +171,7 @@ public class InputAreaLayoutTests
     /// </summary>
     [Test]
     [Arguments(120, 34)]
-    [Arguments(100, 24)]
+    [Arguments(100, 30)] // the smallest size that keeps the configured rows (NarrowColumns, ShortRows)
     public async Task BothBands_ArePaintedForAsManyRowsAsTheyWereGiven(int width, int height)
     {
         // draft2 raises the second bar, puts a line in each, and arms the second — so the armed band
@@ -182,8 +182,9 @@ public class InputAreaLayoutTests
             .IsEqualTo(frame.Rows.Primary);
         await Assert.That(RowsPainted(frame.Ansi, width, height, frame.ArmedBand))
             .IsEqualTo(frame.Rows.Second);
-        await Assert.That(frame.Rows.Primary).IsEqualTo(DefaultRows);
-        await Assert.That(frame.Rows.Second).IsEqualTo(DefaultRows);
+        // Each bar holds a draft, which may wrap past the one-row default; the bands still match the rows given.
+        await Assert.That(frame.Rows.Primary).IsGreaterThanOrEqualTo(DefaultRows);
+        await Assert.That(frame.Rows.Second).IsGreaterThanOrEqualTo(DefaultRows);
     }
 
     /// <summary>

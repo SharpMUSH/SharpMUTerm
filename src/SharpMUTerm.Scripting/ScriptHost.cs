@@ -102,6 +102,133 @@ public sealed class ScriptHost : IDisposable
         }
     }
 
+    /// <summary>
+    /// The script console's one line: evaluated in this host's sandbox, as a Lua REPL does — first as an expression
+    /// (<c>return …</c>), and as a statement when that does not parse — under the host's lock, and stopped once it has
+    /// run <paramref name="instructionLimit"/> Lua instructions or <paramref name="timeLimit"/> of time, so a loop
+    /// typed at the prompt cannot hang the thread it runs on. Errors are returned, never thrown.
+    /// </summary>
+    /// <remarks>
+    /// The chunk runs as a coroutine with MoonSharp's auto-yield counter set, and is resumed until it ends or a limit
+    /// passes; an abandoned coroutine is dropped. The limit is checked between Lua instructions, so Lua running inside a
+    /// callback a library function makes (<c>string.gsub</c>'s, <c>table.sort</c>'s) cannot be yielded out of: there it
+    /// runs to its end, which the console says nothing about because nothing can.
+    /// </remarks>
+    public ConsoleResult EvaluateConsole(string line, long instructionLimit = DefaultInstructionLimit, TimeSpan? timeLimit = null)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        var limit = timeLimit ?? DefaultTimeLimit;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return new ConsoleResult(null, "the scripts have been unloaded");
+            }
+
+            DynValue chunk;
+            try
+            {
+                chunk = _script.LoadString("return " + line, null, ConsoleChunk);
+            }
+            catch (SyntaxErrorException)
+            {
+                try
+                {
+                    chunk = _script.LoadString(line, null, ConsoleChunk);
+                }
+                catch (InterpreterException ex)
+                {
+                    return new ConsoleResult(null, ScriptException.FromInterpreter(ex).Message);
+                }
+            }
+
+            const int slice = 1000;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var coroutine = _script.CreateCoroutine(chunk).Coroutine;
+                coroutine.AutoYieldCounter = slice;
+                long ran = 0;
+                var result = coroutine.Resume();
+                while (result.Type == DataType.YieldRequest)
+                {
+                    ran += slice;
+                    if (ran >= instructionLimit || clock.Elapsed >= limit)
+                    {
+                        return new ConsoleResult(null, ran >= instructionLimit
+                            ? $"stopped after {instructionLimit.ToString("N0", CultureInfo.InvariantCulture)} instructions — a loop that does not end?"
+                            : $"stopped after {limit.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture)} ms — a loop that does not end?");
+                    }
+
+                    result = coroutine.Resume();
+                }
+
+                return new ConsoleResult(Describe(result), null);
+            }
+            catch (InterpreterException ex)
+            {
+                return new ConsoleResult(null, ScriptException.FromInterpreter(ex).Message);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return new ConsoleResult(null, ex.Message);
+            }
+        }
+    }
+
+    /// <summary>How many Lua instructions a console line may run before it is stopped.</summary>
+    public const long DefaultInstructionLimit = 2_000_000;
+
+    /// <summary>How long a console line may run before it is stopped.</summary>
+    public static readonly TimeSpan DefaultTimeLimit = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>The chunk name a console line's errors carry.</summary>
+    public const string ConsoleChunk = "console";
+
+    /// <summary>A value as the console shows it: nothing for no value, a tuple's values separated by tabs.</summary>
+    private static string? Describe(DynValue value)
+    {
+        // A lone nil is what a call like print(...) returns, and showing "= nil" after every print is noise.
+        if (value.Type is DataType.Void or DataType.Nil || (value.Type == DataType.Tuple && value.Tuple.Length == 0))
+        {
+            return null;
+        }
+
+        var text = value.Type == DataType.Tuple
+            ? string.Join('\t', value.Tuple.Select(Show))
+            : Show(value);
+        return text.Length > ConsoleValueLimit ? text[..(ConsoleValueLimit - 1)] + "…" : text;
+
+        static string Show(DynValue v) => v.Type switch
+        {
+            DataType.String => "\"" + v.String + "\"",
+            DataType.Table => ShowTable(v.Table),
+            _ => v.ToPrintString(),
+        };
+
+        static string ShowTable(Table table)
+        {
+            var parts = new List<string>();
+            foreach (var pair in table.Pairs.Take(20))
+            {
+                var key = pair.Key.Type == DataType.String ? pair.Key.String : "[" + pair.Key.ToPrintString() + "]";
+                var val = pair.Value.Type switch
+                {
+                    DataType.String => "\"" + pair.Value.String + "\"",
+                    DataType.Table => "{…}",
+                    _ => pair.Value.ToPrintString(),
+                };
+                parts.Add(key + " = " + val);
+            }
+
+            var more = table.Length > 20 || table.Pairs.Skip(20).Any() ? ", …" : string.Empty;
+            return "{ " + string.Join(", ", parts) + more + " }";
+        }
+    }
+
+    /// <summary>The longest value the console shows.</summary>
+    public const int ConsoleValueLimit = 400;
+
     /// <summary>Loads and executes a Lua file, tracking it for <see cref="Reload"/>.</summary>
     public void LoadFile(string path)
     {
@@ -125,7 +252,24 @@ public sealed class ScriptHost : IDisposable
             }
         }
 
-        Execute(source);
+        Run(source, Path.GetFileName(full));
+    }
+
+    /// <summary>Runs a file's source under its name, so its errors say <c>file:line</c>.</summary>
+    private void Run(string source, string chunkName)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            try
+            {
+                _script.DoString(source, null, chunkName);
+            }
+            catch (InterpreterException ex)
+            {
+                throw ScriptException.FromInterpreter(ex);
+            }
+        }
     }
 
     /// <summary>
@@ -154,7 +298,7 @@ public sealed class ScriptHost : IDisposable
                 throw new ScriptException($"Could not read script file '{file}': {ex.Message}", null, ex);
             }
 
-            Execute(source);
+            Run(source, Path.GetFileName(file));
         }
     }
 
@@ -674,3 +818,6 @@ public sealed class ScriptHost : IDisposable
         }
     }
 }
+
+/// <summary>What a console line came to: the value it returned (null for none), or the error that stopped it.</summary>
+public sealed record ConsoleResult(string? Value, string? Error);

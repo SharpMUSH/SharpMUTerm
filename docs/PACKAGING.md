@@ -56,6 +56,47 @@ dotnet publish src/SharpMUTerm.Avalonia -p:PublishProfile=linux-x64 -o out/linux
 
 Both use `packaging/icons/sharpmuterm.png` / `.ico`; the `.ico` is also each executable's Windows icon.
 
+### `telnet://` links
+
+Both packages can make `telnet://` and `telnets://` links open the window. The program never registers itself;
+the package does, and only where the player agreed to it:
+
+- **Linux** — `sharpmuterm.desktop` declares `MimeType=x-scheme-handler/telnet;x-scheme-handler/telnets;` and runs
+  `sharpmuterm-window --open-link %U`. It takes effect once the desktop integrates the AppImage (AppImageLauncher,
+  appimaged), or by hand: copy the desktop file to `~/.local/share/applications/`, point its `Exec=` at the AppImage,
+  and run `xdg-mime default sharpmuterm.desktop x-scheme-handler/telnet x-scheme-handler/telnets`.
+- **Windows** — the installer's *Open telnet:// and telnets:// links in SharpMUTerm* task (unchecked by default)
+  writes `Software\Classes\telnet` and `…\telnets` under `HKA` (the current user in the default per-user install)
+  with `"…\sharpmuterm-window.exe" --open-link "%1"`. Uninstalling removes both keys.
+
+`--open-link` is why the handler can be trusted with a link: with it on the command line, the client reads the one
+argument after it and drops every other (`ClientOptions.NarrowToLink`), so a link holding a quote cannot add
+arguments of its own. The link itself is read as server text (`TelnetLink`): host, port and TLS only — no user
+name or password, no path, no command. A running client is handed the link over a socket in
+`$XDG_RUNTIME_DIR/sharpmuterm/` (or beside `config.json`), and the new launch exits.
+
+### Alerts and the AppUserModelID
+
+The window takes the AppUserModelID `SharpMUTerm.Window` at start (`SetCurrentProcessExplicitAppUserModelID`), and
+the installer gives its Start menu and desktop shortcuts the same id and writes
+`Software\Classes\AppUserModelId\SharpMUTerm.Window` (`DisplayName`, and `IconUri` pointing at the installed
+`sharpmuterm.png`) under `HKA`, removed on uninstall. That key is what Windows needs before it shows a toast under the
+id, and its presence is how the window knows it may: an alert then shows a toast (through Windows PowerShell 5.1's
+WinRT `ToastNotificationManager`, the text base64-encoded inside the script) as well as flashing the taskbar. A copy
+run from the `.zip` has no key and only flashes. The program never writes the key itself. **Built, never run on
+Windows**: neither the toast nor the shortcut's id has been seen on a desktop.
+
+Linux needs nothing from the package: `notify-send` and, on X11, the window's urgency hint. macOS uses
+`/usr/bin/osascript`, which files the notification under Script Editor and asks once whether to allow it.
+
+### Passwords
+
+Character passwords go to the system's credential store when there is one that answers: Windows Credential Manager
+(built in), the Secret Service through libsecret's `secret-tool` on Linux (`libsecret-tools` on Debian and Ubuntu,
+`libsecret` on Fedora and Arch — recommend it, do not require it), and the login Keychain through `security` on
+macOS. Without one, or for a password it refuses, they stay in `secrets.json` beside `config.json`, as before.
+Existing `secrets.json` entries move into the store the first time the client starts with one.
+
 ## CI / releases
 
 `.github/workflows/release.yml` runs on `v*` tags (and manual dispatch). For `linux-x64` and `win-x64` it

@@ -38,6 +38,12 @@ public sealed class Macro
     /// </summary>
     public string Command { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether the binding is drawn as a dangerous one (<c>flee</c>, <c>quit</c>): the quick bar gives it the warning
+    /// colour in both hosts. Presentation only; the engine never reads it.
+    /// </summary>
+    public bool Danger { get; set; }
+
     /// <summary>Optional named script callback (resolved by the scripting layer).</summary>
     public string? ScriptCallback { get; init; }
 }

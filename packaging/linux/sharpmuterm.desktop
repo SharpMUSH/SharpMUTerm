@@ -3,9 +3,13 @@ Type=Application
 Name=SharpMUTerm
 GenericName=MU* Client
 Comment=A MUSH, MUCK and MUD client
-Exec=sharpmuterm-window %U
+Exec=sharpmuterm-window --open-link %U
 Icon=sharpmuterm
 Terminal=false
 Categories=Game;RolePlaying;
 Keywords=MUD;MUSH;MUCK;MU*;telnet;
 StartupWMClass=sharpmuterm-window
+# telnet:// and telnets:// links open the client. Registered only when the desktop integrates the AppImage
+# (AppImageLauncher, appimaged, or `xdg-mime default sharpmuterm.desktop x-scheme-handler/telnet`); the program never
+# registers itself.
+MimeType=x-scheme-handler/telnet;x-scheme-handler/telnets;

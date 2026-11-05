@@ -401,8 +401,7 @@ public class ScreenPaneNavigationTests
         yield return ("F3 aliases", new SettingsSession(
             selection => AliasesScreenRenderer.Model(sets, selection.SelectionIn(0))));
         yield return ("F4 keypad", new SettingsSession(
-            selection => KeypadScreenRenderer.Model(
-                sets.SelectMany(s => s.Macros).ToList(), sets, selection.SelectionIn(0))));
+            selection => KeypadScreenRenderer.Model(HostKeys.Terminal, sets.SelectMany(s => s.Macros).ToList(), sets, selection.SelectionIn(0))));
         yield return ("F5 worlds", WorldsSession(Worlds(), sets));
         yield return ("F6 timers", new SettingsSession(
             selection => TimersScreenRenderer.Model(sets, selection.SelectionIn(0))));

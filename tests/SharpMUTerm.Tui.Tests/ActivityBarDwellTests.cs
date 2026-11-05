@@ -49,10 +49,10 @@ public class ActivityBarDwellTests
     private static void DrawAndRead(SharpMUTermApp app, WorldSession session)
     {
         session.PrintSystem("*** before you left");
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         session.PrintSystem("*** while you were away");
         app.SimulateReturnFromAway(TimeSpan.FromMinutes(2));
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
     }
 
     [Test]
@@ -64,11 +64,11 @@ public class ActivityBarDwellTests
         await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
 
         time.Advance(TimeSpan.FromSeconds(29));
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
 
         time.Advance(TimeSpan.FromSeconds(2));
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
         await Assert.That(app.AwayBarIndex(Main)).IsNull();
     }
 
@@ -107,7 +107,7 @@ public class ActivityBarDwellTests
 
         app.SimulateScrollKey(Key(ConsoleKey.PageUp));
         time.Advance(TimeSpan.FromMinutes(5));
-        app.SimulateKey(Key(ConsoleKey.End));
+        app.SimulateKey(Key(ConsoleKey.LeftArrow));
 
         await Assert.That(app.AwayBarIndex(Main)).IsNotNull();
     }

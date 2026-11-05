@@ -175,7 +175,7 @@ public class SettingsPasteTests
         var binding = "F5";
         var session = new SettingsSession(_ => new ScreenModel(new[]
         {
-            ScreenRow.Of(ScreenField.Key("key", () => binding, v => binding = v, _ => null)),
+            ScreenRow.Of(ScreenField.Key(HostKeys.Terminal, "key", () => binding, v => binding = v, _ => null)),
         }));
         session.Handle(Key(ConsoleKey.Enter));
         await Assert.That(session.IsEditing).IsTrue();
@@ -228,7 +228,7 @@ public class SettingsPasteTests
         var binding = "F5";
         var session = new SettingsSession(_ => new ScreenModel(new[]
         {
-            ScreenRow.Of(ScreenField.Key("key", () => binding, v => binding = v, _ => null)),
+            ScreenRow.Of(ScreenField.Key(HostKeys.Terminal, "key", () => binding, v => binding = v, _ => null)),
         }));
         var system = new ConsoleWindowSystem(
             new HeadlessConsoleDriver(120, 34), new ConsoleWindowSystemOptions());

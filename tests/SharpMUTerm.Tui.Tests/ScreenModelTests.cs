@@ -65,7 +65,8 @@ public class ScreenModelTests
         // Three checkbox rows: gag and stop-processing, plus case sensitivity — which F3 has always
         // offered on an alias and F2 arbitrarily did not. It is appended rather than inserted, so the
         // two rows below still mean what every other assertion here says they mean.
-        await Assert.That(model.Sizes[1]).IsEqualTo(3);
+        // A fourth, "alert me when away", is appended the same way.
+        await Assert.That(model.Sizes[1]).IsEqualTo(4);
 
         model.ToggleAt(0, 1)!.Value.Flip();
         await Assert.That(sets[0].Triggers[1].Enabled).IsTrue();
@@ -143,7 +144,7 @@ public class ScreenModelTests
     public async Task Keypad_IsOnePaneOfMacroToggles()
     {
         var macros = Sets()[0].Macros;
-        var model = KeypadScreenRenderer.Model(macros);
+        var model = KeypadScreenRenderer.Model(HostKeys.Terminal, macros);
 
         await Assert.That(model.PaneCount).IsEqualTo(1);
 
@@ -164,7 +165,7 @@ public class ScreenModelTests
     public async Task Keypad_GrowsItsButtonsOnceItKnowsWhichSetsTheBindingsLiveIn()
     {
         var sets = Sets();
-        var model = KeypadScreenRenderer.Model(sets[0].Macros, sets, selected: 0);
+        var model = KeypadScreenRenderer.Model(HostKeys.Terminal, sets[0].Macros, sets, selected: 0);
 
         await Assert.That(model.ListSizes[0]).IsEqualTo(1);
         await Assert.That(model.Sizes[0]).IsEqualTo(2); // was 3, with the removal reachable
@@ -364,16 +365,19 @@ public class ScreenModelTests
         var screen = OptionsScreenRenderer.TextAnsiScreen();
         var model = OptionsScreenRenderer.Model(screen);
 
-        // 21 display rows: 6 section headers + 5 spacers + 10 options. It was 7/4 before WHITESPACE and
-        // its "tab width (spaces)" row, which brought a header and a spacer with it, 10/5 before
-        // "detect links in output" joined the COLOUR section, 11/6 before ACTIVITY and its
-        // "activity bar holds for (seconds)" row brought a header and a spacer of their own, and 14/7
-        // before "keep text legible" joined COLOUR beneath the row it is the other half of, and 15/8
-        // before BACKGROUND and its "background transparency (%)" row, and 18/9 before STATUS ROW and its
-        // "meters" row.
-        await Assert.That(screen.Rows.Count).IsEqualTo(21);
+        // 26 display rows: 6 group headings + 5 spacers + the meter table's column headings (drawn, never a
+        // stop) + 14 stops — eight settings in four groups, the three default meters, [+ meter], the
+        // activity bar's hold and split scrollback. SOUND is left out because this caller passes no sound
+        // settings. Since F7 was drawn from its declared section the groups are COLOUR & LEGIBILITY, TEXT,
+        // LINKS & PICTURES, STATUS ROW & METERS, ACTIVITY and SCROLLBACK; it was 21/10 with one row for the
+        // meters as a typed line, and 23/13 before SCROLLBACK.
+        // The THEME group on top adds thirteen rows and three stops: its heading and spacer, a row per built-in
+        // theme, and the preview's caption and seven rows, which are drawn and never a stop.
+        // ALERTS adds three rows and one stop: its heading, its spacer and `alert when away`.
+        // SCENE LOG adds four rows and two stops: its heading, its spacer, the format and what is recorded.
+        await Assert.That(screen.Rows.Count).IsEqualTo(46);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(10);
+        await Assert.That(model.Sizes[0]).IsEqualTo(20);
     }
 
     /// <summary>
@@ -388,32 +392,36 @@ public class ScreenModelTests
         var text = new TextSettings();
         var model = OptionsScreenRenderer.Model(OptionsScreenRenderer.TextAnsiScreen(text));
 
-        model.ToggleAt(0, 0)!.Value.Flip();
+        // The three built-in themes are the first three stops; the ordinals below count from after them.
+        const int Themes = 3;
+
+        model.ToggleAt(0, Themes + 0)!.Value.Flip();
         await Assert.That(text.StripIncomingColour).IsTrue();
 
         // 1 is "keep text legible", which sits directly under the row above because the two are the ends
         // of one question's range — discard every colour the server sent, or keep them and move the few
         // that cannot be read.
-        model.ToggleAt(0, 1)!.Value.Flip();
+        model.ToggleAt(0, Themes + 1)!.Value.Flip();
         await Assert.That(text.KeepTextLegible).IsFalse();
 
-        model.ToggleAt(0, 3)!.Value.Flip();
+        model.ToggleAt(0, Themes + 6)!.Value.Flip();
         await Assert.That(text.UnderlineHyperlinks).IsFalse();
 
-        model.ToggleAt(0, 4)!.Value.Flip();
+        model.ToggleAt(0, Themes + 7)!.Value.Flip();
         await Assert.That(text.DetectLinks).IsFalse();
 
-        model.ToggleAt(0, 6)!.Value.Flip();
+        model.ToggleAt(0, Themes + 5)!.Value.Flip();
         await Assert.That(text.EmojiSubstitution).IsFalse();
 
-        // Row 5 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
+        // Row 4 is the tab width — a count, so it is a field rather than a toggle, and it is what makes
         // this screen carry an editable row at all.
-        await Assert.That(model.ToggleAt(0, 5)).IsNull();
+        await Assert.That(model.ToggleAt(0, Themes + 4)).IsNull();
         await Assert.That(model.HasEditableRow).IsTrue();
 
-        // Row 7 is the background transparency, a percentage rather than the checkbox it started as.
-        await Assert.That(model.ToggleAt(0, 7)).IsNull();
-        var transparency = model.FieldAt(0, 7, 0)!.Value;
+        // Row 3 is the background transparency, a percentage rather than the checkbox it started as, at the
+        // foot of COLOUR & LEGIBILITY.
+        await Assert.That(model.ToggleAt(0, Themes + 3)).IsNull();
+        var transparency = model.FieldAt(0, Themes + 3, 0)!.Value;
         await Assert.That(transparency.Validate("101")).IsNotNull();
         transparency.Set("60");
         await Assert.That(text.BackgroundTransparency).IsEqualTo(60);
@@ -483,7 +491,7 @@ public class ScreenModelTests
 
         await Assert.That(edits.Apply(height, "0")).IsNotNull();
         await Assert.That(edits.Apply(height, "21")).IsNotNull();
-        await Assert.That(input.Rows).IsEqualTo(3);
+        await Assert.That(input.Rows).IsEqualTo(1);
     }
 
     /// <summary>
@@ -512,7 +520,7 @@ public class ScreenModelTests
         var model = WorldsScreenRenderer.Model(worlds, Sets(), 0, 0);
         var row = model.RowAt(WorldsScreenRenderer.CharactersPane, 0);
 
-        await Assert.That(row.FieldCount).IsEqualTo(10);
+        await Assert.That(row.FieldCount).IsEqualTo(11);
         await Assert.That(row.FieldAt(WorldsScreenRenderer.CharacterNameField)!.Value.Get()).IsEqualTo("Kaz");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogFormatField)!.Value.Get()).IsEqualTo("Html");
         await Assert.That(row.FieldAt(WorldsScreenRenderer.LogDirectoryField)!.Value.Get()).IsEqualTo("/logs/kaz");

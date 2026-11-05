@@ -21,34 +21,49 @@ internal static class TriggersScreenView
         int selectedTrigger,
         IReadOnlyList<string> routeTargets,
         int width,
+        ScreenTheme scheme,
         ScreenFocus? focus = null,
         int height = 0,
-        Theme? theme = null)
+        Theme? theme = null,
+        IReadOnlyList<string>? recent = null)
     {
         var header = ScreenChrome.Band(
             TriggersScreenRenderer.HeaderLine(
                 width, TriggersScreenRenderer.Model(sets, selectedTrigger, routeTargets), focus),
-            ScreenPalette.HeaderBg);
+            ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            TriggersScreenRenderer.FooterLine(sets, selectedTrigger, width, focus), ScreenPalette.FooterBg);
+            TriggersScreenRenderer.FooterLine(sets, selectedTrigger, width, focus), ScreenPalette.FooterBg, scheme);
 
         // Body: rule list │ editor, as two real columns. The split is a function of the screen's width:
         // at 120 the rule list keeps the share it was designed with, and at 100 it gives cells back to
         // the editor rather than letting the attribute legend run off the right-hand edge.
+        var body = ScreenChrome.Rows(height);
+        if (ScreenChrome.TooNarrowForTwo(
+                width, TriggersScreenRenderer.MinColumnWidth, TriggersScreenRenderer.MinEditorWidth))
+        {
+            // One column at a time: the rule list, or the editor once the keyboard has moved into it or
+            // ⏎ has opened one of the rule's fields, which are drawn in the editor and nowhere else.
+            var only = focus is { } f && (f.InPane(1) || f.IsEditing)
+                ? TriggersScreenRenderer.EditorColumn(sets, selectedTrigger, routeTargets, focus, width, body, theme, recent)
+                : TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, width);
+            return ScreenChrome.Single(
+                header, footer, ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(only, body), scheme)),
+                only.Count, body);
+        }
+
         var rules = ScreenChrome.SplitWidth(
             width,
             TriggersScreenRenderer.ColumnWidth,
             TriggersScreenRenderer.MinColumnWidth,
             TriggersScreenRenderer.MinEditorWidth);
-        var body = ScreenChrome.Rows(height);
         var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules);
         var right = TriggersScreenRenderer.EditorColumn(
             sets, selectedTrigger, routeTargets, focus,
-            width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme);
+            width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme, recent);
 
-        var rulesCol = ScreenChrome.Stretch(new MarkupControl(ScreenChrome.Window(left, body)));
-        var editorCol = ScreenChrome.Stretch(new MarkupControl(
-            ScreenChrome.Indent(ScreenChrome.Window(right, body))));
-        return ScreenChrome.Split(header, footer, rulesCol, editorCol, rules, Math.Max(left.Count, right.Count), body);
+        var rulesCol = ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(left, body), scheme));
+        var editorCol = ScreenChrome.Stretch(ScreenChrome.Panel(
+            ScreenChrome.Indent(ScreenChrome.Window(right, body)), scheme));
+        return ScreenChrome.Split(header, footer, rulesCol, editorCol, rules, Math.Max(left.Count, right.Count), body, scheme);
     }
 }

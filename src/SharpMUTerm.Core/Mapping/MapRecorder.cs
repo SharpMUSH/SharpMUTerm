@@ -124,6 +124,210 @@ public sealed class MapRecorder : IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>The most edits <see cref="Undo"/> can take back.</summary>
+    public const int UndoDepth = 10;
+
+    /// <summary>What an undo puts back: the rooms an edit touched as they were (null where it made one), the areas, and the pending link.</summary>
+    private sealed record UndoEntry(string Label, IReadOnlyDictionary<long, MapRoom?> Rooms, IReadOnlyDictionary<int, MapArea> Areas, (long From, string Exit)? Pending);
+
+    private readonly LinkedList<UndoEntry> _undo = new();
+
+    /// <summary>
+    /// An exit waiting for the next room the character walks into: <c>From</c>'s <c>Exit</c> will lead there. Set by
+    /// <see cref="LinkNext"/>; read by a view to say so.
+    /// </summary>
+    public (long From, string Exit)? PendingLink { get; private set; }
+
+    /// <summary>What <see cref="Undo"/> would take back, or null when nothing would.</summary>
+    public string? UndoLabel
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _undo.First?.Value.Label;
+            }
+        }
+    }
+
+    /// <summary>How many edits <see cref="Undo"/> can take back.</summary>
+    public int UndoCount
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _undo.Count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A change made by hand that can be undone: the rooms <paramref name="touched"/> names are copied first, the
+    /// change is applied under the lock, and when it answers true it is kept for <see cref="Undo"/> (the last
+    /// <see cref="UndoDepth"/>), the map is marked dirty and redrawn. When it answers false nothing is kept or raised.
+    /// </summary>
+    public bool Edit(string label, IEnumerable<long> touched, Func<WorldMap, bool> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        bool changed;
+        lock (SyncRoot)
+        {
+            var entry = Snapshot(label, touched);
+            changed = change(Map);
+            if (changed)
+            {
+                Push(entry);
+                IsDirty = true;
+            }
+        }
+
+        if (changed)
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Arms <paramref name="exit"/> of room <paramref name="from"/> to lead to the next room the character walks into
+    /// (Mudlet's "the room I go to next"). Undoable like any edit; a second arming replaces the first.
+    /// </summary>
+    public bool LinkNext(long from, string exit)
+    {
+        var key = WorldMap.ExitKey(exit);
+        if (key.Length == 0)
+        {
+            return false;
+        }
+
+        lock (SyncRoot)
+        {
+            if (Map.Room(from) is null || PendingLink == (from, key))
+            {
+                return false;
+            }
+
+            Push(Snapshot($"wait to link {key}", []));
+            PendingLink = (from, key);
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    /// <summary>The last report of each room, this run: what <see cref="ResetToServer"/> puts back.</summary>
+    private readonly Dictionary<long, RoomObservation> _served = new();
+
+    /// <summary>
+    /// Gives a room back to the server: forgets which of its fields were edited by hand (<see cref="MapRoom.HandEdited"/>)
+    /// and, when the server has reported the room this run, puts back its name, area, exits and place at once; otherwise
+    /// the next report does. Undoable like any edit. False when nothing was edited by hand.
+    /// </summary>
+    public bool ResetToServer(long id, string label) => Edit(label, [id], map =>
+    {
+        if (map.Room(id) is not { } room || room.HandEdited.Count == 0)
+        {
+            return false;
+        }
+
+        var edited = room.HandEdited.ToList();
+        room.HandEdited.Clear();
+        if (_served.TryGetValue(id, out var seen))
+        {
+            if (edited.Contains(MapFields.Name) && seen.Name.Length > 0)
+            {
+                room.Name = seen.Name;
+            }
+
+            if (edited.Contains(MapFields.Area) && !string.IsNullOrWhiteSpace(seen.Area))
+            {
+                room.AreaId = map.AreaNamed(seen.Area).Id;
+            }
+
+            if (edited.Contains(MapFields.Exits))
+            {
+                SetExits(room, seen.Exits);
+            }
+
+            if (edited.Contains(MapFields.Position) && seen.Coordinates is { } at)
+            {
+                (room.X, room.Y, room.Z) = at;
+            }
+        }
+
+        return true;
+    });
+
+    /// <summary>Whether the server has reported this room this run, so a reset can put its values back at once.</summary>
+    public bool HasServerReport(long id)
+    {
+        lock (SyncRoot)
+        {
+            return _served.ContainsKey(id);
+        }
+    }
+
+    /// <summary>Takes back the last edit. Returns what it took back, or null when there was nothing to.</summary>
+    public string? Undo()
+    {
+        string label;
+        lock (SyncRoot)
+        {
+            if (_undo.First?.Value is not { } entry)
+            {
+                return null;
+            }
+
+            _undo.RemoveFirst();
+            foreach (var (id, room) in entry.Rooms)
+            {
+                if (room is null)
+                {
+                    Map.Rooms.Remove(id);
+                }
+                else
+                {
+                    Map.Rooms[id] = room.Clone();
+                }
+            }
+
+            // Areas the edit made go again unless a room has come to use one since; the ones it had are put back.
+            foreach (var id in Map.Areas.Keys.Where(id => !entry.Areas.ContainsKey(id) && Map.Rooms.Values.All(r => r.AreaId != id)).ToList())
+            {
+                Map.Areas.Remove(id);
+            }
+
+            foreach (var (id, area) in entry.Areas)
+            {
+                Map.Areas[id] = new MapArea { Id = area.Id, Name = area.Name };
+            }
+
+            PendingLink = entry.Pending;
+            IsDirty = true;
+            label = entry.Label;
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+        return label;
+    }
+
+    private UndoEntry Snapshot(string label, IEnumerable<long> touched) => new(
+        label,
+        touched.Distinct().ToDictionary(id => id, id => Map.Room(id)?.Clone()),
+        Map.Areas.ToDictionary(a => a.Key, a => new MapArea { Id = a.Value.Id, Name = a.Value.Name }),
+        PendingLink);
+
+    private void Push(UndoEntry entry)
+    {
+        _undo.AddFirst(entry);
+        while (_undo.Count > UndoDepth)
+        {
+            _undo.RemoveLast();
+        }
+    }
+
     /// <summary>Applies one observation. Public so a test, or a script, can drive the recorder directly.</summary>
     public void Apply(RoomObservation observation)
     {
@@ -147,7 +351,16 @@ public sealed class MapRecorder : IDisposable
         {
             if (Map.Room(observation.Id ?? CurrentRoomId ?? long.MinValue) is { } here)
             {
-                SetExits(here, observation.Exits);
+                if (_served.TryGetValue(here.Id, out var seen))
+                {
+                    _served[here.Id] = seen with { Exits = observation.Exits };
+                }
+
+                if (!here.HandEdited.Contains(MapFields.Exits))
+                {
+                    SetExits(here, observation.Exits);
+                }
+
                 Touch();
             }
 
@@ -162,13 +375,20 @@ public sealed class MapRecorder : IDisposable
         var room = Map.Room(id);
         var created = room is null;
         room ??= Map.Add(new MapRoom { Id = id });
+        _served[room.Id] = observation;
 
-        if (observation.Name.Length > 0)
+        // A field the player edited by hand is theirs: the report leaves it alone until "reset to server".
+        var mine = room.HandEdited;
+        if (observation.Name.Length > 0 && !mine.Contains(MapFields.Name))
         {
             room.Name = observation.Name;
         }
 
-        if (!string.IsNullOrWhiteSpace(observation.Area))
+        if (mine.Contains(MapFields.Area))
+        {
+            // kept as the player set it
+        }
+        else if (!string.IsNullOrWhiteSpace(observation.Area))
         {
             room.AreaId = Map.AreaNamed(observation.Area).Id;
         }
@@ -178,11 +398,17 @@ public sealed class MapRecorder : IDisposable
         }
 
         room.Environment = observation.Environment ?? room.Environment;
-        SetExits(room, observation.Exits);
+        if (!mine.Contains(MapFields.Exits))
+        {
+            SetExits(room, observation.Exits);
+        }
 
         if (observation.Coordinates is { } at)
         {
-            (room.X, room.Y, room.Z) = at;
+            if (!mine.Contains(MapFields.Position))
+            {
+                (room.X, room.Y, room.Z) = at;
+            }
         }
         else if (created)
         {
@@ -192,6 +418,14 @@ public sealed class MapRecorder : IDisposable
         if (previous is not null && walked is not null && previous.Id != room.Id)
         {
             Link(previous, walked, room);
+        }
+
+        // An exit the player asked to lead to "the next room I go to": this is it, unless it is the room it leaves.
+        if (PendingLink is { } pending && pending.From != room.Id && Map.Room(pending.From) is not null)
+        {
+            Push(Snapshot($"link {pending.Exit}", [pending.From]));
+            Map.SetExit(pending.From, pending.Exit, room.Id);
+            PendingLink = null;
         }
 
         CurrentRoomId = room.Id;

@@ -6,7 +6,7 @@ using SharpConsoleUI.Layout;
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// Composes an options screen (F7 Text &amp; ANSI, F8 Input &amp; spellcheck) from real
+/// Composes an options screen (F7 Text &amp; display, F8 Input) from real
 /// panels rather than one merged markup blob: a header band carrying the keyboard hints, the options
 /// list on a single full-width elevated card, and a Cancel/Save action bar pinned to the last row.
 /// These screens are one list, not two panes, so there is no column split and no vertical rule — the
@@ -22,18 +22,33 @@ internal static class OptionsScreenView
     /// <summary>Columns the list is inset by: two of padding on each side of the card.</summary>
     private const int CardInset = 4;
 
+    /// <param name="height">
+    /// The screen's height, or 0 for none. With one, a list taller than the body is windowed around the
+    /// cursor (<see cref="ScreenChrome.Window"/>) rather than run off the bottom — F7 with its meter table and
+    /// SOUND group is taller than a 24-row terminal.
+    /// </param>
     public static IWindowControl Build(
-        OptionsScreenRenderer.OptionsScreen screen, int width, ScreenFocus? focus = null)
+        OptionsScreenRenderer.OptionsScreen screen,
+        int width,
+        ScreenTheme scheme,
+        ScreenFocus? focus = null,
+        int height = 0)
     {
         var header = ScreenChrome.Band(
             OptionsScreenRenderer.HeaderLine(
                 screen.Title, screen.FKey, width, OptionsScreenRenderer.Model(screen), focus),
-            ScreenPalette.HeaderBg);
+            ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
-            OptionsScreenRenderer.FooterLine(screen.Rows, width, focus), ScreenPalette.FooterBg);
+            OptionsScreenRenderer.FooterLine(screen.Rows, width, focus), ScreenPalette.FooterBg, scheme);
 
         var rows = OptionsScreenRenderer.BodyColumn(screen.Rows, focus, Math.Max(0, width - CardInset));
-        var card = Card(rows);
+        if (height > 0)
+        {
+            // The header, the footer, the card's pad row above the list and one row of backdrop below it.
+            rows = ScreenChrome.Window(rows, Math.Max(1, height - 2 - CardPadding));
+        }
+
+        var card = Card(rows, scheme);
 
         // Header on the first row, footer on the last, the card hugging its content directly beneath the
         // header and the remaining space left as backdrop — so the action bar sits at the bottom of the
@@ -47,9 +62,25 @@ internal static class OptionsScreenView
             .Columns(GridLength.Star(1));
         root.Place(header, 0, 0, 1, 1);
         root.Place(card, 1, 0, 1, 1);
+        root.Place(Backdrop(scheme), 2, 0, 1, 1);
         root.Place(footer, 3, 0, 1, 1);
 
         return root.Build();
+    }
+
+    /// <summary>
+    /// The backdrop under the card, painted from <paramref name="scheme"/> rather than left to the window: while F7's
+    /// theme picker previews another theme, the window behind is still the theme in force.
+    /// </summary>
+    private static IWindowControl Backdrop(ScreenTheme scheme)
+    {
+        var fill = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Column(c => c.Flex(1).Add(ScreenChrome.Panel([string.Empty], scheme, ScreenPalette.PanelBg)))
+            .Build();
+        fill.BackgroundColor = scheme.Colour(ScreenPalette.PanelBg);
+        return fill;
     }
 
     /// <summary>
@@ -57,15 +88,16 @@ internal static class OptionsScreenView
     /// cells its lines cover, so the card is a grid — a grid's background covers its whole arranged
     /// area, giving the band its full width and the padding rows their colour.
     /// </summary>
-    private static IWindowControl Card(IReadOnlyList<string> rows)
+    private static IWindowControl Card(IReadOnlyList<string> rows, ScreenTheme scheme)
     {
-        var list = new MarkupControl(Pad(rows)) { HorizontalAlignment = HorizontalAlignment.Stretch };
+        var list = ScreenChrome.Panel(Pad(rows), scheme, ScreenPalette.EditBg);
+        list.HorizontalAlignment = HorizontalAlignment.Stretch;
         var card = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(c => c.Flex(1).Add(list))
             .Build();
-        card.BackgroundColor = new Color(ScreenPalette.EditBg);
+        card.BackgroundColor = scheme.Colour(ScreenPalette.EditBg);
         return card;
     }
 

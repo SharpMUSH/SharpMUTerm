@@ -1,0 +1,926 @@
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Threading;
+using SharpMUTerm.Core.Layouts;
+using SharpMUTerm.Core.Workspaces;
+using SharpMUTerm.Tui;
+using SkiaSharp;
+
+namespace SharpMUTerm.Avalonia;
+
+/// <summary>
+/// The window's native views, in a layer over the whole window: the header band and the connections sidebar beside
+/// the <see cref="TerminalView"/> (when the window draws them, <see cref="HostChrome"/>), the header buttons, and
+/// native panels drawn over the panes the client says hold them. The header and the sidebar have no cells under
+/// them — the client leaves no row or column for them, and this layer moves the view out of their way
+/// (<see cref="NativeLayout"/>) — while a panel sits over its pane's cells, which are painted underneath exactly as in
+/// a terminal, so nothing a panel does takes a cell, moves a pane or changes what any world is told.
+/// <para>
+/// <b>Input.</b> The layer itself has no background and so is never hit: a pointer anywhere it draws nothing goes
+/// to the view, and on to the client, as before. A header button is the window's alone — its press, release,
+/// movement and wheel stop at it and never reach the client, which is what lets it sit over cells the client
+/// would otherwise read as a press on the header. The vitals gauges are a picture of their pane and take no input:
+/// a press, a drag, a right-click or the wheel over them reaches the client as a press on the pane's cells, so
+/// focus, the pane's menu and selection behave as they do in a terminal. The map, the who-here list and the quick
+/// bar are used with the pointer, so they take it (<see cref="MapCanvas"/>: zoom, pan, click to walk;
+/// <see cref="WhoHereList"/>: click a name; <see cref="QuickBarButtons"/>: click a binding) and hand only a right
+/// click on to the client. None of them takes keyboard focus.
+/// </para>
+/// </summary>
+internal sealed partial class DesktopLayer : Canvas
+{
+    /// <summary>How many header cells a button covers. The header always ends in three blank cells.</summary>
+    internal const int ButtonCells = 3;
+
+    private readonly TerminalView _view;
+    private readonly WindowPointer _pointer;
+    private readonly HostChrome _chrome;
+    private readonly Dictionary<string, HeaderButton> _buttons = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, VitalsGauges> _gauges = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, MapCanvas> _maps = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PopOutButton> _popOuts = new(StringComparer.Ordinal);
+    private readonly NativeHeader _header;
+    private readonly NativeSidebar _sidebar;
+    private readonly NativeFooter _footer;
+    private readonly Dictionary<string, WhoHereList> _whoHere = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, QuickBarButtons> _quickBars = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CollapsedBarView> _collapsedBars = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ComposerView> _composers = new(StringComparer.Ordinal);
+    private readonly NoticeToasts _toasts;
+    private readonly Dictionary<string, NativeTabStrip> _strips = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ScrollBandView> _bands = new(StringComparer.Ordinal);
+    private readonly SeamRules _seams = new();
+    private (SharpMUTerm.Core.Theming.Theme Theme, NativeTokens Tokens)? _paneTokens;
+    private int _noticeAboveRow;
+
+    /// <param name="view">The cells.</param>
+    /// <param name="chrome">
+    /// Which chrome the window draws: the same value the client was told (<see cref="ClientHost.Chrome"/>), so the part
+    /// the client leaves out of the cells is the part this layer draws, and nothing is drawn twice or not at all.
+    /// </param>
+    public DesktopLayer(TerminalView view, HostChrome chrome)
+    {
+        _view = view;
+        _chrome = chrome;
+        _pointer = view.Driver.Pointer;
+        _view.CellsHoldHeader = !chrome.Header;
+        _view.DrawsInputField = chrome.Input;
+        ClipToBounds = true;
+        _pointer.ActionsChanged += () => Dispatcher.UIThread.Post(Sync);
+        _pointer.PanelsChanged += () => Dispatcher.UIThread.Post(Sync);
+        _pointer.ChromeChanged += () => Dispatcher.UIThread.Post(Sync);
+        _pointer.PaneChromeChanged += () => Dispatcher.UIThread.Post(Sync);
+
+        // The chrome first, so every panel and button is drawn over it.
+        _header = new NativeHeader(view) { IsVisible = false };
+        _sidebar = new NativeSidebar(view) { IsVisible = false };
+        _footer = new NativeFooter(view) { IsVisible = false };
+        Children.Add(_header);
+        Children.Add(_sidebar);
+        Children.Add(_footer);
+
+        // The runs of the native views' rules into the divider cells beside them: over the cells, under nothing it touches.
+        Children.Add(_seams);
+        _pointer.StatusChanged += () => Dispatcher.UIThread.Post(Sync);
+
+        // A dragged tab's hint over the panels; the toasts still over it.
+        Children.Add(_dragView);
+
+        // The toasts last, over everything: a notice is the one thing the window says over a panel.
+        _toasts = new NoticeToasts();
+        Children.Add(_toasts);
+        _pointer.NoticeSaid += notice => Dispatcher.UIThread.Post(() =>
+        {
+            _noticeAboveRow = notice.AboveRow;
+            Sync();
+            _toasts.Show(notice);
+        });
+        _view.Repainted += Sync;
+        SyncInsets(collapsed: false);
+        Sync();
+    }
+
+    /// <summary>Which chrome this layer draws. Internal for tests.</summary>
+    internal HostChrome Chrome => _chrome;
+
+    /// <summary>
+    /// Where the cells start in this layer: past the native header and sidebar. Every view placed over cells is placed
+    /// from here, so a panel sits on its pane however wide the sidebar is.
+    /// </summary>
+    internal Point CellOrigin => new(_view.Margin.Left, _view.Margin.Top);
+
+    /// <summary>
+    /// Moves the cells out of the way of the native header and sidebar: the view's margin is their size, so the view —
+    /// and the grid it hands the driver, and so every pane the client lays out — is what is left of the window.
+    /// </summary>
+    private void SyncInsets(bool collapsed)
+    {
+        var insets = NativeLayout.Insets(_chrome, collapsed);
+        if (_view.Margin != insets)
+        {
+            _view.Margin = insets;
+        }
+    }
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        Sync();
+    }
+
+    /// <summary>The header button for an action, or null. Internal for tests.</summary>
+    internal HeaderButton? Button(string actionId) => _buttons.GetValueOrDefault(actionId);
+
+    /// <summary>The native vitals gauges by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, VitalsGauges> Gauges => _gauges;
+
+    /// <summary>The native maps by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, MapCanvas> Maps => _maps;
+
+    /// <summary>The pop-out buttons, by the panel window each pops out. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, PopOutButton> PopOuts => _popOuts;
+
+    /// <summary>The native header. Internal for tests.</summary>
+    internal NativeHeader Header => _header;
+
+    /// <summary>The native sidebar. Internal for tests.</summary>
+    internal NativeSidebar Sidebar => _sidebar;
+
+    /// <summary>The native status footer. Internal for tests.</summary>
+    internal NativeFooter Footer => _footer;
+
+    /// <summary>The native who-here lists by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, WhoHereList> WhoHere => _whoHere;
+
+    /// <summary>The native quick bars by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, QuickBarButtons> QuickBars => _quickBars;
+
+    /// <summary>The collapsed panels' bars, by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, CollapsedBarView> CollapsedBars => _collapsedBars;
+
+    /// <summary>The native docked composers by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, ComposerView> Composers => _composers;
+
+    /// <summary>
+    /// Gives the keyboard to the docked composer the client says is armed, or else to the cells: where it goes back to
+    /// when ⌃P or F1 closes.
+    /// </summary>
+    internal void FocusArmedComposer()
+    {
+        if (_composers.Values.FirstOrDefault(c => c.Model is { Armed: true }) is { } armed)
+        {
+            armed.Editor.Focus();
+            return;
+        }
+
+        _view.Focus();
+    }
+
+    /// <summary>The last header menu opened. Internal for tests.</summary>
+    internal ContextMenu? OpenedMenu { get; private set; }
+
+    /// <summary>Puts every native view where the client's last word and the last frame say it goes.</summary>
+    internal void Sync()
+    {
+        var frame = _view.Driver.Frame;
+        var cell = _view.CellExtent;
+        SyncChrome();
+        SyncButtons(frame, cell);
+        SyncPanels(frame, cell);
+        SyncPaneChrome(cell);
+        SyncTabDrag(cell);
+        SyncSeams(cell);
+        SyncToasts(frame, cell);
+    }
+
+    /// <summary>The native views' rules carried on to the pane dividers' hairlines beside them. Internal for tests.</summary>
+    internal SeamRules Seams => _seams;
+
+    /// <summary>
+    /// Runs each full-width rule a native view over a pane draws (<see cref="IEdgeRules"/>) on through the half divider
+    /// cell between the view's edge and the divider's hairline (<see cref="TerminalView.VerticalHairlines"/>), so a tab
+    /// strip's foot, a panel's heading and a strip's seams meet the hairline rather than stopping half a cell short.
+    /// </summary>
+    private void SyncSeams(Size cell)
+    {
+        SetLeft(_seams, 0);
+        SetTop(_seams, 0);
+        _seams.Width = Math.Max(0, Bounds.Width);
+        _seams.Height = Math.Max(0, Bounds.Height);
+        var origin = CellOrigin;
+        var hairlines = _view.VerticalHairlines().Select(h => h.Translate(new Vector(origin.X, origin.Y))).ToList();
+        var views = _strips.Values.Cast<Control>().Concat(_bands.Values).Concat(_gauges.Values).Concat(_maps.Values)
+            .Concat(_whoHere.Values).Concat(_quickBars.Values).Concat(_collapsedBars.Values).Concat(_composers.Values)
+            .Where(v => v.IsVisible && v.Width > 0 && v.Height > 0 && v is IEdgeRules)
+            .Select(v => (new Rect(GetLeft(v), GetTop(v), v.Width, v.Height), ((IEdgeRules)v).EdgeRules(new Size(v.Width, v.Height))));
+        _seams.Show(SeamRules.Between(views, hairlines, cell.Width));
+    }
+
+    /// <summary>The native tab strips by pane id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, NativeTabStrip> Strips => _strips;
+
+    /// <summary>The native scrolled-back bands by window id. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, ScrollBandView> Bands => _bands;
+
+    /// <summary>
+    /// Each pane's tab strip over the row the client left blank for it, and each scrolled-back band over its row: placed
+    /// from the cells, so a strip is exactly its pane's width and one row deep, and never over another cell.
+    /// </summary>
+    private void SyncPaneChrome(Size cell)
+    {
+        var said = _pointer.PaneChrome;
+        var strips = said?.Strips ?? [];
+        var bands = said?.Bands ?? [];
+        NativeTokens tokens = NativeTokens.Dark;
+        if (said is not null)
+        {
+            if (_paneTokens is not { } cached || !ReferenceEquals(cached.Theme, said.Theme))
+            {
+                _paneTokens = (said.Theme, NativeTokens.For(said.Theme));
+            }
+
+            tokens = _paneTokens.Value.Tokens;
+            _view.DividerRule = new SKColor(tokens.Rule.R, tokens.Rule.G, tokens.Rule.B);
+        }
+
+        var origin = CellOrigin;
+        Sync(_strips, strips.Select(s => (s.Model.PaneId, s.Row)), NewStrip, origin, cell);
+        foreach (var strip in strips)
+        {
+            _strips[strip.Model.PaneId].Show(strip, tokens, said!.Interactive, said.Drag);
+        }
+
+        Sync(_bands, bands.Select(b => (b.Model.WindowId, b.Row)), () => new ScrollBandView(), origin, cell);
+        foreach (var band in bands)
+        {
+            _bands[band.Model.WindowId].Show(band, tokens, said!.Interactive);
+        }
+    }
+
+    private void Sync<T>(Dictionary<string, T> controls, IEnumerable<(string Key, PaneRect Row)> wanted, Func<T> create, Point origin, Size cell)
+        where T : Control
+    {
+        var rows = wanted.ToList();
+        foreach (var stale in controls.Keys.Where(k => rows.All(r => r.Key != k)).ToList())
+        {
+            Children.Remove(controls[stale]);
+            controls.Remove(stale);
+        }
+
+        foreach (var (key, row) in rows)
+        {
+            if (!controls.TryGetValue(key, out var control))
+            {
+                control = create();
+                controls[key] = control;
+                Children.Insert(0, control);
+            }
+
+            SetLeft(control, origin.X + (row.X * cell.Width));
+            SetTop(control, origin.Y + (row.Y * cell.Height));
+            control.Width = (row.Width * cell.Width) + RightOfGrid(row.X, row.Width, _view.Driver.Frame.Width, cell);
+            control.Height = row.Height * cell.Height;
+        }
+    }
+
+    /// <summary>
+    /// The view's pixels right of the grid's last column (less than a cell; the cells' last run is carried over them), for
+    /// a native view whose cells end at that column: it runs on to the view's edge with them, or a tab strip's rule and a
+    /// panel's plane stop short of the window's edge by a strip that shows at any size not a whole number of cells.
+    /// </summary>
+    private double RightOfGrid(int x, int width, int columns, Size cell) =>
+        columns > 0 && width > 0 && x + width >= columns
+            ? Math.Clamp(_view.Bounds.Width - (columns * cell.Width), 0, cell.Width)
+            : 0;
+
+    /// <summary>The toasts over the cell area, their stack sitting on the row the client said the pane area ends at.</summary>
+    private void SyncToasts(ScreenFrame frame, Size cell)
+    {
+        var origin = CellOrigin;
+        SetLeft(_toasts, origin.X);
+        SetTop(_toasts, origin.Y);
+        _toasts.Width = Math.Max(0, frame.Width * cell.Width);
+        _toasts.Height = Math.Max(0, frame.Height * cell.Height);
+        var above = _noticeAboveRow > 0 && _noticeAboveRow < frame.Height ? _noticeAboveRow : Math.Max(0, frame.Height - 2);
+        _toasts.Bottom = above * cell.Height;
+
+        // The native maps' legends, in the toasts' coordinates: a toast is stacked clear of one rather than over it.
+        var avoid = new List<Rect>();
+        foreach (var map in _maps.Values)
+        {
+            if (map.LegendRect(new Size(map.Width, map.Height)) is { } legend)
+            {
+                avoid.Add(legend.Translate(new Vector(GetLeft(map) - origin.X, GetTop(map) - origin.Y)));
+            }
+        }
+
+        // The native quick bars and docked composers too: a quick bar's keys and the post being typed are what a toast must
+        // never sit on, so a toast is lifted above them as it is above a legend.
+        foreach (var view in _quickBars.Values.Cast<Control>().Concat(_composers.Values))
+        {
+            if (view.IsVisible && view.Width > 0 && view.Height > 0)
+            {
+                avoid.Add(new Rect(GetLeft(view) - origin.X, GetTop(view) - origin.Y, view.Width, view.Height));
+            }
+        }
+
+        _toasts.Avoid = avoid;
+
+        // Hidden, not stacked under it, while something modal is in front: a settings window is a window of its own and a
+        // toast under it showed as a clipped fragment past its edge, and ⌃P and the modals have a scrim the toast would sit
+        // on. The status row still says the notice, and the toast keeps its clock, so it is gone when its time is.
+        _toasts.IsVisible = !(ToastsHidden?.Invoke() ?? false) && _pointer.Chrome is not { Interactive: false };
+    }
+
+    /// <summary>Whether something modal the window draws is in front, which hides the toasts. Set by the main window.</summary>
+    internal Func<bool>? ToastsHidden { get; set; }
+
+    /// <summary>The notice toasts. Internal for tests.</summary>
+    internal NoticeToasts Toasts => _toasts;
+
+    /// <summary>
+    /// The native header across the top and the sidebar down the left, when the window draws them — always, a modal in
+    /// front included: the client draws its modals in the cells, which no longer reach under either, so the chrome
+    /// stays where a desktop app's stays and only goes inert (<see cref="ChromeOverlay.Interactive"/>). ⌃B armed is said
+    /// by the header itself, and a collapsed rail is the sidebar's slim strip.
+    /// </summary>
+    private void SyncChrome()
+    {
+        var chrome = _pointer.Chrome;
+        SyncInsets(chrome?.Sidebar.Collapsed ?? false);
+        var width = Bounds.Width;
+        var height = Bounds.Height;
+        var top = _chrome.Header ? NativeLayout.HeaderHeight : 0;
+        var bottom = _chrome.Status ? NativeLayout.StatusHeight : 0;
+
+        // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above the header.
+        _header.ReserveRight = _chrome.Header
+            ? (_pointer.Actions.Count * (NativeLayout.ButtonSize + NativeLayout.ButtonGap)) + WindowChrome.EdgeBand + 4
+            : 0;
+
+        // Before the client has said anything the bands are drawn empty, on the view's own colours, so a window never
+        // opens with a hole where its header will be.
+        var ink = chrome is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(chrome.Palette.Ink);
+        Place(_header, _chrome.Header, new Rect(0, 0, width, NativeLayout.HeaderHeight), chrome,
+            chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.HeaderPlane), ink);
+        Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top - bottom)), chrome,
+            chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane), ink);
+
+        // The footer across the whole width under the cells and the sidebar, and the field's strip: the header's plane, as
+        // the mockups' footer and command-line strip are their header's.
+        if (chrome is not null)
+        {
+            var plane = NativeChromeView.Parse(chrome.Palette.HeaderPlane);
+            _view.FooterPlane = new SKColor(plane.R, plane.G, plane.B);
+            _footer.Plane = plane;
+        }
+
+        if (_chrome.Status && width > 0 && height > bottom)
+        {
+            SetLeft(_footer, 0);
+            SetTop(_footer, height - bottom);
+            _footer.Width = width;
+            _footer.Height = bottom;
+            _footer.Show(_pointer.Status);
+            _footer.IsVisible = true;
+        }
+        else
+        {
+            _footer.IsVisible = false;
+        }
+    }
+
+    private static void Place(NativeChromeView view, bool drawn, Rect area, ChromeOverlay? chrome, Color plane, Color ink)
+    {
+        if (!drawn || area.Width <= 0 || area.Height <= 0)
+        {
+            view.IsVisible = false;
+            return;
+        }
+
+        SetLeft(view, area.X);
+        SetTop(view, area.Y);
+        view.Width = area.Width;
+        view.Height = area.Height;
+        view.Show(chrome, plane, ink);
+        view.IsVisible = true;
+    }
+
+    private void SyncButtons(ScreenFrame frame, Size cell)
+    {
+        var actions = _pointer.Actions;
+        foreach (var stale in _buttons.Keys.Where(id => actions.All(a => a.Id != id)).ToList())
+        {
+            Children.Remove(_buttons[stale]);
+            _buttons.Remove(stale);
+        }
+
+        var origin = CellOrigin;
+        for (var i = 0; i < actions.Count; i++)
+        {
+            var action = actions[i];
+            if (!_buttons.TryGetValue(action.Id, out var button))
+            {
+                button = new HeaderButton(action.Id);
+                button.Click += () => OpenMenu(action, button);
+                AutomationProperties.SetName(button, action.Label);
+                ToolTip.SetTip(button, NativeKeys.Words(action.Hint is { } hint ? $"{action.Label} ({hint})" : action.Label));
+                _buttons[action.Id] = button;
+                Children.Add(button);
+            }
+
+            if (_chrome.Header)
+            {
+                // In the window's own header: right to left from its end, clear of the resize band, on its plane.
+                var side = NativeLayout.ButtonSize;
+                button.Width = side;
+                button.Height = side;
+                SetLeft(button, Bounds.Width - WindowChrome.EdgeBand - 4 - ((i + 1) * (side + NativeLayout.ButtonGap)) + NativeLayout.ButtonGap);
+                SetTop(button, Math.Round((NativeLayout.HeaderHeight - side) / 2));
+                var said = _pointer.Chrome;
+                button.Ink = said is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(said.Palette.Ink);
+                button.Plane = said is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(said.Palette.HeaderPlane);
+                button.IsVisible = Bounds.Width > 0;
+                continue;
+            }
+
+            // Right to left from the header's end, one slot of blank cells each. Shown only while every cell of
+            // its slot is blank, so a button never covers a word of the header.
+            var first = frame.Width - (ButtonCells * (i + 1));
+            var blank = first >= 0 && frame.Height > 0
+                && Enumerable.Range(first, ButtonCells).All(x => WindowChrome.IsMoveHandle(frame, new System.Drawing.Point(x, 0)));
+            button.IsVisible = blank;
+            if (!blank)
+            {
+                continue;
+            }
+
+            // Clear of the window's resize band at the right edge, which a press there is for, and a little over
+            // half a cell clear of whatever the header says before its blank cells, so it never touches a word.
+            var gridRight = (first + ButtonCells) * cell.Width;
+            var right = (Bounds.Width > 0 ? Math.Min(gridRight, Bounds.Width) : gridRight) - WindowChrome.EdgeBand - 1;
+            var size = Math.Max(8, Math.Min(cell.Height + 2, right - ((first + 0.6) * cell.Width)));
+            button.Width = size;
+            button.Height = Math.Max(4, cell.Height - 2);
+            SetLeft(button, origin.X + right - size);
+            SetTop(button, origin.Y + 1);
+            var behind = _view.Renderer.Background(frame[frame.Width - 1, 0]);
+            button.Ink = Colour(_view.Renderer.DefaultForeground);
+            button.Plane = Colour(behind);
+        }
+    }
+
+    private void SyncPanels(ScreenFrame frame, Size cell)
+    {
+        var text = Colour(_view.Renderer.DefaultForeground);
+        Place(
+            _gauges,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.Vitals && p.Vitals is { IsEmpty: false }),
+            () => new VitalsGauges(),
+            frame,
+            cell,
+            (gauges, panel, plane) =>
+            {
+                gauges.Seams = (panel.RuleAbove, panel.RuleBelow);
+                gauges.Show(panel.Vitals!, panel.Ink, plane, text, cell.Height);
+            });
+        Place(
+            _maps,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.Map && p.Map is not null),
+            () => new MapCanvas(_view),
+            frame,
+            cell,
+            (map, panel, plane) => map.Show(panel.Map!, panel.Ink, plane, text, panel.WalkTo, panel.SelectRoom, panel.EditMap, panel.LookMap, MapLean(plane)));
+        Place(
+            _whoHere,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.WhoHere && p.WhoHere is not null),
+            () => new WhoHereList(_view),
+            frame,
+            cell,
+            (list, panel, plane) => list.Show(panel.WhoHere!, panel.Ink, plane, text, cell.Height, panel.Pick));
+        Place(
+            _quickBars,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.QuickBar && p.QuickBar is not null),
+            () => new QuickBarButtons(_view),
+            frame,
+            cell,
+            (bar, panel, plane) =>
+            {
+                bar.Seams = (panel.RuleAbove, panel.RuleBelow);
+                bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch);
+            });
+
+        // A collapsed panel's bar, at the foot of its column (HostChrome.Strips).
+        Place(
+            _collapsedBars,
+            _pointer.Panels.Where(p => p.Collapsed is not null),
+            () => new CollapsedBarView(_view),
+            frame,
+            cell,
+            (bar, panel, plane) => bar.Show(panel.Collapsed!, panel.Ink, plane, text, panel.Expand));
+
+        // The docked composer: a native editor over its pane, the cell editor still drawn (and still the draft) under it.
+        Place(
+            _composers,
+            _pointer.Panels.Where(p => p.PanelId == PanelIds.Composer && p.Composer is not null && p.ComposerSession is not null),
+            () => new ComposerView(_view, fullScreen: false),
+            frame,
+            cell,
+            (composer, panel, plane) => composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text));
+        SyncPopOuts(frame, cell);
+
+        // A pane a native view covers draws no overlay scrollbar of its own: its cells are only the view's backing (the
+        // docked composer's cell editor scrolls to its caret), and on a short pane — the default window at 150% — the
+        // bar showed over the divider row beside the view.
+        _view.CoveredWindows = _gauges.Keys.Concat(_maps.Keys).Concat(_whoHere.Keys).Concat(_quickBars.Keys)
+            .Concat(_collapsedBars.Keys).Concat(_composers.Keys).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The colour a map's shades lean toward (<see cref="MapCanvas.Lean"/>): the focus edge of the tokens for the theme the
+    /// client last said, else of the built-in variant the pane's plane belongs to.
+    /// </summary>
+    private Color MapLean(Color plane)
+    {
+        if (_pointer.PaneChrome is { } said)
+        {
+            if (_paneTokens is not { } cached || !ReferenceEquals(cached.Theme, said.Theme))
+            {
+                _paneTokens = (said.Theme, NativeTokens.For(said.Theme));
+            }
+
+            return _paneTokens.Value.Tokens.Focus;
+        }
+
+        return NativeTokens.LeanFor(plane);
+    }
+
+    /// <summary>Whether a panel is a one-row strip that keeps a corner for its pop-out button rather than sitting under it.</summary>
+    internal static bool ReservesPopOut(PanelOverlay panel) => panel.PopOut is not null && panel.Rect.Height == 1;
+
+    /// <summary>The pixels a one-row strip leaves at its right end for the button.</summary>
+    private static double PopOutReserve(Size cell) => PopOutSize(cell) + 6;
+
+    private static double PopOutSize(Size cell) => Math.Clamp(cell.Height - 2, 12, 18);
+
+    /// <summary>Where the pointer last was over the window, in this layer's coordinates; null once it left.</summary>
+    private Point? _pointerAt;
+
+    /// <summary>
+    /// Shows each pop-out button while the pointer is over its panel and hides it otherwise (D3: an always-on button lay
+    /// over the panel's own text). A one-row strip's reserved corner stays, as the pane's plane, with the icon on hover.
+    /// </summary>
+    private void SyncPopOutHover()
+    {
+        foreach (var button in _popOuts.Values)
+        {
+            var over = _pointerAt is { } at && button.PanelBounds.Contains(at);
+            button.Hovering = over;
+            button.IsVisible = over || button.Reserved;
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (TopLevel.GetTopLevel(this) is { } top)
+        {
+            top.AddHandler(PointerMovedEvent, OnWindowPointerMoved, global::Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+            top.PointerExited += OnWindowPointerExited;
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is { } top)
+        {
+            top.RemoveHandler(PointerMovedEvent, OnWindowPointerMoved);
+            top.PointerExited -= OnWindowPointerExited;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
+    {
+        _pointerAt = e.GetPosition(this);
+        SyncPopOutHover();
+    }
+
+    private void OnWindowPointerExited(object? sender, PointerEventArgs e)
+    {
+        _pointerAt = null;
+        SyncPopOutHover();
+    }
+
+    /// <summary>Moves the pointer for a test, as the window's own pointer movement would.</summary>
+    internal void SimulatePointer(Point? at)
+    {
+        _pointerAt = at;
+        SyncPopOutHover();
+    }
+
+    /// <summary>
+    /// A pop-out button in the top right corner of every docked panel the client says can float, above the panel's
+    /// own view and below the toasts, shown while the pointer is over the panel. A panel that cannot float (or a host
+    /// that cannot) publishes no callback, and gets no button.
+    /// </summary>
+    private void SyncPopOuts(ScreenFrame frame, Size cell)
+    {
+        var wanted = _pointer.Panels.Where(p => p.PopOut is not null && p.Rect.Width > 0 && p.Rect.Height > 0).ToList();
+        foreach (var stale in _popOuts.Keys.Where(id => wanted.All(p => p.WindowId != id)).ToList())
+        {
+            Children.Remove(_popOuts[stale]);
+            _popOuts.Remove(stale);
+        }
+
+        var origin = CellOrigin;
+        foreach (var panel in wanted)
+        {
+            if (!_popOuts.TryGetValue(panel.WindowId, out var button))
+            {
+                button = new PopOutButton();
+                _popOuts[panel.WindowId] = button;
+                Children.Insert(Math.Max(0, Children.IndexOf(_toasts)), button);
+            }
+
+            var size = PopOutSize(cell);
+            var rect = panel.Rect;
+            var right = origin.X + ((rect.X + rect.Width) * cell.Width) + RightOfGrid(rect.X, rect.Width, frame.Width, cell);
+            button.PanelBounds = new Rect(origin.X + (rect.X * cell.Width), origin.Y + (rect.Y * cell.Height), rect.Width * cell.Width, rect.Height * cell.Height);
+            button.Reserved = ReservesPopOut(panel);
+            if (button.Reserved)
+            {
+                // The strip's reserved end: the whole row's height, on the pane's own plane.
+                var reserve = PopOutReserve(cell);
+                button.Width = reserve;
+                button.Height = rect.Height * cell.Height;
+                SetLeft(button, right - reserve);
+                SetTop(button, origin.Y + (rect.Y * cell.Height));
+                var inside = rect.X >= 0 && rect.Y >= 0 && rect.X < frame.Width && rect.Y < frame.Height;
+                button.Plane = Colour(inside ? _view.Renderer.Background(frame[rect.X + rect.Width - 1, rect.Y]) : _view.Renderer.DefaultBackground);
+            }
+            else
+            {
+                button.Width = size;
+                button.Height = size;
+                SetLeft(button, right - size - 3);
+                SetTop(button, origin.Y + (rect.Y * cell.Height) + 2);
+                button.Plane = null;
+            }
+
+            button.Show(panel, Colour(_view.Renderer.DefaultForeground));
+        }
+
+        SyncPopOutHover();
+    }
+
+    /// <summary>
+    /// One native control per panel window, over that pane's output rectangle; a control whose panel left the
+    /// screen goes with it.
+    /// </summary>
+    private void Place<T>(
+        Dictionary<string, T> controls,
+        IEnumerable<PanelOverlay> panels,
+        Func<T> create,
+        ScreenFrame frame,
+        Size cell,
+        Action<T, PanelOverlay, Color> show)
+        where T : Control
+    {
+        var wanted = panels.ToList();
+        foreach (var stale in controls.Keys.Where(id => wanted.All(p => p.WindowId != id)).ToList())
+        {
+            Children.Remove(controls[stale]);
+            controls.Remove(stale);
+        }
+
+        foreach (var panel in wanted)
+        {
+            if (!controls.TryGetValue(panel.WindowId, out var control))
+            {
+                control = create();
+                controls[panel.WindowId] = control;
+
+                // Under the header buttons, so a button is never covered by a panel.
+                Children.Insert(0, control);
+            }
+
+            var rect = panel.Rect;
+            var origin = CellOrigin;
+            SetLeft(control, origin.X + (rect.X * cell.Width));
+            SetTop(control, origin.Y + (rect.Y * cell.Height));
+            // A one-row strip that can pop out leaves its right end to the button (ReservesPopOut), so the button never
+            // lies over its text (`88 / 100`, `F4 edits keys`); the button paints the pane's plane over the cells there.
+            control.Width = Math.Max(0, (rect.Width * cell.Width) + RightOfGrid(rect.X, rect.Width, frame.Width, cell)
+                - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
+            control.Height = (rect.Height * cell.Height) + BelowGrid(frame, rect, cell);
+
+            // The pane's own plane, read off the frame, so the native view sits on whatever the pane wears — its
+            // character's tint, the focus lift — without the client having to say it twice.
+            var inside = rect.X >= 0 && rect.Y >= 0 && rect.X < frame.Width && rect.Y < frame.Height;
+            var plane = inside ? _view.Renderer.Background(frame[rect.X, rect.Y]) : _view.Renderer.DefaultBackground;
+            show(control, panel, Colour(plane));
+        }
+    }
+
+    /// <summary>
+    /// The pixels under the grid a panel also covers: where the window draws the command line's field in the output's
+    /// column, the grid is <see cref="NativeLayout.FieldReserve"/> shorter than the view and the columns beside the field
+    /// are filled with their last row's plane down to the footer. A panel whose pane ends on the grid's last row in such a
+    /// column (a collapsed panel's bar, the map) runs down over that filler, and over the view's leftover pixels under it
+    /// (less than a row), so it meets the footer as the mockups draw it.
+    /// </summary>
+    private double BelowGrid(ScreenFrame frame, SharpMUTerm.Core.Workspaces.PaneRect rect, Size cell) =>
+        _chrome.Input && frame.Band is { } band && rect.Y + rect.Height >= frame.Height && rect.Width > 0
+        && !band.Spans(rect.X, frame.Width) && !band.Spans(rect.X + rect.Width - 1, frame.Width)
+            ? NativeLayout.FieldReserve + Math.Clamp(_view.Bounds.Height - ((frame.Height * cell.Height) + NativeLayout.FieldReserve), 0, cell.Height)
+            : 0;
+
+    /// <summary>The client builds the menu on its thread; it is opened here, under the button.</summary>
+    private void OpenMenu(HeaderAction action, HeaderButton button) =>
+        action.Menu(model => Dispatcher.UIThread.Post(() =>
+        {
+            if (model.Entries.Count == 0)
+            {
+                return;
+            }
+
+            var menu = NativeMenu.Build(model, action.Dispatch, PlacementMode.BottomEdgeAlignedRight, button);
+            menu.Closed += (_, _) => _view.Focus();
+            OpenedMenu = menu;
+            menu.Open(button);
+        }));
+
+    internal static Color Colour(SKColor colour) => Color.FromRgb(colour.Red, colour.Green, colour.Blue);
+}
+
+/// <summary>
+/// A small icon-only button drawn by the window over blank header cells. Drawn rather than templated, so it looks
+/// the same under any Avalonia theme and its hover plate is the header's own colour lifted, not a theme's grey.
+/// It never takes keyboard focus: typing stays with the client.
+/// </summary>
+internal sealed class HeaderButton : Control
+{
+    private bool _pressed;
+
+    public HeaderButton(string actionId)
+    {
+        ActionId = actionId;
+        Focusable = false;
+        Cursor = new Cursor(StandardCursorType.Hand);
+    }
+
+    public string ActionId { get; }
+
+    public Color Ink { get; set; } = Colors.White;
+
+    public Color Plane { get; set; } = Colors.Black;
+
+    /// <summary>Raised on a left click.</summary>
+    public event Action? Click;
+
+    protected override void OnPointerEntered(PointerEventArgs e)
+    {
+        base.OnPointerEntered(e);
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        InvalidateVisual();
+    }
+
+    // Every pointer event over the button is the window's: handled here, so nothing routes on to the client.
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        _pressed = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        e.Handled = true;
+        var click = _pressed && e.InitialPressMouseButton == MouseButton.Left && new Rect(Bounds.Size).Contains(e.GetPosition(this));
+        _pressed = false;
+        InvalidateVisual();
+        if (click)
+        {
+            Click?.Invoke();
+        }
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        e.Handled = true;
+    }
+
+    /// <summary>Clicks the button as a left press and release would. Internal for tests.</summary>
+    internal void PerformClick() => Click?.Invoke();
+
+    public override void Render(DrawingContext context)
+    {
+        var bounds = new Rect(Bounds.Size);
+
+        // Bare at rest, as the mockups' icon button: a plate only under the pointer and while pressed. The plate is drawn
+        // at rest too, fully transparent, because what a control draws is what the pointer hits: with nothing drawn a
+        // press would fall through to the client's cells.
+        var plate = (byte)(_pressed ? 0x55 : IsPointerOver ? 0x38 : 0);
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(plate, Ink.R, Ink.G, Ink.B)), null, bounds, NativeTokens.RadiusControl, NativeTokens.RadiusControl);
+
+        // The layouts glyph: a frame split into a wide pane and a column of two, the shape of a layout; the header's
+        // quiet ink at rest (the mockups' #9aa4b8), the full ink under the pointer.
+        var pen = new Pen(new SolidColorBrush(Color.FromArgb(IsPointerOver || _pressed ? (byte)0xE0 : (byte)0xA8, Ink.R, Ink.G, Ink.B)), 1.25);
+        var w = Math.Min(bounds.Width - 6, 14);
+        var h = Math.Min(bounds.Height - 6, 11);
+        var x = Math.Round((bounds.Width - w) / 2) + 0.5;
+        var y = Math.Round((bounds.Height - h) / 2) + 0.5;
+        var icon = new Rect(x, y, w, h);
+        context.DrawRectangle(null, pen, icon, 1.5, 1.5);
+        var split = Math.Round(x + (w * 0.58)) + 0.5;
+        context.DrawLine(pen, new Point(split, y), new Point(split, y + h));
+        var middle = Math.Round(y + (h / 2)) + 0.5;
+        context.DrawLine(pen, new Point(split, middle), new Point(x + w, middle));
+    }
+}
+
+/// <summary>
+/// How big the window's own chrome is, in logical pixels: the header band across the top and the sidebar down the
+/// left, each the size of a desktop app's rather than a cell's. The client is told only that it draws neither
+/// (<see cref="HostChrome"/>); the sizes are the window's, and the cell grid is the rest of the window.
+/// </summary>
+internal static class NativeLayout
+{
+    /// <summary>
+    /// The header band's height: the mockup's 44, a multiple of 4 like every chrome size here, so the cells below it
+    /// start on a whole device pixel at 125% and 150% (<see cref="NativeTokens"/>' spacing scale).
+    /// </summary>
+    public const double HeaderHeight = 44;
+
+    /// <summary>
+    /// The sidebar's width, open: with <see cref="SidebarGutter"/> the mockups' 252 px (a 232 px column and its 10 px
+    /// padding either side), so the panes start where the mockups' do, one rule further on.
+    /// </summary>
+    public const double SidebarWidth = 244;
+
+    /// <summary>The sidebar's width folded to its strip (⌃B b, or its own fold button).</summary>
+    public const double SidebarSlim = 48;
+
+    /// <summary>
+    /// The sidebar's breathing room before the panes: its own plane carried a few pixels on, so a pane's first column
+    /// of text does not sit hard against the sidebar's edge. Part of the sidebar, never of a pane, so it costs no cell.
+    /// </summary>
+    public const double SidebarGutter = NativeTokens.Space8;
+
+    /// <summary>The status footer's height (<see cref="HostChrome.Status"/>).</summary>
+    public const double StatusHeight = 28;
+
+    /// <summary>The footer's text inset from the window's edges.</summary>
+    public const double FooterPadX = NativeTokens.PanelInset;
+
+    /// <summary>The command line's strip: the padding above the field and below it (<see cref="HostChrome.Input"/>).</summary>
+    public const double FieldOuter = NativeTokens.Space10;
+
+    /// <summary>The field's own padding above its first row and below its last: the mockup's 9 px and its border.</summary>
+    public const double FieldInner = NativeTokens.Space10;
+
+    /// <summary>How far the field's edge sits outside the client's padding columns, horizontally.</summary>
+    public const double FieldInsetX = NativeTokens.Space12;
+
+    /// <summary>
+    /// The field's edge from the grid's left and right edges: the mockup's 20 px, as far as the client's padding columns
+    /// leave room for the field's own inner padding (<see cref="NativeTokens.Space8"/> at least) before the prompt.
+    /// </summary>
+    public const double FieldSide = NativeTokens.Space20;
+
+    /// <summary>The pixels the strip adds around its rows: its padding and the field's, above and below.</summary>
+    public const double FieldStrip = 2 * (FieldOuter + FieldInner);
+
+    /// <summary>How much lower the bars' rows are drawn than their cells: the strip's padding and the field's.</summary>
+    public const double FieldTop = FieldOuter + FieldInner;
+
+    /// <summary>The vertical pixels the field adds around the rows it frames, which the grid gives up.</summary>
+    public const double FieldReserve = FieldStrip;
+
+    /// <summary>A header button's side.</summary>
+    public const double ButtonSize = NativeTokens.ControlHeightSmall;
+
+    /// <summary>The gap between two header buttons.</summary>
+    public const double ButtonGap = NativeTokens.Space8;
+
+    /// <summary>The cells' margin in the window: the space the native header and sidebar take.</summary>
+    public static Thickness Insets(HostChrome chrome, bool collapsed) => new(
+        chrome.Rail ? (collapsed ? SidebarSlim : SidebarWidth) + SidebarGutter : 0,
+        chrome.Header ? HeaderHeight : 0,
+        0,
+        chrome.Status ? StatusHeight : 0);
+}

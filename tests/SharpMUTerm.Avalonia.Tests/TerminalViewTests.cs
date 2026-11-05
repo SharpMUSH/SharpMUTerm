@@ -286,7 +286,7 @@ public class TerminalViewTests
             : global::Avalonia.Media.Color.FromRgb(bytes[i + 2], bytes[i + 1], bytes[i]);
     }
 
-    private static readonly HeadlessUnitTestSession Session = HeadlessUnitTestSession.StartNew(typeof(TestApp));
+    internal static readonly HeadlessUnitTestSession Session = HeadlessUnitTestSession.StartNew(typeof(TestApp));
 
     private static Task<T> Run<T>(Func<Window, T> body, WindowDecorations decorations = WindowDecorations.Full) =>
         Session.Dispatch(() =>
@@ -321,7 +321,7 @@ public sealed class TestApp : Application
     public override void Initialize() => Styles.Add(new SimpleTheme());
 
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<TestApp>()
+        BundledFonts.Use(AppBuilder.Configure<TestApp>()
             .UseSkia()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }));
 }

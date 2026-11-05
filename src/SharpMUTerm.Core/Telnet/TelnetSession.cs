@@ -413,6 +413,9 @@ public sealed class TelnetSession : ITelnetSession
     public event EventHandler? PuebloEnabled;
     public event EventHandler<bool>? MspChanged;
 
+    /// <inheritdoc />
+    public event EventHandler? ReceiveBatchEnded;
+
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (_interpreter is not null)
@@ -920,6 +923,7 @@ public sealed class TelnetSession : ITelnetSession
                 }
 
                 await _interpreter!.InterpretByteArrayAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+                ReceiveBatchEnded?.Invoke(this, EventArgs.Empty);
 
                 // The second arm of charset observation: the direction whose callback the library
                 // does not raise (see WireCharsetCallback). Cheap — a reference comparison — and

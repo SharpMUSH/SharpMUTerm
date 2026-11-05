@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
 
@@ -33,39 +34,6 @@ internal enum QuitAction
 internal readonly record struct QuitDecision(QuitAction Action, QuitChoice Selection);
 
 /// <summary>
-/// What a quit would end, as of the keystroke that asked. The app gathers it (only the app can see
-/// sessions, windows and the open settings screen) and the prompt only renders it, so "what the
-/// question says, given N connections and M drafts" is answerable without a terminal.
-/// </summary>
-/// <param name="ConnectedCharacters">
-/// The connections a quit drops, by <c>world.character</c> (a world's own name for an anonymous one) —
-/// the same list and the same unit the header's fraction counts, from the app's single derivation. It
-/// used to be distinct <em>world</em> names, so two characters logged in on one world were announced as
-/// "1 world connected" while the user was looking at two, and the one thing this prompt exists to do is
-/// be trustworthy about what is at stake.
-/// </param>
-/// <param name="Drafts">
-/// How many unsent lines there are, counted per command line rather than per window: the second bar
-/// holds a line of its own, and a window counted once would hide it.
-/// </param>
-/// <param name="DraftWindows">The windows those drafts are sitting in, by title.</param>
-/// <remarks>
-/// An open settings screen used to be a fact here, carrying how many edits it held that were never
-/// saved. It no longer is: a screen writes each change out as it is committed
-/// (<see cref="ScreenEdits"/>), so there is no such thing as an unsaved edit to warn about, and a
-/// consequence line that could never be reached is worse than one fact fewer.
-/// </remarks>
-internal readonly record struct QuitFacts(
-    IReadOnlyList<string> ConnectedCharacters,
-    int Drafts,
-    IReadOnlyList<string> DraftWindows)
-{
-    /// <summary>A client holding nothing: nothing connected and nothing typed.</summary>
-    internal static QuitFacts Nothing { get; } =
-        new(Array.Empty<string>(), 0, Array.Empty<string>());
-}
-
-/// <summary>
 /// The quit confirmation, minus the window: what a keystroke means to it, and what it says. Pure, for
 /// the same reason <see cref="SettingsSession"/> is — the rules of a modal are exactly the part that a
 /// headless test can check, and <see cref="QuitOverlay"/> is left with nothing but the framework calls.
@@ -86,9 +54,6 @@ internal readonly record struct QuitFacts(
 /// </summary>
 internal static class QuitPrompt
 {
-    /// <summary>How many names a consequence line spells out before it starts counting instead.</summary>
-    private const int MaxNames = 3;
-
     /// <summary>
     /// What one keystroke does, and where it leaves the pointer. <c>y</c>/<c>n</c> answer outright
     /// whatever is pointed at, Esc is the way out of every modal state in this client and stays here
@@ -151,34 +116,16 @@ internal static class QuitPrompt
     }
 
     /// <summary>
-    /// What quitting now would cost, one plain sentence per fact, and empty when it would cost nothing.
-    /// A bare "are you sure?" is a ritual; this client knows what it is holding, so the question names it
-    /// and becomes answerable.
+    /// What quitting now would cost, one plain sentence per fact (<see cref="QuitModel.Consequences"/>, which the
+    /// window's native prompt says too), and empty when it would cost nothing.
     /// </summary>
-    internal static IReadOnlyList<string> Consequences(QuitFacts facts)
-    {
-        var lines = new List<string>();
-
-        if (facts.ConnectedCharacters.Count > 0)
-        {
-            var n = facts.ConnectedCharacters.Count;
-            lines.Add($"{n} character{Plural(n)} connected — {Names(facts.ConnectedCharacters)}");
-        }
-
-        if (facts.Drafts > 0)
-        {
-            var where = facts.DraftWindows.Count > 0 ? $" — {Names(facts.DraftWindows)}" : string.Empty;
-            lines.Add($"{facts.Drafts} unsent draft{Plural(facts.Drafts)}{where}");
-        }
-
-        return lines;
-    }
+    internal static IReadOnlyList<string> Consequences(QuitModel facts) => facts.Consequences;
 
     /// <summary>
     /// The whole surface as markup lines: the question, what it would cost, the two buttons with the
     /// pointed-at one filled, and the keys that answer it.
     /// </summary>
-    internal static List<string> Render(QuitFacts facts, QuitChoice selected)
+    internal static List<string> Render(QuitModel facts, QuitChoice selected)
     {
         var lines = new List<string> { $"[bold {Value}]Quit SharpMUTerm?[/]", string.Empty };
 
@@ -187,7 +134,7 @@ internal static class QuitPrompt
         {
             // Still worth saying: "nothing is connected and nothing is unsent" is the answer to the
             // question the prompt just asked, and it is the state in which y is safe without reading on.
-            lines.Add($"[{Muted}]Nothing is connected and nothing is unsent.[/]");
+            lines.Add($"[{Muted}]{QuitModel.NothingAtStake}[/]");
         }
         else
         {
@@ -216,11 +163,4 @@ internal static class QuitPrompt
             ? $"[{Ink} on {Accent}] ▸ {Escape(label)} [/]"
             : $"[{Label} on {EditBg}]   {Escape(label)} [/]";
 
-    private static string Plural(int count) => count == 1 ? string.Empty : "s";
-
-    /// <summary>Names, capped: past a few they stop identifying anything and only cost the line's width.</summary>
-    private static string Names(IReadOnlyList<string> names) =>
-        names.Count <= MaxNames
-            ? string.Join(", ", names)
-            : $"{string.Join(", ", names.Take(MaxNames))} +{names.Count - MaxNames} more";
 }

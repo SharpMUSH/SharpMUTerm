@@ -22,9 +22,6 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal static class AwayBarRenderer
 {
-    /// <summary>How long the trailing rule is. The same 48 cells the freeze and restore bars draw.</summary>
-    private const int RuleCells = 48;
-
     /// <summary>The label, kept as a constant so a test can look for the exact words a reader will see.</summary>
     internal const string Label = "AWAY";
 
@@ -38,9 +35,10 @@ internal static class AwayBarRenderer
 
     /// <summary>
     /// The bar for <paramref name="lines"/> lines that arrived over an absence of <paramref name="away"/>,
-    /// on an already-resolved <c>#rrggbb</c> accent.
+    /// on an already-resolved <c>#rrggbb</c> accent, sized to a pane <paramref name="width"/> cells wide
+    /// (<see cref="BarRule"/>; 0 = not arranged yet).
     /// </summary>
-    public static string Bar(int lines, TimeSpan away, string accentHex)
+    public static string Bar(int lines, TimeSpan away, string accentHex, int width = 0)
     {
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
@@ -49,9 +47,9 @@ internal static class AwayBarRenderer
         // scrolling is in front of me. The duration is "how far behind am I" — five minutes is a
         // conversation you can still join, two hours is a different evening.
         var count = lines == 1 ? "1 line" : $"{lines} lines";
-        var rule = new string('─', RuleCells);
+        var (text, rule) = BarRule.Fit(Label.Length + 4, [$"{count} since you left · {Duration(away)}", $"{count} · {Duration(away)}", count], width);
         return $"[{accentHex}]{Glyphs.Away} {Label}[/] "
-            + $"[dim]{MarkupText.Escape($"{count} since you left · {Duration(away)}")} {rule}[/]";
+            + $"[dim]{MarkupText.Escape(text)} {BarRule.Rule(rule)}[/]";
     }
 
     /// <summary>
@@ -64,14 +62,14 @@ internal static class AwayBarRenderer
     /// is watching, so a duration on it would be timing the <em>output</em> rather than the absence.
     /// </para>
     /// </summary>
-    public static string Missed(int lines, string accentHex)
+    public static string Missed(int lines, string accentHex, int width = 0)
     {
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
         var count = lines == 1 ? "1 line" : $"{lines} lines";
-        var rule = new string('─', RuleCells);
+        var (text, rule) = BarRule.Fit(MissedLabel.Length + 4, [$"{count} since you were here", count], width);
         return $"[{accentHex}]{Glyphs.Away} {MissedLabel}[/] "
-            + $"[dim]{MarkupText.Escape($"{count} since you were here")} {rule}[/]";
+            + $"[dim]{MarkupText.Escape(text)} {BarRule.Rule(rule)}[/]";
     }
 
     /// <summary>

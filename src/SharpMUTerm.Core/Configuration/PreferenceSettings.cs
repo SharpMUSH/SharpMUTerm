@@ -1,7 +1,7 @@
 namespace SharpMUTerm.Core.Configuration;
 
 /// <summary>
-/// Application-wide text rendering preferences — the settings the F7 "Text &amp; ANSI" screen edits.
+/// Application-wide text rendering preferences — the settings the F7 "Text &amp; display" screen edits.
 /// These are global rather than per world: they describe how *this terminal* draws what any world
 /// sends, so a world's own <see cref="WorldDefinition.Encoding"/> and
 /// <see cref="WorldDefinition.ContentFormat"/> stay where they are.
@@ -155,6 +155,21 @@ public sealed class TextSettings
     /// </summary>
     public int ActivityBarSeconds { get; set; } = DefaultActivityBarSeconds;
 
+    /// <summary>
+    /// Whether scrolling a pane back splits it: the history being read above, a band saying how far back it
+    /// is, and the newest few rows still arriving below (F7 ▸ SCROLLBACK, on by default). The split is inside
+    /// the pane, so it costs no cell of the pane's rectangle and reports no new size to a server. Off, a pane
+    /// scrolls as a whole, as it always did. A display setting, read when a pane is next scrolled back.
+    /// </summary>
+    public bool SplitScrollback { get; set; } = true;
+
+    /// <summary>
+    /// Whether a trigger marked <c>alert</c>, or a world's name-and-pages alert, may tell the desktop while the
+    /// player is in another window (F7 ▸ ALERTS, on by default). Nothing alerts until a trigger or a world asks for
+    /// it, so on costs nothing; off silences every alert at once, including the window title's unread count.
+    /// </summary>
+    public bool AlertWhenAway { get; set; } = true;
+
     /// <summary>Thirty seconds: long enough to read a screenful, short enough not to become furniture.</summary>
     public const int DefaultActivityBarSeconds = 30;
 
@@ -209,10 +224,11 @@ public sealed class InputSettings
     public bool ExcludeCredentials { get; set; } = true;
 
     /// <summary>
-    /// How many lines tall the command line is before anything is typed into it. Three by default, so
-    /// a wrapped line has somewhere to wrap to without the input resizing on the first keystroke.
+    /// How many lines tall the command line is before anything is typed into it. One by default: the bar
+    /// grows a row at a time as a line wraps (up to <see cref="MaxRows"/>), so the rows it would hold empty at
+    /// rest go to the output instead. A configuration that saved another value keeps it.
     /// </summary>
-    public int Rows { get; set; } = 3;
+    public int Rows { get; set; } = 1;
 
     /// <summary>
     /// The most lines the command line grows to as it wraps. Past this it scrolls inside itself rather

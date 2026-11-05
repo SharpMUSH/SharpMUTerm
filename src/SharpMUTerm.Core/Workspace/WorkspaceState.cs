@@ -20,6 +20,13 @@ public sealed class WorkspaceWindowState
     /// </para>
     /// </summary>
     public int Sequence { get; set; } = WorkspaceWindow.Unsequenced;
+
+    /// <summary>
+    /// Where the window floats when it is a panel popped out into a window of its own
+    /// (<see cref="WorkspaceWindow.Floating"/>); null for a window in the pane tree. Absent in a file written before
+    /// panels could float, which reads as not floating.
+    /// </summary>
+    public FloatingBounds? Floating { get; set; }
 }
 
 /// <summary>
@@ -86,6 +93,7 @@ public sealed class WorkspaceState
                 SessionKey = w.SessionKey,
                 OwnerLabel = w.OwnerLabel,
                 Sequence = w.Sequence,
+                Floating = w.Floating,
             }).ToList(),
             Root = CaptureNode(workspace.Layout.Root),
             FocusedPaneId = workspace.Layout.FocusedPaneId,
@@ -101,6 +109,7 @@ public sealed class WorkspaceState
             {
                 OwnerLabel = w.OwnerLabel,
                 Sequence = w.Sequence,
+                Floating = w.Floating,
             });
 
         var layout = new WorkspaceLayout(BuildNode(Root), FocusedPaneId, ZoomedPaneId);

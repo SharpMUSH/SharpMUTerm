@@ -14,7 +14,7 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal sealed class PictureSlots
 {
-    private readonly string[] _pieces;
+    private string[] _pieces;
     private readonly Slot[] _slots;
 
     /// <param name="pieces">
@@ -36,6 +36,22 @@ internal sealed class PictureSlots
     }
 
     /// <summary>Whether a row of <paramref name="picture"/> is on this line.</summary>
+    /// <summary>Where each slot was cut from the line (start column and width), so the pieces can be cut again.</summary>
+    public IReadOnlyList<(int Start, int Length)> Cuts { get; init; } = [];
+
+    /// <summary>
+    /// Replaces the text either side of the slots with the same text formatted again — a theme change re-formats the
+    /// line it was cut from (<see cref="PaneLine.Source"/>), and the pictures drawn in the slots stay as they are.
+    /// </summary>
+    public void Restyle(string[] pieces)
+    {
+        ArgumentNullException.ThrowIfNull(pieces);
+        if (pieces.Length == _pieces.Length)
+        {
+            _pieces = pieces;
+        }
+    }
+
     public bool Holds(long picture) => _slots.Any(slot => slot.Picture == picture);
 
     /// <summary>

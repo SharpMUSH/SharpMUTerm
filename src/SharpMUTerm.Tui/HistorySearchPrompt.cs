@@ -1,3 +1,4 @@
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Input;
 using static SharpMUTerm.Tui.MarkupText;
 using static SharpMUTerm.Tui.ScreenPalette;
@@ -134,6 +135,23 @@ internal static class HistorySearchPrompt
         count == 0 ? -1 : ((selected + delta) % count + count) % count;
 
     /// <summary>
+    /// The surface over <paramref name="model"/> — the cells of the model the window's native history draws too —
+    /// listing <paramref name="matches"/>, which are <see cref="HistoryModel.View"/> for <paramref name="query"/>.
+    /// </summary>
+    internal static List<string> Render(
+        HistoryModel model,
+        IReadOnlyList<HistoryMatch> matches,
+        string query,
+        int selected,
+        int width = 0,
+        int listRows = 0,
+        int first = 0)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        return Render(matches, query, selected, model.Entries.Count, model.BarLabel, width, listRows, first);
+    }
+
+    /// <summary>
     /// The whole surface as markup lines: the query line, the rows newest-first with the pointed-at one
     /// filled, and the keys. <paramref name="width"/> is the surface's content width when known, which
     /// both elides over-long entries and pads the selected row's bar to the full width.
@@ -173,11 +191,11 @@ internal static class HistorySearchPrompt
         var body = new List<string>();
         if (total == 0)
         {
-            body.Add($"[{Muted}]  nothing has been entered on this command line yet[/]");
+            body.Add($"[{Muted}]  {HistoryModel.NothingEntered}[/]");
         }
         else if (matches.Count == 0)
         {
-            body.Add($"[{Muted}]  no matches — ⌫ widens the filter[/]");
+            body.Add($"[{Muted}]  {HistoryModel.NoMatches}[/]");
         }
 
         var top = Math.Clamp(first, 0, Math.Max(0, matches.Count - 1));

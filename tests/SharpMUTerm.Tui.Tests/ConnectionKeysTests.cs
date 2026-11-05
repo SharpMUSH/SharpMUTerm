@@ -145,12 +145,12 @@ public class ConnectionKeysTests
             s => s.Modifiers == ConsoleModifiers.Control && s.Key == ConsoleKey.D))
             .IsFalse()
             .Because("a second key for one action is a duplicate row on every surface that lists chords");
-        await Assert.That(MacroKeys.Verdict("Ctrl+D").Fires).IsTrue();
+        await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, "Ctrl+D").Fires).IsTrue();
 
         // Which is what makes F4 honest about a macro bound to either of them.
         foreach (var descriptor in new[] { "Alt+D", "Alt+R" })
         {
-            var verdict = MacroKeys.Verdict(descriptor);
+            var verdict = MacroKeys.Verdict(HostKeys.Terminal, descriptor);
             await Assert.That(verdict.Delivery).IsEqualTo(MacroKeyDelivery.Taken).Because(descriptor);
             await Assert.That(verdict.Reason).Contains(descriptor);
         }
@@ -166,7 +166,7 @@ public class ConnectionKeysTests
     {
         foreach (var dead in new[] { "Ctrl+I", "Ctrl+M", "Ctrl+J", "Ctrl+H" })
         {
-            await Assert.That(MacroKeys.Verdict(dead).Delivery)
+            await Assert.That(MacroKeys.Verdict(HostKeys.Terminal, dead).Delivery)
                 .IsEqualTo(MacroKeyDelivery.NeverArrives)
                 .Because($"{dead} collapses onto its ASCII byte — this is the list the new chords avoid");
         }
@@ -386,7 +386,7 @@ public class ConnectionKeysTests
 
         app.DispatchCommand($"char:{Corvid}");
 
-        await Assert.That(app.StatusMarkup).Contains("Alt+R");
+        await Assert.That(app.StatusMarkup).Contains("⌥R");
         await Assert.That(app.StatusMarkup).Contains("Reconnect"); // the surface is still named too
     }
 }

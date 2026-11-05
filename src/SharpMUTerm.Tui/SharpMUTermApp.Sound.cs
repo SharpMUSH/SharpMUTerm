@@ -103,7 +103,7 @@ internal sealed partial class SharpMUTermApp
             _audio = Host.Audio?.Invoke();
             if (CanPlaySound && _audio is null)
             {
-                Notice("No sound device could be opened; game sound is captions only.", MessageSeverity.Info, key: "sound");
+                Notice("no device could be opened; game sound is captions only.", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Sound);
             }
         }
 
@@ -137,7 +137,7 @@ internal sealed partial class SharpMUTermApp
     {
         _muted = muted;
         ApplySoundMix();
-        Notice(muted ? "Sound muted." : "Sound on.", MessageSeverity.Info, key: "sound");
+        Notice(muted ? "muted." : "on.", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Sound);
         RefreshStatusBar();
     }
 

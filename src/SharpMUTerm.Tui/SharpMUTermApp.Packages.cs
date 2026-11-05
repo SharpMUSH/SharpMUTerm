@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using SharpMUTerm.Client.Packages;
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Diagnostics;
 using SharpMUTerm.Core.Packages;
@@ -9,8 +11,10 @@ using SharpMUTerm.Core.Packages;
 namespace SharpMUTerm.Tui;
 
 /// <summary>
-/// Packages: installing one from a file or an https link through the review, and the Packages screen (F10)
-/// that lists, switches off, copies from and removes them.
+/// Packages: installing one from a file, an https link or the index through the review, and F10 that lists, switches
+/// off, copies from and removes them — as cell screens in a terminal and as the settings window's package page where
+/// the host has one. Both surfaces call the same methods here: <see cref="SetPackageEnabled"/>,
+/// <see cref="RemovePackage"/>, <see cref="CopyPackageSets"/>, and one consent path, <see cref="AcceptPackage"/>.
 /// </summary>
 internal sealed partial class SharpMUTermApp
 {
@@ -25,12 +29,38 @@ internal sealed partial class SharpMUTermApp
     private int _packageSelected;
     private bool _confirmRemove;
 
+    /// <summary>The index as last fetched this run, or null: it is fetched only when the player browses.</summary>
+    private PackageIndex? _packageIndex;
+
+    /// <summary>The archive under review and what its review says, until it is installed or dropped.</summary>
+    private (PackageContents Contents, PackageReviewModel Model)? _pendingPackage;
+
+    private PackageManager? _packageManager;
+
     /// <summary>How an https package is downloaded; a test supplies one, the client uses <see cref="DownloadPackageAsync"/>.</summary>
     internal Func<Uri, CancellationToken, Task<byte[]?>>? PackageFetch { get; set; }
 
     internal ListOverlay PackageView => _packageView;
 
     internal PackageStore Packages => _packages;
+
+    /// <summary>F10's declaration, from the registry.</summary>
+    /// <summary>F10's section id: the key its edits are recorded under in the settings history.</summary>
+    private const string PackageSectionId = "packages";
+
+    private PackageCollection PackageDeclaration => Section("packages").Packages ?? BuiltInSettings.Packages.Packages!;
+
+    /// <summary>
+    /// F10 as the window's package page reads it — one per app, so the index fetched and a review waiting outlive the
+    /// settings window being closed and opened again.
+    /// </summary>
+    internal PackageManager PackageManager => _packageManager ??= new PackageManager(_config, PackageDeclaration, new PackageHostCalls(this));
+
+    /// <summary>Whether packages are shown in the host's own settings window rather than as cell screens.</summary>
+    private bool NativePackages => Host.NativeSettings is not null;
+
+    /// <summary>The review waiting for consent, for a test.</summary>
+    internal PackageReviewModel? PendingPackageReview => _pendingPackage?.Model;
 
     /// <summary>Reads the installed packages and hands their sets and media to the rest of the client.</summary>
     private void LoadPackages()
@@ -56,6 +86,13 @@ internal sealed partial class SharpMUTermApp
                 _packageMedia.Add(folder);
             }
         }
+
+        if (_packageIndex is not null)
+        {
+            _packageManager?.PublishIndex(_packageIndex, PackageBrowseModel.From(_packageIndex, _packages.Installed, FocusedWorld()));
+        }
+
+        _packageManager?.NotifyChanged();
     }
 
     /// <summary><c>/package</c> opens the Packages screen; <c>/package install &lt;file or https link&gt;</c> installs one.</summary>
@@ -80,6 +117,13 @@ internal sealed partial class SharpMUTermApp
         }
 
         RefuseCommand("/package, /package browse, or /package install <file or https link>");
+    }
+
+    /// <summary>Says why a package step did not happen: on the status row, and on the window's package page.</summary>
+    private void PackageRefused(string reason)
+    {
+        RefuseCommand(reason);
+        _packageManager?.PublishStatus(reason);
     }
 
     /// <summary>Reads a package from a path or an https link and opens its review. Nothing is written here.</summary>
@@ -138,41 +182,54 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>
-    /// Opens the review for an archive, or says why it is not a package. From an index, the archive must be
-    /// the one <paramref name="listed"/> names — its SHA-256, id and version — before anything is shown.
+    /// Opens the review for an archive, or says why it is not a package. From an index, the archive must be the one
+    /// <paramref name="listed"/> names — its SHA-256, id and version — before anything is shown. The review is one
+    /// model (<see cref="PackageReviewModel"/>) whichever host draws it, and nothing is written until
+    /// <see cref="AcceptPackage"/>.
     /// </summary>
     internal void ReviewPackage(byte[] archive, PackageIndexEntry? listed = null)
     {
         if (listed?.Verify(archive, inside: null) is { } mismatch)
         {
-            RefuseCommand($"not installed: {mismatch}");
+            PackageRefused($"not installed: {mismatch}");
             return;
         }
 
         var (contents, problem) = PackageArchive.Read(archive);
         if (contents is null)
         {
-            RefuseCommand($"not installed: {problem}");
+            PackageRefused($"not installed: {problem}");
             return;
         }
 
         if (listed?.Verify(archive, contents.Manifest) is { } different)
         {
-            RefuseCommand($"not installed: {different}");
+            PackageRefused($"not installed: {different}");
             return;
         }
 
-        if (AnyOverlayOpen && !_packageView.IsOpen)
+        if (!NativePackages && AnyOverlayOpen && !_packageView.IsOpen)
         {
             RefuseCommand($"close {OpenOverlayName()} first");
             return;
         }
 
-        var existing = _packages.Find(contents.Manifest.Id);
+        var model = PackageReviewModel.From(
+            contents,
+            PackageCollection.CharactersFor(_config, contents.Manifest),
+            _packages.Find(contents.Manifest.Id));
+        _pendingPackage = (contents, model);
+        if (NativePackages)
+        {
+            PackageManager.PublishReview(model);
+            TryOpenNativeSettings(Section("packages"));
+            return;
+        }
+
         _packageView.Open(
             "review",
-            existing is null ? "Install package" : "Update package",
-            width => PackageScreen.Review(contents, CharactersFor(contents.Manifest), existing, width),
+            model.Title,
+            width => PackageScreen.Review(model, width),
             key =>
             {
                 if (key.Key != ConsoleKey.Enter)
@@ -180,20 +237,50 @@ internal sealed partial class SharpMUTermApp
                     return true;
                 }
 
-                if (_packages.Install(contents) is { } failed)
-                {
-                    RefuseCommand($"not installed: {failed}");
-                    return false;
-                }
-
-                SyncPackages();
-                SaveConfiguration();
-                Notice(
-                    $"Installed {contents.Manifest.Name} {contents.Manifest.Version} · F10 lists your packages",
-                    MessageSeverity.Info,
-                    key: "package");
+                AcceptPackage(model);
                 return false;
-            });
+            },
+            footer: PackageScreen.ReviewFooter,
+            scrollKeys: true);
+    }
+
+    /// <summary>
+    /// The consent: installs the package <paramref name="review"/> described — only while it is still the review
+    /// waiting — and saves. Both hosts' install buttons end here, and nothing else writes a package.
+    /// </summary>
+    internal bool AcceptPackage(PackageReviewModel review)
+    {
+        if (_pendingPackage is not { } pending || !ReferenceEquals(pending.Model, review))
+        {
+            PackageRefused("that review is no longer open");
+            return false;
+        }
+
+        _pendingPackage = null;
+        _packageManager?.PublishReview(null);
+        var manifest = pending.Contents.Manifest;
+        if (_packages.Install(pending.Contents) is { } failed)
+        {
+            PackageRefused($"not installed: {failed}");
+            return false;
+        }
+
+        SyncPackages();
+        SaveConfiguration();
+        var said = $"Installed {manifest.Name} {manifest.Version} · F10 lists your packages";
+        Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
+        _packageManager?.PublishStatus(said);
+        return true;
+    }
+
+    /// <summary>Drops the review <paramref name="review"/> without writing anything.</summary>
+    internal void CancelPackage(PackageReviewModel review)
+    {
+        if (_pendingPackage is { } pending && ReferenceEquals(pending.Model, review))
+        {
+            _pendingPackage = null;
+            _packageManager?.PublishReview(null);
+        }
     }
 
     /// <summary>
@@ -201,7 +288,7 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void Fetch(Uri uri, string what, Action<byte[]> then)
     {
-        Notice($"Fetching {Snippet(uri.Host)}…", MessageSeverity.Info, key: "package");
+        Notice($"Fetching {Snippet(uri.Host)}…", MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
         var fetch = PackageFetch ?? DownloadPackageAsync;
         _ = Task.Run(async () =>
         {
@@ -221,7 +308,7 @@ internal sealed partial class SharpMUTermApp
             {
                 if (bytes is null)
                 {
-                    RefuseCommand($"{what} not fetched: {problem}");
+                    PackageRefused($"{what} not fetched: {problem}");
                     return;
                 }
 
@@ -232,39 +319,51 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// Browse packages: fetches the index — only now, never at start — and lists it with the focused world's
-    /// packages first. ⏎ fetches one, checks it against the index's SHA-256 and opens the review.
+    /// packages first. In a host with a settings window the list is the package page's Browse tab; otherwise the
+    /// cell list, where ⏎ fetches one, checks it against the index's SHA-256 and opens the review.
     /// </summary>
     internal void BrowsePackages()
     {
-        if (ComposerIsInTheWay("the packages") || (AnyOverlayOpen && !_packageView.IsOpen && Refuse($"close {OpenOverlayName()} first")))
+        if (!NativePackages
+            && (ComposerIsInTheWay("the packages") || (AnyOverlayOpen && !_packageView.IsOpen && Refuse($"close {OpenOverlayName()} first"))))
         {
             return;
         }
 
         if (!Uri.TryCreate(_config.PackageIndexUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
         {
-            RefuseCommand("the package index is not an https link (packageIndexUrl in config.json)");
+            PackageRefused("the package index is not an https link (packageIndexUrl in config.json)");
             return;
+        }
+
+        if (NativePackages)
+        {
+            PackageManager.PublishFetching();
+            TryOpenNativeSettings(Section("packages"));
         }
 
         Fetch(uri, "package index", bytes =>
         {
             if (bytes.Length > PackageIndex.MaxIndexBytes)
             {
-                RefuseCommand("the package index is too large");
+                PackageRefused("the package index is too large");
                 return;
             }
 
-            var (index, problem) = PackageIndex.Parse(System.Text.Encoding.UTF8.GetString(bytes));
+            var (index, problem) = PackageIndex.Parse(Encoding.UTF8.GetString(bytes));
             if (index is null)
             {
-                RefuseCommand($"package index not read: {problem}");
+                PackageRefused($"package index not read: {problem}");
                 return;
             }
 
             ShowIndex(index);
         });
     }
+
+    /// <summary>Fetches the archive an index entry names and opens its review once it is the archive the entry names.</summary>
+    internal void InstallFromIndex(PackageIndexEntry entry) =>
+        Fetch(new Uri(entry.Url), "package", bytes => ReviewPackage(bytes, entry));
 
     /// <summary>
     /// The world of the focused window: its session's, else its recorded owner's — so a disconnected
@@ -283,15 +382,23 @@ internal sealed partial class SharpMUTermApp
             : _config.Worlds.FirstOrDefault(w => w.Characters.Any(c => string.Equals($"{w.Name}.{c.Name}", owner, StringComparison.Ordinal)));
     }
 
+    /// <summary>The index arrived: kept for the run (so F10 can say which packages have updates), then listed.</summary>
     private void ShowIndex(PackageIndex index)
     {
-        var world = FocusedWorld();
-        var entries = index.For(world?.Host, world?.Port ?? 0);
+        _packageIndex = index;
+        var model = PackageBrowseModel.From(index, _packages.Installed, FocusedWorld());
+        if (NativePackages)
+        {
+            PackageManager.PublishIndex(index, model);
+            return;
+        }
+
+        var entries = model.Rows;
         _packageSelected = 0;
         _packageView.Open(
             "browse",
             "Browse packages",
-            width => PackageScreen.Browse(entries, _packages.Installed, _packageSelected, world?.Name, index.Dropped, width),
+            width => PackageScreen.Browse(model, _packageSelected, width),
             key =>
             {
                 switch (key.Key)
@@ -303,8 +410,7 @@ internal sealed partial class SharpMUTermApp
                         _packageSelected = Math.Min(Math.Max(0, entries.Count - 1), _packageSelected + 1);
                         return true;
                     case ConsoleKey.Enter when entries.Count > 0:
-                        var entry = entries[Math.Clamp(_packageSelected, 0, entries.Count - 1)];
-                        Fetch(new Uri(entry.Url), "package", bytes => ReviewPackage(bytes, entry));
+                        InstallFromIndex(entries[Math.Clamp(_packageSelected, 0, entries.Count - 1)].Entry);
                         return false;
                     default:
                         return true;
@@ -312,9 +418,18 @@ internal sealed partial class SharpMUTermApp
             });
     }
 
-    /// <summary>The Packages screen, or closes it.</summary>
+    /// <summary>The installed packages as F10 lists them, each with what the index said of it this run.</summary>
+    private IReadOnlyList<PackageItem> PackageItems() => PackageCollection.Items(_config, _packageIndex);
+
+    /// <summary>The Packages screen — the settings window's package page where the host has one — or closes it.</summary>
     internal void ShowPackages()
     {
+        if (NativePackages)
+        {
+            TryOpenNativeSettings(Section("packages"));
+            return;
+        }
+
         if (_packageView.IsOpen)
         {
             _packageView.Close();
@@ -330,10 +445,17 @@ internal sealed partial class SharpMUTermApp
         _confirmRemove = false;
         _packageView.Open(
             "list",
-            "Packages",
-            width => PackageScreen.List(
-                _packages.Installed, _config.DisabledPackages, _packageSelected, _confirmRemove, p => CharactersFor(p.Manifest), width),
+            SectionTitle("packages"),
+            width => PackageScreen.List(PackageDeclaration, _config, PackageItems(), _packageSelected, _confirmRemove, width),
             OnPackageKey);
+    }
+
+    /// <summary>The ids of the fields the cell F10 draws, in order, for a test to hold against the window's.</summary>
+    internal IReadOnlyList<string> CellPackageFields()
+    {
+        var drawn = new List<string>();
+        PackageScreen.List(PackageDeclaration, _config, PackageItems(), _packageSelected, false, 100, drawn);
+        return drawn;
     }
 
     private bool Refuse(string reason)
@@ -344,7 +466,7 @@ internal sealed partial class SharpMUTermApp
 
     private bool OnPackageKey(ConsoleKeyInfo key)
     {
-        var installed = _packages.Installed;
+        var installed = PackageItems();
         var confirming = _confirmRemove;
         _confirmRemove = false;
         if (key.Key == ConsoleKey.B)
@@ -361,6 +483,13 @@ internal sealed partial class SharpMUTermApp
         var current = installed[Math.Clamp(_packageSelected, 0, installed.Count - 1)];
         switch (key.Key)
         {
+            case ConsoleKey.Z when key.Modifiers == ConsoleModifiers.Control:
+                StepPackageHistory(redo: false);
+                break;
+            case ConsoleKey.Y when key.Modifiers == ConsoleModifiers.Control:
+            case ConsoleKey.Z when key.Modifiers == (ConsoleModifiers.Control | ConsoleModifiers.Shift):
+                StepPackageHistory(redo: true);
+                break;
             case ConsoleKey.UpArrow:
                 _packageSelected = Math.Max(0, _packageSelected - 1);
                 break;
@@ -368,28 +497,14 @@ internal sealed partial class SharpMUTermApp
                 _packageSelected = Math.Min(installed.Count - 1, _packageSelected + 1);
                 break;
             case ConsoleKey.Spacebar:
-                if (!_config.DisabledPackages.Remove(current.Id))
-                {
-                    _config.DisabledPackages.Add(current.Id);
-                }
-
-                SyncPackages();
-                SaveConfiguration();
+                SetPackageEnabled(current.Id, !PackageCollection.IsEnabled(_config, current.Id));
                 break;
             case ConsoleKey.C:
-                CopyPackageSets(current);
+                CopyPackageSets(current.Id);
                 break;
             case ConsoleKey.Delete or ConsoleKey.Backspace when confirming:
-                if (_packages.Remove(current.Id) is { } problem)
-                {
-                    RefuseCommand(problem);
-                }
-
-                _config.DisabledPackages.Remove(current.Id);
+                RemovePackage(current.Id);
                 _packageSelected = Math.Max(0, Math.Min(_packageSelected, _packages.Installed.Count - 1));
-                SyncPackages();
-                SaveConfiguration();
-                Notice($"Removed {current.Manifest.Name}.", MessageSeverity.Info, key: "package");
                 break;
             case ConsoleKey.Delete or ConsoleKey.Backspace:
                 _confirmRemove = true;
@@ -402,38 +517,112 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>
+    /// Switches a package on or off and saves once — F10's Space and the window's check box. Through the settings funnel
+    /// (<see cref="PackageEdits"/>), so the switch is recorded under F10's section and ⌃Z undoes it in either host.
+    /// </summary>
+    internal void SetPackageEnabled(string id, bool on)
+    {
+        if (_packages.Find(id) is not { } package)
+        {
+            return;
+        }
+
+        PackageEdits().Apply(
+            () => PackageCollection.SetEnabled(_config, id, on) ? 0 : (int?)null,
+            $"{package.Manifest.Name} switched {(on ? "on" : "off")}");
+    }
+
+    /// <summary>
+    /// The settings funnel for F10's section: recorded in <see cref="_settingsHistory"/> under <c>packages</c>, saved
+    /// with the package state re-synced (media folders, the window's page) — so an undo or redo of a switch is applied
+    /// exactly as the switch was. The cell F10 and the native page both commit and undo through one of these.
+    /// </summary>
+    private ScreenEdits PackageEdits()
+    {
+        var edits = new ScreenEdits(SavePackageChange);
+        edits.Track(_settingsHistory, PackageSectionId);
+        return edits;
+    }
+
+    /// <summary>Saves a change to which packages are on: the package state first, then the configuration.</summary>
+    private void SavePackageChange()
+    {
+        SyncPackages();
+        SaveConfiguration();
+    }
+
+    /// <summary>⌃Z / ⌃Y (⌃⇧Z) on the cell F10: steps F10's history and says what it did on the status row.</summary>
+    private void StepPackageHistory(bool redo)
+    {
+        var edits = PackageEdits();
+        var result = redo ? edits.Redo() : edits.Undo();
+        Notice(result.Note, result.Done ? MessageSeverity.Info : MessageSeverity.Warning, toast: false);
+        _packageManager?.PublishStatus(result.Note);
+    }
+
+    /// <summary>Removes a package and its folder and saves — F10's Del Del and the window's Remove.</summary>
+    internal void RemovePackage(string id)
+    {
+        if (_packages.Find(id) is not { } package)
+        {
+            PackageRefused($"no package '{id}' is installed");
+            return;
+        }
+
+        if (_packages.Remove(id) is { } problem)
+        {
+            PackageRefused(problem);
+        }
+
+        PackageCollection.SetEnabled(_config, id, on: true);
+        SyncPackages();
+        SaveConfiguration();
+        var said = $"Removed {package.Manifest.Name}.";
+        Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
+        _packageManager?.PublishStatus(said);
+    }
+
+    /// <summary>
     /// Copies a package's sets into the player's own, where F2–F6 can edit them and an update will not
     /// replace them. A name already taken gets <c>(copy)</c>.
     /// </summary>
-    private void CopyPackageSets(InstalledPackage package)
+    internal void CopyPackageSets(string id)
     {
+        if (_packages.Find(id) is not { } package)
+        {
+            PackageRefused($"no package '{id}' is installed");
+            return;
+        }
+
         foreach (var set in package.Sets)
         {
-            var copy = JsonSerializer.Deserialize<TriggerSet>(
-                JsonSerializer.SerializeToUtf8Bytes(set, ConfigurationStore.SerializerOptions), ConfigurationStore.SerializerOptions)!;
-            var name = set.Name;
-            for (var n = 1; _config.TriggerSets.Any(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)); n++)
-            {
-                name = n == 1 ? $"{set.Name} (copy)" : $"{set.Name} (copy {n})";
-            }
-
-            copy.Name = name;
-            _config.TriggerSets.Add(copy);
+            SettingsCollection.CopyToEdit(_config, set);
         }
 
         SaveConfiguration();
-        Notice(
-            $"Copied {package.Sets.Count} set(s) to yours; assign them on F5, and switch the package off (Space) to use only your copy.",
-            MessageSeverity.Info,
-            key: "package");
+        var said = $"Copied {package.Sets.Count} set(s) to yours; assign them on F5, and switch the package off (Space) to use only your copy.";
+        Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
+        _packageManager?.PublishStatus(said);
+        _packageManager?.NotifyChanged();
     }
 
-    /// <summary>The characters a package would apply to: everyone on a world it is for.</summary>
-    private IReadOnlyList<string> CharactersFor(PackageManifest manifest) =>
-        _config.Worlds
-            .Where(w => manifest.IsFor(w.Host, w.Port))
-            .SelectMany(w => w.Characters.Select(c => $"{c.Name} ({w.Name})"))
-            .ToList();
+    /// <summary>The window's package page's gestures, each run on the client's thread.</summary>
+    private sealed class PackageHostCalls(SharpMUTermApp app) : IPackageHost
+    {
+        public void SetEnabled(string id, bool on) => app.OnUiThread(() => app.SetPackageEnabled(id, on));
+
+        public void Remove(string id) => app.OnUiThread(() => app.RemovePackage(id));
+
+        public void CopySets(string id) => app.OnUiThread(() => app.CopyPackageSets(id));
+
+        public void Browse() => app.OnUiThread(app.BrowsePackages);
+
+        public void Install(PackageIndexEntry entry) => app.OnUiThread(() => app.InstallFromIndex(entry));
+
+        public void Accept(PackageReviewModel review) => app.OnUiThread(() => app.AcceptPackage(review));
+
+        public void Cancel(PackageReviewModel review) => app.OnUiThread(() => app.CancelPackage(review));
+    }
 
     /// <summary>
     /// The snapshot's packages, built as archives and read through <see cref="PackageArchive.Read"/> like any
@@ -479,8 +668,61 @@ internal sealed partial class SharpMUTermApp
         """,
         "Health warnings, a tells window and the status gauges.");
 
+    private static readonly byte[] DemoColours = DemoPackage(
+        "mush.colours",
+        "MUSH colour names",
+        "0.3.1",
+        "\"*\"",
+        """{"name":"MUSH colours","triggers":[{"name":"pages","pattern":"^From afar","actions":{"spawnTarget":"Pages"}}]}""",
+        "Highlights pages and channel names on any game.");
+
+    private static readonly byte[] DemoGrapevine = DemoPackage(
+        "grapevine.channels", "Grapevine channels", "2.0.0", "\"grapevine.haus\"",
+        """{"name":"Grapevine channels","triggers":[{"name":"gossip","pattern":"^\\[gossip\\]","actions":{"spawnTarget":"Gossip"}}]}""",
+        "Puts each Grapevine channel in a window of its own.");
+
+    private static readonly byte[] DemoMapper = DemoPackage(
+        "aetherfall.mapper", "Aetherfall mapper rooms", "0.9.0", "\"aetherfall.mux\"",
+        """{"name":"Aetherfall mapper","triggers":[{"name":"exits","pattern":"^Obvious exits:","actions":{}}]}""",
+        "Reads room names and exits for the map.");
+
+    /// <summary>The demo's index: four packages, the files it names served by <see cref="DemoFetch"/>, and one broken entry.</summary>
+    private static string DemoIndex() => $$"""
+        {"packages":[
+          {"id":"mush.colours","name":"MUSH colour names","version":"0.3.1","games":["*"],
+           "description":"Highlights pages and channel names on any game.",
+           "url":"https://packages.example/mush-colours-0.3.1.zip","sha256":"{{Sha(DemoColours)}}"},
+          {"id":"grapevine.channels","name":"Grapevine channels","version":"2.0.0","games":["grapevine.haus"],
+           "description":"Puts each Grapevine channel in a window of its own.",
+           "url":"https://packages.example/grapevine-channels-2.0.0.zip","sha256":"{{Sha(DemoGrapevine)}}"},
+          {"id":"aetherfall.basics","name":"Aetherfall basics","version":"1.2.0","author":"the Aetherfall builders",
+           "games":["aetherfall.mux:4201"],"description":"Health warnings, a tells window and the status gauges.",
+           "url":"https://packages.example/aetherfall-basics-1.2.0.zip","sha256":"{{Sha(DemoBasics)}}"},
+          {"id":"aetherfall.mapper","name":"Aetherfall mapper rooms","version":"0.9.0","games":["aetherfall.mux"],
+           "description":"Reads room names and exits for the map.",
+           "url":"https://packages.example/aetherfall-mapper-0.9.0.zip","sha256":"{{Sha(DemoMapper)}}"},
+          {"id":"bad","name":"Bad","version":"1","games":["*"],"url":"http://x","sha256":"x"}]}
+        """;
+
+    private static string Sha(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
+
+    /// <summary>
+    /// The demo's network: the index and the four archives it names, from memory. Only the demo scene sets it, so a
+    /// window demo can browse and install for real without a byte leaving the machine.
+    /// </summary>
+    private static Task<byte[]?> DemoFetch(Uri uri, CancellationToken token) => Task.FromResult<byte[]?>(uri.AbsolutePath switch
+    {
+        var p when p.EndsWith("index.json", StringComparison.Ordinal) => Encoding.UTF8.GetBytes(DemoIndex()),
+        "/mush-colours-0.3.1.zip" => DemoColours,
+        "/grapevine-channels-2.0.0.zip" => DemoGrapevine,
+        "/aetherfall-basics-1.2.0.zip" => DemoBasics,
+        "/aetherfall-mapper-0.9.0.zip" => DemoMapper,
+        _ => null,
+    });
+
     private void LoadDemoPackages(string view)
     {
+        PackageFetch ??= DemoFetch;
         if (view == "package-review")
         {
             ReviewPackage(DemoBasics);
@@ -493,33 +735,18 @@ internal sealed partial class SharpMUTermApp
             _packages.Install(PackageArchive.Read(DemoPackage(
                 "aetherfall.basics", "Aetherfall basics", "1.1.0", "\"aetherfall.mux:4201\"", """{"name":"Aetherfall basics"}""", "")).Contents!);
             SyncPackages();
-            var hash = new string('0', 64);
-            var (index, _) = PackageIndex.Parse($$"""
-                {"packages":[
-                  {"id":"mush.colours","name":"MUSH colour names","version":"0.3.1","games":["*"],
-                   "description":"Highlights pages and channel names on any game.",
-                   "url":"https://packages.example/mush-colours-0.3.1.zip","sha256":"{{hash}}"},
-                  {"id":"grapevine.channels","name":"Grapevine channels","version":"2.0.0","games":["grapevine.haus"],
-                   "url":"https://packages.example/grapevine-channels-2.0.0.zip","sha256":"{{hash}}"},
-                  {"id":"aetherfall.basics","name":"Aetherfall basics","version":"1.2.0","author":"the Aetherfall builders",
-                   "games":["aetherfall.mux:4201"],"description":"Health warnings, a tells window and the status gauges.",
-                   "url":"https://packages.example/aetherfall-basics-1.2.0.zip","sha256":"{{hash}}"},
-                  {"id":"aetherfall.mapper","name":"Aetherfall mapper rooms","version":"0.9.0","games":["aetherfall.mux"],
-                   "url":"https://packages.example/aetherfall-mapper-0.9.0.zip","sha256":"{{hash}}"},
-                  {"id":"bad","name":"Bad","version":"1","games":["*"],"url":"http://x","sha256":"x"}]}
-                """);
-            ShowIndex(index!);
+            if (NativePackages)
+            {
+                PackageManager.PublishFetching();
+                TryOpenNativeSettings(Section("packages"));
+            }
+
+            ShowIndex(PackageIndex.Parse(DemoIndex()).Index!);
             return;
         }
 
         _packages.Install(PackageArchive.Read(DemoBasics).Contents!);
-        _packages.Install(PackageArchive.Read(DemoPackage(
-            "mush.colours",
-            "MUSH colour names",
-            "0.3.1",
-            "\"*\"",
-            """{"name":"MUSH colours","triggers":[{"name":"pages","pattern":"^From afar","actions":{"spawnTarget":"Pages"}}]}""",
-            "Highlights pages and channel names on any game.")).Contents!);
+        _packages.Install(PackageArchive.Read(DemoColours).Contents!);
         _config.DisabledPackages.Add("mush.colours");
         SyncPackages();
         ShowPackages();

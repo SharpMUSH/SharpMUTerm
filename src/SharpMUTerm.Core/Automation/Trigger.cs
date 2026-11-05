@@ -85,6 +85,13 @@ public sealed class TriggerActions
     public string? ScriptCallback { get; set; }
 
     /// <summary>
+    /// Ask for the player's attention when this rule matches while they are in another window: a desktop
+    /// notification and a taskbar flash in the window, a notification or a bell in a terminal. Rate-limited and
+    /// switched off by F7 ▸ <c>alert when away</c>; matched lines that are gagged still alert, since the rule asked.
+    /// </summary>
+    public bool Alert { get; set; }
+
+    /// <summary>
     /// A copy of these actions. Every field is a value or an immutable string, so a member-wise copy
     /// really is a deep one — but it has to be written out rather than shared, because
     /// <see cref="Trigger.Actions"/> is <c>init</c>-only and two triggers holding the same instance
@@ -100,6 +107,7 @@ public sealed class TriggerActions
         SendResponse = SendResponse,
         SpawnTarget = SpawnTarget,
         ScriptCallback = ScriptCallback,
+        Alert = Alert,
     };
 }
 
@@ -112,6 +120,7 @@ public sealed class Trigger
     private Regex? _compiled;
     private bool _caseSensitive;
     private string _pattern = string.Empty;
+    private TriggerMatchType _matchType;
 
     /// <summary>
     /// What the rule is called, for the lists that show it. Settable so the F2 screen can rename a rule
@@ -136,6 +145,26 @@ public sealed class Trigger
             }
 
             _pattern = value;
+            _compiled = null;
+        }
+    }
+
+    /// <summary>
+    /// How <see cref="Pattern"/> is read — a regex (the default, and what every rule written before this
+    /// existed means), or one of the plain-language kinds F2 offers first. Settable so the editor can change
+    /// it live; writing it drops the cached <see cref="Regex"/> for the reason <see cref="Pattern"/> does.
+    /// </summary>
+    public TriggerMatchType MatchType
+    {
+        get => _matchType;
+        set
+        {
+            if (_matchType == value)
+            {
+                return;
+            }
+
+            _matchType = value;
             _compiled = null;
         }
     }
@@ -174,7 +203,7 @@ public sealed class Trigger
     /// <summary>The compiled regex (built once, lazily), with a match timeout guarding against ReDoS.</summary>
     [JsonIgnore]
     public Regex Regex => _compiled ??= new Regex(
-        Pattern,
+        TriggerPatterns.ToRegex(MatchType, Pattern),
         RegexOptions.Compiled | (CaseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase),
         AutomationDefaults.RegexMatchTimeout);
 
@@ -189,6 +218,7 @@ public sealed class Trigger
     {
         Name = Name,
         Pattern = Pattern,
+        MatchType = MatchType,
         Enabled = Enabled,
         CaseSensitive = CaseSensitive,
         StopProcessing = StopProcessing,

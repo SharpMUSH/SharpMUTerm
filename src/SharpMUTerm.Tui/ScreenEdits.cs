@@ -1,3 +1,5 @@
+using SharpMUTerm.Client.Settings;
+
 namespace SharpMUTerm.Tui;
 
 /// <summary>
@@ -44,8 +46,10 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal sealed class ScreenEdits
 {
-    private readonly List<(string What, Action Undo)> _deletions = new();
+    private readonly List<Deletion> _deletions = new();
     private readonly Action? _persist;
+    private SettingsHistory? _history;
+    private string? _section;
 
     /// <summary>
     /// <paramref name="persist"/> writes the configuration out, and is run after <em>every</em> accepted
@@ -77,12 +81,106 @@ internal sealed class ScreenEdits
     /// </summary>
     internal IReadOnlyList<string> Deletions => _deletions.ConvertAll(d => d.What);
 
+    /// <summary>
+    /// Records every change from now on in <paramref name="history"/> as an edit of <paramref name="section"/>, so ⌃Z on
+    /// that section can put it back (<see cref="Undo"/>). The app does this for each screen it opens and for the native
+    /// settings window; a screen with no history (the tests that exercise only the funnel) records nothing.
+    /// </summary>
+    internal void Track(SettingsHistory? history, string? section)
+    {
+        _history = section is null ? null : history;
+        _section = section;
+    }
+
+    /// <summary>Undoes the last edit recorded for this screen's section, saves the result, and says what it did.</summary>
+    internal SettingsUndoResult Undo() => Step(redo: false);
+
+    /// <summary>Redoes the last edit undone on this screen's section, saves the result, and says what it did.</summary>
+    internal SettingsUndoResult Redo() => Step(redo: true);
+
+    private SettingsUndoResult Step(bool redo)
+    {
+        if (_history is not { } history || _section is not { } section)
+        {
+            return new SettingsUndoResult(false, redo ? "Nothing to redo." : "Nothing to undo.");
+        }
+
+        var result = redo ? history.Redo(section) : history.Undo(section);
+        if (!result.Done)
+        {
+            return result;
+        }
+
+        // A deletion undone is no longer one for the closing review to put back (it would be put back twice); one
+        // redone is again.
+        if (result.Tag is Deletion deletion)
+        {
+            if (redo)
+            {
+                if (!_deletions.Contains(deletion))
+                {
+                    _deletions.Add(deletion);
+                }
+            }
+            else
+            {
+                _deletions.Remove(deletion);
+            }
+        }
+
+        _persist?.Invoke();
+        return result;
+    }
+
+    /// <summary>Runs <paramref name="change"/>, saves it, and records it in the history under <paramref name="what"/>.</summary>
+    private T Recorded<T>(string? what, Func<T> change, Func<T, object?>? tag = null, Func<T, bool>? changed = null)
+    {
+        var before = _history?.Capture();
+        var result = change();
+        if (changed?.Invoke(result) == false)
+        {
+            return result;
+        }
+
+        _persist?.Invoke();
+        if (before is not null)
+        {
+            _history!.Record(_section!, before, what, tag?.Invoke(result));
+        }
+
+        return result;
+    }
+
     /// <summary>Flips a checkbox and writes it out. Committed on the spot; nothing to review.</summary>
-    internal void Apply(ScreenToggle toggle)
+    /// <summary>
+    /// Puts a declared setting back to its default — the same funnel as every other change, so a reset is
+    /// saved, and reaches a connected session, exactly as typing the default in would.
+    /// </summary>
+    internal void Apply(Action reset, string? what = null)
+    {
+        ArgumentNullException.ThrowIfNull(reset);
+        Recorded(what, () =>
+        {
+            reset();
+            return 0;
+        });
+    }
+
+    /// <summary>
+    /// Moves something (an item within its set) and saves it only if it moved: <paramref name="move"/> answers where it
+    /// went, or null when it was already at that end and nothing changed.
+    /// </summary>
+    internal int? Apply(Func<int?> move, string? what = null)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        return Recorded(what, move, changed: row => row is not null);
+    }
+
+    internal void Apply(ScreenToggle toggle, string? what = null) => Recorded(what, () =>
     {
         toggle.Flip();
-        _persist?.Invoke();
-    }
+        return 0;
+    });
 
     /// <summary>
     /// Writes a typed value to a field and persists it. Nothing is written when the value doesn't
@@ -99,8 +197,11 @@ internal sealed class ScreenEdits
             return error;
         }
 
-        field.Set(value);
-        _persist?.Invoke();
+        Recorded(field.Label, () =>
+        {
+            field.Set(value);
+            return 0;
+        });
         return null;
     }
 
@@ -120,13 +221,21 @@ internal sealed class ScreenEdits
     internal int? Apply(ScreenButton button)
     {
         var what = button.Describe?.Invoke() ?? button.Target;
-        var press = button.Run();
-        if (press.Undo is { } undo)
-        {
-            _deletions.Add((what ?? button.Label, undo));
-        }
+        Deletion? deletion = null;
+        var press = Recorded(
+            button.Kind == ScreenButtonKind.Remove ? $"deleting {what ?? button.Label}" : button.Label.Trim('[', ']', ' '),
+            () =>
+            {
+                var press = button.Run();
+                if (press.Undo is { } undo)
+                {
+                    deletion = new Deletion(what ?? button.Label, undo);
+                    _deletions.Add(deletion);
+                }
 
-        _persist?.Invoke();
+                return press;
+            },
+            _ => deletion);
         return press.Select;
     }
 
@@ -147,4 +256,12 @@ internal sealed class ScreenEdits
 
     /// <summary>Accepts the logged deletions; there is nothing left to review.</summary>
     internal void Commit() => _deletions.Clear();
+
+    /// <summary>A deletion waiting for the closing review: what it took, and how to put it back.</summary>
+    private sealed class Deletion(string what, Action undo)
+    {
+        internal string What { get; } = what;
+
+        internal Action Undo { get; } = undo;
+    }
 }

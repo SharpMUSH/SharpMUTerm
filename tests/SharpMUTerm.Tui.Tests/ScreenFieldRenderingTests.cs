@@ -54,7 +54,7 @@ public class ScreenFieldRenderingTests
         await Assert.That(Carets(TriggersScreenRenderer.EditorColumn(sets, 0, Array.Empty<string>()))).IsEqualTo(0);
         await Assert.That(Carets(AliasesScreenRenderer.EditorColumn(sets, 0))).IsEqualTo(0);
         await Assert.That(Carets(TimersScreenRenderer.EditorColumn(sets, 0))).IsEqualTo(0);
-        await Assert.That(Carets(KeypadScreenRenderer.HotkeysColumn(sets[0].Macros))).IsEqualTo(0);
+        await Assert.That(Carets(KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, sets[0].Macros))).IsEqualTo(0);
         await Assert.That(Carets(
             WorldsScreenRenderer.DetailColumn(worlds, sets, 0, 0, ScreenPalette.Accent))).IsEqualTo(0);
         await Assert.That(Carets(
@@ -187,16 +187,14 @@ public class ScreenFieldRenderingTests
     {
         var macros = Sets()[0].Macros;
 
-        var command = KeypadScreenRenderer.HotkeysColumn(
-            macros, Edit(0, 0, KeypadScreenRenderer.CommandField, "look here"));
+        var command = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros, Edit(0, 0, KeypadScreenRenderer.CommandField, "look here"));
 
         await Assert.That(Carets(command)).IsEqualTo(1);
         var edited = command.Single(HasCaret);
         await Assert.That(edited).Contains("Num5");
         await Assert.That(edited).Contains("look her");
 
-        var name = KeypadScreenRenderer.HotkeysColumn(
-            macros, Edit(0, 0, KeypadScreenRenderer.NameField, "Survey"));
+        var name = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros, Edit(0, 0, KeypadScreenRenderer.NameField, "Survey"));
 
         await Assert.That(Carets(name)).IsEqualTo(1);
         await Assert.That(name.Single(HasCaret)).Contains("Surve");
@@ -278,8 +276,7 @@ public class ScreenFieldRenderingTests
     [Test]
     public async Task BracketsTypedIntoABufferAreEscaped_NotRenderedAsMarkup()
     {
-        var lines = KeypadScreenRenderer.HotkeysColumn(
-            Sets()[0].Macros, Edit(0, 0, KeypadScreenRenderer.CommandField, "say [red]hi"));
+        var lines = KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, Sets()[0].Macros, Edit(0, 0, KeypadScreenRenderer.CommandField, "say [red]hi"));
 
         var edited = lines.Single(HasCaret);
         await Assert.That(edited).Contains("[[red]]hi");

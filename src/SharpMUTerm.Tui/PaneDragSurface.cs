@@ -12,16 +12,23 @@ internal sealed class PaneDragSurface
 {
     private readonly Dictionary<string, PaneRect> _rects;
     private readonly Dictionary<string, string> _activeWindows;
+    private readonly List<PaneRect> _dividers;
 
-    /// <summary>Creates a surface from pane rectangles and each pane's active window id.</summary>
+    /// <summary>
+    /// Creates a surface from pane rectangles and each pane's active window id. <paramref name="dividers"/> are the
+    /// cells of a tab strip that stand in for the divider above its pane (the run past its last tab): a press there
+    /// resizes the split, so it is not a drag handle for the pane's window.
+    /// </summary>
     public PaneDragSurface(
         IReadOnlyDictionary<string, PaneRect> rects,
-        IReadOnlyDictionary<string, string> activeWindows)
+        IReadOnlyDictionary<string, string> activeWindows,
+        IEnumerable<PaneRect>? dividers = null)
     {
         ArgumentNullException.ThrowIfNull(rects);
         ArgumentNullException.ThrowIfNull(activeWindows);
         _rects = new Dictionary<string, PaneRect>(rects, StringComparer.Ordinal);
         _activeWindows = new Dictionary<string, string>(activeWindows, StringComparer.Ordinal);
+        _dividers = dividers is null ? new List<PaneRect>() : new List<PaneRect>(dividers);
     }
 
     /// <summary>The pane rectangles, keyed by pane id.</summary>
@@ -64,4 +71,12 @@ internal sealed class PaneDragSurface
     /// drag, so clicking, selecting text and following links in a pane's body are all left alone.
     /// </summary>
     public bool IsTabStrip(string paneId, int y) => RectOf(paneId) is { } rect && !rect.IsEmpty && y == rect.Y;
+
+    /// <summary>
+    /// True when a press at the cell starts a pane drag: it is on the pane's tab strip and not on the part of the
+    /// strip that is the divider above the pane.
+    /// </summary>
+    public bool IsDragHandle(string paneId, int x, int y) =>
+        IsTabStrip(paneId, y)
+        && !_dividers.Any(d => x >= d.X && x < d.X + d.Width && y >= d.Y && y < d.Y + d.Height);
 }
