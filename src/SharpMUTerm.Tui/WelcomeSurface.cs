@@ -173,6 +173,34 @@ internal sealed class WelcomeSurface
         Problem = null;
     }
 
+    /// <summary>
+    /// Esc on a form a pick in the window's own find card filled in: the pick is given back — host, port, TLS, the name and
+    /// encoding that came with it, and what was typed since — and the page is the list beside it again, on its Browse row.
+    /// The form keeps nothing, as the cells' Esc back to Browse worlds keeps nothing. False when no pick filled it in.
+    /// </summary>
+    public bool ForgetPick()
+    {
+        if (WorldName is null)
+        {
+            return false;
+        }
+
+        InForm = false;
+        Selected = WelcomeChoice.Browse;
+        Field = WelcomeField.Host;
+        Host = string.Empty;
+        Port = SharpMUTermApp.DefaultConnectPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Tls = false;
+        Character = string.Empty;
+        PasswordLater = false;
+        WorldName = null;
+        Encoding = null;
+        _prefilledHost = null;
+        Problem = null;
+        Request = null;
+        return true;
+    }
+
     /// <summary>Esc: the form goes back to the menu and stays open; on the menu Esc closes, which is the overlay's.</summary>
     /// <returns>Whether Esc was taken here.</returns>
     public bool Back()

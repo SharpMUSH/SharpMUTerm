@@ -961,6 +961,23 @@ public class SurfaceParityTests
                 app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
                 app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
             });
+        // Esc on a form Browse worlds filled in is one step back, to that list as it was left — not the whole welcome closed
+        // (the window's Esc used to close it) and not a menu the player never saw: the cells' Esc, StepBackFromWelcome.
+        await SameModal("welcome: back from a form Browse worlds filled in", "welcome",
+            (app, m) =>
+            {
+                ((WelcomeSession)m.Open(SurfaceCatalog.Welcome)!).Choose(WelcomeChoice.Browse);
+                ((WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!).Pick(1);
+                ((WelcomeSession)m.Open(SurfaceCatalog.Welcome)!).Back();
+            },
+            app =>
+            {
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
+            });
         probed.Add(SurfaceCatalog.Welcome);
 
         // Help: a slash command placed on the command line (sent nowhere), and a key's command run — each the entry the
@@ -1017,6 +1034,26 @@ public class SurfaceParityTests
         await SameModal("browse worlds: back from the addresses", "browse-worlds-endpoints",
             (app, m) => ((WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!).Back(),
             app => app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false)));
+        // Browse worlds the welcome opened goes back to it — the window's Back button and Esc, the cells' Esc on the list —
+        // through ReturnToWelcome, to the welcome on its Browse row.
+        await SameModal("browse worlds: back to the welcome", "welcome",
+            (app, m) =>
+            {
+                ((WelcomeSession)m.Open(SurfaceCatalog.Welcome)!).Choose(WelcomeChoice.Browse);
+                var browse = (WorldBrowseSession)m.Open(SurfaceCatalog.BrowseWorlds)!;
+                if (!browse.CanReturnToWelcome)
+                {
+                    throw new InvalidOperationException("Browse worlds the welcome opened does not offer the way back");
+                }
+
+                browse.ReturnToWelcome();
+            },
+            app =>
+            {
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                app.SimulateWelcomeKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+                app.SimulateWorldBrowseKey(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
+            });
         probed.Add(SurfaceCatalog.BrowseWorlds);
 
         // The import review: Import writes the same world, character and set as the cells' Enter; with the passwords

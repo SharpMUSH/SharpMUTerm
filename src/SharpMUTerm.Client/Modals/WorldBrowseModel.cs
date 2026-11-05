@@ -86,6 +86,21 @@ public sealed record WorldBrowseModel(
         ("Esc", "closes"),
     ];
 
+    /// <summary>
+    /// The keys of a list the welcome opened, where Esc goes back to the welcome rather than closing: the window says so
+    /// on its footer and on a Back button (the cells keep <see cref="Keys"/>' row, whose Esc already goes back there).
+    /// </summary>
+    public static IReadOnlyList<(string Key, string Label)> WelcomeKeys { get; } =
+    [
+        ("↑↓", "pick"),
+        ("⇥", "sort"),
+        ("⏎", "connect form"),
+        ("Esc", "back to the welcome"),
+    ];
+
+    /// <summary>The window's button on a list the welcome opened.</summary>
+    public const string BackToWelcome = "Back to the welcome";
+
     /// <summary>The keys while an address is being chosen.</summary>
     public static IReadOnlyList<(string Key, string Label)> ChoiceKeys { get; } =
     [
@@ -263,6 +278,42 @@ public sealed class WorldBrowseSession : ModalSession<WorldBrowseModel>
 
     public override string Surface => "browse-worlds";
 
+    private WorldListPlace _place = new(string.Empty, WorldDirectorySort.Players, 0);
+
+    /// <summary>
+    /// The client's, on a list the welcome opened (<c>ShowWorldBrowse(fromWelcome: true)</c>): goes back to the welcome
+    /// (<c>ReturnToWelcome</c>), the cells' Esc on their list. Null on a list opened any other way, whose Esc closes.
+    /// </summary>
+    public Action? ReturnToWelcomeWith { get; init; }
+
+    /// <summary>Whether this list goes back to the welcome that opened it: Esc does, and the window shows a Back button.</summary>
+    public bool CanReturnToWelcome => ReturnToWelcomeWith is not null;
+
+    /// <summary>
+    /// Where a list reopened by Esc on a form it filled in starts (query, order, row), as it was left; null starts at
+    /// <see cref="InitialQuery"/>, the top row, by players.
+    /// </summary>
+    public WorldListPlace? StartAt { get; init; }
+
+    /// <summary>
+    /// The host's: where the list is now (what is typed, the order, the row), noted as it moves so the client can open the
+    /// list there again when Esc on the form a pick filled in comes back to it. View state, read by the client only then.
+    /// </summary>
+    public WorldListPlace Place
+    {
+        get => Volatile.Read(ref _place);
+        set => Volatile.Write(ref _place, value ?? throw new ArgumentNullException(nameof(value)));
+    }
+
+    /// <summary>The host's: Esc or Back on a list the welcome opened — back to the welcome. Nothing on any other list.</summary>
+    public void ReturnToWelcome()
+    {
+        if (!IsEnded && Model.Choosing is null && ReturnToWelcomeWith is { } back)
+        {
+            back();
+        }
+    }
+
     /// <summary>What the search box opens with typed in (<c>/browse words</c>).</summary>
     public string InitialQuery { get; init; } = string.Empty;
 
@@ -303,3 +354,6 @@ public sealed class WorldBrowseSession : ModalSession<WorldBrowseModel>
         }
     }
 }
+
+/// <summary>Where a Browse worlds list was left: what was typed, the order, and the row (an index into what it showed).</summary>
+public sealed record WorldListPlace(string Query, WorldDirectorySort Order, int Row);

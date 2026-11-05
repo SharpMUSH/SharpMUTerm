@@ -169,6 +169,12 @@ public sealed record WelcomeModel(
     /// <summary>The button that asks the directory, before anything has been asked.</summary>
     public const string FindButton = "Show worlds";
 
+    /// <summary>
+    /// The window's find card's door to Browse worlds (every row, the order, each address), which the welcome opens as the
+    /// cells' Browse row does, so its Esc comes back here.
+    /// </summary>
+    public const string BrowseAllButton = "Browse all worlds";
+
     /// <summary>What that card says before it has asked anything: nothing is fetched until the player opens the list.</summary>
     public const string FindNote = "Listed from mu*index. Nothing is fetched until you open this list.";
 

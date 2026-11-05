@@ -246,8 +246,11 @@ internal sealed partial class SharpMUTermApp
             }),
             () => OnUiThread(() =>
             {
-                welcome.Back();
-                Republish();
+                if (ReferenceEquals(_nativeModal, session))
+                {
+                    StepBackFromWelcome(welcome);
+                    Republish();
+                }
             }),
             () => OnUiThread(() =>
             {

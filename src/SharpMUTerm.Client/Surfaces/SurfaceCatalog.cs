@@ -551,6 +551,10 @@ public static class SurfaceCatalog
                 // worlds, and the choice fills in the form; Esc goes back to the worlds.
                 new(SurfaceActionKind.Modal, "address", "ChooseWorldEndpoint"),
                 new(SurfaceActionKind.Modal, "leave", "LeaveWorldChoice"),
+
+                // Esc on the form is one step back, the cells' Esc: a form Browse worlds filled in goes back to that list
+                // as it was left, one the find card filled in gives the pick back, one typed by hand goes back to the menu.
+                new(SurfaceActionKind.Modal, "back", "StepBackFromWelcome"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.WelcomeSurface.Render",
@@ -586,6 +590,9 @@ public static class SurfaceCatalog
                 // A world that answers at several addresses is chosen from first (TLS active first); Esc goes back.
                 new(SurfaceActionKind.Modal, "choose", "ChooseWorldEndpoint"),
                 new(SurfaceActionKind.Modal, "back", "LeaveWorldChoice"),
+
+                // A list the welcome opened goes back to it (Esc, and the window's Back button), as the cells' Esc does.
+                new(SurfaceActionKind.Modal, "welcome", "ReturnToWelcome"),
             ],
             NativeModal,
             "SharpMUTerm.Tui.WorldBrowseSurface.Render",

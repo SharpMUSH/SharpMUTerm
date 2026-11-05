@@ -1719,6 +1719,17 @@ fallbacks) for inline images/maps.
   connected count when the shortened brand still does not fit (60 columns wrapped it); `NoWorldsNoticeFor(width)` shortens
   the empty notice's words, never its commands. `FooterFitTests.TheFirstConnectViewsFitA60x20Terminal` and
   `WorldBrowseTests.TheFirstConnectFitsASmallTerminalAtEveryStep` (real keys, 80×24 and 60×20) are the pins.
+- **Wave 32 window welcome backtrack (window; terminal frames unchanged)** (`ux-wave32/window-welcome-backtrack/`). Esc goes back
+  one step in the window too, through the cells' method (`StepBackFromWelcome`, surface action `back`): a form native Browse
+  filled in goes back to that list as it was left (`WorldBrowseSession.Place`/`StartAt`, `WorldListPlace`: query, order, row;
+  `ReturnToWorldBrowse` reopens it without fetching); a pick from the page's own list fills the form *in place* (the list stays),
+  so Esc gives the pick back (`WelcomeSurface.ForgetPick`) and the keyboard returns to the search; a hand-typed form's Esc goes to
+  the search; only then does Esc close. Native Browse opened from the welcome has a Back button and Esc back
+  (`ReturnToWelcomeWith`, `CanReturnToWelcome`, `WelcomeKeys`; action `welcome` → `ReturnToWelcome`, now both hosts). The find
+  card's heading has *Browse all worlds* (`WelcomeModel.BrowseAllButton`), the page's door to it. The page fits without a scroll:
+  bottom margin `Space16`, and a compact tier (`WelcomeView.FitPage`: top 24, gaps 16/12, card padding 18) when the natural
+  height would not fit (the default window). The added-world notice is one model (`WorldNotices.Added`): F5 once (no key chip,
+  the words name it), and `saved with encoding X` when one was saved.
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the
