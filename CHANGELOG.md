@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window's welcome, Esc now steps back one level instead of closing it: from a filled-in form back to the
+  world list as you left it (same search, sort and row), and from Browse worlds back to the welcome, which also has a
+  Back button there. The find card has a *Browse all worlds* button. The welcome page no longer scrolls at 1440×900 or
+  at the window's default size.
+- The notice after adding a world names F5 only once, and says which text encoding the world was saved with when it
+  was given one.
+
 - Connecting to your first world is smoother. In the desktop window's welcome, the arrow keys pick a world from the list
   and Enter adds it. When a game has several addresses, the keyboard starts on the addresses rather than on Back. The
   filled-in form starts at Character and names the world and its text encoding, as the terminal's does. In the

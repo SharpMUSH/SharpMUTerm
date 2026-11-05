@@ -48,6 +48,16 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private readonly List<Border> _worldRows = [];
     private readonly List<Border> _addressRows = [];
     private readonly TextBlock _footer;
+    private readonly StackPanel _page;
+    private readonly TextBlock _pageIntro;
+    private readonly StackPanel _layoutHeading;
+    private readonly WrapPanel _others;
+    private readonly Border _findCard;
+    private readonly Border _connectCard;
+    private readonly ScrollViewer _scroll;
+
+    /// <summary>Whether the page is laid out tight, because the window is too short for it at the mockup's spacing.</summary>
+    private bool _compact;
     private WelcomeModel _model;
     private WorldBrowseSession? _worlds;
     private WelcomeModel? _filledFrom;
@@ -74,10 +84,10 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _model = session.Model;
 
         // The mockup's page: one column, at most ColumnWidth wide, centred on the ground with PageTop above it.
-        var page = new StackPanel
+        var page = _page = new StackPanel
         {
             MaxWidth = ColumnWidth,
-            Margin = new Thickness(NativeTokens.PageInset, PageTop, NativeTokens.PageInset, NativeTokens.PageInset),
+            Margin = new Thickness(NativeTokens.PageInset, PageTop, NativeTokens.PageInset, PageBottom),
             Spacing = 0,
             Background = Brushes.Transparent,
             Tag = ModalOverlay.GroundTag,
@@ -90,7 +100,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
             FontWeight = FontWeight.SemiBold,
             Foreground = colours.Brush(colours.Text),
         });
-        page.Children.Add(new TextBlock
+        page.Children.Add(_pageIntro = new TextBlock
         {
             Text = WelcomeModel.PageIntro,
             FontSize = NativeTokens.Title + 1,
@@ -122,7 +132,23 @@ internal sealed class WelcomeView : DockPanel, IModalView
         };
         _findNote = new TextBlock { FontSize = NativeTokens.Small + 1, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
         var find = new StackPanel { Spacing = NativeTokens.Space14 };
-        find.Children.Add(CardTitle(WelcomeModel.FindHeading));
+        // The heading, and beside it the door to the whole list (Browse worlds: every row, the order, each address), which
+        // the welcome opens as the cells' Browse row does — so its Esc and Back come back here.
+        var findHeading = new DockPanel();
+        if (session.CanFindWorlds)
+        {
+            var browseAll = BrowseAllButton = ModalParts.Button(BrowseAll, null, colours, () => Choose(WelcomeChoice.Browse));
+            browseAll.Name = "BrowseAllWorlds";
+            browseAll.MinHeight = NativeTokens.ControlHeightSmall;
+            browseAll.FontSize = NativeTokens.Body;
+            browseAll.Margin = new Thickness(0, -NativeTokens.Space4, 0, -NativeTokens.Space4); // the title's row keeps its height
+            browseAll.VerticalAlignment = VerticalAlignment.Center;
+            SetDock(browseAll, Dock.Right);
+            findHeading.Children.Add(browseAll);
+        }
+
+        findHeading.Children.Add(CardTitle(WelcomeModel.FindHeading));
+        find.Children.Add(findHeading);
         find.Children.Add(_search);
         find.Children.Add(_findBody);
         find.Children.Add(_findNote);
@@ -179,8 +205,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
         // The mockup's 3 : 2: the list wants the room, the form is four short fields.
         var cards = new Grid { ColumnDefinitions = new ColumnDefinitions("3*,24,2*") };
-        var findCard = Card(find);
-        var connectCard = Card(connect);
+        var findCard = _findCard = Card(find);
+        var connectCard = _connectCard = Card(connect);
         Grid.SetColumn(findCard, 0);
         Grid.SetColumn(connectCard, 2);
         cards.Children.Add(findCard);
@@ -188,7 +214,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(cards);
 
         // ── Starting layout ────────────────────────────────────────────────────────────────────
-        var layoutHeading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space10, Margin = new Thickness(0, NativeTokens.Space28, 0, NativeTokens.Space12) };
+        var layoutHeading = _layoutHeading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space10, Margin = new Thickness(0, NativeTokens.Space28, 0, NativeTokens.Space12) };
         layoutHeading.Children.Add(new TextBlock
         {
             Text = WelcomeModel.LayoutsHeading,
@@ -231,7 +257,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(_layoutReason);
 
         // ── The other ways in ─────────────────────────────────────────────────────────────────
-        var others = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space20, 0, 0) };
+        var others = _others = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space20, 0, 0) };
         others.Children.Add(new TextBlock
         {
             Text = WelcomeModel.OtherWays,
@@ -247,14 +273,17 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(others);
 
         var footer = _footer = ModalParts.Footer(PageKeys, colours);
+        footer.Margin = default; // the page's foot, flush: a full page has no card for the band to stand off
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
-        Children.Add(new ScrollViewer
+        Children.Add(_scroll = new ScrollViewer
         {
             Content = new Panel { Background = Brushes.Transparent, Tag = ModalOverlay.GroundTag, Children = { page } },
             HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
         });
+        _scroll.SizeChanged += (_, _) => FitPage();
+        page.SizeChanged += (_, _) => FitPage();
 
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
         _session.Changed += OnChanged;
@@ -288,6 +317,37 @@ internal sealed class WelcomeView : DockPanel, IModalView
     /// <summary>The ground above the heading: the mockup's 56 px.</summary>
     private const double PageTop = NativeTokens.Space28 * 2;
 
+    /// <summary>The ground under the last row, above the key band: enough to end the page, little enough to fit 900 px.</summary>
+    private const double PageBottom = NativeTokens.Space16;
+
+    /// <summary>The heading's ground on a window too short for the page at the mockup's spacing.</summary>
+    private const double CompactTop = NativeTokens.Space24;
+
+    /// <summary>The gaps under the intro and above the layout heading: the mockup's 28 px, and tight.</summary>
+    private const double SectionGap = NativeTokens.Space28;
+
+    private const double CompactSectionGap = NativeTokens.Space16;
+
+    /// <summary>The gap above the other ways in, and tight.</summary>
+    private const double OthersGap = NativeTokens.Space20;
+
+    private const double CompactOthersGap = NativeTokens.Space12;
+
+    /// <summary>The two upper cards' padding: the mockup's 22 px inside, and tight.</summary>
+    private const double CardPadding = NativeTokens.Space20 + NativeTokens.Space2;
+
+    private const double CompactCardPadding = NativeTokens.Space16 + NativeTokens.Space2;
+
+    /// <summary>How much shorter the tight page is: the ground above, two section gaps, the gap above the other ways, and the cards' padding above and below.</summary>
+    private const double CompactSaving =
+        (PageTop - CompactTop) + (2 * (SectionGap - CompactSectionGap)) + (OthersGap - CompactOthersGap) + (2 * (CardPadding - CompactCardPadding));
+
+    /// <summary>Whether the page is laid out tight, for a test.</summary>
+    public bool Compact => _compact;
+
+    /// <summary>Whether the page fits its window with nothing to scroll, for a test.</summary>
+    public bool FitsWithoutScrolling => _scroll.Extent.Height <= _scroll.Viewport.Height + 0.5;
+
     /// <summary>The model drawn now, for a test.</summary>
     public WelcomeModel Model => _model;
 
@@ -308,6 +368,15 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     /// <summary>The find card's search box, for a test.</summary>
     public TextBox SearchBox => _search;
+
+    /// <summary>The key band at the foot as drawn, for a test.</summary>
+    public string FooterText => _footer.Text ?? string.Empty;
+
+    /// <summary>The find card's door to Browse worlds, for a test; null where the page cannot list worlds.</summary>
+    public Button? BrowseAllButton { get; }
+
+    /// <summary>The world row Enter adds (raised), for a test.</summary>
+    public int SelectedWorldRow => _worldSelected;
 
     /// <summary>The world rows the find card shows now, for a test.</summary>
     public IReadOnlyList<Border> WorldRows => _worldRows;
@@ -397,13 +466,68 @@ internal sealed class WelcomeView : DockPanel, IModalView
     /// <summary>The page's keys once the find card lists worlds: the arrows move the row Enter adds.</summary>
     private const string ListKeys = "Tab moves · ↑↓ pick a world · Enter adds it, or connects · Esc closes";
 
+    /// <summary>The find card's door to Browse worlds.</summary>
+    private const string BrowseAll = WelcomeModel.BrowseAllButton;
+
+    /// <summary>What Esc says while a pick has filled the form in: it goes back to the worlds rather than closing.</summary>
+    private const string EscBack = "Esc back to the worlds";
+
+    /// <summary>The page's keys now: the list's once it lists worlds, with Esc going back while a pick fills the form.</summary>
+    private string Keys()
+    {
+        var keys = _worlds is null ? PageKeys : ListKeys;
+        return _model.WorldName is null ? keys : keys.Replace("Esc closes", EscBack, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The page at the mockup's spacing while the window has the height for it, else tight (less ground above the heading,
+    /// narrower section gaps and card padding), so a 900 px window and the default one show it whole with nothing to
+    /// scroll. Measured on the natural height, so laying it out tight cannot flip it back.
+    /// </summary>
+    private void FitPage()
+    {
+        var viewport = _scroll.Bounds.Height;
+        if (viewport <= 0)
+        {
+            return;
+        }
+
+        var natural = _page.Bounds.Height + _page.Margin.Top + _page.Margin.Bottom + (_compact ? CompactSaving : 0);
+        var compact = natural > viewport + 0.5;
+        if (compact == _compact)
+        {
+            return;
+        }
+
+        _compact = compact;
+        var gap = compact ? CompactSectionGap : SectionGap;
+        _page.Margin = new Thickness(NativeTokens.PageInset, compact ? CompactTop : PageTop, NativeTokens.PageInset, PageBottom);
+        _pageIntro.Margin = new Thickness(0, NativeTokens.Space8, 0, gap);
+        _layoutHeading.Margin = new Thickness(0, gap, 0, NativeTokens.Space12);
+        _others.Margin = new Thickness(0, compact ? CompactOthersGap : OthersGap, 0, 0);
+        _findCard.Padding = _connectCard.Padding = new Thickness(compact ? CompactCardPadding : CardPadding);
+    }
+
     private static FontFamily Mono => NativeTokens.MonoFont;
 
     private void OnChanged(WelcomeModel model) => Dispatcher.UIThread.Post(() =>
     {
+        var picked = _model.WorldName is null && model.WorldName is not null;
+        var givenBack = _model.WorldName is not null && model.WorldName is null;
         _model = model;
         Fill(model);
         DrawFind();
+
+        // A pick in the find card filled the form in on this page: the keyboard goes where the player has to type, as it
+        // does on a page opened filled in. Esc gave the pick back: the keyboard goes back to the list, as it was left.
+        if (picked)
+        {
+            _character.Focus();
+        }
+        else if (givenBack && _search.IsVisible && _search.IsEnabled)
+        {
+            _search.Focus();
+        }
     });
 
     private void OnWorldsAttached(WorldBrowseSession worlds) => Dispatcher.UIThread.Post(() => Attach(worlds));
@@ -480,6 +604,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
             card.Background = _colours.Brush(chosen ? _colours.Raised : _colours.Card);
         }
 
+        if (_worlds?.Model.Choosing is null)
+        {
+            _footer.Text = NativeKeys.Words(Keys());
+        }
+
         DrawCommand();
     }
 
@@ -551,7 +680,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _choiceDrawn = null;
         _addressHadFocus = false;
         _search.IsVisible = true;
-        _footer.Text = NativeKeys.Words(ListKeys);
+        _footer.Text = NativeKeys.Words(Keys());
         if (choosingWasDrawn)
         {
             _search.Focus();
@@ -974,6 +1103,24 @@ internal sealed class WelcomeView : DockPanel, IModalView
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
+
+            // One step back, as the cells' Esc. A form a pick filled in goes back to the list it came from: the client's
+            // to decide (Browse worlds as it was left, or the pick given back to the find card beside it)...
+            if (_model.WorldName is not null)
+            {
+                _session.Back();
+                return;
+            }
+
+            // ...a form typed by hand goes back to the page's menu, the find card, keeping what was typed...
+            if (e.Source is Visual inForm && IsWithin(inForm, _connectCard) && _search.IsEnabled && _search.IsVisible)
+            {
+                _session.Back();
+                _search.Focus();
+                return;
+            }
+
+            // ...and with no step left, Esc closes.
             _session.Dismiss();
             _done();
             return;

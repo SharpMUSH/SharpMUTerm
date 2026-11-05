@@ -97,29 +97,52 @@ internal sealed partial class SharpMUTermApp
         StartWorldList(query);
         if (NativeModalsHost is { } host)
         {
-            WorldBrowseSession? session = null;
-            session = new WorldBrowseSession(
-                _worldModel,
-                ThemeIsDark(),
-                index => OnUiThread(() => PickWorld(session!.Model, index)),
-                words => OnUiThread(() => AskWorldDirectory(words)),
-                endpoint => OnUiThread(() => ChooseWorldEndpoint(session!.Model, endpoint)),
-                () => OnUiThread(LeaveWorldChoice),
-                () => OnUiThread(() =>
-                {
-                    NativeModalClosed(session!);
-                    _worldGeneration++;
-                }))
-            {
-                Theme = _theme.Clone(),
-                InitialQuery = query,
-            };
-            ShowNativeModal(host, session);
+            OpenNativeWorldBrowse(host, query, null);
             return;
         }
 
         OpenCellWorldBrowse(new WorldBrowseSurface(query));
     }
+
+    /// <summary>
+    /// Opens the native Browse worlds over what <see cref="_worldModel"/> holds, starting at <paramref name="place"/> (the
+    /// list as it was left) or at <paramref name="query"/>. A list the welcome opened goes back to it (Esc, and Back).
+    /// </summary>
+    private void OpenNativeWorldBrowse(INativeModals host, string query, WorldListPlace? place)
+    {
+        WorldBrowseSession? session = null;
+        session = new WorldBrowseSession(
+            _worldModel,
+            ThemeIsDark(),
+            index => OnUiThread(() => PickWorld(session!.Model, index)),
+            words => OnUiThread(() => AskWorldDirectory(words)),
+            endpoint => OnUiThread(() => ChooseWorldEndpoint(session!.Model, endpoint)),
+            () => OnUiThread(LeaveWorldChoice),
+            () => OnUiThread(() =>
+            {
+                NativeModalClosed(session!);
+                _worldGeneration++;
+            }))
+        {
+            Theme = _theme.Clone(),
+            InitialQuery = place?.Query ?? query,
+            StartAt = place,
+            ReturnToWelcomeWith = _browseFromWelcome && Host.ScreenIsSeen
+                ? () => OnUiThread(() =>
+                {
+                    if (ReferenceEquals(_nativeModal, session))
+                    {
+                        ReturnToWelcome();
+                    }
+                })
+                : null,
+        };
+        _lastNativeBrowse = session;
+        ShowNativeModal(host, session);
+    }
+
+    /// <summary>The native list last open, so going back to it opens it where it was left (query, order, row).</summary>
+    private WorldBrowseSession? _lastNativeBrowse;
 
     /// <summary>Whether the cell Browse worlds was opened from the welcome, so Esc on its list goes back there.</summary>
     private bool _browseFromWelcome;
@@ -137,6 +160,13 @@ internal sealed partial class SharpMUTermApp
     private void ReturnToWorldBrowse()
     {
         _formFromBrowse = false;
+        if (_worldModel.State == WorldBrowseState.Ready && NativeModalsHost is { } host && _lastNativeBrowse is { } last)
+        {
+            PublishWorldModel(_worldModel with { Choosing = null, Opening = null, Problem = null });
+            OpenNativeWorldBrowse(host, last.Place.Query, last.Place);
+            return;
+        }
+
         if (_worldModel.State != WorldBrowseState.Ready || _lastWorldBrowse is not { } browse)
         {
             ShowWorldBrowse(fromWelcome: _browseFromWelcome);
@@ -147,16 +177,24 @@ internal sealed partial class SharpMUTermApp
         OpenCellWorldBrowse(browse);
     }
 
-    /// <summary>Esc on the cell list opened from the welcome: back to the welcome's menu, on its Browse row.</summary>
+    /// <summary>
+    /// Esc on a list the welcome opened, from either host (the cells' Esc, the window's Esc and Back): back to the
+    /// welcome, on its Browse row.
+    /// </summary>
     private void ReturnToWelcome()
     {
         _browseFromWelcome = false;
-        _helpView.Close();
+        CloseWorldBrowse();
         ShowWelcome();
         _welcome?.Highlight(WelcomeChoice.Browse);
         if (_welcomeView.IsOpen)
         {
             _welcomeView.Repaint();
+        }
+
+        if (NativeWelcome is { } native && _welcome is { } welcome)
+        {
+            native.Publish(welcome.Model);
         }
     }
 
@@ -367,7 +405,18 @@ internal sealed partial class SharpMUTermApp
     /// <summary>Closes Browse worlds and opens the welcome's connect form filled in with <paramref name="address"/>.</summary>
     private void OpenWorldForm(WorldAddress address)
     {
-        _formFromBrowse = CellWorldBrowse is not null;
+        // A pick in the native welcome's own list fills in the form on that page, in place, so the list beside it stays
+        // as the player left it and Esc on the form gives the pick back (StepBackFromWelcome).
+        if (NativeWelcome is { } page && _welcome is { } current && ReferenceEquals(_welcomeWorldsOwner, page))
+        {
+            _formFromBrowse = false;
+            PublishWorldModel(_worldModel);
+            current.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding);
+            page.Publish(current.Model);
+            return;
+        }
+
+        _formFromBrowse = CellWorldBrowse is not null || NativeWorldBrowse is not null;
         CloseWorldBrowse();
         var welcome = new WelcomeSurface(WorldDirectoryProblem()) { Layout = _welcomeLayout };
         welcome.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding);

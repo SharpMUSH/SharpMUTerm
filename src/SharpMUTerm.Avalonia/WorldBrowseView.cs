@@ -64,13 +64,24 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         // pressing Tab anywhere in the list is pressing it.
         _sort.IsTabStop = false;
         bar.Children.Add(_sort);
+
+        // A list the welcome opened says how to go back to it, as its Esc does: the cells' Esc on that list, in a button.
+        if (session.CanReturnToWelcome)
+        {
+            var back = BackToWelcomeButton = ModalParts.Button(WorldBrowseModel.BackToWelcome, "Esc", colours, session.ReturnToWelcome);
+            back.Name = "BackToWelcome";
+            back.IsTabStop = false; // Tab is the sort key here, as on the sort button beside it
+            back.Margin = new Thickness(0, 0, NativeTokens.Space12, 0);
+            SetDock(back, Dock.Left);
+            bar.Children.Add(back);
+        }
         _count = ModalParts.Dim(string.Empty, colours, new Thickness(0));
         _count.VerticalAlignment = VerticalAlignment.Center;
         bar.Children.Add(_count);
         SetDock(bar, Dock.Top);
         Children.Add(bar);
 
-        var footer = _footer = ModalParts.Footer(KeysText(WorldBrowseModel.Keys), colours);
+        var footer = _footer = ModalParts.Footer(KeysText(ListKeys), colours);
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
@@ -86,6 +97,15 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         _box.Text = session.InitialQuery;
         _box.CaretIndex = session.InitialQuery.Length;
         _query = session.InitialQuery;
+
+        // Reopened by Esc on the form a pick here filled in: the list where it was left, order and row too.
+        if (session.StartAt is { } place)
+        {
+            _order = place.Order;
+            ShowSortLabel();
+            _selected = Math.Max(0, place.Row);
+        }
+
         _box.TextChanged += (_, _) =>
         {
             var query = _box.Text ?? string.Empty;
@@ -123,6 +143,12 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
 
     /// <summary>The search box, for a test.</summary>
     public TextBox Box => _box;
+
+    /// <summary>The key band at the foot as drawn, for a test.</summary>
+    public string FooterText => _footer.Text ?? string.Empty;
+
+    /// <summary>The Back button on a list the welcome opened, for a test; null on any other list.</summary>
+    public Button? BackToWelcomeButton { get; }
 
     /// <summary>What the list says under it now, for a test.</summary>
     public string Note => _note.Text ?? string.Empty;
@@ -165,9 +191,22 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
     public void ToggleSort()
     {
         _order = WorldBrowseModel.Next(_order);
-        _sort.Content = SortLabel();
+        ShowSortLabel();
         _selected = 0;
         ShowList();
+    }
+
+    // The label's own text, so the button keeps its Tab chip (replacing the content dropped it).
+    private void ShowSortLabel()
+    {
+        if (_sort.Content is Panel { Children: [TextBlock label, ..] })
+        {
+            label.Text = SortLabel();
+        }
+        else
+        {
+            _sort.Content = SortLabel();
+        }
     }
 
     private string SortLabel()
@@ -192,6 +231,13 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
             _box.Focus();
         }
     });
+
+    /// <summary>The list's keys: Esc goes back to the welcome on a list the welcome opened, and closes on any other.</summary>
+    private IReadOnlyList<(string Key, string Label)> ListKeys =>
+        _session.CanReturnToWelcome ? WorldBrowseModel.WelcomeKeys : WorldBrowseModel.Keys;
+
+    /// <summary>Tells the session where the list is, so a list reopened by Esc on the form it filled in starts there.</summary>
+    private void NotePlace() => _session.Place = new WorldListPlace(_query, _order, _selected);
 
     private static string KeysText(IReadOnlyList<(string Key, string Label)> keys) =>
         string.Join(" · ", keys.Select(k => $"{k.Key} {k.Label}"));
@@ -280,7 +326,7 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
 
         _box.IsVisible = true;
         _bar.IsVisible = true;
-        _footer.Text = NativeKeys.Words(KeysText(WorldBrowseModel.Keys));
+        _footer.Text = NativeKeys.Words(KeysText(ListKeys));
         _view = _model.View(_query, _order);
         _count.Text = _model.CountLine(_query);
         _note.Text = NativeKeys.Words(
@@ -390,6 +436,11 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
         {
             _rows[_selected].BringIntoView();
         }
+
+        if (_model.Choosing is null)
+        {
+            NotePlace();
+        }
     }
 
     private void OnKey(object? sender, KeyEventArgs e)
@@ -411,6 +462,13 @@ internal sealed class WorldBrowseView : DockPanel, IModalView
                 if (_model.Choosing is not null)
                 {
                     _session.Back();
+                    return;
+                }
+
+                // One step back: a list the welcome opened goes back to it (the client closes this), any other closes.
+                if (_session.CanReturnToWelcome)
+                {
+                    _session.ReturnToWelcome();
                     return;
                 }
 

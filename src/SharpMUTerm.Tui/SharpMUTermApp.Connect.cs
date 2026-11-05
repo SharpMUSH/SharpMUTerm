@@ -122,7 +122,11 @@ internal sealed partial class SharpMUTermApp
         shape?.Invoke(world);
         _config.Worlds.Add(world);
         SaveConfiguration();
-        Notice($"added {world.Name} ({world.Host}:{world.Port}) — F5 edits it", MessageSeverity.Info, "F5");
+        // The sentence names F5 once and the encoding it was saved with; no key chip, which said F5 a second time.
+        Notice(
+            Client.Chrome.WorldNotices.Added(world.Name, world.Host, world.Port, world.Encoding),
+            MessageSeverity.Info,
+            action: new Client.Chrome.NoticeAction("screen:worlds", Client.Chrome.WorldNotices.EditAction));
         DialWorld(world);
     }
 

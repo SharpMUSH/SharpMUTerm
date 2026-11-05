@@ -400,4 +400,133 @@ public class NativeModalTests
         await Assert.That(secondFocused).IsTrue();
         await Assert.That(port).IsEqualTo("4201");
     }
+
+    private static WorldBrowseView BrowsePage(Rig rig)
+    {
+        DesktopLayerTests.Drain();
+        rig.Window.UpdateLayout();
+        DesktopLayerTests.Drain();
+        return (WorldBrowseView)rig.Driver.Modals.Modal!.View;
+    }
+
+    /// <summary>
+    /// Esc on a form the find card's Add filled in is one step back (wave 32): the pick is given back and the page is the
+    /// list again as it was left — the same row raised, the keyboard in the search — rather than the whole welcome closing.
+    /// A second Esc, with nothing left to step back from, closes it.
+    /// </summary>
+    [Test]
+    public async Task EscOnAFormTheFindCardFilledInGivesThePickBack_AndLeavesTheListAsItWasLeft()
+    {
+        var (open, world, host, rows, raised, inSearch, keys, closedAfter) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("welcome");
+            var page = WelcomePage(rig);
+            page.SearchBox.Focus();
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            Press(page.SearchBox, global::Avalonia.Input.Key.Down);
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            page = WelcomePage(rig);
+            var filled = page.Model.WorldName is not null;
+            Press(page.CharacterBox!, global::Avalonia.Input.Key.Escape);
+            page = WelcomePage(rig);
+            var open = filled && rig.App.WelcomeIsOpen;
+            var world = rig.App.Welcome?.WorldName;
+            var host = page.HostBox!.Text;
+            var rows = page.WorldRows.Count;
+            var raised = page.SelectedWorldRow;
+            var inSearch = ReferenceEquals(Focused(rig), page.SearchBox);
+            var keys = page.FooterText;
+            Press(page.SearchBox, global::Avalonia.Input.Key.Escape);
+            return (open, world, host, rows, raised, inSearch, keys, !rig.App.WelcomeIsOpen);
+        });
+
+        await Assert.That(open).IsTrue().Because("Esc on the filled form steps back; it does not close the welcome");
+        await Assert.That(world).IsNull();
+        await Assert.That(host).IsEqualTo(string.Empty).Because("the form keeps nothing of the pick, as the cells' Esc back to Browse worlds");
+        await Assert.That(rows).IsGreaterThan(1);
+        await Assert.That(raised).IsEqualTo(1).Because("the list is as it was left: the row the player added is still the raised one");
+        await Assert.That(inSearch).IsTrue();
+        await Assert.That(keys).EndsWith("Esc closes");
+        await Assert.That(closedAfter).IsTrue();
+    }
+
+    /// <summary>
+    /// The find card's Browse all worlds opens Browse worlds from the welcome, so the list says how to go back (a Back
+    /// button and Esc, the cells' Esc on that list) and both end in the welcome again; a pick there fills in the form, and
+    /// Esc on that form goes back to the list as it was left — order and row — rather than closing everything.
+    /// </summary>
+    [Test]
+    public async Task BrowseWorldsFromTheWelcomeGoesBackToIt_AndAFormItFilledInGoesBackToTheList()
+    {
+        var (back, footer, escWelcome, buttonWelcome, order, selected, againBack) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("welcome");
+            var page = WelcomePage(rig);
+            page.BrowseAllButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var browse = BrowsePage(rig);
+            var hasBack = browse.BackToWelcomeButton is { IsVisible: true };
+            var footer = browse.FooterText;
+            Press(browse.Box, global::Avalonia.Input.Key.Escape);
+            WelcomePage(rig);
+            var escWelcome = rig.App.WelcomeIsOpen && !rig.App.WorldBrowseOpen;
+
+            WelcomePage(rig).BrowseAllButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            BrowsePage(rig).BackToWelcomeButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            WelcomePage(rig);
+            var buttonWelcome = rig.App.WelcomeIsOpen && !rig.App.WorldBrowseOpen;
+
+            // Sorted by name, the second row: a pick, then the address if it asks for one, then Esc on the form.
+            WelcomePage(rig).BrowseAllButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            browse = BrowsePage(rig);
+            Press(browse.Box, global::Avalonia.Input.Key.Tab);
+            Press(browse.Box, global::Avalonia.Input.Key.Down);
+            Press(browse.Box, global::Avalonia.Input.Key.Enter);
+            if (rig.App.WorldBrowseOpen && BrowsePage(rig).ChoosingAddress)
+            {
+                Press(BrowsePage(rig).Box, global::Avalonia.Input.Key.Enter);
+            }
+
+            page = WelcomePage(rig);
+            Press(page.CharacterBox!, global::Avalonia.Input.Key.Escape);
+            browse = BrowsePage(rig);
+            return (hasBack, footer, escWelcome, buttonWelcome, browse.Order, browse.Selected, browse.BackToWelcomeButton is not null);
+        });
+
+        await Assert.That(back).IsTrue();
+        await Assert.That(footer).EndsWith("Esc back to the welcome");
+        await Assert.That(escWelcome).IsTrue();
+        await Assert.That(buttonWelcome).IsTrue();
+        await Assert.That(order).IsEqualTo(Core.WorldIndex.WorldDirectorySort.Name).Because("the list comes back as it was left");
+        await Assert.That(selected).IsEqualTo(1);
+        await Assert.That(againBack).IsTrue().Because("the list is still the welcome's, so its Esc still goes back there");
+    }
+
+    /// <summary>
+    /// The welcome fits its window with nothing to scroll (wave 32): at the mockup's 1440 × 900 with a pick's form filled
+    /// in (the tallest the page gets) at the mockup's spacing, and at the window's default size laid out tight.
+    /// </summary>
+    [Test]
+    [Arguments(1440, 900, false)]
+    [Arguments(1230, 822, true)]
+    public async Task TheWelcomeFitsItsWindowWithNothingToScroll(int width, int height, bool tight)
+    {
+        var (fits, compact) = await Run(rig =>
+        {
+            rig.Window.Width = width;
+            rig.Window.Height = height;
+            rig.App.RenderSnapshot("welcome");
+            var page = WelcomePage(rig);
+            page.SearchBox.Focus();
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            page = WelcomePage(rig);
+            Press(page.AddressRows[1], global::Avalonia.Input.Key.Enter);
+            page = WelcomePage(rig);
+            WelcomePage(rig);
+            return (page.FitsWithoutScrolling, page.Compact);
+        });
+
+        await Assert.That(fits).IsTrue();
+        await Assert.That(compact).IsEqualTo(tight);
+    }
 }

@@ -57,11 +57,14 @@ internal sealed partial class SharpMUTermApp
         if (NativeWelcome is { } native && _welcome is { } welcome)
         {
             var stays = key.Key == ConsoleKey.Escape
-                ? welcome.Back()
+                ? StepBackFromWelcome(welcome)
                 : RunWelcomeAction(welcome, welcome.Interpret(key, words => ParseEndpoint(words)));
             if (stays)
             {
-                native.Publish(welcome.Model);
+                if (ReferenceEquals(_nativeModal, native))
+                {
+                    native.Publish(welcome.Model);
+                }
             }
             else if (key.Key == ConsoleKey.Escape)
             {
@@ -125,20 +128,32 @@ internal sealed partial class SharpMUTermApp
             welcome.Render,
             key => WelcomeKey(welcome, key),
             WelcomeSurface.PreferredWidth,
-            escape: () =>
-            {
-                // A form a pick filled in goes back to the list it was picked from, not to a menu the player never saw.
-                if (welcome.InForm && welcome.WorldName is not null && _formFromBrowse)
-                {
-                    _welcomeView.Close();
-                    ReturnToWorldBrowse();
-                    return true;
-                }
-
-                return welcome.Back();
-            },
+            escape: () => StepBackFromWelcome(welcome),
             plane: WelcomeSurface.Plane,
             flush: true);
+    }
+
+    /// <summary>
+    /// Esc on the welcome, from either host (the cells' Esc, the window's Esc on its form): one step back. A form a pick
+    /// in Browse worlds filled in goes back to that list as it was left, not to a menu the player never saw; one a pick in
+    /// the window's own find card filled in gives the pick back, leaving that list beside it; a form typed by hand goes
+    /// back to the menu. False when there is no step left, where Esc closes.
+    /// </summary>
+    private bool StepBackFromWelcome(WelcomeSurface welcome)
+    {
+        if (welcome.InForm && welcome.WorldName is not null)
+        {
+            if (_formFromBrowse)
+            {
+                CloseWelcome();
+                ReturnToWorldBrowse();
+                return true;
+            }
+
+            return welcome.ForgetPick();
+        }
+
+        return welcome.Back();
     }
 
     private bool WelcomeKey(WelcomeSurface welcome, ConsoleKeyInfo key) =>
