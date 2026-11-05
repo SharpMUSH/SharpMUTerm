@@ -565,6 +565,25 @@ public class SettingsWindowTests
         await Assert.That(afterCopy).IsSameReferenceAs(added.Characters[1]);
     }
 
+    /// <summary>+ Character pressed before a new world's commit lands adds to that world, never to one the page fell back to.</summary>
+    [Test]
+    public async Task ACharacterAddedToAWorldStillOnItsWayGoesUnderIt()
+    {
+        var harness = TwoWorlds(deferred: true);
+        var shown = await Run(harness, "worlds", window =>
+        {
+            window.AddWorldButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.AddCharacterButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return window.WorldsShown;
+        });
+
+        await Assert.That(harness.Config.Worlds[0].Characters.Count).IsEqualTo(1);
+        await Assert.That(harness.Config.Worlds[1].Characters.Count).IsEqualTo(1);
+        await Assert.That(harness.Config.Worlds[2].Characters.Count).IsEqualTo(1);
+        await Assert.That(shown).IsSameReferenceAs(harness.Config.Worlds[2].Characters[0]);
+    }
+
     /// <summary>Delete asks first: nothing goes until the yes, and the yes deletes the world shown.</summary>
     [Test]
     public async Task DeletingAWorldAsksFirst()

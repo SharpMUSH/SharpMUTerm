@@ -132,15 +132,19 @@ internal sealed partial class SettingsWindow
             _pendingShow = null;
         }
 
+        // A pending addition stays shown while its commit is on its way: the client applies changes in order, so an edit
+        // or a + Character made on it meanwhile lands after it, under it, and never under a world the page fell back to.
+        var waiting = _pendingShow is { } held && ReferenceEquals(held.World, _shownWorld);
+
         // The shown world or character went (deleted here or elsewhere, or undone away): fall back to what the form chose.
-        if (_shownWorld is not null && !worlds.Any(w => ReferenceEquals(w.World, _shownWorld)))
+        if (!waiting && _shownWorld is not null && !worlds.Any(w => ReferenceEquals(w.World, _shownWorld)))
         {
             _shownWorld = _form.ChosenWorld is { } chosen && worlds.Any(w => ReferenceEquals(w.World, chosen)) ? chosen : worlds.FirstOrDefault()?.World;
             _shownCharacter = null;
         }
 
         _shownWorld ??= worlds.FirstOrDefault()?.World;
-        if (_shownCharacter is not null && _shownWorld?.Characters.Contains(_shownCharacter) != true)
+        if (!waiting && _shownCharacter is not null && _shownWorld?.Characters.Contains(_shownCharacter) != true)
         {
             _shownCharacter = null;
         }
