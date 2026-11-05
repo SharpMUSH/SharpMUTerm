@@ -45,7 +45,9 @@ internal static class ScrollSplitBarRenderer
             {
                 var rule = new string('─', Math.Max(0, width - used));
                 return fill is { } band
-                    ? $"[{band.Text} on {band.Band}]{lead}[{band.Accent}]{MarkupText.Escape(label)}[/]{MarkupText.Escape(hint)} {rule}[/]"
+                    // On the band every word is the band's ink, as the terminal mockup draws it: the band is already
+                    // the cue, and a second colour on the count made it read as a notice.
+                    ? $"[{band.Text} on {band.Band}]{lead}{MarkupText.Escape(label)}{MarkupText.Escape(hint)} {rule}[/]"
                     : $"[dim]{lead}[/][{accentHex}]{MarkupText.Escape(label)}[/][dim]{MarkupText.Escape(hint)} {rule}[/]";
             }
         }

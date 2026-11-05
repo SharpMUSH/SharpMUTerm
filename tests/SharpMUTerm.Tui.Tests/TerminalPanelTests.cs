@@ -131,7 +131,7 @@ public class TerminalPanelTests
         var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Bindings, Resolve);
 
         var wide = QuickBarRenderer.Render(entries, 100, "#00f5b7");
-        await Assert.That(StripMarkup(wide)).Contains("F11 kick").And.EndsWith(QuickBarRenderer.Hint);
+        await Assert.That(StripMarkup(wide).TrimEnd()).Contains("F11 kick").And.EndsWith(QuickBarRenderer.Hint);
         await Assert.That(wide).Contains($"[link={QuickBarRenderer.LinkPrefix}0]");
 
         foreach (var width in new[] { 6, 12, 20, 30, 45 })

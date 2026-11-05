@@ -73,9 +73,10 @@ internal sealed class DockedComposer
             PlaceholderText = "Write a post. ⏎ starts a new line; ⌃S sends it as one command.",
 
             // Both pairs, as the F1 composer sets them: the control paints from the focused pair whenever it has
-            // focus, and from the other while the command line has it.
-            BackgroundColor = scheme.Colour(ScreenPalette.EditBg),
-            FocusedBackgroundColor = scheme.Colour(ScreenPalette.EditBg),
+            // focus, and from the other while the command line has it. The well (FieldBg), as the terminal mockup draws
+            // the text: the ground an input sits in, a step below the side column rather than raised above it.
+            BackgroundColor = scheme.Colour(ScreenPalette.FieldBg),
+            FocusedBackgroundColor = scheme.Colour(ScreenPalette.FieldBg),
             ForegroundColor = scheme.Colour(ScreenPalette.Value),
             FocusedForegroundColor = scheme.Colour(ScreenPalette.Value),
             SelectionBackgroundColor = scheme.Colour(ScreenPalette.CursorBg),
@@ -119,7 +120,16 @@ internal sealed class DockedComposer
         grid.Rows(GridLength.Cells(1), GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
         grid.Place(_header, 0, 0, 1, 1);
         grid.Place(CommandRow.Control, 1, 0, 1, 1);
-        grid.Place(Editor, 2, 0, 1, 1);
+        // A cell of the well before the text, the terminal mockup's padded body: a column of the well's own colour,
+        // so the text sits in the well rather than against the side column's rule.
+        var well = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Column(c => c.Width(1).Add(new MarkupControl(new List<string>())))
+            .Column(c => c.Flex(1).Add(Editor))
+            .Build();
+        well.BackgroundColor = scheme.Colour(ScreenPalette.FieldBg);
+        grid.Place(well, 2, 0, 1, 1);
         grid.Place(_footer, 3, 0, 1, 1);
         Control = grid.Build();
         Redraw();

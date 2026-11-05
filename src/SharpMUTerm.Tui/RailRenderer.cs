@@ -107,8 +107,11 @@ internal static partial class RailRenderer
 
     private static string RenderRow(RailRow row, bool reserveWindow, bool reserveCharacter, ChromeInk ink) => row.Kind switch
     {
-        RailRowKind.Header => $"[dim]┌ {Glyphs.Connections} CONNECTIONS[/]",
-        RailRowKind.World => Link(row, $"[{Accent(row, ink)}]▚[/] [bold]{Escape(row.Label)}[/]"),
+        // The terminal mockup's rail: a plain heading and bold world names, both lined up with the character rows'
+        // ▸ column. The world's accent is carried by its characters' dots; the ▚ spine and the ┌ ⏻ heading were
+        // marks of a box nothing drew.
+        RailRowKind.Header => "  [dim]CONNECTIONS[/]",
+        RailRowKind.World => Link(row, $"  [bold]{Escape(row.Label)}[/]"),
         RailRowKind.Host => $"{Indent(row)}[dim]{Escape(row.Label)}[/]",
         RailRowKind.Empty => $"{Indent(row)}{Link(row, $"[dim]{Escape(row.Label)}[/]")}",
         RailRowKind.Character => Character(row, reserveCharacter, ink),

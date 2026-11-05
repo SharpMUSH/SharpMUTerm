@@ -8,8 +8,8 @@ namespace SharpMUTerm.Tui.Panels;
 
 /// <summary>
 /// The vitals panel: one row of the configured meters as bars —
-/// <c>hp ████████░░  820/1000      mp ██░░░░░░░░  190/1000  low</c> — and, right-aligned, what the character is
-/// fighting when the game says: <c>target a rotting ghoul ████░░░░░░  40%</c>.
+/// <c>hp ██████████  820/1000      mp ██████████  190/1000  low</c> — and, right-aligned, what the character is
+/// fighting when the game says: <c>target a rotting ghoul ██████████  40%</c>.
 /// <para>
 /// <b>Every field is reserved</b>, the status row's rule (<see cref="StatusMeterRenderer"/>): the value and the
 /// maximum take <see cref="StatusMeterRenderer.ValueWidth"/> cells each, the <c>low</c> mark takes its three
@@ -36,6 +36,9 @@ internal static class VitalsStripRenderer
 
     /// <summary>The one-cell low mark the tighter levels use in place of <see cref="LowMark"/>.</summary>
     internal const string ShortLowMark = "!";
+
+    /// <summary>The narrowest banded card whose blocks keep a cell of margin either side.</summary>
+    internal const int CardMarginFromWidth = 16;
 
     /// <summary>
     /// How much a level draws: the bar's cells, whether values are shown (else percentages), whether the low mark is
@@ -119,22 +122,26 @@ internal static class VitalsStripRenderer
 
         if (height >= (2 * blocks) + 3)
         {
+            // Under a band the blocks keep a cell of margin either side, the band's own margin carried down (the
+            // terminal mockup's padded strip), once the card can spare it. A panel's rows are no pane's NAWS.
+            var pad = ink.Heading is not null && width >= CardMarginFromWidth ? " " : string.Empty;
+            var inner = width - (2 * pad.Length);
             foreach (var meter in vitals.Meters)
             {
                 var colour = ink.For(meter.Colour, meter.Low);
-                var title = Escape(Fit(meter.Low ? $"{meter.Title} · {LowMark}" : meter.Title, width - 1));
-                lines.Add(Spread(meter.Low ? $"[bold {colour}]{title}[/]" : $"[bold]{title}[/]", Numbers(meter), width));
-                lines.Add(Bar(meter.HasMax ? meter.Share ?? 0 : 1, width, colour, ink));
+                var title = Escape(Fit(meter.Low ? $"{meter.Title} · {LowMark}" : meter.Title, inner - 1));
+                lines.Add(pad + Spread(meter.Low ? $"[bold {colour}]{title}[/]" : $"[bold]{title}[/]", Numbers(meter), inner));
+                lines.Add(pad + Bar(meter.HasMax ? meter.Share ?? 0 : 1, inner, colour, ink));
             }
 
             // The rule parts the meters from the target; with no target there is nothing to part them from.
             if (vitals.Target is { } target)
             {
-                lines.Add($"[{ink.Empty}]{new string('─', width)}[/]");
+                lines.Add($"{pad}[{ink.Empty}]{new string('─', inner)}[/]");
                 var percent = target.Share is { } share ? StatusMeterRenderer.Percent(share) : string.Empty;
-                var name = Escape(Fit(target.Name, Math.Max(1, width - 8 - percent.Length)));
-                lines.Add(Spread("[dim]Target[/] " + (target.Low ? $"[{ink.Low}]{name}[/]" : name), percent, width));
-                lines.Add(target.Share is { } s ? Bar(s, width, ink.For(target.Colour, target.Low), ink) : string.Empty);
+                var name = Escape(Fit(target.Name, Math.Max(1, inner - 8 - percent.Length)));
+                lines.Add(pad + Spread("[dim]Target[/] " + (target.Low ? $"[{ink.Low}]{name}[/]" : name), percent, inner));
+                lines.Add(target.Share is { } s ? pad + Bar(s, inner, ink.For(target.Colour, target.Low), ink) : string.Empty);
             }
 
             return lines;
@@ -255,14 +262,14 @@ internal static class VitalsStripRenderer
     }
 
     /// <summary>
-    /// A bar of <paramref name="cells"/>: the filled part in solid blocks, the rest in light shade. A meter whose
+    /// A bar of <paramref name="cells"/>: the filled part in solid blocks of its colour, the rest solid blocks of the track (the terminal mockup's rule-coloured track). A meter whose
     /// maximum has not arrived draws all empty, so the bar's cells are held from the first value.
     /// </summary>
     internal static string Bar(double? share, int cells, string colour, Ink ink)
     {
         var filled = share is { } s ? (int)Math.Round(Math.Clamp(s, 0, 1) * cells) : 0;
         var full = filled > 0 ? $"[{colour}]{new string('█', filled)}[/]" : string.Empty;
-        var empty = filled < cells ? $"[{ink.Empty}]{new string('░', cells - filled)}[/]" : string.Empty;
+        var empty = filled < cells ? $"[{ink.Empty}]{new string('█', cells - filled)}[/]" : string.Empty;
         return full + empty;
     }
 }

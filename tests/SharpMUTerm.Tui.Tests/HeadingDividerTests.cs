@@ -161,6 +161,6 @@ public class HeadingDividerTests
         var lines = WhoHereRenderer.Render(WhoHereModel.Unknown, 30, 6, ink);
 
         await Assert.That(FrameGrid.Visible(lines[0])).Contains("HERE");
-        await Assert.That(FrameGrid.Visible(lines[1])).IsEqualTo(WhoHereRenderer.UnknownText);
+        await Assert.That(FrameGrid.Visible(lines[1])).IsEqualTo(" " + WhoHereRenderer.UnknownText).Because("under the band the rows keep its cell of margin");
     }
 }

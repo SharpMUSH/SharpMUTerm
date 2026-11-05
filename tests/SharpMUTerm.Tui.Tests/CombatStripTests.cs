@@ -95,7 +95,7 @@ public class CombatStripTests
             new QuickBarItem("⌃F12", "Ctrl+F12", "flee", true, Danger: true),
         ]);
         var row = QuickBarRenderer.Render(model, 80, "#00f5b7", "#ff6b6b");
-        await Assert.That(row).Contains("[bold #00f5b7]F1[/] kick");
-        await Assert.That(row).Contains("[bold #ff6b6b]⌃F12[/] [#ff6b6b]flee[/]");
+        await Assert.That(row).Contains("[#00f5b7]F1[/] kick");
+        await Assert.That(row).Contains("[#ff6b6b]⌃F12[/] [#ff6b6b]flee[/]");
     }
 }

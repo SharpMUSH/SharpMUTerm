@@ -14629,8 +14629,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             sb.Append($"[{tail} on {headerBg}]{Glyphs.PowerRight}[/]");
         }
+
         var leftBar = sb.ToString();
         var right = HeaderRight(model);
+
+        // With no world the ribbon ends at the brand and the band says so in its quiet ink (the terminal first-run
+        // mockup's ` ≡ SharpMUTerm  no connection`), the same words the prompt uses for the same fact — where the row
+        // has room for it; it goes before the brand is shortened, because an overlong header wraps.
+        var none = $"[{WorkspacePalette.HeaderMuted(_theme).ToHex()}] no connection [/]";
+        if (model.World is null && !model.PrefixArmed && MarkupWidth(leftBar + none) + MarkupWidth(right) + 3 <= HeaderWidth())
+        {
+            leftBar += none;
+        }
 
         // The product's name where the row has room for it beside the ribbon and the right-hand cluster (the mockups'
         // `≡ SharpMUTerm`); the short `muterm` it always was where it has not, because an overlong header wraps.

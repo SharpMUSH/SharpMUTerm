@@ -1650,6 +1650,24 @@ fallbacks) for inline images/maps.
   fill)`): it divides two viewports rather than sitting in a buffer, unlike the freeze/away/NEW bars, which stay rules.
   The header's character is ` ● Corvid` in the world's colour on the band, no chip (`HeaderChip` is gone). The vitals
   card draws its rule only above a target. The welcome's `/connect` example is in the accent.
+- **Wave 29 terminal audit (cells; both hosts' cells move together, the window's native views are unchanged).** Measured
+  against the four `Terminal-*.dc.html` mockups at their own grid (138×34: 1160 px of 14 px JetBrains Mono, 20 px rows) and
+  at 80×24 (`ux-wave29/terminal-audit/`). The rail's heading is `  CONNECTIONS` and a world row a bold name in the ▸
+  column, with no `┌ ⏻` and no `▚` spine (the world's accent is its characters' dots). Under a heading band who-here's
+  rows and the vitals card's blocks keep a cell of margin either side (`MarginFromWidth`/`CardMarginFromWidth` 16; a
+  renderer with no band is unchanged); the quick bar keeps one at each end from 24 cells, its keys in the held muted ink
+  (`HeaderMuted` on the reading plane) and the names in the body ink, not bold accent. A bar's empty part is solid `█` in
+  `WorkspacePalette.Rule` (a fill, exempt like every solid block), not lifted `░`. The docked composer's text is on the
+  well (`FieldBg`), a cell in from the rule. The filled scrolled-back band says everything in the band's ink. With no
+  world the header reads ` no connection` after the brand, where the row has room (dropped before the brand shortens).
+  The settings search's nav has a `SECTIONS` heading, titles in the body ink, the tally before the key, and a query
+  well 24 cells wide (narrowed to what the hints leave). **`ScreenChrome.Split`'s body runs to the action bar**, so the
+  hairline is full height on every two-column screen (it ended under a short list). Left as they are: the output's left
+  padding (a cell there is NAWS; the terminal has no gutter, decided), the rail's own width and cell 2 indent, the
+  Combat mockup's top vitals strip and no rail (the narrow arrangement; ⌃B b folds the rail), the map tab strip beside
+  Chat (a pane with two windows keeps its strip), area-coloured map rooms (`MapAreaPalette`), `rows` not `lines`, the
+  `Corvid · Aetherfall` spelling, `›` as the resting prompt, the cell settings screens having no permanent nav (only the
+  search lists sections), and the nav's own plane (the screens have no such role yet).
 - **Wave 19 panels and welcome (window only; the cells are unchanged).** Each docked native panel draws a heading from
   its model (`PanelHeading.For`, Client; `PanelText.Heading`); `VitalsModel.Source` names where the meters came from
   (`SourceOf`, set in `ReadVitals`), a mixture names nothing. The docked composer's footer (summary, Preview, Send) ends

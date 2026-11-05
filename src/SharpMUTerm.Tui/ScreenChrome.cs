@@ -871,9 +871,9 @@ internal static class ScreenChrome
     /// The frame every two-column settings screen shares: a header band on the first row, an action bar on
     /// the last, and between them two columns divided by a hairline.
     /// <para>
-    /// The body is <em>sized to its content</em> rather than stretched, so a screen with four rules does
-    /// not draw a thirty-row empty pane under them. The hairline stops where the columns stop and the
-    /// slack below belongs to the backdrop. A caller with no height falls back to filling.
+    /// The body runs to the action bar and the hairline with it, the terminal mockup's full-height divider: the list
+    /// column reads as a column however few rows it holds. (It was sized to its content, which ended the hairline in
+    /// mid-screen under a short list.) <paramref name="content"/> and <paramref name="rows"/> are kept for callers.
     /// </para>
     /// </summary>
     /// <param name="header">The header band.</param>
@@ -907,24 +907,12 @@ internal static class ScreenChrome
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill);
 
-        if (rows <= 0)
-        {
-            root.Rows(GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
-            root.Place(header, 0, 0, 1, 1);
-            root.Place(body, 1, 0, 1, 1);
-            root.Place(footer, 2, 0, 1, 1);
-            return root.Build();
-        }
-
-        root.Rows(
-                GridLength.Cells(1),
-                GridLength.Cells(Math.Clamp(content, 1, rows)),
-                GridLength.Star(1),
-                GridLength.Cells(1))
-            .Columns(GridLength.Star(1));
+        _ = content;
+        _ = rows;
+        root.Rows(GridLength.Cells(1), GridLength.Star(1), GridLength.Cells(1)).Columns(GridLength.Star(1));
         root.Place(header, 0, 0, 1, 1);
         root.Place(body, 1, 0, 1, 1);
-        root.Place(footer, 3, 0, 1, 1);
+        root.Place(footer, 2, 0, 1, 1);
         return root.Build();
     }
 

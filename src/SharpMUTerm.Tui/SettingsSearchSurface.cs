@@ -206,10 +206,18 @@ internal static class SettingsSearchView
         var count = state.Query.Trim().Length == 0
             ? string.Empty
             : matches.Count == 1 ? "   1 match" : $"   {matches.Count.ToString(CultureInfo.InvariantCulture)} matches";
-        var left = $" [bold {Value}]Settings[/]  [{Accent}]/[/] [{Value} on {FieldBg}]{Escape(state.Query)}[/]"
-            + $"[{Ink} on {Accent}] [/][{Label}]{count}[/]";
-        return SpreadTitle(left, $"[{Label}]{Hints} [/]", width);
+        // The query sits in a well wider than what is typed (the terminal mockup's search box), the caret block in it.
+        // The well takes only the room the keys leave, so a narrow screen keeps its hints whole.
+        var hints = $"[{Label}]{Hints} [/]";
+        var bare = $" [bold {Value}]Settings[/]  [{Muted}]/[/] [{Value} on {FieldBg}]{Escape(state.Query)}[/][{Ink} on {Accent}] [/]";
+        var room = width - VisibleLength(bare) - VisibleLength(count) - VisibleLength(hints) - 2;
+        var pad = new string(' ', Math.Clamp(Math.Min(QueryWell - state.Query.Length, room), 0, QueryWell));
+        var left = bare + (pad.Length > 0 ? $"[{Value} on {FieldBg}]{pad}[/]" : string.Empty) + $"[{Label}]{count}[/]";
+        return SpreadTitle(left, hints, width);
     }
+
+    /// <summary>How many cells the query's well holds before it grows with the query.</summary>
+    internal const int QueryWell = 24;
 
     /// <summary>Where the selection is, and the actions: <c>meter 1/3 · Text &amp; display   [Esc] Back  [⏎] Go</c>.</summary>
     internal static string FooterLine(SettingsSearchState state, IReadOnlyList<SettingsMatch> matches, int width)
@@ -234,15 +242,16 @@ internal static class SettingsSearchView
         var counts = SettingsSearch.CountBySection(matches);
         var selected = state.Current?.Section.Id;
         var typed = state.Query.Trim().Length > 0;
-        var lines = new List<string> { string.Empty };
+        // The terminal mockup's nav: a SECTIONS heading, then each title in the body ink, its tally, and its key last.
+        var lines = new List<string> { $" [{Label}]SECTIONS[/]" };
         foreach (var section in state.Sections)
         {
             var count = counts.GetValueOrDefault(section.Id);
             var key = section.Key ?? string.Empty;
             var tally = count > 0 ? count.ToString(CultureInfo.InvariantCulture) : string.Empty;
             var title = ElideVisible(Escape(section.Title), Math.Max(4, width - 11));
-            var ink = typed && count == 0 ? Muted : Value;
-            var row = $" [{ink}]{PadVisible(title, Math.Max(4, width - 11))}[/] [{Label}]{key,-4}[/][{Accent}]{tally,3}[/]";
+            var ink = typed && count == 0 ? Muted : PanelFg;
+            var row = $" [{ink}]{PadVisible(title, Math.Max(4, width - 11))}[/][{Accent}]{tally,3}[/] [{Label}]{key,4}[/]";
             lines.Add(ScreenChrome.Cursor(row, section.Id == selected, width));
         }
 

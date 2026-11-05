@@ -235,10 +235,10 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// The strip's colours, each held to the floor against the plane it lands on: the bars are fills but carry
-    /// meaning, so they are lifted like text; the empty part of a bar is a grey that still reads as a track.
+    /// meaning, so they are lifted like text; the empty part of a bar is a track of solid blocks in the rule colour, a fill rather than text.
     /// </summary>
     private VitalsStripRenderer.Ink VitalsInk() =>
-        new(_ink.Accent, LowInk(_ink.Plane), _ink.Lift(new Rgb(0x6a, 0x6a, 0x72)), PanelHeadingInk(),
+        new(_ink.Accent, LowInk(_ink.Plane), WorkspacePalette.Rule(_theme).ToHex(), PanelHeadingInk(),
             colour => MeterInk(colour, _ink.Plane));
 
     /// <summary>The low cue's ink on <paramref name="plane"/> (<see cref="WorkspacePalette.Low"/>), as markup.</summary>
@@ -269,7 +269,7 @@ internal sealed partial class SharpMUTermApp
         {
             var model = Drawing(PanelIds.QuickBar, context.WindowId, QuickBarEntries(context.SessionKey));
             drawn = model.Items;
-            return [QuickBarRenderer.Render(model, width, _ink.Accent, DangerInk())];
+            return [QuickBarRenderer.Render(model, width, WorkspacePalette.HeaderMuted(_theme, _ink.Plane).ToHex(), DangerInk())];
         });
         view.Click = url =>
         {

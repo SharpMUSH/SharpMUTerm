@@ -50,7 +50,7 @@ internal static class WhoHereRenderer
             // The band is drawn whatever the game has said: in a stack it is the boundary above this pane (no divider
             // row is drawn there), so it must not come and go with the roster.
             return ink.Heading is { } unknownBand && height > 1
-                ? [HeadingBand.Row("HERE", string.Empty, string.Empty, Math.Max(8, width), unknownBand), $"[dim]{UnknownText}[/]"]
+                ? [HeadingBand.Row("HERE", string.Empty, string.Empty, Math.Max(8, width), unknownBand), $"{Margin(width, ink)}[dim]{UnknownText}[/]"]
                 : [$"[dim]{UnknownText}[/]"];
         }
 
@@ -69,9 +69,13 @@ internal static class WhoHereRenderer
             return lines;
         }
 
+        // Under a band, a cell of margin either side of the rows: the band's own margin carried down (the terminal
+        // mockup's ` ● Rivane … active `), once the panel can spare it. A panel's rows are no pane's NAWS.
+        var lead = Margin(width, ink);
+        width -= lead.Length * 2;
         if (rowsIn.Count == 0)
         {
-            lines.Add($"[dim]{EmptyText}[/]");
+            lines.Add($"{lead}[dim]{EmptyText}[/]");
             return lines;
         }
 
@@ -84,12 +88,12 @@ internal static class WhoHereRenderer
         var nameWidth = width - 2 - (showIdle ? IdleWidth + 1 : 0);
         for (var i = 0; i < fits; i++)
         {
-            lines.Add(Row(rowsIn[i], i, nameWidth, showIdle, ink));
+            lines.Add(lead + Row(rowsIn[i], i, nameWidth, showIdle, ink));
         }
 
         if (fits < rowsIn.Count)
         {
-            lines.Add($"[dim]… and {(rowsIn.Count - fits).ToString(CultureInfo.InvariantCulture)} more[/]");
+            lines.Add($"{lead}[dim]… and {(rowsIn.Count - fits).ToString(CultureInfo.InvariantCulture)} more[/]");
         }
 
         return lines;
@@ -123,6 +127,13 @@ internal static class WhoHereRenderer
 
         return PadVisible(row, nameWidth + 2) + " " + $"[dim]{(who.Idle ?? string.Empty).PadLeft(IdleWidth)}[/]";
     }
+
+    /// <summary>The rows' margin: one cell under a heading band from <see cref="MarginFromWidth"/> columns, else none.</summary>
+    private static string Margin(int width, Ink ink) =>
+        ink.Heading is not null && width >= MarginFromWidth ? " " : string.Empty;
+
+    /// <summary>The narrowest banded panel that gives its rows a cell of margin either side.</summary>
+    internal const int MarginFromWidth = 16;
 
     private static string Fit(string text, int width) =>
         text.Length <= width ? text : width <= 1 ? "…" : text[..(width - 1)] + "…";

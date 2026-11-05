@@ -436,6 +436,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The terminal looks more like its design: the sidebar's heading and world names are plain (no corner or stripe), the
+  who-is-here list, vitals card and quick bar keep a space of margin at their edges, quick-bar keys are quiet so the
+  names read first, vitals bars show their empty part as a dim solid track, the docked composer's text sits in a darker
+  well, the scrolled-back band no longer colours its count, the header says "no connection" when no world is set up, and
+  every two-column settings screen's divider runs the full height. The settings search lists its sections under a
+  SECTIONS heading with a wider search box.
 - In the desktop window's combat layout the vitals card, the quick bar and the collapsed chat bar are drawn on the same
   plane as the map beside them, parted by a thin rule, as in the design mockups. The vitals card's numbers are in the
   game text's monospace face, and the vitals, quick bar and chat bar text is the size of the rest of the side column.

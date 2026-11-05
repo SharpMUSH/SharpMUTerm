@@ -68,13 +68,25 @@ internal static class QuickBarRenderer
     /// <summary>The row for <paramref name="width"/> cells. Entries that do not fit are counted, never wrapped.</summary>
     /// <param name="model">What to draw.</param>
     /// <param name="width">The row's width in cells.</param>
-    /// <param name="accent">The key's ink.</param>
+    /// <param name="accent">
+    /// The key's ink. The client passes a held muted grey: the terminal mockup draws <c>F1</c> quiet and <c>kick</c> in
+    /// the body ink, so the names read first and the accent stays the client's voice for state.
+    /// </param>
     /// <param name="danger">The ink a dangerous binding's key and name take; the accent when null.</param>
     internal static string Render(QuickBarModel model, int width, string accent, string? danger = null)
     {
-        var entries = model.Items;
+        // A cell of margin at either end once the row can spare it, the terminal mockup's padded strip.
         width = Math.Max(1, width);
-        var hint = $"[link={EditLink}][bold {accent}]{QuickBarModel.EditKey}[/][dim]{QuickBarModel.EditHint[QuickBarModel.EditKey.Length..]}[/][/]";
+        return width >= MarginFromWidth ? " " + Row(model, width - 2, accent, danger) + " " : Row(model, width, accent, danger);
+    }
+
+    /// <summary>The narrowest row that keeps a cell of margin at either end.</summary>
+    internal const int MarginFromWidth = 24;
+
+    private static string Row(QuickBarModel model, int width, string accent, string? danger)
+    {
+        var entries = model.Items;
+        var hint = $"[link={EditLink}][{accent}]{QuickBarModel.EditKey}[/][dim]{QuickBarModel.EditHint[QuickBarModel.EditKey.Length..]}[/][/]";
         if (entries.Count == 0)
         {
             return ElideVisible($"[dim]{QuickBarModel.EmptyText} · [/]{hint}", width);
@@ -127,9 +139,9 @@ internal static class QuickBarRenderer
         var name = entry.Title.Length <= MaxNameWidth ? entry.Title : entry.Title[..(MaxNameWidth - 1)] + "…";
         var link = $"[link={LinkPrefix}{index.ToString(CultureInfo.InvariantCulture)}]";
         return entry.Fires && entry.Danger
-            ? $"{link}[bold {danger}]{Escape(entry.Key)}[/] [{danger}]{Escape(name)}[/][/]"
+            ? $"{link}[{danger}]{Escape(entry.Key)}[/] [{danger}]{Escape(name)}[/][/]"
             : entry.Fires
-            ? $"{link}[bold {accent}]{Escape(entry.Key)}[/] {Escape(name)}[/]"
+            ? $"{link}[{accent}]{Escape(entry.Key)}[/] {Escape(name)}[/]"
             : $"{link}[dim]{Escape(entry.Key)} {Escape(name)}[/][/]";
     }
 
