@@ -728,12 +728,20 @@ public sealed class TelnetSession : ITelnetSession
     }
 
     /// <summary>
-    /// The server's Pueblo hello: answered with <c>PUEBLOCLIENT</c> unless the world says otherwise or MXP is
-    /// already in use. The hello is consumed by the library.
+    /// The server's Pueblo hello: answered with <c>PUEBLOCLIENT</c> unless the world says otherwise or the server
+    /// has agreed MXP. The hello is consumed by the library.
+    /// <para>
+    /// "Agreed" is the option (<see cref="MXPProtocol.IsMXPActive"/>, set on the server's <c>WILL MXP</c>), not
+    /// MXP mode starting (<see cref="_mxpOn"/>, set at the server's start marker). SharpMUSH offers both: it says
+    /// <c>WILL MXP</c>, then the hello in its banner, then starts MXP once our <c>DO</c> arrives. Waiting for
+    /// the marker answered the hello in between, the server switched the connection to Pueblo, and its MXP
+    /// pictures never arrived.
+    /// </para>
     /// </summary>
     private async ValueTask OnPuebloOfferedAsync()
     {
-        if (!_options.AnnouncePueblo || _mxpOn || _interpreter?.PluginManager?.GetPlugin<PuebloProtocol>() is not { } pueblo)
+        if (!_options.AnnouncePueblo || _mxpOn || Mxp is { IsMXPActive: true }
+            || _interpreter?.PluginManager?.GetPlugin<PuebloProtocol>() is not { } pueblo)
         {
             _logger.LogInformation("The server offered Pueblo; not announcing (content format or MXP).");
             return;

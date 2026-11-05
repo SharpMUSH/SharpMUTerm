@@ -103,12 +103,11 @@ public class WorldSessionSettingsTests
     }
 
     /// <summary>
-    /// The first markup a connection negotiates keeps it: MXP after Pueblo leaves the Pueblo parser in place.
-    /// <c>SEND</c> tells them apart — a fresh MXP parser refuses it on an open line and echoes it, Pueblo
-    /// strips it.
+    /// MXP wins over Pueblo: MXP after Pueblo replaces the Pueblo parser. <c>SEND</c> tells them apart — a fresh
+    /// MXP parser refuses it on an open line and echoes it, Pueblo strips it.
     /// </summary>
     [Test]
-    public async Task MxpAfterPuebloDoesNotSwitchAgain()
+    public async Task MxpAfterPuebloTakesOver()
     {
         var telnet = new FakeTelnetSession();
         var session = new WorldSession(World(), sessionFactory: _ => telnet);
@@ -118,7 +117,23 @@ public class WorldSessionSettingsTests
         telnet.RaiseMxpEnabled();
         telnet.EmitLine("<SEND>after</SEND>");
 
-        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "after")).IsTrue();
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "after")).IsFalse();
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "<SEND>after</SEND>")).IsTrue();
+    }
+
+    /// <summary>Nothing switches back: Pueblo after MXP leaves the MXP parser in place.</summary>
+    [Test]
+    public async Task PuebloAfterMxpDoesNotSwitch()
+    {
+        var telnet = new FakeTelnetSession();
+        var session = new WorldSession(World(), sessionFactory: _ => telnet);
+        await session.ConnectAsync();
+
+        telnet.RaiseMxpEnabled();
+        telnet.RaisePuebloEnabled();
+        telnet.EmitLine("<SEND>after</SEND>");
+
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text == "<SEND>after</SEND>")).IsTrue();
     }
 
     [Test]

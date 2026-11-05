@@ -70,4 +70,22 @@ public class PuebloHandshakeTests
 
         await Assert.That(Encoding.ASCII.GetString(transport.Sent)).DoesNotContain("PUEBLOCLIENT");
     }
+
+    /// <summary>
+    /// SharpMUSH's order: <c>WILL MXP</c>, then the Pueblo hello in its banner, then MXP mode once our <c>DO</c>
+    /// arrives. The hello comes after the option is agreed and before MXP mode starts, and answering it put the
+    /// connection in Pueblo, where the server's MXP pictures never come.
+    /// </summary>
+    [Test]
+    public async Task AServerThatAgreedMxpIsNotAnsweredWithPueblo()
+    {
+        byte[] willMxp = [255, 251, 91];
+        var transport = new ScriptedTransport { Greeting = [.. willMxp, .. Ascii(Hello + "Welcome\r\n")] };
+        await using var session = new TelnetSession(transport, NullLogger.Instance);
+        await session.ConnectAsync();
+
+        await Assert.That(await transport.WaitForSentAsync([255, 253, 91])).IsTrue();
+        await Task.Delay(150);
+        await Assert.That(Encoding.ASCII.GetString(transport.Sent)).DoesNotContain("PUEBLOCLIENT");
+    }
 }
