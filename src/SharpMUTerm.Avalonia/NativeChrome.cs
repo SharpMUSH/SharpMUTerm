@@ -351,18 +351,30 @@ internal abstract class NativeChromeView : Control
         }
     }
 
-    /// <summary>A chevron pointing left (<paramref name="left"/>) or right, centred in <paramref name="area"/>.</summary>
-    protected static void Chevron(DrawingContext context, Rect area, bool left, Color colour)
+    /// <summary>
+    /// The sidebar toggle's glyph, centred in <paramref name="area"/>: a rounded window with a column down its left marked
+    /// by three short lines, a desktop app's "show sidebar" icon. The column is shaded while the sidebar is open.
+    /// </summary>
+    protected void SidebarGlyph(DrawingContext context, Rect area, bool open, Color colour)
     {
-        var pen = new Pen(new SolidColorBrush(colour), 1.6, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        var px = NativeTokens.DevicePixel(this);
+        var pen = new Pen(new SolidColorBrush(colour), NativeTokens.Snap(this, 1.25), lineCap: PenLineCap.Round);
         var c = area.Center;
-        var s = Math.Min(area.Width, area.Height) * 0.18;
-        foreach (var dx in new[] { -s * 0.9, s * 0.9 })
+        var box = NativeTokens.StrokeRect(this, new Rect(Math.Round(c.X - 8), Math.Round(c.Y - 7), 16, 14));
+        var column = Math.Round(box.Width * 0.38);
+        if (open)
         {
-            var tip = left ? c.X + dx - s : c.X + dx + s;
-            var back = left ? c.X + dx + s : c.X + dx - s;
-            context.DrawLine(pen, new Point(back, c.Y - (s * 1.6)), new Point(tip, c.Y));
-            context.DrawLine(pen, new Point(tip, c.Y), new Point(back, c.Y + (s * 1.6)));
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x50, colour.R, colour.G, colour.B)), null,
+                new Rect(box.X, box.Y, column, box.Height), 2.5, 2.5);
+        }
+
+        context.DrawRectangle(null, pen, box, 2.5, 2.5);
+        var divider = NativeTokens.Snap(this, box.X + column) + (px / 2);
+        context.DrawLine(pen, new Point(divider, box.Y), new Point(divider, box.Bottom));
+        for (var i = 0; i < 3; i++)
+        {
+            var y = NativeTokens.Snap(this, box.Y + 3.5 + (i * 3)) + (px / 2);
+            context.DrawLine(pen, new Point(box.X + 2, y), new Point(divider - 2, y));
         }
     }
 
@@ -395,6 +407,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
     public double ReserveRight { get; set; }
 
     private Rect _brand;
+    private Rect _toggle;
     private Rect _search;
     private Rect _pill;
     private Rect _prefix;
@@ -405,6 +418,15 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
     internal IReadOnlyList<(Rect Area, HeaderPrefixKey Key)> PrefixKeys => _keys;
 
     private const double PlateHeight = 30;
+
+    /// <summary>The sidebar toggle's square, the glyph 16 px inside it.</summary>
+    internal const double ToggleSize = 28;
+
+    /// <summary>The sidebar toggle's area, as last laid out (empty where the window draws no sidebar). Internal for tests.</summary>
+    internal Rect Toggle => _toggle;
+
+    /// <summary>Where the brand's text starts: after the toggle, or on the inset with none.</summary>
+    private double BrandLeft { get; set; } = NativeTokens.PanelInset;
 
     /// <summary>The brand's size: the mockups' 14 px semibold name, a step over the header's 13 px text.</summary>
     private const double BrandSize = NativeTokens.Title;
@@ -417,7 +439,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
 
     protected override void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits)
     {
-        _brand = _search = _pill = _prefix = _exit = default;
+        _brand = _toggle = _search = _pill = _prefix = _exit = default;
         _keys.Clear();
         var model = overlay.HeaderModel;
         const double size = FontSize;
@@ -428,7 +450,18 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
 
         // The brand is the name in plain text, as a desktop app's title reads (the mockup's): still the palette's door,
         // shown by a plate only under the pointer. The ribbon's filled segment is the cells' way of saying it.
-        _brand = new Rect(NativeTokens.PanelInset - NativeTokens.Space8, plateTop, Measure("SharpMUTerm", BrandSize, bold: true) + (2 * NativeTokens.Space8), plateHeight);
+        // Left of it, the sidebar's fold toggle (SidebarModel.CollapseTarget), offered only where the window draws the
+        // sidebar: a 16 px glyph in a 28 px square on PanelInset, centred over the folded strip's marks.
+        var brandLeft = NativeTokens.PanelInset;
+        if (overlay.Drawn.Rail)
+        {
+            _toggle = new Rect(NativeTokens.PanelInset - NativeTokens.Space6, Math.Round((h - ToggleSize) / 2), ToggleSize, ToggleSize);
+            hits.Add((_toggle, SidebarModel.CollapseTarget, overlay.Sidebar.Collapsed ? NativeSidebar.UnfoldTip : NativeSidebar.FoldTip));
+            brandLeft = _toggle.Right + NativeTokens.Space12;
+        }
+
+        BrandLeft = brandLeft;
+        _brand = new Rect(brandLeft - NativeTokens.Space8, plateTop, Measure("SharpMUTerm", BrandSize, bold: true) + (2 * NativeTokens.Space8), plateHeight);
         hits.Add((_brand, HeaderModel.PaletteTarget, $"Commands ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
 
         var right = Width - ReserveRight - NativeTokens.Space8;
@@ -520,7 +553,17 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
             context.DrawRectangle(new SolidColorBrush(Pressing(_brand) ? Raised(0.13) : Raised(0.08)), null, _brand, radius, radius);
         }
 
-        Text(context, "SharpMUTerm", NativeTokens.PanelInset, middle, BrandSize, Ink, bold: true);
+        Text(context, "SharpMUTerm", BrandLeft, middle, BrandSize, Ink, bold: true);
+
+        if (_toggle.Width > 0)
+        {
+            if (Pressing(_toggle) || Hovered(_toggle))
+            {
+                context.DrawRectangle(new SolidColorBrush(Pressing(_toggle) ? Raised(0.13) : Raised(0.08)), null, _toggle, NativeTokens.RadiusS, NativeTokens.RadiusS);
+            }
+
+            SidebarGlyph(context, _toggle, open: !overlay.Sidebar.Collapsed, Hovered(_toggle) ? Ink : Dim);
+        }
 
         if (_search.Width > 0)
         {
@@ -611,8 +654,8 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
 /// Everything it says is <see cref="SidebarModel"/>, the model the cell rail would be drawn from, and every click goes
 /// back as the target that model gave — the rail's own handler acts on it. The client draws no rail column here.
 /// <para>
-/// <b>Folded</b> (⌃B b, or the fold button beside the title) it is a slim strip, the cell rail's collapsed form at a
-/// desktop app's size: an unfold button, an accent mark per world, and a dot with an initial per character (filled
+/// <b>Folded</b> (⌃B b, or the header's sidebar button) it is a slim strip, the cell rail's collapsed form at a
+/// desktop app's size: an accent mark per world, and a dot with an initial per character (filled
 /// while connected, with an unread mark), each still a click on its target, with the name in its tooltip.
 /// </para>
 /// <para>
@@ -636,7 +679,6 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
 
     private readonly List<Row> _rows = [];
     private Rect _add;
-    private Rect _fold;
 
     /// <summary>How far the rows are scrolled, in pixels, and the list area they scroll in.</summary>
     private double _scroll;
@@ -673,6 +715,9 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
 
     private const double TitleHeight = 36;
 
+    /// <summary>Where the list starts: under <c>CONNECTIONS</c> while open; folded there is no title, only a small gap.</summary>
+    private double ListTop => Folded ? NativeTokens.Space8 : TitleHeight;
+
     private bool Folded => Overlay?.Sidebar.Collapsed ?? false;
 
     protected override void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits)
@@ -683,17 +728,17 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
 
         // Open, the rows span the sidebar and its gutter with RowInset either side (the mockups' 10 px in a 252 px
         // column); folded, the gutter is plane and the strip's marks centre on the rest.
+        // The fold toggle is the header's (NativeHeader.Toggle), left of the brand, in both states.
         var width = folded ? Width - NativeLayout.SidebarGutter : Width;
-        _fold = folded ? new Rect((width - 32) / 2, 6, 32, 28) : new Rect(width - 38, 6, 30, 28);
-        hits.Add((_fold, SidebarModel.CollapseTarget, folded ? UnfoldTip : FoldTip));
+        var titleHeight = ListTop;
 
         var row = folded ? 32 : RowHeight;
         _add = folded
             ? new Rect((width - 32) / 2, Height - 32 - NativeTokens.Space12, 32, 32)
             : new Rect(RowInset, Height - NativeTokens.ControlHeight - NativeTokens.Space12, Math.Max(0, width - (2 * RowInset)), NativeTokens.ControlHeight);
         var bottom = _add.Top - NativeTokens.Space8;
-        _list = new Rect(0, TitleHeight, width, Math.Max(0, bottom - TitleHeight));
-        var y = TitleHeight;
+        _list = new Rect(0, titleHeight, width, Math.Max(0, bottom - titleHeight));
+        var y = titleHeight;
 
         // Laid out unscrolled first: the scroll is clamped to what the rows need, and moved to keep the keyboard's row
         // in view, before anything is placed.
@@ -747,7 +792,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
             }
         }
 
-        _content = y + 4 - TitleHeight;
+        _content = y + 4 - titleHeight;
         if (overlay.Sidebar.Cursor is { } cursor && laid.FirstOrDefault(l => KeyOf(l.Row) == cursor) is { Row: { } focused })
         {
             if (focused.Area.Top - _scroll < _list.Top)
@@ -773,7 +818,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
             hits.Add((area.Intersect(_list), target, tip));
         }
 
-        if (_add.Width > 20 && _add.Top > TitleHeight)
+        if (_add.Width > 20 && _add.Top > ListTop)
         {
             hits.Add((_add, SidebarModel.AddGameTarget, "Connect to a game, or add one"));
         }
@@ -968,15 +1013,9 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
         }
 
         const double size = FontSize;
-        if (Hovered(_fold))
-        {
-            context.DrawRectangle(new SolidColorBrush(Raised(0.12)), null, _fold, 6, 6);
-        }
-
-        Chevron(context, _fold, left: !Folded, Dim);
         if (!Folded)
         {
-            Text(context, "CONNECTIONS", NativeTokens.PanelInset, _fold.Center.Y, NativeTokens.Small, Dim, bold: true);
+            Text(context, "CONNECTIONS", NativeTokens.PanelInset, NativeTokens.Space20, NativeTokens.Small, Dim, bold: true);
         }
 
         using (context.PushClip(_list))

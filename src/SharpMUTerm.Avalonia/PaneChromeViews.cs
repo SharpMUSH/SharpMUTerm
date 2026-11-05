@@ -363,29 +363,25 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
             var hovered = tab.WindowId == _hoverTab;
             if (tab.Selected)
             {
-                // A card joined to the pane: rounded at the top, ruled on three sides, open at the bottom onto the pane.
+                // A card joined to the pane (the mockup's): rounded at the top, ruled on three sides, open at the bottom
+                // onto the pane, on the pane's own plane. In the pane that holds the keyboard the rule is the focus edge
+                // (the command line's own focus colour), the quietest cue that says which pane it is when two show.
                 var r = Math.Min(NativeTokens.RadiusM, area.Height / 2);
-                var card = CardGeometry(area, r, bounds.Height);
-                context.DrawGeometry(new SolidColorBrush(plane), null, card);
-                context.DrawGeometry(null, NativeTokens.HairlinePen(this, Tokens.Rule), CardOutline(NativeTokens.StrokeRect(this, area), r, bounds.Height));
-
-                // The focused pane's front tab carries the focus cue: an accent bar along its top, between the corners.
-                if (overlay.Model.Focused)
-                {
-                    context.DrawRectangle(new SolidColorBrush(Tokens.Accent), null,
-                        new Rect(area.X + r, NativeTokens.Snap(this, area.Y), Math.Max(0, area.Width - (2 * r)), NativeTokens.Snap(this, NativeTokens.BorderStrong)), 1, 1);
-                }
+                context.DrawGeometry(new SolidColorBrush(plane), null, CardGeometry(area, r, bounds.Height));
+                context.DrawGeometry(null, NativeTokens.HairlinePen(this, overlay.Model.Focused ? Tokens.Focus : Tokens.Rule),
+                    CardOutline(NativeTokens.StrokeRect(this, area), r, bounds.Height));
             }
             else
             {
+                var plate = area.Deflate(new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Space4));
                 if (plane != strip)
                 {
-                    context.DrawRectangle(new SolidColorBrush(plane), null, area.Deflate(new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Space4)), NativeTokens.RadiusS, NativeTokens.RadiusS);
+                    context.DrawRectangle(new SolidColorBrush(plane), null, plate, NativeTokens.RadiusS, NativeTokens.RadiusS);
                 }
 
                 if (hovered && Interactive)
                 {
-                    context.DrawRectangle(new SolidColorBrush(PanelText.Alpha(Tokens.Text, 0x14)), null, area.Deflate(new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Space4)), NativeTokens.RadiusS, NativeTokens.RadiusS);
+                    context.DrawRectangle(new SolidColorBrush(PanelText.Alpha(Tokens.Text, 0x14)), null, plate, NativeTokens.RadiusS, NativeTokens.RadiusS);
                 }
             }
 

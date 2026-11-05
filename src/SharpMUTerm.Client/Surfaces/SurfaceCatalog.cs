@@ -309,10 +309,11 @@ public static class SurfaceCatalog
         new(
             RailStrip,
             typeof(SidebarModel),
+            // The fold toggle: drawn by the native header, left of the brand, open or folded (wave 33).
             [new(SurfaceActionKind.Target, SidebarModel.CollapseTarget, "ToggleRail", CellsVia: "layout:toggle-rail")],
             NativeChrome,
             "SharpMUTerm.Tui.RailRenderer.Render",
-            ["SharpMUTerm.Avalonia.NativeSidebar"]),
+            ["SharpMUTerm.Avalonia.NativeSidebar", "SharpMUTerm.Avalonia.NativeHeader"]),
         new(
             Prefix,
             typeof(HeaderPrefix),
