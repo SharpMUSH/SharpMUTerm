@@ -1378,6 +1378,12 @@ fallbacks) for inline images/maps.
     is the row projection. The header's presence dot reads `ConnectedCharacters()`, the same answer as the rail's
     dot and the fraction. While ⌃B is armed `HeaderModel.Prefix` carries `PrefixPanel.Entries` (key, title, why it
     is blocked) and the exit, so the native header shows the keymap where the cell header shows its strip.
+  - **The window's character pill opens a menu; it does not go anywhere** (`HeaderModel.CharacterMenuTarget`,
+    `HeaderCharacterMenu`, `NativeHeader.OpenCharacterMenu`). Going to the character in front went where the reader
+    already was. The menu lists every configured character by world (the one in front checked and disabled, ⌥J/⌥K on its
+    cycle neighbours), then Connect/Disconnect, Worlds & characters (F5), Add a world. Every entry is a ⌃P command, asked
+    for and answered over the sidebar's row-menu channel (`RowMenu`/`RunSidebarMenuEntry`, so an entry not offered is
+    refused). The cell header's character is not a link; ⌃P, ⌥J/⌥K and the rail's row menu are the terminal's way.
   - **`ClientHost.Chrome` (`HostChrome(Header, Rail, Tabs)`, required) says which chrome the host draws, and the client
     leaves no cell for it.** `HostChrome.None` for the terminal, the snapshot, `--plain` and the tests;
     `Desktop` (header, rail, status row and field) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and

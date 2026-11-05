@@ -287,7 +287,7 @@ public static class SurfaceCatalog
             typeof(HeaderModel),
             [
                 new(SurfaceActionKind.Target, HeaderModel.PaletteTarget, "ToggleMenu"),
-                new(SurfaceActionKind.Target, "character", "DispatchRailTarget", CellsVia: Sidebar),
+                new(SurfaceActionKind.Pick, "character menu entry", "RunSidebarMenuEntry", CellsVia: "world:disconnect"),
             ],
             NativeChrome,
             "SharpMUTerm.Tui.SharpMUTermApp.HeaderMarkup",

@@ -47,7 +47,7 @@ public class NativeChromeTests
     private static HeaderModel Header(bool prefix = false) => new(
         false,
         new HeaderWorld("Aetherfall", Teal),
-        new HeaderCharacter("Corvid", "Aetherfall.Corvid", CharacterPresence.Online, "aether.example", 4000, true, CommandIds.Character("Aetherfall.Corvid")),
+        new HeaderCharacter("Corvid", "Aetherfall.Corvid", CharacterPresence.Online, "aether.example", 4000, true, HeaderModel.CharacterMenuTarget),
         1, 2, true, LogFormat.None, prefix)
     {
         Prefix = prefix
@@ -223,7 +223,6 @@ public class NativeChromeTests
             Click(window, layer.Sidebar, layer.Sidebar.Hits.Single(h => h.Target == SidebarModel.AddGameTarget).Area);
             Click(window, layer.Header, layer.Header.Hits.Single(h => h.Target == SidebarModel.CollapseTarget).Area);
             Click(window, layer.Header, layer.Header.Hits.Last(h => h.Target == HeaderModel.PaletteTarget).Area);
-            Click(window, layer.Header, layer.Header.Hits.Single(h => h.Target.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal)).Area);
             window.MouseWheel(new Point(40, window.ClientSize.Height / 2), new Vector(0, 1));
             Drain();
             return (activated, clientSaw, layer.Sidebar.Rows.Select(r => r.Kind).ToArray(), view.IsFocused);
@@ -232,7 +231,7 @@ public class NativeChromeTests
         await Assert.That(activated).IsEquivalentTo(new[]
         {
             CommandIds.Window("spawn:2"), CommandIds.Character("Aetherfall.Wren"), SidebarModel.AddGameTarget,
-            SidebarModel.CollapseTarget, HeaderModel.PaletteTarget, CommandIds.Character("Aetherfall.Corvid"),
+            SidebarModel.CollapseTarget, HeaderModel.PaletteTarget,
         });
         await Assert.That(clientSaw.Count).IsEqualTo(0).Because("every press, release and wheel over native chrome is the window's");
         await Assert.That(focused).IsTrue().Because("the keyboard stays with the client");
@@ -307,6 +306,52 @@ public class NativeChromeTests
 
         await Assert.That(offset).IsGreaterThan(0);
         await Assert.That(shown).IsTrue();
+    }
+
+    /// <summary>
+    /// A click on the character pill goes nowhere by itself: it asks the client for the character menu and opens it under
+    /// the pill. The character in front is where the reader already is, so going there was a click that did nothing.
+    /// </summary>
+    [Test]
+    public async Task AClickOnTheCharacterPillOpensTheCharacterMenuUnderIt()
+    {
+        var (asked, activated, opened, entries, below, clientSaw) = await Run((window, view, layer, driver) =>
+        {
+            var asked = new List<string>();
+            var activated = new List<string>();
+            var menu = new SharpMUTerm.Client.Commands.MenuModel(
+            [
+                new SharpMUTerm.Client.Commands.MenuEntry("Corvid · Aetherfall", null, CommandIds.Character("Aetherfall.Corvid"), Checked: true, Enabled: false),
+                new SharpMUTerm.Client.Commands.MenuEntry("Wren · Aetherfall", "⌥J", CommandIds.Character("Aetherfall.Wren")),
+                SharpMUTerm.Client.Commands.MenuEntry.Separator,
+                new SharpMUTerm.Client.Commands.MenuEntry("Disconnect", "⌥D", "world:disconnect"),
+            ]);
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(activated.Add, Sidebar(), rowMenu: (row, show) =>
+            {
+                asked.Add(row);
+                show(menu);
+            }));
+            Drain();
+            window.UpdateLayout();
+            Drain();
+            var clientSaw = 0;
+            driver.MouseEvent += (_, _, _) => clientSaw++;
+            var pill = layer.Header.Hits.Single(h => h.Target == HeaderModel.CharacterMenuTarget).Area;
+            Click(window, layer.Header, pill);
+            var opened = layer.Header.OpenedMenu;
+            var entries = opened?.Items.OfType<MenuItem>().Count() ?? 0;
+            var below = opened is not null && opened.PlacementRect == pill && opened.Placement == PlacementMode.BottomEdgeAlignedRight;
+            opened?.Close();
+            Drain();
+            return (asked, activated, opened is not null, entries, below, clientSaw);
+        });
+
+        await Assert.That(asked).IsEquivalentTo(new[] { HeaderModel.CharacterMenuTarget });
+        await Assert.That(activated).IsEmpty().Because("the pill opens a menu; it does not go to the character in front");
+        await Assert.That(opened).IsTrue();
+        await Assert.That(entries).IsEqualTo(3);
+        await Assert.That(below).IsTrue().Because("the menu drops from the pill");
+        await Assert.That(clientSaw).IsEqualTo(0);
     }
 
     /// <summary>A right click on a row asks the client for that row's menu, by the row's key, and opens it natively.</summary>

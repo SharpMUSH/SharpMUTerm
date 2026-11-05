@@ -34,6 +34,14 @@ public sealed record HeaderModel(
     /// </summary>
     public const string PaletteTarget = "sharpmuterm-menu:toggle";
 
+    /// <summary>
+    /// The character pill's click target: it opens the character menu (switch to any character, connect or disconnect
+    /// the one in front, open Worlds &amp; Characters, add a world) rather than going anywhere itself. Going to the
+    /// character in front was the old answer, and with that character already in front it went nowhere. A chrome
+    /// target, read only by the header's own handler; the host asks for the menu by this key.
+    /// </summary>
+    public const string CharacterMenuTarget = "sharpmuterm-header:characters";
+
     /// <summary>The chord that opens the command surface, in the symbol vocabulary the catalog writes keys in.</summary>
     public const string PaletteKey = "⌃P";
 
@@ -99,7 +107,7 @@ public sealed record HeaderWorld(string Name, TerminalColor Accent);
 /// <param name="Host">The world's host.</param>
 /// <param name="Port">The world's port.</param>
 /// <param name="Tls">Whether the world is configured for TLS.</param>
-/// <param name="Target">Where a click on the character goes: its rail row's own target.</param>
+/// <param name="Target">What a click on the character opens: <see cref="HeaderModel.CharacterMenuTarget"/>.</param>
 public sealed record HeaderCharacter(
     string Name, string SessionKey, CharacterPresence Presence, string Host, int Port, bool Tls, string Target)
 {
