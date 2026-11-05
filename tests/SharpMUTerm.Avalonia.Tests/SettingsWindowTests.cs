@@ -538,6 +538,56 @@ public class SettingsWindowTests
     }
 
     /// <summary>
+    /// Every world row in the list carries its own + for a character, so adding one to a world that is not the one on show
+    /// is one click, and the new character lands under that world.
+    /// </summary>
+    [Test]
+    public async Task AWorldRowsPlusAddsACharacterToThatWorld()
+    {
+        var harness = TwoWorlds();
+        var shown = await Run(harness, "worlds", window =>
+        {
+            window.AddCharacterRowButtons[harness.Config.Worlds[1]].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return window.WorldsShown;
+        });
+
+        await Assert.That(harness.Config.Worlds[0].Characters.Count).IsEqualTo(1);
+        await Assert.That(harness.Config.Worlds[1].Characters.Count).IsEqualTo(2);
+        await Assert.That(shown).IsSameReferenceAs(harness.Config.Worlds[1].Characters[1]);
+        await Assert.That(harness.Commits).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// A world's settings fold by group: the first is open, the rest show only their heading, and a click on a heading
+    /// opens it. The page is a list of sections a reader can scan rather than one long form.
+    /// </summary>
+    [Test]
+    public async Task AWorldsSettingGroupsFoldToTheirHeadings()
+    {
+        var harness = TwoWorlds();
+        var (before, after, group) = await Run(harness, "worlds", window =>
+        {
+            static bool Open(Button toggle) => ((StackPanel)toggle.Parent!).Children[1].IsVisible;
+            var toggles = window.GroupToggles.Values.ToList();
+            var before = toggles.Select(Open).ToArray();
+            var last = toggles[^1];
+            last.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var after = Open(last);
+            last.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return (before, after, window.GroupToggles.Count);
+        });
+
+        await Assert.That(group).IsGreaterThan(1);
+        await Assert.That(before[0]).IsTrue();
+        await Assert.That(before.Skip(1).All(open => !open)).IsTrue();
+        await Assert.That(after).IsTrue();
+        await Assert.That(harness.Commits).IsEqualTo(0);
+    }
+
+    /// <summary>
     /// The client commits on its own thread, so a new world or character reaches the list after the page asked to show
     /// it; the page shows it once it lands rather than falling back to the first world.
     /// </summary>

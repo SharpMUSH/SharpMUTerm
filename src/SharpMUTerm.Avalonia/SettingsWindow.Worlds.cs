@@ -64,7 +64,7 @@ internal sealed partial class SettingsWindow
     /// <summary>The world or character the page shows on the right, for a test.</summary>
     internal object? WorldsShown => (object?)_shownCharacter ?? _shownWorld;
 
-    /// <summary>The tree's buttons, for a test.</summary>
+    /// <summary>The list's and the detail's buttons, for a test; the detail's are those of the world or character shown.</summary>
     internal Button? AddWorldButton { get; private set; }
 
     internal Button? AddCharacterButton { get; private set; }
@@ -76,6 +76,9 @@ internal sealed partial class SettingsWindow
     internal Button? MoveUpButton { get; private set; }
 
     internal Button? MoveDownButton { get; private set; }
+
+    /// <summary>The + on each world's row in the list, by world, for a test.</summary>
+    internal Dictionary<WorldDefinition, Button> AddCharacterRowButtons { get; } = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>The detail's connect button, for a test; null when none is shown.</summary>
     internal Button? ConnectButton { get; private set; }
@@ -235,34 +238,116 @@ internal sealed partial class SettingsWindow
     /// <summary>The page's grid, for a test (its height is the list editors').</summary>
     internal Grid? WorldsGrid { get; private set; }
 
-    /// <summary>The declared fields as the field pages draw them: a card per group, a hairline between rows.</summary>
+    /// <summary>
+    /// Which field groups are open on the Worlds page, by group name, for the run. A group not named here is open when it
+    /// is the first (Connection, which a new world needs filled in) and closed otherwise.
+    /// </summary>
+    private static readonly Dictionary<string, bool> OpenGroups = new(StringComparer.Ordinal);
+
+    /// <summary>The group headings of the fields on show, for a test: each one's name and whether its rows are open.</summary>
+    internal Dictionary<string, Button> GroupToggles { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The declared fields as the field pages draw them: a card per group, a hairline between rows. Each card folds to its
+    /// heading and a line saying how many settings it holds and how many are changed, so a world reads as its sections
+    /// first; the first is open. While searching every card is open, since only matching fields are on show.
+    /// </summary>
     private List<Border> FieldCards(IReadOnlyList<SettingsField> visible)
     {
+        GroupToggles.Clear();
         var cards = new List<Border>();
-        StackPanel? body = null;
+        StackPanel? rows = null;
         string? group = null;
+        var first = true;
         foreach (var field in visible)
         {
-            if (body is null || !string.Equals(field.Group, group, StringComparison.Ordinal))
+            if (rows is null || !string.Equals(field.Group, group, StringComparison.Ordinal))
             {
                 group = field.Group;
-                body = new StackPanel();
+                rows = new StackPanel();
+                var body = new StackPanel();
                 if (group is { } heading)
                 {
-                    body.Children.Add(CardHeading(heading));
+                    if (Searching)
+                    {
+                        body.Children.Add(CardHeading(heading));
+                    }
+                    else
+                    {
+                        var members = visible.Where(f => string.Equals(f.Group, heading, StringComparison.Ordinal)).ToList();
+                        body.Children.Add(GroupHeading(heading, members, rows, OpenGroups.TryGetValue(heading, out var open) ? open : first));
+                    }
                 }
 
+                body.Children.Add(rows);
                 cards.Add(Card(body));
+                first = false;
             }
             else
             {
-                body.Children.Add(new Border { Height = NativeTokens.Hairline, Background = _tokens.Page.Brush(_tokens.Page.Rule) });
+                rows.Children.Add(new Border { Height = NativeTokens.Hairline, Background = _tokens.Page.Brush(_tokens.Page.Rule) });
             }
 
-            body.Children.Add(FieldRow(field));
+            rows.Children.Add(FieldRow(field));
         }
 
         return cards;
+    }
+
+    /// <summary>A card's heading that opens and closes its rows: a chevron, the name, and while closed what it holds.</summary>
+    private Button GroupHeading(string heading, IReadOnlyList<SettingsField> members, StackPanel rows, bool open)
+    {
+        var chevron = new global::Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse("M 0,2 L 4,6 L 8,2"),
+            Stroke = DimInk,
+            StrokeThickness = 1.5,
+            Width = 8,
+            Height = 8,
+            Stretch = Stretch.None,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, NativeTokens.Space8, 0),
+            RenderTransform = new RotateTransform(),
+        };
+        var title = new TextBlock { Text = heading, FontSize = NativeTokens.CardTitle, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        var summary = new TextBlock { FontSize = NativeTokens.PageSmall, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space10, 0, 0, 0) };
+        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        line.Children.Add(chevron);
+        line.Children.Add(title);
+        line.Children.Add(summary);
+        var button = new Button
+        {
+            Content = line,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space12),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+        AutomationProperties.SetName(button, heading);
+        GroupToggles[heading] = button;
+
+        void Show()
+        {
+            ((RotateTransform)chevron.RenderTransform!).Angle = rows.IsVisible ? 0 : -90;
+            var changed = members.Count(f => !_form.IsDefault(f));
+            var count = members.Count == 1 ? "1 setting" : $"{members.Count} settings";
+            summary.Text = rows.IsVisible ? (changed > 0 ? $"{changed} changed" : "") : changed > 0 ? $"{count} · {changed} changed" : count;
+            ToolTip.SetTip(button, rows.IsVisible ? $"Hide the {heading} settings" : $"Show the {heading} settings");
+            AutomationProperties.SetHelpText(button, rows.IsVisible ? "expanded" : "collapsed");
+        }
+
+        rows.IsVisible = open;
+        button.Click += (_, _) =>
+        {
+            rows.IsVisible = !rows.IsVisible;
+            OpenGroups[heading] = rows.IsVisible;
+            Show();
+        };
+        Show();
+        _refreshers.Add(Show);
+        return button;
     }
 
     private TextBlock CardHeading(string text) => new()
@@ -277,52 +362,39 @@ internal sealed partial class SettingsWindow
 
     private DockPanel TreeColumn()
     {
-        AddWorldButton = TreeButton("+ World", "Add a world");
-        AddCharacterButton = TreeButton("+ Character", "Add a character to the selected world");
-        CopyCharacterButton = TreeButton("Copy", "Copy the selected character");
-        DeleteButton = TreeButton("Delete", "Delete the selected world or character");
-        MoveUpButton = TreeButton("↑", "Move up");
-        MoveDownButton = TreeButton("↓", "Move down");
+        // The list's own head says what it holds and offers the one thing that makes more of it. A world's characters are
+        // added from the + on its row and from the world's own page; everything that acts on the one chosen (copy, move,
+        // delete) is on its page, beside its name, so no button here acts on something the eye has to go and find.
+        AddWorldButton = AccentButton("+ Add world");
+        AddWorldButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        AddWorldButton.HorizontalContentAlignment = HorizontalAlignment.Center;
+        ToolTip.SetTip(AddWorldButton, "Add a world by hand: a name, a host and a port");
+        AutomationProperties.SetName(AddWorldButton, "Add a world");
         AddWorldButton.Click += (_, _) => ShowWorld(_form.AddWorld(), null);
-        AddCharacterButton.Click += (_, _) =>
-        {
-            if (_shownWorld is { } world)
-            {
-                ShowWorld(world, _form.AddCharacter(world));
-            }
-        };
-        CopyCharacterButton.Click += (_, _) =>
-        {
-            if (_shownCharacter is { } character && _form.DuplicateCharacter(character) is { } copy)
-            {
-                ShowWorld(_shownWorld, copy);
-            }
-        };
-        DeleteButton.Click += (_, _) => AskDelete();
-        MoveUpButton.Click += (_, _) => MoveShown(-1);
-        MoveDownButton.Click += (_, _) => MoveShown(1);
 
-        var tools = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(NativeTokens.Space10, NativeTokens.Space10, NativeTokens.Space10, NativeTokens.Space4) };
-        foreach (var button in new[] { AddWorldButton, AddCharacterButton, CopyCharacterButton, DeleteButton, MoveUpButton, MoveDownButton })
-        {
-            button.Margin = new Thickness(0, 0, NativeTokens.Space4, NativeTokens.Space4);
-            tools.Children.Add(button);
-        }
+        var head = new StackPanel { Spacing = NativeTokens.Space10, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space12, NativeTokens.Space12, NativeTokens.Space8) };
+        var count = _form.WorldList().Count;
+        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        title.Children.Add(new TextBlock { Text = "WORLDS", FontSize = NativeTokens.PageSmall, FontWeight = FontWeight.SemiBold, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
+        var tally = new TextBlock { Text = count.ToString(CultureInfo.InvariantCulture), FontSize = NativeTokens.PageSmall, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(tally, 1);
+        title.Children.Add(tally);
+        head.Children.Add(title);
+        head.Children.Add(AddWorldButton);
 
         _worldTree = new ListBox { Background = Brushes.Transparent, Margin = new Thickness(NativeTokens.Space4, 0, NativeTokens.Space4, NativeTokens.Space6) };
         AutomationProperties.SetName(_worldTree, "Worlds and characters");
         _worldTree.SelectionChanged += (_, _) => OnTreeChosen();
         _worldTree.KeyDown += OnTreeKey;
 
-        var foot = new StackPanel { Spacing = NativeTokens.Space4, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space4, NativeTokens.Space12, NativeTokens.Space10) };
+        var foot = new StackPanel { Spacing = NativeTokens.Space6, Margin = new Thickness(NativeTokens.Space12, NativeTokens.Space8, NativeTokens.Space12, NativeTokens.Space12) };
         if (_form.RunCommand is not null)
         {
-            var browse = LinkButton("Browse worlds…", NativeTokens.PageSmall);
-            ToolTip.SetTip(browse, "Find a world in the mu*index directory");
+            foot.Children.Add(new Border { Height = NativeTokens.Hairline, Background = _tokens.Page.Brush(_tokens.Page.Rule), Margin = new Thickness(0, 0, 0, NativeTokens.Space4) });
+            var browse = WideButton("Browse worlds…", "Find a world in the mu*index directory");
             AutomationProperties.SetName(browse, "Browse worlds");
             browse.Click += (_, _) => _form.Run(SettingsForm.BrowseWorlds);
-            var import = LinkButton("Import from another client…", NativeTokens.PageSmall);
-            ToolTip.SetTip(import, "Bring worlds and automation over from MUSHclient, Mudlet or TinTin++");
+            var import = WideButton("Import from another client…", "Bring worlds and automation over from MUSHclient, Mudlet or TinTin++");
             AutomationProperties.SetName(import, "Import from another client");
             import.Click += (_, _) => _form.Run(SettingsForm.ImportWorlds);
             foot.Children.Add(browse);
@@ -330,13 +402,28 @@ internal sealed partial class SettingsWindow
         }
 
         var column = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(tools, Dock.Top);
-        column.Children.Add(tools);
+        DockPanel.SetDock(head, Dock.Top);
+        column.Children.Add(head);
         DockPanel.SetDock(foot, Dock.Bottom);
         column.Children.Add(foot);
         column.Children.Add(_worldTree);
         FillTree();
         return column;
+    }
+
+    /// <summary>A secondary button as wide as the list, for the list's foot.</summary>
+    private static Button WideButton(string text, string tip)
+    {
+        var button = new Button
+        {
+            Content = text,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space6),
+            FontSize = NativeTokens.Label,
+        };
+        ToolTip.SetTip(button, tip);
+        return button;
     }
 
     private static Button TreeButton(string text, string tip)
@@ -355,6 +442,7 @@ internal sealed partial class SettingsWindow
         }
 
         var items = new List<ListBoxItem>();
+        AddCharacterRowButtons.Clear();
         ListBoxItem? selected = null;
         foreach (var world in _form.WorldList())
         {
@@ -399,9 +487,36 @@ internal sealed partial class SettingsWindow
         words.Children.Add(new TextBlock { Text = world.Name, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         var address = world.Tls ? $"{world.Address} · TLS" : world.Address;
         words.Children.Add(new TextBlock { Text = address, FontSize = NativeTokens.Small, Foreground = DimInk, TextTrimming = TextTrimming.CharacterEllipsis });
+
+        // A character is added where it will appear: the + on its world's row. The button takes the press, so the row is
+        // not chosen by it; the new character is shown once it lands.
+        var add = new Button
+        {
+            Content = "+",
+            FontSize = NativeTokens.Heading,
+            FontWeight = FontWeight.SemiBold,
+            Width = NativeTokens.ControlHeightSmall,
+            Height = NativeTokens.ControlHeightSmall,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Focusable = false,
+            CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+        };
+        ToolTip.SetTip(add, $"Add a character to {world.Name}");
+        AutomationProperties.SetName(add, $"Add a character to {world.Name}");
+        var owner = world.World;
+        add.Click += (_, _) => ShowWorld(owner, _form.AddCharacter(owner));
+        AddCharacterRowButtons[owner] = add;
+        var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        line.Children.Add(words);
+        Grid.SetColumn(add, 1);
+        line.Children.Add(add);
+
         var item = new ListBoxItem
         {
-            Content = words,
+            Content = line,
             Tag = world.World,
             Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space6),
             Margin = new Thickness(0, NativeTokens.Space4, 0, 0),
@@ -553,7 +668,11 @@ internal sealed partial class SettingsWindow
         return Card(body);
     }
 
-    /// <summary>The detail's head: the name, where it is, the connect button and a deletion waiting for its yes.</summary>
+    /// <summary>
+    /// The detail's head: where it is (a character's world, as a way back), the name, what it is, and a row of what can be
+    /// done to it — the call to action first (Connect, or + Add character), then copy, move and delete — and a deletion
+    /// waiting for its yes.
+    /// </summary>
     private void FillHead()
     {
         if (_worldHead is not { } head || _shownWorld is not { } world)
@@ -564,24 +683,33 @@ internal sealed partial class SettingsWindow
         head.Children.Clear();
         ConnectButton = null;
         ConfirmDeleteButton = null;
+        AddCharacterButton = null;
+        CopyCharacterButton = null;
         var entry = _form.WorldList().FirstOrDefault(w => ReferenceEquals(w.World, world));
-        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var words = new StackPanel { Spacing = NativeTokens.Space2, VerticalAlignment = VerticalAlignment.Center };
+        var actions = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space6, 0, 0) };
         if (_shownCharacter is { } character)
         {
+            var back = LinkButton($"‹ {world.Name}", NativeTokens.Label);
+            ToolTip.SetTip(back, $"Back to {world.Name}");
+            AutomationProperties.SetName(back, $"Back to {world.Name}");
+            back.Click += (_, _) => ShowWorld(world, null);
+            back.HorizontalAlignment = HorizontalAlignment.Left;
+            head.Children.Add(back);
+
             var listed = entry?.Characters.FirstOrDefault(c => ReferenceEquals(c.Character, character));
             var connected = listed?.Connected == true;
             var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space10 };
             title.Children.Add(PresenceDot(connected));
             title.Children.Add(new TextBlock { Text = character.Name, FontSize = NativeTokens.PageTitle, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-            words.Children.Add(title);
-            words.Children.Add(new TextBlock
+            head.Children.Add(title);
+            head.Children.Add(new TextBlock
             {
-                Text = $"on {world.Name} · {WorldEditing.Address(world)} · {(connected ? "connected" : "not connected")}",
+                Text = $"Character on {world.Name} · {WorldEditing.Address(world)} · {(connected ? "connected" : "not connected")}",
                 FontSize = NativeTokens.Label,
                 Foreground = DimInk,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
+
             if (_form.CanConnect && !string.IsNullOrWhiteSpace(world.Host))
             {
                 var connect = AccentButton(connected ? "Go to" : "Connect");
@@ -589,17 +717,25 @@ internal sealed partial class SettingsWindow
                 ToolTip.SetTip(connect, connected ? "Bring this character's window forward" : $"Connect {character.Name} to {world.Name}");
                 connect.Click += (_, _) => _form.ConnectTo(world, character);
                 ConnectButton = connect;
-                connect.Margin = new Thickness(0, 0, NativeTokens.Space12, 0);
-                Grid.SetColumn(connect, 1);
-                top.Children.Add(connect);
+                AddAction(actions, connect);
             }
+
+            CopyCharacterButton = HeadButton("Duplicate", $"Add a copy of {character.Name} to {world.Name}");
+            CopyCharacterButton.Click += (_, _) =>
+            {
+                if (_shownCharacter is { } shown && _form.DuplicateCharacter(shown) is { } copy)
+                {
+                    ShowWorld(_shownWorld, copy);
+                }
+            };
+            AddAction(actions, CopyCharacterButton);
         }
         else
         {
-            words.Children.Add(new TextBlock { Text = world.Name, FontSize = NativeTokens.PageTitle, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+            head.Children.Add(new TextBlock { Text = world.Name, FontSize = NativeTokens.PageTitle, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
             var count = world.Characters.Count;
             var online = entry?.Connected ?? 0;
-            var parts = new List<string> { WorldEditing.Address(world) };
+            var parts = new List<string> { "World", WorldEditing.Address(world) };
             if (world.UseTls)
             {
                 parts.Add("TLS");
@@ -611,16 +747,60 @@ internal sealed partial class SettingsWindow
                 parts.Add($"{online.ToString(CultureInfo.InvariantCulture)} connected");
             }
 
-            words.Children.Add(new TextBlock { Text = string.Join(" · ", parts), FontSize = NativeTokens.Label, Foreground = DimInk, TextTrimming = TextTrimming.CharacterEllipsis });
+            head.Children.Add(new TextBlock { Text = string.Join(" · ", parts), FontSize = NativeTokens.Label, Foreground = DimInk, TextTrimming = TextTrimming.CharacterEllipsis });
+
+            AddCharacterButton = AccentButton("+ Add character");
+            ToolTip.SetTip(AddCharacterButton, $"Add a character to {world.Name}");
+            AutomationProperties.SetName(AddCharacterButton, $"Add a character to {world.Name}");
+            AddCharacterButton.Click += (_, _) =>
+            {
+                if (_shownWorld is { } shown)
+                {
+                    ShowWorld(shown, _form.AddCharacter(shown));
+                }
+            };
+            AddAction(actions, AddCharacterButton);
         }
 
-        top.Children.Insert(0, words);
-        head.Children.Add(top);
+        var noun = _shownCharacter is null ? "world" : "character";
+        MoveUpButton = HeadButton("Move up", $"Move this {noun} up the list (Alt+Up)");
+        MoveUpButton.Click += (_, _) => MoveShown(-1);
+        MoveDownButton = HeadButton("Move down", $"Move this {noun} down the list (Alt+Down)");
+        MoveDownButton.Click += (_, _) => MoveShown(1);
+        DeleteButton = HeadButton($"Delete {noun}", $"Delete this {noun}; Ctrl+Z brings it back");
+        DeleteButton.Foreground = _tokens.Brush(_tokens.Warn);
+        DeleteButton.Click += (_, _) => AskDelete();
+        AddAction(actions, MoveUpButton);
+        AddAction(actions, MoveDownButton);
+        AddAction(actions, DeleteButton);
+        head.Children.Add(actions);
+        UpdateTreeTools();
 
         if (_pendingDeletion is { } doomed)
         {
             head.Children.Add(DeletionQuestion(doomed));
         }
+    }
+
+    private static void AddAction(WrapPanel actions, Button button)
+    {
+        button.Margin = new Thickness(0, 0, NativeTokens.Space8, NativeTokens.Space4);
+        actions.Children.Add(button);
+    }
+
+    /// <summary>A secondary action in the detail's head.</summary>
+    private static Button HeadButton(string text, string tip)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Padding = new Thickness(NativeTokens.Space12, NativeTokens.Space6),
+            VerticalAlignment = VerticalAlignment.Center,
+            CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+        };
+        ToolTip.SetTip(button, tip);
+        AutomationProperties.SetName(button, tip);
+        return button;
     }
 
     /// <summary>A button in the accent: the page's one call to action.</summary>
@@ -724,21 +904,14 @@ internal sealed partial class SettingsWindow
         }
 
         body.Children.Clear();
-        var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        heading.Children.Add(CardHeading("Characters"));
-        var add = LinkButton("+ Add a character", NativeTokens.PageSmall);
-        AutomationProperties.SetName(add, $"Add a character to {world.Name}");
-        add.Click += (_, _) => ShowWorld(world, _form.AddCharacter(world));
-        Grid.SetColumn(add, 1);
-        heading.Children.Add(add);
-        body.Children.Add(heading);
+        body.Children.Add(CardHeading("Characters"));
 
         var entry = _form.WorldList().FirstOrDefault(w => ReferenceEquals(w.World, world));
         if (entry is null || entry.Characters.Count == 0)
         {
             body.Children.Add(new TextBlock
             {
-                Text = "No character yet. Without one the world connects with no login.",
+                Text = "No character yet. Add one to log in on connect; without one the world connects with no login.",
                 Foreground = DimInk,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, NativeTokens.Space4, 0, NativeTokens.Space12),
