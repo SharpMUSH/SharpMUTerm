@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
 using Avalonia.Themes.Simple;
 
 namespace SharpMUTerm.Avalonia;
@@ -19,6 +20,9 @@ internal sealed class App : Application
             // The client decides when the program ends: closing the window asks it to quit, and it is the
             // client's loop ending that shuts the application down.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+            // A menu's or a tooltip's popup is a top level of its own, so it does not inherit the windows' light hinting.
+            Control.LoadedEvent.AddClassHandler<PopupRoot>((root, _) => NativeTokens.ApplyTextRendering(root));
             desktop.MainWindow = new MainWindow(Options, desktop);
         }
 

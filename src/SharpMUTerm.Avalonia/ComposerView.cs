@@ -141,6 +141,8 @@ internal sealed class ComposerView : Border
             // Docked, as the mockup's panel: Command over its box, then Text over the editor's well.
             _commandLabel.Margin = new Thickness(PanelText.Pad, NativeTokens.Space12, PanelText.Pad, 0);
             _commandWell.Margin = new Thickness(PanelText.Pad, NativeTokens.Space6, PanelText.Pad, 0);
+            // The mockup's box: 8 px above and below the line, so it is as tall as theirs (34 px).
+            _command.Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space8);
             _commandRow = new StackPanel { Children = { _commandLabel, _commandWell } };
             _textLabel.Margin = new Thickness(PanelText.Pad, NativeTokens.Space12, PanelText.Pad, 0);
         }
@@ -600,7 +602,7 @@ internal sealed class ComposerView : Border
         {
             // The escaping, as a chip that switches it (⌥L): Literal or As typed.
             var literal = model.Escaping == ComposeEscaping.Literal;
-            var escaping = Chip(literal ? "Literal" : "As typed", literal ? Accent : Dim, ui - 1.5);
+            var escaping = OutlinedChip(literal ? "Literal" : "As typed", literal ? Accent : Dim);
             escaping.Name = "Escaping";
             escaping.Cursor = new Cursor(StandardCursorType.Hand);
             ToolTip.SetTip(escaping, literal ? "Sent as typed, % [ ] escaped (Alt+L switches)" : "Sent exactly as typed (Alt+L switches)");
@@ -615,7 +617,7 @@ internal sealed class ComposerView : Border
             _chips.Children.Add(escaping);
             if (model.Armed && model.Dictionary is { } named)
             {
-                _chips.Children.Add(Chip(named, Dim, ui - 1.5));
+                _chips.Children.Add(OutlinedChip(named, Dim));
             }
 
             _count.IsVisible = false;
@@ -707,6 +709,21 @@ internal sealed class ComposerView : Border
         Padding = new Thickness(NativeTokens.Space6, 0, NativeTokens.Space6, NativeTokens.Hairline),
         VerticalAlignment = VerticalAlignment.Center,
         Child = new TextBlock { Text = words, FontSize = Math.Max(9, size), Foreground = new SolidColorBrush(ink) },
+    };
+
+    /// <summary>
+    /// The docked heading's chip, as the mockup's <c>Literal</c>: 11 px words in a hairline outline of the panel's rule,
+    /// rounded as a control, on the panel's own plane.
+    /// </summary>
+    private Border OutlinedChip(string words, Color ink) => new()
+    {
+        Background = Brushes.Transparent,
+        BorderBrush = new SolidColorBrush(PanelText.Rule(_text, _plane)),
+        BorderThickness = new Thickness(NativeTokens.Hairline),
+        CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+        Padding = new Thickness(NativeTokens.Space6, NativeTokens.Space2),
+        VerticalAlignment = VerticalAlignment.Center,
+        Child = new TextBlock { Text = words, FontSize = NativeTokens.Small, Foreground = new SolidColorBrush(ink) },
     };
 
     /// <summary>What the header's dictionary chip says while no dictionary marks the post.</summary>

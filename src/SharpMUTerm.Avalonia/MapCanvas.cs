@@ -736,12 +736,14 @@ internal sealed class MapCanvas : Control
         // drawing on every theme; only the accent, the walk and the areas' marks are colours.
         var rule = RuleColour;
         var byId = _model.Rooms.ToDictionary(r => r.Id);
-        var exitPen = new Pen(new SolidColorBrush(rule), Math.Clamp(Spacing * Zoom / 45, 1, 2), lineCap: PenLineCap.Round);
+        var exitWidth = ExitWidth;
+        var exitPen = new Pen(new SolidColorBrush(rule), exitWidth, lineCap: PenLineCap.Round);
         foreach (var exit in _model.Exits)
         {
             if (byId.TryGetValue(exit.From, out var a) && byId.TryGetValue(exit.To, out var b))
             {
-                context.DrawLine(exitPen, CentreOf(a), CentreOf(b));
+                var (from, to) = AlignExit(CentreOf(a), CentreOf(b), exitWidth);
+                context.DrawLine(exitPen, from, to);
             }
         }
 
@@ -1075,8 +1077,38 @@ internal sealed class MapCanvas : Control
     /// </summary>
     internal static Rect PlateOf(Rect name) => name.Inflate(new Thickness(NativeTokens.Space2 + PenAllowance, PenAllowance));
 
-    /// <summary>Half the widest exit pen (2 px), kept clear of a name's plate.</summary>
-    private const double PenAllowance = 1;
+    /// <summary>
+    /// Half the widest exit pen (<see cref="NativeTokens.MapExit"/>, up to a device pixel more once rounded) plus the half
+    /// device pixel <see cref="AlignExit"/> may move it, kept clear of a name's plate.
+    /// </summary>
+    private const double PenAllowance = 1.5;
+
+    /// <summary>
+    /// An exit's width: the mockup's 2 px wherever names are drawn (a step of <see cref="NamesFromStep"/> or more), thinner
+    /// only when zoomed out past that, in whole device pixels so a straight exit is a crisp line. Internal for tests.
+    /// </summary>
+    internal double ExitWidth => NativeTokens.LineWidth(this, NativeTokens.MapExit * Math.Clamp(Spacing * Zoom / NamesFromStep, 0.5, 1));
+
+    /// <summary>
+    /// A straight (level or upright) exit moved by up to half a device pixel so its edges fall on device pixels, as the
+    /// mockup's 2 px lines do; a diagonal is left where it is. Internal for tests.
+    /// </summary>
+    internal (Point From, Point To) AlignExit(Point from, Point to, double width)
+    {
+        if (Math.Abs(from.X - to.X) < 0.5)
+        {
+            var x = NativeTokens.LineCentre(this, (from.X + to.X) / 2, width);
+            return (new Point(x, from.Y), new Point(x, to.Y));
+        }
+
+        if (Math.Abs(from.Y - to.Y) < 0.5)
+        {
+            var y = NativeTokens.LineCentre(this, (from.Y + to.Y) / 2, width);
+            return (new Point(from.X, y), new Point(to.X, y));
+        }
+
+        return (from, to);
+    }
 
     /// <summary>
     /// Every line the map draws between rooms or off one, at the view shown: each exit between two rooms of the view (on

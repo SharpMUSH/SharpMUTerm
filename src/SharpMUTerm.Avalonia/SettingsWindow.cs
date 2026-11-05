@@ -95,6 +95,7 @@ internal sealed class SettingsWindow : Window
     public SettingsWindow(SettingsForm form)
     {
         _form = form;
+        NativeTokens.ApplyTextRendering(this);
         _tokens = TokensFor(form);
         Title = "Settings";
         Width = DefaultWidth;

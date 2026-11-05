@@ -2655,6 +2655,20 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   the rest of what it covers is the column's plane; `BelowGrid` now also takes the view's leftover pixels under the grid
   (under a row), so a panel at the foot of a beside-the-field column meets the footer. Cells and NAWS do not move. Panel
   headings were checked against `Main.png` and already match (context beside the title), so nothing changed there.
+- **Wave 31 fine pixels (window only; terminal frames unchanged).** `ux-wave31/window-fine-pixels/`, against `Desktop-Combat`
+  and `Main.png` at 1440×900. **The window's text is lightly hinted** (`NativeTokens.ApplyTextRendering`, set on `MainWindow`,
+  `SettingsWindow`, `FloatingPanelWindow` and, through a class handler in `App`, every `PopupRoot`): Avalonia's default hinting
+  drew Inter's capitals 11 rows tall at 13 px (the mockup's are 9–10) and 1.5 px above a line box's middle, so every native
+  line read a size heavier and every panel heading's words sat high. The metrics are balanced (Inter's capitals centre in its
+  line box), so no offset is added anywhere. The cells draw their own glyphs and do not change. **Map exits are
+  `NativeTokens.MapExit` (2) wide** from `NamesFromStep` up, thinner zoomed out, never under a device pixel (`ExitWidth`,
+  `NativeTokens.LineWidth`), and a level or upright exit is moved ≤ half a device pixel onto the pixel grid (`AlignExit`,
+  `NativeTokens.LineCentre`), so it is two crisp pixels as the mockup's; `PenAllowance` is 1.5 for that move. The docked
+  composer's mode chip is the mockup's outline (`OutlinedChip`: 11 px, `RadiusControl`, the panel's rule) and its Command box
+  has 8 px padding (34 px tall). Left as they are: the header is 44 px with its rule, the mockup's 45 (chrome on the 4 px
+  grid); the quick bar's three-row strip (60 px, the mockup's 55) and the scrolled-back band's two rows (40, the mockup's 37)
+  are cells; the pane's leftover pixels under the field (wave 28); the divider row between the composer and who-here
+  (`HostChrome.Strips` keeps it); the Here heading is every panel's 44 px (the mockup's is 41 without a chip).
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

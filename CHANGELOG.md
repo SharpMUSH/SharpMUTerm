@@ -436,6 +436,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window text is drawn with light hinting, as the design mockups are: labels and headings no longer look a
+  size heavier than intended, and a panel's heading sits in the middle of its band. Map exits are crisp 2-pixel lines, and
+  the docked composer's Literal / As typed chip is a quiet outline with a slightly taller Command box.
+
 - In the terminal, the map draws corridors three cells long when the area fits, puts its title on the panel heading
   band, keeps its words a cell in from the edge and says "Click a room to walk there" in a tall pane.
 - The settings search lists its sections on a navigation column of their own, a shade off the page, with the selected

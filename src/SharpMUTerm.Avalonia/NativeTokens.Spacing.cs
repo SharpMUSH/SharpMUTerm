@@ -29,6 +29,9 @@ internal sealed partial record NativeTokens
     /// <summary>A chosen card's or a focused control's border: twice a hairline.</summary>
     public const double BorderStrong = 2;
 
+    /// <summary>A map exit: the mockups' <c>stroke-width="2"</c> line between rooms, drawn in whole device pixels (<see cref="LineWidth"/>).</summary>
+    public const double MapExit = 2;
+
     /// <summary>The scale: a control half-step, a hairline gap.</summary>
     public const double Space2 = 2;
 
@@ -130,8 +133,38 @@ internal sealed partial record NativeTokens
         return new Rect(left + half, top + half, Math.Max(0, right - left - (2 * half)), Math.Max(0, bottom - top - (2 * half)));
     }
 
+    /// <summary>
+    /// <paramref name="width"/> rounded to whole device pixels on <paramref name="visual"/>'s screen, never under one: a
+    /// line drawn at it covers whole pixels rather than blending into a fainter, wider one.
+    /// </summary>
+    public static double LineWidth(Visual visual, double width)
+    {
+        var scale = Scaling(visual);
+        return Math.Max(1, Math.Round(width * scale)) / scale;
+    }
+
+    /// <summary>
+    /// Where to put the centre of a straight line <paramref name="width"/> wide (already <see cref="LineWidth"/>) near
+    /// <paramref name="centre"/> so its edges fall on device pixels: on a pixel edge for an even number of pixels, in the
+    /// middle of one for an odd number. Moves it half a device pixel at most.
+    /// </summary>
+    public static double LineCentre(Visual visual, double centre, double width)
+    {
+        var scale = Scaling(visual);
+        var odd = ((int)Math.Round(width * scale) & 1) == 1;
+        return odd ? (Math.Floor(centre * scale) + 0.5) / scale : Math.Round(centre * scale) / scale;
+    }
+
     /// <summary>A one-device-pixel pen in <paramref name="colour"/>, for <see cref="StrokeRect"/>.</summary>
     public static Pen HairlinePen(Visual visual, Color colour) => new(new SolidColorBrush(colour), DevicePixel(visual));
+
+    /// <summary>
+    /// Sets the window's text to light hinting, as a browser draws it (the mockups were drawn in one). Avalonia's default
+    /// hinting snaps Inter's x-height and capitals up a whole pixel at 12–14 px, so every native line read a size
+    /// heavier than <c>Main.png</c> and sat about 1.5 px higher in its box: a heading's capitals rose above its middle.
+    /// Inherited by everything in the window; the cells draw their own glyphs and are not touched.
+    /// </summary>
+    public static void ApplyTextRendering(Visual window) => TextOptions.SetTextHintingMode(window, TextHintingMode.Light);
 
     private static double Scaling(Visual visual)
     {

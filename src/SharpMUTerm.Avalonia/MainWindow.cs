@@ -33,6 +33,7 @@ internal sealed class MainWindow : Window
     {
         _options = options;
         _lifetime = lifetime;
+        NativeTokens.ApplyTextRendering(this);
         _config = ClientLaunch.LoadConfiguration(options, _notices);
         var (foreground, background) = WindowOptions.DefaultColours(_config);
 
