@@ -22,8 +22,19 @@ namespace SharpMUTerm.Avalonia;
 /// of a cell strip is read. Every gesture is handed back as a pane and window id, never a command; it takes no focus.
 /// </para>
 /// </summary>
-internal sealed class NativeTabStrip : Control, ICustomHitTest
+internal sealed class NativeTabStrip : Control, ICustomHitTest, IEdgeRules
 {
+    /// <summary>The strip's foot, its last device pixel (<see cref="Render"/>).</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        if (Overlay is null)
+        {
+            yield break;
+        }
+
+        yield return new EdgeRule(NativeTokens.HorizontalRule(this, size.Height - NativeTokens.DevicePixel(this), 0, size.Width), Tokens.Rule);
+    }
+
     private readonly List<(Rect Area, Rect? Close, TabChipModel Tab, Color Plane)> _tabs = [];
 
     private readonly List<double> _names = [];
@@ -487,8 +498,20 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
 /// where End does (<see cref="ScrollBandModel"/>, the model the cells' rule is drawn from). Only the button is hit; the
 /// rest of the band passes the pointer on to the cells. It takes no focus.
 /// </summary>
-internal sealed class ScrollBandView : Control, ICustomHitTest
+internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
 {
+    /// <summary>The band's rules, along its top and its foot (<see cref="Render"/>).</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        if (Overlay is null)
+        {
+            yield break;
+        }
+
+        yield return new EdgeRule(NativeTokens.HorizontalRule(this, 0, 0, size.Width), Tokens.Rule);
+        yield return new EdgeRule(NativeTokens.HorizontalRule(this, size.Height - NativeTokens.DevicePixel(this), 0, size.Width), Tokens.Rule);
+    }
+
     private Rect _button;
     private bool _hover;
     private bool _pressed;

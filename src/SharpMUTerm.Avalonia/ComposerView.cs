@@ -31,8 +31,17 @@ namespace SharpMUTerm.Avalonia;
 /// function keys — reach the client from a docked editor exactly as they would from its cells.
 /// </para>
 /// </summary>
-internal sealed class ComposerView : Border
+internal sealed class ComposerView : Border, IEdgeRules
 {
+    /// <summary>The docked heading's rule: every panel's, its border's last device pixel.</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        if (!_fullScreen && _header.IsVisible)
+        {
+            yield return PanelText.HeadingRule(this, size.Width, _plane, _text);
+        }
+    }
+
     private readonly TerminalView _view;
     private readonly bool _fullScreen;
     private readonly ComposerEditor _editor;

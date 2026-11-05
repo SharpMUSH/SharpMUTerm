@@ -91,6 +91,28 @@ internal static class PanelText
         (byte)Math.Round(a.G + ((b.G - a.G) * amount)),
         (byte)Math.Round(a.B + ((b.B - a.B) * amount)));
 
+    /// <summary>The rule <see cref="Heading"/> draws under a panel's heading on <paramref name="visual"/>, for <see cref="IEdgeRules"/>.</summary>
+    public static EdgeRule HeadingRule(Visual visual, double width, Color plane, Color text)
+    {
+        var px = NativeTokens.DevicePixel(visual);
+        return new EdgeRule(new Rect(0, PanelHeadingHeight - px, width, px), Rule(text, plane));
+    }
+
+    /// <summary>The seams a strip draws on the edges another pane meets (<c>Seams</c>), for <see cref="IEdgeRules"/>.</summary>
+    public static IEnumerable<EdgeRule> SeamRules(Visual visual, Size size, (bool Above, bool Below) seams, Color plane, Color text)
+    {
+        var colour = Rule(text, plane);
+        if (seams.Above)
+        {
+            yield return new EdgeRule(NativeTokens.HorizontalRule(visual, 0, 0, size.Width), colour);
+        }
+
+        if (seams.Below)
+        {
+            yield return new EdgeRule(NativeTokens.HorizontalRule(visual, size.Height - NativeTokens.DevicePixel(visual), 0, size.Width), colour);
+        }
+    }
+
     /// <summary>
     /// Draws a panel heading across the top of <paramref name="width"/> — the title semibold, the context dim beside it,
     /// a rule under both — and returns the height it took (<see cref="HeadingHeight"/>). <paramref name="right"/> is the

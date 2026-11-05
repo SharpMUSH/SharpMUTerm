@@ -30,7 +30,8 @@ public class SurfaceParityTests
     /// <summary>Controls of the window that are the window itself rather than a surface of the client's.</summary>
     // The focus ring is an adorner drawing one rule round whatever control has the keyboard: it carries no model and says nothing.
     // FittedText is a TextBlock part the composer's footer is built from: it draws the words its view hands it.
-    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing), typeof(FittedText)];
+    // SeamRules carries the declared views' own rules on to a divider's hairline: no model, no input, nothing said.
+    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing), typeof(FittedText), typeof(SeamRules)];
 
     private static readonly Assembly Window = typeof(DesktopLayer).Assembly;
 

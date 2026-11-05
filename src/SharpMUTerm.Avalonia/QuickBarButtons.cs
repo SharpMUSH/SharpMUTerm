@@ -23,8 +23,20 @@ namespace SharpMUTerm.Avalonia;
 /// command. A right click is handed on to the client as a right click on the cell under it.
 /// </para>
 /// </summary>
-internal sealed class QuickBarButtons : Control
+internal sealed class QuickBarButtons : Control, IEdgeRules
 {
+    /// <summary>The strip's top rule (a strip tall enough for the buttons) and its seams.</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        var rules = PanelText.SeamRules(this, size, _seams, _plane, _text).ToList();
+        if (size.Height > ButtonHeight && !_seams.Above)
+        {
+            rules.Add(new EdgeRule(NativeTokens.HorizontalRule(this, 0, 0, size.Width), PanelText.Rule(_text, _plane)));
+        }
+
+        return rules;
+    }
+
     /// <summary>What a laid-out slot does when clicked.</summary>
     internal enum SlotKind
     {

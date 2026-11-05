@@ -16,8 +16,14 @@ namespace SharpMUTerm.Avalonia;
 /// row and the field reserve under it, <c>DesktopLayer.BelowGrid</c>); anything above that is the column's plane, carrying
 /// the panel above it down to the bar, and takes no click.
 /// </summary>
-internal sealed class CollapsedBarView : Control
+internal sealed class CollapsedBarView : Control, IEdgeRules
 {
+    /// <summary>The rule along the bar's top (<see cref="BarTop"/>).</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        yield return new EdgeRule(NativeTokens.HorizontalRule(this, NativeTokens.Snap(this, Math.Max(0, size.Height - BarHeight)), 0, size.Width), PanelText.Rule(_text, _plane));
+    }
+
     private readonly TerminalView _view;
     private CollapsedPanelModel _model = new(string.Empty, 0, string.Empty);
     private Color _plane = Colors.Black;

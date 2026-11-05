@@ -959,6 +959,7 @@ internal sealed class TerminalView : Control
             var hair = DeviceHairline; // one device pixel at every scale (NativeTokens.Hairline); 1.5 px blurred two rows at 150%
             var wide = Math.Max(2f, MathF.Round(3 * s));
             using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+            var meets = new List<(SKRect Rect, SKColor Colour)>();
             foreach (var divider in dividers)
             {
                 var x0 = Math.Max(0, divider.Area.X);
@@ -980,7 +981,7 @@ internal sealed class TerminalView : Control
                 if (divider.Vertical)
                 {
                     float left = x0 * cw, right = x1 * cw;
-                    var at = MathF.Round(left + ((right - left - w) / 2));
+                    var at = HairlineAt(left, right, w);
                     // Beside a band in the output's column the panes run on under the grid, through the field's padding.
                     var tail = band is { Columns: not null } inColumn && y1 == frame.Height && !inColumn.Spans(x0, frame.Width)
                         ? Math.Max(0, (float)(Bounds.Height * scale) - (y1 * ch))
@@ -1001,11 +1002,27 @@ internal sealed class TerminalView : Control
 
                     paint.Color = colour;
                     canvas.DrawRect(at, y0 * ch, w, ((y1 - y0) * ch) + tail, paint);
+
+                    // The field's strip beside the divider has the panes' rule along its top (RenderWithField); it runs on
+                    // through this side's half cell to the hairline, as a horizontal divider's does.
+                    if (band is { } strip && strip.Top >= y0 && strip.Top < y1)
+                    {
+                        var stripTop = strip.Top * ch;
+                        if (strip.Spans(x0 - 1, frame.Width))
+                        {
+                            meets.Add((new SKRect(left, stripTop, at, stripTop + hair), rule));
+                        }
+
+                        if (strip.Spans(x1, frame.Width))
+                        {
+                            meets.Add((new SKRect(at + w, stripTop, right, stripTop + hair), rule));
+                        }
+                    }
                 }
                 else
                 {
                     float top = y0 * ch, bottom = y1 * ch;
-                    var at = MathF.Round(top + ((bottom - top - w) / 2));
+                    var at = HairlineAt(top, bottom, w);
                     // A divider reaching the grid's last column runs on over the leftover pixels right of the grid, where
                     // the cells' last background (the rule's) would otherwise show as a block at the window's edge.
                     var past = x1 == frame.Width ? Math.Clamp((float)(Bounds.Width * scale) - (x1 * cw), 0, cw) : 0;
@@ -1018,10 +1035,45 @@ internal sealed class TerminalView : Control
                         canvas.DrawRect(x * cw, at + w, cellWidth, bottom - at - w, paint);
                     }
 
-                    paint.Color = colour;
-                    canvas.DrawRect(x0 * cw, at, ((x1 - x0) * cw) + past, w, paint);
+                    // A horizontal divider ending beside a vertical one runs on to that one's hairline, through the half of
+                    // its cell this side, so the two rules meet as the mockups' do rather than stopping half a cell short.
+                    var start = (float)(x0 * cw);
+                    var end = (x1 * cw) + past;
+                    if (VerticalHairlineBeside(x0 - 1, y0, s) is { } before)
+                    {
+                        start = before.Right;
+                    }
+
+                    if (VerticalHairlineBeside(x1, y0, s) is { } after)
+                    {
+                        end = after.Left;
+                    }
+
+                    meets.Add((new SKRect(start, at, end, at + w), colour));
                 }
             }
+
+            // Drawn last, so a vertical divider's planes painted after this one do not cover the run into its cell.
+            foreach (var (rect, colour) in meets)
+            {
+                paint.Color = colour;
+                canvas.DrawRect(rect, paint);
+            }
+        }
+
+        /// <summary>The device-pixel hairline of the vertical divider covering cell (<paramref name="x"/>, <paramref name="y"/>), or null.</summary>
+        private SKRect? VerticalHairlineBeside(int x, int y, float s)
+        {
+            foreach (var divider in frame.Dividers)
+            {
+                if (divider.Vertical && x >= divider.Area.X && x < divider.Area.X + divider.Area.Width
+                    && y >= divider.Area.Y && y < divider.Area.Y + divider.Area.Height)
+                {
+                    return Hairline(divider, renderer.Fonts.CellWidth, renderer.Fonts.CellHeight, frame.Width, frame.Height, s);
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -1162,6 +1214,58 @@ internal sealed class TerminalView : Control
     /// pixels at 150% and so a blend across two rows, which is what a blurred rule is.
     /// </summary>
     internal const float DeviceHairline = 1f;
+
+    /// <summary>Where a divider's hairline of width <paramref name="w"/> starts, centred between two cell edges (device pixels).</summary>
+    internal static float HairlineAt(float start, float end, float w) => MathF.Round(start + ((end - start - w) / 2));
+
+    /// <summary>
+    /// A divider's hairline in device pixels, as <c>DrawDividers</c> draws it (wider while lit), over the divider's whole
+    /// length in cells. Shared with <see cref="VerticalHairlines"/>, so a native view's rule run to it meets it exactly.
+    /// </summary>
+    internal static SKRect Hairline(PaneDividerOverlay divider, int cw, int ch, int columns, int rows, float scale)
+    {
+        var w = divider.Lit ? Math.Max(2f, MathF.Round(3 * scale)) : DeviceHairline;
+        var x0 = Math.Max(0, divider.Area.X);
+        var y0 = Math.Max(0, divider.Area.Y);
+        var x1 = Math.Min(columns, divider.Area.X + divider.Area.Width);
+        var y1 = Math.Min(rows, divider.Area.Y + divider.Area.Height);
+        if (divider.Vertical)
+        {
+            var at = HairlineAt(x0 * cw, x1 * cw, w);
+            return new SKRect(at, y0 * ch, at + w, y1 * ch);
+        }
+
+        var top = HairlineAt(y0 * ch, y1 * ch, w);
+        return new SKRect(x0 * cw, top, x1 * cw, top + w);
+    }
+
+    /// <summary>
+    /// Every vertical pane divider's hairline in this view's logical coordinates, from the frame on screen: where a native
+    /// view's horizontal rule beside a divider runs on to (<see cref="SeamRules"/>), so the two meet with no gap.
+    /// </summary>
+    internal IReadOnlyList<Rect> VerticalHairlines()
+    {
+        var frame = _driver.Frame;
+        var list = new List<Rect>();
+        foreach (var divider in frame.Dividers)
+        {
+            if (!divider.Vertical)
+            {
+                continue;
+            }
+
+            var r = Hairline(divider, _renderer.Fonts.CellWidth, _renderer.Fonts.CellHeight, frame.Width, frame.Height, (float)_scale);
+            if (r.Width > 0 && r.Height > 0)
+            {
+                // A divider reaching the grid's foot runs on below it beside a band in the output's column (DrawDividers'
+                // tail), where a native view at the foot of a column (DesktopLayer.BelowGrid) can meet it too.
+                var bottom = divider.Area.Y + divider.Area.Height >= frame.Height ? Math.Max(r.Bottom / _scale, Bounds.Height) : r.Bottom / _scale;
+                list.Add(new Rect(r.Left / _scale, r.Top / _scale, r.Width / _scale, bottom - (r.Top / _scale)));
+            }
+        }
+
+        return list;
+    }
 
     /// <summary>
     /// The field's rectangle in device pixels: inset from the band's edges so the client's band-coloured padding columns

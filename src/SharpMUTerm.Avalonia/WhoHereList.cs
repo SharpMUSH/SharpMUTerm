@@ -21,8 +21,17 @@ namespace SharpMUTerm.Avalonia;
 /// over cells. It never takes keyboard focus.
 /// </para>
 /// </summary>
-internal sealed class WhoHereList : Control
+internal sealed class WhoHereList : Control, IEdgeRules
 {
+    /// <summary>The heading's rule.</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        if (size.Width >= 16 && size.Height >= 8)
+        {
+            yield return PanelText.HeadingRule(this, size.Width, _plane, _text);
+        }
+    }
+
     private readonly TerminalView _view;
 
     /// <summary>

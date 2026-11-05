@@ -53,6 +53,7 @@ internal sealed partial class DesktopLayer : Canvas
     private readonly NoticeToasts _toasts;
     private readonly Dictionary<string, NativeTabStrip> _strips = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ScrollBandView> _bands = new(StringComparer.Ordinal);
+    private readonly SeamRules _seams = new();
     private (SharpMUTerm.Core.Theming.Theme Theme, NativeTokens Tokens)? _paneTokens;
     private int _noticeAboveRow;
 
@@ -81,6 +82,9 @@ internal sealed partial class DesktopLayer : Canvas
         Children.Add(_header);
         Children.Add(_sidebar);
         Children.Add(_footer);
+
+        // The runs of the native views' rules into the divider cells beside them: over the cells, under nothing it touches.
+        Children.Add(_seams);
         _pointer.StatusChanged += () => Dispatcher.UIThread.Post(Sync);
 
         // A dragged tab's hint over the panels; the toasts still over it.
@@ -189,7 +193,31 @@ internal sealed partial class DesktopLayer : Canvas
         SyncPanels(frame, cell);
         SyncPaneChrome(cell);
         SyncTabDrag(cell);
+        SyncSeams(cell);
         SyncToasts(frame, cell);
+    }
+
+    /// <summary>The native views' rules carried on to the pane dividers' hairlines beside them. Internal for tests.</summary>
+    internal SeamRules Seams => _seams;
+
+    /// <summary>
+    /// Runs each full-width rule a native view over a pane draws (<see cref="IEdgeRules"/>) on through the half divider
+    /// cell between the view's edge and the divider's hairline (<see cref="TerminalView.VerticalHairlines"/>), so a tab
+    /// strip's foot, a panel's heading and a strip's seams meet the hairline rather than stopping half a cell short.
+    /// </summary>
+    private void SyncSeams(Size cell)
+    {
+        SetLeft(_seams, 0);
+        SetTop(_seams, 0);
+        _seams.Width = Math.Max(0, Bounds.Width);
+        _seams.Height = Math.Max(0, Bounds.Height);
+        var origin = CellOrigin;
+        var hairlines = _view.VerticalHairlines().Select(h => h.Translate(new Vector(origin.X, origin.Y))).ToList();
+        var views = _strips.Values.Cast<Control>().Concat(_bands.Values).Concat(_gauges.Values).Concat(_maps.Values)
+            .Concat(_whoHere.Values).Concat(_quickBars.Values).Concat(_collapsedBars.Values).Concat(_composers.Values)
+            .Where(v => v.IsVisible && v.Width > 0 && v.Height > 0 && v is IEdgeRules)
+            .Select(v => (new Rect(GetLeft(v), GetTop(v), v.Width, v.Height), ((IEdgeRules)v).EdgeRules(new Size(v.Width, v.Height))));
+        _seams.Show(SeamRules.Between(views, hairlines, cell.Width));
     }
 
     /// <summary>The native tab strips by pane id. Internal for tests.</summary>

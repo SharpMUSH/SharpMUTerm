@@ -1972,6 +1972,11 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
   (read off the frame) with `NativeTokens.Rule` 1 px in the middle; lit, the cells' own `RuleHover`, 3 px. The cells, the
   hit area and NAWS are the terminal's.
   - `HostParityTests` draws every view under `none`, `header-rail` and `desktop`.
+  - **Rules meet the hairline** (wave 35, `SeamRules`/`IEdgeRules`; `ux-wave35/divider-seams/`). A native view covers only its
+    pane, so its full-width rules (strip foot, scroll band, panel headings, strip seams, collapsed bar) stopped half a divider
+    cell short; each view says its rules (`EdgeRules(size)`) and an unhittable `SeamRules` layer draws the half cell to
+    `TerminalView.VerticalHairlines()`. `DrawDividers` runs a horizontal divider and the field strip's top rule on to a vertical
+    hairline the same way. Presses there are the cells' (grab area unchanged); no cell or NAWS moves. `DividerSeamTests`.
 - **The window bundles its faces** (`BundledFonts`, Avalonia; `Fonts/README.md`). Inter 4.1 (four static weights, 1.67 MB)
   and JetBrains Mono are registered as `fonts:SharpMUTerm`, Inter is Avalonia's default family and the bare names map onto
   the bundle, so every view resolves them from the file on every OS; installed faces are only the fallback for glyphs the

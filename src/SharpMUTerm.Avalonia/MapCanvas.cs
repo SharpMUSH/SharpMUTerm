@@ -34,8 +34,17 @@ namespace SharpMUTerm.Avalonia;
 /// client (<see cref="PanelOverlay.LookMap"/>), which redraws both hosts from the one model.
 /// </para>
 /// </summary>
-internal sealed class MapCanvas : Control
+internal sealed class MapCanvas : Control, IEdgeRules
 {
+    /// <summary>The heading's rule, once there are rooms to head.</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        if (_model.Rooms.Count > 0)
+        {
+            yield return PanelText.HeadingRule(this, size.Width, _plane, _text);
+        }
+    }
+
     /// <summary>Pixels between room centres at zoom 1.</summary>
     internal const double Spacing = 34;
 

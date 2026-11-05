@@ -9,6 +9,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window the rules under tab strips and panel headings, and the panels' seams, now run right up to the
+  line between two panes instead of stopping just short of it.
 - In the desktop window the sidebar reads as the mockups: a tracked CONNECTIONS heading, world names without a
   coloured bar, a small dot in the world's colour per character (a ring while offline), and window shortcuts and
   unread counts in a quiet monospace beside each window.

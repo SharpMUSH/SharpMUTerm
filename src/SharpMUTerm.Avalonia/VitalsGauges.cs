@@ -19,8 +19,20 @@ namespace SharpMUTerm.Avalonia;
 /// </para>
 /// <para>It takes no input (see <see cref="DesktopLayer"/>): the pane under it is the client's.</para>
 /// </summary>
-internal sealed class VitalsGauges : Control
+internal sealed class VitalsGauges : Control, IEdgeRules
 {
+    /// <summary>The seams, and the heading's rule while the card is headed.</summary>
+    public IEnumerable<EdgeRule> EdgeRules(Size size)
+    {
+        var rules = PanelText.SeamRules(this, size, _seams, _plane, _text).ToList();
+        if (!_model.IsEmpty && size.Width >= 8 && size.Height >= 4 && StackedFor(size.Height, _model) && HeadedFor(size.Height, _model))
+        {
+            rules.Add(PanelText.HeadingRule(this, size.Width, _plane, _text));
+        }
+
+        return rules;
+    }
+
     private VitalsModel _model = VitalsModel.Empty;
     private PanelInk _ink = new("#5fafff", "#ff5f5f", "#3a3a40");
     private Color _plane = Colors.Black;
