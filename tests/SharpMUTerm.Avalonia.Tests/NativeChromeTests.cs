@@ -166,6 +166,44 @@ public class NativeChromeTests
     }
 
     [Test]
+    public async Task TheSidebarToggleIsASmallButtonLeftOfTheBrandOpenOrFolded()
+    {
+        var (open, folded, sidebarOffers, noRail) = await Run((window, view, layer, driver) =>
+        {
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }));
+            Drain();
+            window.UpdateLayout();
+            Drain();
+            (Rect Toggle, Rect Brand, string Tip) Read() => (layer.Header.Toggle,
+                layer.Header.Hits.First(h => h.Target == HeaderModel.PaletteTarget).Area,
+                layer.Header.Hits.Single(h => h.Target == SidebarModel.CollapseTarget).Tip);
+            var open = Read();
+            var sidebarOffers = layer.Sidebar.Hits.Any(h => h.Target == SidebarModel.CollapseTarget);
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }, collapsed: true));
+            Drain();
+            window.UpdateLayout();
+            Drain();
+            var folded = Read();
+            sidebarOffers |= layer.Sidebar.Hits.Any(h => h.Target == SidebarModel.CollapseTarget);
+
+            // A host that draws a header but no sidebar has nothing to fold, so offers no toggle.
+            ((IPointerPresenter)driver.Pointer).Chrome(Overlay(_ => { }) with { Drawn = HostChrome.None with { Header = true } });
+            Drain();
+            return (open, folded, sidebarOffers, layer.Header.Hits.Any(h => h.Target == SidebarModel.CollapseTarget));
+        });
+
+        await Assert.That(open.Toggle.Width).IsEqualTo(NativeHeader.ToggleSize);
+        await Assert.That(open.Toggle.Height).IsEqualTo(NativeHeader.ToggleSize);
+        await Assert.That(open.Toggle.Right).IsLessThan(open.Brand.Left + NativeTokens.Space8).Because("the toggle comes before the brand");
+        await Assert.That(open.Toggle.Center.X).IsEqualTo(NativeLayout.SidebarSlim / 2).Because("centred over the folded strip's marks");
+        await Assert.That(folded.Toggle).IsEqualTo(open.Toggle).Because("the same place in both states");
+        await Assert.That(open.Tip).IsEqualTo(NativeSidebar.FoldTip);
+        await Assert.That(folded.Tip).IsEqualTo(NativeSidebar.UnfoldTip);
+        await Assert.That(sidebarOffers).IsFalse().Because("the sidebar no longer draws a fold chevron");
+        await Assert.That(noRail).IsFalse();
+    }
+
+    [Test]
     public async Task AClickOnTheSidebarOrTheHeaderHandsBackTheModelsTargetAndNeverReachesTheClient()
     {
         var (activated, clientSaw, rows, focused) = await Run((window, view, layer, driver) =>
@@ -183,7 +221,7 @@ public class NativeChromeTests
             var wren = layer.Sidebar.Rows.Single(r => r.Character?.Name == "Wren");
             Click(window, layer.Sidebar, wren.Area);
             Click(window, layer.Sidebar, layer.Sidebar.Hits.Single(h => h.Target == SidebarModel.AddGameTarget).Area);
-            Click(window, layer.Sidebar, layer.Sidebar.Hits.Single(h => h.Target == SidebarModel.CollapseTarget).Area);
+            Click(window, layer.Header, layer.Header.Hits.Single(h => h.Target == SidebarModel.CollapseTarget).Area);
             Click(window, layer.Header, layer.Header.Hits.Last(h => h.Target == HeaderModel.PaletteTarget).Area);
             Click(window, layer.Header, layer.Header.Hits.Single(h => h.Target.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal)).Area);
             window.MouseWheel(new Point(40, window.ClientSize.Height / 2), new Vector(0, 1));
@@ -347,7 +385,7 @@ public class NativeChromeTests
             driver.MouseEvent += (_, flags, _) => clientSaw.Add(flags);
 
             // Between the brand and the search box: a gap the header leaves on purpose.
-            var brand = layer.Header.Hits[0].Area;
+            var brand = layer.Header.Hits.First(h => h.Target == HeaderModel.PaletteTarget).Area;
             var gap = layer.Header.TranslatePoint(new Point(brand.Right + 10, layer.Header.Bounds.Height / 2), window)!.Value;
             window.MouseDown(gap, MouseButton.Left);
             window.MouseUp(gap, MouseButton.Left);

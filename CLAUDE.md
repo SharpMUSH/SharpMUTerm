@@ -1385,13 +1385,15 @@ fallbacks) for inline images/maps.
   - **A click hands back a target the client put in the model**, and `ActivateChromeTarget` refuses one the last
     overlay did not offer (a rail target is offered only when `Drawn.Rail`). Rail targets go to `DispatchRailTarget`,
     the search box and brand to `HeaderModel.PaletteTarget` (opens ⌃P, never toggles it shut), *Add a game* to
-    `term:welcome`, the sidebar's chevron to `SidebarModel.CollapseTarget` (`ToggleRail`, what ⌃B b runs). Never
+    `term:welcome`, the header's sidebar toggle to `SidebarModel.CollapseTarget` (`ToggleRail`, what ⌃B b runs). Never
     `OnLinkClicked`, and the host spells no command.
   - **A modal does not hide the chrome.** ⌃P, a settings screen, the composer and the quit prompt are drawn in the
     cells, which no longer reach under the header or sidebar, so the chrome stays where a desktop app's stays, under
     a veil, and takes no click (`ChromeOverlay.Interactive`, `MainWindowInFront`; refused client-side too). The
     settings screens and F1 size to the driver's screen, which is the cell area, so they fit and centre there.
-  - **Folded, the sidebar is a 48 px strip**: the unfold chevron, an accent mark per world, a disc with the initial
+  - **The fold button is the header's** (wave 33, `NativeHeader.Toggle`): a 16 px sidebar glyph (column shaded while open) in a
+    28 px square left of the brand, centred over the folded strip, offered only under `Drawn.Rail`, open or folded.
+  - **Folded, the sidebar is a 48 px strip**: an accent mark per world, a disc with the initial
     per character (filled while connected, an unread dot), "+" at the foot; names in tooltips.
     The cell rail's folded strip marks each world with an accent `▌` row and gives characters two letters where two
     share an initial (`RailRenderer.CollapsedWorldMark`, `InitialLength`).
@@ -1444,6 +1446,11 @@ fallbacks) for inline images/maps.
     The columns are lost by the pane: `PaneOutputRects` subtracts the margin and NAWS follows. A native panel is
     published over its output rectangle *and* the gutter (`PublishPanels`), since those cells hold nothing and the panel
     pads itself. The terminal has no gutter. `NativeTabStripTests.TheStripTakesTwoRows…` pins both against the cells.
+  - **The selected tab is the mockup's card** (wave 33, `NativeTabStrip.Render`): the pane's plane, a hairline on three
+    sides, radius 8 at the top, open onto the pane; no accent bar. In the focused pane that hairline is `NativeTokens.Focus`
+    (the command line's focus edge), the only focus cue the strip adds: the pane's plane already says it, but two strips side
+    by side read alike. Underline, accent top edge and pill looks were tried in a real window and dropped
+    (`ux-wave33b/tabs/`).
   - **One model per strip, and the cells title from it**: `BuildPaneTabs`/`RetitlePane` build `StripModelFor` through
     `Drawing(TabStrip, paneId, …)` and `TabTitles.Strip` writes the titles; the band is recorded in
     `RefreshScrollSplitBar`. Published through `IPointerPresenter.PaneChrome` (default member) on `PostBufferPaint`

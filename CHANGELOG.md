@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window the sidebar's large fold chevron is gone: a small sidebar button left of the app's name in the
+  header folds and opens it, in the same place either way.
+- In the desktop window a pane's front tab is drawn as the mockup's card, without the accent bar along its top; the
+  focused pane's tab has a faint blue edge instead.
 - What the client itself says is no longer cut off on an 80- or 60-column terminal. The status row's notices (nothing
   connects at start, switching to an offline character, a pane with no connection, the map's edit keys) and the move
   and drag prompts use shorter words where the row is narrow, keeping every key they name. The reconnect countdown,
