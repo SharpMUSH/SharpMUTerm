@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Layout;
 using SharpMUTerm.Client.Commands;
 using SharpMUTerm.Tui;
@@ -70,6 +71,7 @@ internal static class NativeMenu
                 root.Background = root.ActualTransparencyLevel == WindowTransparencyLevel.Transparent ? null : tokens.Brush(tokens.Card);
             }
         };
+        KeepWhole(menu, target);
         Grid.SetIsSharedSizeScope(menu, true);
         foreach (var item in items)
         {
@@ -98,6 +100,33 @@ internal static class NativeMenu
         }
 
         return menu;
+    }
+
+    /// <summary>
+    /// Holds a menu opened at the pointer where it opened, as an anchored placement, so it can grow to fit what it holds.
+    /// Avalonia sizes a pointer-placed popup once, at its first arrange, and never again (<c>PopupRoot.ArrangeSetBounds</c>
+    /// drops every later size change for <see cref="PlacementMode.Pointer"/>). That first arrange is laid out before the
+    /// popup knows its screen's scaling and before the key column's shared size has settled, so on a scaled display the
+    /// menu came out narrower and shorter than its entries: the keys were cut at its right edge (<c>Ctr</c>, <c>Shi</c>)
+    /// and its last entry hidden under a scroll. Re-placing it at the same point re-sends the position with the size the
+    /// entries now want, and from then on it is not a pointer placement, so a later change of size is honoured too.
+    /// </summary>
+    internal static void KeepWhole(ContextMenu menu, Control target) => menu.Opened += (_, _) => PinWherePointed(menu, target);
+
+    private static void PinWherePointed(ContextMenu menu, Control target)
+    {
+        if (menu.Placement != PlacementMode.Pointer
+            || menu.Parent is not Popup popup
+            || TopLevel.GetTopLevel(menu) is not { } root
+            || root.PointToScreen(default) is var corner && target.PointToClient(corner) is var at && !double.IsFinite(at.X))
+        {
+            return;
+        }
+
+        popup.PlacementRect = new Rect(at, new Size(1, 1));
+        popup.PlacementAnchor = PopupAnchor.TopLeft;
+        popup.PlacementGravity = PopupGravity.BottomRight;
+        popup.Placement = PlacementMode.AnchorAndGravity;
     }
 
     /// <summary>An entry's label with its key after it, the keys lined up in a column of their own, both in the window's words.</summary>
