@@ -195,6 +195,50 @@ internal sealed partial class DesktopLayer : Canvas
         SyncTabDrag(cell);
         SyncSeams(cell);
         SyncToasts(frame, cell);
+        SyncCovered();
+    }
+
+    /// <summary>
+    /// How opaque the window's planes are drawn (F7's background transparency, <see cref="MainWindow"/>): the cells' and
+    /// every native view's that paints one — the header, the sidebar, the footer, the panels and the tab strips. 255 is
+    /// opaque, as the window always was.
+    /// </summary>
+    internal byte PlaneAlpha
+    {
+        get => _planeAlpha;
+        set
+        {
+            if (_planeAlpha == value)
+            {
+                return;
+            }
+
+            _planeAlpha = value;
+            _view.PlaneAlpha = value;
+            Sync();
+        }
+    }
+
+    private byte _planeAlpha = 255;
+
+    /// <summary><paramref name="plane"/> at <see cref="PlaneAlpha"/>; inks worked out from it read only its colour.</summary>
+    private Color Translucent(Color plane) => _planeAlpha == 255 ? plane : Color.FromArgb(_planeAlpha, plane.R, plane.G, plane.B);
+
+    /// <summary>
+    /// Tells the view where a native view over the cells paints its own plane (the panels, a strip panel's reserved
+    /// corner, the tab strips), in the view's coordinates, so the cells under them are left clear while the planes are
+    /// translucent rather than drawn under a second translucent plane.
+    /// </summary>
+    private void SyncCovered()
+    {
+        var origin = CellOrigin;
+        var views = _gauges.Values.Cast<Control>().Concat(_maps.Values).Concat(_whoHere.Values).Concat(_quickBars.Values)
+            .Concat(_collapsedBars.Values).Concat(_composers.Values).Concat(_strips.Values)
+            .Concat(_popOuts.Values.Where(b => b.Reserved));
+        _view.Covered = views
+            .Where(v => v.IsVisible && v.Width > 0 && v.Height > 0)
+            .Select(v => new Rect(GetLeft(v) - origin.X, GetTop(v) - origin.Y, v.Width, v.Height))
+            .ToList();
     }
 
     /// <summary>The native views' rules carried on to the pane dividers' hairlines beside them. Internal for tests.</summary>
@@ -251,6 +295,7 @@ internal sealed partial class DesktopLayer : Canvas
         Sync(_strips, strips.Select(s => (s.Model.PaneId, s.Row)), NewStrip, origin, cell);
         foreach (var strip in strips)
         {
+            _strips[strip.Model.PaneId].PlaneAlpha = _planeAlpha;
             _strips[strip.Model.PaneId].Show(strip, tokens, said!.Interactive, said.Drag);
         }
 
@@ -366,9 +411,9 @@ internal sealed partial class DesktopLayer : Canvas
         // opens with a hole where its header will be.
         var ink = chrome is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(chrome.Palette.Ink);
         Place(_header, _chrome.Header, new Rect(0, 0, width, NativeLayout.HeaderHeight), chrome,
-            chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.HeaderPlane), ink);
+            Translucent(chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.HeaderPlane)), ink);
         Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top - bottom)), chrome,
-            chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane), ink);
+            Translucent(chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane)), ink);
 
         // The footer across the whole width under the cells and the sidebar, and the field's strip: the header's plane, as
         // the mockups' footer and command-line strip are their header's.
@@ -376,7 +421,7 @@ internal sealed partial class DesktopLayer : Canvas
         {
             var plane = NativeChromeView.Parse(chrome.Palette.HeaderPlane);
             _view.FooterPlane = new SKColor(plane.R, plane.G, plane.B);
-            _footer.Plane = plane;
+            _footer.Plane = Translucent(plane);
         }
 
         if (_chrome.Status && width > 0 && height > bottom)
@@ -662,7 +707,7 @@ internal sealed partial class DesktopLayer : Canvas
                 SetLeft(button, right - reserve);
                 SetTop(button, origin.Y + (rect.Y * cell.Height));
                 var inside = rect.X >= 0 && rect.Y >= 0 && rect.X < frame.Width && rect.Y < frame.Height;
-                button.Plane = Colour(inside ? _view.Renderer.Background(frame[rect.X + rect.Width - 1, rect.Y]) : _view.Renderer.DefaultBackground);
+                button.Plane = Translucent(Colour(inside ? _view.Renderer.Background(frame[rect.X + rect.Width - 1, rect.Y]) : _view.Renderer.DefaultBackground));
             }
             else
             {
@@ -724,7 +769,7 @@ internal sealed partial class DesktopLayer : Canvas
             // character's tint, the focus lift — without the client having to say it twice.
             var inside = rect.X >= 0 && rect.Y >= 0 && rect.X < frame.Width && rect.Y < frame.Height;
             var plane = inside ? _view.Renderer.Background(frame[rect.X, rect.Y]) : _view.Renderer.DefaultBackground;
-            show(control, panel, Colour(plane));
+            show(control, panel, Translucent(Colour(plane)));
         }
     }
 

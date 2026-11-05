@@ -139,6 +139,48 @@ internal sealed class TerminalView : Control
     /// </summary>
     internal SKColor? DividerRule { get; set; }
 
+    /// <summary>
+    /// How opaque the planes are drawn: 255 unless F7's background transparency is on and the desktop gave the window a
+    /// translucent surface (<see cref="MainWindow"/>). Only backgrounds take it; text, rules and pictures stay opaque.
+    /// </summary>
+    internal byte PlaneAlpha
+    {
+        get => _planeAlpha;
+        set
+        {
+            if (_planeAlpha != value)
+            {
+                _planeAlpha = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private byte _planeAlpha = 255;
+
+    /// <summary>
+    /// Where native views lie over the cells and paint their own plane (panels, tab strips), in this view's logical units.
+    /// While the planes are translucent the cells there are left clear, or the view's plane over the cells' would be drawn
+    /// twice and read more opaque than the panes beside it. Ignored while the planes are opaque.
+    /// </summary>
+    internal IReadOnlyList<Rect> Covered
+    {
+        get => _coveredRects;
+        set
+        {
+            if (!_coveredRects.SequenceEqual(value))
+            {
+                _coveredRects = value.ToArray();
+                if (_planeAlpha != 255)
+                {
+                    InvalidateVisual();
+                }
+            }
+        }
+    }
+
+    private IReadOnlyList<Rect> _coveredRects = [];
+
     /// <summary>The vertical pixels the field takes beside the rows it frames: none unless the view draws it.</summary>
     private double FieldReserve => DrawsInputField ? NativeLayout.FieldReserve : 0;
 
@@ -200,7 +242,8 @@ internal sealed class TerminalView : Control
         _fieldBars = bars;
         var rule = DividerRule ?? Mix(_renderer.DefaultBackground, _renderer.DefaultForeground, 0.12f);
         context.Custom(new FrameDraw(
-            new Rect(Bounds.Size), frame, _driver.Pictures, _renderer, _scale, band, FooterPlane ?? Darker(_renderer.DefaultBackground), bars, rule));
+            new Rect(Bounds.Size), frame, _driver.Pictures, _renderer, _scale, band, FooterPlane ?? Darker(_renderer.DefaultBackground), bars, rule,
+            _planeAlpha, _planeAlpha == 255 ? [] : _coveredRects));
         if (band is not null)
         {
             DrawFieldText(context, frame, band, bars);
@@ -928,7 +971,7 @@ internal sealed class TerminalView : Control
     /// <summary>One frame, drawn straight onto the compositor's Skia canvas.</summary>
     private sealed class FrameDraw(
         Rect bounds, ScreenFrame frame, PictureStore pictures, CellRenderer renderer, double scale, InputBand? band, SKColor plane,
-        IReadOnlyList<FieldBar> bars, SKColor rule)
+        IReadOnlyList<FieldBar> bars, SKColor rule, byte alpha, IReadOnlyList<Rect> covered)
         : ICustomDrawOperation
     {
         public Rect Bounds { get; } = bounds;
@@ -937,7 +980,14 @@ internal sealed class TerminalView : Control
 
         public bool Equals(ICustomDrawOperation? other) =>
             other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane
-            && draw.Rule == Rule && draw.Bars.SequenceEqual(Bars);
+            && draw.Rule == Rule && draw.Bars.SequenceEqual(Bars) && draw.Alpha == Alpha && draw.Covered.SequenceEqual(Covered);
+
+        private byte Alpha => alpha;
+
+        private IReadOnlyList<Rect> Covered => covered;
+
+        /// <summary><paramref name="colour"/> as a plane is drawn: at the window's translucency.</summary>
+        private SKColor Translucent(SKColor colour) => alpha == 255 ? colour : colour.WithAlpha(alpha);
 
         private SKColor Rule => rule;
 
@@ -961,7 +1011,7 @@ internal sealed class TerminalView : Control
             canvas.Scale((float)(1 / scale));
             if (band is null)
             {
-                renderer.Render(canvas, frame, pictures);
+                renderer.Render(canvas, frame, pictures, alpha: alpha);
             }
             else
             {
@@ -969,7 +1019,29 @@ internal sealed class TerminalView : Control
             }
 
             DrawDividers(canvas);
+            ClearCovered(canvas);
             canvas.Restore();
+        }
+
+        /// <summary>
+        /// Leaves the cells under a native view that paints its own plane clear, while the planes are translucent, so that
+        /// plane is drawn once. Source mode: the pixels are replaced, not drawn over.
+        /// </summary>
+        private void ClearCovered(SKCanvas canvas)
+        {
+            if (alpha == 255 || covered.Count == 0)
+            {
+                return;
+            }
+
+            using var clear = new SKPaint { Color = SKColors.Transparent, BlendMode = SKBlendMode.Src, IsAntialias = false };
+            var s = (float)scale;
+            foreach (var rect in covered)
+            {
+                canvas.DrawRect(new SKRect(
+                    MathF.Round((float)rect.Left * s), MathF.Round((float)rect.Top * s),
+                    MathF.Round((float)rect.Right * s), MathF.Round((float)rect.Bottom * s)), clear);
+            }
         }
 
         /// <summary>
@@ -990,7 +1062,8 @@ internal sealed class TerminalView : Control
             var s = (float)scale;
             var hair = DeviceHairline; // one device pixel at every scale (NativeTokens.Hairline); 1.5 px blurred two rows at 150%
             var wide = Math.Max(2f, MathF.Round(3 * s));
-            using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+            // Source mode: a translucent plane replaces the cells' own under it rather than being drawn over them.
+            using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill, BlendMode = SKBlendMode.Src };
             var meets = new List<(SKRect Rect, SKColor Colour)>();
             foreach (var divider in dividers)
             {
@@ -1022,13 +1095,13 @@ internal sealed class TerminalView : Control
                     {
                         var h = y == y1 - 1 ? ch + tail : ch;
                         // A band's rows beside the divider are the field's strip, not the bar cells under it.
-                        paint.Color = band is { } beside && y >= beside.Top && beside.Spans(x0 - 1, frame.Width)
+                        paint.Color = Translucent(band is { } beside && y >= beside.Top && beside.Spans(x0 - 1, frame.Width)
                             ? plane
-                            : PlaneBeside(x0 - 1, y, -1, 0);
+                            : PlaneBeside(x0 - 1, y, -1, 0));
                         canvas.DrawRect(left, y * ch, at - left, h, paint);
-                        paint.Color = band is { } after && y >= after.Top && after.Spans(x1, frame.Width)
+                        paint.Color = Translucent(band is { } after && y >= after.Top && after.Spans(x1, frame.Width)
                             ? plane
-                            : PlaneBeside(x1, y, 1, 0);
+                            : PlaneBeside(x1, y, 1, 0));
                         canvas.DrawRect(at + w, y * ch, right - at - w, h, paint);
                     }
 
@@ -1061,9 +1134,9 @@ internal sealed class TerminalView : Control
                     for (var x = x0; x < x1; x++)
                     {
                         var cellWidth = x == x1 - 1 ? cw + past : cw;
-                        paint.Color = PlaneBeside(x, y0 - 1, 0, -1);
+                        paint.Color = Translucent(PlaneBeside(x, y0 - 1, 0, -1));
                         canvas.DrawRect(x * cw, top, cellWidth, at - top, paint);
-                        paint.Color = PlaneBeside(x, y1, 0, 1);
+                        paint.Color = Translucent(PlaneBeside(x, y1, 0, 1));
                         canvas.DrawRect(x * cw, at + w, cellWidth, bottom - at - w, paint);
                     }
 
@@ -1161,10 +1234,12 @@ internal sealed class TerminalView : Control
             canvas.Save();
             canvas.ClipRect(new SKRect(0, 0, width, height));
             canvas.ClipRect(new SKRect(left, top, right, height), SKClipOperation.Difference);
-            renderer.Render(canvas, frame, pictures);
+            renderer.Render(canvas, frame, pictures, alpha: alpha);
             canvas.Restore();
 
-            using var paint = new SKPaint { IsAntialias = true };
+            // Source mode for the planes, so a translucent one replaces what is under it (Translucent); the rules and the
+            // field's edge are opaque, where the two modes draw alike.
+            using var paint = new SKPaint { IsAntialias = true, BlendMode = SKBlendMode.Src };
             if (band.Columns is not null && frame.Height > 0)
             {
                 // Under the grid beside the band, the pixels the field's padding takes: the last row's own planes, carried down.
@@ -1173,7 +1248,7 @@ internal sealed class TerminalView : Control
                 {
                     if (!band.Spans(x, frame.Width))
                     {
-                        paint.Color = renderer.Background(frame[x, frame.Height - 1].Background);
+                        paint.Color = Translucent(renderer.Background(frame[x, frame.Height - 1].Background));
                         canvas.DrawRect(x * cw, gridBottom, x == frame.Width - 1 ? width - (x * cw) : cw, height - gridBottom, paint);
                     }
                 }
@@ -1181,7 +1256,7 @@ internal sealed class TerminalView : Control
 
             var field = FieldRect(band, cw, ch, frame.Width, s, width);
             var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.From + band.Pad), band.Top].Background);
-            paint.Color = plane;
+            paint.Color = Translucent(plane);
             canvas.DrawRect(left, top, right - left, height - top, paint);
             // The strip's top edge is the panes' own rule (the mockups' #2c3447), as a divider between two panes is.
             paint.Color = Rule;
@@ -1189,7 +1264,7 @@ internal sealed class TerminalView : Control
 
             var radius = (float)(NativeTokens.RadiusM * scale);
             var rounded = new SKRoundRect(field, radius);
-            paint.Color = fill;
+            paint.Color = Translucent(fill);
             canvas.DrawRoundRect(rounded, paint);
 
             canvas.Save();
@@ -1201,7 +1276,7 @@ internal sealed class TerminalView : Control
             if (bars.Count == 0)
             {
                 canvas.ClipRect(new SKRect(left, top, textRight, (band.Top + band.Rows) * ch));
-                renderer.Render(canvas, frame, pictures);
+                renderer.Render(canvas, frame, pictures, alpha: alpha);
             }
             else
             {
@@ -1213,14 +1288,14 @@ internal sealed class TerminalView : Control
                     var meet = (bar.TextStart * cw) - shift;
                     canvas.Save();
                     canvas.ClipRect(new SKRect(left, bar.Top * ch, meet, bar.End * ch));
-                    renderer.Render(canvas, frame, pictures);
+                    renderer.Render(canvas, frame, pictures, alpha: alpha);
                     canvas.Restore();
 
                     canvas.Save();
                     // Short of the right padding by the shift, so what comes in from the right is the field's fill.
                     canvas.ClipRect(new SKRect(meet, bar.Top * ch, textRight - shift, bar.End * ch));
                     canvas.Translate(-shift, 0);
-                    renderer.Render(canvas, frame, pictures);
+                    renderer.Render(canvas, frame, pictures, alpha: alpha);
                     canvas.Restore();
                 }
             }

@@ -83,8 +83,8 @@ public static partial class BuiltInSettings
             Number("transparency", "background transparency (%)", 0, TextSettings.MaxBackgroundTransparency,
                 ColourGroup,
                 c => c.Text.BackgroundTransparency, (c, v) => c.Text.BackgroundTransparency = v,
-                "how see-through the panes are on a terminal that can do it; 0 is off",
-                "opacity translucent kitty background"),
+                "how see-through the backgrounds are (window or terminal); 0 is off",
+                "opacity translucent transparent kitty window background"),
 
             Number("tab-width", "tab width (spaces)", 0, TextSettings.MaxTabWidth, TextGroup,
                 c => c.Text.TabWidth, (c, v) => c.Text.TabWidth = v,

@@ -677,6 +677,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 - On Linux, including Wayland through XWayland, the desktop window's content now fills the whole window. It used to
   stop a few pixels short of every edge, which showed as a gap when the window was snapped, tiled or maximised.
+- F7's background transparency now works in the desktop window. The window becomes see-through at the level set,
+  on every background it draws (panes, header, sidebar, panels, tab strips, the command line's field), while text,
+  rules and pictures stay solid. It needs a desktop that can draw translucent windows: always on Windows, and on Linux
+  only with a compositor running; without one the window stays opaque.
 - Pictures from SharpMUSH show again. A server offering both MXP and Pueblo was answered as a Pueblo client, so it
   sent its rooms without their pictures; MXP is now preferred.
 - In the terminal, walking the command palette with ↑↓ past its last visible row scrolls the list to keep the

@@ -11330,7 +11330,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// written on its default background and take whatever opacity it was configured with.
     /// </summary>
     private bool HandsPlanesToTheTerminal =>
-        BackgroundTransparency > 0 && !_capabilities.SupportsTransparentColours;
+        BackgroundTransparency > 0 && !_capabilities.SupportsTransparentColours && Host.Translucency is null;
 
     /// <summary>The planes kitty is currently drawing translucent, in slot order. Empty when none.</summary>
     internal IReadOnlyList<Rgb> TransparentColours => _transparentColours.Planes;
@@ -11339,6 +11339,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal string? LastColourControl { get; private set; }
 
     private (IReadOnlyList<Rgb> Planes, int Level) _transparentColours = (Array.Empty<Rgb>(), 0);
+
+    /// <summary>The level last said to <see cref="ClientHost.Translucency"/>; a host starts opaque.</summary>
+    private int _translucencyShown;
 
     /// <summary>
     /// The planes worth one of kitty's seven slots, most cells first: the pane bodies (focused pane
@@ -11386,6 +11389,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void SyncTransparentColours()
     {
+        // A host that draws the backgrounds itself (the window) is told the level and keeps every plane painted.
+        if (Host.Translucency is { } translucency)
+        {
+            var percent = BackgroundTransparency;
+            if (percent != _translucencyShown)
+            {
+                _translucencyShown = percent;
+                translucency.Show(percent);
+            }
+
+            return;
+        }
+
         var level = _capabilities.SupportsTransparentColours ? BackgroundTransparency : 0;
         IReadOnlyList<Rgb> planes = level > 0 ? TransparentColourCandidates() : Array.Empty<Rgb>();
         var (current, currentLevel) = _transparentColours;

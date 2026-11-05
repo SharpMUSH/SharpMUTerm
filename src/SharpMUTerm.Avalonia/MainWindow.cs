@@ -22,6 +22,8 @@ internal sealed class MainWindow : Window
     private readonly IClassicDesktopStyleApplicationLifetime _lifetime;
     private readonly AvaloniaConsoleDriver _driver;
     private readonly TerminalView _view;
+    private readonly DesktopLayer _layer;
+    private readonly IBrush _opaque;
     private readonly AppConfiguration _config;
     private readonly List<string> _notices = [];
     private bool _clientEnded;
@@ -86,7 +88,8 @@ internal sealed class MainWindow : Window
         // --title-bar brings it back.
         _decorations = DecorationsFor(options.TitleBar);
         WindowDecorations = _decorations;
-        Background = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
+        _opaque = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
+        Background = _opaque;
         // The view fills the window past the native chrome; the screen-reader regions sit under it, unseen.
         var root = new Panel();
         foreach (var region in _driver.Announcer.Regions())
@@ -99,6 +102,7 @@ internal sealed class MainWindow : Window
         // The window's native views: the header band and the connections sidebar beside the cells (the layer moves the
         // view out of their way, so no cell lies under either), the Layouts button, and native panels over their panes.
         var layer = new DesktopLayer(_view, options.Chrome);
+        _layer = layer;
         root.Children.Add(layer);
 
         // The edge Avalonia would have drawn round a BorderOnly window on X11, drawn here (DecorationsFor): a hairline,
@@ -113,6 +117,10 @@ internal sealed class MainWindow : Window
             };
             root.Children.Add(_edge);
         }
+
+        // F7's background transparency: the client says the level, the window asks the desktop for a translucent surface
+        // and draws its planes at that level once it has one (SyncTranslucency).
+        _driver.Translucency.Changed += _ => Dispatcher.UIThread.Post(ApplyTranslucency);
 
         // F1, over the cells and under the layer, so a toast is still seen over it. Closing it gives the keyboard to an
         // armed docked composer if there is one, else to the cells.
@@ -198,10 +206,38 @@ internal sealed class MainWindow : Window
     /// added, and the window "restores" to a size larger than the screen. So the last size the window had while
     /// it was not maximised is remembered here, and restored by hand.
     /// </summary>
+    /// <summary>
+    /// Asks the desktop for a translucent window while F7's background transparency is above zero, and for an opaque one
+    /// otherwise. What the desktop gives is <see cref="TopLevel.ActualTransparencyLevel"/>, which may arrive later and may
+    /// be none at all (an X server with no compositor), so the planes follow it rather than the request.
+    /// </summary>
+    private void ApplyTranslucency()
+    {
+        TransparencyLevelHint = _driver.Translucency.Percent > 0 ? [WindowTransparencyLevel.Transparent] : [];
+        SyncTranslucency();
+    }
+
+    /// <summary>The planes at the level the desktop can show: opaque, on the theme's own colour, until it can show any.</summary>
+    private void SyncTranslucency()
+    {
+        var alpha = WindowTranslucency.PlaneAlpha(_driver.Translucency.Percent, ActualTransparencyLevel);
+        Background = alpha == 255 ? _opaque : Brushes.Transparent;
+
+        // Subpixel text blends its fringes against what is under it, and under a translucent plane that is the desktop
+        // the window cannot see: greyscale while the planes are translucent, the default otherwise.
+        TextOptions.SetTextRenderingMode(this, alpha == 255 ? TextRenderingMode.Unspecified : TextRenderingMode.Antialias);
+
+        _layer.PlaneAlpha = alpha;
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == WindowStateProperty)
+        if (change.Property == ActualTransparencyLevelProperty && _layer is not null)
+        {
+            SyncTranslucency();
+        }
+        else if (change.Property == WindowStateProperty)
         {
             _stateChangedAt = Environment.TickCount64;
             var state = change.GetNewValue<WindowState>();

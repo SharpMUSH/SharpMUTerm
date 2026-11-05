@@ -107,5 +107,8 @@ internal static class WindowHost
 
         // F11 full screen, ⇧F11 windowed full screen, and how the window opens (the Window settings page).
         WindowModes = driver.WindowModes,
+
+        // F7's background transparency is drawn here: every plane at the level, over a translucent desktop window.
+        Translucency = driver.Translucency,
     };
 }

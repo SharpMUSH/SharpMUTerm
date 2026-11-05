@@ -743,6 +743,12 @@ internal sealed class MapCanvas : Control, IEdgeRules
         // The mockup's map: rooms a step off the pane's plane with a rule round them, exits as rules between them, the
         // character's room ringed in the accent. Every shade is a mix of the pane's own plane and ink, so it is the same
         // drawing on every theme; only the accent, the walk and the areas' marks are colours.
+        // A translucent plane is not painted twice under the heading (PanelText.Heading), so nothing panned up may show
+        // through it: the map is clipped below the heading instead.
+        var headingHeight = PanelText.HeadingHeight(CellHeight);
+        var underHeading = _plane.A == 255
+            ? null
+            : (IDisposable?)context.PushClip(new Rect(0, headingHeight, bounds.Width, Math.Max(0, bounds.Height - headingHeight)));
         var rule = RuleColour;
         var byId = _model.Rooms.ToDictionary(r => r.Id);
         var exitWidth = ExitWidth;
@@ -839,6 +845,8 @@ internal sealed class MapCanvas : Control, IEdgeRules
         {
             DrawName(context, hovered.Current ? $"{hovered.Name} — you are here" : hovered.Name, CentreOf(hovered), size, plate: true);
         }
+
+        underHeading?.Dispose();
 
         // What and where: the panel heading (Map, the area and level) with the area's colour as a mark before its name's
         // line, then a walk under way, under it. The character's room is named under its own box.

@@ -25,7 +25,8 @@ internal sealed record WindowOptions(
     int Rows,
     bool TitleBar = false,
     bool CellChrome = false,
-    float LineHeight = WindowOptions.DefaultLineHeight)
+    float LineHeight = WindowOptions.DefaultLineHeight,
+    int? Transparency = null)
 {
     /// <summary>
     /// The cell text size when <c>--font-size</c> names none: 10 pt, the 13 px game text of the window's mockups.
@@ -58,6 +59,7 @@ internal sealed record WindowOptions(
         var points = DefaultPoints;
         var lineHeight = DefaultLineHeight;
         var demo = false;
+        int? transparency = null;
         var titleBar = false;
         var cellChrome = false;
         var (columns, rows) = (120, 36);
@@ -88,6 +90,13 @@ internal sealed record WindowOptions(
                 case "--view": view = Next(); break;
                 case "--theme": theme = Next(); break;
                 case "--render-png": png = Next(); break;
+                case "--transparency":
+                    if (int.TryParse(Next(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var level))
+                    {
+                        transparency = Math.Clamp(level, 0, TextSettings.MaxBackgroundTransparency);
+                    }
+
+                    break;
                 case "--size":
                     if (Next()?.Split('x', 'X') is [var w, var h] && int.TryParse(w, out var cw) && int.TryParse(h, out var ch))
                     {
@@ -99,12 +108,17 @@ internal sealed record WindowOptions(
             }
         }
 
-        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome, lineHeight);
+        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome, lineHeight, transparency);
     }
 
-    /// <summary>Applies <c>--theme</c>, the way the snapshot does: name and inline theme both.</summary>
+    /// <summary>Applies <c>--theme</c>, the way the snapshot does: name and inline theme both; and <c>--transparency</c>.</summary>
     public void ApplyTheme(AppConfiguration config)
     {
+        if (Transparency is { } level)
+        {
+            config.Text.BackgroundTransparency = level;
+        }
+
         if (ThemeName is { } name)
         {
             config.ThemeName = name;
@@ -158,6 +172,7 @@ internal sealed record WindowOptions(
                 new("--demo-config", "Run the built-in demo worlds instead of your own; saves nothing."),
                 new("--view <name>", "With --demo-config: open on one of the snapshot views (e.g. mxp-image)."),
                 new("--theme <name>", "With --demo-config: Dark, Light or Solarized Dark."),
+                new("--transparency <0-100>", "With --demo-config: F7's background transparency at that level."),
                 new("--render-png <file>", "With --demo-config: draw one frame to a PNG with no window, and exit."),
             ]),
         ]);
