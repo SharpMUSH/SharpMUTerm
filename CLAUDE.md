@@ -1729,7 +1729,7 @@ fallbacks) for inline images/maps.
   card's heading has *Browse all worlds* (`WelcomeModel.BrowseAllButton`), the page's door to it. The page fits without a scroll:
   bottom margin `Space16`, and a compact tier (`WelcomeView.FitPage`: top 24, gaps 16/12, card padding 18) when the natural
   height would not fit (the default window). The added-world notice is one model (`WorldNotices.Added`): F5 once (no key chip,
-  the words name it), and `saved with encoding X` when one was saved.
+  the words name it), the encoding in brackets when one was saved, and no endpoint (the CONNECT rows say it; with one the row did not fit 60 columns).
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

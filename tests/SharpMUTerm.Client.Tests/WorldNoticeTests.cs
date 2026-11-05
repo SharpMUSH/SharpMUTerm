@@ -13,7 +13,7 @@ public class WorldNoticeTests
     {
         var text = WorldNotices.Added("Aetherfall", "aetherfall.example", 4201, "ISO-8859-1");
 
-        await Assert.That(text).IsEqualTo("added Aetherfall (aetherfall.example:4201), saved with encoding ISO-8859-1 — F5 edits it");
+        await Assert.That(text).IsEqualTo("added Aetherfall (ISO-8859-1) — F5 edits it");
         await Assert.That(text.Split("F5").Length - 1).IsEqualTo(1);
     }
 
@@ -25,6 +25,6 @@ public class WorldNoticeTests
     public async Task AWorldLeftToNegotiateItsEncodingSaysNoEncoding(string? encoding)
     {
         await Assert.That(WorldNotices.Added("mud.example.org", "mud.example.org", 4000, encoding))
-            .IsEqualTo("added mud.example.org (mud.example.org:4000) — F5 edits it");
+            .IsEqualTo("added mud.example.org — F5 edits it");
     }
 }

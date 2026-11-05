@@ -9,7 +9,8 @@ namespace SharpMUTerm.Client.Chrome;
 public static class WorldNotices
 {
     /// <summary>
-    /// A world added and dialled: its name and endpoint, the encoding it was saved with when that is not <c>auto</c> (a
+    /// A world added and dialled: its name (the endpoint is on the CONNECT rows just above, and a host name made the row
+    /// too long for 60 columns), the encoding it was saved with when that is not <c>auto</c> (a
     /// charset mu*index named), and F5 named once, as the way to change any of it. The notice carries no key chip, so
     /// the row and the toast both say F5 once.
     /// </summary>
@@ -20,8 +21,8 @@ public static class WorldNotices
         var saved = string.IsNullOrWhiteSpace(encoding)
             || encoding.Trim().Equals(TelnetSessionOptions.AutoEncodingName, StringComparison.OrdinalIgnoreCase)
                 ? string.Empty
-                : $", saved with encoding {encoding.Trim()}";
-        return $"added {name} ({host}:{port}){saved} — F5 edits it";
+                : $" ({encoding.Trim()})";
+        return $"added {name}{saved} — F5 edits it";
     }
 
     /// <summary>The added notice's action label: F5's worlds screen, which the row names by its key only when it fits.</summary>
