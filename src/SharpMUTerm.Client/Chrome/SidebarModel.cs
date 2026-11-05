@@ -137,12 +137,12 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
     }
 
     private static bool SameWorld(RailWorld a, RailWorld b) =>
-        a.Name == b.Name && a.Host == b.Host && a.Port == b.Port && a.Accent.Equals(b.Accent)
+        a.Name == b.Name && a.Host == b.Host && a.Port == b.Port && a.Accent.Equals(b.Accent) && Equals(a.Avatar, b.Avatar)
         && a.Characters.Count == b.Characters.Count
         && a.Characters.Zip(b.Characters).All(p => SameCharacter(p.First, p.Second));
 
     private static bool SameCharacter(RailCharacter a, RailCharacter b) =>
         a.Name == b.Name && a.SessionKey == b.SessionKey && a.Connected == b.Connected && a.Active == b.Active
-        && a.Unread == b.Unread && a.Chord == b.Chord && a.InGroup == b.InGroup
+        && a.Unread == b.Unread && a.Chord == b.Chord && a.InGroup == b.InGroup && Equals(a.Avatar, b.Avatar)
         && a.Windows.SequenceEqual(b.Windows); // RailWindow has no list member, so its record equality is by value
 }

@@ -264,6 +264,12 @@ public static partial class BuiltInSettings
     /// <summary>Sound and the starting layout.</summary>
     public const string WorldMediaGroup = "Sound & layout";
 
+    /// <summary>The world's picture.</summary>
+    public const string WorldPictureGroup = "Picture";
+
+    /// <summary>What an avatar field says it takes, on both screens.</summary>
+    public const string AvatarHelp = "a picture for the sidebar: a full path to an image file, or an https:// address";
+
     /// <summary>
     /// F5: one world's own fields, edited for the world a surface has chosen. The cell screen builds its world row from
     /// these (in its own ⇥ order, by id — see <c>WorldsScreenRenderer.WorldFieldOrder</c>), and its CHARACTERS and TRIGGER
@@ -374,8 +380,15 @@ public static partial class BuiltInSettings
                     (c, w) => WorldFieldValues.LayoutName(WorldFieldValues.Layouts(c), w.Layout) ?? WorldFieldValues.WorldLayoutDefault,
                     (c, w, v) => w.Layout = WorldFieldValues.LayoutId(WorldFieldValues.Layouts(c), v)),
             },
+
+            WorldText("avatar", "avatar", TextRule.Image, WorldPictureGroup,
+                (_, w) => w.Avatar, (_, w, v) => w.Avatar = v,
+                AvatarHelp + "; characters with none of their own use it", AvatarKeywords),
         ],
     };
+
+    /// <summary>What finds an avatar field in the settings search.</summary>
+    private const string AvatarKeywords = "picture image portrait icon photo avatar sidebar";
 
     /// <summary>F9's character groups.</summary>
     public const string CharacterGroup = "Character";
@@ -455,6 +468,9 @@ public static partial class BuiltInSettings
                     (c, ch) => WorldFieldValues.LayoutName(WorldFieldValues.Layouts(c), ch.Layout) ?? WorldFieldValues.CharacterLayoutDefault,
                     (c, ch, v) => ch.Layout = WorldFieldValues.LayoutId(WorldFieldValues.Layouts(c), v)),
             },
+            CharacterText("avatar", "avatar", TextRule.Image, LookGroup,
+                (_, c) => c.Avatar, (_, c, v) => c.Avatar = v,
+                AvatarHelp + "; blank uses the world's", AvatarKeywords),
         ],
     };
 

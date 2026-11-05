@@ -4,6 +4,7 @@ using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Client.Palette;
 using SharpMUTerm.Client.Surfaces;
+using SharpMUTerm.Core.Avatars;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
@@ -243,6 +244,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// that named them (<see cref="InsertImageRows"/>).
     /// </summary>
     private readonly InlineImageHost _inlineImages;
+
+    /// <summary>The characters' and worlds' pictures (<see cref="AvatarStore"/>), read only when a reader was supplied.</summary>
+    private readonly AvatarStore _avatars;
+
+    /// <summary>The avatars sent to a Kitty terminal for the cell rail.</summary>
+    private readonly AvatarKittyImages _avatarKitty = new();
 
     /// <summary>Pictures drawn again as Sixel over their half-blocks, where that is on; null elsewhere.</summary>
     private readonly SixelOverlay? _sixel;
@@ -742,7 +749,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         Func<SpellChecker?>? spelling = null,
         bool autoLayout = false,
         string? dictionaries = null,
-        Func<Uri, CancellationToken, Task<byte[]?>>? worldFetch = null)
+        Func<Uri, CancellationToken, Task<byte[]?>>? worldFetch = null,
+        Func<string, CancellationToken, Task<byte[]?>>? avatarFetch = null)
     {
         _spelling = spelling;
         _worldFetch = worldFetch;
@@ -766,6 +774,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _inlineImages = new InlineImageHost(
             (url, token) => (ImageFetch ?? _imageLoader.FetchBytesAsync)(url, token),
             OnImageUi);
+        _avatars = new AvatarStore(
+            action =>
+            {
+                OnUi(action);
+                return true;
+            },
+            AvatarsArrived) { Reader = avatarFetch };
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
         _media = media ?? new MediaCache();
@@ -2386,6 +2401,39 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // `tint-input-moved` is that frame after a real ⌃→, so the pair is the before and after of the
         // keystroke rather than two hand-posed states. It is the same construction `focus`/`focus-moved`
         // use, for the same reason: a colour that follows the focus is a claim about two frames.
+        // `avatars` puts pictures on the demo's sidebar: Aetherfall an emblem, Corvid a portrait of his own,
+        // Rookery none (so he wears the world's), and Grapevine nothing (so Thistle keeps the letter). The
+        // pictures are drawn in memory (DemoAvatars), so the frame reads no file and fetches nothing.
+        // `avatars-collapsed` is the folded strip. A terminal shows them only where Kitty placeholders work;
+        // the window draws them natively.
+        if (view is not null && view.StartsWith("avatars", StringComparison.OrdinalIgnoreCase))
+        {
+            AvatarFetch = DemoAvatars.ReadAsync;
+            foreach (var world in _config.Worlds)
+            {
+                if (string.Equals(world.Name, "Aetherfall", StringComparison.Ordinal))
+                {
+                    world.Avatar = DemoAvatars.For(world.Name);
+                }
+
+                foreach (var character in world.Characters)
+                {
+                    if (string.Equals(character.Name, "Corvid", StringComparison.Ordinal))
+                    {
+                        character.Avatar = DemoAvatars.For(character.Name);
+                    }
+                }
+            }
+
+            if (string.Equals(view, "avatars-collapsed", StringComparison.OrdinalIgnoreCase))
+            {
+                _railCollapsed = true;
+            }
+
+            RefreshHeader();
+            RefreshRail();
+        }
+
         if (view is not null && view.StartsWith("tint", StringComparison.OrdinalIgnoreCase))
         {
             // Guarded the way `characters` above is: --demo-config is the caller's choice, so a machine
@@ -3273,6 +3321,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// lines keep arriving, or count what was fetched. Null in every real run.
     /// </summary>
     internal Func<string, CancellationToken, Task<byte[]?>>? ImageFetch { get; set; }
+
+    /// <summary>
+    /// What reads the characters' and worlds' pictures (<see cref="AvatarSource.LoadAsync"/> in a live run), or null —
+    /// the default, in every test and snapshot — for none: then no file is read, nothing is fetched, and the sidebar
+    /// draws letters. Settable so a demo scene can hand in pictures of its own.
+    /// </summary>
+    internal Func<string, CancellationToken, Task<byte[]?>>? AvatarFetch
+    {
+        get => _avatars.Reader;
+        set => _avatars.Reader = value;
+    }
 
     /// <summary>Completes when every MXP picture asked for so far has been delivered or given up on.</summary>
     internal Task InlineImagesSettled => _headless ? SettleHeadlessImagesAsync() : _inlineImages.Pending;
@@ -8611,6 +8670,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 ? AccentPalette[index % AccentPalette.Length]
                 : world.Accent;
 
+            var worldAvatar = _avatars.Get(world.Avatar);
             var characters = new List<RailCharacter>();
             foreach (var character in world.Characters)
             {
@@ -8625,10 +8685,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Unread: windows.Sum(w => w.Unread),
                     windows,
                     Chord: characterChords.GetValueOrDefault(key),
-                    InGroup: _sendGroup.Contains(key)));
+                    InGroup: _sendGroup.Contains(key),
+                    Avatar: _avatars.Get(character.Avatar) ?? worldAvatar));
             }
 
-            worlds.Add(new RailWorld(world.Name, world.Host, world.Port, accent, characters));
+            worlds.Add(new RailWorld(world.Name, world.Host, world.Port, accent, characters, worldAvatar));
             index++;
         }
 
@@ -11634,7 +11695,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private List<string> RenderRailLines()
     {
         return RailRenderer.Render(
-            Drawing(SurfaceCatalog.Sidebar, string.Empty, BuildSidebar()), RailMaxWidth - RailMargin, _ink, RailCursorBand());
+            Drawing(SurfaceCatalog.Sidebar, string.Empty, BuildSidebar()), RailMaxWidth - RailMargin, _ink, RailCursorBand(), RailAvatarCells);
+    }
+
+    /// <summary>
+    /// The Kitty image a rail row's avatar is drawn under, or null to draw the dot and initial instead: only where the terminal draws Kitty
+    /// placeholders and they can be placed in the cells (the inline pictures' policy). Half-blocks are not used: a rail
+    /// row is one cell tall, and two cells of half-blocks are four pixels — a smudge, not a face.
+    /// </summary>
+    private int? RailAvatarCells(AvatarPicture picture, bool connected) =>
+        ResolveInlineImagePresentation() == InlineImagePresentation.Kitty
+            ? _avatarKitty.IdFor(picture, dim: !connected, _system.ConsoleDriver as IGraphicsProtocol)
+            : null;
+
+    /// <summary>A picture read after the frame that asked for it: the sidebar and the header are drawn again with it.</summary>
+    private void AvatarsArrived()
+    {
+        RefreshRail();
+        RefreshHeader();
     }
 
     /// <summary>
@@ -15316,6 +15394,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _webImageCts?.Cancel();
         _webImageCts?.Dispose();
         _inlineImages.Dispose();
+        _avatars.Dispose();
         _imageLoader.Dispose();
         _fetcher.Dispose();
         foreach (var scripts in _scripts.Values)

@@ -228,7 +228,8 @@ internal static class Program
             spelling: () => OpenDictionary(loadLogger),
             autoLayout: true,
             dictionaries: DictionariesFolder,
-            worldFetch: SharpMUTerm.Core.WorldIndex.WorldDirectory.DownloadAsync);
+            worldFetch: SharpMUTerm.Core.WorldIndex.WorldDirectory.DownloadAsync,
+            avatarFetch: SharpMUTerm.Core.Avatars.AvatarSource.LoadAsync);
         ready?.Invoke(liveApp);
 
         // A telnet:// link on the command line is followed once the loop runs, the way /connect host port would be;

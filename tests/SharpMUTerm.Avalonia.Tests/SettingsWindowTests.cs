@@ -489,6 +489,38 @@ public class SettingsWindowTests
         await Assert.That(harness.Commits).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// A world's picture is a text field with a named Choose button beside it; a relative path is refused and put back,
+    /// an https address is kept.
+    /// </summary>
+    [Test]
+    public async Task AWorldsPictureIsCheckedAndHasAChooseButton()
+    {
+        var harness = TwoWorlds();
+        var (refused, kept, choose) = await Run(harness, "worlds", window =>
+        {
+            var box = window.FieldControls["avatar"].GetVisualDescendants().OfType<TextBox>().First();
+            void Enter(string text)
+            {
+                box.Text = text;
+                box.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Enter });
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            Enter("pictures/me.png");
+            var refused = box.Text;
+            Enter("https://example.com/me.png");
+            var choose = window.GetVisualDescendants().OfType<Button>()
+                .Any(b => AutomationProperties.GetName(b) == "Choose a picture for avatar");
+            return (refused, box.Text, choose);
+        });
+
+        await Assert.That(refused ?? string.Empty).IsEqualTo(string.Empty);
+        await Assert.That(kept).IsEqualTo("https://example.com/me.png");
+        await Assert.That(harness.Config.Worlds[0].Avatar).IsEqualTo("https://example.com/me.png");
+        await Assert.That(choose).IsTrue();
+    }
+
     /// <summary>The window's worlds page has no door to the cell F5: everything F5 did is on the page.</summary>
     [Test]
     public async Task TheWorldsPageSendsNobodyToTheCellScreen()

@@ -366,6 +366,18 @@ internal abstract class NativeChromeView : Control
     }
 
     /// <summary>
+    /// The presence mark on a picture: a small dot on its lower right, in the world's colour and filled while connected,
+    /// a ring while not, cut out of <paramref name="behind"/> so it reads on any picture.
+    /// </summary>
+    protected static void Presence(DrawingContext context, Point centre, double radius, Color accent, bool connected, Color behind)
+    {
+        var at = centre + new Point(radius * 0.72, radius * 0.72);
+        var mark = Math.Max(2.5, radius * 0.3);
+        context.DrawEllipse(new SolidColorBrush(behind), null, at, mark + 1.5, mark + 1.5);
+        Dot(context, at, mark, accent, connected);
+    }
+
+    /// <summary>
     /// The sidebar toggle's glyph, centred in <paramref name="area"/>: a rounded window with a column down its left marked
     /// by three short lines, a desktop app's "show sidebar" icon. The column is shaded while the sidebar is open.
     /// </summary>
@@ -636,9 +648,24 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
             var fill = Hovered(_pill) ? Raised(0.16) : Raised(0.09);
             context.DrawRectangle(new SolidColorBrush(fill), null, _pill, _pill.Height / 2, _pill.Height / 2);
             var accent = Accent(world.Accent);
-            var dotCentre = new Point(_pill.X + 12 + 4.5, middle);
-            Dot(context, dotCentre, 4.5, character.Presence == CharacterPresence.Offline ? Dim : accent, character.Presence == CharacterPresence.Online);
-            var x = dotCentre.X + 4.5 + 8;
+            var online = character.Presence == CharacterPresence.Online;
+            double x;
+            if (overlay.Sidebar.Worlds.SelectMany(w => w.Characters).FirstOrDefault(c => c.Active)?.Avatar is { } avatar)
+            {
+                // The sidebar's picture for the character in front, in the dot's place: the same picture both show.
+                var avatarRadius = (_pill.Height / 2) - 4;
+                var avatarCentre = new Point(_pill.X + 4 + avatarRadius, middle);
+                AvatarBitmaps.Draw(context, avatar, avatarCentre, avatarRadius, dim: !online);
+                Presence(context, avatarCentre, avatarRadius, accent, online, fill);
+                x = avatarCentre.X + avatarRadius + 7;
+            }
+            else
+            {
+                var dotCentre = new Point(_pill.X + 12 + 4.5, middle);
+                Dot(context, dotCentre, 4.5, character.Presence == CharacterPresence.Offline ? Dim : accent, online);
+                x = dotCentre.X + 4.5 + 8;
+            }
+
             var room = _pill.Right - 12 - x;
             var nameWidth = Text(context, character.Name, x, middle, size, Ink, bold: true, maxWidth: room);
             x += nameWidth + 10;
@@ -770,6 +797,12 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
     private const double WindowIndent = CharacterIndent + NativeTokens.Space4;
 
     private const double TitleHeight = 36;
+
+    /// <summary>A picture's radius on an open row: 18 px across, in the dot's column and clear of the name.</summary>
+    private const double AvatarRadius = 9;
+
+    /// <summary>The colour under the row being drawn, which a picture's presence mark is cut out of.</summary>
+    private Color _rowBehind;
 
     /// <summary>Where the list starts: under <c>CONNECTIONS</c> while open; folded there is no title, only a small gap.</summary>
     private double ListTop => Folded ? NativeTokens.Space8 : TitleHeight;
@@ -1110,19 +1143,22 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
                 RailRowKind.Window => overlay.Sidebar.Plated(r.Window!),
                 _ => false,
             };
-            if (focused)
+            _rowBehind = focused ? Raised(0.14) : selected ? Plate(hovered) : hovered ? Raised(0.07) : Plane;
+            if (focused || selected || hovered)
             {
-                context.DrawRectangle(new SolidColorBrush(Raised(0.14)), null, r.Area, 6, 6);
-            }
-            else if (selected || hovered)
-            {
-                context.DrawRectangle(new SolidColorBrush(selected ? Plate(hovered) : Raised(0.07)), null, r.Area, 6, 6);
+                context.DrawRectangle(new SolidColorBrush(_rowBehind), null, r.Area, 6, 6);
             }
 
             var accent = Accent(r.World.Accent);
             var right = r.Area.Right - 10;
             switch (r.Kind)
             {
+                case RailRowKind.World when r.World.Avatar is { } avatar:
+                    // A world with a picture: the picture in its characters' column, and the name lined up with theirs.
+                    AvatarBitmaps.Draw(context, avatar, new Point(r.Area.X + CharacterIndent - NativeTokens.Space12, middle), AvatarRadius, dim: false);
+                    Text(context, r.World.Name, r.Area.X + CharacterIndent, middle, size, Ink, bold: true, maxWidth: right - r.Area.X - CharacterIndent);
+                    break;
+
                 case RailRowKind.World:
                     // The world's name alone, as the mockup's: its colour is on its characters' dots.
                     Text(context, r.World.Name, NativeTokens.PanelInset, middle, size, Ink, bold: true, maxWidth: right - NativeTokens.PanelInset);
@@ -1187,18 +1223,28 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
         }
 
         var colour = character.Connected ? accent : Dim;
-        if (character.Connected)
+        if (character.Avatar is { } avatar)
         {
-            context.DrawEllipse(new SolidColorBrush(colour), null, centre, radius, radius);
+            // The picture in the disc's place, ringed in the world's colour while connected and faded while not.
+            AvatarBitmaps.Draw(context, avatar, centre, radius, dim: !character.Connected,
+                new Pen(new SolidColorBrush(colour), character.Connected ? 2 : 1.4));
         }
         else
         {
-            context.DrawEllipse(null, new Pen(new SolidColorBrush(colour), 1.4), centre, radius, radius);
+            if (character.Connected)
+            {
+                context.DrawEllipse(new SolidColorBrush(colour), null, centre, radius, radius);
+            }
+            else
+            {
+                context.DrawEllipse(null, new Pen(new SolidColorBrush(colour), 1.4), centre, radius, radius);
+            }
+
+            var initial = character.Name.Length > 0 ? char.ToUpperInvariant(character.Name[0]).ToString() : "?";
+            var ink = character.Connected ? On(colour, Plane) : Dim;
+            Text(context, initial, centre.X - (Measure(initial, FontSize, bold: true) / 2), centre.Y, FontSize, ink, bold: true);
         }
 
-        var initial = character.Name.Length > 0 ? char.ToUpperInvariant(character.Name[0]).ToString() : "?";
-        var ink = character.Connected ? On(colour, Plane) : Dim;
-        Text(context, initial, centre.X - (Measure(initial, FontSize, bold: true) / 2), centre.Y, FontSize, ink, bold: true);
         if (character.Unread > 0)
         {
             var mark = Legible(Parse(overlay.Palette.Unread));
@@ -1209,9 +1255,20 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
     private void DrawCharacter(DrawingContext context, Row r, RailCharacter character, Color accent, double middle, double right, double size)
     {
         var centre = new Point(r.Area.X + CharacterIndent - NativeTokens.Space12, middle);
-        // The world's colour, filled while connected and a ring while not (the mockup's 8 px dot): with no mark on the
-        // world's row, the dots are where its colour is read.
-        Dot(context, centre, 4, accent, character.Connected, diamond: character.InGroup);
+        if (character.Avatar is { } avatar && !character.InGroup)
+        {
+            // The character's picture (else its world's) in the dot's column, with the dot on its corner: the world's
+            // colour and the presence stay readable, and the name does not move.
+            AvatarBitmaps.Draw(context, avatar, centre, AvatarRadius, dim: !character.Connected);
+            Presence(context, centre, AvatarRadius, accent, character.Connected, _rowBehind);
+        }
+        else
+        {
+            // The world's colour, filled while connected and a ring while not (the mockup's 8 px dot): with no mark on the
+            // world's row, the dots are where its colour is read. A member of the send group keeps its diamond.
+            Dot(context, centre, 4, accent, character.Connected, diamond: character.InGroup);
+        }
+
 
         // Right to left: the unread badge or the offline word, then the cycle chord.
         if (character.Unread > 0)

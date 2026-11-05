@@ -1458,6 +1458,17 @@ fallbacks) for inline images/maps.
   - **Not done**: no animation when the sidebar folds; the command line keeps its armed band while the sidebar holds
     the keys; the terminal has no row menu (no pointer menus there), its entries are ⌃P's.
 
+- **Characters and worlds can carry a picture** (`CharacterDefinition.Avatar`, `WorldDefinition.Avatar`; Core `Avatars/`:
+  `AvatarSource`, `AvatarPicture`; `TextRule.Image`; Tui `AvatarStore`, `AvatarKittyImages`, `DemoAvatars`; Avalonia
+  `AvatarBitmaps`; the `avatars`/`avatars-collapsed` views). A source is an absolute path or `~/…` to a picture file, or
+  `https://` (no user info, bounded length, no control characters), read capped at 4 MiB with a 15 s timeout. The reader is
+  `avatarFetch:` (the `save:` family: null by default, so tests and snapshots read nothing; `Program` passes
+  `AvatarSource.LoadAsync`). Each source is read once a run, cut to a centred square, scaled to 64² and kept as one
+  `AvatarPicture` instance, so a model carrying it compares equal frame to frame; a failure is remembered. `BuildSidebar`
+  resolves character, then world, then none (`RailCharacter.Avatar`). **The cells spend no cell on it**: a picture
+  replaces the dot and its space (two Kitty placeholder columns, a greyed copy when offline) and only where
+  `CanPlaceKitty`; else, and in the send group, the dot stays. The window draws it round, with a presence mark, in the open
+  and folded sidebar and the header pill; F5's field has a Choose… button (the platform picker).
 - **The window draws each pane's tab strip and the scrolled-back band natively, over rows the cells keep**
   (`HostChrome.Tabs`, `HostChrome.Native` = all three, the window's default; Client `TabStripModel`/`TabChipModel`,
   `ScrollBandModel`; Tui `Pointer/SharpMUTermApp.PaneChrome.cs`, `PaneChromeOverlay`; Avalonia `PaneChromeViews.cs`:

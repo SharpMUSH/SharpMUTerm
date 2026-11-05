@@ -1,6 +1,7 @@
 using System.Text;
 using SharpConsoleUI.Parsing;
 using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Core.Avatars;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Workspaces;
 using static SharpMUTerm.Tui.MarkupText;
@@ -29,11 +30,16 @@ internal static partial class RailRenderer
     /// The band the keyboard cursor's row is drawn on while the sidebar holds the keys (<see cref="SidebarModel.Cursor"/>,
     /// ⌥C): a background, or <c>#ink on #band</c> for the row's unstyled text. The row is padded to the widest row so the band runs the width of the rail and costs no column.
     /// </param>
-    public static List<string> Render(SidebarModel model, int maxWidth, ChromeInk? ink, string? cursorBand = null)
+    /// <param name="avatars">
+    /// The Kitty image a row's picture is shown under (<see cref="AvatarKittyImages"/>), asked with whether the character
+    /// is connected; null, or a null answer, draws the dot and initial instead.
+    /// </param>
+    public static List<string> Render(
+        SidebarModel model, int maxWidth, ChromeInk? ink, string? cursorBand = null, Func<AvatarPicture, bool, int?>? avatars = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         var rows = model.Rows();
-        var lines = model.Collapsed ? RenderCollapsed(rows, ink) : Render(rows, maxWidth, ink);
+        var lines = model.Collapsed ? RenderCollapsed(rows, ink, avatars) : Render(rows, maxWidth, ink, avatars);
         if (model.Cursor is not { } cursor || cursorBand is null)
         {
             return lines;
@@ -62,7 +68,10 @@ internal static partial class RailRenderer
     private static string OnBand(string line, string band)
     {
         var plane = Hex(band);
-        return Tag().Replace(line, tag => Ink().Replace(tag.Value, ink => Contrast.Legible(Hex(ink.Value), plane).ToHex()));
+        // A tag in front of a picture's placeholder cells is no colour: its foreground is the image's id.
+        return Tag().Replace(line, tag => line.AsSpan(tag.Index + tag.Length).StartsWith(Placeholder, StringComparison.Ordinal)
+            ? tag.Value
+            : Ink().Replace(tag.Value, ink => Contrast.Legible(Hex(ink.Value), plane).ToHex()));
 
         static Rgb Hex(string hex) => new(
             Convert.ToByte(hex.Substring(1, 2), 16), Convert.ToByte(hex.Substring(3, 2), 16), Convert.ToByte(hex.Substring(5, 2), 16));
@@ -84,7 +93,7 @@ internal static partial class RailRenderer
     /// rail is drawn on. Null means the unmeasured base hues, which is what a themeless unit test wants.
     /// </param>
     public static List<string> Render(
-        IReadOnlyList<RailRow> rows, int maxWidth = int.MaxValue, ChromeInk? ink = null)
+        IReadOnlyList<RailRow> rows, int maxWidth = int.MaxValue, ChromeInk? ink = null, Func<AvatarPicture, bool, int?>? avatars = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
         var voice = ink ?? ChromeInk.Default;
@@ -99,13 +108,14 @@ internal static partial class RailRenderer
         var lines = new List<string>(rows.Count);
         foreach (var row in rows)
         {
-            lines.Add(Fit(row, maxWidth, r => RenderRow(r, reserveWindow, reserveCharacter, voice)));
+            lines.Add(Fit(row, maxWidth, r => RenderRow(r, reserveWindow, reserveCharacter, voice, avatars)));
         }
 
         return lines;
     }
 
-    private static string RenderRow(RailRow row, bool reserveWindow, bool reserveCharacter, ChromeInk ink) => row.Kind switch
+    private static string RenderRow(
+        RailRow row, bool reserveWindow, bool reserveCharacter, ChromeInk ink, Func<AvatarPicture, bool, int?>? avatars) => row.Kind switch
     {
         // The terminal mockup's rail: a plain heading and bold world names, both lined up with the character rows'
         // ▸ column. The world's accent is carried by its characters' dots; the ▚ spine and the ┌ ⏻ heading were
@@ -114,7 +124,7 @@ internal static partial class RailRenderer
         RailRowKind.World => Link(row, $"  [bold]{Escape(row.Label)}[/]"),
         RailRowKind.Host => $"{Indent(row)}[dim]{Escape(row.Label)}[/]",
         RailRowKind.Empty => $"{Indent(row)}{Link(row, $"[dim]{Escape(row.Label)}[/]")}",
-        RailRowKind.Character => Character(row, reserveCharacter, ink),
+        RailRowKind.Character => Character(row, reserveCharacter, ink, avatars),
         RailRowKind.Window => Window(row, reserveWindow, ink),
         _ => Escape(row.Label),
     };
@@ -155,7 +165,7 @@ internal static partial class RailRenderer
     /// characters does.
     /// </para>
     /// </summary>
-    public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows, ChromeInk? ink = null)
+    public static List<string> RenderCollapsed(IReadOnlyList<RailRow> rows, ChromeInk? ink = null, Func<AvatarPicture, bool, int?>? avatars = null)
     {
         var voice = ink ?? ChromeInk.Default;
         var lines = new List<string>();
@@ -168,12 +178,19 @@ internal static partial class RailRenderer
                     lines.Add(Link(row, $"[{Accent(row, voice)}]{CollapsedWorldMark}[/]"));
                     break;
                 case RailRowKind.Character:
+                    // Reserved here too: the strip is clamped to 4–10 cells, so it moves less, but a
+                    // strip that widens when a background world speaks is the same reflow.
+                    if (Picture(row, avatars) is { } cells)
+                    {
+                        // The picture takes the dot's and the initial's cells, two of them, padded to the strip's
+                        // letters: the same width, so a picture arriving moves no column.
+                        lines.Add(Link(row, $"{cells}{new string(' ', letters - 1)}{UnreadField(row.Unread, voice)}"));
+                        break;
+                    }
+
                     var initial = Escape(Initials(row.Label, letters));
                     var dot = row.Connected ? "●" : "○";
                     var name = row.Active ? $"[bold]{initial}[/]" : initial;
-
-                    // Reserved here too: the strip is clamped to 4–10 cells, so it moves less, but a
-                    // strip that widens when a background world speaks is the same reflow.
                     lines.Add(Link(row, $"[{Accent(row, voice)}]{dot}[/]{name}{UnreadField(row.Unread, voice)}"));
                     break;
             }
@@ -213,16 +230,35 @@ internal static partial class RailRenderer
     /// rather than trailing so no blank status field separates it from the name it names.
     /// </para>
     /// </summary>
-    private static string Character(RailRow row, bool reserve, ChromeInk ink)
+    private static string Character(RailRow row, bool reserve, ChromeInk ink, Func<AvatarPicture, bool, int?>? avatars)
     {
         var marker = row.Active ? "[bold]▸[/]" : " ";
+        var name = row.Active ? $"[bold]{Escape(row.Label)}[/]" : Escape(row.Label);
+
+        // The picture takes the dot and the space after it, two cells, so a picture arriving moves no column. It is
+        // greyed while the character is offline (a placeholder cell cannot be dimmed, so the grey copy is its own
+        // image). A member of the send group keeps its diamond: that is the one thing the row would otherwise lose.
+        if (!row.InGroup && Picture(row, avatars) is { } cells)
+        {
+            return $"{Indent(row)}{ChordField(row.Chord, reserve)}"
+                + Link(row, $"{marker} {cells}{name}{UnreadField(row.Unread, ink)}");
+        }
+
         // A member of the send group wears a diamond in the dot's cell: the same width, so joining the group
         // moves no column and re-announces no pane size.
         var dot = row.InGroup ? (row.Connected ? "◆" : "◇") : row.Connected ? "●" : "○";
-        var name = row.Active ? $"[bold]{Escape(row.Label)}[/]" : Escape(row.Label);
         return $"{Indent(row)}{ChordField(row.Chord, reserve)}"
             + Link(row, $"{marker} [{Accent(row, ink)}]{dot}[/] {name}{UnreadField(row.Unread, ink)}");
     }
+
+    /// <summary>The first cell of a Kitty placeholder, which <see cref="OnBand"/> must not recolour.</summary>
+    private static readonly string Placeholder = char.ConvertFromUtf32(SharpMUTerm.Graphics.KittyGraphicsProtocol.PlaceholderCodePoint);
+
+    /// <summary>A row's picture as two placeholder cells, or null when it has none or it cannot be shown.</summary>
+    private static string? Picture(RailRow row, Func<AvatarPicture, bool, int?>? avatars) =>
+        row.Avatar is { } picture && avatars?.Invoke(picture, row.Connected) is { } id
+            ? InlineImageRows.Kitty(id, AvatarKittyImages.Columns, 1)[0]
+            : null;
 
     /// <summary>
     /// Cells kept for a row's chord whether or not it has one: the sigil, one digit or letter, and a

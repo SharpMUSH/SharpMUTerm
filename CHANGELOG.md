@@ -34,6 +34,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Characters and worlds can have a picture. Set **avatar** on the Worlds & Characters page (the desktop window has a
+  Choose… button for a file) or on F5 in the terminal: a full path to an image file, `~/…`, or an `https://` address.
+  The sidebar shows it in place of the dot or letter, open and folded, and the window's header pill shows the
+  character in front. A character with no picture of its own uses its world's; with neither, the letter stays. In the
+  terminal, pictures appear only in kitty, Ghostty and Rio (Kitty placeholders); elsewhere the letters stay.
+
 - The desktop window has full screen (F11) and windowed full screen (Shift+F11), a borderless window the size of the
   screen. Press the same key again to go back. Both are also in the command palette and the output's right-click menu,
   and a new Window settings page chooses how the window opens next time.

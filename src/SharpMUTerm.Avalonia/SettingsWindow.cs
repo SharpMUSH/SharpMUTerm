@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -1120,11 +1121,63 @@ internal sealed partial class SettingsWindow : Window
                         box.Text = _form.Text(text);
                     }
                 });
+                if (text.Rule == TextRule.Image)
+                {
+                    // A picture is usually a file on this machine: the window's own picker fills the box, and the box's
+                    // own rule (TextRules.Check) decides, exactly as if the path had been typed.
+                    var choose = new Button { Content = "Choose…", VerticalAlignment = VerticalAlignment.Center };
+                    AutomationProperties.SetName(choose, $"Choose a picture for {field.Label}");
+                    ToolTip.SetTip(choose, "Pick an image file");
+                    choose.Click += async (_, _) =>
+                    {
+                        if (await PickPictureAsync() is { } path)
+                        {
+                            box.Text = path;
+                            Commit();
+                        }
+                    };
+                    box.Width -= 96;
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
+                    row.Children.Add(box);
+                    row.Children.Add(choose);
+                    return row;
+                }
+
                 return box;
             }
 
             default:
                 return new TextBlock { Text = "set on its own screen", Foreground = DimInk };
+        }
+    }
+
+    /// <summary>An image file picked with the window's own open dialog, or null.</summary>
+    private async Task<string?> PickPictureAsync()
+    {
+        if (StorageProvider is not { CanOpen: true } storage)
+        {
+            return null;
+        }
+
+        try
+        {
+            var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Choose a picture",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("Pictures")
+                    {
+                        Patterns = [.. SharpMUTerm.Core.Avatars.AvatarSource.Extensions.Select(e => "*" + e)],
+                    },
+                ],
+            });
+            return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
         }
     }
 

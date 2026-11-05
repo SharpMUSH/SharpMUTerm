@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Avatars;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Text;
 
@@ -47,10 +48,12 @@ public sealed record RailRow(
     int Unread = 0,
     string? Chord = null,
     string? Target = null,
-    bool InGroup = false);
+    bool InGroup = false,
+    AvatarPicture? Avatar = null);
 
-/// <summary>A world as projected into the rail: its identity, accent, and characters.</summary>
-public sealed record RailWorld(string Name, string Host, int Port, TerminalColor Accent, IReadOnlyList<RailCharacter> Characters);
+/// <summary>A world as projected into the rail: its identity, accent, characters, and its picture once one is loaded.</summary>
+public sealed record RailWorld(
+    string Name, string Host, int Port, TerminalColor Accent, IReadOnlyList<RailCharacter> Characters, AvatarPicture? Avatar = null);
 
 /// <summary>
 /// A character in the rail: connection/active state, unread total, its windows, and the chord that
@@ -69,6 +72,10 @@ public sealed record RailWorld(string Name, string Host, int Port, TerminalColor
 /// names the same window carry the same digit. Null when the workspace holds a single window (one
 /// window is no information) or the character has none open.
 /// </para>
+/// <para>
+/// <paramref name="Avatar"/> is the picture to draw for the character: its own once loaded, else its world's, else
+/// null and the views draw the dot or the initial they always drew.
+/// </para>
 /// </summary>
 public sealed record RailCharacter(
     string Name,
@@ -78,7 +85,8 @@ public sealed record RailCharacter(
     int Unread,
     IReadOnlyList<RailWindow> Windows,
     string? Chord = null,
-    bool InGroup = false);
+    bool InGroup = false,
+    AvatarPicture? Avatar = null);
 
 /// <summary>
 /// A window in the rail: its title, the workspace id a click activates, the <c>⌥N</c> chord that goes
@@ -141,7 +149,7 @@ public static class RailModel
 
         foreach (var world in worlds)
         {
-            rows.Add(new RailRow(RailRowKind.World, 0, world.Name, Accent: world.Accent, Target: TargetFor(world)));
+            rows.Add(new RailRow(RailRowKind.World, 0, world.Name, Accent: world.Accent, Target: TargetFor(world), Avatar: world.Avatar));
 
             if (world.Characters.Count == 0)
             {
@@ -162,7 +170,8 @@ public static class RailModel
                     Unread: character.Unread,
                     Chord: character.Chord,
                     Target: CommandIds.Character(character.SessionKey),
-                    InGroup: character.InGroup));
+                    InGroup: character.InGroup,
+                    Avatar: character.Avatar));
 
                 if (!character.Active)
                 {
