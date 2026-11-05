@@ -1469,6 +1469,14 @@ fallbacks) for inline images/maps.
   replaces the dot and its space (two Kitty placeholder columns, a greyed copy when offline) and only where
   `CanPlaceKitty`; else, and in the send group, the dot stays. The window draws it round, with a presence mark, in the open
   and folded sidebar and the header pill; F5's field has a Choose… button (the platform picker).
+  **A picture is kept as a copy** (Core `AvatarLibrary`, `AvatarCrop`, `AvatarCropStage`, `PngWriter`; Tui
+  `SharpMUTermApp.Avatars.cs`; `avatarCopies:`, the `save:` family, so tests and snapshots copy nothing): on each
+  `SaveConfiguration` and at start, every source that is not already a copy is read, cut to its crop (centred unless the
+  window's crop step chose one, `SettingsForm.PictureCropped` → `ChooseAvatarCrop`), written as a 128² PNG to
+  `avatars/avatar-<guid>.png` beside `config.json` (`.new` then rename), and every setting naming it is re-pointed through
+  `PersistConfiguration`. A failed read keeps the source. Copies nothing names are deleted at start only (`Prune`), so an
+  undo in the run never points at a deleted file. The crop step is the settings window's `AvatarCropView` over the page
+  (drag, wheel, slider, arrows, ± zoom 1–4×; Enter uses, Esc cancels and does not close the window).
 - **The window draws each pane's tab strip and the scrolled-back band natively, over rows the cells keep**
   (`HostChrome.Tabs`, `HostChrome.Native` = all three, the window's default; Client `TabStripModel`/`TabChipModel`,
   `ScrollBandModel`; Tui `Pointer/SharpMUTermApp.PaneChrome.cs`, `PaneChromeOverlay`; Avalonia `PaneChromeViews.cs`:

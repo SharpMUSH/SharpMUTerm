@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -71,6 +72,7 @@ internal sealed partial class SettingsWindow : Window
     private readonly List<(StatusMeter Meter, TextBlock Now)> _meterNow = [];
     private readonly List<ThemeCardView> _themeCards = [];
     private readonly Border _frame;
+    private readonly Panel _layers;
     private readonly TextBlock _title;
     private readonly Border _bar;
     private readonly Border _searchFrame;
@@ -271,7 +273,8 @@ internal sealed partial class SettingsWindow : Window
 
         // The frame is ours, so the resize border is too: a band along each edge, as the borderless main window has.
         CanResize = true;
-        Content = WindowChrome.WithResizeBands(this, _frame);
+        _layers = WindowChrome.WithResizeBands(this, _frame);
+        Content = _layers;
 
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());
         Opened += (_, _) =>
@@ -1130,11 +1133,28 @@ internal sealed partial class SettingsWindow : Window
                     ToolTip.SetTip(choose, "Pick an image file");
                     choose.Click += async (_, _) =>
                     {
-                        if (await PickPictureAsync() is { } path)
+                        if (await PickPictureAsync() is not { } path)
                         {
-                            box.Text = path;
-                            Commit();
+                            return;
                         }
+
+                        // A picture this window can draw goes through the crop step first; one it cannot (too large,
+                        // not a picture) is set as typed, and the box's rule says why.
+                        if (OpenPicture(path) is { } bitmap)
+                        {
+                            using (bitmap)
+                            {
+                                if (await CropAsync(bitmap) is not { } crop)
+                                {
+                                    return;
+                                }
+
+                                _form.PictureCropped?.Invoke(path, crop);
+                            }
+                        }
+
+                        box.Text = path;
+                        Commit();
                     };
                     box.Width -= 96;
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
@@ -1148,6 +1168,58 @@ internal sealed partial class SettingsWindow : Window
 
             default:
                 return new TextBlock { Text = "set on its own screen", Foreground = DimInk };
+        }
+    }
+
+    /// <summary>The crop step open over the page, if one is.</summary>
+    internal AvatarCropView? CropStep { get; private set; }
+
+    /// <summary>
+    /// Shows the crop step for <paramref name="picture"/> over the page and waits for it: the square chosen, or null when
+    /// it was cancelled. The keyboard goes to the picture while it is up and back to what had it after.
+    /// </summary>
+    internal async Task<SharpMUTerm.Core.Avatars.AvatarCrop?> CropAsync(Bitmap picture)
+    {
+        CropStep?.Finish(null);
+        var had = FocusManager?.GetFocusedElement() as Control;
+        var step = new AvatarCropView(picture, _tokens);
+        CropStep = step;
+        _layers.Children.Add(step);
+        step.Stage.Focus();
+        try
+        {
+            return await step.Result;
+        }
+        finally
+        {
+            _layers.Children.Remove(step);
+            if (ReferenceEquals(CropStep, step))
+            {
+                CropStep = null;
+            }
+
+            had?.Focus();
+        }
+    }
+
+    /// <summary>The file at <paramref name="path"/> as a bitmap, or null when it is refused, too large or not a picture.</summary>
+    private static Bitmap? OpenPicture(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (SharpMUTerm.Core.Avatars.AvatarSource.Problem(path) is not null || !info.Exists || info.Length > SharpMUTerm.Core.Avatars.AvatarSource.MaxBytes)
+            {
+                return null;
+            }
+
+            using var stream = info.OpenRead();
+            return new Bitmap(stream);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The decoder's own failure for bytes that are not a picture is not one documented type.
+            return null;
         }
     }
 

@@ -521,6 +521,48 @@ public class SettingsWindowTests
         await Assert.That(choose).IsTrue();
     }
 
+    /// <summary>
+    /// The crop step: it opens over the page with the keyboard on the picture, Esc cancels it without closing the window,
+    /// and Use hands back the square under the circle after a drag and a zoom.
+    /// </summary>
+    [Test]
+    public async Task TheCropStepHandsBackTheSquareUnderTheCircle()
+    {
+        var harness = TwoWorlds();
+        var (cancelled, stillOpen, focused, crop, expected, gone) = await Run(harness, "worlds", window =>
+        {
+            using var picture = new global::Avalonia.Media.Imaging.WriteableBitmap(
+                new global::Avalonia.PixelSize(400, 200), new global::Avalonia.Vector(96, 96),
+                global::Avalonia.Platform.PixelFormat.Rgba8888, global::Avalonia.Platform.AlphaFormat.Premul);
+
+            var first = window.CropAsync(picture);
+            Dispatcher.UIThread.RunJobs();
+            var focused = window.CropStep!.Stage.IsFocused;
+            window.CropStep.Stage.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Escape, Source = window.CropStep.Stage });
+            Dispatcher.UIThread.RunJobs();
+            var cancelled = first.IsCompleted && first.Result is null;
+            var stillOpen = window.IsVisible;
+
+            var second = window.CropAsync(picture);
+            Dispatcher.UIThread.RunJobs();
+            var stage = window.CropStep!.Stage;
+            stage.ZoomBy(1);
+            stage.Pan(-40, 0);
+            var expected = stage.Model.Crop;
+            window.CropStep.UseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return (cancelled, stillOpen, focused, second.Result, expected, window.CropStep is null);
+        });
+
+        await Assert.That(focused).IsTrue();
+        await Assert.That(cancelled).IsTrue();
+        await Assert.That(stillOpen).IsTrue();
+        await Assert.That(crop).IsEqualTo(expected);
+        await Assert.That(crop!.Value.Side).IsEqualTo(0.5);
+        await Assert.That(crop.Value.CentreX).IsGreaterThan(0.5);
+        await Assert.That(gone).IsTrue();
+    }
+
     /// <summary>The window's worlds page has no door to the cell F5: everything F5 did is on the page.</summary>
     [Test]
     public async Task TheWorldsPageSendsNobodyToTheCellScreen()

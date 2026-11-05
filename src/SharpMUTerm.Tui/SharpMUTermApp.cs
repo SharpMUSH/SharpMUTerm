@@ -251,6 +251,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The avatars sent to a Kitty terminal for the cell rail.</summary>
     private readonly AvatarKittyImages _avatarKitty = new();
 
+    /// <summary>The client's own copies of the pictures (<c>avatars/</c>); one with no folder keeps none.</summary>
+    private readonly AvatarLibrary _avatarCopies;
+
     /// <summary>Pictures drawn again as Sixel over their half-blocks, where that is on; null elsewhere.</summary>
     private readonly SixelOverlay? _sixel;
 
@@ -750,7 +753,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         bool autoLayout = false,
         string? dictionaries = null,
         Func<Uri, CancellationToken, Task<byte[]?>>? worldFetch = null,
-        Func<string, CancellationToken, Task<byte[]?>>? avatarFetch = null)
+        Func<string, CancellationToken, Task<byte[]?>>? avatarFetch = null,
+        AvatarLibrary? avatarCopies = null)
     {
         _spelling = spelling;
         _worldFetch = worldFetch;
@@ -781,6 +785,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             },
             AvatarsArrived) { Reader = avatarFetch };
+        _avatarCopies = avatarCopies ?? new AvatarLibrary();
         _mssp = mssp ?? new MsspCache();
         _maps = maps ?? new MapStore();
         _media = media ?? new MediaCache();
@@ -3140,6 +3145,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _startupRan = true;
+        _avatarCopies.Prune(AvatarSources());
+        _ = KeepAvatarCopies();
 
         if (startup.Count == 0)
         {
@@ -7984,6 +7991,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // And F5's layout rows: a live layout whose owner now resolves to another one is re-applied. No timers.
         ReapplyLayoutAfterSettings();
+
+        // A picture just set on F5 or the Worlds & Characters page is copied in, and the setting re-pointed once it is.
+        _ = KeepAvatarCopies();
 
         PersistConfiguration();
     }

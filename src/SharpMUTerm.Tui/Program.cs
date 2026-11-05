@@ -229,7 +229,8 @@ internal static class Program
             autoLayout: true,
             dictionaries: DictionariesFolder,
             worldFetch: SharpMUTerm.Core.WorldIndex.WorldDirectory.DownloadAsync,
-            avatarFetch: SharpMUTerm.Core.Avatars.AvatarSource.LoadAsync);
+            avatarFetch: SharpMUTerm.Core.Avatars.AvatarSource.LoadAsync,
+            avatarCopies: new SharpMUTerm.Core.Avatars.AvatarLibrary(SharpMUTerm.Core.Avatars.AvatarLibrary.PathFor(ConfigurationStore.DefaultPath)));
         ready?.Invoke(liveApp);
 
         // A telnet:// link on the command line is followed once the loop runs, the way /connect host port would be;

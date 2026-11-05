@@ -39,6 +39,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   The sidebar shows it in place of the dot or letter, open and folded, and the window's header pill shows the
   character in front. A character with no picture of its own uses its world's; with neither, the letter stays. In the
   terminal, pictures appear only in kitty, Ghostty and Rio (Kitty placeholders); elsewhere the letters stay.
+  The client keeps its own copy of each picture, cut to a square, in an `avatars` folder beside `config.json`, so the
+  original file can be moved or deleted and a web picture is downloaded once. In the window, Choose… opens a crop step:
+  drag the picture inside the circle and zoom to pick the part shown. A path typed in the terminal keeps the centre.
 
 - The desktop window has full screen (F11) and windowed full screen (Shift+F11), a borderless window the size of the
   screen. Press the same key again to go back. Both are also in the command palette and the output's right-click menu,

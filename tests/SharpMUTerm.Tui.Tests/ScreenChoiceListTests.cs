@@ -278,12 +278,12 @@ public class ScreenChoiceListTests
     }
 
     /// <summary>
-    /// F5's log format is the app's one genuinely closed list, and it sits second-from-last in its
-    /// block — so it is also the case that has to open upward. Both halves are asserted here because
-    /// they are the two things the F2 case cannot show.
+    /// F5's log format is the app's one genuinely closed list, near the foot of its block — so it is
+    /// drawn over the rows round it, on whichever side has room, and never over the field itself.
+    /// Both halves are asserted here because they are the two things the F2 case cannot show.
     /// </summary>
     [Test]
-    public async Task F5DrawsTheLogFormatAsAClosedListAboveTheField()
+    public async Task F5DrawsTheLogFormatAsAClosedListOverTheForm()
     {
         var worlds = new List<WorldDefinition>
         {
@@ -315,7 +315,9 @@ public class ScreenChoiceListTests
             l => l.Contains($"[{ScreenPalette.Ink} on {ScreenPalette.Accent}]", StringComparison.Ordinal));
         await Assert.That(form.Count).IsEqualTo(plain.Count);
         await Assert.That(field).IsGreaterThan(0);
-        await Assert.That(form.FindLastIndex(IsMenu)).IsLessThan(field);
+        var above = form.FindLastIndex(IsMenu) < field;
+        var below = form.FindIndex(IsMenu) > field;
+        await Assert.That(above || below).IsTrue();
     }
 
     /// <summary>

@@ -100,3 +100,84 @@ public class AvatarTests
         await Assert.That(app.BuildSidebar()).IsEqualTo(sidebar);
     }
 }
+
+/// <summary>
+/// The copy kept of a picture: written beside the configuration, the setting pointed at it, and the original no longer
+/// needed — the reported "what happens when the file is deleted".
+/// </summary>
+public class AvatarCopyTests
+{
+    private static readonly TerminalCapabilities Headless =
+        new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
+
+    [Test]
+    public async Task ThePngWrittenDecodesBackToItsPixels()
+    {
+        var rgba = new byte[] { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 9, 9, 9, 255 };
+        var back = AvatarStore.Cropped(PngWriter.Rgba(2, 2, rgba), AvatarCrop.Centre, 2);
+        await Assert.That(back).IsNotNull();
+        await Assert.That(back!.SequenceEqual(rgba)).IsTrue();
+    }
+
+    [Test]
+    public async Task APictureIsCopiedCroppedAndTheSettingPointedAtTheCopy()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "avatar-copy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            // Left half red, right half blue: the crop the window chose (the right-hand square) is what is kept.
+            var original = Path.Combine(folder, "wide.png");
+            var pixels = new byte[4 * 2 * 4];
+            for (var y = 0; y < 2; y++)
+            {
+                for (var x = 0; x < 4; x++)
+                {
+                    var at = ((y * 4) + x) * 4;
+                    pixels[at + (x < 2 ? 0 : 2)] = 255;
+                    pixels[at + 3] = 255;
+                }
+            }
+
+            await File.WriteAllBytesAsync(original, PngWriter.Rgba(4, 2, pixels));
+            var config = DemoScene.Build();
+            var world = config.Worlds.Single(w => w.Name == "Aetherfall");
+            var corvid = world.Characters.Single(c => c.Name == "Corvid");
+            corvid.Avatar = original;
+            world.Avatar = original;
+
+            var library = new AvatarLibrary(Path.Combine(folder, "avatars"));
+            await using var app = new SharpMUTermApp(
+                config,
+                ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 32), null, null, null),
+                avatarFetch: AvatarSource.LoadAsync,
+                avatarCopies: library);
+            app.ChooseAvatarCrop(original, new AvatarCrop(0.75, 0.5, 1));
+            await app.KeepAvatarCopies();
+
+            await Assert.That(library.IsCopy(corvid.Avatar)).IsTrue();
+            await Assert.That(world.Avatar).IsEqualTo(corvid.Avatar);
+
+            File.Delete(original);
+            var kept = AvatarStore.Cropped(await File.ReadAllBytesAsync(corvid.Avatar!), AvatarCrop.Centre, 1)!;
+            await Assert.That(kept[0]).IsEqualTo((byte)0);
+            await Assert.That(kept[2]).IsEqualTo((byte)255);
+            await Assert.That(AvatarSource.Problem(corvid.Avatar)).IsNull();
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task WithNoFolderTheSourceIsKeptAsTyped()
+    {
+        var config = DemoScene.Build();
+        var corvid = config.Worlds.SelectMany(w => w.Characters).First(c => c.Name == "Corvid");
+        corvid.Avatar = DemoAvatars.For("corvid");
+        await using var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(120, 32)) { AvatarFetch = DemoAvatars.ReadAsync };
+        await app.KeepAvatarCopies();
+        await Assert.That(corvid.Avatar).IsEqualTo(DemoAvatars.For("corvid"));
+    }
+}

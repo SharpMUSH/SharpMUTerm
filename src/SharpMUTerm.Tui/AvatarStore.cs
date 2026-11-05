@@ -113,7 +113,14 @@ internal sealed class AvatarStore : IDisposable
     }
 
     /// <summary>Decodes, crops to the centred square and scales; null when the bytes are not a picture.</summary>
-    internal static AvatarPicture? Picture(string source, byte[] bytes)
+    internal static AvatarPicture? Picture(string source, byte[] bytes) =>
+        Cropped(bytes, AvatarCrop.Centre, Size) is { } rgba ? new AvatarPicture(source, Size, rgba) : null;
+
+    /// <summary>
+    /// The square <paramref name="crop"/> names, scaled to <paramref name="size"/>², as opaque RGBA; null when the bytes
+    /// are not a picture. The one cut both the sidebar's pictures and the kept copies are made with.
+    /// </summary>
+    internal static byte[]? Cropped(byte[] bytes, AvatarCrop crop, int size)
     {
         PixelBuffer decoded;
         try
@@ -130,10 +137,8 @@ internal sealed class AvatarStore : IDisposable
             return null;
         }
 
-        var side = Math.Min(decoded.Width, decoded.Height);
+        var (left, top, side) = crop.In(decoded.Width, decoded.Height);
         var square = new PixelBuffer(side, side);
-        var left = (decoded.Width - side) / 2;
-        var top = (decoded.Height - side) / 2;
         for (var y = 0; y < side; y++)
         {
             for (var x = 0; x < side; x++)
@@ -142,12 +147,12 @@ internal sealed class AvatarStore : IDisposable
             }
         }
 
-        var scaled = PixelScale.Stretch(square, Size, Size);
-        var rgba = new byte[Size * Size * 4];
+        var scaled = PixelScale.Stretch(square, size, size);
+        var rgba = new byte[size * size * 4];
         var i = 0;
-        for (var y = 0; y < Size; y++)
+        for (var y = 0; y < size; y++)
         {
-            for (var x = 0; x < Size; x++)
+            for (var x = 0; x < size; x++)
             {
                 var p = scaled.GetPixel(x, y);
                 rgba[i++] = p.R;
@@ -157,7 +162,7 @@ internal sealed class AvatarStore : IDisposable
             }
         }
 
-        return new AvatarPicture(source, Size, rgba);
+        return rgba;
     }
 
     public void Dispose()

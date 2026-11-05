@@ -163,6 +163,9 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private readonly Dictionary<string, object> _listSelections = new(StringComparer.Ordinal);
 
+    /// <summary>The form the window was last handed, told when a picture's copy re-points a setting it shows.</summary>
+    private SettingsForm? _lastSettingsForm;
+
     internal SettingsForm NativeSettingsForm(string initial, object? item = null)
     {
         var data = SettingsGameData();
@@ -223,6 +226,7 @@ internal sealed partial class SharpMUTermApp
         {
             Packages = PackageManager,
             Selections = _listSelections,
+            PictureCropped = (source, crop) => OnUiThread(() => ChooseAvatarCrop(source, crop)),
             Theme = () => _theme.Clone(),
             BesideOutput = item is not null,
             WorldNotes = WorldNotesNow(),
@@ -262,6 +266,7 @@ internal sealed partial class SharpMUTermApp
                 form?.NotifyChanged();
             }),
         };
+        _lastSettingsForm = form;
         return form;
     }
 
