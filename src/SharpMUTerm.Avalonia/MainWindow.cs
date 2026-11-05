@@ -121,10 +121,30 @@ internal sealed class MainWindow : Window
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
 
-        // --size names the grid, so the window is that grid plus the native chrome around it.
+        // --size names the grid, so the window is that grid plus the native chrome around it — measured at the scale
+        // of the screen it opens on, and shrunk by whole cells to that screen's working area (WindowFit): at 150% on a
+        // 1080p screen the default grid is taller than the screen, and its command line opened below the edge.
         var insets = NativeLayout.Insets(options.Chrome, collapsed: false);
+        var screen = Screens is { } screens ? screens.Primary ?? screens.All.FirstOrDefault() : null;
+        if (screen is not null)
+        {
+            _view.PrepareScale(screen.Scaling);
+        }
+
         var cells = _view.SizeFor(options.Columns, options.Rows);
-        var size = new Size(cells.Width + insets.Left, cells.Height + insets.Top);
+        var size = new Size(cells.Width + insets.Left + insets.Right, cells.Height + insets.Top + insets.Bottom);
+        if (screen is not null)
+        {
+            var chrome = new Size(insets.Left + insets.Right, insets.Top + insets.Bottom + _view.SizeFor(0, 0).Height);
+            var fitted = WindowFit.InCells(size, WindowFit.Room(screen.WorkingArea, screen.Scaling), _view.CellExtent, chrome);
+            if (fitted != size)
+            {
+                size = fitted;
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Position = WindowFit.Centre(size, screen.WorkingArea, screen.Scaling);
+            }
+        }
+
         Width = size.Width;
         Height = size.Height;
         _normalSize = size;

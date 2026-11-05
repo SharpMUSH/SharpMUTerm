@@ -637,6 +637,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The desktop window fits the screen at 125% and 150% display scaling. It used to open taller than a 1080p screen, with
+  the command line and status row below its edge; it now opens a few rows shorter, centred. The settings window fits
+  too, and the welcome page no longer scrolls at 150%.
+- At 125% and 150% the desktop window's pane dividers, tab strip rule and command-line field edge are one sharp pixel
+  rather than a blurred two, and the tab strips and the command-line field reach the window's right edge instead of
+  stopping a few pixels short.
+- The docked composer's footer says `28 words` where `2 paragraphs · 28 words` does not fit, rather than cutting the
+  count off, and no scroll bar shows over its edge.
 - In the desktop window's settings, Ctrl+Z in a text box you have just confirmed with Enter now undoes that setting
   instead of only changing the box back on screen; the box keeps Ctrl+Z for typing you have not confirmed yet.
 - The desktop window's trigger, alias, key and timer pages no longer show a second scroll bar beside the editor.

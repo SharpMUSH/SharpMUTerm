@@ -136,6 +136,13 @@ internal sealed class SettingsPresenter : INativeSettings
             var wasDocked = _docked;
             _docked = false;
             var size = RememberedSize ?? new Size(SettingsWindow.DefaultWidth, SettingsWindow.DefaultHeight);
+
+            // Inside the screen the main window is on (WindowFit): the default 1120 × 760 is 1,140 device rows at 150%.
+            if ((owner.Screens.ScreenFromWindow(owner) ?? owner.Screens.Primary ?? owner.Screens.All.FirstOrDefault()) is { } screen)
+            {
+                size = WindowFit.Within(size, WindowFit.Room(screen.WorkingArea, screen.Scaling), new Size(window.MinWidth, window.MinHeight));
+            }
+
             window.Width = Math.Max(window.MinWidth, size.Width);
             window.Height = Math.Max(window.MinHeight, size.Height);
             if (wasDocked)

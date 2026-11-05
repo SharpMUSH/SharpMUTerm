@@ -254,10 +254,20 @@ internal sealed partial class DesktopLayer : Canvas
 
             SetLeft(control, origin.X + (row.X * cell.Width));
             SetTop(control, origin.Y + (row.Y * cell.Height));
-            control.Width = row.Width * cell.Width;
+            control.Width = (row.Width * cell.Width) + RightOfGrid(row.X, row.Width, _view.Driver.Frame.Width, cell);
             control.Height = row.Height * cell.Height;
         }
     }
+
+    /// <summary>
+    /// The view's pixels right of the grid's last column (less than a cell; the cells' last run is carried over them), for
+    /// a native view whose cells end at that column: it runs on to the view's edge with them, or a tab strip's rule and a
+    /// panel's plane stop short of the window's edge by a strip that shows at any size not a whole number of cells.
+    /// </summary>
+    private double RightOfGrid(int x, int width, int columns, Size cell) =>
+        columns > 0 && width > 0 && x + width >= columns
+            ? Math.Clamp(_view.Bounds.Width - (columns * cell.Width), 0, cell.Width)
+            : 0;
 
     /// <summary>The toasts over the cell area, their stack sitting on the row the client said the pane area ends at.</summary>
     private void SyncToasts(ScreenFrame frame, Size cell)
@@ -494,6 +504,12 @@ internal sealed partial class DesktopLayer : Canvas
             cell,
             (composer, panel, plane) => composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text));
         SyncPopOuts(frame, cell);
+
+        // A pane a native view covers draws no overlay scrollbar of its own: its cells are only the view's backing (the
+        // docked composer's cell editor scrolls to its caret), and on a short pane — the default window at 150% — the
+        // bar showed over the divider row beside the view.
+        _view.CoveredWindows = _gauges.Keys.Concat(_maps.Keys).Concat(_whoHere.Keys).Concat(_quickBars.Keys)
+            .Concat(_collapsedBars.Keys).Concat(_composers.Keys).ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -606,7 +622,7 @@ internal sealed partial class DesktopLayer : Canvas
 
             var size = PopOutSize(cell);
             var rect = panel.Rect;
-            var right = origin.X + ((rect.X + rect.Width) * cell.Width);
+            var right = origin.X + ((rect.X + rect.Width) * cell.Width) + RightOfGrid(rect.X, rect.Width, frame.Width, cell);
             button.PanelBounds = new Rect(origin.X + (rect.X * cell.Width), origin.Y + (rect.Y * cell.Height), rect.Width * cell.Width, rect.Height * cell.Height);
             button.Reserved = ReservesPopOut(panel);
             if (button.Reserved)
@@ -672,7 +688,8 @@ internal sealed partial class DesktopLayer : Canvas
             SetTop(control, origin.Y + (rect.Y * cell.Height));
             // A one-row strip that can pop out leaves its right end to the button (ReservesPopOut), so the button never
             // lies over its text (`88 / 100`, `F4 edits keys`); the button paints the pane's plane over the cells there.
-            control.Width = Math.Max(0, (rect.Width * cell.Width) - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
+            control.Width = Math.Max(0, (rect.Width * cell.Width) + RightOfGrid(rect.X, rect.Width, frame.Width, cell)
+                - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
             control.Height = (rect.Height * cell.Height) + BelowGrid(frame, rect, cell);
 
             // The pane's own plane, read off the frame, so the native view sits on whatever the pane wears — its

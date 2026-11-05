@@ -162,9 +162,27 @@ public sealed record ComposerModel(
             return string.Empty;
         }
 
-        static string Count(int n, string one) => n == 1 ? $"1 {one}" : $"{n:N0} {one}s";
         return $"{Count(paragraphs, "paragraph")} · {Count(words, "word")}";
     }
+
+    /// <summary>
+    /// <see cref="Summary"/> and its shorter form, the words alone (<c>31 words</c>), longest first, for a footer that is
+    /// narrower than the full count: the window draws the longest that fits rather than cutting the count off. Empty for
+    /// an empty post.
+    /// </summary>
+    public static IReadOnlyList<string> SummaryForms(string body)
+    {
+        var summary = Summary(body);
+        if (summary.Length == 0)
+        {
+            return [];
+        }
+
+        var words = body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        return [summary, Count(words, "word")];
+    }
+
+    private static string Count(int n, string one) => n == 1 ? $"1 {one}" : $"{n:N0} {one}s";
 
     /// <summary>
     /// What the docked header names the post by — <c>+pose</c>, <c>say</c> — so a reader can see what it will be sent as
