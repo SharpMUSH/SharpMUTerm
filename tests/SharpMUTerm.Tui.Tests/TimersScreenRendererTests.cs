@@ -61,8 +61,15 @@ public class TimersScreenRendererTests
     public async Task Render_FlattensAcrossSetsAndShowsOwningSet()
     {
         var lines = TimersScreenRenderer.Render(Scene(), 0);
-        await Assert.That(lines.Any(l => l.Contains("heartbeat") && l.Contains("▪ Comms"))).IsTrue();
-        await Assert.That(lines.Any(l => l.Contains("restock") && l.Contains("▪ Trade"))).IsTrue();
+        await Assert.That(HeadingAbove(lines, l => l.Contains("[bold]heartbeat[/]"))).Contains("Comms");
+        await Assert.That(HeadingAbove(lines, l => l.Contains("[bold]restock[/]"))).Contains("Trade");
+    }
+
+    /// <summary>The set heading a row sits under: the nearest heading band above it.</summary>
+    private static string HeadingAbove(List<string> lines, Func<string, bool> row)
+    {
+        var index = lines.FindIndex(l => row(l));
+        return lines.Take(index).Last(l => l.Contains(" ▪[/] [bold", StringComparison.Ordinal));
     }
 
     [Test]

@@ -482,14 +482,25 @@ internal static class KeypadScreenRenderer
             lines.Add("  [dim]no hotkeys[/]");
         }
 
+        // Each set is a heading over its bindings, drawn where the owner changes: the bindings are listed set by set,
+        // so that is once per set. The heading is markup and not a cursor stop, and the row keeps its own set well,
+        // because F4 has no editor pane and the well is where a binding's set is changed.
+        TriggerSet? heading = null;
         for (var i = 0; i < macros.Count; i++)
         {
+            var owner = sets is null ? null : ScreenLists.OwnerOf(sets, s => s.Macros, macros[i]);
+            if (owner is not null && !ReferenceEquals(owner, heading))
+            {
+                heading = owner;
+                lines.Add(ScreenChrome.SetHeading(owner.Name, owner.Macros.Count, "binding", "bindings", width));
+            }
+
             lines.Add(ScreenChrome.Cursor(
                 Hotkey(
                     keys,
                     macros[i],
                     macros,
-                    sets is null ? null : ScreenLists.OwnerOf(sets, s => s.Macros, macros[i])?.Name,
+                    owner?.Name,
                     cursor.EditOn(0, i, NameField),
                     cursor.EditOn(0, i, CommandField),
                     cursor.EditOn(0, i, KeyField),
@@ -506,7 +517,7 @@ internal static class KeypadScreenRenderer
         {
             if (set.Macros.Count == 0)
             {
-                lines.Add(ScreenChrome.EmptySet(set.Name, "bindings"));
+                lines.Add(ScreenChrome.SetHeading(set.Name, 0, "binding", "bindings", width));
             }
         }
 

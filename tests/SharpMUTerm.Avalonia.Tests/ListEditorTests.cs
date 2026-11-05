@@ -154,6 +154,23 @@ public class ListEditorTests
         await Assert.That(harness.Commits).IsEqualTo(1);
     }
 
+    /// <summary>
+    /// Each set is a heading over its items that says how many it holds, in the words the cell screens' set band
+    /// says (<see cref="SetHeading.Count"/>), an empty set included; nothing is listed under an empty set besides.
+    /// </summary>
+    [Test]
+    public async Task EachSetIsAHeadingThatCountsItsItemsInTheCellsWords()
+    {
+        var harness = new Harness();
+        harness.Config.TriggerSets.Add(new TriggerSet { Name = "Combat" });
+        var headings = await Run(harness, "triggers", window => window.ListEditor!.SetHeadings.ToArray());
+
+        await Assert.That(headings).IsEquivalentTo(
+            new[] { "public, 2 triggers", "Combat, no triggers", "combat · Pack, 1 trigger" },
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(SetHeading.Count(2, "trigger", "triggers")).IsEqualTo("2 triggers");
+    }
+
     [Test]
     public async Task TheLiveTestListsTheMatchingLinesWithTheMatchMarked()
     {

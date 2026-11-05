@@ -59,8 +59,10 @@ public class TriggersScreenRendererTests
         var rowIndex = lines.FindIndex(l => l.Contains("Tell") && l.Contains(@"^(\w+) tells you"));
         await Assert.That(lines[rowIndex]).Contains("→ Chat");
 
-        var sub = lines[rowIndex + 1];
-        await Assert.That(sub).Contains("Comms");
+        // The set is the heading the rule sits under, not a repeat on the rule's own rows.
+        var heading = lines.Take(rowIndex).Last(l => l.Contains(" ▪[/] [bold", StringComparison.Ordinal));
+        await Assert.That(heading).Contains("Comms");
+        await Assert.That(lines[rowIndex + 1]).DoesNotContain("Comms");
     }
 
     [Test]
@@ -70,7 +72,6 @@ public class TriggersScreenRendererTests
 
         var tellRowIndex = lines.FindIndex(l => l.Contains("Tell") && l.Contains(@"^(\w+) tells you"));
         var tellSub = lines[tellRowIndex + 1];
-        await Assert.That(tellSub).Contains("Comms");
         await Assert.That(tellSub).Contains('H'); // highlight foreground set
         await Assert.That(tellSub).Contains(Glyphs.Capture); // spawn target set
 

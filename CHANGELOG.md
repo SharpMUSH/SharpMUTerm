@@ -478,6 +478,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Trigger sets stand out on the Triggers, Aliases, Keypad and Timers screens. Each set is a heading over its rules,
+  with its name in bold and how many rules it holds, in the terminal and the desktop window alike; an empty set says
+  "no triggers" on its heading. A trigger's second row no longer repeats its set's name.
+
 - In the desktop window text is drawn with light hinting, as the design mockups are: labels and headings no longer look a
   size heavier than intended, and a panel's heading sits in the middle of its band. Map exits are crisp 2-pixel lines, and
   the docked composer's Literal / As typed chip is a quiet outline with a slightly taller Command box.

@@ -41,6 +41,7 @@ internal sealed class ListEditorView : Grid
     private readonly Dictionary<string, Control> _controls = new(StringComparer.Ordinal);
     private readonly List<(object Item, ListBoxItem Row, CheckBox Enabled)> _rows = [];
     private readonly List<Button> _copyButtons = [];
+    private readonly List<string> _headings = [];
     private readonly StackPanel _preview = new() { Spacing = NativeTokens.Space4 };
     private object? _shownItem;
     private bool _syncing;
@@ -136,6 +137,9 @@ internal sealed class ListEditorView : Grid
 
     /// <summary>The copy-to-edit button of each package set listed, for a test.</summary>
     public IReadOnlyList<Button> CopyButtons => _copyButtons;
+
+    /// <summary>Each set heading as it reads (<c>Comms, 3 triggers</c>), in list order, for a test.</summary>
+    public IReadOnlyList<string> SetHeadings => _headings;
 
     /// <summary>The ids of the item fields drawn — the list's enable check box first — for a test.</summary>
     public IReadOnlyList<string> ShownFields { get; private set; } = [];
@@ -260,21 +264,13 @@ internal sealed class ListEditorView : Grid
     {
         _rows.Clear();
         _copyButtons.Clear();
+        _headings.Clear();
         var items = new List<ListBoxItem>();
         var groups = _form.Groups(_section);
         foreach (var group in groups)
         {
+            // An empty set's heading already says "no triggers", so nothing is listed under it.
             items.Add(GroupHeader(group));
-            if (group.Items.Count == 0)
-            {
-                items.Add(new ListBoxItem
-                {
-                    Content = new TextBlock { Text = $"no {_collection.Plural}", Foreground = DimInk, FontStyle = FontStyle.Italic },
-                    IsEnabled = false,
-                    Padding = new Thickness(NativeTokens.Space32, NativeTokens.Space2),
-                });
-            }
-
             foreach (var item in group.Items)
             {
                 items.Add(ItemRow(group, item));
@@ -297,12 +293,19 @@ internal sealed class ListEditorView : Grid
         UpdateTools();
     }
 
+    /// <summary>
+    /// A set's heading over its items: a band on the page's ground across the list, the set's name at the list's
+    /// item size in the body ink, and how many items it holds at the right (<see cref="SettingsCollection.CountOf"/>,
+    /// the words the cell heading says). A package's set says so under its name and carries <c>Copy to edit</c>.
+    /// It was an 11 px all-caps label in the heading ink, quieter than the rows under it.
+    /// </summary>
     private ListBoxItem GroupHeader(SettingsItemGroup group)
     {
+        var page = _tokens.Page;
         var row = new DockPanel { LastChildFill = true };
         if (group.ReadOnly)
         {
-            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(NativeTokens.Space8, NativeTokens.Hairline), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center };
+            var copy = new Button { Content = "Copy to edit", Padding = new Thickness(NativeTokens.Space8, NativeTokens.Hairline), FontSize = NativeTokens.Small, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space8, 0, 0, 0) };
             ToolTip.SetTip(copy, "A package's set is replaced when the package updates; copy it into your own sets to change it");
             AutomationProperties.SetName(copy, $"Copy {group.Set.Name} to edit");
             var set = group.Set;
@@ -312,15 +315,55 @@ internal sealed class ListEditorView : Grid
             row.Children.Add(copy);
         }
 
+        var count = new TextBlock
+        {
+            Text = _collection.CountOf(group.Items.Count),
+            FontSize = NativeTokens.Small,
+            Foreground = DimInk,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(NativeTokens.Space8, 0, 0, 0),
+        };
+        DockPanel.SetDock(count, Dock.Right);
+        row.Children.Add(count);
+
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        words.Children.Add(new TextBlock { Text = group.Label.ToUpperInvariant(), FontWeight = FontWeight.SemiBold, FontSize = NativeTokens.Small, LetterSpacing = 0.8, Foreground = _tokens.Brush(_tokens.Header), TextTrimming = TextTrimming.CharacterEllipsis });
+        var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
+        name.Children.Add(new Border
+        {
+            Width = NativeTokens.Space8,
+            Height = NativeTokens.Space8,
+            CornerRadius = new CornerRadius(NativeTokens.Hairline),
+            Background = _tokens.Brush(_tokens.Accent),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        name.Children.Add(new TextBlock { Text = group.Label, FontWeight = FontWeight.SemiBold, FontSize = NativeTokens.Title, Foreground = page.Brush(page.Text), TextTrimming = TextTrimming.CharacterEllipsis });
+        words.Children.Add(name);
         if (group.ReadOnly)
         {
             words.Children.Add(new TextBlock { Text = "package · read-only", FontSize = NativeTokens.Small, Foreground = DimInk });
         }
 
         row.Children.Add(words);
-        return new ListBoxItem { Content = row, Focusable = false, IsHitTestVisible = group.ReadOnly, Padding = new Thickness(NativeTokens.Space8, NativeTokens.Space8, NativeTokens.Space8, NativeTokens.Space2) };
+        var band = new Border
+        {
+            Background = page.Brush(page.Ground),
+            BorderBrush = page.Brush(page.Rule),
+            BorderThickness = new Thickness(NativeTokens.Hairline),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusS),
+            Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space6),
+            Child = row,
+        };
+        _headings.Add($"{group.Label}, {_collection.CountOf(group.Items.Count)}");
+        AutomationProperties.SetName(band, $"Set {_headings[^1]}");
+        return new ListBoxItem
+        {
+            Content = band,
+            Focusable = false,
+            IsHitTestVisible = group.ReadOnly,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Padding = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space4),
+            Background = Brushes.Transparent,
+        };
     }
 
     private ListBoxItem ItemRow(SettingsItemGroup group, object item)

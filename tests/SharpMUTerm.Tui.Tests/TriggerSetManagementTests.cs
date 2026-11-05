@@ -569,6 +569,9 @@ public class TriggerSetManagementTests
     /// there instead. It is markup and not a row: it stands for a set rather than an item, so the cursor
     /// cannot land on it and the pane's row counts are untouched.
     /// </summary>
+    private static bool IsEmptyHeading(string line, string set, string none) =>
+        line.Contains($"[bold {ScreenPalette.Value}]{set}[/]", StringComparison.Ordinal) && line.Contains(none, StringComparison.Ordinal);
+
     [Test]
     public async Task AnEmptySetIsNamedOnEveryFlattenedScreen()
     {
@@ -577,20 +580,20 @@ public class TriggerSetManagementTests
         var macros = sets.SelectMany(s => s.Macros).ToList();
 
         await Assert.That(TriggersScreenRenderer.RulesColumn(sets, 0)
-            .Any(l => l.Contains("▪ Combat — no triggers", StringComparison.Ordinal))).IsTrue();
+            .Any(l => IsEmptyHeading(l, "Combat", "no triggers"))).IsTrue();
         await Assert.That(AliasesScreenRenderer.ListColumn(sets, 0)
-            .Any(l => l.Contains("▪ Combat — no aliases", StringComparison.Ordinal))).IsTrue();
+            .Any(l => IsEmptyHeading(l, "Combat", "no aliases"))).IsTrue();
         await Assert.That(TimersScreenRenderer.ListColumn(sets, 0)
-            .Any(l => l.Contains("▪ Combat — no timers", StringComparison.Ordinal))).IsTrue();
+            .Any(l => IsEmptyHeading(l, "Combat", "no timers"))).IsTrue();
         await Assert.That(KeypadScreenRenderer.HotkeysColumn(HostKeys.Terminal, macros, null, sets, 0)
-            .Any(l => l.Contains("▪ Combat — no bindings", StringComparison.Ordinal))).IsTrue();
+            .Any(l => IsEmptyHeading(l, "Combat", "no bindings"))).IsTrue();
 
-        // Trade holds triggers but no aliases, so it is named on F3 and not on F2 — the placeholder is
+        // Trade holds triggers but no aliases, so its heading says so on F3 and not on F2 — the count is
         // per screen, because "empty" means empty of the thing that screen edits.
         await Assert.That(AliasesScreenRenderer.ListColumn(sets, 0)
-            .Any(l => l.Contains("▪ Trade — no aliases", StringComparison.Ordinal))).IsTrue();
+            .Any(l => IsEmptyHeading(l, "Trade", "no aliases"))).IsTrue();
         await Assert.That(TriggersScreenRenderer.RulesColumn(sets, 0)
-            .Any(l => l.Contains("▪ Trade — no triggers", StringComparison.Ordinal))).IsFalse();
+            .Any(l => IsEmptyHeading(l, "Trade", "no triggers"))).IsFalse();
 
         // And it costs no cursor stops: three sets, four rules between them, unchanged.
         await Assert.That(TriggersScreenRenderer.Model(sets, 0).ListSizes[0]).IsEqualTo(3);
