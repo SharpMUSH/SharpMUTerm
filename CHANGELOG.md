@@ -9,6 +9,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The command line gives its whole width to what you type. The character and world it sends to
+  (`Corvid · Aetherfall ›`) are shown as a placeholder while the line is empty and go away with the first character,
+  so typed text starts at the left edge instead of after the name. The same in the terminal and the desktop window.
 - The desktop window's Worlds & Characters page makes adding obvious. The list has an **Add world** button at its top
   and a **+** on every world for a new character; Browse worlds and Import sit at its foot. The world or character on
   show has its actions beside its name: Connect or Go to, Add character, Duplicate, Move up and down, and Delete. A

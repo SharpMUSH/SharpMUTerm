@@ -91,7 +91,7 @@ public class Wave18PaletteAndScreenTests
         await using var app = Demo(80, 24);
         var rows = FrameGrid.Decode(app.RenderSnapshot("menu"), 80, 24);
 
-        await Assert.That(rows[22]).StartsWith("Corvid · Aetherfall ›").Because(rows[22]);
+        await Assert.That(rows[22]).StartsWith("say hello there").Because("the command line, holding the demo's draft: " + rows[22]);
         await Assert.That(rows.Take(22).Any(r => r.Contains('└'))).IsTrue().Because("the palette's bottom border is above it");
     }
 

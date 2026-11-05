@@ -479,6 +479,30 @@ public class InputAreaEndToEndTests
         await Assert.That(CaretFollowsTheSentinel(app)).IsTrue();
     }
 
+    /// <summary>
+    /// <b>The prompt is a placeholder.</b> An empty command line shows whose connection ⏎ reaches where the text will go,
+    /// with the caret on its first cell; the first character typed replaces it, and typed text starts in the first column
+    /// rather than after the name (it used to indent past a <c>Corvid · Aetherfall ›</c> gutter on every row).
+    /// </summary>
+    [Test]
+    public async Task ThePromptIsAPlaceholderTheFirstKeystrokeReplaces()
+    {
+        var (app, _) = Demo();
+        var grid = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+        var (_, caretX, caretY) = app.CaretOnScreen();
+        await Assert.That(caretX).IsEqualTo(0).Because("an empty bar's caret is in the first column");
+        await Assert.That(grid[caretY]).StartsWith("Corvid · Aetherfall ›").Because("the prompt is shown while the bar is empty");
+
+        Type(app, Sentinel.ToString());
+        grid = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+        await Assert.That(FindSentinel(app)).IsEqualTo((caretY, 0)).Because("typed text has the whole row");
+        await Assert.That(grid[caretY]).DoesNotContain("Aetherfall").Because("the placeholder goes with the first character");
+
+        app.SimulateKey(new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false));
+        grid = FrameGrid.Decode(app.RenderWholeFrame(), Width, Height);
+        await Assert.That(grid[caretY]).StartsWith("Corvid · Aetherfall ›").Because("and comes back once the bar is empty again");
+    }
+
     /// <summary>A character no other part of the frame draws, so its painted cell is unambiguous.</summary>
     private const char Sentinel = '~';
 

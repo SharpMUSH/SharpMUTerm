@@ -60,9 +60,8 @@ public class InputSelectionTests
     public async Task DraggingAcrossTheCommandLineSelectsWhatItCrosses()
     {
         var (app, copied) = App("say hello there");
-        var prompt = SharpConsoleUI.Parsing.MarkupParser.StripLength(app.PrimaryPromptMarkup);
-
-        app.SimulateInputDrag(prompt + 4, 0, prompt + 9, 0);
+        // The prompt is a placeholder, so the text starts in the bar's first column.
+        app.SimulateInputDrag(4, 0, 9, 0);
         app.SimulateKey(CtrlC);
 
         await Assert.That(app.InputSelection).IsEqualTo("hello");
@@ -113,9 +112,7 @@ public class InputSelectionTests
     public async Task CtrlXCutsTheCommandLinesSelectionToTheClipboard()
     {
         var (app, copied) = App("say hello there");
-        var prompt = SharpConsoleUI.Parsing.MarkupParser.StripLength(app.PrimaryPromptMarkup);
-
-        app.SimulateInputDrag(prompt + 3, 0, prompt + 9, 0);
+        app.SimulateInputDrag(3, 0, 9, 0);
         app.SimulateKey(Ctrl(ConsoleKey.X));
 
         await Assert.That(copied).IsEquivalentTo(new[] { " hello" });

@@ -235,6 +235,9 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
         canvas.DrawText(text, left, top + Fonts.Baseline, SKTextAlign.Left, font, ink);
     }
 
+    /// <summary>How wide a bar caret is drawn, in device pixels.</summary>
+    internal float CaretThickness => Math.Max(2f, Fonts.StrokeWidth * 1.5f);
+
     private void DrawCaret(SKCanvas canvas, ScreenFrame frame)
     {
         var caret = frame.Caret;
@@ -247,7 +250,7 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
         var cell = frame[caret.X, caret.Y];
         var left = caret.X * Fonts.CellWidth;
         var top = caret.Y * Fonts.CellHeight;
-        var thickness = Math.Max(2f, Fonts.StrokeWidth * 1.5f);
+        var thickness = CaretThickness;
         using var paint = new SKPaint { Color = Foreground(cell), IsAntialias = false };
         switch (caret.Shape)
         {
