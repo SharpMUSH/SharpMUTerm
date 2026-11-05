@@ -3,6 +3,7 @@ using SharpMUTerm.Core.Commands;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Layout;
 
 namespace SharpMUTerm.Tui;
 
@@ -34,6 +35,8 @@ internal sealed class CommandPalette
     internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private PromptControl? _search;
     private MarkupControl? _results;
+    private ScrollablePanelControl? _list;
+    private int _barColumns;
     private PaletteView _view = Empty;
     private int _selected;
     private int _contentWidth;
@@ -114,7 +117,28 @@ internal sealed class CommandPalette
         _search.InputChanged += (_, query) => Refresh(query);
         _search.Entered += (_, _) => Commit();
 
-        _results = new MarkupControl(new List<string>());
+        _results = new MarkupControl(new List<string>()) { HorizontalAlignment = HorizontalAlignment.Stretch };
+
+        // The rows scroll under the prompt in a panel of their own, so the prompt stays put and ↑↓ can keep the
+        // selected row in view (KeepSelectionInView). The window itself scrolled before, taking the prompt with it,
+        // and nothing moved it as the selection walked off the bottom.
+        _list = new ScrollablePanelControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Fill,
+            VerticalScrollMode = ScrollMode.Scroll,
+            HorizontalScrollMode = ScrollMode.None,
+            ShowScrollbar = true,
+            AutoScroll = false,
+        };
+        if (!Scheme.IsIdentity)
+        {
+            // The bar's arrows are text: off Dark the framework's grey is under the floor on the themed plane.
+            _list.ScrollbarColor = Scheme.Colour(ScreenPalette.Muted);
+            _list.ScrollbarThumbColor = Scheme.Colour(ScreenPalette.Muted);
+        }
+
+        _list.AddControl(_results);
 
         // Size the surface to hug the full (unfiltered) catalog so nothing scrolls and there's no empty
         // gutter: fit height to the row count and width to the widest row, both capped to the desktop. A
@@ -131,7 +155,9 @@ internal sealed class CommandPalette
             Math.Max(CommandSurfaceRenderer.NaturalWidth(initial), HeaderWidth(initial)) + 1,
             32,
             Math.Max(32, desktop.Width - 6));
-        var width = _contentWidth + 2; // + the 1-cell left/right border
+        // A list taller than its room carries a scroll bar, which takes a column of its own beside the rows.
+        _barColumns = initial.Rows.Count + 1 > height - 3 ? 1 : 0;
+        var width = _contentWidth + 2 + _barColumns; // + the 1-cell left/right border
 
         // A clean overlay: single border, but no window chrome — no minimize/maximize/close buttons
         // (HideTitleButtons) and no resize grip (Resizable(false)); Esc closes it. It floats on
@@ -153,9 +179,10 @@ internal sealed class CommandPalette
             : builder.Centered();
         _window = builder
             .AddControl(_search)
-            .AddControl(_results)
+            .AddControl(_list)
             .OnClosed((_, _) => Reset())
             .Build();
+        _window.IsScrollable = false;
         Scheme.Frame(_window);
 
         _window.PreviewKeyPressed += OnKey;
@@ -176,6 +203,7 @@ internal sealed class CommandPalette
         _selected = _view.Entries.Count == 0 ? -1 : Math.Clamp(_selected, 0, _view.Entries.Count - 1);
         Paint();
         FitHeight(query);
+        _list?.ScrollToTop();
     }
 
     /// <summary>The height the palette opened at: the whole catalog's, capped above the command line.</summary>
@@ -224,7 +252,76 @@ internal sealed class CommandPalette
 
         _selected = ((_selected + delta) % count + count) % count;
         Paint();
+        KeepSelectionInView();
     }
+
+    /// <summary>The rows the list shows at once: the window less its border and the prompt.</summary>
+    private int ListRows => _window is { } window ? Math.Max(1, window.Height - 3) : 0;
+
+    /// <summary>The first list row on screen, for a test.</summary>
+    internal int ListTop => _list?.VerticalScrollOffset ?? 0;
+
+    /// <summary>
+    /// Scrolls the list the least that puts the selected row on screen. The first entry scrolls to the top, so the
+    /// count line is seen again; an entry straight under a group's heading brings the heading with it.
+    /// </summary>
+    private void KeepSelectionInView()
+    {
+        if (_list is not { } list || _selected < 0)
+        {
+            return;
+        }
+
+        var line = SelectedLine();
+        var rows = ListRows;
+        var top = list.VerticalScrollOffset;
+        var first = _selected == 0 ? 0 : line >= 2 && _view.Rows[line - 2] is PaletteHeader ? line - 1 : line;
+        if (first < top)
+        {
+            top = first;
+        }
+        else if (line >= top + rows)
+        {
+            top = line - rows + 1;
+        }
+
+        if (top != list.VerticalScrollOffset)
+        {
+            list.ScrollToPosition(top);
+            _window?.Invalidate(redrawAll: true);
+        }
+    }
+
+    /// <summary>The selected entry's line in what <see cref="Paint"/> draws: the count line, then one line a row.</summary>
+    private int SelectedLine()
+    {
+        var index = 0;
+        for (var row = 0; row < _view.Rows.Count; row++)
+        {
+            if (_view.Rows[row] is PaletteEntry && index++ == _selected)
+            {
+                return row + 1;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>Moves the selection a page, stopping at either end rather than wrapping (the window's palette does the same).</summary>
+    private void Page(int direction)
+    {
+        var count = _view.Entries.Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        var target = Math.Clamp(_selected + direction * Math.Max(1, ListRows - 1), 0, count - 1);
+        Move(target - _selected);
+    }
+
+    /// <summary>Hands a key to the open surface, as the keyboard would; for a test.</summary>
+    internal void SimulateKey(ConsoleKeyInfo key) => OnKey(this, new KeyPressedEventArgs(key, false));
 
     /// <summary>Selects the listed entry with <paramref name="id"/> and commits it, as arrows and ⏎ would; for a test.</summary>
     internal bool Choose(string id)
@@ -263,6 +360,14 @@ internal sealed class CommandPalette
                 Move(-1);
                 e.Handled = true;
                 break;
+            case ConsoleKey.PageDown:
+                Page(1);
+                e.Handled = true;
+                break;
+            case ConsoleKey.PageUp:
+                Page(-1);
+                e.Handled = true;
+                break;
             case ConsoleKey.Enter:
                 Commit();
                 e.Handled = true;
@@ -287,6 +392,7 @@ internal sealed class CommandPalette
         _window = null;
         _search = null;
         _results = null;
+        _list = null;
         _view = Empty;
     }
 }

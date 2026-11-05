@@ -1943,6 +1943,23 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             OpenMenu();
         }
 
+        // The command surface walked past its last visible row with ↓: the list has scrolled under the prompt to keep
+        // the selected row on screen. Each key is drawn before the next, as a person pressing it would see.
+        if (string.Equals(view, "menu-scrolled", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenMenu();
+            if (_palette.IsOpen)
+            {
+                for (var step = 0; step < 24; step++)
+                {
+                    RenderWholeFrame();
+                    _palette.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+                }
+
+                ReArmWholeFrame();
+            }
+        }
+
         // The command surface searched: a real drag across the output first, because "Make a trigger from
         // the selection" is offered only while something is selected, then `trig sel` typed into it — the
         // frame that shows a fuzzy match across two words, its characters highlighted, at the top.

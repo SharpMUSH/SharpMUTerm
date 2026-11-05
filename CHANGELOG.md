@@ -663,6 +663,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 - Pictures from SharpMUSH show again. A server offering both MXP and Pueblo was answered as a Pueblo client, so it
   sent its rooms without their pictures; MXP is now preferred.
+- In the terminal, walking the command palette with ↑↓ past its last visible row scrolls the list to keep the
+  selected command on screen; the search box stays put above it, and PgUp/PgDn move a page as they do in the window.
 - The older-history view (⌥H, then ⏎) no longer wraps every line onto a second row and shows a scroll bar at 80×24, and its
   title no longer wraps at 120 columns.
 - A web page opened in a pane beside the sidebar is laid out at that pane's width, so its paragraphs no longer leave a word
