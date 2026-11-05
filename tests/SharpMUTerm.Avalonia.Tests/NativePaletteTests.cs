@@ -183,6 +183,41 @@ public class NativePaletteTests
     }
 
     [Test]
+    public async Task ArrowingThroughTheWholeCatalogKeepsTheSelectedRowInView()
+    {
+        var (count, outOfView, wrapped) = await Run(rig =>
+        {
+            var overlay = Open(rig);
+            var total = overlay.View.Entries.Count;
+            var missed = new List<int>();
+            for (var step = 1; step < total; step++)
+            {
+                Press(overlay, Key.Down);
+                if (!overlay.SelectedRowInView())
+                {
+                    missed.Add(overlay.Selected);
+                }
+            }
+
+            for (var step = 0; step < total; step++)
+            {
+                Press(overlay, Key.Up);
+                if (!overlay.SelectedRowInView())
+                {
+                    missed.Add(overlay.Selected);
+                }
+            }
+
+            Press(overlay, Key.Down);
+            return (total, missed, overlay.SelectedRowInView());
+        });
+
+        await Assert.That(count).IsGreaterThan(20).Because("the catalog must overflow the card for this to test anything");
+        await Assert.That(outOfView).IsEmpty().Because("every entry ↑↓ selects is scrolled into view");
+        await Assert.That(wrapped).IsTrue();
+    }
+
+    [Test]
     public async Task EscapeClosesRunsNothingAndGivesTheKeyboardBack()
     {
         var (open, clientOpen, recent, focused) = await Run(rig =>

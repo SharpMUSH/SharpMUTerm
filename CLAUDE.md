@@ -349,6 +349,11 @@ fallbacks) for inline images/maps.
   - **The cell palette is as tall as what it lists** (`CommandPalette.FitHeight`): the whole catalog's height (capped above
     the command line) while the query is empty, the matching rows' once something is typed, at least `FilteredMinHeight` (10)
     and never taller than it opened; the top edge stays put, so the prompt does not move.
+    **Its rows scroll in a panel of their own under the prompt** (`_list`, the window `IsScrollable = false`), and every
+    ↑↓/PgUp/PgDn scrolls the least that shows the selected row (`KeepSelectionInView`; the first entry goes to the top, an
+    entry under a heading brings the heading). The window used to scroll as a whole, taking the prompt with it, and nothing
+    followed the selection off the bottom. A catalog taller than the palette widens it a column for the bar. The
+    `menu-scrolled` view; `PaletteScrollTests` and the window's `NativePaletteTests.ArrowingThrough…` read every step.
   - **Clashes come from `MacroKeys`, never a second table** (`KeyClashes`, Tui). `ClaimedBy` (a global
     shortcut: the client wins, `Verdict` already says Taken) and `YieldedBy` (what the main window does with a
     chord only after `DispatchMacro` declined it: the binding wins, a warning). `YieldedBy`'s list mirrors the

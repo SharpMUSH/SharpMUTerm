@@ -183,6 +183,18 @@ internal sealed class PaletteOverlay : Panel
     /// <summary>The selected entry's index in <see cref="PaletteView.Entries"/>, or -1 with nothing listed.</summary>
     public int Selected => _selected;
 
+    /// <summary>Whether the selected row lies wholly inside the list's visible part, read off the layout; for a test.</summary>
+    internal bool SelectedRowInView()
+    {
+        if (_selected < 0 || _selected >= _entryRows.Count || _entryRows[_selected].TranslatePoint(default, _scroller) is not { } top)
+        {
+            return false;
+        }
+
+        var height = _entryRows[_selected].Bounds.Height;
+        return top.Y >= -0.5 && top.Y + height <= _scroller.Viewport.Height + 0.5;
+    }
+
     /// <summary>Each row as drawn, in order: a header's label, an entry's title.</summary>
     public IReadOnlyList<string> RowTexts => _rowTexts;
 
