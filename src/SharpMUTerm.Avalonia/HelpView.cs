@@ -49,6 +49,7 @@ internal sealed class HelpView : DockPanel, IModalView
         Children.Add(_count);
 
         _footer = ModalParts.Footer(string.Empty, colours);
+        _footer.Margin = default; // flush under the list rule, as the palette band is
         SetDock(_footer, Dock.Bottom);
         Children.Add(_footer);
 

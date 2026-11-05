@@ -1779,6 +1779,18 @@ fallbacks) for inline images/maps.
   server text, the map's room labels and legend (laddered by design), ⌃P's reserved key column and its scroll bar on the
   frame (the window is the framework's scrollable one), F4's capture prompt widening its row (`CaptureWidth`, decided), the
   tab strip's grey `─` (upstream), and a number and its unit split by a wrap (the framework breaks at any space).
+- **Wave 34 A window completion audit (window only; terminal frames unchanged)** (`ux-wave34/window-completion-audit/`, 1440×900
+  and 1280×800 at 125%: the four mockups plus ⌃P, F1, ⌃F, a toast, quit, two tinted characters, Light). The sidebar is the
+  mockups': `CONNECTIONS` tracked (`NativeSidebar.Tracked`, letters one by one, since `FormattedText` has no spacing), a world
+  is its name alone, a character a 4 px dot in the world's accent (ring offline), a window's chord in mono `Small` at the
+  right with its unread count as bold accent text before it, not a pill. ⌃P rows share one pitch (`ModalParts.ChipHeight`
+  floor). A card's content is clipped inside its edge (`ModalParts.InsideEdge`), so a foot band no longer covers the rounded
+  hairline; ⌃P/⌃F/⌃R/help's band sits flush under the list rule. **The field stays drawn under a native modal**
+  (`InputBandNow` drops it only for a *cell* modal). F1's title is `Compose`/`Edit`/`Script`/`Read only` as the docked one,
+  its chips outlined and its key row `ModalParts.Chip` caps. The welcome's key line sits under its column. Left as it is:
+  a panel's heading rule or a strip's seam stops ~4 px short of a divider's hairline, because the hairline is centred in
+  the divider cell and a native view covers only its pane; moving the hairline or the view fails where both sides are
+  native, or narrows the divider's grab area.
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

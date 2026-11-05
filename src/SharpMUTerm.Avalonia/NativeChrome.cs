@@ -274,13 +274,13 @@ internal abstract class NativeChromeView : Control
         }
     }
 
-    protected static FormattedText Format(string text, double size, Color colour, bool bold = false, double maxWidth = double.PositiveInfinity)
+    protected static FormattedText Format(string text, double size, Color colour, bool bold = false, double maxWidth = double.PositiveInfinity, bool mono = false)
     {
         var formatted = new FormattedText(
             text,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface(NativeTokens.UiFont, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
+            new Typeface(mono ? NativeTokens.KeyFace : NativeTokens.UiFont, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
             size,
             new SolidColorBrush(colour))
         {
@@ -300,12 +300,26 @@ internal abstract class NativeChromeView : Control
     /// <summary>Draws one line of text vertically centred on <paramref name="middle"/>; returns its width.</summary>
     protected static double Text(
         DrawingContext context, string text, double x, double middle, double size, Color colour, bool bold = false,
-        double maxWidth = double.PositiveInfinity, bool alignRight = false)
+        double maxWidth = double.PositiveInfinity, bool alignRight = false, bool mono = false)
     {
-        var formatted = Format(text, size, colour, bold, maxWidth);
+        var formatted = Format(text, size, colour, bold, maxWidth, mono);
         var left = alignRight ? x - formatted.Width : x;
         context.DrawText(formatted, new Point(Math.Round(left), Math.Round(middle - (formatted.Height / 2))));
         return formatted.Width;
+    }
+
+    /// <summary>
+    /// A small-caps heading (CONNECTIONS) with the mockups' 0.8 px tracking, the palette's group headers' — a formatted
+    /// text has no letter spacing, so it is set a letter at a time.
+    /// </summary>
+    protected static void Tracked(DrawingContext context, string text, double x, double middle, double size, Color colour)
+    {
+        foreach (var letter in text)
+        {
+            var glyph = Format(letter.ToString(), size, colour, bold: true);
+            context.DrawText(glyph, new Point(x, Math.Round(middle - (glyph.Height / 2))));
+            x += glyph.WidthIncludingTrailingWhitespace + 0.8;
+        }
     }
 
     /// <summary>An unread count as a pill, right-aligned at <paramref name="right"/>; returns its width.</summary>
@@ -1015,7 +1029,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
         const double size = FontSize;
         if (!Folded)
         {
-            Text(context, "CONNECTIONS", NativeTokens.PanelInset, NativeTokens.Space20, NativeTokens.Small, Dim, bold: true);
+            Tracked(context, "CONNECTIONS", NativeTokens.PanelInset, NativeTokens.Space20, NativeTokens.Small, Dim);
         }
 
         using (context.PushClip(_list))
@@ -1068,7 +1082,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
             switch (r.Kind)
             {
                 case RailRowKind.World:
-                    context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(r.Area.X, middle - 7, NativeTokens.MarkWidth, 14), 1.5, 1.5);
+                    // The world's name alone, as the mockup's: its colour is on its characters' dots.
                     Text(context, r.World.Name, NativeTokens.PanelInset, middle, size, Ink, bold: true, maxWidth: right - NativeTokens.PanelInset);
                     break;
 
@@ -1153,8 +1167,9 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
     private void DrawCharacter(DrawingContext context, Row r, RailCharacter character, Color accent, double middle, double right, double size)
     {
         var centre = new Point(r.Area.X + CharacterIndent - NativeTokens.Space12, middle);
-        var colour = character.Connected ? accent : Dim;
-        Dot(context, centre, 4.5, colour, character.Connected, diamond: character.InGroup);
+        // The world's colour, filled while connected and a ring while not (the mockup's 8 px dot): with no mark on the
+        // world's row, the dots are where its colour is read.
+        Dot(context, centre, 4, accent, character.Connected, diamond: character.InGroup);
 
         // Right to left: the unread badge or the offline word, then the cycle chord.
         if (character.Unread > 0)
@@ -1168,7 +1183,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
 
         if (character.Chord is { Length: > 0 } chord)
         {
-            right -= Text(context, KeyGlyphs.Words(chord), right, middle, size - 1.5, Dim, alignRight: true) + 6;
+            right -= Text(context, KeyGlyphs.Words(chord), right, middle, NativeTokens.Small, Dim, alignRight: true, mono: true) + 6;
         }
 
         var x = r.Area.X + CharacterIndent;
@@ -1183,14 +1198,16 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
             context.DrawRectangle(new SolidColorBrush(accent), null, new Rect(x - NativeTokens.Space8 - NativeTokens.MarkWidth, middle - 7, NativeTokens.MarkWidth, 14), 1.5, 1.5);
         }
 
-        if (window.Unread > 0)
-        {
-            right -= Badge(context, window.Unread, right, middle, size) + 6;
-        }
-
+        // The mockup's window row: the chord in the cells' mono at the edge, the unread count before it as the accent's
+        // figure (the character's row keeps the pill, so the two counts read as total and part).
         if (!window.Closed && window.Chord is { Length: > 0 } chord)
         {
-            right -= Text(context, KeyGlyphs.Words(chord), right, middle, size - 1.5, Dim, alignRight: true) + 6;
+            right -= Text(context, KeyGlyphs.Words(chord), right, middle, NativeTokens.Small, Dim, alignRight: true, mono: true) + 8;
+        }
+
+        if (window.Unread > 0)
+        {
+            right -= Text(context, UnreadText(window.Unread), right, middle, size, Legible(Parse(Overlay?.Palette.Unread)), bold: true, alignRight: true) + 8;
         }
 
         if (window.Closed)

@@ -9,6 +9,17 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- In the desktop window the sidebar reads as the mockups: a tracked CONNECTIONS heading, world names without a
+  coloured bar, a small dot in the world's colour per character (a ring while offline), and window shortcuts and
+  unread counts in a quiet monospace beside each window.
+- In the desktop window every row of the command palette is the same height, whether or not it shows a shortcut,
+  and the key band at the foot of the palette, search, history and help lines up with the list above it and no longer
+  covers the card's rounded corners.
+- In the desktop window the command line's field stays drawn under the command palette and the other window dialogs,
+  rather than showing raw cells with a dark block at the end.
+- The desktop window's full-screen composer has a plain "Compose" title like the docked one, outlined mode chips, and
+  key caps in its footer matching the rest of the window. The welcome page's key hints sit under its column.
+
 - In the desktop window the sidebar's large fold chevron is gone: a small sidebar button left of the app's name in the
   header folds and opens it, in the same place either way.
 - In the desktop window a pane's front tab is drawn as the mockup's card, without the accent bar along its top; the

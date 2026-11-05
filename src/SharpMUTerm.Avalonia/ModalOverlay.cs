@@ -71,7 +71,7 @@ internal sealed class ModalOverlay : Panel
             CornerRadius = new CornerRadius(NativeTokens.RadiusL),
             BoxShadow = NativeTokens.Shadow,
             ClipToBounds = true,
-            Child = (Control)_view,
+            Child = ModalParts.InsideEdge((Control)_view),
         };
 
         var scope = new ThemeVariantScope
