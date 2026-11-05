@@ -45,6 +45,7 @@ WizardStyle=modern
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "addtopath"; Description: "Add the install folder to PATH, so sharpmuterm runs from any terminal"; GroupDescription: "Terminal:"
+Name: "nerdfont"; Description: "Install the Symbols Nerd Font Mono font, so the terminal client can draw its icons"; GroupDescription: "Terminal:"
 Name: "telnetlinks"; Description: "Open telnet:// and telnets:// links in SharpMUTerm"; GroupDescription: "Links:"; Flags: unchecked
 
 [Files]
@@ -52,6 +53,13 @@ Source: "{#PublishDir}\sharpmuterm-window.exe"; DestDir: "{app}"; Flags: ignorev
 Source: "{#PublishDir}\sharpmuterm.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "..\icons\sharpmuterm.png"; DestDir: "{app}"; Flags: ignoreversion
+
+; The icons the terminal client's header, sidebar and status row use come from a Nerd Font, and a terminal draws them
+; only if one is installed. The window bundles the same file, so this is for the terminal alone. {autofonts} is the
+; user's own fonts folder in the default per-user install (Windows 10 1803 or later) and the system's for everyone.
+; Never replaced and never removed: another program, or the player's terminal profile, may rely on it.
+Source: "..\..\src\SharpMUTerm.Avalonia\Fonts\SymbolsNerdFontMono-Regular.ttf"; DestDir: "{autofonts}"; FontInstall: "Symbols Nerd Font Mono"; Flags: onlyifdoesntexist uninsneveruninstall; Tasks: nerdfont
+Source: "..\..\src\SharpMUTerm.Avalonia\Fonts\SymbolsNerdFont-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion; Tasks: nerdfont
 
 ; AppUserModelID: the window takes the same id at start (WindowsAppId in src/SharpMUTerm.Avalonia/DesktopAlert.cs), so
 ; the taskbar groups it with this shortcut and an alert's toast is shown under it.
