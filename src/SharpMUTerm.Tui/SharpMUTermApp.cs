@@ -11406,7 +11406,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // (PaneExtent.DividerRows), so an unfocused one is recessed the backdrop's step: two unfocused panes are
         // otherwise one plane, and the strip would run straight into the output under it. Focused, it takes the
         // focus lift like any pane — recessed strip, then unfocused pane, then the focused one, in luminance.
-        return IsStripPane(paneId) ? WorkspacePalette.Recessed(plane) : plane;
+        // Where the host draws the strips (HostChrome.Strips, the window) each native strip draws a hairline where it meets
+        // a pane (PanelOverlay.RuleAbove/RuleBelow), so it keeps the panels' plane, as the combat mockup's side column does.
+        return IsStripPane(paneId) && !Host.Chrome.Strips ? WorkspacePalette.Recessed(plane) : plane;
     }
 
     /// <summary>Whether a pane is a fixed-height strip panel (<see cref="PaneNode.FixedRows"/>, derived on every rebuild).</summary>

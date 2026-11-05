@@ -204,6 +204,7 @@ internal sealed partial class SharpMUTermApp
         var overlays = new List<PanelOverlay>();
         // F1 drawn by the host covers the panes the same way, though it is no framework modal.
         var covered = _system.ModalStateService.HasModals || _nativeCompose is not null;
+        var whole = Host.Chrome.Strips && !covered ? PaneRectsForResize() : null;
         foreach (var (paneId, rect) in !covered ? PaneOutputRects() : new Dictionary<string, Core.Workspaces.PaneRect>())
         {
             // A native panel lies over its pane's gutter too (HostChrome.PaneGutter): those columns hold nothing but the
@@ -213,11 +214,11 @@ internal sealed partial class SharpMUTermApp
                 : rect;
             if (CollapsedBarOverlay(paneId, over) is { } bar)
             {
-                overlays.Add(bar);
+                overlays.Add(Seamed(bar, paneId, whole));
             }
             else if (_workspace.Layout.FindPane(paneId) is { ActiveTab: { } windowId } && OverlayFor(windowId, over, docked: true) is { } overlay)
             {
-                overlays.Add(overlay);
+                overlays.Add(Seamed(overlay, paneId, whole));
             }
         }
 
@@ -228,6 +229,25 @@ internal sealed partial class SharpMUTermApp
 
         _panelOverlays = overlays;
         _pointer.Panels(overlays);
+    }
+
+    /// <summary>
+    /// Marks the edges of a strip panel that another pane meets (<see cref="PanelOverlay.RuleAbove"/>/<c>RuleBelow</c>), where
+    /// the host draws strips and so the strip is not recessed: its native view draws the hairline the cells' plane step stood
+    /// for. Whole pane rectangles, so a neighbour's tab strip counts as the neighbour.
+    /// </summary>
+    private PanelOverlay Seamed(PanelOverlay overlay, string paneId, Dictionary<string, Core.Workspaces.PaneRect>? whole)
+    {
+        if (whole is null || !IsStripPane(paneId) || !whole.TryGetValue(paneId, out var me))
+        {
+            return overlay;
+        }
+
+        bool Meets(Func<Core.Workspaces.PaneRect, bool> edge) => whole.Any(p =>
+            p.Key != paneId && edge(p.Value) && p.Value.X < me.X + me.Width && me.X < p.Value.X + p.Value.Width);
+        var above = Meets(o => o.Y + o.Height == me.Y);
+        var below = Meets(o => o.Y == me.Y + me.Height);
+        return above || below ? overlay with { RuleAbove = above, RuleBelow = below } : overlay;
     }
 
     /// <summary>

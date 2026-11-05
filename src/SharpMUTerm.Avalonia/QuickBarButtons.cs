@@ -129,7 +129,7 @@ internal sealed class QuickBarButtons : Control
         InvalidateVisual();
     }
 
-    private double FontSize => Math.Min(NativeTokens.Title, Math.Max(9, _cellHeight * 0.66));
+    private double FontSize => Math.Min(NativeTokens.Body, Math.Max(9, _cellHeight * 0.66));
 
     /// <summary>The key chip's size: a step under the label, as a caption.</summary>
     private double KeySize => Math.Max(8, FontSize - 2);
@@ -337,6 +337,39 @@ internal sealed class QuickBarButtons : Control
         menu.Open(this);
     }
 
+    private (bool Above, bool Below) _seams;
+
+    /// <summary>
+    /// The edges another pane meets (<see cref="PanelOverlay.RuleAbove"/>/<c>RuleBelow</c>): a hairline is drawn there, the
+    /// mockups' rule between the side column's panels, since in the window a strip keeps the panels' plane.
+    /// </summary>
+    internal (bool Above, bool Below) Seams
+    {
+        get => _seams;
+        set
+        {
+            if (value != _seams)
+            {
+                _seams = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private void DrawSeams(DrawingContext context, Rect bounds, Color text, Color plane)
+    {
+        var rule = new SolidColorBrush(PanelText.Rule(text, plane));
+        if (_seams.Above)
+        {
+            context.FillRectangle(rule, NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
+        }
+
+        if (_seams.Below)
+        {
+            context.FillRectangle(rule, NativeTokens.HorizontalRule(this, bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
+        }
+    }
+
     // ── Drawing ──────────────────────────────────────────────────────────────────────────────────
 
     public override void Render(DrawingContext context)
@@ -348,6 +381,8 @@ internal sealed class QuickBarButtons : Control
             // A strip tall enough for the buttons is a strip: a rule along its top, as the mockups draw it over the field.
             context.FillRectangle(new SolidColorBrush(PanelText.Rule(_text, _plane)), NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
         }
+
+        DrawSeams(context, bounds, _text, _plane);
 
         Layout(bounds.Size);
         var size = FontSize;

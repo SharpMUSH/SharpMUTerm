@@ -283,6 +283,12 @@ internal sealed record PaneDividerOverlay(PaneRect Area, bool Vertical, bool Lit
 /// For the map, looks at another level or area, or back at the character (<c>LookMap</c>), the funnel the cell map's look
 /// keys and links end in. Safe to call from any thread; one instance per window.
 /// </param>
+/// <param name="RuleAbove">
+/// For a strip panel where the host draws strips (<see cref="HostChrome.Strips"/>): another pane meets its top edge, so the
+/// native strip draws a hairline there. The strip keeps the panels' plane in that host rather than the recessed step the
+/// cells use to part it from its neighbour.
+/// </param>
+/// <param name="RuleBelow">As <paramref name="RuleAbove"/>, for its bottom edge.</param>
 internal sealed record PanelOverlay(
     string PanelId,
     string WindowId,
@@ -302,7 +308,9 @@ internal sealed record PanelOverlay(
     Action<SharpMUTerm.Client.Panels.MapEdit>? EditMap = null,
     Action<SharpMUTerm.Client.Panels.MapLook>? LookMap = null,
     SharpMUTerm.Client.Panels.CollapsedPanelModel? Collapsed = null,
-    Action? Expand = null);
+    Action? Expand = null,
+    bool RuleAbove = false,
+    bool RuleBelow = false);
 
 /// <summary>A panel's colours as <c>#rrggbb</c>: a bar or fill, the warning, and the empty part of a bar.</summary>
 internal sealed record PanelInk(string Bar, string Low, string Track);

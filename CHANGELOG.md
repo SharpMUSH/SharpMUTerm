@@ -436,6 +436,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window's combat layout the vitals card, the quick bar and the collapsed chat bar are drawn on the same
+  plane as the map beside them, parted by a thin rule, as in the design mockups. The vitals card's numbers are in the
+  game text's monospace face, and the vitals, quick bar and chat bar text is the size of the rest of the side column.
+- On the desktop window's welcome page the layout cards centre their text and the two check boxes sit closer together.
+
 - The desktop window is closer to its design: interface text is a size smaller (13 px, 12 px for labels and the status
   footer), the connections sidebar is a little wider with its own edge and taller rows, the header's search box is
   narrower and quieter, the footer and the command line's strip sit on the header's colour, tabs line up with the output,

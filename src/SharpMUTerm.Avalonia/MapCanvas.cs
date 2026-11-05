@@ -58,6 +58,9 @@ internal sealed class MapCanvas : Control
     private PanelInk _ink = new("#5fafff", "#ffaf5f", "#6a6a72");
     private Color _plane = Colors.Black;
     private Color _text = Colors.White;
+
+    /// <summary>The plane it paints, read off the cells under it. Internal for tests.</summary>
+    internal Color Plane => _plane;
     private Action<long>? _walkTo;
     private Action<long?>? _select;
     private Action<MapEdit>? _edit;

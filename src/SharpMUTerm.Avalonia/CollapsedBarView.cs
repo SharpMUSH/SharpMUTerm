@@ -115,9 +115,9 @@ internal sealed class CollapsedBarView : Control
         }
 
         var middle = bounds.Height / 2;
-        var size = NativeTokens.Title;
+        var size = NativeTokens.Body; // the mockup's 13 px bar, as the rest of the side column
         var x = PanelText.Pad;
-        var note = PanelText.Measure(_model.Note, NativeTokens.Small + 1, false);
+        var note = PanelText.Measure(_model.Note, NativeTokens.Caption, false);
         var right = bounds.Width - PanelText.Pad;
         var room = Math.Max(1, right - x - note - NativeTokens.Space16);
         x += PanelText.Draw(context, _model.Title, x, middle, size, _text, true, room);
@@ -127,6 +127,6 @@ internal sealed class CollapsedBarView : Control
             PanelText.Draw(context, _model.UnreadText, x, middle, size, _accent, true, Math.Max(1, right - x - note - NativeTokens.Space8));
         }
 
-        PanelText.Draw(context, _model.Note, right, middle, NativeTokens.Small + 1, PanelText.Dim(_text, _plane), false, note + 1, alignRight: true);
+        PanelText.Draw(context, _model.Note, right, middle, NativeTokens.Caption, PanelText.Dim(_text, _plane), false, note + 1, alignRight: true);
     }
 }

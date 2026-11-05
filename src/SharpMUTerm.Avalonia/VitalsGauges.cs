@@ -27,6 +27,39 @@ internal sealed class VitalsGauges : Control
     private Color _text = Colors.White;
     private double _cellHeight = 16;
 
+    private (bool Above, bool Below) _seams;
+
+    /// <summary>
+    /// The edges another pane meets (<see cref="PanelOverlay.RuleAbove"/>/<c>RuleBelow</c>): a hairline is drawn there, the
+    /// mockups' rule between the side column's panels, since in the window a strip keeps the panels' plane.
+    /// </summary>
+    internal (bool Above, bool Below) Seams
+    {
+        get => _seams;
+        set
+        {
+            if (value != _seams)
+            {
+                _seams = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private void DrawSeams(DrawingContext context, Rect bounds, Color text, Color plane)
+    {
+        var rule = new SolidColorBrush(PanelText.Rule(text, plane));
+        if (_seams.Above)
+        {
+            context.FillRectangle(rule, NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
+        }
+
+        if (_seams.Below)
+        {
+            context.FillRectangle(rule, NativeTokens.HorizontalRule(this, bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
+        }
+    }
+
     public VitalsGauges()
     {
         // Never focusable (the keyboard stays on the command line), but named for a screen reader exploring the window.
@@ -34,6 +67,9 @@ internal sealed class VitalsGauges : Control
         IsHitTestVisible = false;
         ClipToBounds = true;
     }
+
+    /// <summary>The plane it paints, read off the cells under it. Internal for tests.</summary>
+    internal Color Plane => _plane;
 
     /// <summary>What it is showing. Internal for tests.</summary>
     internal VitalsModel Model => _model;
@@ -152,6 +188,7 @@ internal sealed class VitalsGauges : Control
 
         // The plane covers the cells under it: the strip is drawn by this, not beside it.
         context.FillRectangle(new SolidColorBrush(_plane), bounds);
+        DrawSeams(context, bounds, _text, _plane);
         if (bounds.Width < 8 || bounds.Height < 4 || _model.IsEmpty)
         {
             return;
@@ -179,7 +216,8 @@ internal sealed class VitalsGauges : Control
         var block = BlockHeight(_cellHeight) + grow;
         var label = LabelHeight(_cellHeight);
         var barHeight = BarHeight(_cellHeight);
-        var size = Math.Min(NativeTokens.Title - 1, Math.Max(10, _cellHeight * 0.68));
+        // The mockup's card: 12 px names, the numbers in the game text's mono at the same size.
+        var size = Math.Min(NativeTokens.Caption, Math.Max(10, _cellHeight * 0.6));
         var top = headed
             ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this)) + 12 + grow
             : 8;
@@ -193,7 +231,7 @@ internal sealed class VitalsGauges : Control
             var middle = y + (label / 2);
             var title = low ? $"{meter.Title} · low" : meter.Title;
             PanelText.Draw(context, title, inner.Left, middle, size, low ? warn : _text, low, inner.Width * 0.6);
-            PanelText.Draw(context, Numbers(meter), inner.Right, middle, size, low ? warn : _text, false, inner.Width * 0.4, alignRight: true);
+            PanelText.Draw(context, Numbers(meter), inner.Right, middle, size, low ? warn : _text, false, inner.Width * 0.4, alignRight: true, face: NativeTokens.MonoFont);
             DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, barHeight), meter.HasMax ? meter.Share ?? 0 : 1, low, meter.Colour);
             y += block;
         }
@@ -207,7 +245,7 @@ internal sealed class VitalsGauges : Control
             PanelText.Draw(context, target.Name, inner.Left + leadWidth, middle, size, target.Low ? warn : _text, false, (inner.Width * 0.75) - leadWidth);
             if (target.Share is { } share)
             {
-                PanelText.Draw(context, Percent(share), inner.Right, middle, size, _text, false, inner.Width * 0.25, alignRight: true);
+                PanelText.Draw(context, Percent(share), inner.Right, middle, size, _text, false, inner.Width * 0.25, alignRight: true, face: NativeTokens.MonoFont);
                 DrawBar(context, new Rect(inner.Left, y + label + 4, inner.Width, Math.Max(4, barHeight - 4)), share, target.Low, target.Colour);
             }
         }

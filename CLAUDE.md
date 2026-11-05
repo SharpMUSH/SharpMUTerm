@@ -2601,6 +2601,20 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   side column's share (a layout property both hosts read), the focused pane's lifted plane and the history plane (the focus
   cue), 20 px rows and two-column gutters (cells), the accent bar on the focused tab, `main`, `world`, `Ctrl+Enter`,
   *Command palette*, the pane's leftover pixels under the command line.
+- **Wave 29 combat and first-run audit (window only; terminal frames unchanged).** Measured against `Desktop-Combat` and
+  `Desktop-FirstRun` at 1440×900 (`ux-wave29/combat-firstrun-audit/`; the combat mockup rendered without its open menu).
+  **Under `HostChrome.Strips` a strip panel is not recessed** (`SurfaceToneIn`): the vitals card, quick bar and collapsed
+  bar are the panels' plane like the map, and a strip draws a hairline on each edge another pane meets
+  (`PanelOverlay.RuleAbove`/`RuleBelow`, from the whole pane rectangles in `PublishPanels`; `VitalsGauges`/`QuickBarButtons`
+  `.Seams`). The terminal keeps the recessed step, having no hairline. The vitals card's names are `Caption` and its numbers
+  the mono face at that size; the quick bar's labels and the collapsed bar's title are `Body` (wave 28's "keep 14" was not
+  a measurement). The welcome's layout cards centre their words, and its check boxes are 24 px rows (Fluent fixes 32).
+  Left as they are: the combat mockup has no sidebar or tab strip (the window keeps both, as `Main.png` draws them), panel
+  headings (the two mockups disagree: one 44 px heading with its context beside the title is decided), the look buttons,
+  room names and legend, movement in gold and low in `WorkspacePalette.Low`, the map's shades as mixes of the pane's plane
+  and ink, the collapsed bar running over the field's strip (`BelowGrid`), output starting at the top (cells), the footer's
+  bright name (the row's model), and the welcome's chips, *Package* tag, `world` noun, third *suggested* state and Fluent's
+  20 px check box.
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

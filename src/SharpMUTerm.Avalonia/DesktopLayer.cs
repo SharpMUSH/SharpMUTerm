@@ -445,7 +445,11 @@ internal sealed partial class DesktopLayer : Canvas
             () => new VitalsGauges(),
             frame,
             cell,
-            (gauges, panel, plane) => gauges.Show(panel.Vitals!, panel.Ink, plane, text, cell.Height));
+            (gauges, panel, plane) =>
+            {
+                gauges.Seams = (panel.RuleAbove, panel.RuleBelow);
+                gauges.Show(panel.Vitals!, panel.Ink, plane, text, cell.Height);
+            });
         Place(
             _maps,
             _pointer.Panels.Where(p => p.PanelId == PanelIds.Map && p.Map is not null),
@@ -466,7 +470,11 @@ internal sealed partial class DesktopLayer : Canvas
             () => new QuickBarButtons(_view),
             frame,
             cell,
-            (bar, panel, plane) => bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch));
+            (bar, panel, plane) =>
+            {
+                bar.Seams = (panel.RuleAbove, panel.RuleBelow);
+                bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch);
+            });
 
         // A collapsed panel's bar, at the foot of its column (HostChrome.Strips).
         Place(

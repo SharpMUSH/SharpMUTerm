@@ -122,8 +122,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
             ModalParts.Sunk(box, colours, magnifier: false);
         }
 
-        _tls = new CheckBox { Content = "Encrypt the connection (TLS)", FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS) };
-        _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS) };
+        _tls = new CheckBox { Content = "Encrypt the connection (TLS)", FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS), Margin = CheckRow };
+        _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS), Margin = CheckRow };
         _command = new TextBlock { FontSize = NativeTokens.Small + 1, LineHeight = NativeTokens.Space16 + NativeTokens.Space2, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
         _problem = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Warn), TextWrapping = TextWrapping.Wrap, IsVisible = false };
         foreach (var box in new[] { _host, _port, _character })
@@ -260,6 +260,12 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     /// <summary>The page's column: the mockup's 1,040 px.</summary>
     private const double ColumnWidth = 1040;
+
+    /// <summary>
+    /// A check box row's margin: four pixels taken off above and below Fluent's 32 px check box (its template fixes that
+    /// height), so the row is the mockup's 24 and the two rows and the Connect button sit the card's 14 px apart.
+    /// </summary>
+    private static Thickness CheckRow => new(0, -NativeTokens.Space4, 0, -NativeTokens.Space4);
 
     /// <summary>The ground above the heading: the mockup's 56 px.</summary>
     private const double PageTop = NativeTokens.Space28 * 2;
@@ -741,7 +747,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     private Border LayoutCard(WelcomeLayout layout)
     {
-        var words = new StackPanel { Spacing = NativeTokens.Space4 };
+        // Centred in the card, as the mockup's buttons centre theirs: the shorter card's words sit in its middle.
+        var words = new StackPanel { Spacing = NativeTokens.Space4, VerticalAlignment = VerticalAlignment.Center };
         words.Children.Add(new TextBlock
         {
             Text = layout.ToString(),
