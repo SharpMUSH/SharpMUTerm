@@ -3,6 +3,7 @@ using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
+using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Tui;
@@ -231,6 +232,15 @@ internal sealed partial class SharpMUTermApp
                 // Connecting (or going to) a character brings its window forward: the settings window gets out of the way.
                 Host.NativeSettings?.Close();
                 DispatchCommand(CommandIds.CharacterPrefix + key);
+
+                // The button says Connect for a character that is not connected, so it dials as well: switching alone
+                // is navigation (SwitchToCharacter). Dialled through the reconnect path, with this session named rather
+                // than read off the window in front.
+                if (_sessions.Find(key) is { State: not (ConnectionState.Connected or ConnectionState.Connecting) } session)
+                {
+                    CancelReconnect(session);
+                    LastCommand = ReconnectAsync(session);
+                }
             }),
             ServerInfo = ServerInfoNow(),
             RunCommand = id => OnUiThread(() =>

@@ -136,6 +136,39 @@ public class NativeSettingsRoutingTests
         await Assert.That(native.Closed).IsEqualTo(1);
     }
 
+    /// <summary>
+    /// The page's Connect button dials: a switch alone is navigation and would leave the character offline under a
+    /// button that said Connect. Go to (a character already connected) dials nothing more.
+    /// </summary>
+    [Test]
+    public async Task ConnectOnTheWorldsPageDialsTheCharacter()
+    {
+        var (app, native, _) = App();
+        var wires = new List<RecordingTelnetSession>();
+        app.TelnetFactory = _ =>
+        {
+            var wire = new RecordingTelnetSession();
+            wires.Add(wire);
+            return wire;
+        };
+        app.SimulateKey(F(ConsoleKey.F5));
+        var form = native.Shown.Single();
+        var world = app.Configuration.Worlds.Single(w => w.Name == "Aetherfall");
+        var corvid = world.Characters.Single(c => c.Name == "Corvid");
+
+        await Assert.That(form.ConnectTo(world, corvid)).IsTrue();
+        await app.LastCommand;
+
+        await Assert.That(native.Closed).IsEqualTo(1);
+        await Assert.That(wires.Sum(w => w.ConnectAttempts)).IsEqualTo(1);
+        await Assert.That(app.FindSession("Aetherfall.Corvid")!.IsConnected).IsTrue();
+
+        form.ConnectTo(world, corvid);
+        await app.LastCommand;
+
+        await Assert.That(wires.Sum(w => w.ConnectAttempts)).IsEqualTo(1).Because("Go to only brings the window forward");
+    }
+
     [Test]
     public async Task TheSearchIsTheCellSurfacesOwn()
     {

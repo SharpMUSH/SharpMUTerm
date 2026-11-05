@@ -45,6 +45,9 @@ public class SettingsWindowTests
         public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Notes { get; init; } =
             new Dictionary<string, IReadOnlyDictionary<string, string>>();
 
+        /// <summary>Commits land a turn later, as the client's do when its thread is not the window's.</summary>
+        public bool Deferred { get; init; }
+
         public SettingsForm Form(string initial = "text")
         {
             SettingsForm? form = null;
@@ -53,9 +56,21 @@ public class SettingsWindowTests
                 Config,
                 change =>
                 {
-                    change();
-                    Commits++;
-                    form!.NotifyChanged();
+                    void Land()
+                    {
+                        change();
+                        Commits++;
+                        form!.NotifyChanged();
+                    }
+
+                    if (Deferred)
+                    {
+                        Dispatcher.UIThread.Post(Land);
+                    }
+                    else
+                    {
+                        Land();
+                    }
                 },
                 Opened.Add,
                 initial,
@@ -384,9 +399,9 @@ public class SettingsWindowTests
         Dispatcher.UIThread.RunJobs();
     }
 
-    private static Harness TwoWorlds()
+    private static Harness TwoWorlds(bool deferred = false)
     {
-        var harness = new Harness();
+        var harness = new Harness { Deferred = deferred };
         harness.Config.Worlds.Clear();
         harness.Config.Worlds.Add(new WorldDefinition { Name = "Aetherfall", Host = "aether.example", Characters = { new CharacterDefinition { Name = "Corvid" } } });
         harness.Config.Worlds.Add(new WorldDefinition { Name = "Brightwater", Host = "bright.example", Characters = { new CharacterDefinition { Name = "Wren" } } });
@@ -520,6 +535,34 @@ public class SettingsWindowTests
         await Assert.That(harness.Config.Worlds[2].Characters.Count).IsEqualTo(1);
         await Assert.That(shown).IsSameReferenceAs(harness.Config.Worlds[2].Characters[0]);
         await Assert.That(harness.Commits).IsEqualTo(2);
+    }
+
+    /// <summary>
+    /// The client commits on its own thread, so a new world or character reaches the list after the page asked to show
+    /// it; the page shows it once it lands rather than falling back to the first world.
+    /// </summary>
+    [Test]
+    public async Task ANewWorldOrCharacterIsShownOnceACommitLandsLate()
+    {
+        var harness = TwoWorlds(deferred: true);
+        var (afterWorld, afterCharacter, afterCopy) = await Run(harness, "worlds", window =>
+        {
+            window.AddWorldButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var afterWorld = window.WorldsShown;
+            window.AddCharacterButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var afterCharacter = window.WorldsShown;
+            window.CopyCharacterButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return (afterWorld, afterCharacter, window.WorldsShown);
+        });
+
+        var added = harness.Config.Worlds[2];
+        await Assert.That(afterWorld).IsSameReferenceAs(added);
+        await Assert.That(afterCharacter).IsSameReferenceAs(added.Characters[0]);
+        await Assert.That(added.Characters.Count).IsEqualTo(2);
+        await Assert.That(afterCopy).IsSameReferenceAs(added.Characters[1]);
     }
 
     /// <summary>Delete asks first: nothing goes until the yes, and the yes deletes the world shown.</summary>

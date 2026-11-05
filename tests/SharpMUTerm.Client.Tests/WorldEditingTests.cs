@@ -54,7 +54,7 @@ public class WorldEditingTests
         var added = form.AddWorld();
 
         await Assert.That(config.Worlds).IsNotSameReferenceAs(before);
-        await Assert.That(config.Worlds.Select(w => w.Name)).IsEquivalentTo(new[] { "Aetherfall", "Brightwater", "New World" });
+        await Assert.That(config.Worlds.Select(w => w.Name)).IsEquivalentTo(new[] { "Aetherfall", "Brightwater", "New World" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(form.ChosenWorld).IsSameReferenceAs(added);
         await Assert.That(commits).IsEquivalentTo(new string?[] { "adding a world" });
     }
@@ -82,12 +82,12 @@ public class WorldEditingTests
 
         var added = form.AddCharacter(world);
         var copy = form.DuplicateCharacter(world.Characters[0])!;
-        await Assert.That(world.Characters.Select(c => c.Name)).IsEquivalentTo(new[] { "Corvid", "Corvid copy", "New Character" });
+        await Assert.That(world.Characters.Select(c => c.Name)).IsEquivalentTo(new[] { "Corvid", "Corvid copy", "New Character" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(form.ChosenCharacter).IsSameReferenceAs(copy);
 
         await Assert.That(form.MoveCharacter(added, -1)).IsTrue();
         await Assert.That(form.MoveCharacter(world.Characters[0], -1)).IsFalse().Because("the first cannot go further up");
-        await Assert.That(world.Characters.Select(c => c.Name)).IsEquivalentTo(new[] { "Corvid", "New Character", "Corvid copy" });
+        await Assert.That(world.Characters.Select(c => c.Name)).IsEquivalentTo(new[] { "Corvid", "New Character", "Corvid copy" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
 
         await Assert.That(form.DeleteCharacter(copy)).IsTrue();
         await Assert.That(form.ChosenCharacter).IsNull();
@@ -109,11 +109,11 @@ public class WorldEditingTests
         form.Assign(character, config.TriggerSets.Single(s => s.Name == "Combat"), on: true);
         var rows = form.Assignments(character);
 
-        await Assert.That(character.TriggerSets).IsEquivalentTo(new[] { "Chat", "Combat" });
-        await Assert.That(rows.Where(r => r.On).Select(r => (r.Name, r.Rank))).IsEquivalentTo(new[] { ("Chat", 1), ("Combat", 2) });
+        await Assert.That(character.TriggerSets).IsEquivalentTo(new[] { "Chat", "Combat" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(rows.Where(r => r.On).Select(r => (r.Name, r.Rank))).IsEquivalentTo(new[] { ("Chat", 1), ("Combat", 2) }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
 
         form.MoveAssignment(character, config.TriggerSets.Single(s => s.Name == "Combat"), -1);
-        await Assert.That(character.TriggerSets).IsEquivalentTo(new[] { "Combat", "Chat" });
+        await Assert.That(character.TriggerSets).IsEquivalentTo(new[] { "Combat", "Chat" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
 
         form.Assign(character, config.TriggerSets.Single(s => s.Name == "Chat"), on: false);
         await Assert.That(character.TriggerSets).IsEquivalentTo(new[] { "Combat" });

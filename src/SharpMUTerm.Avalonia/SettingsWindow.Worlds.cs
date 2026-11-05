@@ -45,6 +45,13 @@ internal sealed partial class SettingsWindow
     /// <summary>A deletion waiting for its yes: the world or character it would delete, or null.</summary>
     private object? _pendingDeletion;
 
+    /// <summary>
+    /// A world or character asked to be shown before the configuration holds it: the client commits on its own thread,
+    /// so a world or character just added can reach the list a frame after the page asked for it. It is shown once it
+    /// arrives, rather than the page falling back to the first world.
+    /// </summary>
+    private (WorldDefinition World, CharacterDefinition? Character)? _pendingShow;
+
     private ListBox? _worldTree;
     private StackPanel? _worldHead;
     private StackPanel? _worldCharacters;
@@ -92,6 +99,7 @@ internal sealed partial class SettingsWindow
         _shownWorld = world;
         _shownCharacter = character;
         _pendingDeletion = null;
+        _pendingShow = world is not null && !Holds(_form.WorldList(), world, character) ? (world, character) : null;
         if (world is not null)
         {
             _form.Choose(world, character);
@@ -117,6 +125,12 @@ internal sealed partial class SettingsWindow
         ConnectButton = null;
         ConfirmDeleteButton = null;
         var worlds = _form.WorldList();
+        if (_pendingShow is { } pending && Holds(worlds, pending.World, pending.Character))
+        {
+            _shownWorld = pending.World;
+            _shownCharacter = pending.Character;
+            _pendingShow = null;
+        }
 
         // The shown world or character went (deleted here or elsewhere, or undone away): fall back to what the form chose.
         if (_shownWorld is not null && !worlds.Any(w => ReferenceEquals(w.World, _shownWorld)))
@@ -965,10 +979,16 @@ internal sealed partial class SettingsWindow
         return string.Join(";", parts) + "#" + sets;
     }
 
+    /// <summary>Whether <paramref name="worlds"/> holds <paramref name="world"/>, and <paramref name="character"/> under it when one is named.</summary>
+    private static bool Holds(IReadOnlyList<WorldListEntry> worlds, WorldDefinition world, CharacterDefinition? character) =>
+        worlds.Any(w => ReferenceEquals(w.World, world)) && (character is null || world.Characters.Contains(character));
+
     private void RefreshWorldsPage()
     {
         var worlds = _form.WorldList();
-        var gone = (_shownWorld is not null && !worlds.Any(w => ReferenceEquals(w.World, _shownWorld)))
+        var arrived = _pendingShow is { } pending && Holds(worlds, pending.World, pending.Character);
+        var gone = arrived
+            || (_shownWorld is not null && !worlds.Any(w => ReferenceEquals(w.World, _shownWorld)))
             || (_shownCharacter is not null && !worlds.Any(w => w.World.Characters.Contains(_shownCharacter)))
             || (_shownWorld is null && worlds.Count > 0);
         if (gone)
