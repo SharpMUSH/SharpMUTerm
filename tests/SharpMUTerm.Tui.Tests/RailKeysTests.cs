@@ -176,4 +176,40 @@ public class RailKeysTests
         await Assert.That(app.RunSidebarMenuEntry(edit)).IsTrue();
         await Assert.That(app.OpenSettingsKey).IsNotNull();
     }
+
+    /// <summary>
+    /// The header's character pill opens a switcher rather than going to the character in front: every configured
+    /// character by world, the one in front checked and not offered, then connect or disconnect, Worlds &amp; Characters
+    /// and Add a world — all registry commands.
+    /// </summary>
+    [Test]
+    public async Task TheCharacterPillOpensASwitcherOfEveryCharacter()
+    {
+        await using var app = await App();
+        var header = app.BuildHeaderModel();
+        await Assert.That(header.Character!.Target).IsEqualTo(HeaderModel.CharacterMenuTarget);
+
+        var menu = app.HeaderCharacterMenu();
+        var characters = menu.Entries.Where(e => e.Command?.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal) == true).ToList();
+        var configured = app.BuildSidebar().Worlds.SelectMany(w => w.Characters).ToList();
+        await Assert.That(characters.Count).IsEqualTo(configured.Count);
+        var front = characters.Single(e => e.Checked);
+        await Assert.That(front.Command).IsEqualTo(CommandIds.Character(header.Character.SessionKey));
+        await Assert.That(front.Enabled).IsFalse().Because("the character in front is where the reader already is");
+        await Assert.That(menu.Entries.Any(e => e.Label is "Connect" or "Disconnect")).IsTrue();
+        await Assert.That(menu.Entries.Any(e => e.Command == "screen:worlds")).IsTrue();
+        await Assert.That(menu.Entries.Any(e => e.Command == SidebarModel.AddGameTarget)).IsTrue();
+        foreach (var id in menu.Commands())
+        {
+            await Assert.That(app.Contributions.Commands.Resolve(id)).IsNotNull().Because(id);
+        }
+
+        // Picking another character switches to them; a click on the pill alone acts on nothing.
+        await Assert.That(app.ActivateChromeTarget(HeaderModel.CharacterMenuTarget)).IsFalse();
+        await Assert.That(app.BuildHeaderModel().Character!.SessionKey).IsEqualTo(header.Character.SessionKey);
+        var other = characters.First(e => e.Enabled);
+        await Assert.That(app.RunSidebarMenuEntry(other.Command!)).IsTrue();
+        await Assert.That(CommandIds.Character(app.BuildHeaderModel().Character!.SessionKey)).IsEqualTo(other.Command);
+        await Assert.That(app.RunSidebarMenuEntry("app:quit")).IsFalse();
+    }
 }

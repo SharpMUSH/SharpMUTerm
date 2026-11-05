@@ -106,7 +106,7 @@ internal abstract class NativeChromeView : Control
     protected bool Pressing(Rect area) => _pressed is not null && _hover == area;
 
     /// <summary>Acts on a target as a click would. Internal for tests.</summary>
-    internal void Click(string target)
+    internal virtual void Click(string target)
     {
         if (!Inert && target.Length > 0)
         {
@@ -485,7 +485,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
             var detail = Measure(character.Detail(world.Name), size);
             var width = Math.Min(pad + 10 + 8 + name + 10 + detail + pad, Math.Max(0, right - _brand.Right - 24));
             _pill = new Rect(right - width, plateTop + PillInset, width, plateHeight - (2 * PillInset));
-            hits.Add((_pill, character.Target, $"{character.Name} on {world.Name} — {character.Host}:{character.Port}"));
+            hits.Add((_pill, character.Target, $"{character.Name} on {world.Name} — {character.Host}:{character.Port}. Switch character, connect or disconnect"));
             right = _pill.Left - 16;
         }
 
@@ -542,6 +542,48 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
     }
 
     protected override void PressedEmpty(PointerPressedEventArgs e) => View.WindowGestureFromChrome(e);
+
+    /// <summary>The character menu as last opened (null before). Internal for tests.</summary>
+    internal ContextMenu? OpenedMenu { get; private set; }
+
+    /// <summary>The character pill opens its menu under it; every other target is acted on as before.</summary>
+    internal override void Click(string target)
+    {
+        if (target == HeaderModel.CharacterMenuTarget)
+        {
+            OpenCharacterMenu();
+            return;
+        }
+
+        base.Click(target);
+    }
+
+    /// <summary>
+    /// Asks the client for the character menu (<see cref="HeaderModel.CharacterMenuTarget"/>) and opens it under the
+    /// pill, right edges aligned. The client builds it on its own thread; the menu is opened on this one.
+    /// </summary>
+    private void OpenCharacterMenu()
+    {
+        if (Overlay is not { } overlay || Inert || _pill.Width <= 0)
+        {
+            return;
+        }
+
+        var anchor = _pill;
+        overlay.RowMenu(HeaderModel.CharacterMenuTarget, model => Dispatcher.UIThread.Post(() =>
+        {
+            if (model.Entries.Count == 0)
+            {
+                return;
+            }
+
+            var menu = NativeMenu.Build(model, overlay.RunRowMenu, PlacementMode.BottomEdgeAlignedRight, this);
+            menu.PlacementRect = anchor;
+            menu.Closed += (_, _) => View.Focus();
+            OpenedMenu = menu;
+            menu.Open(this);
+        }));
+    }
 
     public override void Render(DrawingContext context)
     {
