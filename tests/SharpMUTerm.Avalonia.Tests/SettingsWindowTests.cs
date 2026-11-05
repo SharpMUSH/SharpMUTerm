@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Automation;
+using Avalonia.VisualTree;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -26,6 +28,15 @@ public class SettingsWindowTests
         public SettingsHistory? History { get; set; }
 
         public List<string> Opened { get; } = [];
+
+        /// <summary>The session keys the form's connect buttons asked for.</summary>
+        public List<string> Connects { get; } = [];
+
+        /// <summary>The commands the worlds page ran (Browse worlds, the import).</summary>
+        public List<string> Ran { get; } = [];
+
+        /// <summary>The characters the client says are connected.</summary>
+        public List<string> Connected { get; } = [];
 
         /// <summary>The sections the form lists; every built-in one is declared now, so a test adds one that is not.</summary>
         public IReadOnlyList<SettingsSectionContribution> Sections { get; init; } = BuiltInSettings.All;
@@ -55,6 +66,9 @@ public class SettingsWindowTests
                 () => ThemePreviews.IsDark(ThemeChoices.Resolve(Config)))
             {
                 WorldNotes = Notes,
+                ConnectedKeys = () => Connected.ToArray(),
+                Connect = Connects.Add,
+                RunCommand = Ran.Add,
                 CommitAs = History is null ? null : (change, what) =>
                 {
                     var before = History.Capture();
@@ -379,15 +393,19 @@ public class SettingsWindowTests
         return harness;
     }
 
-    /// <summary>F5's section is drawn here: a world picker over the declared fields, and an edit lands on the world picked.</summary>
+    /// <summary>
+    /// F5's section is the worlds page: a tree of every world with its characters, the declared fields of the one picked,
+    /// and an edit lands on that world.
+    /// </summary>
     [Test]
     public async Task AWorldSectionPicksItsWorldAndEditsIt()
     {
         var harness = TwoWorlds();
         var (fields, subjects) = await Run(harness, "worlds", window =>
         {
-            var subjects = window.SubjectPicker!.ItemCount;
-            window.SubjectPicker.SelectedIndex = 1;
+            var tree = window.WorldTree!;
+            var subjects = tree.ItemCount;
+            tree.SelectedItem = tree.Items.OfType<ListBoxItem>().First(i => ReferenceEquals(i.Tag, harness.Config.Worlds[1]));
             Dispatcher.UIThread.RunJobs();
             var box = (TextBox)window.FieldControls["edit-grab"];
             box.Text = "Edit>";
@@ -396,7 +414,7 @@ public class SettingsWindowTests
             return (window.ShownFields.ToArray(), subjects);
         });
 
-        await Assert.That(subjects).IsEqualTo(2);
+        await Assert.That(subjects).IsEqualTo(4);
         await Assert.That(fields).IsEquivalentTo(BuiltInSettings.World.Fields.Select(f => f.Id).ToArray());
         await Assert.That(harness.Config.Worlds[1].GrabPrefix).IsEqualTo("Edit>");
         await Assert.That(harness.Config.Worlds[0].GrabPrefix).IsNull();
@@ -456,33 +474,123 @@ public class SettingsWindowTests
         await Assert.That(harness.Commits).IsEqualTo(0);
     }
 
-    /// <summary>The lists F5 holds (characters, trigger sets, adding and deleting) are its cell screen's; the door opens it.</summary>
+    /// <summary>The window's worlds page has no door to the cell F5: everything F5 did is on the page.</summary>
     [Test]
-    public async Task TheWorldSectionsDoorOpensTheCellScreen()
+    public async Task TheWorldsPageSendsNobodyToTheCellScreen()
     {
         var harness = TwoWorlds();
-        await Run(harness, "worlds", window =>
+        var buttons = await Run(harness, "worlds", window =>
+            window.GetVisualDescendants().OfType<Button>().Select(b => AutomationProperties.GetName(b) ?? string.Empty).ToArray());
+
+        await Assert.That(buttons.Any(n => n.Contains("screen", StringComparison.OrdinalIgnoreCase))).IsFalse();
+        await Assert.That(harness.Opened).IsEmpty();
+    }
+
+    /// <summary>F9 is folded into the worlds page: it has no row of its own, and opening it shows the character.</summary>
+    [Test]
+    public async Task F9OpensTheWorldsPageOnTheCharacter()
+    {
+        var harness = TwoWorlds();
+        var (rows, shown, fields) = await Run(harness, "logging", window =>
+            (window.GetVisualDescendants().OfType<ListBoxItem>().Select(i => i.Tag).OfType<string>().ToArray(),
+             window.WorldsShown,
+             window.ShownFields.ToArray()));
+
+        await Assert.That(rows).Contains("worlds");
+        await Assert.That(rows).DoesNotContain("logging");
+        await Assert.That(shown).IsSameReferenceAs(harness.Config.Worlds[0].Characters[0]);
+        await Assert.That(fields).IsEquivalentTo(BuiltInSettings.Character.Fields.Select(f => f.Id).ToArray());
+    }
+
+    /// <summary>A world and a character are added from the tree's buttons, each one commit, and the page shows the new one.</summary>
+    [Test]
+    public async Task WorldsAndCharactersAreAddedOnThePage()
+    {
+        var harness = TwoWorlds();
+        var shown = await Run(harness, "worlds", window =>
         {
-            window.ScreenDoor!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.AddWorldButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            window.AddCharacterButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return window.WorldsShown;
+        });
+
+        await Assert.That(harness.Config.Worlds.Count).IsEqualTo(3);
+        await Assert.That(harness.Config.Worlds[2].Characters.Count).IsEqualTo(1);
+        await Assert.That(shown).IsSameReferenceAs(harness.Config.Worlds[2].Characters[0]);
+        await Assert.That(harness.Commits).IsEqualTo(2);
+    }
+
+    /// <summary>Delete asks first: nothing goes until the yes, and the yes deletes the world shown.</summary>
+    [Test]
+    public async Task DeletingAWorldAsksFirst()
+    {
+        var harness = TwoWorlds();
+        var (before, asked) = await Run(harness, "worlds", window =>
+        {
+            window.DeleteButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var before = harness.Config.Worlds.Count;
+            var asked = window.ConfirmDeleteButton is not null;
+            window.ConfirmDeleteButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return (before, asked);
+        });
+
+        await Assert.That(before).IsEqualTo(2);
+        await Assert.That(asked).IsTrue();
+        await Assert.That(harness.Config.Worlds.Select(w => w.Name)).IsEquivalentTo(new[] { "Brightwater" });
+    }
+
+    /// <summary>A character's page lists every set, and ticking one lists it on the character in one commit.</summary>
+    [Test]
+    public async Task ACharactersSetsAreTickedOnItsPage()
+    {
+        var harness = TwoWorlds();
+        harness.Config.TriggerSets.Add(new TriggerSet { Name = "Combat" });
+        var boxes = await Run(harness, "logging", window =>
+        {
+            var names = window.SetBoxes.Keys.ToArray();
+            window.SetBoxes["Combat"].IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+            return names;
+        });
+
+        await Assert.That(boxes).Contains("Combat");
+        await Assert.That(harness.Config.Worlds[0].Characters[0].TriggerSets).Contains("Combat");
+        await Assert.That(harness.Commits).IsEqualTo(1);
+    }
+
+    /// <summary>A character's connect button asks the client for that session; the page never dials itself.</summary>
+    [Test]
+    public async Task TheConnectButtonAsksTheClient()
+    {
+        var harness = TwoWorlds();
+        await Run(harness, "logging", window =>
+        {
+            window.ConnectButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             return 0;
         });
 
-        await Assert.That(harness.Opened).IsEquivalentTo(new[] { "worlds" });
+        await Assert.That(harness.Connects).IsEquivalentTo(new[] { "Aetherfall.Corvid" });
+        await Assert.That(harness.Commits).IsEqualTo(0);
     }
 
-    /// <summary>With no world there is nothing to edit: no fields, a sentence saying so, and the door to F5.</summary>
+    /// <summary>With no world there is nothing to edit: no fields, and the ways to get one (add, browse, import).</summary>
     [Test]
-    public async Task AWorldSectionWithNoWorldsShowsOnlyTheDoor()
+    public async Task AWorldSectionWithNoWorldsOffersWaysToGetOne()
     {
         var harness = new Harness();
         harness.Config.Worlds.Clear();
-        var (fields, door, picker) = await Run(harness, "worlds", window =>
-            (window.ShownFields.Count, window.ScreenDoor is not null, window.SubjectPicker is not null));
+        var (fields, add, buttons) = await Run(harness, "worlds", window =>
+            (window.ShownFields.Count, window.AddWorldButton is not null,
+             window.GetVisualDescendants().OfType<Button>().Select(b => AutomationProperties.GetName(b) ?? string.Empty).ToArray()));
 
         await Assert.That(fields).IsEqualTo(0);
-        await Assert.That(door).IsTrue();
-        await Assert.That(picker).IsFalse();
+        await Assert.That(add).IsTrue();
+        await Assert.That(buttons.Any(n => n.Contains("Browse", StringComparison.Ordinal))).IsTrue();
     }
 
     /// <summary>F7 in the window host reaches the presenter, which opens the settings window on that section.</summary>

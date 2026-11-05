@@ -2393,7 +2393,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     the order `WorldFieldOrder`/`SecurityFieldOrder`/`CharacterFieldOrder` name, because ⇥ order and the field
     ordinals tests navigate by are the cell screen's, while the declaration's order is the window's grouping. A
     `TextRule` (Required, Name, Pattern, Secret, Defaulted) is the one rule both the cell field and
-    `SettingsForm.SetText` apply. The lists (characters, trigger sets, adding and deleting) stay the cell screen's.
+    `SettingsForm.SetText` apply. In the cells the lists (characters, trigger sets, adding and deleting) are the cell
+    screen's; in the window they are the Worlds & Characters page's (below).
     `DeclaredWorldSettingsTests` holds the two surfaces' field lists together.
   - **The theme is F7's first field, a `ThemeField`** (`ThemeChoices`, `ThemePreview`/`ThemeCard`, Client;
     `ThemePreviews`, `SharpMUTermApp.Theme.cs`, Tui; `ThemeCardView`, Avalonia). One Client model per theme: three
@@ -2468,12 +2469,21 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     thread. `GameDataStore` is locked, but the focus is not safe to read from another thread. The `now` column is
     re-read each second (`OptionsScreenRenderer.NowText`). The received paths feed each path box's auto-complete
     and a list below it; clicking a path fills the path box last used.
-  - **A scoped section (F5, F9) has a subject picker and a door.** `SettingsForm.Subjects`/`Choose` pick the world
-    or character its fields edit; the form opens on the focused window's (`FocusedSubject`, resolved on the client's
-    thread). A write captures the subject at the moment it is made. `Open the F5 screen ↗` (`OpenScreen`) is the way
-    to the lists, and opens the *cell* screen: `OpenSectionScreen` calls `GoToSetting(…, native: false)`, or the door
-    would reopen this window. With no world there are no fields, only a sentence and the door. A text the rule
-    refuses is put back with the reason as a tooltip. A field may carry a per-world note the cell row shows
+  - **F5 and F9 are one native page, Worlds & Characters, and the window never opens the cell F5** (Client
+    `SettingsForm.Worlds.cs`: `WorldEditing`, `WorldListEntry`, `SetAssignment`, `SettingsForm.PageOf`; `ServerInfoModel`,
+    which the cell INFO screen `MsspScreenRenderer` now draws from too; Avalonia `SettingsWindow.Worlds.cs`). A tree of
+    worlds with their characters (presence dot from `SettingsForm.ConnectedKeys`, a volatile snapshot refreshed in
+    `RefreshRail`) and its buttons (+ World, + Character, Copy, Delete with an inline yes, ↑/↓ and ⌥↑/↓, Del), then the
+    chosen world's characters (Connect / Go to, through `SettingsForm.Connect` → `char:<key>`, which closes the window
+    first), its declared field cards and its server information; or the chosen character's trigger sets (tick to use,
+    numbered and reordered in the order that decides a clash, a package's set read only, *Edit their rules* → F2) and its
+    declared fields. **F9 is folded in** (`PageOf("logging") == "worlds"`): no nav row, its search hits count under the
+    page, F9 opens the page on the character. Every change is one `Commit` with a name for the undo history, replacing
+    the list it changes. The page runs exactly two commands (`SettingsForm.Run`: Browse worlds, the import); anything else
+    is refused. There is no subject picker and no door: `OpenSectionScreen` only serves a section that declares no
+    fields, and a declared one asked for from the window reopens the window (`TheWindowNeverOpensTheCellF5`). **The
+    terminal keeps its cell F5**, which is still drawn from the same declarations. A text the rule refuses is put back
+    with the reason as a tooltip. A field may carry a per-world note the cell row shows
     (`SettingsForm.WorldNotes`, by field id then world, built on the client's thread; `Note` shows it only while the
     field is at its default): `join wraps` carries `recommended · wraps at 78, pane is 60`, one string from
     `WorldFieldValues.JoinWrapsAdvice` for both hosts.

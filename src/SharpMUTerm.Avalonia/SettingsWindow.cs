@@ -31,7 +31,7 @@ namespace SharpMUTerm.Avalonia;
 /// none on a cell screen. A section that declares no fields is listed and opens its own cell screen.
 /// </para>
 /// </summary>
-internal sealed class SettingsWindow : Window
+internal sealed partial class SettingsWindow : Window
 {
     /// <summary>
     /// How far the meter table's received-paths box sits in: under the value path column, past the table's 4 px inset,
@@ -254,6 +254,11 @@ internal sealed class SettingsWindow : Window
             {
                 packages.Height = ListEditorHeight();
             }
+
+            if (WorldsGrid is { } worlds)
+            {
+                worlds.Height = ListEditorHeight();
+            }
         };
 
         var dock = new DockPanel { LastChildFill = true };
@@ -399,12 +404,6 @@ internal sealed class SettingsWindow : Window
     /// <summary>The theme cards on the page, for a test.</summary>
     public IReadOnlyList<ThemeCardView> ThemeCards => _themeCards;
 
-    /// <summary>The world or character picker of a scoped section, for a test; null on an app-wide one.</summary>
-    public ComboBox? SubjectPicker { get; private set; }
-
-    /// <summary>The button that opens the section's own cell screen, for a test; null where there is none.</summary>
-    public Button? ScreenDoor { get; private set; }
-
     /// <summary>The meter table, for a test: a heading row and one row per meter.</summary>
     public Grid? MeterGrid { get; private set; }
 
@@ -427,9 +426,16 @@ internal sealed class SettingsWindow : Window
         _shown = null;
         _matches = _form.Search(_search.Text);
         BuildSectionList();
-        Choose(form.Section(form.Initial) is { } initial && SettingsForm.IsDeclared(initial)
+        var first = form.Section(form.Initial) is { } initial && SettingsForm.IsDeclared(initial)
             ? initial.Id
-            : form.Sections.FirstOrDefault(SettingsForm.IsDeclared)?.Id);
+            : form.Sections.FirstOrDefault(SettingsForm.IsDeclared)?.Id;
+        if (first is not null)
+        {
+            // F9 opens the worlds page on the character the form chose; F5 on its world.
+            SeedWorldsSelection(first);
+        }
+
+        Choose(first);
     }
 
     // ── the section list ─────────────────────────────────────────────────────────────────────────
@@ -442,6 +448,12 @@ internal sealed class SettingsWindow : Window
         var items = new List<ListBoxItem>();
         foreach (var section in _form.Sections)
         {
+            if (!string.Equals(SettingsForm.PageOf(section.Id), section.Id, StringComparison.Ordinal))
+            {
+                // Folded into another page (F9's characters are on the worlds page), so it has no row of its own.
+                continue;
+            }
+
             var title = new TextBlock { Text = section.Title, FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             var badge = new TextBlock { FontSize = NativeTokens.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space8, 0, 0, 0) };
             _badges[section.Id] = badge;
@@ -475,7 +487,15 @@ internal sealed class SettingsWindow : Window
         var searching = Searching;
         foreach (var section in _form.Sections)
         {
-            var count = counts.GetValueOrDefault(section.Id);
+            if (!_badges.ContainsKey(section.Id))
+            {
+                continue;
+            }
+
+            // A page counts the matches of every section folded into it.
+            var count = _form.Sections
+                .Where(s => string.Equals(SettingsForm.PageOf(s.Id), section.Id, StringComparison.Ordinal))
+                .Sum(s => counts.GetValueOrDefault(s.Id));
             // While searching a section with matches says how many and one without says nothing (the mockup's rows):
             // a column of greyed zeros read as a column of disabled sections.
             _badges[section.Id].Text = searching
@@ -531,6 +551,7 @@ internal sealed class SettingsWindow : Window
 
     private void Choose(string? id)
     {
+        id = id is null ? null : SettingsForm.PageOf(id);
         _shown = id;
         _form.Showing = id;
         _form.HistoryNote = null;
@@ -556,7 +577,7 @@ internal sealed class SettingsWindow : Window
         _matches = _form.Search(_search.Text);
         UpdateBadges();
         if (Searching
-            && !_matches.Any(m => m.Field is not null && m.Section.Id == _shown)
+            && !_matches.Any(m => m.Field is not null && SettingsForm.PageOf(m.Section.Id) == _shown)
             && _matches.FirstOrDefault(m => m.Field is not null) is { } first)
         {
             // The section on show has nothing matching: go to the first that has.
@@ -581,12 +602,12 @@ internal sealed class SettingsWindow : Window
         _notes.Clear();
         _meterNow.Clear();
         _themeCards.Clear();
-        SubjectPicker = null;
         ListEditor = null;
         PackagePage = null;
-        ScreenDoor = null;
         MeterGrid = null;
         _meterRows = -1;
+        WorldsGrid = null;
+        _worldTree = null;
         if (_shown is null || _form.Section(_shown) is not { } section)
         {
             _scope.Content = null;
@@ -594,7 +615,16 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        _scope.Content = section.Scope is SettingScope.World or SettingScope.Character ? SubjectRow(section) : null;
+        if (IsWorldsPage(section))
+        {
+            // The tree on the page is the subject picker, and adding and deleting are on it: no picker, no door.
+            _scope.Content = null;
+            _page.Children.Add(PageHead(section));
+            BuildWorldsPage(section);
+            return;
+        }
+
+        _scope.Content = null;
         _page.Children.Add(PageHead(section));
 
         if (section.Packages is not null)
@@ -715,8 +745,7 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>
     /// The page's heading: the section's title and, under it, what the page is showing — the screen it is in the
-    /// terminal, or what the search matched with the way back to everything — and, for a scoped section, the way to its
-    /// own cell screen for what is not a field (the lists of characters and trigger sets, adding and deleting).
+    /// terminal, or what the search matched with the way back to everything.
     /// </summary>
     private StackPanel PageHead(SettingsSectionContribution section)
     {
@@ -735,20 +764,6 @@ internal sealed class SettingsWindow : Window
         else if (section.Key is { } key)
         {
             line.Children.Add(new TextBlock { Text = $"{key} in the client · changes apply as you make them", FontSize = NativeTokens.Label, Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center });
-        }
-
-        if (section.Scope is SettingScope.World or SettingScope.Character && section.Key is { } screen)
-        {
-            var door = LinkButton($"Open the {screen} screen ↗");
-            door.Margin = new Thickness(line.Children.Count > 0 ? NativeTokens.Space12 : 0, 0, 0, 0);
-            ToolTip.SetTip(door, section.Scope == SettingScope.World
-                ? "Adding and deleting worlds, their characters and trigger sets are on the cell screen"
-                : "Adding and deleting characters is on the cell screen");
-            AutomationProperties.SetName(door, $"Open the {screen} screen");
-            var id = section.Id;
-            door.Click += (_, _) => _form.OpenScreen(id);
-            ScreenDoor = door;
-            line.Children.Add(door);
         }
 
         if (line.Children.Count > 0)
@@ -795,42 +810,6 @@ internal sealed class SettingsWindow : Window
         }
 
         return button;
-    }
-
-    /// <summary>
-    /// A scoped section's subject, in the header as the mockup's "Applies to": which world or character the fields are
-    /// for, picked from every one there is.
-    /// </summary>
-    private Control SubjectRow(SettingsSectionContribution section)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space8 };
-        var subjects = _form.Subjects(section.Scope);
-        var noun = section.Scope == SettingScope.World ? "world" : "character";
-        if (subjects.Count == 0)
-        {
-            row.Children.Add(new TextBlock { Text = $"No {noun} yet", VerticalAlignment = VerticalAlignment.Center, Foreground = DimInk, FontSize = NativeTokens.Label });
-            return row;
-        }
-
-        var labels = subjects.Select(s => s.Label).ToList();
-        var current = _form.Subject(section.Scope);
-        var picker = new ComboBox { ItemsSource = labels, MinWidth = 180, MaxWidth = 280, SelectedItem = current?.Label, FontSize = NativeTokens.Label };
-        AutomationProperties.SetName(picker, $"The {noun} these settings are for");
-        picker.SelectionChanged += (_, _) =>
-        {
-            if (!_syncing && picker.SelectedIndex is >= 0 and var i && i < subjects.Count
-                && !string.Equals(subjects[i].Label, _form.Subject(section.Scope)?.Label, StringComparison.Ordinal))
-            {
-                _form.Choose(subjects[i]);
-                var offset = _scroller.Offset;
-                BuildPage();
-                _scroller.Offset = offset;
-            }
-        };
-        SubjectPicker = picker;
-        row.Children.Add(new TextBlock { Text = section.Scope == SettingScope.World ? "Applies to world" : "Applies to character", VerticalAlignment = VerticalAlignment.Center, Foreground = DimInk, FontSize = NativeTokens.Label });
-        row.Children.Add(picker);
-        return row;
     }
 
     /// <summary>The theme field: a card per theme, its preview drawn from the client's model; a click uses it.</summary>
@@ -1096,7 +1075,7 @@ internal sealed class SettingsWindow : Window
 
             case TextField text when field.Binding is SettingBinding<string?>:
             {
-                var box = new TextBox { Text = _form.Text(text), Width = 260 };
+                var box = new TextBox { Text = _form.Text(text), Width = _shown == BuiltInSettings.World.Id ? WorldsTextBoxWidth : 260 };
                 if (text.Masked)
                 {
                     box.PasswordChar = '•';

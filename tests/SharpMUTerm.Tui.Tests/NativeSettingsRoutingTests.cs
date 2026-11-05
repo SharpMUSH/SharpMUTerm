@@ -104,16 +104,36 @@ public class NativeSettingsRoutingTests
         await Assert.That(saves.Count).IsEqualTo(2);
     }
 
+    /// <summary>
+    /// The window never sends a declared section to its cell screen: F5 asked for from the window comes back as the
+    /// window's own Worlds &amp; Characters page, so the cell F5 is the terminal's alone.
+    /// </summary>
     [Test]
-    public async Task TheWindowsWayToAnUndeclaredSectionClosesItAndOpensTheCellScreen()
+    public async Task TheWindowNeverOpensTheCellF5()
     {
         var (app, native, _) = App();
-        app.SimulateKey(F(ConsoleKey.F7));
+        app.SimulateKey(F(ConsoleKey.F5));
+        await Assert.That(native.Shown.Single().Initial).IsEqualTo("worlds");
 
-        native.Shown.Single().OpenScreen("aliases");
+        native.Shown.Single().OpenScreen("worlds");
+        app.SimulateKey(F(ConsoleKey.F9));
 
+        await Assert.That(app.SettingsOpenKey).IsNull();
+        await Assert.That(native.Shown.Select(f => f.Initial)).IsEquivalentTo(new[] { "worlds", "worlds", "logging" });
+    }
+
+    /// <summary>The worlds page's two commands go to the client, which closes the window first; nothing else is run.</summary>
+    [Test]
+    public async Task TheWorldsPageRunsOnlyBrowseAndImport()
+    {
+        var (app, native, _) = App();
+        app.SimulateKey(F(ConsoleKey.F5));
+        var form = native.Shown.Single();
+
+        await Assert.That(form.Run("term:quit")).IsFalse();
+        await Assert.That(native.Closed).IsEqualTo(0);
+        await Assert.That(form.Run(SettingsForm.BrowseWorlds)).IsTrue();
         await Assert.That(native.Closed).IsEqualTo(1);
-        await Assert.That(app.SettingsOpenKey).IsEqualTo(ConsoleKey.F3);
     }
 
     [Test]

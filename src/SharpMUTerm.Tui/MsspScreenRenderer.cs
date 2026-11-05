@@ -1,4 +1,5 @@
 using System.Globalization;
+using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Telnet.Mssp;
 using static SharpMUTerm.Tui.MarkupText;
@@ -85,53 +86,29 @@ internal static class MsspScreenRenderer
     /// the name printed once — rather than as their first or last value. This caps the rows one variable
     /// can spend.
     /// </summary>
-    internal const int MaxValueRows = 8;
+    internal const int MaxValueRows = ServerInfoModel.MaxValueRows;
 
     /// <summary>What a row shows where the server said nothing at all.</summary>
-    internal const string Unreported = "—";
+    internal const string Unreported = ServerInfoModel.Unreported;
 
     /// <summary>What a numeric world variable of <c>-1</c> reads as: the specification's "not available".</summary>
-    internal const string Unavailable = "unknown";
+    internal const string Unavailable = ServerInfoModel.Unavailable;
 
     /// <summary>The words the never-connected state is put in.</summary>
-    internal const string NeverConnected = "No server information yet — connect once and this fills in.";
+    internal const string NeverConnected = ServerInfoModel.NeverConnected;
 
     /// <summary>
     /// The words the connected-and-silent state is put in. It says the absence is normal because it is:
     /// MSSP is optional, most MUSHes do not implement it, and a client that reported the ordinary case
     /// as a failure would be teaching people to distrust the screen.
     /// </summary>
-    internal const string NoMssp = "This server does not publish MSSP. It is optional, and most MUSHes do not.";
-
-    /// <summary>
-    /// The first-class rows, in the order somebody browsing a world list wants them. Everything not on
-    /// this list is still shown — under <see cref="EverythingElse"/> — because a protocol whose entire
-    /// purpose is servers describing themselves is a protocol whose unofficial half is where the
-    /// interesting things are.
-    /// </summary>
-    private static readonly (string Label, string Variable)[] Headline =
-    [
-        ("name", MsspVariables.Name),
-        ("players", MsspVariables.Players),
-        ("uptime", MsspVariables.Uptime),
-        ("codebase", MsspVariables.Codebase),
-        ("family", MsspVariables.Family),
-        ("hostname", MsspVariables.Hostname),
-        ("port", MsspVariables.Port),
-        ("ssl", MsspVariables.Ssl),
-        ("charset", MsspVariables.Charset),
-        ("contact", MsspVariables.Contact),
-        ("website", MsspVariables.Website),
-        ("genre", MsspVariables.Genre),
-        ("status", MsspVariables.Status),
-        ("minimum age", MsspVariables.MinimumAge),
-    ];
+    internal const string NoMssp = ServerInfoModel.NoMssp;
 
     /// <summary>The heading over the variables that did not earn a headline row.</summary>
-    internal const string EverythingElse = "EVERYTHING ELSE";
+    internal const string EverythingElse = ServerInfoModel.EverythingElse;
 
     /// <summary>The heading over the headline rows.</summary>
-    internal const string SummaryHeading = "SERVER";
+    internal const string SummaryHeading = ServerInfoModel.SummaryHeading;
 
     /// <summary>
     /// How an unofficial variable is marked. Official and unofficial must both be visible and must be
@@ -143,7 +120,7 @@ internal static class MsspScreenRenderer
     internal const string UnofficialMark = "·";
 
     /// <summary>The legend that says what <see cref="UnofficialMark"/> means, so the mark is readable.</summary>
-    internal const string UnofficialLegend = "not in the MSSP specification";
+    internal const string UnofficialLegend = ServerInfoModel.UnofficialLegend;
 
     /// <summary>
     /// The screen's navigable shape: one stop per drawn body row, so ↑↓ scroll a report longer than the
@@ -226,55 +203,54 @@ internal static class MsspScreenRenderer
     internal static List<string> Body(
         WorldDefinition? world, MsspObservation? observation, DateTimeOffset now, int width = 0)
     {
+        // The rows are the Client's model (the window's world page draws the same one); this only lays them out.
         var cells = ValueCells(width);
+        var model = ServerInfoModel.For(world, observation, now);
         var rows = new List<string>();
-        AddConfigured(rows, world, cells);
-
-        if (observation is null)
+        if (world is null)
         {
-            rows.Add(string.Empty);
-            rows.Add($"  [{Muted}]{Escape(NeverConnected)}[/]");
-            return rows;
+            rows.Add($"  [{Muted}]no world selected[/]");
         }
 
-        if (observation is { Report: null } or { ObservedAt: null })
+        foreach (var row in model.Configured)
         {
-            rows.Add(string.Empty);
-            rows.Add($"  [{Muted}]{Escape(NoMssp)}[/]");
-            rows.Add(string.Empty);
-            rows.Add(Row("last seen", Since(observation.ConnectedAt, now), cells));
-            return rows;
+            AddRow(rows, row, cells);
         }
 
-        var report = observation.Report!;
+        switch (model.State)
+        {
+            case ServerInfoState.NeverConnected:
+                rows.Add(string.Empty);
+                rows.Add($"  [{Muted}]{Escape(NeverConnected)}[/]");
+                return rows;
+            case ServerInfoState.PublishesNothing:
+                rows.Add(string.Empty);
+                rows.Add($"  [{Muted}]{Escape(NoMssp)}[/]");
+                rows.Add(string.Empty);
+                rows.Add(Row("last seen", model.LastSeen ?? string.Empty, cells));
+                return rows;
+        }
 
-        // Built once. MsspData.UnofficialNames allocates and filters on every read, and the mark column
-        // asks per row — a hundred-variable report would have walked it a hundred times.
-        var unofficial = new HashSet<string>(report.UnofficialNames, StringComparer.Ordinal);
         rows.Add(string.Empty);
-        rows.Add(Row("captured", Since(observation.ObservedAt!.Value, now), cells));
+        rows.Add(Row("captured", model.Captured ?? string.Empty, cells));
         rows.Add(string.Empty);
         rows.Add($"  [{Label}]{SummaryHeading}[/]");
-
-        var drawn = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (label, variable) in Headline)
+        foreach (var row in model.Headline)
         {
-            drawn.Add(variable);
-            AddVariable(rows, label, report[variable], variable, report, unofficial, now, cells);
+            AddRow(rows, row, cells);
         }
 
-        var remaining = report.Keys.Where(name => !drawn.Contains(name)).ToList();
         rows.Add(string.Empty);
         rows.Add($"  [{Label}]{EverythingElse}[/]");
-        if (remaining.Count == 0)
+        if (model.Others.Count == 0)
         {
-            rows.Add($"  [{Muted}]nothing else was sent[/]");
+            rows.Add($"  [{Muted}]{ServerInfoModel.NothingElse}[/]");
             return rows;
         }
 
-        foreach (var name in remaining)
+        foreach (var row in model.Others)
         {
-            AddVariable(rows, name, report[name], name, report, unofficial, now, cells);
+            AddRow(rows, row, cells);
         }
 
         rows.Add(string.Empty);
@@ -283,167 +259,34 @@ internal static class MsspScreenRenderer
     }
 
     /// <summary>
-    /// What the client knows without asking anybody: the world's own name, host, port and whether the
-    /// connection is encrypted. It heads every state, including both empty ones — which is the point.
-    /// A screen that had nothing at all to show for a world it has never reached would be a screen you
-    /// stop opening; one that shows the configuration it does hold answers half the question.
+    /// One variable as one row per value, the name on the first row only, so a three-port server reads as one variable
+    /// with three values; past <see cref="MaxValueRows"/> the rest are counted.
     /// </summary>
-    private static void AddConfigured(List<string> rows, WorldDefinition? world, int cells)
+    private static void AddRow(List<string> rows, ServerInfoRow row, int cells)
     {
-        if (world is null)
+        var mark = row.Unofficial ? UnofficialMark : " ";
+        for (var i = 0; i < row.Values.Count; i++)
         {
-            rows.Add($"  [{Muted}]no world selected[/]");
-            return;
+            rows.Add(Row(i == 0 ? row.Label : string.Empty, row.Values[i], cells, i == 0 ? mark : " "));
         }
 
-        rows.Add(Row("world", world.Name, cells));
-        rows.Add(Row(
-            "address",
-            $"{world.Host}:{world.Port.ToString(CultureInfo.InvariantCulture)}",
-            cells));
-        rows.Add(Row("transport", world.UseTls ? "TLS" : "plain", cells));
-    }
-
-    /// <summary>
-    /// One variable, as one row per value. The name is printed on the first row only, so a three-port
-    /// server reads as one variable with three values rather than as three variables — and the values
-    /// are drawn least-to-most-relevant, in wire order, which is the order the specification gives them
-    /// meaning in ("the last reported value should be used as the default value").
-    /// </summary>
-    private static void AddVariable(
-        List<string> rows,
-        string label,
-        IReadOnlyList<string> values,
-        string variable,
-        MsspData report,
-        IReadOnlySet<string> unofficial,
-        DateTimeOffset now,
-        int cells)
-    {
-        var mark = unofficial.Contains(variable) ? UnofficialMark : " ";
-
-        if (values.Count == 0)
+        if (row.More > 0)
         {
-            // Two different absences, and the row says which. A variable the server sent with no value
-            // is a fact about the server; one it never mentioned is a fact about the report.
-            rows.Add(Row(label, report.ContainsKey(variable) ? Unavailable : Unreported, cells, mark));
-            return;
-        }
-
-        var shown = Math.Min(values.Count, MaxValueRows);
-        for (var i = 0; i < shown; i++)
-        {
-            rows.Add(Row(
-                i == 0 ? label : string.Empty,
-                Reading(variable, values[i], now),
-                cells,
-                i == 0 ? mark : " "));
-        }
-
-        if (values.Count > shown)
-        {
-            rows.Add(Row(
-                string.Empty,
-                $"… {(values.Count - shown).ToString(CultureInfo.InvariantCulture)} more",
-                cells));
+            rows.Add(Row(string.Empty, $"… {row.More.ToString(CultureInfo.InvariantCulture)} more", cells));
         }
     }
 
     /// <summary>
-    /// How one value reads. Almost all of them read as themselves; the two exceptions are the ones where
-    /// the raw string is actively misleading — <c>UPTIME</c> is a Unix timestamp, which is a number
-    /// nobody can read as a duration, and <c>-1</c> is the specification's marker for "this server
-    /// cannot count that" rather than a count of minus one.
-    /// </summary>
-    private static string Reading(string variable, string value, DateTimeOffset now)
-    {
-        if (string.Equals(variable, MsspVariables.Uptime, StringComparison.Ordinal)
-            && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix)
-            && unix > 0)
-        {
-            var booted = DateTimeOffset.FromUnixTimeSeconds(unix);
-            return $"{Duration(now - booted)} (since {booted.UtcDateTime:yyyy-MM-dd HH:mm} UTC)";
-        }
-
-        return string.Equals(value, "-1", StringComparison.Ordinal) ? Unavailable : value;
-    }
-
-    /// <summary>
-    /// A <c>label   value</c> row. Both halves are sanitised, truncated and escaped, and the whole thing
-    /// carries a one-cell mark column — reserved, blank when the variable is official, so a report of
-    /// unofficial variables and one of official variables put their values in the same column.
-    /// <para>
-    /// <b>The label is padded before it is escaped, and it is a label off the wire.</b> Under
-    /// EVERYTHING ELSE the label <em>is</em> the variable name the server sent, so it is exactly as
-    /// hostile as a value: <c>Escape</c> doubles every bracket, so padding the escaped string pads a
-    /// name containing <c>[</c> to fewer <em>visible</em> cells than <see cref="NameWidth"/> and the
-    /// value column steps left on that row alone. Sanitising it matters for the same reason — MSSP
-    /// says names are upper-case letters and spaces, and a server is not obliged to be truthful.
-    /// </para>
+    /// A <c>label   value</c> row: truncated, then escaped (in that order, so a <c>[[</c> pair is never cut in half),
+    /// with a one-cell mark column reserved whether or not the variable is unofficial. The label is padded before it
+    /// is escaped, because escaping doubles brackets and a padded escape would be fewer visible cells. Both halves are
+    /// already sanitised by <see cref="ServerInfoModel"/>; this sanitises again for a caller handing raw text.
     /// </summary>
     private static string Row(string label, string value, int cells, string mark = " ") =>
-        $" [{Muted}]{mark}[/] [{Label}]{Escape(Fit(Sanitize(label), NameWidth).PadRight(NameWidth))}[/]  "
-        + ScreenChrome.ReadOnly(Fit(Sanitize(value), cells));
+        $" [{Muted}]{mark}[/] [{Label}]{Escape(Fit(ServerInfoModel.Sanitize(label), NameWidth).PadRight(NameWidth))}[/]  "
+        + ScreenChrome.ReadOnly(Fit(ServerInfoModel.Sanitize(value), cells));
 
-    /// <summary>
-    /// Replaces every control character with a space. This is the first thing done to any value and it
-    /// is not cosmetic: a markup block is a list of rows, so a raw <c>\n</c> inside one value would end
-    /// that row early and push a fragment of a stranger's text onto a line of its own, below the row it
-    /// belongs to and outside the column it was measured for. An <c>ESC</c> would be worse — the frame
-    /// is ANSI, and the compositor is not the only thing that reads it.
-    /// </summary>
-    private static string Sanitize(string value)
-    {
-        if (!value.Any(char.IsControl))
-        {
-            return value;
-        }
-
-        return string.Create(value.Length, value, static (span, source) =>
-        {
-            for (var i = 0; i < source.Length; i++)
-            {
-                span[i] = char.IsControl(source[i]) ? ' ' : source[i];
-            }
-        });
-    }
-
-    /// <summary>
-    /// Truncates raw text to <paramref name="width"/> cells, ellipsis included in the count. It runs
-    /// <em>before</em> <see cref="MarkupText.Escape"/> at every call site: escaping doubles every bracket,
-    /// so truncating escaped markup can cut a <c>[[</c> in half and leave an unbalanced tag the parser
-    /// then eats the rest of the row with.
-    /// </summary>
+    /// <summary>Truncates raw text to <paramref name="width"/> cells, ellipsis included — before escaping, never after.</summary>
     private static string Fit(string text, int width) =>
         text.Length <= width ? text : text[..Math.Max(1, width - 1)] + "…";
-
-    /// <summary>
-    /// How long ago something was, in words, with the exact instant beside it. Both halves earn their
-    /// place: "3 days ago" is what tells a reader the player count in front of them is not current, and
-    /// the timestamp is what lets them decide whether it matters. A screen that presented a week-old
-    /// snapshot with no date at all would be reporting stale data as fact.
-    /// </summary>
-    private static string Since(DateTimeOffset at, DateTimeOffset now)
-    {
-        var ago = now - at;
-        var words = ago < TimeSpan.Zero ? "just now" : $"{Duration(ago)} ago";
-        return $"{words}  ({at.UtcDateTime:yyyy-MM-dd HH:mm} UTC)";
-    }
-
-    /// <summary>A coarse duration — the largest unit that is not zero, which is all any of this needs.</summary>
-    private static string Duration(TimeSpan span)
-    {
-        if (span < TimeSpan.Zero)
-        {
-            span = TimeSpan.Zero;
-        }
-
-        return span.TotalDays >= 1 ? Plural((int)span.TotalDays, "day")
-            : span.TotalHours >= 1 ? Plural((int)span.TotalHours, "hour")
-            : span.TotalMinutes >= 1 ? Plural((int)span.TotalMinutes, "minute")
-            : "moments";
-    }
-
-    private static string Plural(int count, string noun) =>
-        $"{count.ToString(CultureInfo.InvariantCulture)} {noun}{(count == 1 ? string.Empty : "s")}";
 }

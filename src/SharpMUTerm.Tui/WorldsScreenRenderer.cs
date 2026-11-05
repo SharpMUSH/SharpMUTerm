@@ -747,12 +747,8 @@ internal static class WorldsScreenRenderer
             : $"trigger set {set.Name} and its {string.Join(", ", parts)}";
     }
 
-    /// <summary>What deleting a world would cost: the world, and the characters that live on it.</summary>
-    private static string DescribeWorld(WorldDefinition world) =>
-        world.Characters.Count == 0
-            ? $"world {world.Name}"
-            : $"world {world.Name} and its {world.Characters.Count.ToString(CultureInfo.InvariantCulture)}"
-                + $" character{Plural(world.Characters.Count)}";
+    /// <summary>What deleting a world would cost — the window's page says the same (<see cref="WorldEditing.Deletion(WorldDefinition)"/>).</summary>
+    private static string DescribeWorld(WorldDefinition world) => WorldEditing.Deletion(world);
 
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
 
@@ -871,7 +867,7 @@ internal static class WorldsScreenRenderer
                 },
                 target: source.Name)));
             rows.Add(ScreenRow.Of(ScreenButton.Remove(
-                characters, selectedCharacter, target: source.Name, describe: () => $"character {source.Name}")));
+                characters, selectedCharacter, target: source.Name, describe: () => WorldEditing.Deletion(source))));
         }
 
         return rows;
