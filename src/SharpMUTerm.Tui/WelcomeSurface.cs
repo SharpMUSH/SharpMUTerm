@@ -159,6 +159,13 @@ internal sealed class WelcomeSurface
         _ => null,
     };
 
+    /// <summary>Puts the menu's cursor on <paramref name="choice"/>: the row the player is coming back from.</summary>
+    public void Highlight(WelcomeChoice choice)
+    {
+        Selected = choice;
+        Problem = null;
+    }
+
     /// <summary>Back to the menu, as it opens — for <c>/welcome</c> reopening a surface that was left in the form.</summary>
     public void ShowMenu()
     {
@@ -441,13 +448,11 @@ internal sealed class WelcomeSurface
 
     private static List<string> RenderForm(WelcomeModel model, int width)
     {
-        var lines = new List<string>
-        {
-            Band(WelcomeModel.FormHeading, width),
-            string.Empty,
-            Body(Value(model.FormIntroLine)),
-            string.Empty,
-        };
+        // The intro is broken to the body's width: a world Browse worlds named makes it a long sentence, which ran past
+        // the frame's right edge at 80 columns.
+        var lines = new List<string> { Band(WelcomeModel.FormHeading, width), string.Empty };
+        lines.AddRange(HelpSurface.Wrap(model.FormIntroLine, Math.Max(10, width - (2 * Indent))).Select(row => Body(Value(row))));
+        lines.Add(string.Empty);
 
         var boxWidth = Math.Clamp(width - (2 * Indent) - 16, 12, 44);
         var field = model.Field;

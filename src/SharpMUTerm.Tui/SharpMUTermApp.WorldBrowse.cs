@@ -65,8 +65,9 @@ internal sealed partial class SharpMUTermApp
     /// <c>/browse</c> — or closes it when it is open (⌃P's entry is a toggle). With no screen to read, the rows are said
     /// as lines instead.
     /// </summary>
-    internal void ShowWorldBrowse(string query = "")
+    internal void ShowWorldBrowse(string query = "", bool fromWelcome = false)
     {
+        _browseFromWelcome = fromWelcome;
         if (NativeModalOf(SurfaceCatalog.BrowseWorlds) is { } native)
         {
             CloseNativeModal(native);
@@ -117,8 +118,52 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
-        var browse = new WorldBrowseSurface(query);
+        OpenCellWorldBrowse(new WorldBrowseSurface(query));
+    }
+
+    /// <summary>Whether the cell Browse worlds was opened from the welcome, so Esc on its list goes back there.</summary>
+    private bool _browseFromWelcome;
+
+    /// <summary>Whether the cell connect form was filled in by a pick in the cell Browse worlds, so Esc on it goes back there.</summary>
+    private bool _formFromBrowse;
+
+    /// <summary>The cell surface last open, so going back to the list finds it as it was left (query, order, row).</summary>
+    private WorldBrowseSurface? _lastWorldBrowse;
+
+    /// <summary>
+    /// Esc on a connect form a pick filled in: back to the list it was picked from, as it was left and without asking the
+    /// directory again (the list is still held). The form keeps nothing: the next pick fills it in afresh.
+    /// </summary>
+    private void ReturnToWorldBrowse()
+    {
+        _formFromBrowse = false;
+        if (_worldModel.State != WorldBrowseState.Ready || _lastWorldBrowse is not { } browse)
+        {
+            ShowWorldBrowse(fromWelcome: _browseFromWelcome);
+            return;
+        }
+
+        PublishWorldModel(_worldModel with { Choosing = null, Opening = null, Problem = null });
+        OpenCellWorldBrowse(browse);
+    }
+
+    /// <summary>Esc on the cell list opened from the welcome: back to the welcome's menu, on its Browse row.</summary>
+    private void ReturnToWelcome()
+    {
+        _browseFromWelcome = false;
+        _helpView.Close();
+        ShowWelcome();
+        _welcome?.Highlight(WelcomeChoice.Browse);
+        if (_welcomeView.IsOpen)
+        {
+            _welcomeView.Repaint();
+        }
+    }
+
+    private void OpenCellWorldBrowse(WorldBrowseSurface browse)
+    {
         _worldBrowse = browse;
+        _lastWorldBrowse = browse;
         var rows = Math.Clamp(_system.DesktopDimensions.Height - 6, 10, 30);
         _helpView.Open(
             WorldBrowseMode,
@@ -144,14 +189,21 @@ internal sealed partial class SharpMUTermApp
             width: WorldBrowseSurface.PreferredWidth,
             escape: () =>
             {
-                // Esc on the address choice goes back to the list; on the list it closes.
-                if (_worldModel.Choosing is null)
+                // Esc on the address choice goes back to the list; on the list it closes, or goes back to the welcome
+                // it was opened from.
+                if (_worldModel.Choosing is not null)
                 {
-                    return false;
+                    LeaveWorldChoice();
+                    return true;
                 }
 
-                LeaveWorldChoice();
-                return true;
+                if (_browseFromWelcome && Host.ScreenIsSeen)
+                {
+                    ReturnToWelcome();
+                    return true;
+                }
+
+                return false;
             },
             closed: () =>
             {
@@ -315,6 +367,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>Closes Browse worlds and opens the welcome's connect form filled in with <paramref name="address"/>.</summary>
     private void OpenWorldForm(WorldAddress address)
     {
+        _formFromBrowse = CellWorldBrowse is not null;
         CloseWorldBrowse();
         var welcome = new WelcomeSurface(WorldDirectoryProblem()) { Layout = _welcomeLayout };
         welcome.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding);

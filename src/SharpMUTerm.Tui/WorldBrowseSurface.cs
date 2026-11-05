@@ -201,13 +201,12 @@ internal sealed class WorldBrowseSurface
             }
         }
 
-        Pad(lines, rows - 2);
         var note = model.Opening is not null ? model.OpeningLine
             : model.State == WorldBrowseState.Ready && model.Problem is { } problem ? problem
             : model.State == WorldBrowseState.Ready && view.Count > 0 ? model.MarksNote + WorldBrowseModel.PickNote
             : string.Empty;
         var noteTone = model.State == WorldBrowseState.Ready && model.Problem is not null && model.Opening is null ? ScreenPalette.Caution : ScreenPalette.Label;
-        lines.Add(note.Length == 0 ? string.Empty : $"[{noteTone}]{Escape(Elide(note, width - 1))}[/]");
+        AddNote(lines, note, noteTone, width, rows);
         lines.Add(Footer(width));
         return lines;
     }
@@ -248,11 +247,35 @@ internal sealed class WorldBrowseSurface
                 + $"[{stateTone}]{Escape(stateText)}[/]");
         }
 
-        Pad(lines, rows - 2);
-        var note = model.Problem ?? WorldBrowseModel.ChoiceNote;
-        lines.Add($"[{(model.Problem is null ? ScreenPalette.Label : ScreenPalette.Caution)}]{Escape(Elide(note, width - 1))}[/]");
+        AddNote(lines, model.Problem ?? WorldBrowseModel.ChoiceNote, model.Problem is null ? ScreenPalette.Label : ScreenPalette.Caution, width, rows);
         lines.Add(ChoiceFooter(width));
         return lines;
+    }
+
+    /// <summary>
+    /// The note above the keys, closing <paramref name="lines"/> at <paramref name="rows"/> less the key row: one row, or two
+    /// where it is longer than the width and the row above it is blank — at 80 columns the pick note (which says nothing is
+    /// saved before the form's ⏎) and a refusal were cut mid-sentence. A third row is never taken: the rest is elided.
+    /// </summary>
+    private static void AddNote(List<string> lines, string note, string tone, int width, int rows)
+    {
+        var wrapped = note.Length <= width - 1 ? new List<string> { note } : HelpSurface.Wrap(note, width - 1).ToList();
+        var two = wrapped.Count > 1 && lines.Count < rows - 2;
+        Pad(lines, rows - (two ? 3 : 2));
+        if (note.Length == 0)
+        {
+            lines.Add(string.Empty);
+            return;
+        }
+
+        if (two)
+        {
+            lines.Add($"[{tone}]{Escape(wrapped[0])}[/]");
+            lines.Add($"[{tone}]{Escape(Elide(string.Join(' ', wrapped.Skip(1)), width - 1))}[/]");
+            return;
+        }
+
+        lines.Add($"[{tone}]{Escape(Elide(note, width - 1))}[/]");
     }
 
     /// <summary>The address choice's key row, laddered to one row: the choice and the way back are never given up.</summary>
