@@ -20,7 +20,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - The desktop window has full screen (F11) and windowed full screen (Shift+F11), a borderless window the size of the
   screen. Press the same key again to go back. Both are also in the command palette and the output's right-click menu,
   and a new Window settings page chooses how the window opens next time.
-
+- In the desktop window, F5 is now a Worlds & Characters page: every world and its characters in one list, with
+  buttons to add, copy, delete and reorder them, a Connect button for each character, each world's server
+  information, and a character's trigger sets ticked on and put in order right on its page. F9's character settings
+  are on the same page, beside the world they play on. The window no longer sends you to the old F5 screen; the
+  terminal keeps it.
 - The Windows installer offers to install Symbols Nerd Font Mono, so the terminal client's header and sidebar icons
   are drawn instead of boxes. The desktop window already carries its own copy.
 - In the desktop window the rules under tab strips and panel headings, and the panels' seams, now run right up to the

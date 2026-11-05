@@ -8806,6 +8806,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Repaints the rail from current state, and resizes its column to fit what it now says.</summary>
     private void RefreshRail()
     {
+        _connectedKeys = ConnectedCharacters().ToArray();
         var lines = RenderRailLines();
         _rail.SetContent(lines);
         ApplyRailWidth(RailWidth(lines));

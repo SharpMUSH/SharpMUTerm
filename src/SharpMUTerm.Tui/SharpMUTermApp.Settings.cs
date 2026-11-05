@@ -1,7 +1,9 @@
 using SharpMUTerm.Client.Contributions;
 using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
+using SharpMUTerm.Core.Session;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Tui;
@@ -58,16 +60,9 @@ internal sealed partial class SharpMUTermApp
     /// The search's ⏎: opens the match's screen in the same window and, for a declared field, puts the cursor
     /// on the row drawing it. Packages (F10) is not a settings screen and is opened its own way.
     /// </summary>
-    private bool GoToSetting(SettingsMatch match) => GoToSetting(match, native: true);
-
-    /// <param name="match">What to go to.</param>
-    /// <param name="native">
-    /// Whether a declared section may open in the host's settings window. False when the window itself asked for the
-    /// cell screen — F5's world lists and trigger sets are the cell screen's, and the window links to it.
-    /// </param>
-    private bool GoToSetting(SettingsMatch match, bool native)
+    private bool GoToSetting(SettingsMatch match)
     {
-        if (string.Equals(match.Section.Id, "packages", StringComparison.Ordinal) && !(native && NativePackages))
+        if (string.Equals(match.Section.Id, "packages", StringComparison.Ordinal) && !NativePackages)
         {
             _settings.CloseAll();
             ShowPackages();
@@ -75,7 +70,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         // A declared section is the host's own settings window where the host has one.
-        if (native && TryOpenNativeSettings(match.Section))
+        if (TryOpenNativeSettings(match.Section))
         {
             return true;
         }
@@ -231,6 +226,29 @@ internal sealed partial class SharpMUTermApp
             Theme = () => _theme.Clone(),
             BesideOutput = item is not null,
             WorldNotes = WorldNotesNow(),
+            ConnectedKeys = () => _connectedKeys,
+            Connect = key => OnUiThread(() =>
+            {
+                // Connecting (or going to) a character brings its window forward: the settings window gets out of the way.
+                Host.NativeSettings?.Close();
+                DispatchCommand(CommandIds.CharacterPrefix + key);
+
+                // The button says Connect for a character that is not connected, so it dials as well: switching alone
+                // is navigation (SwitchToCharacter). Dialled through the reconnect path, with this session named rather
+                // than read off the window in front.
+                if (_sessions.Find(key) is { State: not (ConnectionState.Connected or ConnectionState.Connecting) } session)
+                {
+                    CancelReconnect(session);
+                    LastCommand = ReconnectAsync(session);
+                }
+            }),
+            ServerInfo = ServerInfoNow(),
+            RunCommand = id => OnUiThread(() =>
+            {
+                // Browse worlds and the import are surfaces of their own: the settings window gets out of their way.
+                Host.NativeSettings?.Close();
+                DispatchCommand(id);
+            }),
             CommitAs = Commit,
             UndoRedo = (section, redo) => OnUiThread(() =>
             {
@@ -245,6 +263,29 @@ internal sealed partial class SharpMUTermApp
             }),
         };
         return form;
+    }
+
+    /// <summary>
+    /// The connected characters' session keys, replaced whole on the client's thread whenever the rail is rebuilt (which
+    /// every connect and disconnect does), so the settings window can read who is connected from its own thread.
+    /// </summary>
+    private volatile IReadOnlyCollection<string> _connectedKeys = Array.Empty<string>();
+
+    /// <summary>
+    /// What every world's server has said about itself (<see cref="ServerInfoModel"/>), read now on the client's thread
+    /// from the MSSP cache and handed to the settings window as a lookup, so the window reads nothing live. A world not
+    /// in the lookup (added since) reads as never connected.
+    /// </summary>
+    private Func<WorldDefinition, ServerInfoModel?> ServerInfoNow()
+    {
+        var now = _time.GetUtcNow();
+        var known = new Dictionary<WorldDefinition, ServerInfoModel>(ReferenceEqualityComparer.Instance);
+        foreach (var w in _config.Worlds)
+        {
+            known[w] = ServerInfoModel.For(w, _mssp.Find(w.Host, w.Port), now);
+        }
+
+        return world => known.TryGetValue(world, out var model) ? model : ServerInfoModel.For(world, null, now);
     }
 
     /// <summary>
@@ -280,14 +321,16 @@ internal sealed partial class SharpMUTermApp
     }
 
     /// <summary>
-    /// The settings window's way to a section it cannot draw: close the window and open that section's own screen.
+    /// The settings window's way to a section it cannot draw (one that declares no fields): close the window and open
+    /// that section's own screen. A declared section is never sent to its cell screen from the window — F5 and F9 are
+    /// the window's Worlds &amp; Characters page, so the cell F5 is the terminal's alone.
     /// </summary>
     private void OpenSectionScreen(string id)
     {
         Host.NativeSettings?.Close();
         if (_contributions.SettingsSections.Find(id) is { } section)
         {
-            GoToSetting(new SettingsMatch(section, null, section.Title, -1, 0), native: false);
+            GoToSetting(new SettingsMatch(section, null, section.Title, -1, 0));
         }
     }
 

@@ -28,7 +28,7 @@ public sealed record SettingsSubject(string Label, WorldDefinition World, Charac
 /// there once a change has landed.
 /// </para>
 /// </summary>
-public sealed class SettingsForm
+public sealed partial class SettingsForm
 {
     private readonly AppConfiguration _config;
     private readonly Action<Action> _commit;

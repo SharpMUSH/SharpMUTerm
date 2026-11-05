@@ -104,16 +104,69 @@ public class NativeSettingsRoutingTests
         await Assert.That(saves.Count).IsEqualTo(2);
     }
 
+    /// <summary>
+    /// The window never sends a declared section to its cell screen: F5 asked for from the window comes back as the
+    /// window's own Worlds &amp; Characters page, so the cell F5 is the terminal's alone.
+    /// </summary>
     [Test]
-    public async Task TheWindowsWayToAnUndeclaredSectionClosesItAndOpensTheCellScreen()
+    public async Task TheWindowNeverOpensTheCellF5()
     {
         var (app, native, _) = App();
-        app.SimulateKey(F(ConsoleKey.F7));
+        app.SimulateKey(F(ConsoleKey.F5));
+        await Assert.That(native.Shown.Single().Initial).IsEqualTo("worlds");
 
-        native.Shown.Single().OpenScreen("aliases");
+        native.Shown.Single().OpenScreen("worlds");
+        app.SimulateKey(F(ConsoleKey.F9));
+
+        await Assert.That(app.SettingsOpenKey).IsNull();
+        await Assert.That(native.Shown.Select(f => f.Initial)).IsEquivalentTo(new[] { "worlds", "worlds", "logging" });
+    }
+
+    /// <summary>The worlds page's two commands go to the client, which closes the window first; nothing else is run.</summary>
+    [Test]
+    public async Task TheWorldsPageRunsOnlyBrowseAndImport()
+    {
+        var (app, native, _) = App();
+        app.SimulateKey(F(ConsoleKey.F5));
+        var form = native.Shown.Single();
+
+        await Assert.That(form.Run("term:quit")).IsFalse();
+        await Assert.That(native.Closed).IsEqualTo(0);
+        await Assert.That(form.Run(SettingsForm.BrowseWorlds)).IsTrue();
+        await Assert.That(native.Closed).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// The page's Connect button dials: a switch alone is navigation and would leave the character offline under a
+    /// button that said Connect. Go to (a character already connected) dials nothing more.
+    /// </summary>
+    [Test]
+    public async Task ConnectOnTheWorldsPageDialsTheCharacter()
+    {
+        var (app, native, _) = App();
+        var wires = new List<RecordingTelnetSession>();
+        app.TelnetFactory = _ =>
+        {
+            var wire = new RecordingTelnetSession();
+            wires.Add(wire);
+            return wire;
+        };
+        app.SimulateKey(F(ConsoleKey.F5));
+        var form = native.Shown.Single();
+        var world = app.Configuration.Worlds.Single(w => w.Name == "Aetherfall");
+        var corvid = world.Characters.Single(c => c.Name == "Corvid");
+
+        await Assert.That(form.ConnectTo(world, corvid)).IsTrue();
+        await app.LastCommand;
 
         await Assert.That(native.Closed).IsEqualTo(1);
-        await Assert.That(app.SettingsOpenKey).IsEqualTo(ConsoleKey.F3);
+        await Assert.That(wires.Sum(w => w.ConnectAttempts)).IsEqualTo(1);
+        await Assert.That(app.FindSession("Aetherfall.Corvid")!.IsConnected).IsTrue();
+
+        form.ConnectTo(world, corvid);
+        await app.LastCommand;
+
+        await Assert.That(wires.Sum(w => w.ConnectAttempts)).IsEqualTo(1).Because("Go to only brings the window forward");
     }
 
     [Test]
