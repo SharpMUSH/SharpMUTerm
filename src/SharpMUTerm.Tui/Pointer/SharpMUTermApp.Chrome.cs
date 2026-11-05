@@ -67,7 +67,7 @@ internal sealed partial class SharpMUTermApp
         {
             if (MainWindowInFront())
             {
-                show(SidebarRowMenu(row));
+                show(row == HeaderModel.CharacterMenuTarget ? HeaderCharacterMenu() : SidebarRowMenu(row));
             }
         });
         _sidebarMenuRun ??= id => OnUiThread(() => RunSidebarMenuEntry(id));
@@ -147,6 +147,12 @@ internal sealed partial class SharpMUTermApp
             return false;
         }
 
+        // The character pill opens a menu, which the host asks for through RowMenu; a click on it acts on nothing.
+        if (target == HeaderModel.CharacterMenuTarget)
+        {
+            return false;
+        }
+
         if (target == SidebarModel.CollapseTarget)
         {
             ToggleRail();
@@ -184,7 +190,8 @@ internal sealed partial class SharpMUTermApp
 /// </param>
 /// <param name="RowMenu">
 /// Asks the client for a sidebar row's menu, by the row's key (<see cref="SidebarModel.KeyOf(RailRow)"/>); the client
-/// builds it on its thread and hands it to the callback, which runs there (the host marshals). Nothing is handed back
+/// builds it on its thread and hands it to the callback, which runs there (the host marshals). The header's character
+/// pill asks by <see cref="HeaderModel.CharacterMenuTarget"/> for its character menu. Nothing is handed back
 /// while a modal of the client's is in front. Same instance for the life of the app.
 /// </param>
 /// <param name="RunRowMenu">Runs an entry of the menu <see cref="RowMenu"/> last built, by its command id; safe from any thread.</param>

@@ -14748,7 +14748,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     active.World.Host,
                     active.World.Port,
                     active.World.UseTls,
-                    CommandIds.Character(key));
+                    HeaderModel.CharacterMenuTarget);
             }
         }
 

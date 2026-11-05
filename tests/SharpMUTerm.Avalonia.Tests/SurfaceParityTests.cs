@@ -430,13 +430,18 @@ public class SurfaceParityTests
     {
         var probed = new HashSet<string>(StringComparer.Ordinal);
 
-        // Header: the search box opens ⌃P; the ☰ link does too. The character click is the sidebar's.
+        // Header: the search box opens ⌃P; the ☰ link does too. The character pill's menu runs ⌃P's commands, the ones the
+        // sidebar's row menu and the keys run: switching to another character from it is ⌃P's Switch to.
         await Same("header: palette", "layout-combat",
             (app, _) => app.ActivateChromeTarget(HeaderModel.PaletteTarget),
             (app, _) => app.SimulateHeaderLink(HeaderModel.PaletteTarget));
-        await Same("header: character", "layout-combat",
-            (app, _) => app.ActivateChromeTarget(app.BuildChromeOverlay().HeaderModel.Character!.Target),
-            (app, _) => app.DispatchRailTarget(app.BuildChromeOverlay().HeaderModel.Character!.Target));
+        await Same("header: character menu", "characters",
+            (app, _) =>
+            {
+                var menu = app.HeaderCharacterMenu();
+                app.RunSidebarMenuEntry(menu.Entries.First(e => e.Enabled && e.Command?.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal) == true).Command!);
+            },
+            (app, _) => app.DispatchCommand(app.HeaderCharacterMenu().Entries.First(e => e.Enabled && e.Command?.StartsWith(CommandIds.CharacterPrefix, StringComparison.Ordinal) == true).Command!));
         probed.Add(SurfaceCatalog.Header);
 
         // Sidebar: a window row, and Add a game (⌃P ▸ Welcome in cells).

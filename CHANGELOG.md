@@ -12,6 +12,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - The command line gives its whole width to what you type. The character and world it sends to
   (`Corvid · Aetherfall ›`) are shown as a placeholder while the line is empty and go away with the first character,
   so typed text starts at the left edge instead of after the name. The same in the terminal and the desktop window.
+- In the desktop window, clicking the character pill in the header opens a character menu instead of going to the
+  character already in front. It lists every character by world, with Alt+J and Alt+K beside the next and previous
+  ones, then Connect or Disconnect, Worlds & characters, and Add a world.
 - The desktop window's Worlds & Characters page makes adding obvious. The list has an **Add world** button at its top
   and a **+** on every world for a new character; Browse worlds and Import sit at its foot. The world or character on
   show has its actions beside its name: Connect or Go to, Add character, Duplicate, Move up and down, and Delete. A
@@ -20,6 +23,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- In the desktop window on a scaled display, right-click menus are as large as their entries: the keys beside them
+  (Ctrl+B |, Shift+F11) are no longer cut off at the menu's right edge, and the last entry is no longer hidden under a
+  scroll. This covers the output's, the sidebar's, the map's and the composer's menus.
 - In the desktop window, opening the full-screen composer (F1) no longer leaves the panes' tab strips drawn on top of
   it. The strips go when the composer opens and come back when it closes.
 - Scrolling the mouse wheel over the bottom half of a pane that is split by scrollback no longer moves both halves
