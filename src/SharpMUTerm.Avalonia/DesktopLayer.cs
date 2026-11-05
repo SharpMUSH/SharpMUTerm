@@ -456,7 +456,7 @@ internal sealed partial class DesktopLayer : Canvas
             () => new MapCanvas(_view),
             frame,
             cell,
-            (map, panel, plane) => map.Show(panel.Map!, panel.Ink, plane, text, panel.WalkTo, panel.SelectRoom, panel.EditMap, panel.LookMap));
+            (map, panel, plane) => map.Show(panel.Map!, panel.Ink, plane, text, panel.WalkTo, panel.SelectRoom, panel.EditMap, panel.LookMap, MapLean(plane)));
         Place(
             _whoHere,
             _pointer.Panels.Where(p => p.PanelId == PanelIds.WhoHere && p.WhoHere is not null),
@@ -494,6 +494,25 @@ internal sealed partial class DesktopLayer : Canvas
             cell,
             (composer, panel, plane) => composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text));
         SyncPopOuts(frame, cell);
+    }
+
+    /// <summary>
+    /// The colour a map's shades lean toward (<see cref="MapCanvas.Lean"/>): the focus edge of the tokens for the theme the
+    /// client last said, else of the built-in variant the pane's plane belongs to.
+    /// </summary>
+    private Color MapLean(Color plane)
+    {
+        if (_pointer.PaneChrome is { } said)
+        {
+            if (_paneTokens is not { } cached || !ReferenceEquals(cached.Theme, said.Theme))
+            {
+                _paneTokens = (said.Theme, NativeTokens.For(said.Theme));
+            }
+
+            return _paneTokens.Value.Tokens.Focus;
+        }
+
+        return NativeTokens.LeanFor(plane);
     }
 
     /// <summary>Whether a panel is a one-row strip that keeps a corner for its pop-out button rather than sitting under it.</summary>
@@ -654,7 +673,7 @@ internal sealed partial class DesktopLayer : Canvas
             // A one-row strip that can pop out leaves its right end to the button (ReservesPopOut), so the button never
             // lies over its text (`88 / 100`, `F4 edits keys`); the button paints the pane's plane over the cells there.
             control.Width = Math.Max(0, (rect.Width * cell.Width) - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
-            control.Height = (rect.Height * cell.Height) + BelowGrid(frame, rect);
+            control.Height = (rect.Height * cell.Height) + BelowGrid(frame, rect, cell);
 
             // The pane's own plane, read off the frame, so the native view sits on whatever the pane wears — its
             // character's tint, the focus lift — without the client having to say it twice.
@@ -668,12 +687,13 @@ internal sealed partial class DesktopLayer : Canvas
     /// The pixels under the grid a panel also covers: where the window draws the command line's field in the output's
     /// column, the grid is <see cref="NativeLayout.FieldReserve"/> shorter than the view and the columns beside the field
     /// are filled with their last row's plane down to the footer. A panel whose pane ends on the grid's last row in such a
-    /// column (a collapsed panel's bar, the map) runs down over that filler, so it meets the footer as the mockups draw it.
+    /// column (a collapsed panel's bar, the map) runs down over that filler, and over the view's leftover pixels under it
+    /// (less than a row), so it meets the footer as the mockups draw it.
     /// </summary>
-    private double BelowGrid(ScreenFrame frame, SharpMUTerm.Core.Workspaces.PaneRect rect) =>
+    private double BelowGrid(ScreenFrame frame, SharpMUTerm.Core.Workspaces.PaneRect rect, Size cell) =>
         _chrome.Input && frame.Band is { } band && rect.Y + rect.Height >= frame.Height && rect.Width > 0
         && !band.Spans(rect.X, frame.Width) && !band.Spans(rect.X + rect.Width - 1, frame.Width)
-            ? NativeLayout.FieldReserve
+            ? NativeLayout.FieldReserve + Math.Clamp(_view.Bounds.Height - ((frame.Height * cell.Height) + NativeLayout.FieldReserve), 0, cell.Height)
             : 0;
 
     /// <summary>The client builds the menu on its thread; it is opened here, under the button.</summary>

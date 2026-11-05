@@ -58,9 +58,13 @@ internal sealed class MapCanvas : Control
     private PanelInk _ink = new("#5fafff", "#ffaf5f", "#6a6a72");
     private Color _plane = Colors.Black;
     private Color _text = Colors.White;
+    private Color? _lean;
 
     /// <summary>The plane it paints, read off the cells under it. Internal for tests.</summary>
     internal Color Plane => _plane;
+
+    /// <summary>The colour the map's shades lean toward: the tokens' focus edge, or null for the pane's ink alone. Internal for tests.</summary>
+    internal Color? Lean => _lean;
     private Action<long>? _walkTo;
     private Action<long?>? _select;
     private Action<MapEdit>? _edit;
@@ -139,14 +143,14 @@ internal sealed class MapCanvas : Control
 
     public void Show(
         MapViewModel model, PanelInk ink, Color plane, Color text, Action<long>? walkTo, Action<long?>? select = null, Action<MapEdit>? edit = null,
-        Action<MapLook>? look = null)
+        Action<MapLook>? look = null, Color? lean = null)
     {
         _walkTo = walkTo;
         _select = select;
         _edit = edit;
         _look = look;
         _inspector.Show(model, plane, text, edit, select);
-        if (model.Equals(_model) && ink == _ink && plane == _plane && text == _text)
+        if (model.Equals(_model) && ink == _ink && plane == _plane && text == _text && lean == _lean)
         {
             return;
         }
@@ -162,6 +166,7 @@ internal sealed class MapCanvas : Control
         _ink = ink;
         _plane = plane;
         _text = text;
+        _lean = lean;
         InvalidateVisual();
     }
 
@@ -773,7 +778,7 @@ internal sealed class MapCanvas : Control
             }
             else
             {
-                var fill = new SolidColorBrush(Mix(_plane, _text, room.Id == _hovered ? 0.13 : 0.07));
+                var fill = new SolidColorBrush(Shade(room.Id == _hovered ? RoomHoverShade : RoomShade));
                 context.DrawRectangle(fill, room.Ahead ? new Pen(new SolidColorBrush(path), NativeTokens.BorderStrong) : edge, rect, radius, radius);
                 if (room.Locked)
                 {
@@ -857,8 +862,33 @@ internal sealed class MapCanvas : Control
     /// <summary>The mark in the character's room when the game gives it none: the roguelike's "you".</summary>
     internal const string YouGlyph = "@";
 
-    /// <summary>The map's rule: a room's outline and an exit, the pane's ink a quarter of the way over its plane.</summary>
-    private Color RuleColour => Mix(_plane, _text, 0.24);
+    /// <summary>
+    /// The map's shades are steps of the pane's plane, so they sit on whatever the pane wears (a tint, Light, Solarized).
+    /// With a <see cref="Lean"/> (the tokens' focus edge, the mockups' blue) the steps go toward it: a room's fill toward the
+    /// edge itself, a rule toward the pane's ink leaned <see cref="LeanShare"/> of the way to it, which on Dark lands the
+    /// rooms and exits on <c>Desktop-Combat</c>'s <c>#1d2333</c> and <c>#3a4257</c> rather than a neutral grey. With none
+    /// (a host that said no theme), the steps go toward the pane's ink alone, as they always did.
+    /// </summary>
+    internal const double LeanShare = 0.7;
+
+    /// <summary>A room's fill, its hover, a name's plate: steps toward the pane's ink; with a lean, <see cref="FillLean"/> times as far toward it.</summary>
+    internal const double RoomShade = 0.07, RoomHoverShade = 0.13, PlateShade = 0.1;
+
+    /// <summary>How much further a fill steps toward the lean than toward the ink: the edge is far darker than the ink.</summary>
+    internal const double FillLean = 2.8;
+
+    /// <summary>A rule's step: toward the ink, or with a lean toward the leaned ink.</summary>
+    internal const double RuleShade = 0.24, LeanedRuleShade = 0.44;
+
+    private Color Shade(double amount) =>
+        _lean is { } lean ? Mix(_plane, lean, Math.Min(1, amount * FillLean)) : Mix(_plane, _text, amount);
+
+    /// <summary>The map's rule: a room's outline and an exit. Internal for tests.</summary>
+    internal Color RuleColour =>
+        _lean is { } lean ? Mix(_plane, Mix(_text, lean, LeanShare), LeanedRuleShade) : Mix(_plane, _text, RuleShade);
+
+    /// <summary>A room's fill. Internal for tests.</summary>
+    internal Color RoomFill => Shade(RoomShade);
 
     /// <summary>The map's secondary ink (names, the legend, the hint): opaque, so it reads the same over a rule.</summary>
     private Color DimInk => Mix(_plane, _text, 0.62);
@@ -869,7 +899,7 @@ internal sealed class MapCanvas : Control
         {
             var hovered = button.Enabled && _buttonHovered == button.Id;
             context.DrawRectangle(
-                new SolidColorBrush(Mix(_plane, _text, hovered ? 0.13 : 0.07)),
+                new SolidColorBrush(Shade(hovered ? RoomHoverShade : RoomShade)),
                 new Pen(new SolidColorBrush(RuleColour), NativeTokens.DevicePixel(this)),
                 NativeTokens.StrokeRect(this, button.Rect),
                 NativeTokens.RadiusControl,
@@ -1128,7 +1158,7 @@ internal sealed class MapCanvas : Control
         if (plate)
         {
             var back = new Rect(at.X - 6, at.Y - 2, text.Width + 12, text.Height + 4);
-            context.DrawRectangle(new SolidColorBrush(Mix(_plane, _text, 0.1)), new Pen(new SolidColorBrush(RuleColour), 1), back, NativeTokens.RadiusS, NativeTokens.RadiusS);
+            context.DrawRectangle(new SolidColorBrush(Shade(PlateShade)), new Pen(new SolidColorBrush(RuleColour), 1), back, NativeTokens.RadiusS, NativeTokens.RadiusS);
         }
         else
         {

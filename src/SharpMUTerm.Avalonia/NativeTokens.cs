@@ -190,6 +190,13 @@ internal sealed partial record NativeTokens(
             Colour(Shift(canon.Focus, shift)));
     }
 
+    /// <summary>
+    /// The focus edge of the built-in variant <paramref name="plane"/> belongs to: what a native map leans its shades toward
+    /// where no theme was said (a floating panel's window).
+    /// </summary>
+    public static Color LeanFor(Color plane) =>
+        (Contrast.RelativeLuminance(new Rgb(plane.R, plane.G, plane.B)) < 0.18 ? Dark : Light).Focus;
+
     /// <summary>A brush of <paramref name="colour"/>.</summary>
     public SolidColorBrush Brush(Color colour) => new(colour);
 
