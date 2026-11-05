@@ -336,4 +336,68 @@ public class NativeModalTests
         await Assert.That(spans).IsTrue();
         await Assert.That(open).IsTrue();
     }
+
+    private static WelcomeView WelcomePage(Rig rig)
+    {
+        DesktopLayerTests.Drain();
+        rig.Window.UpdateLayout();
+        DesktopLayerTests.Drain();
+        return (WelcomeView)rig.Driver.Modals.Modal!.View;
+    }
+
+    private static object? Focused(Rig rig) => rig.Window.FocusManager?.GetFocusedElement();
+
+    /// <summary>
+    /// A new player's path by keyboard alone (wave 31): ⏎ in the find card's search shows the list, ↓ moves the raised row
+    /// and ⏎ adds it — the pick the cells' Browse worlds makes — and the form it fills in says which world it is and waits
+    /// in Character, the one field the directory could not fill. ⏎ used to ask nothing once the list was shown, and the
+    /// keyboard landed in Host, where typing drops the listed name.
+    /// </summary>
+    [Test]
+    public async Task EnterInTheSearchAddsTheRaisedWorld_AndTheFormItFillsWaitsInCharacter()
+    {
+        var (picked, intro, inCharacter) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("welcome");
+            var page = WelcomePage(rig);
+            page.SearchBox.Focus();
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            Press(page.SearchBox, global::Avalonia.Input.Key.Down);
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            var form = WelcomePage(rig);
+            return (rig.App.Welcome?.WorldName, form.FormIntro.IsVisible ? form.FormIntro.Text : null, ReferenceEquals(Focused(rig), form.CharacterBox));
+        });
+
+        await Assert.That(picked).IsEqualTo("Lanternport");
+        await Assert.That(intro).IsNotNull().And.Contains("Lanternport, as listed on mu*index");
+        await Assert.That(inCharacter).IsTrue();
+    }
+
+    /// <summary>
+    /// A world at several addresses lists them in the find card with the keyboard on the one Enter chooses: ↓ moves it and
+    /// Enter chooses the second. The focus used to sit on Back, so Enter after an arrow went back to the worlds.
+    /// </summary>
+    [Test]
+    public async Task TheAddressChoiceHoldsTheKeyboardOnTheAddressEnterChooses()
+    {
+        var (firstFocused, secondFocused, port) = await Run(rig =>
+        {
+            rig.App.RenderSnapshot("welcome");
+            var page = WelcomePage(rig);
+            page.SearchBox.Focus();
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            Press(page.SearchBox, global::Avalonia.Input.Key.Enter);
+            page = WelcomePage(rig);
+            var first = page.AddressRows.Count > 0 && ReferenceEquals(Focused(rig), page.AddressRows[0]);
+            Press((Control)Focused(rig)!, global::Avalonia.Input.Key.Down);
+            var second = page.AddressRows.Count > 1 && ReferenceEquals(Focused(rig), page.AddressRows[1]);
+            Press((Control)Focused(rig)!, global::Avalonia.Input.Key.Enter);
+            WelcomePage(rig);
+            return (first, second, rig.App.Welcome?.Port);
+        });
+
+        await Assert.That(firstFocused).IsTrue();
+        await Assert.That(secondFocused).IsTrue();
+        await Assert.That(port).IsEqualTo("4201");
+    }
 }

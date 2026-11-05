@@ -354,4 +354,116 @@ public class WorldBrowseTests
         await Assert.That(run.App.LastNotice).Contains("Aetherfall has 3 addresses");
         await Assert.That(run.Config.Worlds.Count).IsEqualTo(0);
     }
+
+    // ---- The first-connect path, walked end to end (wave 31) ------------------------------------
+
+    /// <summary>
+    /// Esc on the list the welcome opened goes back to the welcome, on its Browse row: it used to close everything,
+    /// leaving a new player with no menu and only a notice naming <c>/welcome</c>.
+    /// </summary>
+    [Test]
+    public async Task EscOnTheListTheWelcomeOpenedGoesBackToTheWelcome()
+    {
+        await using var run = await Start();
+        OpenFromTheWelcome(run.App);
+
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Escape, '\x1b'));
+
+        await Assert.That(run.App.WorldBrowseOpen).IsFalse();
+        await Assert.That(run.App.WelcomeIsOpen).IsTrue();
+        await Assert.That(run.App.Welcome!.InForm).IsFalse();
+        await Assert.That(run.App.Welcome!.Selected).IsEqualTo(WelcomeChoice.Browse);
+
+        run.App.SimulateWelcomeKey(Key(ConsoleKey.Escape, '\x1b'));
+        await Assert.That(run.App.WelcomeIsOpen).IsFalse().Because("Esc on the menu still closes it");
+    }
+
+    /// <summary>A list opened from ⌃P has no welcome behind it: Esc closes it, as it always did.</summary>
+    [Test]
+    public async Task EscOnTheListFromTheCommandPaletteCloses()
+    {
+        await using var run = await Start();
+        run.App.SimulateWelcomeKey(Key(ConsoleKey.Escape, '\x1b'));
+        run.App.DispatchCommand(BuiltInCommands.BrowseWorldsCommand);
+
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Escape, '\x1b'));
+
+        await Assert.That(run.App.WorldBrowseOpen).IsFalse();
+        await Assert.That(run.App.WelcomeIsOpen).IsFalse();
+    }
+
+    /// <summary>
+    /// Esc on a form a pick filled in goes back to the list, as it was left (the row picked still selected) and without
+    /// asking the directory again; Esc there goes on back to the welcome.
+    /// </summary>
+    [Test]
+    public async Task EscOnAPickedFormGoesBackToTheListAsItWasLeft()
+    {
+        await using var run = await Start();
+        OpenFromTheWelcome(run.App);
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.DownArrow));
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        await Assert.That(run.App.Welcome!.WorldName).IsEqualTo("Lanternport");
+        var asked = run.Asked.Count;
+
+        run.App.SimulateWelcomeKey(Key(ConsoleKey.Escape, '\x1b'));
+
+        await Assert.That(run.App.WelcomeIsOpen).IsFalse();
+        await Assert.That(run.App.WorldBrowseOpen).IsTrue();
+        await Assert.That(run.App.CellWorldBrowse!.Selected).IsEqualTo(1);
+        await Assert.That(run.Asked.Count).IsEqualTo(asked).Because("the list is still held");
+        await Assert.That(run.Config.Worlds.Count).IsEqualTo(0);
+
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Escape, '\x1b'));
+        await Assert.That(run.App.WelcomeIsOpen).IsTrue();
+    }
+
+    /// <summary>
+    /// The whole path: welcome, Browse worlds, a world at several addresses, the plain one, the form, ⏎ — and the key tour
+    /// lands under the <c>connected to</c> row, not between it and <c>dialling</c>.
+    /// </summary>
+    [Test]
+    public async Task TheFirstConnectFromBrowseLeavesTheTourUnderTheConnectedRow()
+    {
+        await using var run = await Start();
+        OpenFromTheWelcome(run.App);
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.DownArrow));
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        run.App.SimulateWelcomeKey(Key(ConsoleKey.Enter, '\r'));
+        await run.App.LastCommand;
+
+        var world = run.Config.Worlds.Single();
+        await Assert.That(world.Name).IsEqualTo("Aetherfall");
+        await Assert.That(world.Encoding).IsEqualTo("ISO-8859-1");
+        await Assert.That(run.App.KeyTourShown).IsTrue();
+        var lines = run.App.PaneLines(SharpMUTermApp.MainWindowId).Select(MarkupText.Plain).ToList();
+        var connected = lines.FindIndex(l => l.Contains("connected to aetherfall.example:4201", StringComparison.Ordinal));
+        var tour = lines.FindIndex(l => l.StartsWith(SharpMUTermApp.KeyTourLead, StringComparison.Ordinal));
+        await Assert.That(connected).IsGreaterThanOrEqualTo(0);
+        await Assert.That(tour).IsGreaterThan(connected);
+    }
+
+    /// <summary>
+    /// At 80 columns the form a pick filled in keeps its intro inside the frame (it ran past the right edge), and the list's
+    /// note says its whole sentence on two rows rather than stopping mid-word.
+    /// </summary>
+    [Test]
+    public async Task At80ColumnsThePickedFormAndTheListsNoteStayWhole()
+    {
+        await using var run = await Start();
+        OpenFromTheWelcome(run.App);
+        var list = run.App.CellWorldBrowse!.Render(run.App.WorldBrowseModelNow, 70, 18).Select(MarkupText.Plain).ToList();
+        await Assert.That(string.Join(' ', list.Select(l => l.Trim()))).Contains("nothing is saved or dialled until you press ⏎ there.");
+        await Assert.That(list.Count).IsEqualTo(18);
+
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        var choice = run.App.CellWorldBrowse!.Render(run.App.WorldBrowseModelNow, 70, 18).Select(MarkupText.Plain).ToList();
+        await Assert.That(string.Join(' ', choice.Select(l => l.Trim()))).Contains("until you press ⏎ there.");
+
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        var form = WelcomeSurface.Render(run.App.Welcome!.Model, 70);
+        await Assert.That(form.Select(MarkupText.VisibleLength).Max()).IsLessThanOrEqualTo(70);
+        await Assert.That(string.Join(' ', form.Select(MarkupText.Plain).Select(l => l.Trim()))).Contains("press ⏎ to save and connect.");
+    }
 }

@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Connecting to your first world is smoother. In the desktop window's welcome, the arrow keys pick a world from the list
+  and Enter adds it. When a game has several addresses, the keyboard starts on the addresses rather than on Back. The
+  filled-in form starts at Character and names the world and its text encoding, as the terminal's does. In the
+  terminal, Esc steps back one screen at a time: from the form to the world list (without fetching it again), and from
+  the list to the welcome. The key tour now appears under the "connected to" line instead of between dialling and
+  connecting. At 80 columns the form and the list's notes no longer run off the edge or stop mid-sentence.
+
 - In the desktop window every button, field and list on the settings window, the command palette, the dialogs, the
   welcome page and the composer can be reached with Tab, shows one rounded focus ring in the theme's colours when the
   keyboard reaches it, and has a name a screen reader can say. Tab stays inside an open dialog, and Enter or Space on a

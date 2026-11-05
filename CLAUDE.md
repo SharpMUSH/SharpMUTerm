@@ -1699,6 +1699,16 @@ fallbacks) for inline images/maps.
   beside the chips once the row holds both (`PreferredWidth` 78, so from 82 columns). Not taken from the mockups: their
   genre chips and *Package* tag (mu*index gives neither), example data (port 4201, TLS on), the "games" noun, and the
   mockup's suggested-layout card (nothing is known before the first connect, so *suggested* stays a third state).
+- **Wave 31 first connect: welcome → Browse → address → form → connect, walked in both hosts** (`ux-wave31/first-connect-flow/`).
+  The raised world row is the one selected (`WelcomeView._worldSelected`), so ↑↓ in the search move it and ⏎ adds it (`FindOrAdd`;
+  a query the held rows do not match still asks the directory). In an address choice the keyboard is on the address row (focus
+  posted at `Loaded`, since rows are not in the tree until laid out), not on Back. A form a pick filled in starts in Character
+  and says which world it is and its charset (`FormIntroLine`, both hosts). **Every Esc goes back one step** in the cells: from a
+  picked form to the list as it was left (`ReturnToWorldBrowse`, which re-uses the last model and fetches nothing), and from a
+  Browse the welcome opened to the welcome on its Browse row (`_browseFromWelcome`; from ⌃P it still closes). **The tour row
+  goes under `connected to …`** (`ShowOwedKeyTour`, on the `ConnectionNoted` CONNECT note, because `StateChanged` Connected
+  comes before that row). The `welcome` demo scene starts empty (`_startedEmpty`), so it owes the tour as a real first run does.
+  Cell notes wrap to two rows rather than eliding (`WorldBrowseSurface.AddNote`); the form's intro wraps to the frame.
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

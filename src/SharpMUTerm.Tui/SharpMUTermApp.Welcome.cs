@@ -26,8 +26,11 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private WelcomeLayout _welcomeLayout = WelcomeLayout.Suggested;
 
-    /// <summary>Whether the configuration had no worlds when this app was made: the one state the tour is owed in.</summary>
-    private readonly bool _startedEmpty;
+    /// <summary>
+    /// Whether the configuration had no worlds when this app was made: the one state the tour is owed in. The welcome
+    /// scene empties the demo's configuration after the app is made, and sets it as an empty configuration's start would.
+    /// </summary>
+    private bool _startedEmpty;
 
     /// <summary>Sessions whose player asked, on the welcome's form, to be reminded to save a password.</summary>
     private readonly HashSet<string> _passwordLater = new(StringComparer.Ordinal);
@@ -124,6 +127,14 @@ internal sealed partial class SharpMUTermApp
             WelcomeSurface.PreferredWidth,
             escape: () =>
             {
+                // A form a pick filled in goes back to the list it was picked from, not to a menu the player never saw.
+                if (welcome.InForm && welcome.WorldName is not null && _formFromBrowse)
+                {
+                    _welcomeView.Close();
+                    ReturnToWorldBrowse();
+                    return true;
+                }
+
                 return welcome.Back();
             },
             plane: WelcomeSurface.Plane,
@@ -145,7 +156,7 @@ internal sealed partial class SharpMUTermApp
         {
             case WelcomeAction.Browse:
                 CloseWelcome();
-                ShowWorldBrowse();
+                ShowWorldBrowse(fromWelcome: true);
                 return false;
 
             case WelcomeAction.Settings:
@@ -290,7 +301,7 @@ internal sealed partial class SharpMUTermApp
         if (_config.KeyTourPending)
         {
             _config.KeyTourPending = false;
-            ShowKeyTour(windowId);
+            _tourAfterConnectRow = windowId;
             PersistConfiguration();
         }
 
@@ -300,6 +311,22 @@ internal sealed partial class SharpMUTermApp
                 $"to log in by itself next time, save {Snippet(session.Character?.Name ?? session.World.Name)}'s password on F5",
                 MessageSeverity.Info,
                 "F5");
+        }
+    }
+
+    /// <summary>The window the tour is owed in, until its <c>connected to …</c> row has been drawn; null when none.</summary>
+    private string? _tourAfterConnectRow;
+
+    /// <summary>
+    /// The owed tour, under the <c>CONNECT connected to …</c> row rather than above it: the state change that owes it is
+    /// raised before the session's note, and the tour drawn there split <c>dialling…</c> from <c>connected</c>.
+    /// </summary>
+    private void ShowOwedKeyTour(string windowId, ConnectionNote note)
+    {
+        if (string.Equals(_tourAfterConnectRow, windowId, StringComparison.Ordinal) && note.Label == ConnectionNote.Connect)
+        {
+            _tourAfterConnectRow = null;
+            ShowKeyTour(windowId);
         }
     }
 
@@ -370,6 +397,7 @@ internal sealed partial class SharpMUTermApp
         // And the workspace a first run has: the main window alone, owned by nobody. --demo-config resumes a
         // saved workspace with a character's windows in it, which an empty configuration could never have.
         _config.Worlds.Clear();
+        _startedEmpty = true;
         foreach (var window in _workspace.Windows.Select(w => w.Id).Where(id => id != MainWindowId).ToList())
         {
             _workspace.CloseWindow(window);

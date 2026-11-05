@@ -54,6 +54,18 @@ internal sealed class WelcomeView : DockPanel, IModalView
     private WorldGame? _choiceDrawn;
     private int _address;
 
+    /// <summary>The world row Enter adds, as an index into the rows the find card shows (<see cref="_shown"/>).</summary>
+    private int _worldSelected;
+
+    /// <summary>Whether an address row had the keyboard when the find card was last rebuilt, so the new row gets it back.</summary>
+    private bool _addressHadFocus;
+
+    /// <summary>The list's index of each row the find card shows, in the order shown.</summary>
+    private readonly List<int> _shown = [];
+
+    /// <summary>The intro the form shows once Browse worlds filled it in: which world, as listed, and the encoding it sets.</summary>
+    private readonly TextBlock _formIntro;
+
     public WelcomeView(WelcomeSession session, NativeTokens colours, Action done)
     {
         _session = session;
@@ -103,7 +115,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
         // Sunk into the ground with the mockup's magnifier, as every search box is: on the raised card a field on Fluent's
         // default (the raised plane itself) had no plane of its own and on Light read as no field at all.
         ModalParts.Sunk(_search, colours);
-        _search.TextChanged += (_, _) => DrawRows();
+        _search.TextChanged += (_, _) =>
+        {
+            _worldSelected = 0;
+            DrawRows();
+        };
         _findNote = new TextBlock { FontSize = NativeTokens.Small + 1, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
         var find = new StackPanel { Spacing = NativeTokens.Space14 };
         find.Children.Add(CardTitle(WelcomeModel.FindHeading));
@@ -126,6 +142,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _passwordLater = new CheckBox { Content = NativeKeys.Words("Password: " + char.ToLowerInvariant(WelcomeModel.PasswordOn[0]) + WelcomeModel.PasswordOn[1..]), FontSize = NativeTokens.Body, CornerRadius = new CornerRadius(NativeTokens.RadiusS), Margin = CheckRow };
         _command = new TextBlock { FontSize = NativeTokens.Small + 1, LineHeight = NativeTokens.Space16 + NativeTokens.Space2, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap };
         _problem = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Warn), TextWrapping = TextWrapping.Wrap, IsVisible = false };
+        _formIntro = new TextBlock { FontSize = NativeTokens.Body, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap, IsVisible = false };
         foreach (var box in new[] { _host, _port, _character })
         {
             box.TextChanged += (_, _) => DrawCommand();
@@ -151,6 +168,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
         var connect = new StackPanel { Spacing = NativeTokens.Space14 };
         connect.Children.Add(CardTitle(WelcomeModel.ConnectHeading));
+        connect.Children.Add(_formIntro);
         connect.Children.Add(Labelled(WelcomeModel.FieldLabel(WelcomeField.Host), _host));
         connect.Children.Add(portAndName);
         connect.Children.Add(_tls);
@@ -285,6 +303,9 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     public TextBox? CharacterBox => _character;
 
+    /// <summary>The line under the form's heading once a pick filled it in, for a test.</summary>
+    public TextBlock FormIntro => _formIntro;
+
     /// <summary>The find card's search box, for a test.</summary>
     public TextBox SearchBox => _search;
 
@@ -305,7 +326,12 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     public void FocusFirst()
     {
-        if (_model.InForm || _model.Host.Length > 0 || !_session.CanFindWorlds)
+        // Filled in by a pick: host, port and TLS are the directory's, so the keyboard waits where the player has to type.
+        if (_model.WorldName is not null)
+        {
+            _character.Focus();
+        }
+        else if (_model.InForm || _model.Host.Length > 0 || !_session.CanFindWorlds)
         {
             _host.Focus();
         }
@@ -367,6 +393,9 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
     /// <summary>The page's keys, spelt in words.</summary>
     private const string PageKeys = "Tab moves · Enter connects, or searches · Esc closes";
+
+    /// <summary>The page's keys once the find card lists worlds: the arrows move the row Enter adds.</summary>
+    private const string ListKeys = "Tab moves · ↑↓ pick a world · Enter adds it, or connects · Esc closes";
 
     private static FontFamily Mono => NativeTokens.MonoFont;
 
@@ -431,6 +460,9 @@ internal sealed class WelcomeView : DockPanel, IModalView
             _passwordLater.IsChecked = model.PasswordLater;
         }
 
+        // The cells' line under the form's heading once a pick filled it in: which world, as listed, and the encoding set.
+        _formIntro.Text = model.WorldName is null ? null : NativeKeys.Words(model.FormIntroLine);
+        _formIntro.IsVisible = model.WorldName is not null;
         _problem.Text = NativeKeys.Words(model.Problem);
         _problem.IsVisible = model.Problem is not null;
         _layoutTag.IsVisible = model.Layout == WelcomeLayout.Suggested;
@@ -468,6 +500,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
     /// <summary>The find card's body: the button that asks, then the rows and what the list says about itself.</summary>
     private void DrawFind()
     {
+        _addressHadFocus |= _addressRows.Any(r => r.IsKeyboardFocusWithin);
         _findBody.Children.Clear();
         _worldRows.Clear();
         _addressRows.Clear();
@@ -503,6 +536,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
             return;
         }
 
+        _addressHadFocus |= _addressRows.Any(r => r.IsKeyboardFocusWithin);
         _findBody.Children.Clear();
         _worldRows.Clear();
         _addressRows.Clear();
@@ -515,8 +549,9 @@ internal sealed class WelcomeView : DockPanel, IModalView
 
         var choosingWasDrawn = _choiceDrawn is not null;
         _choiceDrawn = null;
+        _addressHadFocus = false;
         _search.IsVisible = true;
-        _footer.Text = PageKeys;
+        _footer.Text = NativeKeys.Words(ListKeys);
         if (choosingWasDrawn)
         {
             _search.Focus();
@@ -525,15 +560,21 @@ internal sealed class WelcomeView : DockPanel, IModalView
         var query = _search.Text ?? string.Empty;
         var shown = model.View(query, WorldDirectorySort.Players);
         var list = new StackPanel { Spacing = NativeTokens.Space8 };
+        _shown.Clear();
         foreach (var world in shown)
         {
             var index = IndexOf(model, world);
-            if (index < 0)
+            if (index >= 0)
             {
-                continue;
+                _shown.Add(index);
             }
+        }
 
-            var row = WorldRow(world, index, model.Opening is null);
+        _worldSelected = Math.Clamp(_worldSelected, 0, Math.Max(0, _shown.Count - 1));
+        for (var i = 0; i < _shown.Count; i++)
+        {
+            var index = _shown[i];
+            var row = WorldRow(model.Rows[index], index, model.Opening is null, i == _worldSelected);
             _worldRows.Add(row);
             list.Children.Add(row);
         }
@@ -547,6 +588,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
                 HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             });
+            if (_worldSelected < _worldRows.Count)
+            {
+                var selectedRow = _worldRows[_worldSelected];
+                Dispatcher.UIThread.Post(() => selectedRow.BringIntoView(), DispatcherPriority.Background);
+            }
         }
 
         // What the list says about itself: asking, why it is empty, or how many and from where.
@@ -571,6 +617,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
         }
 
         var fresh = _choiceDrawn is null;
+        var hadRowFocus = _addressHadFocus;
+        _addressHadFocus = false;
         _choiceDrawn = game;
         _search.IsVisible = false;
         _footer.Text = NativeKeys.Words(string.Join(" · ", WorldBrowseModel.ChoiceKeys.Select(k => $"{k.Key} {k.Label}")));
@@ -590,7 +638,10 @@ internal sealed class WelcomeView : DockPanel, IModalView
             TextWrapping = TextWrapping.Wrap,
         });
 
+        // Entered once by Tab and walked with the arrows, as every native list is; the row with the keyboard is the one
+        // Enter chooses, so the Back button below is never what Enter presses by default.
         var list = new StackPanel { Spacing = NativeTokens.Space2 };
+        KeyboardNavigation.SetTabNavigation(list, KeyboardNavigationMode.Once);
         _address = Math.Clamp(_address, 0, game.Endpoints.Count - 1);
         for (var i = 0; i < game.Endpoints.Count; i++)
         {
@@ -631,6 +682,8 @@ internal sealed class WelcomeView : DockPanel, IModalView
                 VerticalAlignment = VerticalAlignment.Center,
             });
             var row = ModalParts.Row(line, address, () => SelectAddress(index), () => ChooseAddress(index));
+            row.Focusable = true;
+            row.GotFocus += (_, _) => SelectAddress(index);
             ToolTip.SetTip(row, WorldBrowseModel.EndpointText(endpoint));
             _addressRows.Add(row);
             list.Children.Add(row);
@@ -653,10 +706,21 @@ internal sealed class WelcomeView : DockPanel, IModalView
         _findNote.Foreground = _colours.Brush(model.Problem is null ? _colours.Dim : _colours.Warn);
         HighlightAddress();
 
-        // The Add pressed to get here has left the page; the keys stay with the choice.
-        if (fresh)
+        // The Add pressed to get here has left the page; the keys stay with the choice, on the address Enter takes.
+        // Posted: the rows sit in a scroll viewer whose template puts them in the tree only at the next layout, and a
+        // control not in the tree refuses the focus (which then fell to the cells behind the page).
+        if (fresh || hadRowFocus)
         {
-            back.Focus();
+            var row = _addressRows[_address];
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (row.IsAttachedToVisualTree())
+                    {
+                        row.Focus(NavigationMethod.Directional);
+                    }
+                },
+                DispatcherPriority.Loaded);
         }
     }
 
@@ -691,7 +755,40 @@ internal sealed class WelcomeView : DockPanel, IModalView
     }
 
     /// <summary>One listed world: its name over its codebase, players and tagline, with Add at the right.</summary>
-    private Border WorldRow(WorldListing world, int index, bool enabled)
+    /// <summary>↑↓ in the search: the row Enter adds moves, the cells' Browse worlds selection.</summary>
+    private void SelectWorld(int delta)
+    {
+        if (_shown.Count == 0)
+        {
+            return;
+        }
+
+        _worldSelected = ModalParts.Step(_worldSelected, delta, _shown.Count);
+        DrawRows();
+    }
+
+    /// <summary>
+    /// Enter in the search once the list is shown: the words none of the rows hold ask the directory, as Browse worlds'
+    /// ⏎ does; otherwise the raised row is added, the pick ⏎ makes in the cells.
+    /// </summary>
+    private void FindOrAdd()
+    {
+        var query = _search.Text ?? string.Empty;
+        if (_worlds is { } worlds && worlds.Model.Choosing is null && !worlds.Model.AsksDirectory(query)
+            && _worldSelected < _shown.Count)
+        {
+            if (worlds.Model.Opening is null)
+            {
+                Add(_shown[_worldSelected]);
+            }
+
+            return;
+        }
+
+        Find();
+    }
+
+    private Border WorldRow(WorldListing world, int index, bool enabled, bool selected)
     {
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         words.Children.Add(new TextBlock
@@ -717,7 +814,7 @@ internal sealed class WelcomeView : DockPanel, IModalView
             Margin = new Thickness(0, NativeTokens.Space2, 0, 0),
         });
 
-        var add = ModalParts.Button(WelcomeModel.AddButton, null, _colours, () => Add(index), accent: index == 0);
+        var add = ModalParts.Button(WelcomeModel.AddButton, null, _colours, () => Add(index), accent: selected);
         add.IsEnabled = enabled;
         add.CornerRadius = new CornerRadius(NativeTokens.RadiusControl);
         add.MinHeight = NativeTokens.ControlHeightSmall + NativeTokens.Space4;
@@ -730,15 +827,15 @@ internal sealed class WelcomeView : DockPanel, IModalView
         add.Margin = new Thickness(NativeTokens.Space12, 0, 0, 0);
         grid.Children.Add(words);
         grid.Children.Add(add);
-        // The mockup's rows: the first, the one Enter would add, raised with the focused edge; the rest only outlined.
+        // The mockup's rows: the one Enter would add (the first, until ↑↓ moves it) raised with the focused edge; the rest only outlined.
         var row = new Border
         {
             Child = grid,
             Padding = new Thickness(NativeTokens.Space14, NativeTokens.Space12),
             CornerRadius = new CornerRadius(NativeTokens.RadiusCard),
             BorderThickness = new Thickness(NativeTokens.Hairline),
-            BorderBrush = _colours.Brush(index == 0 ? _colours.Focus : _colours.Edge),
-            Background = index == 0 ? _colours.Brush(_colours.Raised) : Brushes.Transparent,
+            BorderBrush = _colours.Brush(selected ? _colours.Focus : _colours.Edge),
+            Background = selected ? _colours.Brush(_colours.Raised) : Brushes.Transparent,
         };
         ToolTip.SetTip(row, world.Tagline.Length > 0 ? world.Tagline : world.Name);
         global::Avalonia.Automation.AutomationProperties.SetName(row, world.Name);
@@ -854,12 +951,24 @@ internal sealed class WelcomeView : DockPanel, IModalView
                 case Key.Down when !IsWithinForm(e.Source):
                     e.Handled = true;
                     SelectAddress(ModalParts.Step(_address, e.Key == Key.Up ? -1 : 1, game.Endpoints.Count));
+                    if (_address < _addressRows.Count)
+                    {
+                        _addressRows[_address].Focus(NavigationMethod.Directional);
+                    }
+
                     return;
                 case Key.Enter when !IsWithinForm(e.Source):
                     e.Handled = true;
                     ChooseAddress(_address);
                     return;
             }
+        }
+
+        if (e.Key is Key.Up or Key.Down && _worlds is not null && e.Source is Visual inSearch && IsWithin(inSearch, _search))
+        {
+            e.Handled = true;
+            SelectWorld(e.Key == Key.Up ? -1 : 1);
+            return;
         }
 
         if (e.Key == Key.Escape)
@@ -878,7 +987,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
         e.Handled = true;
         if (ReferenceEquals(e.Source, _search) || (e.Source is Visual v && IsWithin(v, _search)))
         {
-            Find();
+            FindOrAdd();
+        }
+        else if (e.Source is Visual row && _addressRows.Any(r => IsWithin(row, r)))
+        {
+            ChooseAddress(_address);
         }
         else
         {

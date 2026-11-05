@@ -3426,6 +3426,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             AppendClientRow(windowId, note.Label, note.Text);
             AnnounceLine(windowId, note.ToString());
+            ShowOwedKeyTour(windowId, note);
         });
         session.PromptChanged += (_, _) => OnUi(() =>
         {
