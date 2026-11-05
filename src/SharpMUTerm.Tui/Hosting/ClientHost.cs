@@ -168,6 +168,13 @@ internal sealed record ClientHost
     public required IFilePicker? FilePicker { get; init; }
 
     /// <summary>
+    /// Full screen, windowed full screen, maximised and windowed, for a host that is a desktop window
+    /// (<see cref="IWindowModes"/>); null in the terminal, the snapshot, the tests and <c>--plain</c>, where the client
+    /// offers none of them.
+    /// </summary>
+    public required IWindowModes? WindowModes { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -214,6 +221,7 @@ internal sealed record ClientHost
         FloatingPanels = null,
         Attention = new TerminalAttention(driver, TerminalAttention.Detect()),
         FilePicker = null,
+        WindowModes = null,
     };
 
     /// <summary>
@@ -246,6 +254,7 @@ internal sealed record ClientHost
         FloatingPanels = null,
         Attention = null,
         FilePicker = null,
+        WindowModes = null,
     };
 
     /// <summary>

@@ -133,6 +133,12 @@ public sealed class AppConfiguration
     /// </summary>
     public bool KeyTourPending { get; set; }
 
+    /// <summary>
+    /// How the desktop window opens: windowed, maximised, full screen or windowed full screen. Read by the window alone;
+    /// a terminal has no window to size. F11 and ⇧F11 change the mode for the run without touching this.
+    /// </summary>
+    public WindowMode WindowStart { get; set; }
+
     /// <summary>The package index Browse packages reads: an https link to an <c>index.json</c>.</summary>
     public string PackageIndexUrl { get; set; } = DefaultPackageIndexUrl;
 

@@ -29,6 +29,15 @@ internal sealed class MainWindow : Window
     private Size _normalSize;
     private long _stateChangedAt;
 
+    // Windowed full screen is a Normal window with no decorations at the screen's bounds, so it is a flag of ours, not a
+    // WindowState; what it covered is put back when it ends.
+    private bool _windowedFullScreen;
+    private PixelPoint _beforeWindowedPosition;
+    private Size _beforeWindowedSize;
+
+    // What a full screen goes back to when it ends: windowed or maximised.
+    private WindowMode _beforeFullScreen = WindowMode.Windowed;
+
     public MainWindow(WindowOptions options, IClassicDesktopStyleApplicationLifetime lifetime)
     {
         _options = options;
@@ -73,9 +82,10 @@ internal sealed class MainWindow : Window
         }
 
         // No title bar: the header is the top of the window — the window's own (NativeHeader), or the client's cells
-        // with --cell-chrome. The border stays, and the header's empty space moves the window (WindowChrome).
+        // with --cell-chrome. The header's empty space moves the window and its edges resize it (WindowChrome).
         // --title-bar brings it back.
-        WindowDecorations = options.TitleBar ? WindowDecorations.Full : WindowDecorations.BorderOnly;
+        _decorations = DecorationsFor(options.TitleBar);
+        WindowDecorations = _decorations;
         Background = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
         // The view fills the window past the native chrome; the screen-reader regions sit under it, unseen.
         var root = new Panel();
@@ -90,6 +100,19 @@ internal sealed class MainWindow : Window
         // view out of their way, so no cell lies under either), the Layouts button, and native panels over their panes.
         var layer = new DesktopLayer(_view, options.Chrome);
         root.Children.Add(layer);
+
+        // The edge Avalonia would have drawn round a BorderOnly window on X11, drawn here (DecorationsFor): a hairline,
+        // only while the window is an ordinary window.
+        if (_decorations == WindowDecorations.None)
+        {
+            _edge = new Border
+            {
+                BorderBrush = new SolidColorBrush(NativeTokens.For(_config.Theme).Edge),
+                BorderThickness = new Thickness(NativeTokens.Hairline),
+                IsHitTestVisible = false,
+            };
+            root.Children.Add(_edge);
+        }
 
         // F1, over the cells and under the layer, so a toast is still seen over it. Closing it gives the keyboard to an
         // armed docked composer if there is one, else to the cells.
@@ -117,6 +140,7 @@ internal sealed class MainWindow : Window
         // Panels popped out into windows of their own, owned by this one so they stay above it and go with it.
         _driver.Floating.Attach(this, _view);
         _driver.FilePicker.Attach(this);
+        _driver.WindowModes.Attach(this);
         Closed += (_, _) => _driver.Floating.Detach();
         Content = root;
         AutomationProperties.SetName(_view, "SharpMUTerm");
@@ -153,6 +177,12 @@ internal sealed class MainWindow : Window
         {
             _view.Focus();
 
+            // How the configuration says the window opens (the Window settings page). Windowed is how it already is.
+            if (_config.WindowStart != WindowMode.Windowed)
+            {
+                SetMode(_config.WindowStart);
+            }
+
             // After the first layout, so the driver already holds the window's real grid when the client
             // measures its chrome against it.
             Dispatcher.UIThread.Post(StartClient, DispatcherPriority.Background);
@@ -174,14 +204,27 @@ internal sealed class MainWindow : Window
         if (change.Property == WindowStateProperty)
         {
             _stateChangedAt = Environment.TickCount64;
-            if (change.GetNewValue<WindowState>() == WindowState.Normal && _normalSize is { Width: > 0, Height: > 0 })
+            var state = change.GetNewValue<WindowState>();
+
+            // The window manager maximised or minimised a windowed full screen (a keyboard shortcut, a snap): it is
+            // not one any more, and gets its frame back.
+            if (_windowedFullScreen && state is WindowState.Maximized or WindowState.FullScreen)
+            {
+                _windowedFullScreen = false;
+                WindowDecorations = _decorations;
+            }
+
+            if (state == WindowState.Normal && !_windowedFullScreen && _normalSize is { Width: > 0, Height: > 0 })
             {
                 Width = _normalSize.Width;
                 Height = _normalSize.Height;
             }
+
+            NoteMode();
         }
         else if (change.Property == ClientSizeProperty
                  && WindowState == WindowState.Normal
+                 && !_windowedFullScreen
                  && Environment.TickCount64 - _stateChangedAt > SettleMilliseconds)
         {
             // Not while a change of state is still settling: the sizes reported then are the maximised one on its
@@ -191,6 +234,140 @@ internal sealed class MainWindow : Window
     }
 
     private const int SettleMilliseconds = 500;
+
+    private readonly WindowDecorations _decorations;
+    private readonly Border? _edge;
+
+    /// <summary>
+    /// The decorations of an ordinary window. <c>--title-bar</c> asks for the platform's whole frame. Otherwise none on
+    /// Linux and a border elsewhere. On X11 — which is also every Wayland desktop, through XWayland — a BorderOnly window
+    /// has no frame from the window manager and Avalonia draws its own instead, with a drop shadow about nine pixels deep
+    /// <em>inside</em> the window. The window manager cannot tell that margin from the window (Avalonia publishes no
+    /// <c>_GTK_FRAME_EXTENTS</c>), so the window's content stopped short of every edge of what the desktop thought was the
+    /// window: a gap round a window snapped or tiled to the screen, and a transparent or black frame where the compositor
+    /// shows no alpha. With none the content is the whole window; its edge is a hairline drawn here, and resizing was
+    /// already ours (<see cref="WindowChrome"/>). Windows draws BorderOnly natively, with the shadow outside the window.
+    /// </summary>
+    internal static WindowDecorations DecorationsFor(bool titleBar) =>
+        titleBar ? WindowDecorations.Full
+        : OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD() ? WindowDecorations.None
+        : WindowDecorations.BorderOnly;
+
+    /// <summary>The mode the window is in now.</summary>
+    internal WindowMode Mode =>
+        _windowedFullScreen ? WindowMode.WindowedFullScreen
+        : WindowState switch
+        {
+            WindowState.FullScreen => WindowMode.FullScreen,
+            WindowState.Maximized => WindowMode.Maximised,
+            _ => WindowMode.Windowed,
+        };
+
+    /// <summary>
+    /// Whether the window is covering the screen (full screen or windowed full screen), where its edges do not resize it
+    /// and its header does not move it.
+    /// </summary>
+    internal bool CoversScreen => Mode is WindowMode.FullScreen or WindowMode.WindowedFullScreen;
+
+    /// <summary>
+    /// Goes into <paramref name="mode"/>, or — when the window is already in it — back to the windowed or maximised state
+    /// it was in before. F11 and ⇧F11, and the client's toggles, end here.
+    /// </summary>
+    internal void ToggleMode(WindowMode mode) =>
+        SetMode(Mode == mode && mode is WindowMode.FullScreen or WindowMode.WindowedFullScreen ? _beforeFullScreen : mode);
+
+    /// <summary>⌥⏎ and a double-click on the header: out of a full screen first, else maximise and restore.</summary>
+    internal void ToggleMaximised() =>
+        SetMode(CoversScreen ? _beforeFullScreen : Mode == WindowMode.Maximised ? WindowMode.Windowed : WindowMode.Maximised);
+
+    /// <summary>Puts the window in <paramref name="mode"/>.</summary>
+    internal void SetMode(WindowMode mode)
+    {
+        var current = Mode;
+        if (mode == current)
+        {
+            return;
+        }
+
+        if (current is WindowMode.Windowed or WindowMode.Maximised && mode is WindowMode.FullScreen or WindowMode.WindowedFullScreen)
+        {
+            _beforeFullScreen = current;
+        }
+
+        if (_windowedFullScreen)
+        {
+            LeaveWindowedFullScreen(mode);
+        }
+
+        switch (mode)
+        {
+            case WindowMode.Windowed:
+                WindowState = WindowState.Normal;
+                break;
+            case WindowMode.Maximised:
+                WindowState = WindowState.Maximized;
+                break;
+            case WindowMode.FullScreen:
+                WindowState = WindowState.FullScreen;
+                break;
+            case WindowMode.WindowedFullScreen:
+                EnterWindowedFullScreen();
+                break;
+        }
+
+        NoteMode();
+    }
+
+    /// <summary>
+    /// A Normal window with no decorations at the bounds of the screen it is on — not its working area, so it covers the
+    /// taskbar — and nothing else: it stays an ordinary window, which is the point of it.
+    /// </summary>
+    private void EnterWindowedFullScreen()
+    {
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary ?? Screens.All.FirstOrDefault();
+        if (screen is null)
+        {
+            return;
+        }
+
+        if (WindowState != WindowState.Normal)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        _beforeWindowedPosition = Position;
+        _beforeWindowedSize = _normalSize is { Width: > 0, Height: > 0 } ? _normalSize : ClientSize;
+        _windowedFullScreen = true;
+        WindowDecorations = WindowDecorations.None;
+        var scale = screen.Scaling > 0 ? screen.Scaling : 1;
+        Position = screen.Bounds.Position;
+        Width = screen.Bounds.Width / scale;
+        Height = screen.Bounds.Height / scale;
+    }
+
+    private void LeaveWindowedFullScreen(WindowMode next)
+    {
+        _windowedFullScreen = false;
+        WindowDecorations = _decorations;
+        if (next == WindowMode.Windowed)
+        {
+            Position = _beforeWindowedPosition;
+            Width = _beforeWindowedSize.Width;
+            Height = _beforeWindowedSize.Height;
+            _normalSize = _beforeWindowedSize;
+        }
+    }
+
+    private void NoteMode()
+    {
+        var mode = Mode;
+        if (_edge is not null)
+        {
+            _edge.IsVisible = mode == WindowMode.Windowed;
+        }
+
+        _driver.WindowModes.Note(mode);
+    }
 
     private void StartClient()
     {

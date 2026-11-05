@@ -8842,6 +8842,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             MapFound: MapFoundRooms(),
             RecentAlerts: _recentAlerts.Count,
             Alerts: _alertsListed ? AlertRefs() : null,
+            WindowMode: CanSetWindowMode ? Host.WindowModes!.Mode : null,
             ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }
 
@@ -9330,6 +9331,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "layout:layouts":
                 ShowLayouts();
                 return true;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.FullScreenCommand:
+                return ToggleWindowMode(WindowMode.FullScreen);
+            case SharpMUTerm.Client.Commands.BuiltInCommands.WindowedFullScreenCommand:
+                return ToggleWindowMode(WindowMode.WindowedFullScreen);
             case "term:mute":
             case "term:unmute":
                 SetMuted(id == "term:mute");
