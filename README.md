@@ -164,7 +164,8 @@ The window has no title bar: drag the blank part of the top row to move it, doub
 Alt+Enter to maximise and restore, drag an edge to resize, and Ctrl+Q to quit (`--title-bar` brings the
 system one back). A newline in the command line is Ctrl+Enter or Shift+Enter here, which a window can
 see and a terminal cannot; Alt+Enter is the window's.
-Paste is Ctrl+Shift+V or Shift+Insert. Install a Nerd Font for the header and sidebar icons.
+Paste is Ctrl+Shift+V or Shift+Insert. The window bundles its fonts, icons included. The terminal client needs a
+Nerd Font for its header and sidebar icons; the Windows installer offers to install Symbols Nerd Font Mono.
 
 ## Testing
 

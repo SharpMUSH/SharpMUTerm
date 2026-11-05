@@ -51,7 +51,11 @@ dotnet publish src/SharpMUTerm.Avalonia -p:PublishProfile=linux-x64 -o out/linux
   `SharpMUTerm.AppImage --terminal [args]` runs the terminal client from the same file.
 - **Windows installer** — `packaging/windows/sharpmuterm.iss`, an Inno Setup 6 script. Installs both executables
   per user (no UAC prompt) or for everyone, adds a Start menu entry for the window, and optionally puts the
-  install folder on `PATH`. Build with
+  install folder on `PATH`. Its *Install the Symbols Nerd Font Mono font* task (checked by default) installs the
+  window's bundled `SymbolsNerdFontMono-Regular.ttf` for the terminal client's icons: per user (Windows 10 1803 or
+  later) or for everyone, never replacing a copy already there and left in place on uninstall. A terminal that does
+  not fall back to it on its own needs it added to its font list (Windows Terminal 1.21 or later: *Font face*
+  `Cascadia Mono, Symbols Nerd Font Mono`). Build with
   `iscc /DAppVersion=1.2.3 /DNumericVersion=1.2.3.0 /DPublishDir=<dir> /DOutputDir=<dir> packaging\windows\sharpmuterm.iss`.
 
 Both use `packaging/icons/sharpmuterm.png` / `.ico`; the `.ico` is also each executable's Windows icon.
