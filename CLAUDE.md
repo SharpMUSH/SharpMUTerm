@@ -3553,9 +3553,11 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **The answer goes only to a server that said hello, and only from `auto` or `pueblo`**
     (`TelnetSessionOptions.AnnouncePueblo`). It is a line at a login prompt, where a server without Pueblo
     reads it as a name — the unsolicited-negotiation rule, in text.
-  - **The first markup a connection negotiates keeps it.** The parser is swapped only off the plain
-    `AnsiParser`, and the hello is not answered once MXP is on, so a server offering both is not flipped
-    between them by the order the handshakes finish in.
+  - **MXP wins over Pueblo, and nothing switches back.** The hello is not answered once the server has
+    *agreed* MXP (`MXPProtocol.IsMXPActive`, its `WILL`), not only once MXP mode has started: SharpMUSH sends
+    `WILL MXP`, then the hello in its banner, then starts MXP, and answering the hello in that gap put the
+    connection in Pueblo, where its MXP pictures never came. As a fallback the parser may move from an
+    automatic Pueblo parser to MXP, never the other way.
   - **The library consumes both lines**, and a prompt is read from `LastPromptBytes`, so neither can be
     flushed as text by a boundary that follows it.
 - **`<VERSION>`/`<SUPPORT>` are answered, and the `SUPPORTS` list is held to the same rule as the MTTS

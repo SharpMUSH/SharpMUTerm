@@ -321,14 +321,17 @@ public sealed class WorldSession : IAsyncDisposable
     private void OnPuebloEnabled(object? sender, EventArgs e) => UpgradeParser(ContentFormat.Pueblo);
 
     /// <summary>
-    /// The one parser swap. Only from <see cref="ContentFormat.Ansi"/> and only off the plain ANSI parser, so
-    /// <b>the first markup a connection negotiates keeps it</b>: a server that offers both MXP and Pueblo is
-    /// not switched back and forth by the order its handshakes finish in. (The telnet layer also declines to
-    /// answer a Pueblo hello once MXP is on.)
+    /// The one parser swap. Only from <see cref="ContentFormat.Ansi"/> (nobody chose), and only forward: off the
+    /// plain ANSI parser to either markup, and off an automatic Pueblo parser to MXP. <b>MXP wins over Pueblo</b>
+    /// whatever order the handshakes finish in, and nothing switches back: MXP carries what Pueblo cannot
+    /// (pictures, menus, the line-security model), and a server offering both (SharpMUSH) sends its pictures
+    /// over MXP. (The telnet layer also declines to answer a Pueblo hello once the server has agreed MXP, so
+    /// this is the fallback for a server that offers MXP only after its hello.)
     /// </summary>
     private void UpgradeParser(ContentFormat format)
     {
-        if (World.ContentFormat != ContentFormat.Ansi || _parser is not AnsiParser)
+        var forward = _parser is AnsiParser || (_parser is PuebloParser && format == ContentFormat.Mxp);
+        if (World.ContentFormat != ContentFormat.Ansi || !forward)
         {
             return;
         }
