@@ -1211,7 +1211,7 @@ fallbacks) for inline images/maps.
     Private Use Area are looked up in a Nerd Font **by name** before the platform fallback, which on Linux can
     pick a face that draws PUA code points as hex boxes. No font is bundled: with no Nerd Font installed the
     chrome's icons are tofu.
-  - **The window has no title bar** (`WindowDecorations.BorderOnly`; `--title-bar` restores it). The client's
+  - **The window has no title bar** (`MainWindow.DecorationsFor`: `None` on Linux and FreeBSD, `BorderOnly` elsewhere; `--title-bar` restores it). The client's
     header is the top of the window. A drag on a *blank* header cell moves it and a double-click maximises
     (`WindowChrome`); a press on header text is still the client's. Resizing is a 5-pixel band at each edge,
     done by us with `BeginResizeDrag`, because a borderless window on Linux gets a border only from some window
@@ -1224,6 +1224,23 @@ fallbacks) for inline images/maps.
     stdin, and the framework reads a redirected one behind a modal "Reading input" dialog that stays up while the
     pipe is open. **On Windows `--help`/`--render-png` borrow the parent console** (`AttachConsole`) when output is
     not already redirected, because a `WinExe` has none.
+  - **On Linux the window is undecorated, and that is the Wayland fix.** Avalonia 12 has no Wayland back end, so a
+    Wayland desktop runs it through XWayland, where `BorderOnly` puts Avalonia in forced-decoration mode: it draws its
+    own border, grips and a ~9 px shadow *inside* the X window and publishes no `_GTK_FRAME_EXTENTS`, so the compositor
+    counts the shadow as window and the content stops short of every edge (measured under Weston: X window 1230×850,
+    content 1213×833; undecorated, 1212×832 both). `None` there, a 1 px `Edge` hairline of our own while windowed,
+    resizing already ours. Windows keeps `BorderOnly`, whose border is the system's and outside the window.
+  - **Full screen (F11) and windowed full screen (⇧F11) are the window's** (`ClientHost.WindowModes` → `IWindowModes`,
+    null in the terminal and headless; Avalonia `WindowModes`, `MainWindow.SetMode`/`ToggleMode`; Tui
+    `SharpMUTermApp.WindowModes.cs`; Core `WindowMode`). Both chords are in `HostKeys.Reserved`, acted on by
+    `TerminalView` and the native composer. Full screen is `WindowState.FullScreen`; windowed full screen is a Normal,
+    undecorated window placed on the screen's `Bounds` (`_windowedFullScreen`), because a maximised window stops at the
+    taskbar. The same key goes back to what came before (windowed or maximised, `_beforeFullScreen`); ⌥⏎ from either
+    leaves it for maximised; the window manager maximising or full-screening ends windowed full screen. While either
+    covers the screen nothing resizes or moves the window. ⌃P `window:full-screen`/`window:windowed-full-screen`
+    (titled *Leave …* while in it) and the output's right-click menu list them only while `CommandContext.WindowMode`
+    is set, and F7's *Window* page (`BuiltInSettings.Window`, registered only where the host has modes, not in `All`)
+    sets `AppConfiguration.WindowStart`, applied when the window opens, never live.
   - **Restoring re-applies the remembered normal size by hand** (`MainWindow.OnPropertyChanged`). On X11 a
     `BorderOnly` window's border is Avalonia's own (`DecorationInset`, part of the window only while it is not
     maximised); a restore laid out before the window manager's restored size arrives pushes the *maximised*

@@ -882,6 +882,14 @@ internal sealed class ComposerView : Border, IEdgeRules
             return;
         }
 
+        // F11 and ⇧F11 are the window's too: full screen and windowed full screen.
+        if (mapped is { } screen && TerminalView.WindowModeFor(screen) is { } windowMode)
+        {
+            e.Handled = true;
+            _view.ToggleMode(windowMode);
+            return;
+        }
+
         switch (e.Key, mods)
         {
             case (Key.S, KeyModifiers.Control):

@@ -14,6 +14,14 @@ internal static class WindowHost
     public static ReservedChord Maximise { get; } = new(
         new HostChord(ConsoleKey.Enter, ConsoleModifiers.Alt, "Alt+⏎", "Alt+Enter"), "maximises and restores the window");
 
+    /// <summary>F11 goes in and out of full screen, as in a browser or Windows Terminal. A macro on F11 is the cost.</summary>
+    public static ReservedChord FullScreen { get; } = new(
+        new HostChord(ConsoleKey.F11, 0, "F11", "F11"), "goes in and out of full screen");
+
+    /// <summary>⇧F11 goes in and out of windowed full screen: a borderless window the size of the screen.</summary>
+    public static ReservedChord WindowedFullScreen { get; } = new(
+        new HostChord(ConsoleKey.F11, ConsoleModifiers.Shift, "Shift+F11", "Shift+F11"), "goes in and out of windowed full screen");
+
     /// <summary>Paste is the window's, on the terminal conventions, so a bare ⌃V still reaches the client as a key.</summary>
     public static IReadOnlyList<ReservedChord> Paste { get; } =
     [
@@ -28,7 +36,7 @@ internal static class WindowHost
     public static HostKeys Keys { get; } = new()
     {
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
-        Reserved = [Maximise, .. Paste],
+        Reserved = [Maximise, FullScreen, WindowedFullScreen, .. Paste],
 
         // Avalonia reports the key and its modifiers: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O arrive as themselves.
         ReportsChordsWhole = true,
@@ -96,5 +104,8 @@ internal static class WindowHost
 
         // An import from another client starts at the desktop's own file picker.
         FilePicker = driver.FilePicker,
+
+        // F11 full screen, ⇧F11 windowed full screen, and how the window opens (the Window settings page).
+        WindowModes = driver.WindowModes,
     };
 }

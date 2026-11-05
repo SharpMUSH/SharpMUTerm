@@ -76,6 +76,10 @@ public sealed record CharacterRef(
 /// Those alerts, newest first, once <c>Recent alerts</c> has opened the palette on them (null before), so each is an entry
 /// that goes to its character's window without crowding every other ⌃P.
 /// </param>
+/// <param name="WindowMode">
+/// How the desktop window covers the screen, so ⌃P offers full screen and windowed full screen (and leaving them); null
+/// in a host with no window to size (the terminal).
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -103,7 +107,8 @@ public sealed record CommandContext(
     IReadOnlyList<FoundRoom>? MapFound = null,
     IReadOnlyList<ScriptFileRef>? ScriptFiles = null,
     int RecentAlerts = 0,
-    IReadOnlyList<AlertRef>? Alerts = null);
+    IReadOnlyList<AlertRef>? Alerts = null,
+    Configuration.WindowMode? WindowMode = null);
 
 /// <summary>A page or alert the client kept this run, for ⌃P's <c>Recent alerts</c> entries.</summary>
 /// <param name="Id">Its number this run, which the entry's id carries.</param>

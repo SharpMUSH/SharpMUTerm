@@ -155,13 +155,25 @@ internal sealed class ModalOverlay : Panel
         }
 
         e.Handled = true;
+        if (window is MainWindow { CoversScreen: true })
+        {
+            return;
+        }
+
         if (window is { WindowState: WindowState.Normal, CanResize: true } && WindowChrome.EdgeAt(e.GetPosition(window), window.ClientSize) is { } edge)
         {
             window.BeginResizeDrag(edge, e);
         }
         else if (e.ClickCount == 2)
         {
-            window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            if (window is MainWindow main)
+            {
+                main.ToggleMaximised();
+            }
+            else
+            {
+                window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            }
         }
         else
         {

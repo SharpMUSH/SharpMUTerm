@@ -13,7 +13,17 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal sealed partial class SharpMUTermApp
 {
-    private void RegisterBuiltInSettings() => BuiltInSettings.Register(_contributions.SettingsSections);
+    private void RegisterBuiltInSettings()
+    {
+        BuiltInSettings.Register(_contributions.SettingsSections);
+
+        // How the window opens, only where there is a window that can cover the screen: a terminal's settings never list
+        // a choice that does nothing there.
+        if (CanSetWindowMode)
+        {
+            _contributions.SettingsSections.Add(BuiltInSettings.Window);
+        }
+    }
 
     /// <summary>A declared section's title — what its screen's header, its ⌃P entry and the search all call it.</summary>
     private string SectionTitle(string id) =>

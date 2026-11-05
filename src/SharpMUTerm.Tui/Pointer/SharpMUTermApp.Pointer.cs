@@ -665,6 +665,9 @@ internal sealed partial class SharpMUTermApp
                     "layout:split-right", "layout:split-down", "layout:zoom", "layout:unzoom", "layout:close", null,
                     "term:freeze", "term:unfreeze", "term:scroll-live", "term:clear", "term:timestamps-on", "term:timestamps-off");
                 AddPopOut(items);
+
+                // The window covering the screen: offered only where the host is a window.
+                AddCommands(items, null, SharpMUTerm.Client.Commands.BuiltInCommands.FullScreenCommand, SharpMUTerm.Client.Commands.BuiltInCommands.WindowedFullScreenCommand);
                 break;
 
             case PointerKind.CommandLine:

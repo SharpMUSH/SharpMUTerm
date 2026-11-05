@@ -166,6 +166,49 @@ public static partial class BuiltInSettings
         ],
     };
 
+    /// <summary>The Window page's words for each <see cref="WindowMode"/>, in its order.</summary>
+    public static IReadOnlyList<string> WindowStarts { get; } = ["windowed", "maximised", "full screen", "windowed full screen"];
+
+    /// <summary>The Window page's one group.</summary>
+    public const string WindowGroup = "Opening";
+
+    /// <summary>
+    /// The desktop window: how it opens. Not in <see cref="All"/> and not on any F-key: a host registers it only when it
+    /// is a window that can cover the screen (the terminal has no window to size), so the terminal's settings never list
+    /// a choice that does nothing there. F11 and ⇧F11 change the mode for the run; this is where it starts.
+    /// </summary>
+    public static SettingsSectionContribution Window { get; } = new()
+    {
+        Id = "window",
+        Title = "Window",
+        Order = 75,
+        Fields =
+        [
+            new ChoiceField("start", "window opens", WindowStarts, "next time it opens; F11 is full screen and Shift+F11 windowed full screen at any time")
+            {
+                Group = WindowGroup,
+                Keywords = "full screen fullscreen windowed borderless maximised maximized start launch window size",
+                Binding = new SettingBinding<string>(
+                    c => WindowStarts[(int)c.WindowStart],
+                    (c, v) => c.WindowStart = WindowStartFor(v)),
+            },
+        ],
+    };
+
+    /// <summary>The <see cref="WindowMode"/> one of <see cref="WindowStarts"/> names; anything else is windowed.</summary>
+    public static WindowMode WindowStartFor(string? words)
+    {
+        for (var i = 0; i < WindowStarts.Count; i++)
+        {
+            if (string.Equals(WindowStarts[i], words, StringComparison.OrdinalIgnoreCase))
+            {
+                return (WindowMode)i;
+            }
+        }
+
+        return WindowMode.Windowed;
+    }
+
     /// <summary>F8's groups.</summary>
     public const string InputGroup = "Input";
 

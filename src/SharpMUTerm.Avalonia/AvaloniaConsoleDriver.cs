@@ -97,6 +97,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The desktop's file picker, for an import from another client (<see cref="WindowFilePicker"/>).</summary>
     public WindowFilePicker FilePicker { get; } = new();
 
+    /// <summary>Full screen, windowed full screen, maximised and windowed (<see cref="WindowModes"/>).</summary>
+    public WindowModes WindowModes { get; } = new();
+
     public bool IsRunning { get; private set; }
 
     // ── IConsoleDriver: output ────────────────────────────────────────────────────────────────

@@ -98,6 +98,12 @@ public static class BuiltInCommands
     /// <summary>The command that moves the keyboard into the connection sidebar (⌥C).</summary>
     public const string RailKeysCommand = "layout:rail-keys";
 
+    /// <summary>Full screen, and back (F11 in the window). Offered only by a host that is a window.</summary>
+    public const string FullScreenCommand = "window:full-screen";
+
+    /// <summary>Windowed full screen, and back (⇧F11 in the window): a borderless window the size of the screen.</summary>
+    public const string WindowedFullScreenCommand = "window:windowed-full-screen";
+
     /// <summary>Cancels a dropped connection's waiting reconnect.</summary>
     public const string StopReconnectCommand = "world:stop-reconnect";
 
@@ -253,6 +259,14 @@ public static class BuiltInCommands
         // action runs on that panel's own character whichever window is focused.
         Family("panel:popout", Client.Panels.PanelFloatCommands.PopOutPrefix, PopOuts);
         Family("panel:dock", Client.Panels.PanelFloatCommands.DockPrefix, Docks);
+        // The desktop window covering the screen. Only where the host is a window (WindowMode is null in a terminal, whose
+        // emulator has its own full screen); each entry leaves the mode it names once the window is in it.
+        Add(FullScreenCommand, CommandGroup.Layout, "Full screen", "F11", "the whole screen, over the taskbar",
+            when: c => c.State.WindowMode is not null,
+            titleFor: c => c.State.WindowMode == Core.Configuration.WindowMode.FullScreen ? "Leave full screen" : "Full screen");
+        Add(WindowedFullScreenCommand, CommandGroup.Layout, "Windowed full screen", "⇧F11", "a borderless window the size of the screen",
+            when: c => c.State.WindowMode is not null,
+            titleFor: c => c.State.WindowMode == Core.Configuration.WindowMode.WindowedFullScreen ? "Leave windowed full screen" : "Windowed full screen");
         Add("term:walk-stop", CommandGroup.Map, "Stop walking", detail: "ends the speedwalk", when: c => c.State.Walking);
 
         // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.

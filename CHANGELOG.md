@@ -15,6 +15,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The desktop window has full screen (F11) and windowed full screen (Shift+F11), a borderless window the size of the
+  screen. Press the same key again to go back. Both are also in the command palette and the output's right-click menu,
+  and a new Window settings page chooses how the window opens next time.
+
 - The Windows installer offers to install Symbols Nerd Font Mono, so the terminal client's header and sidebar icons
   are drawn instead of boxes. The desktop window already carries its own copy.
 - In the desktop window the rules under tab strips and panel headings, and the panels' seams, now run right up to the
@@ -667,6 +671,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- On Linux, including Wayland through XWayland, the desktop window's content now fills the whole window. It used to
+  stop a few pixels short of every edge, which showed as a gap when the window was snapped, tiled or maximised.
 - Pictures from SharpMUSH show again. A server offering both MXP and Pueblo was answered as a Pueblo client, so it
   sent its rooms without their pictures; MXP is now preferred.
 - In the terminal, walking the command palette with ↑↓ past its last visible row scrolls the list to keep the

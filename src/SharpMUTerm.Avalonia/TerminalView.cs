@@ -362,6 +362,13 @@ internal sealed class TerminalView : Control
             return;
         }
 
+        if (mapped is { } screen && WindowModeFor(screen) is { } mode)
+        {
+            ToggleMode(mode);
+            e.Handled = true;
+            return;
+        }
+
         if (mapped is { } key)
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
@@ -533,9 +540,15 @@ internal sealed class TerminalView : Control
         e.Handled = true;
     }
 
-    /// <summary>The window this view drives when it has no title bar, or null when it has one.</summary>
+    /// <summary>
+    /// The window this view drives when it has no title bar, or null when it has one — or while it covers the screen,
+    /// where its edges resize nothing and its header moves nothing.
+    /// </summary>
     private Window? Undecorated =>
-        TopLevel.GetTopLevel(this) is Window { WindowDecorations: not WindowDecorations.Full } window ? window : null;
+        TopLevel.GetTopLevel(this) is Window { WindowDecorations: not WindowDecorations.Full } window
+        && window is not MainWindow { CoversScreen: true }
+            ? window
+            : null;
 
     /// <summary>A press that moves or resizes an undecorated window instead of reaching the client (<see cref="WindowChrome"/>).</summary>
     private bool TryWindowGesture(PointerPressedEventArgs e, Point position) => TryWindowGesture(e, position, emptyChrome: false);
@@ -614,11 +627,30 @@ internal sealed class TerminalView : Control
 
     internal void ToggleMaximised()
     {
-        if (TopLevel.GetTopLevel(this) is Window window)
+        if (TopLevel.GetTopLevel(this) is MainWindow main)
+        {
+            main.ToggleMaximised();
+        }
+        else if (TopLevel.GetTopLevel(this) is Window window)
         {
             window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
         }
     }
+
+    /// <summary>F11 and ⇧F11 (<see cref="WindowHost.FullScreen"/>, <see cref="WindowHost.WindowedFullScreen"/>): in and out.</summary>
+    internal void ToggleMode(SharpMUTerm.Core.Configuration.WindowMode mode)
+    {
+        if (TopLevel.GetTopLevel(this) is MainWindow main)
+        {
+            main.ToggleMode(mode);
+        }
+    }
+
+    /// <summary>The mode a window chord toggles, or null for a chord that is not one.</summary>
+    internal static SharpMUTerm.Core.Configuration.WindowMode? WindowModeFor(ConsoleKeyInfo key) =>
+        WindowHost.FullScreen.Chord.Matches(key) ? SharpMUTerm.Core.Configuration.WindowMode.FullScreen
+        : WindowHost.WindowedFullScreen.Chord.Matches(key) ? SharpMUTerm.Core.Configuration.WindowMode.WindowedFullScreen
+        : null;
 
     /// <summary>
     /// The cursor for <paramref name="position"/>: a window edge's resize cursor first, then the arrow over a
