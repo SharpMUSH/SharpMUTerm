@@ -3088,7 +3088,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (empty || _demoConnectedKeys.Count == 0)
             {
                 Notice(
-                    empty ? NoWorldsNotice : NothingAtStartNotice,
+                    empty ? NoWorldsNoticeFor(HeaderWidth()) : NothingAtStartNotice,
                     empty ? MessageSeverity.Warning : MessageSeverity.Info);
             }
 
@@ -3134,6 +3134,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     internal const string NoWorldsNotice =
         "No world configured · /connect <host> <port> · F5 adds one · /welcome";
+
+    /// <summary>
+    /// <see cref="NoWorldsNotice"/>, or a shorter spelling of the same three ways in where the status row is narrower than
+    /// it (60 columns elided <c>/welcome</c> away): the words go, never a command or a key.
+    /// </summary>
+    internal static string NoWorldsNoticeFor(int width) =>
+        new[]
+        {
+            NoWorldsNotice,
+            "No world · /connect <host> <port> · F5 adds one · /welcome",
+            "No world · /connect <host> <port> · F5 · /welcome",
+            "/connect <host> <port> · F5 · /welcome",
+        }.FirstOrDefault(text => width <= 0 || text.Length <= width) ?? "/connect · F5 · /welcome";
 
     /// <summary>
     /// And when there are worlds but none of their characters is marked. It is the ordinary state of a
@@ -14651,6 +14664,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             leftBar = string.Concat(leftBar.AsSpan(0, at), $" {ShortBrandWord} ", leftBar.AsSpan(at + BrandWord.Length + 2));
         }
 
+        // Still too wide (a 60-column terminal with a world and a character): the connected count goes next. The rail's
+        // dots say the same fact, and a header that wraps takes a row off every pane.
+        if (MarkupWidth(leftBar) + MarkupWidth(right) + 3 > HeaderWidth())
+        {
+            right = HeaderRight(model, count: false);
+        }
+
         // The ⌃B prefix indicator shows only while armed, and it is the *terse* half of the which-key
         // pair: the keys immediately, the panel a few hundred milliseconds later if nothing was pressed.
         // What it says — including the spelling of the exit — lives in PrefixPanel, so the two surfaces
@@ -14683,10 +14703,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private const string BrandWord = "SharpMUTerm", ShortBrandWord = "muterm";
 
     /// <summary>The header's right-hand cluster: the connected fraction and the log cell.</summary>
-    private string HeaderRight(HeaderModel model)
+    private string HeaderRight(HeaderModel model, bool count = true)
     {
         var muted = WorkspacePalette.HeaderMuted(_theme).ToHex();
-        var conn = model.HasWorlds ? $"{model.ConnectedText}   " : string.Empty;
+        var conn = count && model.HasWorlds ? $"{model.ConnectedText}   " : string.Empty;
         var log = model.Log == LogFormat.None
             ? $"[{muted}]{Glyphs.Log} {model.LogText}[/]"
             : $"[{Contrast.Legible(ParseHex(_ink.Accent), _theme.StatusBackground, WorkspacePalette.HeaderTextFloor).ToHex()}]{Glyphs.Log}[/] [{muted}]{model.LogText}[/]";

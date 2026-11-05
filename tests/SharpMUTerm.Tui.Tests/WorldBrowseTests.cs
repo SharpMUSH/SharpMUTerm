@@ -35,13 +35,15 @@ public class WorldBrowseTests
         bool fetch = true,
         Func<ClientHost, ClientHost>? host = null,
         Func<Uri, byte[]?>? answer = null,
-        AppConfiguration? config = null)
+        AppConfiguration? config = null,
+        int width = 120,
+        int height = 32)
     {
         Console.SetIn(TextReader.Null);
         config ??= new AppConfiguration();
         var asked = new List<Uri>();
         var saved = new List<bool>();
-        var baseHost = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 32), null, null, null);
+        var baseHost = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(width, height), null, null, null);
         Func<Uri, CancellationToken, Task<byte[]?>>? worldFetch = fetch
             ? (uri, _) =>
             {
@@ -465,5 +467,49 @@ public class WorldBrowseTests
         var form = WelcomeSurface.Render(run.App.Welcome!.Model, 70);
         await Assert.That(form.Select(MarkupText.VisibleLength).Max()).IsLessThanOrEqualTo(70);
         await Assert.That(string.Join(' ', form.Select(MarkupText.Plain).Select(l => l.Trim()))).Contains("press ⏎ to save and connect.");
+    }
+
+    public static IEnumerable<Func<(int Width, int Height)>> SmallTerminals() =>
+        [() => (80, 24), () => (60, 20)];
+
+    /// <summary>
+    /// The first connect walked by real keys on a small terminal, every step read off the painted frame: welcome, Browse,
+    /// a world with several addresses, the form, ⏎ and the tour. On each frame the header and the status row are one row
+    /// each and nothing in the status row is elided, the command line is not under a modal, and the step's keys are on one
+    /// row. At 60×20 the welcome covered the command line, the header wrapped and Browse's note cut its ⏎; at 80×24 the
+    /// tour wrapped.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(SmallTerminals))]
+    public async Task TheFirstConnectFitsASmallTerminalAtEveryStep(int width, int height)
+    {
+        await using var run = await Start(width: width, height: height);
+
+        async Task<IReadOnlyList<string>> Frame(string step, params string[] oneRow)
+        {
+            var rows = FrameGrid.Decode(run.App.RenderWholeFrame(), width, height);
+            var all = string.Join('\n', rows);
+            await Assert.That(rows[0].Contains("LOG", StringComparison.Ordinal)).IsTrue().Because($"{step}: the header is one row:\n{all}");
+            await Assert.That(rows[1].TrimStart().StartsWith("off", StringComparison.Ordinal)).IsFalse().Because($"{step}: the header did not wrap:\n{all}");
+            await Assert.That(rows[^1].Contains('…')).IsFalse().Because($"{step}: the status row elides nothing:\n{all}");
+            await Assert.That(rows[^2].Contains('│') || rows[^2].Contains('└')).IsFalse().Because($"{step}: the command line is clear of the modal:\n{all}");
+            await Assert.That(rows.Any(r => oneRow.All(h => r.Contains(h, StringComparison.Ordinal)))).IsTrue()
+                .Because($"{step}: '{string.Join("', '", oneRow)}' on one row:\n{all}");
+            return rows;
+        }
+
+        await Frame("welcome", "↑↓ pick", "Esc closes");
+        OpenFromTheWelcome(run.App);
+        var list = await Frame("browse", "⏎ connect form", "Esc");
+        await Assert.That(string.Join(' ', list.Select(r => r.Replace('│', ' ').Trim()))).Contains("until you press ⏎ there.")
+            .Because("the list's note says its whole sentence");
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        await Frame("addresses", "⏎ connect form", "Esc back");
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.DownArrow));
+        run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
+        await Frame("form", "⏎ connect", "Esc back");
+        run.App.SimulateWelcomeKey(Key(ConsoleKey.Enter, '\r'));
+        await run.App.LastCommand;
+        await Frame("connected", SharpMUTermApp.KeyTourLead, "⌃P", "Key tour");
     }
 }

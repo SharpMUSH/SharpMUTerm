@@ -183,12 +183,19 @@ internal sealed class WorldBrowseSurface
             string.Empty,
         };
 
-        var body = rows - lines.Count - 2;
         var view = model.View(query, sort);
+        var note = model.Opening is not null ? model.OpeningLine
+            : model.State == WorldBrowseState.Ready && model.Problem is { } problem ? problem
+            : model.State == WorldBrowseState.Ready && view.Count > 0 ? model.MarksNote + WorldBrowseModel.PickNote
+            : string.Empty;
+        var noteTone = model.State == WorldBrowseState.Ready && model.Problem is not null && model.Opening is null ? ScreenPalette.Caution : ScreenPalette.Label;
+        var noteRows = NoteRows(note, width, rows - lines.Count - 1 - MinListRows);
+        var body = rows - lines.Count - 1 - Math.Max(1, noteRows.Count);
         if (model.Empty(query) is { } empty)
         {
+            // Wrapped, not elided: a refusal cut mid-sentence ("the answer was to…") does not say why.
             var tone = model.State is WorldBrowseState.Failed or WorldBrowseState.Unavailable ? ScreenPalette.Caution : ScreenPalette.Label;
-            lines.Add($"  [{tone}]{Escape(Elide(empty, width - 2))}[/]");
+            lines.AddRange(NoteRows(empty, width - 2, body).Select(row => $"  [{tone}]{Escape(row)}[/]"));
         }
         else
         {
@@ -201,12 +208,7 @@ internal sealed class WorldBrowseSurface
             }
         }
 
-        var note = model.Opening is not null ? model.OpeningLine
-            : model.State == WorldBrowseState.Ready && model.Problem is { } problem ? problem
-            : model.State == WorldBrowseState.Ready && view.Count > 0 ? model.MarksNote + WorldBrowseModel.PickNote
-            : string.Empty;
-        var noteTone = model.State == WorldBrowseState.Ready && model.Problem is not null && model.Opening is null ? ScreenPalette.Caution : ScreenPalette.Label;
-        AddNote(lines, note, noteTone, width, rows);
+        AddNote(lines, noteRows, noteTone, rows);
         lines.Add(Footer(width));
         return lines;
     }
@@ -234,7 +236,8 @@ internal sealed class WorldBrowseSurface
 
         var columns = game.Endpoints.Select(WorldBrowseModel.Endpoint).ToArray();
         var addressWidth = Math.Clamp(columns.Max(c => c.Address.Length) + 2, 12, Math.Max(12, width / 2));
-        for (var i = 0; i < columns.Length && lines.Count < rows - 2; i++)
+        var noteRows = NoteRows(model.Problem ?? WorldBrowseModel.ChoiceNote, width, rows - lines.Count - 1 - Math.Min(columns.Length, MinListRows));
+        for (var i = 0; i < columns.Length && lines.Count < rows - 1 - noteRows.Count; i++)
         {
             var (address, security, state) = columns[i];
             var chosen = i == endpoint;
@@ -247,35 +250,52 @@ internal sealed class WorldBrowseSurface
                 + $"[{stateTone}]{Escape(stateText)}[/]");
         }
 
-        AddNote(lines, model.Problem ?? WorldBrowseModel.ChoiceNote, model.Problem is null ? ScreenPalette.Label : ScreenPalette.Caution, width, rows);
+        AddNote(lines, noteRows, model.Problem is null ? ScreenPalette.Label : ScreenPalette.Caution, rows);
         lines.Add(ChoiceFooter(width));
         return lines;
     }
 
+    /// <summary>The list rows a note may not take: below this many it is elided rather than wrapped further.</summary>
+    private const int MinListRows = 3;
+
+    /// <summary>The note above the keys at most <see cref="MaxNoteRows"/> rows: at 60 columns the pick note is three.</summary>
+    private const int MaxNoteRows = 3;
+
     /// <summary>
-    /// The note above the keys, closing <paramref name="lines"/> at <paramref name="rows"/> less the key row: one row, or two
-    /// where it is longer than the width and the row above it is blank — at 80 columns the pick note (which says nothing is
-    /// saved before the form's ⏎) and a refusal were cut mid-sentence. A third row is never taken: the rest is elided.
+    /// <paramref name="note"/> broken to <paramref name="width"/> (less a cell) in at most <paramref name="most"/> rows (never
+    /// fewer than one nor more than <see cref="MaxNoteRows"/>), the last elided only if it still does not fit — at 80 columns
+    /// the pick note (which says nothing is saved before the form's ⏎) and a refusal were cut mid-sentence, and at 60 the
+    /// ⏎ itself. Empty for an empty note.
     /// </summary>
-    private static void AddNote(List<string> lines, string note, string tone, int width, int rows)
+    private static List<string> NoteRows(string note, int width, int most)
     {
-        var wrapped = note.Length <= width - 1 ? new List<string> { note } : HelpSurface.Wrap(note, width - 1).ToList();
-        var two = wrapped.Count > 1 && lines.Count < rows - 2;
-        Pad(lines, rows - (two ? 3 : 2));
         if (note.Length == 0)
+        {
+            return [];
+        }
+
+        most = Math.Clamp(most, 1, MaxNoteRows);
+        var wrapped = note.Length <= width - 1 ? [note] : HelpSurface.Wrap(note, width - 1).ToList();
+        if (wrapped.Count > most)
+        {
+            var tail = string.Join(' ', wrapped.Skip(most - 1));
+            wrapped = [.. wrapped.Take(most - 1), Elide(tail, width - 1)];
+        }
+
+        return wrapped;
+    }
+
+    /// <summary>The note's rows just above the key row, closing <paramref name="lines"/> at <paramref name="rows"/> less it.</summary>
+    private static void AddNote(List<string> lines, List<string> note, string tone, int rows)
+    {
+        Pad(lines, rows - 1 - Math.Max(1, note.Count));
+        if (note.Count == 0)
         {
             lines.Add(string.Empty);
             return;
         }
 
-        if (two)
-        {
-            lines.Add($"[{tone}]{Escape(wrapped[0])}[/]");
-            lines.Add($"[{tone}]{Escape(Elide(string.Join(' ', wrapped.Skip(1)), width - 1))}[/]");
-            return;
-        }
-
-        lines.Add($"[{tone}]{Escape(Elide(note, width - 1))}[/]");
+        lines.AddRange(note.Select(row => $"[{tone}]{Escape(row)}[/]"));
     }
 
     /// <summary>The address choice's key row, laddered to one row: the choice and the way back are never given up.</summary>

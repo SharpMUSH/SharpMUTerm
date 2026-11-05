@@ -48,6 +48,7 @@ public class FooterFitTests
         ("layouts", ["↑↓ pick", "[⏎] Apply"]),
         ("welcome", ["↑↓ pick", "Esc closes"]),
         ("welcome-connect", ["↑↓ field", "Esc back"]),
+        ("tour", ["Keys:", "⌃P", "Key tour"]),
         ("packages", ["installed", "Space", "Esc close"]),
         ("package-review", ["⏎ install", "Esc cancel"]),
         ("package-browse", ["↑↓ select", "Esc close"]),
@@ -77,6 +78,39 @@ public class FooterFitTests
         var row = rows.FirstOrDefault(r => wanted.All(h => r.Contains(h, StringComparison.Ordinal)));
         await Assert.That(row).IsNotNull()
             .Because($"{view} at 80×24 must show '{string.Join("', '", wanted)}' on one row:\n{string.Join('\n', rows)}");
+    }
+
+    /// <summary>
+    /// The first-connect views at 60×20 as well (wave 32): the welcome, Browse, its addresses, the form and the tour. Each key
+    /// row on one row, the header one row, nothing elided on the status row, and the command line clear of the modal.
+    /// </summary>
+    internal static readonly (string View, string[] OneRow)[] FirstConnect =
+    [
+        ("welcome", ["↑↓ pick", "Esc closes"]),
+        ("welcome-connect", ["↑↓ field", "Esc back"]),
+        ("browse-worlds", ["↑↓ pick", "Esc closes"]),
+        ("browse-worlds-failed", ["↑↓ pick", "Esc closes"]),
+        ("browse-worlds-picked", ["↑↓ field", "Esc back"]),
+        ("browse-worlds-endpoints", ["↑↓ pick", "Esc back"]),
+        ("tour", ["Keys:", "⌃P", "Key tour"]),
+    ];
+
+    public static IEnumerable<Func<(string View, string Hints)>> FirstConnectCases() =>
+        FirstConnect.Select(f => (Func<(string, string)>)(() => (f.View, string.Join(" | ", f.OneRow))));
+
+    [Test]
+    [MethodDataSource(nameof(FirstConnectCases))]
+    public async Task TheFirstConnectViewsFitA60x20Terminal(string view, string hints)
+    {
+        const int width = 60, height = 20;
+        var rows = FrameGrid.Decode(App(width, height).RenderSnapshot(view), width, height);
+        var all = string.Join('\n', rows);
+        var wanted = hints.Split(" | ");
+        await Assert.That(rows.Any(r => wanted.All(h => r.Contains(h, StringComparison.Ordinal)))).IsTrue()
+            .Because($"{view} at 60×20: '{string.Join("', '", wanted)}' on one row:\n{all}");
+        await Assert.That(rows[0].Contains("LOG off", StringComparison.Ordinal)).IsTrue().Because($"{view}: the header is one row:\n{all}");
+        await Assert.That(rows[^1].Contains('…')).IsFalse().Because($"{view}: the status row elides nothing:\n{all}");
+        await Assert.That(rows[^2].Contains('│') || rows[^2].Contains('└')).IsFalse().Because($"{view}: the command line is clear:\n{all}");
     }
 
     [Test]
@@ -178,13 +212,13 @@ public class FooterFitTests
         await Assert.That(app.Palette.WindowHeight).IsEqualTo(full).Because("an emptied query lists the whole catalog again");
     }
 
-    private static SharpMUTermApp App()
+    private static SharpMUTermApp App(int width = Width, int height = Height)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.ThemeName = "Dark";
         config.Theme = ThemeLibrary.Get("Dark");
-        return new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
+        return new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(width, height));
     }
 
     private static string Render(string view) => App().RenderSnapshot(view);

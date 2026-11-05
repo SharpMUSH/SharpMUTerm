@@ -361,30 +361,38 @@ internal sealed class WelcomeSurface
     private static string Body(string markup) => markup.Length == 0 ? markup : new string(' ', Indent) + markup;
 
     /// <summary>
+    /// The most lines the surface may take, or <see cref="int.MaxValue"/> for no limit. The app sets it from the desktop's
+    /// height so the window, centred, leaves the command line and the status row in view (at 60×20 it covered both).
+    /// </summary>
+    public int MaxRows { get; set; } = int.MaxValue;
+
+    /// <summary>
     /// The surface at a width: the menu, or the form. Both are the same number of lines, so the one window holds
     /// either — the form's footer sits where the menu's does, and nothing has to be closed and reopened to switch,
     /// which a window running its own loop does not do in the order a headless one does.
     /// </summary>
-    public List<string> Render(int width) => Render(Model, width);
+    public List<string> Render(int width) => Render(Model, width, MaxRows);
 
     /// <summary>
     /// The surface for <paramref name="model"/> at a width — the cells of the model the window's native welcome draws. The
     /// mockup's shape: the heading on a band across the top, the body indented under it, the keys on a band across the
     /// foot, all on the settings screens' panel (<see cref="Plane"/>). <paramref name="width"/> is the frame's whole inside.
+    /// Over <paramref name="rows"/> lines the spacers go first, then the <c>/connect</c> example (the status row names
+    /// <c>/connect</c> too); nothing is wrapped by the frame, because every sentence is broken to the body's width here.
     /// </summary>
-    public static List<string> Render(WelcomeModel model, int width)
+    public static List<string> Render(WelcomeModel model, int width, int rows = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(model);
+        var menu = Fit(RenderMenu(model, width), rows);
         if (!model.InForm)
         {
-            return RenderMenu(model, width);
+            return menu;
         }
 
-        var form = RenderForm(model, width);
+        var form = Fit(RenderForm(model, width), menu.Count);
         var footer = form[^1];
         form.RemoveAt(form.Count - 1);
-        var height = RenderMenu(model, width).Count;
-        while (form.Count < height - 1)
+        while (form.Count < menu.Count - 1)
         {
             form.Add(string.Empty);
         }
@@ -393,33 +401,70 @@ internal sealed class WelcomeSurface
         return form;
     }
 
-    private static List<string> RenderMenu(WelcomeModel model, int width)
+    /// <summary>A line of the surface and when it is given up: 0 never, else highest first.</summary>
+    private readonly record struct Line(string Markup, int Drop = 0);
+
+    /// <summary>Spacer rows, given up first, in this order (highest first).</summary>
+    private const int DropLayoutSpacer = 6, DropExample = 6, DropHeadingSpacer = 5, DropIntroSpacer = 4, DropKeysSpacer = 3, DropProblemSpacer = 2;
+
+    /// <summary><paramref name="lines"/> with the highest <see cref="Line.Drop"/> given up first until at most <paramref name="rows"/> remain.</summary>
+    private static List<string> Fit(List<Line> lines, int rows)
+    {
+        var kept = lines.ToList();
+        foreach (var drop in kept.Select(l => l.Drop).Where(d => d > 0).Distinct().OrderDescending().ToList())
+        {
+            if (kept.Count <= rows)
+            {
+                break;
+            }
+
+            kept.RemoveAll(l => l.Drop == drop);
+        }
+
+        return kept.Select(l => l.Markup).ToList();
+    }
+
+    /// <summary><paramref name="text"/> broken to <paramref name="width"/>, each row a body line in <paramref name="style"/>.</summary>
+    private static IEnumerable<Line> Sentence(string text, int width, Func<string, string> style) =>
+        HelpSurface.Wrap(text, Math.Max(10, width)).Select(row => new Line(Body(style(row))));
+
+    private static List<Line> RenderMenu(WelcomeModel model, int width)
     {
         var inner = width - (2 * Indent);
-        var lines = new List<string>
-        {
-            Band(WelcomeModel.Heading, width),
-            string.Empty,
-            Body(Value(WelcomeModel.Intro)),
-            string.Empty,
-        };
+        var lines = new List<Line> { new(Band(WelcomeModel.Heading, width)), new(string.Empty, DropHeadingSpacer) };
+        lines.AddRange(Sentence(WelcomeModel.Intro, inner, t => Value(t)));
+        lines.Add(new(string.Empty, DropIntroSpacer));
 
         foreach (var choice in Enum.GetValues<WelcomeChoice>())
         {
             var selected = choice == model.Selected;
             var (title, detail) = model.Describe(choice);
             var marker = selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
-            var row = $"{marker} {Pad(Value(title, selected), 20)} {Muted(detail)}";
+
+            // The detail is elided to the row rather than wrapped by the frame (60 columns): it says where a choice goes,
+            // and the title already does.
+            var room = inner - 23;
+            var shown = detail.Length <= room ? detail : room > 1 ? detail[..(room - 1)].TrimEnd() + "…" : string.Empty;
+            var row = $"{marker} {Pad(Value(title, selected), 20)} {Muted(shown)}";
 
             // The choice ⏎ takes is a band across the list, the settings screens' cursor row (the mockup's).
-            lines.Add(Body(selected ? $"[on {ScreenPalette.CursorBg}]{Pad(row, inner)}[/]" : row));
+            lines.Add(new(Body(selected ? $"[on {ScreenPalette.CursorBg}]{Pad(row, inner)}[/]" : row)));
         }
 
-        lines.Add(model.Problem is null ? string.Empty : Body($"  [{ScreenPalette.Caution}]{Escape(model.Problem)}[/]"));
-        lines.Add(Body(Muted(WelcomeModel.ExampleLead)));
-        lines.Add(Body($"  [{ScreenPalette.Accent}]{Escape(ExampleCommand)}[/]"));
-        lines.Add(string.Empty);
-        lines.Add(Body(Label(model.LayoutHeading)));
+        if (model.Problem is null)
+        {
+            lines.Add(new(string.Empty, DropProblemSpacer));
+        }
+        else
+        {
+            lines.AddRange(HelpSurface.Wrap(model.Problem, Math.Max(10, inner - 2))
+                .Select(row => new Line(Body($"  [{ScreenPalette.Caution}]{Escape(row)}[/]"))));
+        }
+
+        lines.Add(new(Body(Muted(WelcomeModel.ExampleLead)), DropExample));
+        lines.Add(new(Body($"  [{ScreenPalette.Accent}]{Escape(ExampleCommand)}[/]"), DropExample));
+        lines.Add(new(string.Empty, DropLayoutSpacer));
+        lines.AddRange(Sentence(model.LayoutHeading, inner, Label));
         var chips = string.Join("  ", Enum.GetValues<WelcomeLayout>().Select(layout =>
         {
             var name = WelcomeModel.LayoutName(layout);
@@ -433,40 +478,46 @@ internal sealed class WelcomeSurface
         var beside = "  " + chips + "   " + note;
         if (VisibleLength(beside) <= inner)
         {
-            lines.Add(Body(beside));
+            lines.Add(new(Body(beside)));
         }
         else
         {
-            lines.Add(Body("  " + chips));
-            lines.Add(Body("  " + note));
+            lines.Add(new(Body("  " + chips)));
+            lines.AddRange(HelpSurface.Wrap(WelcomeModel.LayoutNote, Math.Max(10, inner - 2)).Select(row => new Line(Body("  " + Muted(row)))));
         }
 
-        lines.Add(string.Empty);
-        lines.Add(Keys(width, WelcomeModel.MenuKeys.Left, WelcomeModel.MenuKeys.Right));
+        lines.Add(new(string.Empty, DropKeysSpacer));
+        lines.Add(new(Keys(width, WelcomeModel.MenuKeys.Left, WelcomeModel.MenuKeys.Right)));
         return lines;
     }
 
-    private static List<string> RenderForm(WelcomeModel model, int width)
+    private static List<Line> RenderForm(WelcomeModel model, int width)
     {
         // The intro is broken to the body's width: a world Browse worlds named makes it a long sentence, which ran past
         // the frame's right edge at 80 columns.
-        var lines = new List<string> { Band(WelcomeModel.FormHeading, width), string.Empty };
-        lines.AddRange(HelpSurface.Wrap(model.FormIntroLine, Math.Max(10, width - (2 * Indent))).Select(row => Body(Value(row))));
-        lines.Add(string.Empty);
+        var lines = new List<Line> { new(Band(WelcomeModel.FormHeading, width)), new(string.Empty, DropHeadingSpacer) };
+        lines.AddRange(Sentence(model.FormIntroLine, width - (2 * Indent), t => Value(t)));
+        lines.Add(new(string.Empty, DropIntroSpacer));
 
         var boxWidth = Math.Clamp(width - (2 * Indent) - 16, 12, 44);
         var field = model.Field;
-        lines.Add(Body(Row(field, WelcomeField.Host, Box(model.Host, boxWidth, field == WelcomeField.Host, WelcomeModel.HostPlaceholder))));
-        lines.Add(Body(Row(field, WelcomeField.Port, Box(model.Port, 7, field == WelcomeField.Port, null))));
-        lines.Add(Body(Row(field, WelcomeField.Tls, Toggle(model.Tls, WelcomeModel.TlsOn, WelcomeModel.TlsOff))));
-        lines.Add(Body(Row(field, WelcomeField.Character, Box(model.Character, boxWidth, field == WelcomeField.Character, WelcomeModel.CharacterPlaceholder))));
-        lines.Add(Body(Row(field, WelcomeField.Password, Toggle(model.PasswordLater, WelcomeModel.PasswordOn, WelcomeModel.PasswordOff))));
-        lines.Add(string.Empty);
-        lines.Add(Body(model.Problem is null
-            ? Muted(model.FormLayoutLine)
-            : $"[{ScreenPalette.Caution}]{Escape(model.Problem)}[/]"));
-        lines.Add(string.Empty);
-        lines.Add(Keys(width, "↑↓ field · Space toggle", WelcomeModel.FormKeys));
+        lines.Add(new(Body(Row(field, WelcomeField.Host, Box(model.Host, boxWidth, field == WelcomeField.Host, WelcomeModel.HostPlaceholder)))));
+        lines.Add(new(Body(Row(field, WelcomeField.Port, Box(model.Port, 7, field == WelcomeField.Port, null)))));
+        lines.Add(new(Body(Row(field, WelcomeField.Tls, Toggle(model.Tls, WelcomeModel.TlsOn, WelcomeModel.TlsOff)))));
+        lines.Add(new(Body(Row(field, WelcomeField.Character, Box(model.Character, boxWidth, field == WelcomeField.Character, WelcomeModel.CharacterPlaceholder)))));
+        lines.Add(new(Body(Row(field, WelcomeField.Password, Toggle(model.PasswordLater, WelcomeModel.PasswordOn, WelcomeModel.PasswordOff)))));
+        lines.Add(new(string.Empty, DropProblemSpacer));
+        if (model.Problem is null)
+        {
+            lines.AddRange(Sentence(model.FormLayoutLine, width - (2 * Indent), Muted));
+        }
+        else
+        {
+            lines.AddRange(Sentence(model.Problem, width - (2 * Indent), t => $"[{ScreenPalette.Caution}]{Escape(t)}[/]"));
+        }
+
+        lines.Add(new(string.Empty, DropKeysSpacer));
+        lines.Add(new(Keys(width, "↑↓ field · Space toggle", WelcomeModel.FormKeys)));
         return lines;
     }
 

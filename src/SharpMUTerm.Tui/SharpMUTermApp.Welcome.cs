@@ -119,6 +119,10 @@ internal sealed partial class SharpMUTermApp
     private void OpenWelcomeView()
     {
         var welcome = _welcome!;
+
+        // Its frame and two rows either side of it, so the centred window leaves the command line and the status row in
+        // view (ListOverlay's rule for a modal whose keys are pinned): at 60×20 the welcome sat on both.
+        welcome.MaxRows = Math.Max(8, _system.DesktopDimensions.Height - 6);
         _welcomeView.Open(
             "welcome",
             string.Empty, // the heading is the surface's own band, the mockup's; a frame title would say it twice
@@ -330,26 +334,50 @@ internal sealed partial class SharpMUTermApp
         }
     }
 
-    /// <summary>The tour row: one line naming four keys, chrome in the window, never the session's text.</summary>
-    internal string KeyTourMarkup()
+    /// <summary>
+    /// The tour's keys, in reading order. A row that cannot hold them all ladders (<see cref="KeyLadder"/>): short labels
+    /// first, then ⌥M, F5 and F1 go in that order; ⌃P and the way to hide the row are never given up. The full form is
+    /// the row as it always read.
+    /// </summary>
+    internal static readonly IReadOnlyList<LadderKey> KeyTourKeys =
+    [
+        new("⌃P", "every command", "commands"),
+        new("⌥M", "layouts", Drop: 1),
+        new("F1", "long posts", "posts", Drop: 3),
+        new("F5", "worlds", Drop: 2),
+        new(string.Empty, "hide with ⌃P ▸ Key tour", "hide: ⌃P ▸ Key tour"),
+    ];
+
+    /// <summary>
+    /// The tour row: one line naming four keys, chrome in the window, never the session's text. Fitted to
+    /// <paramref name="width"/> cells (0: no limit) so it never wraps; the lead counts against the width.
+    /// </summary>
+    internal string KeyTourMarkup(int width = 0)
     {
         string Key(string key) => $"[bold {_ink.Accent}]{Escape(key)}[/]";
         string Say(string text) => $"[{_ink.Notice}]{Escape(text)}[/]";
-        return Say(KeyTourLead + " ")
-            + Key("⌃P") + Say(" every command · ")
-            + Key("⌥M") + Say(" layouts · ")
-            + Key("F1") + Say(" long posts · ")
-            + Key("F5") + Say(" worlds · ")
-            + Say("hide with ⌃P ▸ Key tour");
+        var lead = KeyTourLead + " ";
+        return Say(lead) + KeyLadder.Fit(KeyTourKeys, width <= 0 ? 0 : Math.Max(1, width - lead.Length), Key, Say, Say(" · "));
     }
 
     /// <summary>Puts the tour row at the end of <paramref name="windowId"/>, or moves it there.</summary>
     internal void ShowKeyTour(string windowId)
     {
         HideKeyTour();
-        AppendWindowLine(windowId, KeyTourMarkup());
+        if (BarWidth(windowId) <= 0)
+        {
+            // Not arranged yet: drawn in full, so the next frame must redraw it at the pane's width.
+            _chromeBarWidths.Remove(windowId);
+        }
+
+        Func<string, string> bar = _ => KeyTourMarkup(BarWidth(windowId));
+        _tourBar = bar;
+        AppendWindowLine(windowId, bar(string.Empty), bar: bar);
         _tourWindow = windowId;
     }
+
+    /// <summary>How the tour row is drawn, which is also how it is found in its buffer again; null when none is up.</summary>
+    private Func<string, string>? _tourBar;
 
     /// <summary>Takes the tour row away. False when there was none.</summary>
     private bool HideKeyTour()
@@ -362,8 +390,9 @@ internal sealed partial class SharpMUTermApp
         _tourWindow = null;
         if (_lines.TryGetValue(windowId, out var buffer))
         {
-            var markup = KeyTourMarkup();
-            var at = buffer.FindLastIndex(line => string.Equals(line.Markup, markup, StringComparison.Ordinal));
+            var bar = _tourBar;
+            _tourBar = null;
+            var at = buffer.FindLastIndex(line => line.Bar is { } drawn && ReferenceEquals(drawn, bar));
             if (at >= 0)
             {
                 RemoveChromeRow(windowId, at);

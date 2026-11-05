@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The first connect fits a small terminal. At 80×24 the key tour shown after your first connect is one line again (it
+  wrapped), keeping ⌃P and how to hide it. At 60×20 the welcome no longer covers the command line, the header stays on
+  one row, the world list's note and a failed listing say their whole sentence, and the "no world" notice keeps
+  `/welcome` instead of cutting it off.
+
 - Connecting to your first world is smoother. In the desktop window's welcome, the arrow keys pick a world from the list
   and Enter adds it. When a game has several addresses, the keyboard starts on the addresses rather than on Back. The
   filled-in form starts at Character and names the world and its text encoding, as the terminal's does. In the

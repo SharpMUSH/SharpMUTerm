@@ -1709,6 +1709,16 @@ fallbacks) for inline images/maps.
   goes under `connected to …`** (`ShowOwedKeyTour`, on the `ConnectionNoted` CONNECT note, because `StateChanged` Connected
   comes before that row). The `welcome` demo scene starts empty (`_startedEmpty`), so it owes the tour as a real first run does.
   Cell notes wrap to two rows rather than eliding (`WorldBrowseSurface.AddNote`); the form's intro wraps to the frame.
+- **Wave 32 first connect at 80×24 and 60×20 (cells, both hosts; terminal frames moved)** (`ux-wave32/terminal-first-connect-80x24/`).
+  **The tour row ladders** (`KeyTourKeys`, `KeyTourMarkup(width)`): it is a bar row (`PaneLine.Bar`, redrawn at the pane's width
+  by `SyncChromeBarWidths`, found again by its bar delegate `_tourBar`), full where it fits, short labels then ⌥M, F5, F1 given
+  up; ⌃P and `hide: ⌃P ▸ Key tour` stay. As chrome it is no longer found by ⌃F. **The welcome fits the desktop**
+  (`WelcomeSurface.MaxRows` = desktop − 6, so centred it clears the command line): every sentence is broken to the body, a
+  choice's detail is elided to its row, and over the rows spacers then the `/connect` example go (`Line.Drop`). Browse's
+  notes take up to 3 rows from the list (never below 3 list rows, `NoteRows`), and a refusal wraps. The header drops its
+  connected count when the shortened brand still does not fit (60 columns wrapped it); `NoWorldsNoticeFor(width)` shortens
+  the empty notice's words, never its commands. `FooterFitTests.TheFirstConnectViewsFitA60x20Terminal` and
+  `WorldBrowseTests.TheFirstConnectFitsASmallTerminalAtEveryStep` (real keys, 80×24 and 60×20) are the pins.
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the
