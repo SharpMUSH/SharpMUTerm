@@ -87,6 +87,11 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest, IEdgeRules
     };
 
     /// <summary>Takes the client's strip and the window's tokens, lays the tabs out and redraws.</summary>
+    /// <summary>How opaque the strip's planes are drawn: F7's background transparency, as the cells' (<see cref="TerminalView.PlaneAlpha"/>).</summary>
+    internal byte PlaneAlpha { get; set; } = 255;
+
+    private Color Fade(Color plane) => PlaneAlpha == 255 ? plane : Color.FromArgb(PlaneAlpha, plane.R, plane.G, plane.B);
+
     public void Show(TabStripOverlay overlay, NativeTokens tokens, bool interactive, TabDragModel? drag = null)
     {
         Overlay = overlay;
@@ -356,7 +361,7 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest, IEdgeRules
 
         var bounds = new Rect(Bounds.Size);
         var strip = Parse(overlay.StripPlane, Tokens.Card);
-        context.FillRectangle(new SolidColorBrush(strip), bounds);
+        context.FillRectangle(new SolidColorBrush(Fade(strip)), bounds);
         // The strip's last device pixel is its rule, filled rather than stroked, so it is one crisp row at 125% and 150%.
         var px = NativeTokens.DevicePixel(this);
         context.FillRectangle(new SolidColorBrush(Tokens.Rule), NativeTokens.HorizontalRule(this, bounds.Height - px, 0, bounds.Width));
@@ -378,7 +383,7 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest, IEdgeRules
                 // onto the pane, on the pane's own plane. In the pane that holds the keyboard the rule is the focus edge
                 // (the command line's own focus colour), the quietest cue that says which pane it is when two show.
                 var r = Math.Min(NativeTokens.RadiusM, area.Height / 2);
-                context.DrawGeometry(new SolidColorBrush(plane), null, CardGeometry(area, r, bounds.Height));
+                context.DrawGeometry(new SolidColorBrush(Fade(plane)), null, CardGeometry(area, r, bounds.Height));
                 context.DrawGeometry(null, NativeTokens.HairlinePen(this, overlay.Model.Focused ? Tokens.Focus : Tokens.Rule),
                     CardOutline(NativeTokens.StrokeRect(this, area), r, bounds.Height));
             }
@@ -387,7 +392,7 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest, IEdgeRules
                 var plate = area.Deflate(new Thickness(0, NativeTokens.Hairline, 0, NativeTokens.Space4));
                 if (plane != strip)
                 {
-                    context.DrawRectangle(new SolidColorBrush(plane), null, plate, NativeTokens.RadiusS, NativeTokens.RadiusS);
+                    context.DrawRectangle(new SolidColorBrush(Fade(plane)), null, plate, NativeTokens.RadiusS, NativeTokens.RadiusS);
                 }
 
                 if (hovered && Interactive)

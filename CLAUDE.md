@@ -3269,6 +3269,13 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     writing a foreground for every blank cell, which splits words across SGR runs and broke a dozen
     frame-text tests. `--transparency <0-100>` renders a snapshot with it on; a snapshot is never kitty,
     so it shows the fallback.
+    **The window draws the level itself** (`ClientHost.Translucency` → `IWindowTranslucency`, null in the terminal and
+    headless; Avalonia `WindowTranslucency`): the client keeps every plane painted and says the level once per change, the
+    window asks for `WindowTransparencyLevel.Transparent` and draws every background at `255·(100−p)/100` with Src blending
+    (cells, dividers, field, header, sidebar, panels, tab strips), clearing the cells under a native view so its plane is
+    drawn once. Text, rules and pictures stay opaque; text is greyscale-antialiased while translucent (subpixel halos).
+    With no compositor (`ActualTransparencyLevel` None) it stays opaque. `--transparency` in the window renders it.
+    Floating panel windows, modals and toasts stay opaque. Untried on Windows.
   - **The command line wears it too, and takes the hue without the depth** (`PaintInputBands`,
     `WorkspacePalette.IdleBand(theme, tint)` / `ArmedBand(theme, tint)`). On a pane, luminance carries
     focus as a ratio that a step applied equally to all six leaves intact; on the input row luminance is

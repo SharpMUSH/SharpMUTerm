@@ -121,7 +121,15 @@ internal static class PanelText
     public static double Heading(DrawingContext context, SharpMUTerm.Client.Panels.PanelHeading heading, double width, double cellHeight, Color plane, Color text, double right = 0, double rule = NativeTokens.Hairline)
     {
         var height = HeadingHeight(cellHeight);
-        context.FillRectangle(new SolidColorBrush(plane), new Rect(0, 0, width, height));
+
+        // Over whatever the panel drew under it. A translucent plane (F7's background transparency) is not drawn again:
+        // the panel's own fill is already there, and a second would read as a darker band; such a panel clips its
+        // content below the heading instead (MapCanvas).
+        if (plane.A == 255)
+        {
+            context.FillRectangle(new SolidColorBrush(plane), new Rect(0, 0, width, height));
+        }
+
         var middle = (height - rule) / 2;
         var limit = width - Pad - right;
         var x = Pad;

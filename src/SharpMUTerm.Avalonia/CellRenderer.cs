@@ -34,13 +34,42 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
 
     public SKColor DefaultBackground { get; } = defaultBackground;
 
-    public void Render(SKCanvas canvas, ScreenFrame frame, PictureStore pictures, bool caretShown = true)
+    /// <summary>Whether the frame being drawn has translucent planes, and so greyscale text (<see cref="Render"/>).</summary>
+    private bool _greyscale;
+
+    /// <param name="alpha">
+    /// How opaque the backgrounds are drawn (F7's background transparency in the window): 255, the cells as they always
+    /// were; anything less draws every run, the default background's too, in source mode at that alpha, so each pixel of a
+    /// plane is that plane once over whatever is behind the window. Glyphs, pictures and the caret stay opaque.
+    /// </param>
+    public void Render(SKCanvas canvas, ScreenFrame frame, PictureStore pictures, bool caretShown = true, byte alpha = 255)
     {
         var cw = Fonts.CellWidth;
         var ch = Fonts.CellHeight;
-        canvas.Clear(DefaultBackground);
+        var translucent = alpha != 255;
+        // Subpixel (LCD) text needs an opaque background to blend its colour fringes against; over a translucent plane
+        // it draws coloured halos, so a translucent frame's glyphs are greyscale antialiased.
+        _greyscale = translucent;
+        if (!translucent)
+        {
+            canvas.Clear(DefaultBackground);
+        }
 
-        using var fill = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+        using var fill = new SKPaint
+        {
+            IsAntialias = false,
+            Style = SKPaintStyle.Fill,
+            BlendMode = translucent ? SKBlendMode.Src : SKBlendMode.SrcOver,
+        };
+
+        if (translucent)
+        {
+            // What no row reaches (the view's leftover pixels under the last row) is the default background, once.
+            var clip = canvas.LocalClipBounds;
+            var below = frame.Height * ch;
+            fill.Color = DefaultBackground.WithAlpha(alpha);
+            canvas.DrawRect(new SKRect(clip.Left, below, clip.Right, Math.Max(below, clip.Bottom)), fill);
+        }
 
         // Backgrounds, as runs: one rectangle per stretch of a row sharing a colour. A row's last run is carried on to the
         // canvas's right edge: a window is rarely a whole number of cells wide, and the pixels past the last column would
@@ -58,9 +87,9 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
                     continue;
                 }
 
-                if (current != DefaultBackground)
+                if (translucent || current != DefaultBackground)
                 {
-                    fill.Color = current;
+                    fill.Color = translucent ? current.WithAlpha(alpha) : current;
                     var width = x == frame.Width ? Math.Max((x - start) * cw, right - (start * cw)) : (x - start) * cw;
                     canvas.DrawRect(start * cw, y * ch, width, ch, fill);
                 }
@@ -187,6 +216,7 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
         var bold = (cell.Decorations & TextDecoration.Bold) != 0;
         var italic = (cell.Decorations & TextDecoration.Italic) != 0;
         var font = Fonts.For(cell.Rune.Value, bold, italic);
+        font.Edging = _greyscale ? SKFontEdging.Antialias : SKFontEdging.SubpixelAntialias;
         var text = cell.Combiners is null ? cell.Rune.ToString() : cell.Rune + cell.Combiners;
 
         // A fallback face is not held to the cell: an emoji or a CJK glyph from it can be wider than the

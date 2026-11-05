@@ -175,6 +175,14 @@ internal sealed record ClientHost
     public required IWindowModes? WindowModes { get; init; }
 
     /// <summary>
+    /// Draws F7's background transparency itself (<see cref="IWindowTranslucency"/>): the window, which paints every plane
+    /// at the level over a translucent desktop window. Null where the backgrounds are a terminal's to show: the terminal
+    /// (kitty is told the level through its color-control escape, any other terminal is handed its default background),
+    /// the snapshot, the tests and <c>--plain</c>.
+    /// </summary>
+    public required IWindowTranslucency? Translucency { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -222,6 +230,7 @@ internal sealed record ClientHost
         Attention = new TerminalAttention(driver, TerminalAttention.Detect()),
         FilePicker = null,
         WindowModes = null,
+        Translucency = null,
     };
 
     /// <summary>
@@ -255,6 +264,7 @@ internal sealed record ClientHost
         Attention = null,
         FilePicker = null,
         WindowModes = null,
+        Translucency = null,
     };
 
     /// <summary>

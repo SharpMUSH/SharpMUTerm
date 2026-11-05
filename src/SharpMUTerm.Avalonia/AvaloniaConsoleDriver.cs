@@ -91,6 +91,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>The window's title for what is in front, which the main window shows (<see cref="WindowTitleBar"/>).</summary>
     public WindowTitleBar TitleBar { get; } = new();
 
+    /// <summary>F7's background transparency, which the main window draws (<see cref="WindowTranslucency"/>).</summary>
+    public WindowTranslucency Translucency { get; } = new();
+
     /// <summary>The window's alerts while it is behind another (<see cref="WindowAttention"/>).</summary>
     public WindowAttention Attention { get; } = new();
 
@@ -197,6 +200,35 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     }
 
     public void Dispose() => Pictures.Dispose();
+}
+
+/// <summary>
+/// The window's half of <see cref="IWindowTranslucency"/>: the client says F7's level on its own thread, and the main
+/// window, which subscribes, asks the desktop for a translucent window and paints its planes at that level on Avalonia's.
+/// </summary>
+internal sealed class WindowTranslucency : IWindowTranslucency
+{
+    /// <summary>The last level, 0 (opaque) before the client has said one.</summary>
+    public int Percent { get; private set; }
+
+    /// <summary>Raised on the client's thread with each new level.</summary>
+    public event Action<int>? Changed;
+
+    public void Show(int percent)
+    {
+        Percent = Math.Clamp(percent, 0, SharpMUTerm.Core.Configuration.TextSettings.MaxBackgroundTransparency);
+        Changed?.Invoke(Percent);
+    }
+
+    /// <summary>
+    /// How opaque the window's planes are drawn for F7's <paramref name="percent"/>, on a window the desktop made
+    /// <paramref name="actual"/>: 255 (opaque) at 0% or where the desktop gave no translucency — a plane drawn translucent
+    /// on an opaque window would show black, not the desktop — else the rest of 255 the level leaves, 0 at 100%.
+    /// </summary>
+    public static byte PlaneAlpha(int percent, global::Avalonia.Controls.WindowTransparencyLevel actual) =>
+        percent <= 0 || actual == global::Avalonia.Controls.WindowTransparencyLevel.None
+            ? (byte)255
+            : (byte)Math.Round(255 * (100 - Math.Min(percent, 100)) / 100.0);
 }
 
 /// <summary>

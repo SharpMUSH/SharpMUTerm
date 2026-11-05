@@ -467,8 +467,10 @@ internal sealed class ComposerView : Border, IEdgeRules
     private void Paint()
     {
         Background = new SolidColorBrush(_plane);
-        _header.Background = new SolidColorBrush(_fullScreen ? Band : _plane);
-        _footer.Background = new SolidColorBrush(_fullScreen ? Band : _plane);
+        // Docked, the header and footer are the panel's own plane, which the view already paints: transparent rather than
+        // the same colour again, so a translucent plane (F7's background transparency) is not drawn twice there.
+        _header.Background = _fullScreen ? new SolidColorBrush(Band) : Brushes.Transparent;
+        _footer.Background = _fullScreen ? new SolidColorBrush(Band) : Brushes.Transparent;
         _header.BorderBrush = new SolidColorBrush(_fullScreen ? Mix(_plane, _text, 0.12) : PanelText.Rule(_text, _plane));
         _header.BorderThickness = new Thickness(0, 0, 0, NativeTokens.Hairline);
         _footer.BorderBrush = _header.BorderBrush;

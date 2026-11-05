@@ -276,4 +276,43 @@ public class TransparentBackgroundTests
             + ";transparent_background_color6;transparent_background_color7\u001b\\");
         await Assert.That(KittyTransparentColours.Sequence([new Rgb(0, 0, 0)], 100)).Contains("#000000@0;");
     }
+
+    /// <summary>A host that draws the backgrounds itself, recording each level it is told.</summary>
+    private sealed class RecordingTranslucency : IWindowTranslucency
+    {
+        public List<int> Shown { get; } = [];
+
+        public void Show(int percent) => Shown.Add(percent);
+    }
+
+    /// <summary>
+    /// <b>The window is told the level and keeps every plane painted.</b> It draws the backgrounds itself, so nothing is
+    /// handed to a terminal's default background (a window has none to show) and nothing is named to kitty: the level goes
+    /// to <see cref="ClientHost.Translucency"/>, once per change, and back to 0 when it is turned off.
+    /// </summary>
+    [Test]
+    public async Task AHostThatDrawsTheBackgroundsIsToldTheLevelAndEveryCellStaysPainted()
+    {
+        Console.SetIn(TextReader.Null);
+        var window = new RecordingTranslucency();
+        var host = ClientHost.Headless(new HeadlessConsoleDriver(Width, Height), Kitty) with { Translucency = window };
+        var app = new SharpMUTermApp(Transparent(40), host);
+        var frame = app.RenderSnapshot("split");
+
+        foreach (var (_, rect) in app.PaneOutputRects())
+        {
+            await Assert.That(DefaultCells(frame, rect)).IsEqualTo(0);
+        }
+
+        await Assert.That(app.LastColourControl).IsNull();
+        await Assert.That(window.Shown).IsEquivalentTo(new[] { 40 });
+
+        app.RenderWholeFrame();
+        await Assert.That(window.Shown.Count).IsEqualTo(1);
+
+        app.Configuration.Text.BackgroundTransparency = 0;
+        app.SaveConfiguration();
+        app.RenderWholeFrame();
+        await Assert.That(window.Shown).IsEquivalentTo(new[] { 40, 0 });
+    }
 }
