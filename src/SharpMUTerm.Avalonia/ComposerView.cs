@@ -1085,6 +1085,7 @@ internal sealed class ComposerView : Border, IEdgeRules
 
         var menu = new ContextMenu { ItemsSource = items };
         menu.Closed += (_, _) => _editor.Focus();
+        NativeMenu.KeepWhole(menu, _editor);
         OpenedMenu = menu;
         menu.Open(_editor);
         return menu;
