@@ -150,7 +150,7 @@ internal sealed class ComposerView : Border
         _marks = new MarkLayer(_editor);
         _gutter = new LineGutter(_editor) { IsVisible = false };
 
-        _title = new TextBlock { FontWeight = fullScreen ? FontWeight.Bold : FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, fullScreen ? NativeTokens.Space10 : NativeTokens.Space8, 0) };
+        _title = new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, NativeTokens.Space8, 0) };
         _target = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         _chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, VerticalAlignment = VerticalAlignment.Center };
         _count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space10, 0, 0, 0) };
@@ -497,8 +497,8 @@ internal sealed class ComposerView : Border
         _gutter.Warn = Warn;
         _gutter.Background = new SolidColorBrush(Band);
         _gutter.InvalidateVisual();
-        _title.Foreground = new SolidColorBrush(_fullScreen ? Accent : _text);
-        _target.Foreground = new SolidColorBrush(_fullScreen ? _text : Dim);
+        _title.Foreground = new SolidColorBrush(_text);
+        _target.Foreground = new SolidColorBrush(Dim);
         _count.Foreground = new SolidColorBrush(Dim);
         _preview.Background = new SolidColorBrush(Band);
         _preview.BorderBrush = _header.BorderBrush;
@@ -571,14 +571,14 @@ internal sealed class ComposerView : Border
         if (model.Edit is { Script: true } script)
         {
             // A script: its name, that a save reloads the character's scripts, and what the last save did.
-            _title.Text = script.ReadOnly ? "READ ONLY" : "SCRIPT";
+            _title.Text = script.ReadOnly ? "Read only" : "Script";
             var whose = model.Target.Length == 0 ? "no connection" : model.Target;
             _target.Text = $"{script.Name}   lua · {(script.ReadOnly ? "a package's script" : $"reloads {whose}")}"
                 + (script.Status is { } status ? $" · {status.TrimStart('!', ' ')}" : string.Empty);
         }
         else if (model.Edit is { } edit)
         {
-            _title.Text = "EDIT";
+            _title.Text = "Edit";
             _target.Text = $"{edit.Name}   {edit.Type} · from {(model.Target.Length == 0 ? "no connection" : model.Target)}";
         }
         else if (!_fullScreen)
@@ -590,12 +590,12 @@ internal sealed class ComposerView : Border
         }
         else
         {
-            _title.Text = "COMPOSE";
+            _title.Text = "Compose";
             _target.Text = model.Target.Length == 0 ? "no connection" : $"to {model.Target}";
         }
 
         _target.Foreground = new SolidColorBrush(
-            model.Target.Length == 0 || model.Edit?.Status?.StartsWith('!') == true ? Warn : _fullScreen ? _text : Dim);
+            model.Target.Length == 0 || model.Edit?.Status?.StartsWith('!') == true ? Warn : Dim);
 
         _chips.Children.Clear();
         if (model.Edit is null && !_fullScreen)
@@ -668,7 +668,8 @@ internal sealed class ComposerView : Border
             var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space4, Margin = new Thickness(0, NativeTokens.Hairline, NativeTokens.Space14, NativeTokens.Hairline) };
             if (key.Key.Length > 0)
             {
-                item.Children.Add(Chip(NativeKeys.Words(key.Key), Accent, ui - 1.5));
+                // A key cap, the one every native list draws (⌃P, help, the modals), not a tinted word.
+                item.Children.Add(ModalParts.Chip(NativeKeys.Words(key.Key), NativeTokens.For(null, Luma(_plane) < 0.5)));
             }
 
             item.Children.Add(new TextBlock
@@ -700,16 +701,8 @@ internal sealed class ComposerView : Border
     /// <summary>What the idle editor says while empty, or null. Internal for tests.</summary>
     internal string? Placeholder => _placeholder.IsVisible ? _placeholder.Text : null;
 
-    private Border Chip(string words, Color ink, double size) => new()
-    {
-        Background = new SolidColorBrush(Mix(_plane, ink, 0.14)),
-        BorderBrush = new SolidColorBrush(Mix(_plane, ink, 0.32)),
-        BorderThickness = new Thickness(NativeTokens.Hairline),
-        CornerRadius = new CornerRadius(NativeTokens.RadiusS),
-        Padding = new Thickness(NativeTokens.Space6, 0, NativeTokens.Space6, NativeTokens.Hairline),
-        VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = words, FontSize = Math.Max(9, size), Foreground = new SolidColorBrush(ink) },
-    };
+    /// <summary>A header chip (escaping, dictionary): the docked heading's outline, so F1 and the panel wear one chip.</summary>
+    private Border Chip(string words, Color ink, double size) => OutlinedChip(words, ink);
 
     /// <summary>
     /// The docked heading's chip, as the mockup's <c>Literal</c>: 11 px words in a hairline outline of the panel's rule,

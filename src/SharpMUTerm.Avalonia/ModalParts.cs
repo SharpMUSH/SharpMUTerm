@@ -194,6 +194,20 @@ internal static class ModalParts
     }
 
     /// <summary>A key chip, as the palette draws a key.</summary>
+    /// <summary>
+    /// A card's content clipped to the inside of its hairline edge. The card clips its child to its own outer corner, so a
+    /// foot band (the well) drawn square to the bottom covered the edge where it curves and the corner lost its hairline.
+    /// </summary>
+    public static Border InsideEdge(Control child) => new()
+    {
+        CornerRadius = new CornerRadius(NativeTokens.RadiusL - NativeTokens.Hairline),
+        ClipToBounds = true,
+        Child = child,
+    };
+
+    /// <summary>A key cap's height: a list row that may hold one is at least this tall, so rows keep one pitch.</summary>
+    public const double ChipHeight = NativeTokens.Space20;
+
     public static Border Key(string key, NativeTokens colours) => Chip(NativeKeys.Words(key), colours, new Thickness(NativeTokens.Space6, 0, 0, 0));
 
     /// <summary>

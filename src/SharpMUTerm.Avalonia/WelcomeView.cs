@@ -273,7 +273,11 @@ internal sealed class WelcomeView : DockPanel, IModalView
         page.Children.Add(others);
 
         var footer = _footer = ModalParts.Footer(PageKeys, colours);
-        footer.Margin = default; // the page's foot, flush: a full page has no card for the band to stand off
+        // Under the page's column, ending at its right edge as the cards do — not at the window's edge, where the keys sat
+        // apart from everything else on the page on any window wider than the column.
+        footer.MaxWidth = ColumnWidth;
+        footer.Padding = new Thickness(0, NativeTokens.Space8, 0, NativeTokens.Space10);
+        footer.Margin = new Thickness(NativeTokens.PageInset, 0); // the page's foot, flush: no card for the band to stand off
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
         Children.Add(_scroll = new ScrollViewer

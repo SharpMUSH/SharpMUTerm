@@ -88,6 +88,7 @@ internal sealed class SearchView : DockPanel, IModalView
         Children.Add(_note);
 
         var footer = ModalParts.Footer("↑↓ pick · Enter go · Alt+E regex · Alt+A all windows · Alt+H older history · Esc cancel", colours);
+        footer.Margin = default; // flush under the list rule, as the palette band is
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 

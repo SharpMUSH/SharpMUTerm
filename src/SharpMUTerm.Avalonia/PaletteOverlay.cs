@@ -140,7 +140,7 @@ internal sealed class PaletteOverlay : Panel
             CornerRadius = new CornerRadius(NativeTokens.RadiusL),
             BoxShadow = NativeTokens.Shadow,
             ClipToBounds = true,
-            Child = dock,
+            Child = ModalParts.InsideEdge(dock),
         };
 
         // Fluent for the card alone, in the client's variant; the rest of the window keeps the Simple theme its
@@ -324,7 +324,9 @@ internal sealed class PaletteOverlay : Panel
             left.Children.Add(title);
         }
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        // Every row is a key cap's height whether or not it holds one, so the list keeps one pitch (a row with a chip was
+        // 3 px taller than one without, and the rhythm broke at every key).
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = ModalParts.ChipHeight };
         grid.Children.Add(left);
         if (key is not null)
         {

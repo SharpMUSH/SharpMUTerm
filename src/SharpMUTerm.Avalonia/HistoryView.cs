@@ -48,6 +48,7 @@ internal sealed class HistoryView : DockPanel, IModalView
         Children.Add(header);
 
         var footer = ModalParts.Footer("↑↓ pick · Enter places it on the command line · Esc cancel", colours);
+        footer.Margin = default; // flush under the list rule, as the palette band is
         SetDock(footer, Dock.Bottom);
         Children.Add(footer);
 
