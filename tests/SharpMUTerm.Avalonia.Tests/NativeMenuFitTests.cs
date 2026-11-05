@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using SharpMUTerm.Client.Commands;
@@ -15,8 +14,8 @@ namespace SharpMUTerm.Avalonia.Tests;
 /// the output's right-click menu showing <c>Ctr</c>, <c>Shi</c> and a clipped <c>F11</c> in its key column, on a scaled
 /// Windows display. Avalonia sizes a pointer-placed popup once, at a first arrange laid out before it knows its screen's
 /// scaling, and ignores every later size; the headless platform has no such first pass, so the clipping itself is seen
-/// only in a real window (under Xvfb at 150%: 299×358 for a menu wanting 301×372). What is held here is the cure: once
-/// open, a pointer menu is re-placed as an anchored one at the same point, which Avalonia does resize.
+/// only in a real window (under Xvfb at 150%: 299×358 for a menu wanting 301×372), where the cure (re-placing the open
+/// menu as an anchored one at the same point) was checked by eye.
 /// </summary>
 [NotInParallel]
 public class NativeMenuFitTests
@@ -62,9 +61,12 @@ public class NativeMenuFitTests
     }
 
     [Test]
-    public async Task APointerMenuIsReAnchoredWhereItOpenedSoItCanGrow()
+    public async Task AMenuInTheOverlayLayerKeepsItsPointerPlacement()
     {
-        var (placement, anchor, gravity, rect) = await TerminalViewTests.Session.Dispatch(() =>
+        // The headless platform draws popups in the window's overlay layer, which already follows a change of size;
+        // re-anchoring there would place the menu from the window's corner. The popup-window path is the one the
+        // screenshots in the pull request check, under Xvfb at 100, 125 and 150%.
+        var placement = await TerminalViewTests.Session.Dispatch(() =>
         {
             var target = new Border();
             var window = new Window { Content = target, Width = 900, Height = 700 };
@@ -75,8 +77,7 @@ public class NativeMenuFitTests
             {
                 menu.Open(target);
                 DesktopLayerTests.Drain();
-                var popup = (Popup)menu.Parent!;
-                return (popup.Placement, popup.PlacementAnchor, popup.PlacementGravity, popup.PlacementRect);
+                return TopLevel.GetTopLevel(menu) is PopupRoot ? (PlacementMode?)null : ((Popup)menu.Parent!).Placement;
             }
             finally
             {
@@ -85,11 +86,7 @@ public class NativeMenuFitTests
             }
         }, CancellationToken.None);
 
-        // Avalonia re-sends the position, with the size the entries want, only for a placement that is not the pointer.
-        await Assert.That(placement).IsEqualTo(PlacementMode.AnchorAndGravity);
-        await Assert.That(anchor).IsEqualTo(PopupAnchor.TopLeft);
-        await Assert.That(gravity).IsEqualTo(PopupGravity.BottomRight);
-        await Assert.That(rect).IsNotNull();
+        await Assert.That(placement).IsEqualTo(PlacementMode.Pointer);
     }
 
     /// <summary>Opens the menu over a window and lists every text drawn narrower than it wants or past its row's edge.</summary>

@@ -110,6 +110,8 @@ internal static class NativeMenu
     /// menu came out narrower and shorter than its entries: the keys were cut at its right edge (<c>Ctr</c>, <c>Shi</c>)
     /// and its last entry hidden under a scroll. Re-placing it at the same point re-sends the position with the size the
     /// entries now want, and from then on it is not a pointer placement, so a later change of size is honoured too.
+    /// A menu drawn in the window's overlay layer (no popup window of its own) is left alone: its host already follows a
+    /// change of size, and its top level is the window, whose corner is not where the menu opened.
     /// </summary>
     internal static void KeepWhole(ContextMenu menu, Control target) => menu.Opened += (_, _) => PinWherePointed(menu, target);
 
@@ -117,7 +119,7 @@ internal static class NativeMenu
     {
         if (menu.Placement != PlacementMode.Pointer
             || menu.Parent is not Popup popup
-            || TopLevel.GetTopLevel(menu) is not { } root
+            || TopLevel.GetTopLevel(menu) is not PopupRoot root
             || root.PointToScreen(default) is var corner && target.PointToClient(corner) is var at && !double.IsFinite(at.X))
         {
             return;
