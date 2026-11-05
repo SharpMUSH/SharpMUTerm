@@ -9,6 +9,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- In the desktop window, opening the full-screen composer (F1) no longer leaves the panes' tab strips drawn on top of
+  it. The strips go when the composer opens and come back when it closes.
 - Scrolling the mouse wheel over the bottom half of a pane that is split by scrollback no longer moves both halves
   at different speeds. Anywhere in the pane the wheel scrolls the history, three rows a notch, and the newest rows
   stay put at the bottom. The same in the terminal and the desktop window.
