@@ -12,7 +12,9 @@ namespace SharpMUTerm.Avalonia;
 /// top, the panel's name, its unread count in the accent, and the note at the right — the mockups' <c>Chat  2 new ·····
 /// collapsed in combat</c> footer of a side column. A left click anywhere on it is <see cref="PanelOverlay.Expand"/>, the
 /// method the cell row's link ends in; the window builds no command. A right click is the client's, on the cell under it.
-/// It never takes the keyboard.
+/// It never takes the keyboard. The bar is the mockup's <see cref="BarHeight"/> at the foot of what it covers (its cell
+/// row and the field reserve under it, <c>DesktopLayer.BelowGrid</c>); anything above that is the column's plane, carrying
+/// the panel above it down to the bar, and takes no click.
 /// </summary>
 internal sealed class CollapsedBarView : Control
 {
@@ -29,8 +31,30 @@ internal sealed class CollapsedBarView : Control
         _view = view;
         ClipToBounds = true;
         Focusable = false;
-        Cursor = new Cursor(StandardCursorType.Hand);
-        ToolTip.SetTip(this, CollapsedPanelModel.ExpandHint);
+    }
+
+    /// <summary>
+    /// The bar's height: <c>Desktop-Combat</c>'s footer of the side column, 10 px either side of a 13 px line and its rule
+    /// (the command line field's height, <see cref="NativeTokens.FieldHeight"/>).
+    /// </summary>
+    internal const double BarHeight = NativeTokens.FieldHeight;
+
+    /// <summary>Where the bar starts, on a device pixel: the foot of the control, or its top when it is shorter. Internal for tests.</summary>
+    internal double BarTop => NativeTokens.Snap(this, Math.Max(0, Bounds.Height - BarHeight));
+
+    private bool InBar(Point at) => at.Y >= BarTop && new Rect(Bounds.Size).Contains(at);
+
+    private void SetHot(bool hot)
+    {
+        if (hot == _hot)
+        {
+            return;
+        }
+
+        _hot = hot;
+        Cursor = hot ? new Cursor(StandardCursorType.Hand) : null;
+        ToolTip.SetTip(this, hot ? CollapsedPanelModel.ExpandHint : null);
+        InvalidateVisual();
     }
 
     /// <summary>What it is showing. Internal for tests.</summary>
@@ -58,21 +82,20 @@ internal sealed class CollapsedBarView : Control
     protected override void OnPointerEntered(PointerEventArgs e)
     {
         base.OnPointerEntered(e);
-        _hot = true;
-        InvalidateVisual();
+        SetHot(InBar(e.GetPosition(this)));
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
-        _hot = false;
-        InvalidateVisual();
+        SetHot(false);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
         e.Handled = true;
+        SetHot(InBar(e.GetPosition(this)));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -89,7 +112,7 @@ internal sealed class CollapsedBarView : Control
     {
         base.OnPointerReleased(e);
         e.Handled = true;
-        if (e.InitialPressMouseButton == MouseButton.Left && new Rect(Bounds.Size).Contains(e.GetPosition(this)))
+        if (e.InitialPressMouseButton == MouseButton.Left && InBar(e.GetPosition(this)))
         {
             _expand?.Invoke();
         }
@@ -103,18 +126,24 @@ internal sealed class CollapsedBarView : Control
 
     public override void Render(DrawingContext context)
     {
-        var bounds = new Rect(Bounds.Size);
-        var plane = _hot ? PanelText.Mix(_plane, _text, 0.05) : _plane;
-        context.FillRectangle(new SolidColorBrush(plane), bounds);
+        var whole = new Rect(Bounds.Size);
+        var top = BarTop;
+        var bounds = new Rect(0, top, whole.Width, whole.Height - top);
+        context.FillRectangle(new SolidColorBrush(_plane), whole);
+        if (_hot)
+        {
+            context.FillRectangle(new SolidColorBrush(PanelText.Mix(_plane, _text, 0.05)), bounds);
+        }
+
         context.FillRectangle(
             new SolidColorBrush(PanelText.Rule(_text, _plane)),
-            NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
+            NativeTokens.HorizontalRule(this, top, 0, bounds.Width));
         if (bounds.Width < 8)
         {
             return;
         }
 
-        var middle = bounds.Height / 2;
+        var middle = top + (bounds.Height / 2);
         var size = NativeTokens.Body; // the mockup's 13 px bar, as the rest of the side column
         var x = PanelText.Pad;
         var note = PanelText.Measure(_model.Note, NativeTokens.Caption, false);

@@ -2633,6 +2633,16 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   and ink, the collapsed bar running over the field's strip (`BelowGrid`), output starting at the top (cells), the footer's
   bright name (the row's model), and the welcome's chips, *Package* tag, `world` noun, third *suggested* state and Fluent's
   20 px check box.
+- **Wave 30 map shades and Chat bar (window only; terminal frames unchanged).** `ux-wave30/window-map-and-bars/`. The native
+  map's shades lean toward the tokens' focus edge (`MapCanvas.Lean`, `DesktopLayer.MapLean`: `NativeTokens.For(theme).Focus`,
+  `NativeTokens.LeanFor(plane)` in a floating window): a room's fill steps the pane's plane toward the edge itself
+  (`RoomShade × FillLean`), a rule toward the pane's ink leaned `LeanShare` (0.7) to it (`LeanedRuleShade`), so Dark lands on
+  `Desktop-Combat`'s `#1d2333`/`#3a4257` and Light/Solarized/tints stay steps of their own plane; with no lean the old neutral
+  steps. This replaces wave 29's "shades as mixes of plane and ink". The collapsed bar draws only its bottom
+  `CollapsedBarView.BarHeight` (38, the mockup's) as the bar — rule, words, hover, hand cursor, tooltip and the click — and
+  the rest of what it covers is the column's plane; `BelowGrid` now also takes the view's leftover pixels under the grid
+  (under a row), so a panel at the foot of a beside-the-field column meets the footer. Cells and NAWS do not move. Panel
+  headings were checked against `Main.png` and already match (context beside the title), so nothing changed there.
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

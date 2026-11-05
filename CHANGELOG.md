@@ -436,6 +436,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- In the desktop window the map's rooms and exits are a quiet blue step of the panel, as the combat mockup draws them,
+  rather than a neutral grey (Light and Solarized Dark take the same lean toward their own focus colour), and the
+  collapsed Chat bar at the foot of the combat column is a slim 38 px row instead of reaching up beside the command line.
 - The terminal looks more like its design: the sidebar's heading and world names are plain (no corner or stripe), the
   who-is-here list, vitals card and quick bar keep a space of margin at their edges, quick-bar keys are quiet so the
   names read first, vitals bars show their empty part as a dim solid track, the docked composer's text sits in a darker
