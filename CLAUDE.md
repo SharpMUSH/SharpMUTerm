@@ -1360,7 +1360,7 @@ fallbacks) for inline images/maps.
     leaves no cell for it.** `HostChrome.None` for the terminal, the snapshot, `--plain` and the tests;
     `Desktop` (header, rail, status row and field) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
     `Native` (header, rail and tab strips) for the window (`WindowHost.Create`, from `WindowOptions.Chrome`; `--cell-chrome` and
-    `--render-png` say None). It is a flag per part, not a size: the space is the host's own business (42 px, 232 px,
+    `--render-png` say None). It is a flag per part, not a size: the space is the host's own business (44 px, 244 + 8 px,
     `NativeLayout`), and the client is only told the part is not its to draw. With `Header` the header control is
     `Visible = false` — a hidden sticky band takes no row — and `ChromeRows()` counts no header row, so the
     input-height veto (`SyncInputHeights`) and the layout agree. With `Rail` `BuildWorkspaceRow` builds the pane area
@@ -2579,13 +2579,28 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     cell row (the mockup's is a 56 px strip of 34 px buttons), and panel internals' font sizes are not on the scale.
 
 - **Wave 23 B (Light window, settings window).** The native header's plane is `WorkspacePalette.NativeHeaderPlane`: the
-  status band on a dark theme, the backdrop on a light one (Light's status band is a lavender that sat beside the neutral
+  panels' plane ×1.1 on a dark theme (wave 28; it was the status band), the backdrop on a light one (Light's status band is a lavender that sat beside the neutral
   rail and footer as a third grey); `HeaderMuted(theme, plane)` holds the quiet ink on it. Native only — the cell header
   keeps its band. `LightCanon`'s `Edge`/`Rule` are `#c4c8d2`/`#dcdfe6`, the dark set's ~1.4:1 step mirrored, so a field on
   Light's side column has an edge. The welcome's search and form fields are `ModalParts.Sunk` (Fluent's default text
   background is `Raised`, the cards' own plane). Settings: a section with no match shows no count (not a greyed `0`);
   page monospace is `NativeTokens.Code` (12); the received-paths panel scrolls past `MeterPathsMaxHeight`; list-editor
   combos stretch like the text boxes; a disabled button keeps the button plane with a `Rule` edge.
+- **Wave 28 roleplay audit (window only; terminal frames unchanged).** The window measured against `Main.png` at 1440×900
+  (the `roleplay-scrolled` view: Roleplay, a drafted post, scrolled back with more arriving). The window's UI text is the
+  mockups' 13 px: `NativeChromeView.FontSize` and `PanelText.Size` are `Body` (they were 14), the brand `Title`, panel
+  labels, buttons, the footer and the scrolled-back band `NativeTokens.Caption` (12); the vitals gauges, quick bar and
+  collapsed bars keep 14 (`Title`), measured last wave. The sidebar is 244 + 8 (the mockups' 252), its rows span the gutter
+  with 10 px insets, 30 px rows, and a hairline in its last pixel is its edge. On a dark theme the sidebar is the panels'
+  plane (`WorkspacePalette.NativeRailPlane` = `Surface`) and the header, footer and command-line strip are that ×1.1
+  (`NativeHeaderPlane`; `NativeFooter.Plane`, inks re-held to `TextFloor` there); the strip's top edge is the panes' rule.
+  The header's search box is 320 px with its chord as plain text after the label, the pill 26 px, the Layouts button bare
+  at rest. Tabs start 12 px in, at 13 px. The composer's game text is the cells' size (`TerminalView.CellTextSize`, not a
+  share of the row) at the row's pitch. A row's last background run reaches the canvas's right edge (`CellRenderer`), so a
+  window that is not a whole number of cells wide shows no strip of the theme background. Left as decided or not ours: the
+  side column's share (a layout property both hosts read), the focused pane's lifted plane and the history plane (the focus
+  cue), 20 px rows and two-column gutters (cells), the accent bar on the focused tab, `main`, `world`, `Ctrl+Enter`,
+  *Command palette*, the pane's leftover pixels under the command line.
 - **Every native surface spells a key in words** (`NativeKeys.Words`, Avalonia: `KeyGlyphs.Words` plus the named keys
   `⏎` Enter, `⇥`/`↹` Tab, `⇤` Shift+Tab, `⌫` Backspace, `⌦` Delete, `⎋` Esc, `⇞`/`⇟` PgUp/PgDn; arrows stay arrows):
   `Ctrl+P`, `Alt+M`, `Ctrl+B b`, never `⌃P`/`⌥M`/`⏎`. The client writes keys in glyphs because the cells draw them

@@ -179,7 +179,7 @@ internal sealed class VitalsGauges : Control
         var block = BlockHeight(_cellHeight) + grow;
         var label = LabelHeight(_cellHeight);
         var barHeight = BarHeight(_cellHeight);
-        var size = Math.Min(PanelText.Size - 1, Math.Max(10, _cellHeight * 0.68));
+        var size = Math.Min(NativeTokens.Title - 1, Math.Max(10, _cellHeight * 0.68));
         var top = headed
             ? PanelText.Heading(context, PanelHeading.For(_model), bounds.Width, _cellHeight, _plane, _text, right: NativeTokens.Space20, rule: NativeTokens.DevicePixel(this)) + 12 + grow
             : 8;

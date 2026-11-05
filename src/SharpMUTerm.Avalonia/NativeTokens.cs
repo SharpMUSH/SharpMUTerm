@@ -49,6 +49,12 @@ internal sealed partial record NativeTokens(
     /// <summary>The type ramp: captions and keys.</summary>
     public const double Small = 11;
 
+    /// <summary>
+    /// The type ramp: a panel's labels and buttons, the footer, the scrolled-back band — the mockups' 12 px secondary
+    /// line under 13 px body text.
+    /// </summary>
+    public const double Caption = 12;
+
     /// <summary>The type ramp: body text, help, rows.</summary>
     public const double Body = 13;
 

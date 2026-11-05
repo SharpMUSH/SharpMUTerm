@@ -191,7 +191,7 @@ internal abstract class NativeChromeView : Control
     // ── Drawing ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The UI font size the chrome's text is set in.</summary>
-    protected const double FontSize = NativeTokens.Body + 1;
+    protected const double FontSize = NativeTokens.Body;
 
     /// <summary>
     /// Secondary text (<c>offline</c>, a chord, <c>CONNECTIONS</c>): the ink two thirds of the way from the plane,
@@ -208,6 +208,9 @@ internal abstract class NativeChromeView : Control
         var mixed = new Rgb(Mix(ink.R, plane.R), Mix(ink.G, plane.G), Mix(ink.B, plane.B));
         return ToColour(Contrast.Legible(mixed, new Rgb(plane.R, plane.G, plane.B), NativeTokens.TextFloor));
     }
+
+    /// <summary>The chrome's rules (under the header, down the sidebar's edge): the mockups' <c>#2c3447</c> on their planes.</summary>
+    protected const byte RuleAlpha = 0x2c;
 
     protected Color Faint(byte alpha) => Color.FromArgb(alpha, Ink.R, Ink.G, Ink.B);
 
@@ -403,6 +406,15 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
 
     private const double PlateHeight = 30;
 
+    /// <summary>The brand's size: the mockups' 14 px semibold name, a step over the header's 13 px text.</summary>
+    private const double BrandSize = NativeTokens.Title;
+
+    /// <summary>The search box's width: the mockups' 320 px.</summary>
+    private const double SearchWidth = 320;
+
+    /// <summary>How much shorter the character's pill is than the search box at each end: the mockups' 26 px pill.</summary>
+    private const double PillInset = 2;
+
     protected override void Layout(ChromeOverlay overlay, List<(Rect Area, string Target, string Tip)> hits)
     {
         _brand = _search = _pill = _prefix = _exit = default;
@@ -416,16 +428,16 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
 
         // The brand is the name in plain text, as a desktop app's title reads (the mockup's): still the palette's door,
         // shown by a plate only under the pointer. The ribbon's filled segment is the cells' way of saying it.
-        _brand = new Rect(NativeTokens.PanelInset - NativeTokens.Space8, plateTop, Measure("SharpMUTerm", size + 2, bold: true) + (2 * NativeTokens.Space8), plateHeight);
+        _brand = new Rect(NativeTokens.PanelInset - NativeTokens.Space8, plateTop, Measure("SharpMUTerm", BrandSize, bold: true) + (2 * NativeTokens.Space8), plateHeight);
         hits.Add((_brand, HeaderModel.PaletteTarget, $"Commands ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
 
         var right = Width - ReserveRight - NativeTokens.Space8;
         if (model.Character is { } character && model.World is { } world)
         {
             var name = Measure(character.Name, size, bold: true);
-            var detail = Measure(character.Detail(world.Name), size - 1);
+            var detail = Measure(character.Detail(world.Name), size);
             var width = Math.Min(pad + 10 + 8 + name + 10 + detail + pad, Math.Max(0, right - _brand.Right - 24));
-            _pill = new Rect(right - width, plateTop, width, plateHeight);
+            _pill = new Rect(right - width, plateTop + PillInset, width, plateHeight - (2 * PillInset));
             hits.Add((_pill, character.Target, $"{character.Name} on {world.Name} — {character.Host}:{character.Port}"));
             right = _pill.Left - 16;
         }
@@ -444,7 +456,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
         if (right - start >= searchFloor)
         {
             // Beside the character's pill at the right, as the mockup sets it, rather than against the brand.
-            var width = Math.Min(360, right - start);
+            var width = Math.Min(SearchWidth, right - start);
             _search = new Rect(right - width, plateTop, width, plateHeight);
             hits.Add((_search, HeaderModel.PaletteTarget, $"Commands, characters, windows and settings ({KeyGlyphs.Words(HeaderModel.PaletteKey)})"));
         }
@@ -490,7 +502,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
         context.DrawRectangle(new SolidColorBrush(Plane), null, bounds);
 
         // A hairline under the band, where a desktop app's toolbar meets its content: one device pixel, the band's last.
-        context.DrawRectangle(new SolidColorBrush(Faint(0x24)), null,
+        context.DrawRectangle(new SolidColorBrush(Faint(RuleAlpha)), null,
             NativeTokens.HorizontalRule(this, bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
         if (Overlay is not { } overlay)
         {
@@ -508,7 +520,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
             context.DrawRectangle(new SolidColorBrush(Pressing(_brand) ? Raised(0.13) : Raised(0.08)), null, _brand, radius, radius);
         }
 
-        Text(context, "SharpMUTerm", NativeTokens.PanelInset, middle, size + 2, Ink, bold: true);
+        Text(context, "SharpMUTerm", NativeTokens.PanelInset, middle, BrandSize, Ink, bold: true);
 
         if (_search.Width > 0)
         {
@@ -533,7 +545,7 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
             x += nameWidth + 10;
             if (_pill.Right - 12 - x > 12)
             {
-                Text(context, character.Detail(world.Name), x, middle, size - 1, Parse(overlay.Palette.HeaderMuted), maxWidth: _pill.Right - 12 - x);
+                Text(context, character.Detail(world.Name), x, middle, size, Parse(overlay.Palette.HeaderMuted), maxWidth: _pill.Right - 12 - x);
             }
         }
 
@@ -546,20 +558,23 @@ internal sealed class NativeHeader(TerminalView view) : NativeChromeView(view, "
         var fill = Hovered(_search) ? Raised(0.04) : Sunk(0.3);
         context.DrawRectangle(new SolidColorBrush(fill), NativeTokens.HairlinePen(this, Faint(Hovered(_search) ? (byte)0x50 : (byte)0x30)), NativeTokens.StrokeRect(this, _search), radius, radius);
 
-        // A magnifier: a ring and its handle.
-        const double ring = 5;
-        var centre = new Point(_search.X + 14 + ring, middle - 1);
+        // A magnifier: a ring and its handle, the mockups' 14 px glyph, 10 px in.
+        const double ring = 4;
+        var centre = new Point(_search.X + NativeTokens.Space10 + ring + 1, middle - 1);
         var pen = new Pen(new SolidColorBrush(Dim), 1.4, lineCap: PenLineCap.Round);
         context.DrawEllipse(null, pen, centre, ring, ring);
-        context.DrawLine(pen, centre + new Point(ring * 0.72, ring * 0.72), centre + new Point(ring * 1.55, ring * 1.55));
+        context.DrawLine(pen, centre + new Point(ring * 0.72, ring * 0.72), centre + new Point(ring * 1.6, ring * 1.6));
 
+        // The label, then the chord in the same quiet ink a gap after it: the mockups' placeholder, no cap.
         var key = KeyGlyphs.Words(HeaderModel.PaletteKey);
-        var keyWidth = Measure(key, size - 1.5) + 12;
-        var cap = new Rect(_search.Right - 8 - keyWidth, middle - 10, keyWidth, 20);
-        context.DrawRectangle(null, NativeTokens.HairlinePen(this, Faint(0x50)), NativeTokens.StrokeRect(this, cap), NativeTokens.RadiusS, NativeTokens.RadiusS);
-        Text(context, key, cap.X + 6, middle, size - 1.5, Dim);
-        var textLeft = centre.X + (ring * 2) + 8;
-        Text(context, SearchText, textLeft, middle, size, Dim, maxWidth: Math.Max(1, cap.Left - 10 - textLeft));
+        var textLeft = centre.X + ring + NativeTokens.Space10;
+        var limit = _search.Right - NativeTokens.Space10;
+        var drawn = Text(context, SearchText, textLeft, middle, size, Dim, maxWidth: Math.Max(1, limit - textLeft));
+        var keyLeft = textLeft + drawn + NativeTokens.Space16;
+        if (limit - keyLeft >= Measure(key, size))
+        {
+            Text(context, key, keyLeft, middle, size, Dim);
+        }
     }
 
     private void DrawPrefix(DrawingContext context, HeaderPrefix prefix, ChromeOverlay overlay, double middle)
@@ -642,13 +657,13 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
     /// <summary>The rows as last laid out. Internal for tests.</summary>
     internal IReadOnlyList<Row> Rows => _rows;
 
-    private const double RowHeight = 28;
+    private const double RowHeight = 30;
 
     /// <summary>
     /// A row's own left edge: half the chrome's inset, so a row's plate starts there and its text — a world's name, the
     /// title, the foot button's words — on <see cref="NativeTokens.PanelInset"/>, the header brand's edge.
     /// </summary>
-    private const double RowInset = NativeTokens.PanelInset - NativeTokens.Space8;
+    private const double RowInset = NativeTokens.Space10;
 
     /// <summary>A character row's name: the mockup's indent under its world, past the presence dot.</summary>
     private const double CharacterIndent = NativeTokens.Space32;
@@ -656,7 +671,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
     /// <summary>A window row's name, indented under its character's (the mockup's 46 px from the sidebar's edge).</summary>
     private const double WindowIndent = CharacterIndent + NativeTokens.Space4;
 
-    private const double TitleHeight = 40;
+    private const double TitleHeight = 36;
 
     private bool Folded => Overlay?.Sidebar.Collapsed ?? false;
 
@@ -664,8 +679,11 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
     {
         _rows.Clear();
         _add = default;
-        var width = Width - NativeLayout.SidebarGutter; // the gutter is plane, never a row
         var folded = overlay.Sidebar.Collapsed;
+
+        // Open, the rows span the sidebar and its gutter with RowInset either side (the mockups' 10 px in a 252 px
+        // column); folded, the gutter is plane and the strip's marks centre on the rest.
+        var width = folded ? Width - NativeLayout.SidebarGutter : Width;
         _fold = folded ? new Rect((width - 32) / 2, 6, 32, 28) : new Rect(width - 38, 6, 30, 28);
         hits.Add((_fold, SidebarModel.CollapseTarget, folded ? UnfoldTip : FoldTip));
 
@@ -939,9 +957,11 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
 
     public override void Render(DrawingContext context)
     {
-        // The plane runs on through the gutter to the panes (NativeLayout.SidebarGutter): the pane's own raised surface
-        // against it is the edge, as the cell rail's backdrop is.
+        // The plane runs on through the gutter to the panes (NativeLayout.SidebarGutter), and a hairline in its last device
+        // pixel is the edge: the sidebar is the panels' plane on a dark theme (the mockups'), level with an unfocused pane.
         context.DrawRectangle(new SolidColorBrush(Plane), null, new Rect(Bounds.Size));
+        var px = NativeTokens.DevicePixel(this);
+        context.DrawRectangle(new SolidColorBrush(Faint(RuleAlpha)), null, NativeTokens.VerticalRule(this, Bounds.Width - px, 0, Bounds.Height));
         if (Overlay is not { } overlay)
         {
             return;
@@ -956,7 +976,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
         Chevron(context, _fold, left: !Folded, Dim);
         if (!Folded)
         {
-            Text(context, "CONNECTIONS", NativeTokens.PanelInset, _fold.Center.Y, size - 2.5, Dim, bold: true);
+            Text(context, "CONNECTIONS", NativeTokens.PanelInset, _fold.Center.Y, NativeTokens.Small, Dim, bold: true);
         }
 
         using (context.PushClip(_list))

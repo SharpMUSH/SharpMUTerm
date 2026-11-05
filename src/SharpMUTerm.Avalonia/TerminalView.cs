@@ -107,6 +107,9 @@ internal sealed class TerminalView : Control
     /// <summary>The cell size in logical units, for placing a native view over cells (<see cref="DesktopLayer"/>).</summary>
     internal Size CellExtent => CellSize;
 
+    /// <summary>The cells' text size in logical units: the size a native view sets game text in to read as the cells do.</summary>
+    internal double CellTextSize => _renderer.Fonts.Size / _scale;
+
     /// <summary>What draws the cells, for a native view that matches their colours.</summary>
     internal CellRenderer Renderer => _renderer;
 
@@ -1063,7 +1066,8 @@ internal sealed class TerminalView : Control
             var fill = renderer.Background(frame[Math.Min(frame.Width - 1, band.From + band.Pad), band.Top].Background);
             paint.Color = plane;
             canvas.DrawRect(left, top, right - left, height - top, paint);
-            paint.Color = Mix(plane, renderer.DefaultForeground, 0.10f);
+            // The strip's top edge is the panes' own rule (the mockups' #2c3447), as a divider between two panes is.
+            paint.Color = Rule;
             canvas.DrawRect(left, top, right - left, Math.Max(1, s), paint);
 
             var radius = (float)(NativeTokens.RadiusM * scale);

@@ -436,6 +436,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The desktop window is closer to its design: interface text is a size smaller (13 px, 12 px for labels and the status
+  footer), the connections sidebar is a little wider with its own edge and taller rows, the header's search box is
+  narrower and quieter, the footer and the command line's strip sit on the header's colour, tabs line up with the output,
+  and the composer's text is the same size as the game's.
 - The desktop window's settings window now matches its design more closely: the section list, search box and page line
   up as drawn, small text such as column headings, help lines and the footer is a size smaller, the meter table's rows
   are spaced and padded as drawn, and each meter's live value is shown in that meter's colour (red when it is low).

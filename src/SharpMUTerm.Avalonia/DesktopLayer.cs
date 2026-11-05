@@ -332,11 +332,13 @@ internal sealed partial class DesktopLayer : Canvas
         Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top - bottom)), chrome,
             chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane), ink);
 
-        // The footer across the whole width under the cells and the sidebar; the field's strip on the same plane.
+        // The footer across the whole width under the cells and the sidebar, and the field's strip: the header's plane, as
+        // the mockups' footer and command-line strip are their header's.
         if (chrome is not null)
         {
-            var plane = NativeChromeView.Parse(chrome.Palette.RailPlane);
+            var plane = NativeChromeView.Parse(chrome.Palette.HeaderPlane);
             _view.FooterPlane = new SKColor(plane.R, plane.G, plane.B);
+            _footer.Plane = plane;
         }
 
         if (_chrome.Status && width > 0 && height > bottom)
@@ -756,12 +758,15 @@ internal sealed class HeaderButton : Control
     {
         var bounds = new Rect(Bounds.Size);
 
-        // A plate that says "this is a control" at rest, a stronger one under the pointer and while pressed.
-        var plate = (byte)(_pressed ? 0x55 : IsPointerOver ? 0x38 : 0x16);
-        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(plate, Ink.R, Ink.G, Ink.B)), null, bounds, 4, 4);
+        // Bare at rest, as the mockups' icon button: a plate only under the pointer and while pressed. The plate is drawn
+        // at rest too, fully transparent, because what a control draws is what the pointer hits: with nothing drawn a
+        // press would fall through to the client's cells.
+        var plate = (byte)(_pressed ? 0x55 : IsPointerOver ? 0x38 : 0);
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(plate, Ink.R, Ink.G, Ink.B)), null, bounds, NativeTokens.RadiusControl, NativeTokens.RadiusControl);
 
-        // The layouts glyph: a frame split into a wide pane and a column of two, the shape of a layout.
-        var pen = new Pen(new SolidColorBrush(Color.FromArgb(0xE0, Ink.R, Ink.G, Ink.B)), 1.25);
+        // The layouts glyph: a frame split into a wide pane and a column of two, the shape of a layout; the header's
+        // quiet ink at rest (the mockups' #9aa4b8), the full ink under the pointer.
+        var pen = new Pen(new SolidColorBrush(Color.FromArgb(IsPointerOver || _pressed ? (byte)0xE0 : (byte)0xA8, Ink.R, Ink.G, Ink.B)), 1.25);
         var w = Math.Min(bounds.Width - 6, 14);
         var h = Math.Min(bounds.Height - 6, 11);
         var x = Math.Round((bounds.Width - w) / 2) + 0.5;
@@ -788,8 +793,11 @@ internal static class NativeLayout
     /// </summary>
     public const double HeaderHeight = 44;
 
-    /// <summary>The sidebar's width, open.</summary>
-    public const double SidebarWidth = 232;
+    /// <summary>
+    /// The sidebar's width, open: with <see cref="SidebarGutter"/> the mockups' 252 px (a 232 px column and its 10 px
+    /// padding either side), so the panes start where the mockups' do, one rule further on.
+    /// </summary>
+    public const double SidebarWidth = 244;
 
     /// <summary>The sidebar's width folded to its strip (⌃B b, or its own fold button).</summary>
     public const double SidebarSlim = 48;

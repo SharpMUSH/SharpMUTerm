@@ -66,8 +66,8 @@ internal static class PanelText
     /// <summary>The panels' side padding, and the heading's.</summary>
     public const double Pad = NativeTokens.PanelInset;
 
-    /// <summary>The panels' text size: the window's body size, one step up, which is what the mockups' side column reads at.</summary>
-    public const double Size = NativeTokens.Body + 1;
+    /// <summary>The panels' text size: the window's body size, the mockups' 13 px side column (who is here, the composer).</summary>
+    public const double Size = NativeTokens.Body;
 
     /// <summary>
     /// How tall a panel's heading is, its rule included: the mockup's 44 (12 px above and below a 19 px line, and the

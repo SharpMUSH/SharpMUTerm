@@ -115,7 +115,7 @@ internal sealed class CollapsedBarView : Control
         }
 
         var middle = bounds.Height / 2;
-        var size = PanelText.Size;
+        var size = NativeTokens.Title;
         var x = PanelText.Pad;
         var note = PanelText.Measure(_model.Note, NativeTokens.Small + 1, false);
         var right = bounds.Width - PanelText.Pad;

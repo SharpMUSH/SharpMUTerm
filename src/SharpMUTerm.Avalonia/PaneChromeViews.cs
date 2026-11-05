@@ -68,11 +68,10 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
     /// <summary>The <c>+N ▾</c> button's area, or null when every tab fits. Internal for tests.</summary>
     internal Rect? OverflowArea => _overflow;
 
-    /// <summary>The type size for the strip's depth: two cell rows where the host draws the strips, the mockup's 14 px Inter.</summary>
+    /// <summary>The type size for the strip's depth: the mockups' 13 px Inter wherever a tab has room for it.</summary>
     private double Size => (double.IsNaN(Height) ? Bounds.Height : Height) switch
     {
-        >= 30 => NativeTokens.Title,
-        >= 18 => PanelText.Size,
+        >= 18 => NativeTokens.Body,
         _ => NativeTokens.Small,
     };
 
@@ -129,7 +128,7 @@ internal sealed class NativeTabStrip : Control, ICustomHitTest
             right = _overflow.Value.X - 6;
         }
 
-        var x = 8.0;
+        var x = NativeTokens.Space12; // the mockups' strip padding before the first tab
         var top = Top(height);
         var names = Fit(overlay.Model.Tabs, right - x);
         for (var i = 0; i < overlay.Model.Tabs.Count; i++)
@@ -514,7 +513,8 @@ internal sealed class ScrollBandView : Control, ICustomHitTest
     /// <summary>The button's area, as last laid out. Internal for tests.</summary>
     internal Rect Button => _button;
 
-    private double Size => (double.IsNaN(Height) ? Bounds.Height : Height) >= 20 ? NativeTokens.Body : NativeTokens.Small;
+    /// <summary>The band's words and button: the mockups' 12 px over the output's 13.</summary>
+    private double Size => (double.IsNaN(Height) ? Bounds.Height : Height) >= 20 ? NativeTokens.Caption : NativeTokens.Small;
 
     private string ButtonText => $"{ScrollBandModel.Action}  {NativeKeys.Words(ScrollBandModel.ReturnKey)}";
 

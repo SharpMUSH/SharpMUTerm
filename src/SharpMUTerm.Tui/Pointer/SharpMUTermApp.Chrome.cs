@@ -82,7 +82,7 @@ internal sealed partial class SharpMUTermApp
             UnreadBadge.TintFor(_ink),
             _ink.Notice,
             Hex(headerPlane),
-            Hex(WorkspacePalette.Backdrop(_theme)),
+            Hex(WorkspacePalette.NativeRailPlane(_theme)),
             Hex(_theme.Resolve(Core.Text.TerminalColor.Default, isBackground: false)))
         {
             BrandInk = WorkspacePalette.HeaderInk(_theme, ParseHex(brand)).ToHex(),

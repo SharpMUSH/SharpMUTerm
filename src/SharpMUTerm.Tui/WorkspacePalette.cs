@@ -437,8 +437,8 @@ internal static class WorkspacePalette
     }
 
     /// <summary>
-    /// The plane a host draws its native header on. A dark theme keeps the status band (a step above the backdrop, the
-    /// mockup's header over its navigation). A light theme's status band is a tinted grey (Light's lavender
+    /// The plane a host draws its native header (and its footer and the command line's strip) on. A dark theme lifts the
+    /// panels' plane a step (<see cref="NativeChromeLift"/>), the mockups' header over its navigation. A light theme's status band is a tinted grey (Light's lavender
     /// <c>#dcdce6</c>) that sat beside the neutral rail and footer as a third, unrelated grey; there the header shares the
     /// backdrop with the rail and the footer, and the rule under it is the boundary. Native only: the cell header keeps
     /// its band.
@@ -446,8 +446,25 @@ internal static class WorkspacePalette
     internal static Rgb NativeHeaderPlane(Theme theme)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance ? theme.StatusBackground : Backdrop(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance ? Scale(Surface(theme), NativeChromeLift) : Backdrop(theme);
     }
+
+    /// <summary>
+    /// The plane a host draws its native sidebar on. A dark theme gives it the panels' plane — the unfocused pane's
+    /// surface, the mockups' <c>#141822</c> navigation beside a <c>#171b24</c> header — and a hairline is its edge; a light
+    /// theme keeps the backdrop. Native only: the cell rail keeps the backdrop.
+    /// </summary>
+    internal static Rgb NativeRailPlane(Theme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Contrast.RelativeLuminance(theme.Background) < LightPlaneLuminance ? Surface(theme) : Backdrop(theme);
+    }
+
+    /// <summary>
+    /// How far a dark theme's native header, footer and command-line strip are lifted off the panels' plane: Dark's
+    /// <c>#151921</c> to the mockups' <c>#171b24</c>.
+    /// </summary>
+    private const double NativeChromeLift = 1.1;
 
     /// <summary>
     /// The low cue on a meter (a vital below <c>StatusMeterRenderer.LowShare</c>): its bar, its value and its <c>low</c>

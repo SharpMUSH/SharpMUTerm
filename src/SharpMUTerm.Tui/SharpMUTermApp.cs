@@ -2254,6 +2254,29 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Roleplay);
         }
 
+        // `roleplay-scrolled` is the state the desktop mockup (Main) draws: the Roleplay layout, a post drafted in the
+        // docked composer through its real keys and released with Esc, then the output scrolled back with real PgUp keys
+        // while more arrives, so the split's band and live tail are on screen beside the composer and who-here.
+        if (string.Equals(view, "roleplay-scrolled", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadDemoGameData();
+            LoadDemoOccupants();
+            ApplyLayout(DemoScene.ActiveSessionKey, Core.Layouts.BuiltInLayouts.Roleplay);
+            Activate(TerminalPanels.WindowId(Core.Layouts.PanelIds.Composer, DemoScene.ActiveSessionKey));
+            SimulateComposerTyping("\t+pose\tCorvid tips his hat to the guard as he passes, then falls into step beside Rivane.\n\n"
+                + "\"Round is longer, but I'd rather arrive dry than not at all.\"");
+            SimulateKey(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
+            Activate(MainWindowId);
+            LoadLongScene(MainWindowId, ScrollbackSceneLines);
+            SettleScroll();
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+            SettleScroll();
+            LoadLongScene(MainWindowId, 4, first: ScrollbackSceneLines + 1);
+            SettleScroll();
+            ReArmWholeFrame();
+        }
+
         // The ⌃Q confirmation, over a workspace that has something to lose: a second world marked
         // connected (the demo scene's own way of saying so, and what the header's "n/m characters" reads),
         // a line typed into the command line through the bar's real change notification, and then the

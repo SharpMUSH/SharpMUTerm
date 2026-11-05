@@ -129,7 +129,7 @@ internal sealed class QuickBarButtons : Control
         InvalidateVisual();
     }
 
-    private double FontSize => Math.Min(PanelText.Size, Math.Max(9, _cellHeight * 0.66));
+    private double FontSize => Math.Min(NativeTokens.Title, Math.Max(9, _cellHeight * 0.66));
 
     /// <summary>The key chip's size: a step under the label, as a caption.</summary>
     private double KeySize => Math.Max(8, FontSize - 2);

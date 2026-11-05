@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Core.Text;
 using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Avalonia;
@@ -68,11 +69,13 @@ internal sealed class NativeFooter : Control
 
     public override void Render(DrawingContext context)
     {
-        var plane = NativeChromeView.Parse(Overlay?.Shown.Plane ?? HexOf(_view.Renderer.DefaultBackground));
+        var plane = Plane ?? NativeChromeView.Parse(Overlay?.Shown.Plane ?? HexOf(_view.Renderer.DefaultBackground));
+        _plane = plane;
         var bounds = new Rect(Bounds.Size);
         context.FillRectangle(new SolidColorBrush(plane), bounds);
         var ink = _view.Renderer.DefaultForeground;
-        context.FillRectangle(new SolidColorBrush(Color.FromArgb(0x1f, ink.Red, ink.Green, ink.Blue)), new Rect(0, 0, bounds.Width, 1));
+        var rule = _view.DividerRule is { } divider ? Color.FromRgb(divider.Red, divider.Green, divider.Blue) : Color.FromArgb(0x1f, ink.Red, ink.Green, ink.Blue);
+        context.FillRectangle(new SolidColorBrush(rule), NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
         _hits.Clear();
         if (Overlay is not { } overlay)
         {
@@ -127,22 +130,41 @@ internal sealed class NativeFooter : Control
         return width;
     }
 
-    /// <summary>A run as text in the UI face: keys in words, padding runs of spaces shortened to a gap.</summary>
+    /// <summary>
+    /// A run as text in the UI face, in the footer's one weight (the mockups' row is all regular 12 px; the cells' bold
+    /// identity is their way of setting it apart): keys in words, padding runs of spaces made the mockups' 18 px gap.
+    /// </summary>
     private FormattedText Format(StatusRun run, Color plane) => new(
-        Gaps.Replace(NativeKeys.Words(run.Text), "   "),
+        Gaps.Replace(NativeKeys.Words(run.Text), Gap),
         CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight,
-        new Typeface(NativeTokens.UiFont, FontStyle.Normal, run.Bold ? FontWeight.SemiBold : FontWeight.Normal),
-        NativeTokens.Body,
+        new Typeface(NativeTokens.UiFont, FontStyle.Normal, FontWeight.Normal),
+        NativeTokens.Caption,
         new SolidColorBrush(InkOf(run)))
     {
         MaxLineCount = 1,
     };
 
+    /// <summary>The gap between the row's facts: five spaces of the 12 px face, about the mockups' 18 px.</summary>
+    private const string Gap = "     ";
+
     private static readonly Regex Gaps = new(" {3,}", RegexOptions.CultureInvariant);
 
-    /// <summary>A run's ink: its own, else the row's (a run the cells write with no colour).</summary>
-    private Color InkOf(StatusRun run) => NativeChromeView.Parse(run.Ink ?? Overlay?.Shown.Ink);
+    /// <summary>
+    /// The plane the window paints the footer on (the native header's), or
+    /// null for the row's own. The row's inks were held to the floor on the row's plane, so they are held again on this.
+    /// </summary>
+    internal Color? Plane { get; set; }
+
+    private Color _plane;
+
+    /// <summary>A run's ink: its own, else the row's (a run the cells write with no colour), legible on the footer's plane.</summary>
+    private Color InkOf(StatusRun run)
+    {
+        var ink = NativeChromeView.Parse(run.Ink ?? Overlay?.Shown.Ink);
+        var held = Contrast.Legible(new Rgb(ink.R, ink.G, ink.B), new Rgb(_plane.R, _plane.G, _plane.B), NativeTokens.TextFloor);
+        return Color.FromRgb(held.R, held.G, held.B);
+    }
 
     private static string HexOf(SkiaSharp.SKColor colour) => $"#{colour.Red:x2}{colour.Green:x2}{colour.Blue:x2}";
 

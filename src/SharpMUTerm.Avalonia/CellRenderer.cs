@@ -42,7 +42,10 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
 
         using var fill = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
 
-        // Backgrounds, as runs: one rectangle per stretch of a row sharing a colour.
+        // Backgrounds, as runs: one rectangle per stretch of a row sharing a colour. A row's last run is carried on to the
+        // canvas's right edge: a window is rarely a whole number of cells wide, and the pixels past the last column would
+        // otherwise be a strip of the default background beside whatever pane ends there.
+        var right = canvas.LocalClipBounds.Right;
         for (var y = 0; y < frame.Height; y++)
         {
             var start = 0;
@@ -58,7 +61,8 @@ internal sealed class CellRenderer(CellFonts fonts, SKColor defaultForeground, S
                 if (current != DefaultBackground)
                 {
                     fill.Color = current;
-                    canvas.DrawRect(start * cw, y * ch, (x - start) * cw, ch, fill);
+                    var width = x == frame.Width ? Math.Max((x - start) * cw, right - (start * cw)) : (x - start) * cw;
+                    canvas.DrawRect(start * cw, y * ch, width, ch, fill);
                 }
 
                 start = x;

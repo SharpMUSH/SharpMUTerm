@@ -516,7 +516,10 @@ internal sealed class ComposerView : Border
         _summary.FontSize = PanelText.Size - 1;
         _commandLabel.FontSize = _fullScreen ? ui - 1 : PanelText.Size - 1;
         _textLabel.FontSize = PanelText.Size - 1;
-        _command.FontSize = Math.Clamp(cell * 0.8, 11, 18);
+        // Game text in the cells' own face and size (the mockups' 13 px JetBrains Mono beside the output's), not a share
+        // of the row: a row carries the line height's leading, which made the text a size larger than the output's.
+        var text = _view.CellTextSize > 0 ? _view.CellTextSize : cell * 0.8;
+        _command.FontSize = Math.Clamp(text, 11, 18);
         _command.FontFamily = NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
         foreach (var button in new[] { _previewButton, _sendButton })
         {
@@ -528,7 +531,10 @@ internal sealed class ComposerView : Border
         _previewHeading.FontSize = ui - 1.5;
         _previewText.FontSize = Math.Clamp(cell * 0.72, 11, 16);
         _previewText.FontFamily = NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
-        _editor.FontSize = Proportional ? Math.Clamp(cell * 0.86, 12, 19) : Math.Clamp(cell * 0.8, 11, 18);
+        _editor.FontSize = Proportional ? Math.Clamp(text * 1.08, 12, 19) : Math.Clamp(text, 11, 18);
+
+        // Rows as far apart as the output's (the mockups' 20 px line), so a post reads at the pitch it will be read at.
+        _editor.LineHeight = Proportional ? double.NaN : cell;
         _editor.FontFamily = Proportional
             ? NativeTokens.UiFont
             : NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
