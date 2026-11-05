@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Graphics;
 using SharpMUTerm.Tui;
 
@@ -39,6 +40,70 @@ public class ScrollSplitTests
     }
 
     private static string Line(int number) => $"line {number:0000}";
+
+    /// <summary>
+    /// One wheel notch, delivered the way a live client gets it: to our driver handler and to the framework's own
+    /// window dispatch, both of which see every mouse frame once <c>Run()</c> has started.
+    /// </summary>
+    private static void Wheel(SharpMUTermApp app, HeadlessConsoleDriver driver, bool up, System.Drawing.Point at)
+    {
+        var flags = new List<MouseFlags> { up ? MouseFlags.WheeledUp : MouseFlags.WheeledDown };
+        driver.SimulateMouseEvent(flags, at);
+        app.SimulateFrameworkMouse(flags, at);
+        Settled(app);
+    }
+
+    private static (SharpMUTermApp App, HeadlessConsoleDriver Driver, PaneRect Pane) WheelApp()
+    {
+        Console.SetIn(TextReader.Null);
+        var driver = new HeadlessConsoleDriver(120, 32);
+        var app = new SharpMUTermApp(DemoScene.Build(), Headless, driver);
+        app.RenderSnapshot("scrollback");
+        Settled(app);
+        var paneId = app.PaneWindows().First(p => p.Value == Main).Key;
+        return (app, driver, app.PaneOutputRects()[paneId]);
+    }
+
+    /// <summary>
+    /// The reported defect: a wheel over the live tail scrolled the history by three rows and the tail by one, both
+    /// at once. Anywhere in a split pane the wheel reads back through the history, and the tail stays on the
+    /// newest rows.
+    /// </summary>
+    [Test]
+    public async Task TheWheelOverTheLiveTailScrollsTheHistoryAndNotTheTail()
+    {
+        var (app, driver, pane) = WheelApp();
+        var history = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
+        var tail = new System.Drawing.Point(pane.X + 5, pane.Y + pane.Height - 2);
+
+        Wheel(app, driver, up: true, history);
+        await Assert.That(app.IsScrollSplit(Main)).IsTrue();
+        var opened = app.ScrollbackOf(Main)!.Value.Offset;
+        var tailAt = app.ScrollTailOf(Main)!.Value;
+
+        Wheel(app, driver, up: true, tail);
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - 3);
+        await Assert.That(app.ScrollTailOf(Main)!.Value.Offset).IsEqualTo(tailAt.Offset);
+        await Assert.That(app.ScrollTailOf(Main)!.Value.AutoScroll).IsTrue();
+
+        Wheel(app, driver, up: false, tail);
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened);
+        await Assert.That(app.ScrollTailOf(Main)!.Value.Offset).IsEqualTo(tailAt.Offset);
+    }
+
+    /// <summary>A notch is three rows wherever the pointer is, never three plus the framework's own one.</summary>
+    [Test]
+    public async Task AWheelNotchOverTheHistoryMovesItThreeRows()
+    {
+        var (app, driver, pane) = WheelApp();
+        var history = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
+
+        Wheel(app, driver, up: true, history);
+        var opened = app.ScrollbackOf(Main)!.Value.Offset;
+        Wheel(app, driver, up: true, history);
+
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - 3);
+    }
 
     [Test]
     public async Task ScrollingBackSplitsThePaneAndKeepsTheNewestLineInView()
