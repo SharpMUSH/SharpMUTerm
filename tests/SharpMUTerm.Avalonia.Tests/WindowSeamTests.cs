@@ -56,12 +56,12 @@ public class WindowSeamTests
     }
 
     [Test]
-    public async Task TheTypedTextStartsAMonoSpaceAfterThePromptAndAPressThereIsItsCell()
+    public async Task TheTypedTextStartsAtTheFieldsPaddingAndAPressThereIsItsCell()
     {
-        const string prompt = "Corvid · Aetherfall › ";
-        var (bar, cellWidth, pressed) = await Run((window, view, driver) =>
+        // A bar holding text has no placeholder, so nothing is drawn shifted: a press on a cell is that cell.
+        var pressed = await Run((window, view, driver) =>
         {
-            var band = new InputBand(Rows - 1, 1, InputLayout.HostFieldPad, [new InputPrompt(Rows - 1, prompt)], "");
+            var band = new InputBand(Rows - 1, 1, InputLayout.HostFieldPad, [new InputPrompt(Rows - 1, "")], "");
             ((IPointerPresenter)driver.Pointer).InputBand(band);
             driver.Flush();
             Drain();
@@ -69,24 +69,19 @@ public class WindowSeamTests
             {
             }
 
-            var bars = view.BarsOf(driver.Frame, band);
             var seen = new List<System.Drawing.Point>();
             driver.MouseEvent += (_, _, c) => seen.Add(c);
             var scale = view.Renderer.Fonts.CellWidth / view.SizeFor(1, 1).Width;
             var cw = view.Renderer.Fonts.CellWidth / scale;
             var ch = view.Renderer.Fonts.CellHeight / scale;
-            var bar = bars.Single();
-            var at = new Point((bar.TextStart * cw) - bar.Shift + (cw / 2), ((Rows - 1) * ch) + NativeLayout.FieldTop + (ch / 2));
+            var at = new Point((InputLayout.HostFieldPad * cw) + (cw / 2), ((Rows - 1) * ch) + NativeLayout.FieldTop + (ch / 2));
             window.MouseDown(at, global::Avalonia.Input.MouseButton.Left);
             window.MouseUp(at, global::Avalonia.Input.MouseButton.Left);
-            return (bar, view.Renderer.Fonts.CellWidth, seen.FirstOrDefault());
+            return seen.FirstOrDefault();
         }, field: true);
 
-        await Assert.That(bar.TextStart).IsEqualTo(InputLayout.HostFieldPad + prompt.Length);
-        await Assert.That(bar.Shift).IsGreaterThan(cellWidth).Because("the UI face is narrower than the cells under it");
-        var gap = ((bar.TextStart - InputLayout.HostFieldPad) * (double)cellWidth) - bar.Shift - bar.PromptWidth;
-        await Assert.That(gap).IsBetween(cellWidth - 1.0, cellWidth + 1.0).Because("a mono space between the prompt and the text");
-        await Assert.That(pressed).IsEqualTo(new System.Drawing.Point(bar.TextStart, Rows - 1)).Because("a press on the first typed character is its cell");
+        await Assert.That(pressed).IsEqualTo(new System.Drawing.Point(InputLayout.HostFieldPad, Rows - 1))
+            .Because("the text's first cell is the first inside the field's padding");
     }
 
     [Test]

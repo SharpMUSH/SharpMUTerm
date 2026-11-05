@@ -34,8 +34,9 @@ namespace SharpMUTerm.Tui;
 /// is about to be given. That count is read from the editor's own wrapper by reflection
 /// (<see cref="WrappedRowCount"/>), because the public one is measured at the width of the <em>last</em>
 /// paint and so runs a frame behind every resize.</item>
-/// <item><b>The prompt is a gutter</b> (<see cref="PromptGutter"/>) as wide as the prompt, written on
-/// the first row and blank under it, so every row of text indents past it.</item>
+/// <item><b>The prompt is a placeholder.</b> While the bar is empty its first row shows the prompt (whose
+/// connection ⏎ reaches) where the text will go; the first character typed replaces it, so typed text has the
+/// whole row from the first column. Only the host field's padding (<see cref="LeadingPad"/>) is a gutter.</item>
 /// <item><b>Copy and cut go through the app.</b> The editor's ⌃C and ⌃X write to the system clipboard
 /// through a static helper nothing can substitute, so a test would overwrite the developer's clipboard.
 /// They are never passed on: ⌃C is answered by <c>SharpMUTermApp.CopyFocusedSelection</c>, which asks the
@@ -59,7 +60,7 @@ internal sealed class InputBarControl : MultilineEditControl,
     private static readonly FieldInfo? VerticalScrollField = typeof(MultilineEditControl).GetField(
         "_verticalScrollOffset", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    private readonly PromptGutter _gutter;
+    private readonly PadGutter _gutter;
     private bool _armed = true;
     private int _minRows = 3;
     private int _maxRows = 8;
@@ -78,7 +79,7 @@ internal sealed class InputBarControl : MultilineEditControl,
         ShowEditingHints = false;
         HorizontalScrollbarVisibility = ScrollbarVisibility.Never;
         VerticalScrollbarVisibility = ScrollbarVisibility.Auto;
-        _gutter = new PromptGutter(this);
+        _gutter = new PadGutter(this);
         AddGutterRenderer(_gutter);
         ContentChanged += (_, _) =>
         {
@@ -118,22 +119,27 @@ internal sealed class InputBarControl : MultilineEditControl,
     /// <summary>Whether ⇥ has somewhere to go — false while this is the only bar on screen.</summary>
     internal Func<bool> HasSibling { get; set; } = () => false;
 
-    /// <summary>The prompt drawn on the bar's first row, as markup. Every row of text indents past it.</summary>
+    /// <summary>
+    /// The prompt, as markup: drawn on the first row while the bar is empty, as a placeholder the first character
+    /// typed replaces. It takes no column from the text.
+    /// </summary>
     internal string Prompt
     {
-        get => _gutter.Markup;
+        get => _prompt;
         set
         {
             var markup = value ?? string.Empty;
-            if (_gutter.Markup == markup)
+            if (_prompt == markup)
             {
                 return;
             }
 
-            _gutter.Markup = markup;
-            Invalidate(Invalidation.Relayout);
+            _prompt = markup;
+            Invalidate(Invalidation.Repaint);
         }
     }
+
+    private string _prompt = string.Empty;
 
     /// <summary>Whether ⏎ sends from this bar. The unarmed bar is dimmed and shows no caret.</summary>
     internal bool Armed
@@ -334,8 +340,8 @@ internal sealed class InputBarControl : MultilineEditControl,
 
     private int _leadingPad;
 
-    /// <summary>The gutter: the leading pad and the prompt.</summary>
-    private int PromptWidth => _leadingPad + MarkupParser.StripLength(Prompt);
+    /// <summary>The gutter: the leading pad alone, since the prompt is a placeholder in the text's own columns.</summary>
+    private int PromptWidth => _leadingPad;
 
     /// <summary>⇥ is ours whenever there is another bar to hand it to; otherwise it stays traversal.</summary>
     public new bool WantsTabKey => HasSibling();
@@ -615,6 +621,32 @@ internal sealed class InputBarControl : MultilineEditControl,
         return base.MeasureDOM(constraints);
     }
 
+    /// <summary>
+    /// Paints the editor, then the prompt over the first row while there is no text: the placeholder. It is drawn only
+    /// when the first row is in view, clipped to the text's columns, and the caret sits on its first cell.
+    /// </summary>
+    public override void PaintDOM(CharacterBuffer buffer, LayoutRect bounds, LayoutRect clipRect, Color defaultFg, Color defaultBg)
+    {
+        base.PaintDOM(buffer, bounds, clipRect, defaultFg, defaultBg);
+        if (_prompt.Length == 0 || !IsEmpty || VerticalScrollOffset > 0)
+        {
+            return;
+        }
+
+        var x = bounds.X + Margin.Left + _leadingPad;
+        var y = bounds.Y + Margin.Top;
+        var width = FieldWidth(bounds.Width);
+        var area = new LayoutRect(x, y, width, 1);
+        var clip = new LayoutRect(
+            Math.Max(area.X, clipRect.X), Math.Max(area.Y, clipRect.Y),
+            Math.Max(0, Math.Min(area.Right, clipRect.Right) - Math.Max(area.X, clipRect.X)),
+            Math.Max(0, Math.Min(area.Bottom, clipRect.Bottom) - Math.Max(area.Y, clipRect.Y)));
+        if (clip.Width > 0 && clip.Height > 0)
+        {
+            buffer.WriteCellsClipped(x, y, MarkupParser.Parse(_prompt, Ink, Band), clip);
+        }
+    }
+
     /// <summary>The caret is drawn only on the bar ⏎ sends from, and only while it holds the focus.</summary>
     public new Point? GetLogicalCursorPosition()
     {
@@ -686,33 +718,21 @@ internal sealed class InputBarControl : MultilineEditControl,
     }
 
     /// <summary>
-    /// The prompt, drawn as a gutter: as wide as the prompt on every row, written on the first and blank
-    /// under it, so a wrapped line indents past the prompt rather than running back under it.
+    /// The host field's padding, drawn as a gutter: band-coloured columns on every row, so a wrapped line keeps the
+    /// field's inner padding. None in a terminal.
     /// </summary>
-    private sealed class PromptGutter(InputBarControl bar) : IGutterRenderer
+    private sealed class PadGutter(InputBarControl bar) : IGutterRenderer
     {
-        public string Markup { get; set; } = string.Empty;
-
-        // The prompt's width is re-read on every measure, so there is nothing for this to announce.
+        // The pad's width is re-read on every measure, so there is nothing for this to announce.
         public event EventHandler? Invalidated { add { } remove { } }
 
-        public int GetWidth(int totalLineCount) => bar._leadingPad + MarkupParser.StripLength(Markup);
+        public int GetWidth(int totalLineCount) => bar._leadingPad;
 
         public void Render(in GutterRenderContext context, int width)
         {
-            var band = bar.Band;
-            var ink = bar.Ink;
             for (var x = 0; x < width; x++)
             {
-                context.Buffer.SetNarrowCell(context.X + x, context.Y, ' ', ink, band);
-            }
-
-            if (context.SourceLineIndex == 0 && context.IsFirstWrappedSegment)
-            {
-                var pad = Math.Min(bar._leadingPad, width);
-                context.Buffer.WriteCellsClipped(
-                    context.X + pad, context.Y, MarkupParser.Parse(Markup, ink, band),
-                    new LayoutRect(context.X + pad, context.Y, width - pad, 1));
+                context.Buffer.SetNarrowCell(context.X + x, context.Y, ' ', bar.Ink, bar.Band);
             }
         }
     }

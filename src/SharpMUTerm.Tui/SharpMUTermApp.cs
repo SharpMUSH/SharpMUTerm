@@ -7272,6 +7272,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private (Rgb Armed, Rgb Idle) _inputBands;
 
+    /// <summary>The ink the armed bar's placeholder prompt is drawn in, held legible on the armed band.</summary>
+    private Rgb _placeholderInk;
+
     /// <summary>
     /// Repaints both command lines in <paramref name="tint"/>'s colour. <b>The bar wears the tint of the
     /// character it is talking to</b>, so "which pane am I in", "who does ⏎ reach" and "which line is
@@ -7297,6 +7300,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var armedInk = ToColor(Contrast.Legible(
             _theme.Resolve(TerminalColor.Default, isBackground: false), _inputBands.Armed));
         var idleInk = ToColor(Contrast.Legible(WorkspacePalette.IdleInk(_theme), _inputBands.Idle));
+
+        // The armed bar's prompt is a placeholder: the muted ink, held to the floor on the armed band.
+        _placeholderInk = Contrast.Legible(WorkspacePalette.IdleInk(_theme), _inputBands.Armed);
 
         foreach (var bar in new[] { _input, _second })
         {
@@ -7400,16 +7406,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// The armed prompt is <b>bold</b> and the idle one dim — the second cue the band colour is not asked
     /// to carry on its own: weight still reads on a terminal theme that flattens two dark backgrounds
     /// together, and to someone who cannot tell the two hues apart. Both spellings are the same
-    /// <em>width</em>, which is not a detail: the prompt's width is what the caret column and the wrap
-    /// column are measured from, so a marker glyph that appeared only on the armed bar would reflow the
-    /// line being typed every time the other bar took over.
+    /// <em>width</em>. The prompt is a placeholder (<see cref="InputBarControl.Prompt"/>): it is drawn only while the
+    /// bar is empty, in a muted ink on the armed bar, and takes no column from typed text.
     /// </para>
     /// </summary>
     private string PromptMarkup(string prompt, bool armed = true)
     {
         var text = prompt.Replace("[", "[[").Replace("]", "]]");
         return armed
-            ? $"[bold on {InputBandHex}]{text}[/]"
+            ? $"[bold {Hex(_placeholderInk)} on {InputBandHex}]{text}[/]"
             : $"[dim on {IdleBandHex}]{text}[/]";
     }
 

@@ -309,10 +309,11 @@ internal sealed partial class SharpMUTermApp
             return null;
         }
 
-        var prompts = new List<InputPrompt> { new(top, MarkupParser.Remove(_input.Prompt)) };
+        // A bar's prompt is a placeholder: said while the bar is empty, and empty once anything is typed.
+        var prompts = new List<InputPrompt> { new(top, Placeholder(_input)) };
         if (_second.Visible)
         {
-            prompts.Add(new InputPrompt(top + _input.ActualHeight, MarkupParser.Remove(_second.Prompt)));
+            prompts.Add(new InputPrompt(top + _input.ActualHeight, Placeholder(_second)));
         }
 
         return new InputBand(top, rows, InputLayout.HostFieldPad, prompts, $"⏎ sends · {KeyGlyphs.Normalize(Host.Keys.Newline.Glyph)} new line")
@@ -322,6 +323,7 @@ internal sealed partial class SharpMUTermApp
         };
     }
 
+    private static string Placeholder(InputBarControl bar) => bar.IsEmpty ? MarkupParser.Remove(bar.Prompt) : string.Empty;
 }
 
 /// <summary>The status row, for a host that draws it (<see cref="HostChrome.Status"/>).</summary>
@@ -340,7 +342,10 @@ internal sealed record StatusOverlay(StatusModel Model, bool Interactive, Action
     public StatusModel Shown => Compact ?? Model;
 }
 
-/// <summary>A command line's prompt, by the screen row its first line is on, as plain text.</summary>
+/// <summary>
+/// A command line's placeholder prompt, by the screen row its first line is on, as plain text: empty once the bar holds
+/// any text, which then starts where the placeholder did.
+/// </summary>
 internal sealed record InputPrompt(int Row, string Text);
 
 /// <summary>
@@ -350,7 +355,7 @@ internal sealed record InputPrompt(int Row, string Text);
 /// <param name="Top">The first screen row of the first bar.</param>
 /// <param name="Rows">How many rows the bars take between them.</param>
 /// <param name="Pad">The band-coloured columns the client leaves at each end of a bar row, for the field's inner padding.</param>
-/// <param name="Prompts">Each bar's prompt, drawn in the bar's first cells after <paramref name="Pad"/>.</param>
+/// <param name="Prompts">Each bar's placeholder, drawn in the bar's first cells after <paramref name="Pad"/> while it is empty.</param>
 /// <param name="Hint">The newline hint, in the cells' glyphs, for the host to draw where the first row is blank.</param>
 internal sealed record InputBand(int Top, int Rows, int Pad, IReadOnlyList<InputPrompt> Prompts, string Hint)
 {

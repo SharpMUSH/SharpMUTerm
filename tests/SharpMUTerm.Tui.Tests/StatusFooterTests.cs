@@ -111,7 +111,9 @@ public class StatusFooterTests
         await Assert.That(band).IsNotNull();
         await Assert.That(band!.Pad).IsEqualTo(InputLayout.HostFieldPad);
         await Assert.That(band.Top + band.Rows).IsEqualTo(Height - native.LaidOutRows.Status);
-        await Assert.That(band.Prompts.Single().Text).Contains("›");
+        await Assert.That(band.Prompts.Single().Text).IsEmpty().Because("the bar holds the demo's draft, so it shows no placeholder");
+        native.SimulateKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+        await Assert.That(native.InputBandNow()!.Prompts.Single().Text).Contains("›").Because("an empty bar's prompt is its placeholder");
         await Assert.That(band.Hint).Contains("new line");
         await Assert.That(presenter.Bands.OfType<InputBand>()).IsNotEmpty();
 

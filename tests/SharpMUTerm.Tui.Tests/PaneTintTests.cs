@@ -392,7 +392,7 @@ public class PaneTintTests
 
         // The armed prompt is bold and the idle one dim, whatever colour they are wearing — the cue that
         // survives a terminal flattening two backgrounds together.
-        await Assert.That(app.PrimaryPromptMarkup).StartsWith("[bold on ");
+        await Assert.That(app.PrimaryPromptMarkup).StartsWith("[bold #");
         await Assert.That(app.SecondPromptMarkup).StartsWith("[dim on ");
     }
 

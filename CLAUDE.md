@@ -34,8 +34,10 @@ fallbacks) for inline images/maps.
   handling. What the subclass adds is the part an editor does not do: ⏎ sends (the editor inserts on ⏎
   and declines every modified ⏎, so ⌥⏎ is handed to it as a *bare* ⏎); it grows between `MinRows`
   and `MaxRows` (`MeasureDOM` sets the editor's fixed viewport from the wrapped row count); the prompt is
-  a gutter renderer, so every row indents past it; and the key table in front decides what the editor
-  ever sees. Three things are load-bearing:
+  a **placeholder** (`PaintDOM` draws it on the first row while the bar is empty; the first character typed replaces
+  it), so typed text has the whole row and only the host field's padding is a gutter; and the key table in front
+  decides what the editor ever sees. The maintainer asked for that (the prompt used to be a gutter every row indented
+  past, ~20 columns of `Corvid · Aetherfall ›`); which bar is armed is still the band, and whose it is the tint. Three things are load-bearing:
   - **Keys are filtered, never passed wholesale.** The editor's table is a document's — ⌃A select-all,
     ⌃C/⌃X straight to the system clipboard through a static helper nothing can substitute, ⌃D duplicate
     line, ⌥↑/↓ move line, ⇥ indent, Esc out of edit mode. None of those may reach it: ⌃C is
@@ -52,8 +54,7 @@ fallbacks) for inline images/maps.
   - **A full last row gets a row under it**, and the caret is moved onto it. The editor draws a caret at
     the end of a full row one cell past the text, which on a bar as wide as the terminal is off screen.
     `ACaretAfterAFullRowIsOnTheRowBelowIt` reads that off the frame.
-  Two old behaviours changed with it: the prompt scrolls away with the first row once the bar is past its
-  cap, and past the cap the overflow is shown by the editor's scrollbar rather than `▴`/`▾`.
+  An old behaviour changed with it: past the cap the overflow is shown by the editor's scrollbar rather than `▴`/`▾`.
 - **License:** MIT.
 
 ## Repository state
@@ -1952,14 +1953,12 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     band-coloured columns either side (`InputBarControl.LeadingPad` + right margin), the client publishes an `InputBand`
     (rows, pad, prompts, hint) on `PostBufferPaint`, `Flush` snapshots it into the `ScreenFrame` it belongs to, and
     `TerminalView` draws the rows above it, the strip, a rounded field filled with the band colour read off the cells (so
-    armed, idle and the tint are the cells'), the bars' rows `FieldTop` px lower inside it, the prompt in semibold Inter
-    over its cells and the newline hint over blank cells. The grid gives up `FieldReserve` px, never a row, so panes and
+    armed, idle and the tint are the cells'), the bars' rows `FieldTop` px lower inside it, an empty bar's placeholder in
+    Inter over its cells (clear of the caret on its first cell) and the newline hint over blank cells. The grid gives up `FieldReserve` px, never a row, so panes and
     NAWS are a terminal's told the same chrome. Null under a modal. Rebuilding it on a `TextBox` would fork every key rule
     above.
-  - **The typed text meets the prompt by drawing, not by cells** (`TerminalView.BarsOf`, `FieldBar`). The Inter prompt is
-    narrower than its cells, so each bar's text is drawn `Shift` px left (to one mono space after the measured prompt), the
-    caret with it, and `Cell` maps a press there back to the cell under it; the right padding the shift uncovers is the
-    field's fill. The gutter, the caret's cell and every key are unchanged, so parity needs nothing.
+  - **A placeholder and typed text never share a row**, so nothing is drawn shifted: `InputPrompt.Text` is the placeholder
+    while the bar is empty and empty once it holds text, and a press on a field cell is that cell.
   - **In the window the command line is a row of the output's column** (`HostChrome.InputInColumn`, on in `Desktop`;
     `InputColumn.Target`/`Anchor`, Core; `WithInputBars`/`DetachInputBars`). The prompt row and both bars leave the window's
     sticky band and become Auto rows of a grid wrapped round one node of the pane tree, so the side column runs to the

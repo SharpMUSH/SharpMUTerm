@@ -35,7 +35,8 @@ public class SearchScriptsFitTests
 
         await Assert.That(page.PageRows).IsEqualTo(ScrollbackViewModel.PageRowsFor(24, 80));
         await Assert.That(page.Lines.Count).IsEqualTo(page.PageRows);
-        var prompt = rows.ToList().FindIndex(r => r.Contains("Corvid · Aetherfall ›", StringComparison.Ordinal));
+        // The demo's draft is on the command line, so its row is the draft's (the prompt is a placeholder under it).
+        var prompt = rows.ToList().FindIndex(r => r.StartsWith("say hello there", StringComparison.Ordinal));
         await Assert.That(prompt).IsGreaterThan(0).Because("the command line is not under the view's border:\n" + string.Join('\n', rows));
         var bottom = rows.ToList().FindLastIndex(r => r.Contains('└'));
         await Assert.That(bottom).IsLessThan(prompt);
