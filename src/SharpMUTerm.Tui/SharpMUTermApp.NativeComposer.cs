@@ -181,6 +181,7 @@ internal sealed partial class SharpMUTermApp
         _nativeCompose = open;
         native.Open(open.Session, ComposerInk());
         PublishPanels();
+        PublishPaneChrome();
         PublishHostChrome();
     }
 
@@ -236,6 +237,7 @@ internal sealed partial class SharpMUTermApp
         Host.NativeComposer?.Close();
         KeepComposeDraft(new ComposeResult(open.Body, open.Escaping, open.Edit, open.Script, open.Verb));
         PublishPanels();
+        PublishPaneChrome();
         PublishHostChrome();
     }
 

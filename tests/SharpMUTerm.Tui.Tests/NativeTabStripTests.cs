@@ -1,6 +1,7 @@
 using System.Drawing;
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Client.Chrome;
+using SharpMUTerm.Client.Composer;
 using SharpMUTerm.Client.Surfaces;
 using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Graphics;
@@ -183,5 +184,48 @@ public class NativeTabStripTests
         await using var app = App(HostChrome.None, out _, "scrollback-split", pointer);
         await Assert.That(pointer.Published.Last().Bands).Count().IsEqualTo(1);
         await Assert.That(pointer.Published.Last().Strips).IsEmpty();
+    }
+
+    private sealed class OpenComposer : INativeComposer
+    {
+        public bool Available => true;
+
+        public ComposerSession? Session { get; private set; }
+
+        public void Open(ComposerSession session, PanelInk ink) => Session = session;
+
+        public void Close()
+        {
+        }
+    }
+
+    /// <summary>
+    /// The window's F1 lies over the panes, and the native strips lie over the window's cells, so a strip left published
+    /// is drawn over the composer. Opening F1 paints no frame (the editor covers the cells), so the strips are withdrawn
+    /// when F1 opens and come back when it closes, without waiting for a frame that may never come.
+    /// </summary>
+    [Test]
+    public async Task OpeningTheNativeComposerWithdrawsEveryStripWithoutWaitingForAFrame()
+    {
+        Console.SetIn(TextReader.Null);
+        var pointer = new PanePresenter();
+        var composer = new OpenComposer();
+        var host = ClientHost.Headless(new HeadlessConsoleDriver(Width, Height), Caps) with
+        {
+            Chrome = HostChrome.Native,
+            Pointer = pointer,
+            NativeComposer = composer,
+        };
+        await using var app = new SharpMUTermApp(DemoScene.Build(), host);
+        app.RenderSnapshot("split");
+        app.RenderNextFrame();
+        await Assert.That(pointer.Published.Last().Strips.Count).IsGreaterThanOrEqualTo(2);
+
+        app.SimulateKey(new ConsoleKeyInfo('\0', ConsoleKey.F1, false, false, false));
+        await Assert.That(composer.Session).IsNotNull().Because("F1 opened in the host's editor");
+        await Assert.That(pointer.Published.Last().Strips).IsEmpty().Because("no strip may sit over the composer");
+
+        composer.Session!.Close("draft");
+        await Assert.That(pointer.Published.Last().Strips.Count).IsGreaterThanOrEqualTo(2).Because("closing F1 brings them back");
     }
 }
