@@ -11,11 +11,14 @@ namespace SharpMUTerm.Tui;
 internal static class ClientRowRenderer
 {
     /// <summary>The row for <paramref name="label"/> and <paramref name="text"/>, on an already-resolved <c>#rrggbb</c> accent.</summary>
-    public static string Bar(string label, string text, string accentHex, int width = 0)
+    public static string Bar(string label, string text, string accentHex, int width = 0) => Bar(label, [text], accentHex, width);
+
+    /// <summary>The row with a ladder of wordings, longest first: the first that fits the pane is drawn whole (<see cref="BarRule"/>).</summary>
+    public static string Bar(string label, IReadOnlyList<string> forms, string accentHex, int width = 0)
     {
         ArgumentException.ThrowIfNullOrEmpty(label);
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
-        var (words, rule) = BarRule.Fit(label.Length + 4, text, width);
+        var (words, rule) = BarRule.Fit(label.Length + 4, forms, width);
         return $"[{accentHex}]› {MarkupText.Escape(label)}[/] [dim]{MarkupText.Escape(words)} {BarRule.Rule(rule)}[/]";
     }
 }

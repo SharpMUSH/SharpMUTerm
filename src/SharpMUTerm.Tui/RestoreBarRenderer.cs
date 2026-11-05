@@ -40,7 +40,7 @@ internal static class RestoreBarRenderer
         // a different game). Local time in the same 24-hour form the timestamp gutter uses.
         var count = lines == 1 ? "1 line" : $"{lines} lines";
         var stamp = when.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.CurrentCulture);
-        var (text, rule) = BarRule.Fit(Label.Length + 4, $"{count} from the previous session · {stamp}", width);
+        var (text, rule) = BarRule.Fit(Label.Length + 4, [$"{count} from the previous session · {stamp}", $"{count} · {stamp}", count], width);
         return $"[{accentHex}]{Glyphs.Restored} {Label}[/] "
             + $"[dim]{MarkupText.Escape(text)} {BarRule.Rule(rule)}[/]";
     }

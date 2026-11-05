@@ -358,31 +358,22 @@ internal sealed class DockedComposer
         RenderFooter(model);
     }
 
-    /// <summary>The key row under the editor, in the long form or the short one when the pane is too narrow for it.</summary>
+    /// <summary>
+    /// The key row under the editor, laddered (<see cref="KeyLadder"/>) to the pane: long labels, then short ones, then
+    /// ⌥W, ⇥, ⌥L and F1 given up in that order; ⌃S and Esc stay. It was cut at the edge (<c>Esc back ·…</c>) at 80 columns.
+    /// </summary>
     private void RenderFooter(ComposerModel model)
     {
-        var footer = KeyRow(model.Keys, shortForm: false);
-        if (_width > 0 && VisibleLength(footer) > _width)
+        var keys = model.Keys.Select(k => new LadderKey(k.Key, k.Label, k.Short, k.Key switch
         {
-            footer = KeyRow(model.Keys, shortForm: true);
-        }
-
+            "⌥W" => 1,
+            "⇥" => 2,
+            "⌥L" => 3,
+            "F1" => 4,
+            _ => LadderKey.Keep,
+        })).ToList();
+        var footer = " " + KeyLadder.Fit(keys, _width > 0 ? _width - 1 : 0, Key, label => $"[dim]{Escape(label)}[/]", "[dim] · [/]");
         _footer.SetContent(new List<string> { _width > 0 ? ElideVisible(footer, _width) : footer });
-    }
-
-    /// <summary>The key row: <c> ⌃S send · ⌥L literal · …</c>, a key in the accent and its word dimmed.</summary>
-    private string KeyRow(IReadOnlyList<ComposerKey> keys, bool shortForm)
-    {
-        var row = new System.Text.StringBuilder(" ");
-        for (var i = 0; i < keys.Count; i++)
-        {
-            var key = keys[i];
-            var label = Escape(shortForm ? key.Short ?? key.Label : key.Label);
-            row.Append(key.Key.Length > 0 ? $"{Key(key.Key)}[dim] {label}" : $"[dim]{label}");
-            row.Append(i < keys.Count - 1 ? " · [/]" : "[/]");
-        }
-
-        return row.ToString();
     }
 
     private string Key(string key) => $"[{_accent}]{key}[/]";

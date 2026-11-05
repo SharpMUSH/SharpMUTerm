@@ -131,7 +131,18 @@ internal sealed partial class SharpMUTermApp
         if (entering)
         {
             // Not toasted: the window's map inspector shows these as buttons; the status row says them for the cells.
-            Notice("←↑→↓ select · r rename · l lock · Del delete · u undo · Esc done", MessageSeverity.Info, source: NoticeModel.Sources.Map, toast: false);
+            // Fitted: at 60 columns the full list was cut at "u undo …". `?` lists every key, so it stands for those given up.
+            Notice(
+                FirstFitting(
+                    NoticeRoom($"{NoticeModel.Sources.Map}:"),
+                    "←↑→↓ select · r rename · l lock · Del delete · u undo · Esc done",
+                    "←↑→↓ select · r rename · Del delete · u undo · ? keys · Esc done",
+                    "←↑→↓ select · r rename · u undo · ? keys · Esc done",
+                    "←↑→↓ select · ? keys · Esc done",
+                    "? keys · Esc done"),
+                MessageSeverity.Info,
+                source: NoticeModel.Sources.Map,
+                toast: false);
         }
     }
 

@@ -61,7 +61,7 @@ internal sealed partial class SharpMUTermApp
         switch (step)
         {
             case ReconnectStep.Scheduled when auto.SecondsLeft is { } seconds:
-                SayInSessionWindow(session, ReconnectLabel, ReconnectLine(seconds, auto.Try));
+                SayInSessionWindow(session, ReconnectLabel, ReconnectLines(seconds, auto.Try));
                 Notice(
                     $"{title} dropped — reconnecting in {seconds} s · ⌥R now",
                     MessageSeverity.Info,
@@ -119,8 +119,20 @@ internal sealed partial class SharpMUTermApp
     internal static string ReconnectState(int seconds) => $"reconnecting in {seconds,2} s · ⌥R now";
 
     /// <summary>The line a session's window gets when a try is scheduled; one writer for the live session and the demo's.</summary>
-    internal static string ReconnectLine(int seconds, int attempt) =>
-        $"in {seconds} s · try {attempt} of {AutoReconnect.Delays.Count} · ⌥R dials now · ⌃P ▸ Stop reconnecting";
+    internal static string ReconnectLine(int seconds, int attempt) => ReconnectLines(seconds, attempt)[0];
+
+    /// <summary>
+    /// <see cref="ReconnectLine"/> and its shorter spellings, longest first, for a narrow pane: the words and the try count
+    /// go, never ⌥R or ⌃P ▸ Stop reconnecting (wave 33: 80 columns cut it to "Stop reconnec…").
+    /// </summary>
+    internal static string[] ReconnectLines(int seconds, int attempt) =>
+    [
+        $"in {seconds} s · try {attempt} of {AutoReconnect.Delays.Count} · ⌥R dials now · ⌃P ▸ Stop reconnecting",
+        $"in {seconds} s · try {attempt}/{AutoReconnect.Delays.Count} · ⌥R now · ⌃P ▸ Stop reconnecting",
+        $"in {seconds} s · ⌥R now · ⌃P ▸ Stop reconnecting",
+        $"in {seconds} s · ⌥R now · ⌃P ▸ Stop",
+        $"in {seconds} s · ⌥R now",
+    ];
 
     /// <summary>The label of every row a reconnect writes into its session's window.</summary>
     internal const string ReconnectLabel = "RECONNECT";
@@ -129,11 +141,11 @@ internal sealed partial class SharpMUTermApp
     /// Writes a client row into <paramref name="session"/>'s own window (<see cref="AppendClientRow"/>): chrome, not a
     /// session line, so the client's own bookkeeping never lands in the character's transcript or restore log.
     /// </summary>
-    private void SayInSessionWindow(WorldSession session, string label, string text)
+    private void SayInSessionWindow(WorldSession session, string label, params string[] forms)
     {
         if (_sessionWindows.TryGetValue(session, out var windowId))
         {
-            AppendClientRow(windowId, label, text);
+            AppendClientRow(windowId, label, forms);
         }
     }
 
@@ -141,7 +153,7 @@ internal sealed partial class SharpMUTermApp
     /// Appends one client row (<see cref="ClientRowRenderer"/>) to a window: drawn as the bars are, held as chrome (a bar
     /// function and no plain text), with no stamp, because it did not arrive. Fed to nothing a session line is fed to.
     /// </summary>
-    private void AppendClientRow(string windowId, string label, string text)
+    private void AppendClientRow(string windowId, string label, params string[] forms)
     {
         if (BarWidth(windowId) <= 0)
         {
@@ -151,8 +163,8 @@ internal sealed partial class SharpMUTermApp
 
         AppendWindowLine(
             windowId,
-            ClientRowRenderer.Bar(label, text, FrozenAccentHex(), BarWidth(windowId)),
-            bar: accent => ClientRowRenderer.Bar(label, text, accent, BarWidth(windowId)));
+            ClientRowRenderer.Bar(label, forms, FrozenAccentHex(), BarWidth(windowId)),
+            bar: accent => ClientRowRenderer.Bar(label, forms, accent, BarWidth(windowId)));
     }
 
     /// <summary>The demo scene's waiting reconnect, in seconds: the `reconnect` view's, which has no live session to drop.</summary>
@@ -168,7 +180,7 @@ internal sealed partial class SharpMUTermApp
         AppendClientRow(MainWindowId, ConnectionNote.Lost, "connection lost · Connection reset by peer");
         AppendClientRow(MainWindowId, ConnectionNote.Connect, "dialling aetherfall.mux:4201…");
         AppendClientRow(MainWindowId, ConnectionNote.Failed, "could not connect to aetherfall.mux:4201 · Connection refused");
-        AppendClientRow(MainWindowId, ReconnectLabel, ReconnectLine(12, 2));
+        AppendClientRow(MainWindowId, ReconnectLabel, ReconnectLines(12, 2));
         _statusIdentity = ("Corvid", "aetherfall.mux", 4201, "faulted");
         RefreshStatusBar();
         SettleScroll();

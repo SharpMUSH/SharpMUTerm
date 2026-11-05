@@ -125,6 +125,18 @@ internal sealed partial class SharpMUTermApp
         return text.Contains(way, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The first of <paramref name="forms"/> (longest first) that fits <paramref name="room"/> cells, else the last: how a
+    /// line the client writes is fitted to a narrow row. The forms shorten the words and keep every key and command, so
+    /// the row elides nothing (wave 33). A room of 0 or less is no limit.
+    /// </summary>
+    internal static string FirstFitting(int room, params string[] forms) =>
+        forms.FirstOrDefault(form => room <= 0 || StatusModel.WidthOf(form) <= room) ?? forms[^1];
+
+    /// <summary>The cells a notice's text may take on this status row: the row, less a key chip or source label and its space.</summary>
+    private int NoticeRoom(string? keyOrSource = null) =>
+        HeaderWidth() - (keyOrSource is null ? 0 : StatusModel.WidthOf(keyOrSource) + 1);
+
     /// <summary>A colour held to <see cref="WorkspacePalette.HeaderTextFloor"/> on <paramref name="plane"/>: notice text is small text.</summary>
     private static string HeldOn(string hex, Rgb plane) =>
         TryParseRgb(hex, out var rgb) ? Hex(Contrast.Legible(rgb, plane, WorkspacePalette.HeaderTextFloor)) : hex;

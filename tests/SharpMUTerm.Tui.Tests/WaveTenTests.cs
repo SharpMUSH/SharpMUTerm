@@ -53,10 +53,16 @@ public class WaveTenTests
     [Test]
     public async Task ANarrowPaneElidesTheWordsBeforeTheBarCouldWrap()
     {
+        // Wave 33: the words shorten to a form that fits (the count, then nothing more) rather than being cut.
         var bar = AwayBarRenderer.Bar(37, TimeSpan.FromMinutes(12), "#c678dd", 24);
         await Assert.That(MarkupText.VisibleLength(bar)).IsEqualTo(24);
-        await Assert.That(bar).Contains("…");
+        await Assert.That(bar).DoesNotContain("…");
+        await Assert.That(bar).Contains("37 lines");
         await Assert.That(bar).Contains(AwayBarRenderer.Label);
+
+        // Only past the shortest form are the words cut, still never wrapping.
+        var tiny = AwayBarRenderer.Bar(37, TimeSpan.FromMinutes(12), "#c678dd", 14);
+        await Assert.That(MarkupText.VisibleLength(tiny)).IsEqualTo(14);
     }
 
     [Test]

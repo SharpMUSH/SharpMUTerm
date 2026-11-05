@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- What the client itself says is no longer cut off on an 80- or 60-column terminal. The status row's notices (nothing
+  connects at start, switching to an offline character, a pane with no connection, the map's edit keys) and the move
+  and drag prompts use shorter words where the row is narrow, keeping every key they name. The reconnect countdown,
+  the "NEW" and "AWAY" bars, the composer's header and the docked composer's keys do the same instead of ending in "…".
+
 - The first connect fits a small terminal. At 80×24 the key tour shown after your first connect is one line again (it
   wrapped), keeping ⌃P and how to hide it. At 60×20 the welcome no longer covers the command line, the header stays on
   one row, the world list's note and a failed listing say their whole sentence, and the "no world" notice keeps

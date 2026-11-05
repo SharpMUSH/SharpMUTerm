@@ -263,7 +263,7 @@ internal sealed partial class SharpMUTermApp
         return StatusRowModel(
         [
             DropPrompt("DRAG", name, where),
-            Segment(StatusRole.ModeHint, Dim("release to drop · Esc cancel")),
+            DropHint(DropPrompt("DRAG", name, where), DragHints),
         ]);
     }
 

@@ -2110,7 +2110,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RefusePrefix(PrefixPanel.NoSplitRefusal);
             RefuseCommand("nothing to reconnect — pick a character first (⌃P ▸ Switch to …)");
             Notice(
-                $"switched to Corvid · offline — {ReconnectHint()} connects it",
+                SwitchedNotice("Corvid", connected: false),
                 MessageSeverity.Info,
                 action: new NoticeAction("world:reconnect", "Reconnect"));
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error);
@@ -3088,7 +3088,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             if (empty || _demoConnectedKeys.Count == 0)
             {
                 Notice(
-                    empty ? NoWorldsNoticeFor(HeaderWidth()) : NothingAtStartNotice,
+                    empty ? NoWorldsNoticeFor(HeaderWidth()) : NothingAtStartNoticeFor(HeaderWidth()),
                     empty ? MessageSeverity.Warning : MessageSeverity.Info);
             }
 
@@ -3155,6 +3155,20 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     internal const string NothingAtStartNotice =
         "nothing connects at start — ⌃P ▸ Switch to …, then Reconnect · F5 ▸ at start marks one";
+
+    /// <summary>
+    /// <see cref="NothingAtStartNotice"/>, or a shorter spelling of the same two ways out where the status row is narrower
+    /// than it (84 cells were elided at 80 columns): the words go, never <c>⌃P ▸ Switch to …</c>, Reconnect or
+    /// <c>F5 ▸ at start</c>.
+    /// </summary>
+    internal static string NothingAtStartNoticeFor(int width) =>
+        FirstFitting(
+            width,
+            NothingAtStartNotice,
+            "nothing connects at start · ⌃P ▸ Switch to …, then Reconnect · F5 ▸ at start",
+            "none at start · ⌃P ▸ Switch to …, then Reconnect · F5 ▸ at start",
+            "⌃P ▸ Switch to …, Reconnect · F5 ▸ at start",
+            "⌃P ▸ Switch to … · F5 ▸ at start");
 
     /// <summary>
     /// One startup dial, whose failure is this connection's own business. Awaited separately from its
@@ -3662,13 +3676,33 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         UpdateStatus();
         UpdateInputChrome();
 
-        var state = session.IsConnected
-            ? "connected"
-            : $"offline — {ReconnectHint()} connects it";
         Notice(
-            $"switched to {SessionTitle(session)} · {state}",
+            SwitchedNotice(SessionTitle(session), session.IsConnected),
             MessageSeverity.Info,
             action: session.IsConnected ? null : new NoticeAction("world:reconnect", "Reconnect"));
+    }
+
+    /// <summary>
+    /// What a switch says, fitted to the status row: the words shorten (<c>switched to</c>, then the ⌃P path behind the
+    /// key) and the key that reconnects stays.
+    /// </summary>
+    private string SwitchedNotice(string title, bool connected)
+    {
+        if (connected)
+        {
+            return FirstFitting(NoticeRoom(), $"switched to {title} · connected", $"{title} · connected");
+        }
+
+        var key = CommandKey("world:reconnect");
+        var hint = ReconnectHint();
+        var way = key ?? "⌃P ▸ Reconnect";
+        return FirstFitting(
+            NoticeRoom(),
+            $"switched to {title} · offline — {hint} connects it",
+            $"switched to {title} · offline — {way} connects it",
+            $"{title} · offline — {way} connects it",
+            $"{title} · offline — {way} connects",
+            $"offline — {way} connects it");
     }
 
     /// <summary>
@@ -5753,14 +5787,29 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var window = _workspace.FindWindow(windowId);
         if (window?.SessionKey is { Length: > 0 } owner)
         {
-            return $"{Snippet(DisplayName(owner))} has no open session — ⌃P ▸ Switch to it opens one; nothing was sent";
+            var name = Snippet(DisplayName(owner));
+            return FirstFitting(
+                NoticeRoom("⌃P"),
+                $"{name} has no open session — ⌃P ▸ Switch to it opens one; nothing was sent",
+                $"{name} has no open session — ⌃P ▸ Switch to it; nothing was sent",
+                $"{name}: no session — ⌃P ▸ Switch to it; nothing was sent",
+                "no session — ⌃P ▸ Switch to it; nothing was sent",
+                "no session · ⌃P ▸ Switch to; nothing sent");
         }
 
         // Through Snippet: a window's title can be a world's own text (the web view is titled from the
         // page it loaded), and the status row is no place for an unbounded string off the wire.
         return _sessionWindows.Count == 0
-            ? "nothing is connected — ⌃P ▸ Switch to a character; nothing was sent"
-            : $"{Snippet(window?.Title ?? windowId)} belongs to no connection — nothing was sent";
+            ? FirstFitting(
+                NoticeRoom("⌃P"),
+                "nothing is connected — ⌃P ▸ Switch to a character; nothing was sent",
+                "nothing connected — ⌃P ▸ Switch to; nothing was sent",
+                "⌃P ▸ Switch to; nothing sent")
+            : FirstFitting(
+                NoticeRoom("⌃P"),
+                $"{Snippet(window?.Title ?? windowId)} belongs to no connection — nothing was sent",
+                "this pane belongs to no connection — nothing was sent",
+                "no connection here — nothing was sent");
     }
 
     /// <summary>
@@ -13153,9 +13202,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return StatusRowModel(
         [
             DropPrompt("MOVE", name, DropLabel(_moveTargetPaneId, _moveEdge)),
-            Segment(StatusRole.ModeHint, Dim("1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel")),
+            DropHint(
+                DropPrompt("MOVE", name, DropLabel(_moveTargetPaneId, _moveEdge)),
+                "1–9 pane · ←↑↓→ edge · ⏎ commit · Esc cancel",
+                "1–9 · ←↑↓→ · ⏎ commit · Esc cancel",
+                "⏎ commit · Esc cancel",
+                "⏎ · Esc"),
         ]);
     }
+
+    /// <summary>
+    /// The move and drag prompts' key segment: the first of <paramref name="forms"/> that fits beside
+    /// <paramref name="prompt"/> on the row, so a narrow row gives up whole keys (⏎ and Esc last) and never cuts one.
+    /// </summary>
+    private StatusSegment DropHint(StatusSegment prompt, params string[] forms) =>
+        Segment(StatusRole.ModeHint, Dim(FirstFitting(HeaderWidth() - prompt.Width - StatusModel.Separator.Length, forms)));
+
+    /// <summary>The drag prompts' keys, longest first; Esc is given up last.</summary>
+    private static readonly string[] DragHints = ["release to drop · Esc cancel", "release · Esc cancel", "Esc cancel"];
 
     /// <summary>The move and drag prompts' first segment: <c>MOVE window → where</c>.</summary>
     private StatusSegment DropPrompt(string verb, string window, string where) =>
@@ -13520,7 +13584,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         return StatusRowModel(
         [
             DropPrompt("DRAG", name, DropLabel(targetPaneId, edge)),
-            Segment(StatusRole.ModeHint, Dim("release to drop · Esc cancel")),
+            DropHint(DropPrompt("DRAG", name, DropLabel(targetPaneId, edge)), DragHints),
         ]);
     }
 
@@ -13832,11 +13896,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Through Snippet, because a window's title can be a *world's* text — the web view is titled from
         // the page it loaded — and the status row is not a place to paste an unbounded string from the wire.
+        var named = Snippet(owner is { Length: > 0 } ? DisplayName(owner) : _workspace.FindWindow(windowId)?.Title ?? windowId);
         Notice(
             owner is { Length: > 0 }
-                ? $"{Snippet(DisplayName(owner))} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere from this pane"
-                : $"{Snippet(_workspace.FindWindow(windowId)?.Title ?? windowId)} belongs to no connection — " +
-                  "⏎ sends nowhere from this pane");
+                ? FirstFitting(
+                    NoticeRoom(),
+                    $"{named} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere from this pane",
+                    $"{named} has no open session — ⌃P ▸ Switch to it opens one; ⏎ sends nowhere",
+                    $"{named} has no open session — ⌃P ▸ Switch to it; ⏎ sends nowhere",
+                    $"{named}: no session — ⌃P ▸ Switch to it; ⏎ sends nowhere",
+                    "no session — ⌃P ▸ Switch to it; ⏎ sends nowhere",
+                    "no session · ⌃P ▸ Switch to · ⏎ sends nowhere")
+                : FirstFitting(
+                    NoticeRoom(),
+                    $"{named} belongs to no connection — ⏎ sends nowhere from this pane",
+                    "this pane belongs to no connection — ⏎ sends nowhere from it",
+                    "no connection here — ⏎ sends nowhere"));
     }
 
     /// <summary>

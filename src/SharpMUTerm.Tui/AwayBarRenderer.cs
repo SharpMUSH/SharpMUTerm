@@ -47,7 +47,7 @@ internal static class AwayBarRenderer
         // scrolling is in front of me. The duration is "how far behind am I" — five minutes is a
         // conversation you can still join, two hours is a different evening.
         var count = lines == 1 ? "1 line" : $"{lines} lines";
-        var (text, rule) = BarRule.Fit(Label.Length + 4, $"{count} since you left · {Duration(away)}", width);
+        var (text, rule) = BarRule.Fit(Label.Length + 4, [$"{count} since you left · {Duration(away)}", $"{count} · {Duration(away)}", count], width);
         return $"[{accentHex}]{Glyphs.Away} {Label}[/] "
             + $"[dim]{MarkupText.Escape(text)} {BarRule.Rule(rule)}[/]";
     }
@@ -67,7 +67,7 @@ internal static class AwayBarRenderer
         ArgumentException.ThrowIfNullOrEmpty(accentHex);
 
         var count = lines == 1 ? "1 line" : $"{lines} lines";
-        var (text, rule) = BarRule.Fit(MissedLabel.Length + 4, $"{count} since you were here", width);
+        var (text, rule) = BarRule.Fit(MissedLabel.Length + 4, [$"{count} since you were here", count], width);
         return $"[{accentHex}]{Glyphs.Away} {MissedLabel}[/] "
             + $"[dim]{MarkupText.Escape(text)} {BarRule.Rule(rule)}[/]";
     }

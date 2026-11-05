@@ -735,21 +735,36 @@ internal sealed class ComposeOverlay
             : $"[{ScreenPalette.Value}]{Escape(model.Target)}[/]";
 
         var footerKeys = KeyLadder.Choose(FooterKeys(model), width);
-        string header;
+
+        // Each header is a short ladder of its own (wave 33): at 60 columns the full one was cut mid-word ("spellin…").
+        // The words that name a field go first, then the least needed field; what the screen is and who it sends to stay.
+        string[] headers;
         if (model.Edit is { Script: true } script)
         {
             var status = script.Status is { } said
                 ? $"[{ScreenPalette.Label}]  ·  [/][{(said.StartsWith('!') ? ScreenPalette.Warn : ScreenPalette.Value)}]{Escape(said)}[/]"
                 : string.Empty;
-            header = $"[{ScreenPalette.Accent}]{(script.ReadOnly ? "READ ONLY" : "SCRIPT")}[/] [{ScreenPalette.Value}]{Escape(script.Name)}[/]"
-                + $"[{ScreenPalette.Label}]  lua  ·  {(model.Target.Length == 0 ? "reloads nobody" : "reloads ")}[/]"
-                + (model.Target.Length == 0 ? string.Empty : $"[{ScreenPalette.Value}]{Escape(model.Target)}[/]")
-                + status;
+            var name = $"[{ScreenPalette.Accent}]{(script.ReadOnly ? "READ ONLY" : "SCRIPT")}[/] [{ScreenPalette.Value}]{Escape(script.Name)}[/]";
+            headers =
+            [
+                name
+                    + $"[{ScreenPalette.Label}]  lua  ·  {(model.Target.Length == 0 ? "reloads nobody" : "reloads ")}[/]"
+                    + (model.Target.Length == 0 ? string.Empty : $"[{ScreenPalette.Value}]{Escape(model.Target)}[/]")
+                    + status,
+
+                // The script error is the engine's text, not the client's: it may still be elided past this, and the
+                // console says it whole.
+                name + status,
+            ];
         }
         else if (model.Edit is { } edit)
         {
-            header = $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
-                + $"[{ScreenPalette.Label}]  {Escape(edit.Type)}  ·  from [/]{target}";
+            headers =
+            [
+                $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/]"
+                    + $"[{ScreenPalette.Label}]  {Escape(edit.Type)}  ·  from [/]{target}",
+                $"[{ScreenPalette.Accent}]EDIT[/] [{ScreenPalette.Value}]{Escape(edit.Name)}[/][{ScreenPalette.Label}]  from [/]{target}",
+            ];
         }
         else
         {
@@ -763,12 +778,18 @@ internal sealed class ComposeOverlay
                 ? $"[{ScreenPalette.Value}]{Escape(name)}[/]"
                 : $"[{ScreenPalette.Muted}]no dictionary[/]";
 
-            header = $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}"
-                + $"[{ScreenPalette.Label}]  ·  text [/]{mode}"
-                + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}";
+            var head = $"[{ScreenPalette.Accent}]COMPOSE[/][{ScreenPalette.Label}]  to [/]{target}";
+            headers =
+            [
+                head + $"[{ScreenPalette.Label}]  ·  text [/]{mode}" + $"[{ScreenPalette.Label}]  ·  spelling [/]{spelling}",
+                head + $"[{ScreenPalette.Label}]  ·  [/]{mode}" + $"[{ScreenPalette.Label}]  ·  [/]{spelling}",
+                head + $"[{ScreenPalette.Label}]  ·  [/]{mode}",
+            ];
         }
 
         var length = $"[{ScreenPalette.Value}]{ComposerModel.CharactersLabel(model.Characters)}[/] ";
+        var room = width - VisibleLength(length) - 1;
+        var header = width > 0 ? headers.FirstOrDefault(h => VisibleLength(h) <= room) ?? headers[^1] : headers[0];
         header = width > 0 ? SpreadLR(header, length, width) : $"{header}[{ScreenPalette.Label}]  ·  [/]{length}";
 
         var footer = string.Join(

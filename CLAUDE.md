@@ -1730,6 +1730,18 @@ fallbacks) for inline images/maps.
   bottom margin `Space16`, and a compact tier (`WelcomeView.FitPage`: top 24, gaps 16/12, card padding 18) when the natural
   height would not fit (the default window). The added-world notice is one model (`WorldNotices.Added`): F5 once (no key chip,
   the words name it), the encoding in brackets when one was saved, and no endpoint (the CONNECT rows say it; with one the row did not fit 60 columns).
+- **Wave 33 client text at 80 and 60 columns (cells, both hosts; terminal frames moved)** (`ux-wave33/terminal-client-text-80/`).
+  Text the client words is fitted by **choosing a shorter wording, never by eliding**: `FirstFitting(room, forms…)` (notices:
+  `NoticeRoom(chip)` is the row less a key chip or source label; `NothingAtStartNoticeFor`, `SwitchedNotice`, `NothingToSendTo`,
+  the no-session notice, the map's edit-keys notice), `DropHint` for the move/drag prompts (⏎ and Esc last), `BarRule.Fit(fixed,
+  forms, width)` for bars and client rows (NEW, AWAY, RESTORED, `ReconnectLines`; `AppendClientRow(…, params forms)`), F1's header
+  as a ladder of headers (field words, then spelling), and the docked composer's keys through `KeyLadder` (⌃S, Esc kept). Every
+  form keeps every key and command; a form may drop the owner's name. The key tour already fit with the timestamp gutter on: a
+  bar carries no stamp, so the gutter costs it nothing (pinned). `ClientTextFitTests` reads each fixed row off the frame at
+  80×24 and 60×20. Left as they are: a list row's detail column (⌃P, help, Browse, F10, the welcome's choices: it gives way by
+  design), server and mu*index text, a script error's engine text in the script header, the message log's rows, F5's world
+  column and trigger-set descriptions at 80×24, and the settings action bar's context line and F7's search/undo header at 60
+  columns (the settings screens are held to 80×24).
 - **Wave 16 groups** (F5 headings, ⌃P groups, scene mark, client rows, map find). Decisions not to relitigate:
   - **F5's world column is drawn in the declaration's order under its `Group` headings** (`WorldsScreenRenderer.DetailColumn`
     walks `BuiltInSettings.World.Fields`), so the cell screen and the window group alike; `WorldFieldOrder` (⇥ order and the

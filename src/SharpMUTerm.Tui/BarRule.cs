@@ -44,6 +44,19 @@ internal static class BarRule
         return (elided, Math.Max(0, room - elided.Length));
     }
 
+    /// <summary>
+    /// <see cref="Fit(int, string, int)"/> over a ladder of wordings, longest first: the first that fits beside a short rule
+    /// is used whole, so a bar the client words shortens its words rather than cutting them (wave 33). Only when the last
+    /// does not fit is it elided.
+    /// </summary>
+    public static (string Text, int Rule) Fit(int fixedCells, IReadOnlyList<string> forms, int width)
+    {
+        ArgumentNullException.ThrowIfNull(forms);
+        var room = width - fixedCells - Minimum;
+        var form = width <= 0 ? forms[0] : forms.FirstOrDefault(f => f.Length <= room) ?? forms[^1];
+        return Fit(fixedCells, form, width);
+    }
+
     /// <summary>A run of <paramref name="cells"/> rule characters.</summary>
     public static string Rule(int cells) => new('─', Math.Max(0, cells));
 }
