@@ -11072,6 +11072,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 // this app puts transient state and which costs no output width at all.
                 ShowScrollbar = false,
                 AutoScroll = autoScroll,
+
+                // The wheel is ScrollPaneUnderPointer's, and only its. Left on, the framework scrolled the
+                // panel under the pointer as well, by its own step: over a plain pane that was the same
+                // viewport moved twice, and over a split pane's live tail it was the *tail* moving at one
+                // line a notch beside the history moving at three — both halves scrolling at once.
+                EnableMouseWheel = false,
             };
             panel.Scrolled += (_, _) => OnPaneScrolled();
             _paneScrolls[key] = panel;
@@ -12591,6 +12597,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>A window's live-output viewport state, or null before one has been built.</summary>
     internal ScrollbackView? ScrollbackOf(string windowId) => ViewOf(_paneScrolls.GetValueOrDefault(windowId));
+
+    /// <summary>A split window's live-tail viewport state, or null while it is not split.</summary>
+    internal ScrollbackView? ScrollTailOf(string windowId) =>
+        ViewOf(_paneScrolls.GetValueOrDefault(TailRegionKey(windowId)));
+
+    /// <summary>
+    /// Hands a mouse frame to the framework's own window dispatch, as its input loop would (window-relative,
+    /// <c>InputCoordinator.PropagateMouseEventToWindow</c>'s translation). A live client delivers every frame there
+    /// as well as to <see cref="OnDriverMouseEvent"/>, but the framework subscribes to the driver only inside
+    /// <c>Run()</c>, which no test calls — so without this a test sees only our half of a wheel notch. The
+    /// dispatcher is internal to the window, hence the reflection.
+    /// </summary>
+    internal bool SimulateFrameworkMouse(List<MouseFlags> flags, System.Drawing.Point point)
+    {
+        var dispatcher = typeof(Window)
+            .GetProperty("EventDispatcher", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?.GetValue(_window) as SharpConsoleUI.Windows.WindowEventDispatcher;
+        if (dispatcher is null)
+        {
+            return false;
+        }
+
+        var onWindow = SharpConsoleUI.Helpers.GeometryHelpers.TranslateToRelative(_window, point, _system.DesktopUpperLeft.Y);
+        return dispatcher.ProcessMouseEvent(new MouseEventArgs(flags, onWindow, point, onWindow, _window));
+    }
 
     /// <summary>A window's pinned-scrollback viewport state while its pane is frozen, or null.</summary>
     internal ScrollbackView? FrozenScrollbackOf(string windowId) =>
