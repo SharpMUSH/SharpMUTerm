@@ -32,7 +32,7 @@ internal static class AliasesScreenRenderer
 
     /// <summary>
     /// What the alias list's key is called, and the two marks it glosses. A row reads
-    /// <c>✓ ▸ say ^'(.*) ▪ Comms → say $1</c>: the tick is the enabled state <c>on</c> heads without
+    /// <c>✓ ▸ say ^'(.*) → say $1</c> under its set's heading: the tick is the enabled state <c>on</c> heads without
     /// really explaining, and the square is the owning set. Named constants because the row draws the
     /// same glyphs and the key would otherwise be a second, drifting copy of them.
     /// </summary>
@@ -255,22 +255,18 @@ internal static class AliasesScreenRenderer
             lines.Add("[dim]no aliases[/]");
         }
 
-        // Walked per set rather than down the flattened list, so a set holding no aliases can still say
-        // so — it owns none of these rows and would otherwise be drawn nowhere at all. The row indices
-        // are the flattened ones either way: the placeholder is markup, not a cursor stop.
+        // Walked per set rather than down the flattened list: each set is a heading over its aliases, so a row need not
+        // repeat its set and an empty set still says so. The row indices are the flattened ones either way: the
+        // heading is markup, not a cursor stop.
         var index = 0;
         foreach (var set in sets)
         {
-            if (set.Aliases.Count == 0)
-            {
-                lines.Add(ScreenChrome.EmptySet(set.Name, "aliases"));
-                continue;
-            }
+            lines.Add(ScreenChrome.SetHeading(set.Name, set.Aliases.Count, "alias", "aliases", width));
 
             foreach (var alias in set.Aliases)
             {
                 lines.Add(ScreenChrome.Cursor(
-                    Row(alias, set.Name, index == selected), cursor.IsOn(0, index), width));
+                    Row(alias, index == selected), cursor.IsOn(0, index), width));
                 index++;
             }
         }
@@ -327,14 +323,14 @@ internal static class AliasesScreenRenderer
         return entries;
     }
 
-    private static string Row(Alias alias, string setName, bool selected)
+    private static string Row(Alias alias, bool selected)
     {
         var check = alias.Enabled ? $"[{Accent}]✓[/]" : "[dim]·[/]";
         var marker = selected ? "▸" : " ";
         var name = Escape(alias.Name);
         var pattern = Escape(alias.Pattern);
         var expansion = Escape(FirstLine(alias.Substitution));
-        return $"{check} {marker} [bold]{name}[/] [dim]{pattern}[/] [dim]▪ {Escape(setName)}[/] → {expansion}";
+        return $"{check} {marker} [bold]{name}[/] [dim]{pattern}[/] → {expansion}";
     }
 
     private static List<string> BuildEditor(

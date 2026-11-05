@@ -456,23 +456,18 @@ internal static class TriggersScreenRenderer
             left.Add("[dim]no triggers[/]");
         }
 
-        // Walked per set rather than down the flattened list, so a set holding no rules can still say so
-        // — it owns none of these rows and would otherwise be drawn nowhere at all. The row indices are
-        // the flattened ones either way: the placeholder is markup, not a cursor stop.
+        // Walked per set rather than down the flattened list: each set is a heading over its rules, so a rule need not
+        // repeat its set and an empty set still says so. The row indices are the flattened ones either way: the heading
+        // is markup, not a cursor stop.
         var row = 0;
         foreach (var set in sets)
         {
-            if (set.Triggers.Count == 0)
-            {
-                left.Add(ScreenChrome.EmptySet(set.Name, "triggers"));
-                continue;
-            }
-
+            left.Add(ScreenChrome.SetHeading(set.Name, set.Triggers.Count, "trigger", "triggers", width));
             foreach (var trigger in set.Triggers)
             {
                 left.Add(ScreenChrome.Cursor(
                     RuleRow(row, selectedTrigger, trigger, width), cursor.IsOn(0, row), width));
-                left.Add(RuleSub(set.Name, trigger.Actions));
+                left.Add(RuleSub(trigger.Actions));
                 row++;
             }
         }
@@ -491,12 +486,12 @@ internal static class TriggersScreenRenderer
 
     /// <summary>
     /// Every mark a rule's two rows are written in, and what it means. The action letters were the one
-    /// vocabulary on these screens written down nowhere at all: a rule reading <c>▪ Comms · H ✎ ⇥ ƒ</c>
-    /// is four facts in five cells, and the cells are unguessable — <c>H</c> could as easily be "hidden"
+    /// vocabulary on these screens written down nowhere at all: a rule reading <c>H ✎ ⇥ ƒ</c>
+    /// is four facts in four cells, and the cells are unguessable — <c>H</c> could as easily be "hidden"
     /// as "highlight", and <c>⇥</c> as easily "indent" as "routed". The tick is in the list too, because
     /// <c>on</c> as a column header is not much better a gloss than the tick it heads.
     /// <para>
-    /// The order is the order the marks appear on a row: the tick and the set on the first two cells,
+    /// The order is the order the marks appear on a row: the tick on the rule, the set on its heading,
     /// then the flags in the order <see cref="Flags"/> emits them.
     /// </para>
     /// </summary>
@@ -618,8 +613,8 @@ internal static class TriggersScreenRenderer
         return $"{marker} {box} [bold]{Escape(trigger.Name)}[/] [dim]{Escape(pattern)}[/] [dim]→ {Escape(target)}[/]";
     }
 
-    private static string RuleSub(string owningSet, TriggerActions actions) =>
-        $"  [dim]▪ {Escape(owningSet)} · {Flags(actions)}[/]";
+    private static string RuleSub(TriggerActions actions) =>
+        $"    [dim]{Flags(actions)}[/]";
 
     private static string Flags(TriggerActions actions)
     {

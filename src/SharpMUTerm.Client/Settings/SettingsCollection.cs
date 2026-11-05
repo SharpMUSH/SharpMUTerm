@@ -57,6 +57,12 @@ public abstract class SettingsCollection
     /// <summary>What several are called (<c>triggers</c>).</summary>
     public required string Plural { get; init; }
 
+    /// <summary>
+    /// How many items a set holds, as a set's heading says it in both hosts: <c>no triggers</c>, <c>1 trigger</c>,
+    /// <c>3 triggers</c>.
+    /// </summary>
+    public string CountOf(int count) => SetHeading.Count(count, Noun, Plural);
+
     /// <summary>Every field of an item, in the order a form shows them.</summary>
     public required IReadOnlyList<SettingsField> Fields { get; init; }
 

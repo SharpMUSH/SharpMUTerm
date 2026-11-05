@@ -33,7 +33,7 @@ internal static class TimersScreenRenderer
 
     /// <summary>
     /// What the timer list's key is called, and the two marks it glosses. A row reads
-    /// <c>✓ ▸ keepalive every 60s ▪ Comms → @@idle</c>: the tick is the enabled state <c>on</c> heads
+    /// <c>✓ ▸ keepalive every 60s → @@idle</c> under its set's heading: the tick is the enabled state <c>on</c> heads
     /// without really explaining, and the square is the owning set. Named constants because the row
     /// draws the same glyphs and the key would otherwise be a second, drifting copy of them.
     /// </summary>
@@ -253,22 +253,18 @@ internal static class TimersScreenRenderer
             lines.Add("[dim]no timers[/]");
         }
 
-        // Walked per set rather than down the flattened list, so a set holding no timers can still say
-        // so — it owns none of these rows and would otherwise be drawn nowhere at all. The row indices
-        // are the flattened ones either way: the placeholder is markup, not a cursor stop.
+        // Walked per set rather than down the flattened list: each set is a heading over its timers, so a row need not
+        // repeat its set and an empty set still says so. The row indices are the flattened ones either way: the
+        // heading is markup, not a cursor stop.
         var index = 0;
         foreach (var set in sets)
         {
-            if (set.Timers.Count == 0)
-            {
-                lines.Add(ScreenChrome.EmptySet(set.Name, "timers"));
-                continue;
-            }
+            lines.Add(ScreenChrome.SetHeading(set.Name, set.Timers.Count, "timer", "timers", width));
 
             foreach (var timer in set.Timers)
             {
                 lines.Add(ScreenChrome.Cursor(
-                    Row(timer, set.Name, index == selected), cursor.IsOn(0, index), width));
+                    Row(timer, index == selected), cursor.IsOn(0, index), width));
                 index++;
             }
         }
@@ -332,14 +328,14 @@ internal static class TimersScreenRenderer
         return entries;
     }
 
-    private static string Row(TimerDefinition timer, string setName, bool selected)
+    private static string Row(TimerDefinition timer, bool selected)
     {
         var check = timer.Enabled ? $"[{Accent}]✓[/]" : "[dim]·[/]";
         var marker = selected ? "▸" : " ";
         var name = Escape(timer.Name);
         var schedule = Schedule(timer);
         var command = Escape(timer.Command);
-        return $"{check} {marker} [bold]{name}[/] {schedule} [dim]▪ {Escape(setName)}[/] → {command}";
+        return $"{check} {marker} [bold]{name}[/] {schedule} → {command}";
     }
 
     /// <summary>

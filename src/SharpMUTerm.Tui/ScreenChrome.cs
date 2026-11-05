@@ -721,18 +721,31 @@ internal static class ScreenChrome
         : $"[{ScreenPalette.Label}]{glyph} {MarkupText.Escape(meaning)}[/]";
 
     /// <summary>
-    /// The one row an <em>empty</em> trigger set gets in a flattened pane. F2, F3, F4 and F6 each draw one
-    /// column of every set's rules, so a set holding none of that kind would be drawn nowhere at all.
+    /// A trigger set's heading in a flattened list (F2, F3, F4, F6): a band across the column, the set's glyph in the
+    /// accent, its name in bold and how many items it holds at the right (<see cref="SharpMUTerm.Client.Settings.SetHeading"/>,
+    /// the words the window's heading says too). The items follow it, so a row no longer has to repeat its set.
     /// <para>
-    /// A readout and not a row: the cursor cannot reach it, because it stands for a set rather than an
-    /// item, and a cursor stop here would be a row that <c>[[- del]]</c>, Space and ⏎ all had to except.
-    /// Moving an item into the set is what replaces it with real rows.
+    /// A readout and not a row: the cursor cannot reach it, because it stands for a set rather than an item, and a
+    /// cursor stop here would be a row that <c>[[- del]]</c>, Space and ⏎ all had to except. It is drawn for an empty
+    /// set too (<c>no triggers</c>), which would otherwise be drawn nowhere at all. The band is the header plane, a
+    /// text plane every ink is held on in every theme, and spends no cell beyond its own row.
     /// </para>
     /// </summary>
-    /// <param name="set">The set with nothing in it.</param>
-    /// <param name="noun">What the screen's rows are called, plural — <c>triggers</c>, <c>timers</c>.</param>
-    internal static string EmptySet(string set, string noun) =>
-        $"  [{ScreenPalette.Muted}]▪ {MarkupText.Escape(set)} — no {MarkupText.Escape(noun)}[/]";
+    /// <param name="set">The set's name.</param>
+    /// <param name="count">How many of this screen's items it holds.</param>
+    /// <param name="noun">One item, singular — <c>trigger</c>.</param>
+    /// <param name="plural">What the screen's rows are called — <c>triggers</c>, <c>timers</c>.</param>
+    /// <param name="width">How wide the column runs; the band is padded to it and the name elided to fit.</param>
+    internal static string SetHeading(string set, int count, string noun, string plural, int width)
+    {
+        var tally = SharpMUTerm.Client.Settings.SetHeading.Count(count, noun, plural);
+        var room = Math.Max(4, width - tally.Length - 5);
+        var name = MarkupText.Escape(MarkupText.ElidePlain(set, room));
+        var left = $"[{ScreenPalette.Accent}] ▪[/] [bold {ScreenPalette.Value}]{name}[/]";
+        var right = $"[{ScreenPalette.Label}]{MarkupText.Escape(tally)}[/] ";
+        var gap = Math.Max(1, width - MarkupText.VisibleLength(left) - MarkupText.VisibleLength(right));
+        return $"[on {ScreenPalette.HeaderBg}]{left}{new string(' ', gap)}{right}[/]";
+    }
 
     /// <summary>
     /// Draws a pane's button rows, appended after its list. They come from the pane's own

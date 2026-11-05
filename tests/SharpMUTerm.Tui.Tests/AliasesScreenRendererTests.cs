@@ -60,8 +60,15 @@ public class AliasesScreenRendererTests
     public async Task Render_FlattensAcrossSetsAndShowsOwningSet()
     {
         var lines = AliasesScreenRenderer.Render(Scene(), 0);
-        await Assert.That(lines.Any(l => l.Contains("gr") && l.Contains("▪ Comms"))).IsTrue();
-        await Assert.That(lines.Any(l => l.Contains("buy") && l.Contains("▪ Trade"))).IsTrue();
+        await Assert.That(HeadingAbove(lines, l => l.Contains("[bold]gr[/]"))).Contains("Comms");
+        await Assert.That(HeadingAbove(lines, l => l.Contains("[bold]buy[/]"))).Contains("Trade");
+    }
+
+    /// <summary>The set heading a row sits under: the nearest heading band above it.</summary>
+    private static string HeadingAbove(List<string> lines, Func<string, bool> row)
+    {
+        var index = lines.FindIndex(l => row(l));
+        return lines.Take(index).Last(l => l.Contains(" ▪[/] [bold", StringComparison.Ordinal));
     }
 
     [Test]
