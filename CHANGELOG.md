@@ -7,6 +7,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Changed
+
+- The desktop window's Worlds & Characters page makes adding obvious. The list has an **Add world** button at its top
+  and a **+** on every world for a new character; Browse worlds and Import sit at its foot. The world or character on
+  show has its actions beside its name: Connect or Go to, Add character, Duplicate, Move up and down, and Delete. A
+  character's page links back to its world. A world's settings fold by group, with only Connection open at first and
+  each closed group saying how many settings it holds and how many are changed.
+
 ### Fixed
 
 - In the desktop window, opening the full-screen composer (F1) no longer leaves the panes' tab strips drawn on top of
