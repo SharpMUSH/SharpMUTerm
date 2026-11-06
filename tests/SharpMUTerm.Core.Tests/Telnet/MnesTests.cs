@@ -37,6 +37,7 @@ public class MnesTests
 
         await Assert.That(Contains(sent, [Iac, Will, NewEnviron])).IsTrue();
         await Assert.That(Contains(sent, Variable("CLIENT_NAME", "SharpMUTerm"))).IsTrue();
+        await Assert.That(Contains(sent, Variable("CLIENT_VERSION", GmcpHandshake.ClientVersion))).IsTrue();
         await Assert.That(Contains(sent, Variable("TERMINAL_TYPE", "XTERM"))).IsTrue();
         await Assert.That(Contains(sent, Variable("MTTS", "2845"))).IsTrue();
         await Assert.That(Contains(sent, Encoding.ASCII.GetBytes("IPADDRESS"))).IsFalse();

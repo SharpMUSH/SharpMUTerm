@@ -1,4 +1,5 @@
 using SharpMUTerm.Core.Protocols;
+using SharpMUTerm.Core.Telnet;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Core.Tests.Protocols;
@@ -508,7 +509,7 @@ public class MxpParserTests
         // Spec: "the response is sent as a secure-tagged line" (ESC[1z prefix), and the tag's exact
         // attribute order is MXP, STYLE, CLIENT, VERSION, with REGISTERED optional and here omitted.
         await Assert.That(replies).Count().IsEqualTo(1);
-        await Assert.That(replies[0]).IsEqualTo("\x1b[1z<VERSION MXP=1.0 STYLE=0 CLIENT=SharpMUTerm VERSION=1>");
+        await Assert.That(replies[0]).IsEqualTo($"\x1b[1z<VERSION MXP=1.0 STYLE=0 CLIENT=SharpMUTerm VERSION={GmcpHandshake.ClientVersion}>");
     }
 
     /// <summary>A VERSION request on an open line is a player's, not the server's, and is refused.</summary>
