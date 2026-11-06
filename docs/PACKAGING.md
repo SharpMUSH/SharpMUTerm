@@ -75,6 +75,28 @@ troubleshooting are in [`UPDATES.md`](UPDATES.md).
 
 Both use `packaging/icons/sharpmuterm.png` / `.ico`; the `.ico` is also each executable's Windows icon.
 
+### Three ways to run it
+
+An install starts in any of three modes, each with its own entry:
+
+| Mode | What it is | Windows (Start menu) | AppImage |
+|---|---|---|---|
+| GUI | The window with its own controls (the default) | **SharpMUTerm** | the launcher, or `SharpMUTerm.AppImage` |
+| Emulated | The window drawn all in cells, as the terminal draws it (`--emulated`) | **SharpMUTerm (Emulated)** | right-click ▸ *SharpMUTerm (Emulated)*, or `--emulated` |
+| Native | The terminal client in a terminal | **SharpMUTerm (Native)**, and a *SharpMUTerm* profile in Windows Terminal | right-click ▸ *SharpMUTerm (Native)*, or `--terminal` |
+
+On Windows, Velopack makes the first shortcut; the install hook (`LaunchShortcuts`) makes the other two beside it, both
+pointing into `current\`, and a Windows Terminal fragment (`%LocalAppData%\Microsoft\Windows Terminal\Fragments\SharpMUTerm`)
+running `sharpmuterm.exe`; uninstall removes all three. The Native shortcut opens in the default terminal (Windows
+Terminal on Windows 11). No Windows terminal draws inline pictures (ConPTY drops Kitty graphics), so GUI or Emulated is
+the better client there. The portable `.zip` runs no hooks and has none of these.
+
+On Linux the desktop entry carries the other two as desktop actions, which a desktop shows once the AppImage is
+integrated (AppImageLauncher, appimaged, Gear Lever). Started with no terminal, `AppRun --terminal` opens one and runs
+the AppImage again inside it: kitty, then Ghostty (both draw inline pictures), then `$TERMINAL`, WezTerm, foot,
+Konsole, GNOME Terminal, `x-terminal-emulator` and xterm; with none, it opens the emulated window. `--plain` and
+`--help` are never moved. `sharpmuterm --emulated` hands off to the window like `--window`.
+
 ### `telnet://` links
 
 The Linux package can make `telnet://` and `telnets://` links open the window. The program never registers itself;

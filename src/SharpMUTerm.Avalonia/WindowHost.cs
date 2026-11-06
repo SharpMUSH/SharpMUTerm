@@ -51,7 +51,28 @@ internal static class WindowHost
     /// Which chrome the window draws natively. The header, the rail and the tab strips by default (<see cref="HostChrome.Native"/>), which is the window a person runs;
     /// <see cref="HostChrome.None"/> for <c>--render-png</c> and <c>--cell-chrome</c>, where the cells carry it all.
     /// </param>
-    public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard, HostChrome? chrome = null) => new()
+    /// <param name="emulated">
+    /// <c>--emulated</c>: nothing native. Every surface the window would draw itself is left to the cells, and the
+    /// pointer presenter drops the native views it would otherwise lay over them (<see cref="WindowPointer.CellsOnly"/>).
+    /// </param>
+    public static ClientHost Create(AvaloniaConsoleDriver driver, Action<string>? clipboard, HostChrome? chrome = null, bool emulated = false)
+    {
+        var host = Build(driver, clipboard, emulated ? HostChrome.None : chrome);
+        driver.Pointer.CellsOnly = emulated;
+        return emulated
+            ? host with
+            {
+                NativeSettings = null,
+                NativePalette = null,
+                NativeComposer = null,
+                NativeModals = null,
+                FloatingPanels = null,
+                FilePicker = null,
+            }
+            : host;
+    }
+
+    private static ClientHost Build(AvaloniaConsoleDriver driver, Action<string>? clipboard, HostChrome? chrome) => new()
     {
         Name = "window",
         Driver = driver,

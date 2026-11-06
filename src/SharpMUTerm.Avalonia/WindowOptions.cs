@@ -26,8 +26,20 @@ internal sealed record WindowOptions(
     bool TitleBar = false,
     bool CellChrome = false,
     float LineHeight = WindowOptions.DefaultLineHeight,
-    int? Transparency = null)
+    int? Transparency = null,
+    bool Emulated = false)
 {
+    /// <summary>
+    /// <c>--emulated</c>: the terminal in a window. The cells draw everything, as in a terminal: no native header,
+    /// sidebar, tab strips, status row or field, and no native palette, settings, composer, modals, panels, toasts
+    /// or file picker (<see cref="WindowHost.Create"/>). What stays the window's is what a terminal emulator does
+    /// for itself: the pixels, the pointer's shape, the clipboard, full screen.
+    /// </summary>
+    public const string EmulatedFlag = WindowHandoff.EmulatedFlag;
+
+    /// <summary><c>--gui</c>: the window as it opens with no flag. Accepted so every mode has a name a shortcut can pass.</summary>
+    public const string GuiFlag = "--gui";
+
     /// <summary>
     /// The cell text size when <c>--font-size</c> names none: 10 pt, the 13 px game text of the window's mockups.
     /// </summary>
@@ -43,7 +55,7 @@ internal sealed record WindowOptions(
     /// Which chrome the window draws natively: the header and the sidebar, unless <c>--cell-chrome</c> asked for the
     /// terminal's cells or this is <c>--render-png</c>, which draws cells and nothing native.
     /// </summary>
-    public HostChrome Chrome => CellChrome || RenderPng is not null ? HostChrome.None : HostChrome.Desktop;
+    public HostChrome Chrome => Emulated || CellChrome || RenderPng is not null ? HostChrome.None : HostChrome.Desktop;
 
     /// <summary>
     /// What the client is told about this "terminal": Kitty graphics and truecolour. Both are true by
@@ -62,6 +74,7 @@ internal sealed record WindowOptions(
         int? transparency = null;
         var titleBar = false;
         var cellChrome = false;
+        var emulated = false;
         var (columns, rows) = (120, 36);
         for (var i = 0; i < args.Length; i++)
         {
@@ -86,6 +99,8 @@ internal sealed record WindowOptions(
                 case "--demo-config": demo = true; break;
                 case "--title-bar": titleBar = true; break;
                 case "--cell-chrome": cellChrome = true; break;
+                case EmulatedFlag: emulated = true; break;
+                case GuiFlag: emulated = false; break;
                 case WindowHandoff.Flag: break; // already in a window
                 case "--view": view = Next(); break;
                 case "--theme": theme = Next(); break;
@@ -108,7 +123,7 @@ internal sealed record WindowOptions(
             }
         }
 
-        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome, lineHeight, transparency);
+        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome, lineHeight, transparency, emulated);
     }
 
     /// <summary>Applies <c>--theme</c>, the way the snapshot does: name and inline theme both; and <c>--transparency</c>.</summary>
@@ -164,6 +179,9 @@ internal sealed record WindowOptions(
                 new("--size <WxH>", "The window's first size in cells, and the grid for --render-png (default 120x36)."),
                 new("--title-bar", "Keep the system title bar. Without it, drag the blank part of the header",
                     "to move the window, double-click it to maximise, and drag an edge to resize."),
+                new(EmulatedFlag, "The terminal in a window: everything drawn in cells, as the terminal draws it,",
+                    "with no native panels, menus, settings or pop-ups."),
+                new(GuiFlag, "The window with its native controls (the default)."),
                 new("--cell-chrome", "Draw the header and the connections sidebar in cells, as the terminal does,",
                     "instead of as the window's own controls."),
             ]),

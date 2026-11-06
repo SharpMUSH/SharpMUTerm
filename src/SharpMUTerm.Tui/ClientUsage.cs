@@ -92,6 +92,8 @@ internal static class ClientUsage
             [
                 new(WindowHandoff.Flag, "Open in a desktop window instead (sharpmuterm-window), with the other",
                     "arguments. The same client, configuration and keys; see its --help."),
+                new(WindowHandoff.EmulatedFlag, "Open in a desktop window drawn all in cells, as this terminal draws it",
+                    "(sharpmuterm-window --emulated)."),
             ]),
             ("Screen readers:",
             [

@@ -43,7 +43,7 @@ internal static class ClientLaunch
             return app.Run([]);
         }
 
-        var host = WindowHost.Create(driver, clipboard, options.Chrome) with { Updates = VelopackUpdates.Detect(window: true) };
+        var host = WindowHost.Create(driver, clipboard, options.Chrome, options.Emulated) with { Updates = VelopackUpdates.Detect(window: true) };
         return Tui.Program.RunLive(options.ClientArgs, config, notices, host, vault: _vault);
     }
 
@@ -53,7 +53,7 @@ internal static class ClientLaunch
         // The installed dictionary, read-only: the demo's ⌥W adds a word for the run and writes no user-words file.
         var app = new SharpMUTermApp(
             config,
-            WindowHost.Create(driver, clipboard, options.Chrome),
+            WindowHost.Create(driver, clipboard, options.Chrome, options.Emulated),
             spelling: () => SpellChecker.Find(SpellChecker.SearchFolders(null), SpellChecker.PreferredLanguage(), null));
 
         // The snapshot's scene builder is the demo: it pours the demo output in and opens the named view. What

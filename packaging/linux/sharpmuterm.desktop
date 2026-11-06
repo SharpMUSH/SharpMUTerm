@@ -13,3 +13,16 @@ StartupWMClass=sharpmuterm-window
 # (AppImageLauncher, appimaged, or `xdg-mime default sharpmuterm.desktop x-scheme-handler/telnet`); the program never
 # registers itself.
 MimeType=x-scheme-handler/telnet;x-scheme-handler/telnets;
+# The other two ways to run it, offered on the launcher's right-click menu once the desktop integrates the AppImage
+# (AppImageLauncher, appimaged, Gear Lever), which points every Exec at the AppImage and keeps the arguments. The plain
+# entry above is the window with its own controls.
+Actions=Emulated;Native;
+
+[Desktop Action Emulated]
+Name=SharpMUTerm (Emulated)
+Exec=sharpmuterm-window --emulated
+
+# AppRun opens a terminal for this when it was started without one (kitty or Ghostty first: they draw inline pictures).
+[Desktop Action Native]
+Name=SharpMUTerm (Native)
+Exec=sharpmuterm-window --terminal

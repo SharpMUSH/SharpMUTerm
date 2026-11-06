@@ -1,18 +1,20 @@
 #!/bin/sh
-# Starts the desktop window. `--terminal` as the first argument runs the terminal client instead, so one
-# AppImage carries both: `SharpMUTerm.AppImage --terminal host 4201`.
+# Starts the desktop window. `--emulated` is the window drawn all in cells, as the terminal draws it. `--terminal` as
+# the first argument runs the terminal client instead, so one AppImage carries all three:
+# `SharpMUTerm.AppImage --terminal host 4201`.
 HERE="$(dirname "$(readlink -f "$0")")"
 if [ "$1" != "--terminal" ]; then
     exec "$HERE/usr/bin/sharpmuterm-window" "$@"
 fi
 shift
 
-# `--terminal --window` is the window. Done here rather than by the terminal's own hand-off, because that
-# starts the window and exits, and the AppImage is unmounted when the program it started exits, taking the
-# window's executable with it.
+# `--terminal --window` is the window, and `--terminal --emulated` the emulated one. Done here rather than by the
+# terminal's own hand-off, because that starts the window and exits, and the AppImage is unmounted when the program it
+# started exits, taking the window's executable with it.
 window=0
 for arg in "$@"; do
     [ "$arg" = "--window" ] && window=1
+    [ "$arg" = "--emulated" ] && window=1
 done
 if [ "$window" = 1 ]; then
     for arg in "$@"; do
@@ -20,5 +22,28 @@ if [ "$window" = 1 ]; then
         [ "$arg" = "--window" ] || set -- "$@" "$arg"
     done
     exec "$HERE/usr/bin/sharpmuterm-window" "$@"
+fi
+
+# Started with no terminal (a launcher's "SharpMUTerm (Native)"): open one and run this AppImage again inside it.
+# kitty and Ghostty first, because they draw inline pictures; $TERMINAL ahead of the rest. With none, the emulated
+# window. --plain and --help read and write a pipe, so they are left alone; SHARPMUTERM_IN_TERMINAL stops a terminal
+# that gives us no tty from opening another.
+plain=0
+for arg in "$@"; do
+    case "$arg" in --plain|--help|-h|--snapshot) plain=1 ;; esac
+done
+if [ "$plain" = 0 ] && [ -z "$SHARPMUTERM_IN_TERMINAL" ] && ! [ -t 0 ] && ! [ -t 1 ]; then
+    self="${APPIMAGE:-$0}"
+    export SHARPMUTERM_IN_TERMINAL=1
+    if command -v kitty >/dev/null 2>&1; then exec kitty -- "$self" --terminal "$@"; fi
+    if command -v ghostty >/dev/null 2>&1; then exec ghostty -e "$self" --terminal "$@"; fi
+    if [ -n "$TERMINAL" ] && command -v "$TERMINAL" >/dev/null 2>&1; then exec "$TERMINAL" -e "$self" --terminal "$@"; fi
+    if command -v wezterm >/dev/null 2>&1; then exec wezterm start -- "$self" --terminal "$@"; fi
+    if command -v foot >/dev/null 2>&1; then exec foot "$self" --terminal "$@"; fi
+    if command -v konsole >/dev/null 2>&1; then exec konsole -e "$self" --terminal "$@"; fi
+    if command -v gnome-terminal >/dev/null 2>&1; then exec gnome-terminal -- "$self" --terminal "$@"; fi
+    if command -v x-terminal-emulator >/dev/null 2>&1; then exec x-terminal-emulator -e "$self" --terminal "$@"; fi
+    if command -v xterm >/dev/null 2>&1; then exec xterm -e "$self" --terminal "$@"; fi
+    exec "$HERE/usr/bin/sharpmuterm-window" --emulated "$@"
 fi
 exec "$HERE/usr/bin/sharpmuterm" "$@"

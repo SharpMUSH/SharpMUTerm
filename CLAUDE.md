@@ -2091,6 +2091,15 @@ program it started exits and the hand-off exits at once. The AppImage and the Wi
 (`VelopackHooks`) put `current\` on PATH, register the toast id and install the Nerd Font, which the Inno Setup installer
 used to do. Windows no longer registers `telnet://` links.
 
+**Three modes, three entries** (`LaunchShortcuts`, Avalonia; `packaging/linux/sharpmuterm.desktop`, `AppRun`; docs/PACKAGING.md):
+GUI (the window, default; `--gui`), Emulated (`--emulated`: `WindowHost.Create(…, emulated: true)` gives the client
+`HostChrome.None` and no native settings, palette, composer, modals, floating panels or file picker, and
+`WindowPointer.CellsOnly` drops panels, header buttons, pane chrome, toasts and hairline dividers; pointer shapes,
+tooltips, the right-click menu and overlay scrollbars stay the window's) and Native (the terminal). Windows' install hook
+adds *SharpMUTerm (Emulated)* and *(Native)* beside Velopack's own shortcut, plus a Windows Terminal fragment; the
+AppImage's desktop entry has them as actions, and `AppRun --terminal` with no tty opens a terminal (kitty, Ghostty first).
+Native is last on Windows: no Windows terminal draws Kitty graphics. `sharpmuterm --emulated` hands off like `--window`.
+
 **An installed copy updates itself, through Velopack** (`ClientHost.Updates` → `IUpdates`, null in tests, snapshots, the
 parity harness and any copy not laid out by an installer; `VelopackUpdates` in `Hosting/`; `SharpMUTermApp.Updates.cs`;
 ⌃P `app:check-updates`/`app:update`; F7 ▸ Updates). Decisions not to relitigate:
