@@ -1461,7 +1461,7 @@ fallbacks) for inline images/maps.
 - **Characters and worlds can carry a picture** (`CharacterDefinition.Avatar`, `WorldDefinition.Avatar`; Core `Avatars/`:
   `AvatarSource`, `AvatarPicture`; `TextRule.Image`; Tui `AvatarStore`, `AvatarKittyImages`, `DemoAvatars`; Avalonia
   `AvatarBitmaps`; the `avatars`/`avatars-collapsed` views). A source is an absolute path or `~/…` to a picture file, or
-  `https://` (no user info, bounded length, no control characters), read capped at 4 MiB with a 15 s timeout. The reader is
+  `https://` (no user info, bounded length, no control characters), read capped at 4 MiB with a 15 s timeout (a file at 32 MiB, `MaxFileBytes`: a phone photo is cut to a copy). The reader is
   `avatarFetch:` (the `save:` family: null by default, so tests and snapshots read nothing; `Program` passes
   `AvatarSource.LoadAsync`). Each source is read once a run, cut to a centred square, scaled to 64² and kept as one
   `AvatarPicture` instance, so a model carrying it compares equal frame to frame; a failure is remembered. `BuildSidebar`
@@ -1476,7 +1476,8 @@ fallbacks) for inline images/maps.
   `avatars/avatar-<guid>.png` beside `config.json` (`.new` then rename), and every setting naming it is re-pointed through
   `PersistConfiguration`. A failed read keeps the source. Copies nothing names are deleted at start only (`Prune`), so an
   undo in the run never points at a deleted file. The crop step is the settings window's `AvatarCropView` over the page
-  (drag, wheel, slider, arrows, ± zoom 1–4×; Enter uses, Esc cancels and does not close the window).
+  (drag, wheel, slider, arrows, ± zoom 1–4×; Enter uses, Esc cancels and does not close the window). Choose… always goes
+  through it: the picture is decoded at most `CropDecodeSide` (2048) a side, and one it cannot open is not set (the box says why).
 - **The window draws each pane's tab strip and the scrolled-back band natively, over rows the cells keep**
   (`HostChrome.Tabs`, `HostChrome.Native` = all three, the window's default; Client `TabStripModel`/`TabChipModel`,
   `ScrollBandModel`; Tui `Pointer/SharpMUTermApp.PaneChrome.cs`, `PaneChromeOverlay`; Avalonia `PaneChromeViews.cs`:
