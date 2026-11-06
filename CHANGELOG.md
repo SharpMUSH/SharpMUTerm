@@ -23,6 +23,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Servers now hear this client's name. Over TTYPE (MTTS) it introduced itself as `UNKNOWN`, because its own
+  terminal types were handed to the telnet library after the library had already settled its answers; it now
+  answers `SHARPMUTERM`, `XTERM`, `MTTS 2845`. An MXP `<VERSION>` reply names the real version instead of `1`, the same
+  version NEW-ENVIRON and GMCP `Core.Hello` already sent.
+
 - In the desktop window, Choose… for a character's or world's picture now always opens the crop step. A photo over
   4 MB used to skip it and was set as a path the sidebar could not read, so the picture never appeared. Picture files
   up to 32 MB are accepted (downloads stay at 4 MB), and a file that cannot be used says why instead of being set.

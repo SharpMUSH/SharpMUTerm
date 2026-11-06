@@ -70,6 +70,7 @@ public class MxpCapabilityTests
 
         await Assert.That(await WaitForTextAsync(transport, "<VERSION")).IsTrue();
         await Assert.That(Reply(transport, "<VERSION")).Contains("CLIENT=SharpMUTerm");
+        await Assert.That(Reply(transport, "<VERSION")).Contains($"VERSION={GmcpHandshake.ClientVersion}");
     }
 
     [Test]

@@ -49,8 +49,8 @@ public sealed class TelnetSessionOptions
     public int ReceiveBufferSize { get; init; } = 8192;
 
     /// <summary>
-    /// What this client calls itself over TTYPE/MTTS, most specific first, or null to leave
-    /// TelnetNegotiationCore's own list in place.
+    /// What this client calls itself over TTYPE/MTTS, most specific first, or null to let
+    /// TelnetNegotiationCore derive the list from the client identity (the name, then the terminal type).
     /// <para>
     /// The MTTS convention is that a server may ask for the terminal type repeatedly and gets a
     /// different answer each time: the client's <em>name</em> first, then a terminal type, then
@@ -433,7 +433,6 @@ public sealed class TelnetSession : ITelnetSession
         {
             _interpreter = await BuildInterpreterAsync().ConfigureAwait(false);
             SeedInterpreterEncoding(_interpreter);
-            ApplyTerminalTypes(_interpreter);
             WireCharsetCallback(_interpreter);
         }
         catch
@@ -463,13 +462,15 @@ public sealed class TelnetSession : ITelnetSession
             .UseLogger(_logger)
             .OnNegotiation(WriteToTransportAsync)
             .OnSubmit(OnSubmitAsync)
+            // Who this client is, for every protocol in the library that names it.
+            .WithClientIdentity(Identity())
             // Explicit defaults let NAWS observe negotiation completion, so an early pane report
             // is retained and sent on DO NAWS rather than silently discarded by the base plugin.
             .AddPlugin(new WindowSizeProtocol().OnNAWS(static (_, _) => ValueTask.CompletedTask))
             .AddPlugin<GMCPProtocol>().OnGMCPMessage(OnGmcpAsync).OnGMCPNegotiated(OnGmcpNegotiatedAsync)
             .AddPlugin<MSDPProtocol>().OnMSDPMessage(OnMsdpAsync)
             .AddPlugin<MSSPProtocol>().OnMSSP(OnMsspAsync).WithMSSPConfig(static () => new MSSPConfig())
-            .AddPlugin<TerminalTypeProtocol>()
+            .AddPlugin(TerminalTypePlugin())
             // Answers a server's DO NEW-ENVIRON; offers nothing on its own (the unsolicited-negotiation rule).
             .AddPlugin<NewEnvironProtocol>().WithClientEnvironmentVariables(TelnetSessionOptions.MnesIdentity(_options.TerminalTypes))
             .AddPlugin<CharsetProtocol>().WithCharsetOrder(_options.CharsetOrder)
@@ -543,32 +544,36 @@ public sealed class TelnetSession : ITelnetSession
     }
 
     /// <summary>
-    /// Tells the terminal-type plugin what to answer with, when this session has an opinion.
+    /// The terminal-type plugin, told what to answer with before the interpreter is built.
     /// <para>
-    /// Silent when the plugin is not registered (shouldn't happen with <see cref="AddDefaultMUDProtocols"/>):
-    /// being unable to state a name is a cosmetic loss for the client, so it is logged rather than
-    /// thrown — a session that refuses to connect because it could not introduce itself would be a
-    /// worse outcome than one that connects under the wrong name. A crawler, which has a duty to
-    /// identify itself, checks <see cref="TerminalTypesApplied"/> instead of assuming.
+    /// It has to be before: the plugin settles its answer list once, while the interpreter is built
+    /// (<c>ConfigureStateMachine</c>), and a list given to it afterwards is never read. This session used to
+    /// hand the list over after <c>BuildAsync</c>, so every server was told <c>UNKNOWN</c> and never heard
+    /// this client's name over TTYPE.
     /// </para>
     /// </summary>
-    private void ApplyTerminalTypes(TelnetInterpreter interpreter)
+    private TerminalTypeProtocol TerminalTypePlugin()
     {
-        if (_options.TerminalTypes is not { Count: > 0 } types)
+        var plugin = new TerminalTypeProtocol();
+        if (_options.TerminalTypes is { Count: > 0 } types)
         {
-            return;
+            plugin.WithTerminalTypes(types.ToArray());
+            TerminalTypesApplied = true;
         }
 
-        if (interpreter.PluginManager?.GetPlugin<TerminalTypeProtocol>() is not { } plugin)
-        {
-            _logger.LogWarning(
-                "Terminal types are not settable on this TelnetNegotiationCore build; the server will be told "
-                + "the library's name instead of ours.");
-            return;
-        }
+        return plugin;
+    }
 
-        plugin.WithTerminalTypes(types.ToArray());
-        TerminalTypesApplied = true;
+    /// <summary>
+    /// The library's record of who this client is: its name, its version and the terminal type it renders as.
+    /// The TTYPE list and the MNES variables are stated explicitly as well, so they say exactly what
+    /// <see cref="TelnetSessionOptions.TerminalTypes"/> says; this is what any other part of the library reads.
+    /// </summary>
+    private ClientIdentity Identity()
+    {
+        var types = _options.TerminalTypes is { Count: > 0 } configured ? configured : TelnetSessionOptions.SharpMUTermTerminalTypes;
+        var terminal = types.Count > 1 && !types[1].StartsWith("MTTS ", StringComparison.Ordinal) ? types[1] : null;
+        return new ClientIdentity(GmcpHandshake.ClientName) { Version = GmcpHandshake.ClientVersion, TerminalType = terminal };
     }
 
     /// <summary>

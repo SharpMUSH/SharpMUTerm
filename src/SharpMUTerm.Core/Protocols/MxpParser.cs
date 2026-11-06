@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using SharpMUTerm.Core.Telnet;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Core.Protocols;
@@ -150,7 +151,7 @@ public sealed partial class MxpParser : ILineParser
     public event EventHandler<string>? ClientReply;
 
     /// <summary>What this client answers a VERSION request with.</summary>
-    public const string ClientName = "SharpMUTerm";
+    public const string ClientName = GmcpHandshake.ClientName;
 
     /// <summary>The MXP revision a VERSION reply names (see <see cref="HandleVersionRequest"/>).</summary>
     public const string MxpRevision = "1.0";
@@ -158,8 +159,8 @@ public sealed partial class MxpParser : ILineParser
     /// <summary>The style-sheet version a VERSION reply names: none is ever in effect.</summary>
     public const string StyleVersion = "0";
 
-    /// <summary>The client version a VERSION reply names: a fixed placeholder.</summary>
-    public const string ClientVersion = "1";
+    /// <summary>The client version a VERSION reply names: this build's, as MinVer stamped it.</summary>
+    public static string ClientVersion => GmcpHandshake.ClientVersion;
 
     /// <summary>
     /// Spec: "the response is sent as a secure-tagged line: <c>&lt;ESC&gt;[1z</c> prefix with newline
