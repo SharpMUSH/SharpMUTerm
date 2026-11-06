@@ -2703,6 +2703,12 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `history-search-filter` opens ⌃R with its query typed (`HistorySession.InitialQuery`), and `search-landed` lands
     through the native search's own close and `GoToSearchHit`, so the cells it leaves match the terminal's.
   - Screenshots from a real window under Xvfb, driven with XTest (`ux-wave8/modals-*.png`).
+  - **⌃B's panel, Client messages and Game data are native modals too** (`PrefixPanelSession` over `HeaderPrefix`,
+    `MessageLogModel`, `GameDataModel`, Client; `PrefixView`, `MessageLogView`, `GameDataView`; `SharpMUTermApp.NativeForms.cs`).
+    The window opens ⌃B's panel in `ArmPrefix` at once (`TryOpenNativePrefixPanel`); the cells keep the 400 ms which-key wait.
+    Every key or click ends in `ConsumePrefixKey`; More/Less in `StepMessageLevel`. **No window key, command or button may
+    open a cell form while the host has a native one**: `WindowOpensNoCellFormTests` runs every ⌃P command (fresh and in four
+    demo scenes) and every app chord and F-key against a fake native host and fails on `CellSurfaceOpen`.
 - **The window has one design language: `NativeTokens`** (Avalonia). Planes (card, raised, selected, scrim), edge
   and rule, inks (text, dim, header, accent, warn, notice, accent and key inks), radii `RadiusS/M/L` 4/8/12 and
   the type ramp `Small/Body/Title/Heading` 11/13/14/18 (`Miniature` 9 only for a theme card's preview). Derived

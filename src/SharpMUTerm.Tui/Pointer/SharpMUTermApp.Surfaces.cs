@@ -27,6 +27,9 @@ internal sealed partial class SharpMUTermApp
     internal object? DrawnModel(string surface, string key = "") =>
         surface == SurfaceCatalog.Palette ? (_palette.IsOpen ? _palette.View : null)
         : surface == SurfaceCatalog.Prefix ? (_prefixPanel.IsOpen ? _prefixPanel.Drawn : null)
+        : surface == SurfaceCatalog.PrefixPanel ? (_prefixPanel.IsOpen ? _prefixPanel.Drawn : null)
+        : surface == SurfaceCatalog.Messages ? _messageLog.Model
+        : surface == SurfaceCatalog.GameData ? _gameData.Model
         : surface == SurfaceCatalog.Compose ? (_composer.IsOpen ? _composer.Model : null)
         : surface == SurfaceCatalog.Quit ? _quit.Model
         : surface == SurfaceCatalog.Search ? _search.Model

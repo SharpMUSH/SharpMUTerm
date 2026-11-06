@@ -54,6 +54,9 @@ internal sealed class ModalOverlay : Panel
             ImportReviewSession import => new ImportReviewView(import, Colours, Done),
             ScriptConsoleSession console => new ScriptConsoleView(console, Colours, Done),
             ScrollbackViewSession history => new ScrollbackView(history, Colours, Done),
+            PrefixPanelSession prefix => new PrefixView(prefix, Colours, Done),
+            MessageLogSession messages => new MessageLogView(messages, Colours, Done),
+            GameDataSession data => new GameDataView(data, Colours, Done),
             _ => throw new ArgumentException($"no native view for {session.GetType().Name}", nameof(session)),
         };
         AutomationProperties.SetName(this, _view.Title);

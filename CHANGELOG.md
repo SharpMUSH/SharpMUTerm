@@ -44,6 +44,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - Scrolling the mouse wheel over the bottom half of a pane that is split by scrollback no longer moves both halves
   at different speeds. Anywhere in the pane the wheel scrolls the history, three rows a notch, and the newest rows
   stay put at the bottom. The same in the terminal and the desktop window.
+- In the desktop window Ctrl+B's pane commands open the moment Ctrl+B is pressed, drawn as a window card rather than
+  the terminal's text box, and a key can be clicked as well as typed. Client messages and Game data (both from the
+  command palette) are window cards too. The terminal keeps its own forms, and Ctrl+B there still waits a moment
+  before showing the list.
 
 ### Added
 
