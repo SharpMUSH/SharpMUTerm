@@ -33,7 +33,7 @@ internal sealed class QuitView : DockPanel, IModalView
         _done = done;
         var model = session.Model;
 
-        var heading = ModalParts.Heading("Quit SharpMUTerm?", colours);
+        var heading = ModalParts.Heading(model.Heading, colours);
         heading.Margin = new Thickness(NativeTokens.Space24, NativeTokens.Space16, NativeTokens.Space24, NativeTokens.Space8);
         SetDock(heading, Dock.Top);
         Children.Add(heading);
@@ -54,13 +54,18 @@ internal sealed class QuitView : DockPanel, IModalView
             facts.Children.Add(line);
         }
 
+        if (model.RestartNote is { } note)
+        {
+            facts.Children.Add(new TextBlock { Text = note, Foreground = colours.Brush(colours.Dim), TextWrapping = TextWrapping.Wrap });
+        }
+
         SetDock(facts, Dock.Top);
         Children.Add(facts);
 
         _footer = ModalParts.Footer(string.Empty, colours);
         SetDock(_footer, Dock.Bottom);
 
-        _quit = ModalParts.Button("Quit", "Y", colours, () => Answer(true));
+        _quit = ModalParts.Button(model.Yes, "Y", colours, () => Answer(true));
         _stay = ModalParts.Button("Stay", "N", colours, () => Answer(false));
         _quit.MinWidth = _stay.MinWidth = 96;
         _quit.GotFocus += (_, _) => Select(QuitChoice.Quit);
@@ -121,7 +126,7 @@ internal sealed class QuitView : DockPanel, IModalView
             button.Classes.Set("accent", mine == choice);
         }
 
-        _footer.Text = $"←→ Tab pick · Enter {(choice == QuitChoice.Quit ? "quits" : "stays")} · Esc stays · Ctrl+Q again stays";
+        _footer.Text = $"←→ Tab pick · Enter {(choice == QuitChoice.Quit ? (_session.Model.RestartVersion is null ? "quits" : "restarts") : "stays")} · Esc stays · Ctrl+Q again stays";
     }
 
     private void OnKey(object? sender, KeyEventArgs e)

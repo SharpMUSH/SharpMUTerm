@@ -92,6 +92,9 @@ public sealed class AppConfiguration
     /// <summary>How a scene log (⌃P ▸ Start scene log) is written: HTML or plain text, poses or every line (F7 ▸ Scene log).</summary>
     public SceneLogSettings SceneLog { get; set; } = new();
 
+    /// <summary>Whether this copy looks for a newer release, and whether prereleases count (F7 ▸ Updates).</summary>
+    public UpdateSettings Updates { get; set; } = new();
+
     /// <summary>How the command line behaves — the F8 "Input &amp; spellcheck" screen's settings.</summary>
     public InputSettings Input { get; set; } = new();
 

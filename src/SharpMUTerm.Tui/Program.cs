@@ -140,6 +140,31 @@ internal static class Program
         Action<SharpMUTermApp>? ready = null,
         CredentialVault? vault = null)
     {
+        var exitCode = RunClient(args, config, loadNotices, host, ready, vault, out var update);
+
+        // An update the player restarted for is put in place here, after everything the client held is closed and
+        // saved (the logs, the link socket, config.json): the new version may start before this process has gone.
+        if (update is not null && host.Updates is { } updates)
+        {
+            if (updates.ApplyAfterExit(update) is { } said)
+            {
+                Console.Out.WriteLine(said);
+            }
+        }
+
+        return exitCode;
+    }
+
+    private static int RunClient(
+        string[] args,
+        AppConfiguration config,
+        IReadOnlyList<string> loadNotices,
+        ClientHost host,
+        Action<SharpMUTermApp>? ready,
+        CredentialVault? vault,
+        out UpdateOffer? update)
+    {
+        update = null;
         // What this launch connects: the command line's host if one was typed, else whatever is marked
         // `at start` on F5, else nothing at all. The precedence lives in Core (StartupConnections) so it
         // can be asserted without a terminal; the parsing stays here.
@@ -271,6 +296,7 @@ internal static class Program
             // A failed save must never change the exit code — the session is a convenience, not critical.
         }
 
+        update = liveApp.UpdateToApply;
         return exitCode;
     }
 

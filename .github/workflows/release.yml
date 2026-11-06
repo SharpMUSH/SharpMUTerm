@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      numeric: ${{ steps.version.outputs.numeric }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,8 +28,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       # A tag builds exactly its own version; a manual run builds what MinVer makes of the commit, e.g.
-      # 0.2.1-alpha.0.5. The installer's file version has to be four numbers, so a prerelease suffix is
-      # dropped there.
+      # 0.2.1-alpha.0.5.
       - name: Version
         id: version
         run: |
@@ -46,7 +44,6 @@ jobs:
             version=$("$RUNNER_TEMP/minver/minver" --tag-prefix v --minimum-major-minor 0.1 --verbosity warn)
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "numeric=${version%%-*}.0" >> "$GITHUB_OUTPUT"
 
   publish:
     name: publish (${{ matrix.rid }})
@@ -91,31 +88,44 @@ jobs:
           test -s smoke.png
           rm smoke.png
 
+      # vpk, Velopack's packager, makes the installer and the update feed the client reads (VelopackUpdates): each
+      # release carries releases.<channel>.json and a full .nupkg, and an installed copy asks the latest releases for
+      # them. Full packages only (no deltas), so a re-run builds the same files.
+      - name: Install vpk
+        shell: bash
+        run: dotnet tool install --global vpk --version 1.2.161
+
+      # The AppImage: our AppDir, with Velopack's updater and manifest added beside the executables. The .tar.gz stays
+      # for anyone who wants the two files alone; it does not update itself.
       - name: Package (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          sudo apt-get install -y squashfs-tools
           mkdir -p dist
           tar -czf dist/sharpmuterm-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} sharpmuterm sharpmuterm-window
-          packaging/linux/build-appimage.sh publish/${{ matrix.rid }} ${{ needs.version.outputs.version }} dist
+          packaging/linux/build-appdir.sh publish/${{ matrix.rid }} appdir/SharpMUTerm.AppDir
+          vpk pack -u SharpMUTerm -v ${{ needs.version.outputs.version }} -r ${{ matrix.rid }} \
+            -p appdir/SharpMUTerm.AppDir -e sharpmuterm-window \
+            --packTitle SharpMUTerm --packAuthors "Harry Cordewener" -i packaging/icons/sharpmuterm.png \
+            --delta None -o releases
+          cp releases/*.nupkg releases/*.AppImage releases/releases.linux.json dist/
 
+      # Setup.exe installs for this user under %LocalAppData%\SharpMUTerm; the portable .zip carries the same updater.
+      # What the old installer offered beside the files (toast id, PATH, the Nerd Font) is done by the window's own
+      # install hooks (VelopackHooks).
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           mkdir -p dist
-          (cd publish/${{ matrix.rid }} && 7z a ../../dist/sharpmuterm-${{ matrix.rid }}.zip sharpmuterm.exe sharpmuterm-window.exe)
-          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
-          if [ ! -f "$iscc" ]; then
-            choco install innosetup --no-progress -y
-          fi
-          # Git Bash rewrites an argument that starts with / into a Windows path; ISCC's /D options are not paths.
-          MSYS2_ARG_CONV_EXCL='*' "$iscc" \
-            "/DAppVersion=${{ needs.version.outputs.version }}" \
-            "/DNumericVersion=${{ needs.version.outputs.numeric }}" \
-            "/DPublishDir=$(cygpath -w "$PWD/publish/${{ matrix.rid }}")" \
-            "/DOutputDir=$(cygpath -w "$PWD/dist")" \
-            packaging/windows/sharpmuterm.iss
+          cp packaging/icons/sharpmuterm.png publish/${{ matrix.rid }}/
+          cp LICENSE publish/${{ matrix.rid }}/LICENSE.txt
+          vpk pack -u SharpMUTerm -v ${{ needs.version.outputs.version }} -r ${{ matrix.rid }} \
+            -p publish/${{ matrix.rid }} -e sharpmuterm-window.exe \
+            --packTitle SharpMUTerm --packAuthors "Harry Cordewener" -i packaging/icons/sharpmuterm.ico \
+            --aumid SharpMUTerm.Window --shortcuts StartMenuRoot --delta None -o releases
+          cp releases/*.nupkg releases/*-Setup.exe releases/*-Portable.zip releases/releases.win.json dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -150,7 +160,7 @@ jobs:
         run: |
           gh release upload "$TAG" artifacts/* --clobber
           count=$(gh release view "$TAG" --json assets -q '.assets | length')
-          test "$count" -ge 4 || { echo "::error::the release has $count packages, expected 4"; exit 1; }
+          test "$count" -ge 8 || { echo "::error::the release has $count packages, expected 8"; exit 1; }
 
       # Notes written on the Releases page are kept. Empty notes get the version's changelog section, else
       # [Unreleased]; with neither, they stay empty.

@@ -23,6 +23,8 @@
     <PackageReference Include="Avalonia.Themes.Simple" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="SharpConsoleUI" />
+    <!-- The installer's hooks (VelopackHooks); the updater itself is the Tui's, in Hosting/. -->
+    <PackageReference Include="Velopack" />
   </ItemGroup>
 
   <!--

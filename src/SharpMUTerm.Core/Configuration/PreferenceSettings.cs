@@ -274,3 +274,19 @@ public sealed class SoundSettings
     public Media.MediaMix Mix(bool muted) =>
         new(MasterVolume, SoundVolume, MusicVolume, Muted: muted || !Enabled);
 }
+
+/// <summary>
+/// Whether this copy looks for a newer release by itself, and which ones count (F7 ▸ Updates). Only an installed copy
+/// can update (the Windows installer's, the AppImage); in any other the settings are kept and do nothing.
+/// </summary>
+public sealed class UpdateSettings
+{
+    /// <summary>
+    /// Look for a newer release shortly after start and once a day after that, and say so when there is one. Nothing is
+    /// downloaded until asked. ⌃P ▸ Check for updates asks either way.
+    /// </summary>
+    public bool Check { get; set; } = true;
+
+    /// <summary>Count a release GitHub marks as a prerelease as newer.</summary>
+    public bool Prereleases { get; set; }
+}

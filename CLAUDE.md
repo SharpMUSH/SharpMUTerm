@@ -2083,11 +2083,31 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
 window exe with every other argument unchanged and exits with 0, or 1 and a message naming where it looked
 (beside the running program first, then `PATH`). There is no in-process switch: the terminal does not load
 Avalonia. The window ignores the flag. **Every release package ships both executables side by side**
-(`release.yml`; `packaging/`): the `.tar.gz`/`.zip`, the Linux AppImage and the Windows installer. The AppImage
+(`release.yml`; `packaging/`): the Linux `.tar.gz`, the AppImage, and the Windows installer and portable `.zip`. The AppImage
 starts the window; `--terminal` as its first argument runs the terminal instead, and `--terminal --window` is
 turned into the window by `AppRun` itself rather than by the hand-off, because an AppImage is unmounted when the
-program it started exits and the hand-off exits at once. The installer is Inno Setup, per-user by default, with
-an optional PATH entry so `sharpmuterm` runs from any terminal.
+program it started exits and the hand-off exits at once. The AppImage and the Windows packages are Velopack's (`vpk pack`;
+`docs/PACKAGING.md`); Setup installs per user under `%LocalAppData%\SharpMUTerm`, and the window's install hooks
+(`VelopackHooks`) put `current\` on PATH, register the toast id and install the Nerd Font, which the Inno Setup installer
+used to do. Windows no longer registers `telnet://` links.
+
+**An installed copy updates itself, through Velopack** (`ClientHost.Updates` → `IUpdates`, null in tests, snapshots, the
+parity harness and any copy not laid out by an installer; `VelopackUpdates` in `Hosting/`; `SharpMUTermApp.Updates.cs`;
+⌃P `app:check-updates`/`app:update`; F7 ▸ Updates). Decisions not to relitigate:
+  - **The feed is the GitHub release itself** (`GithubSource`, `releases.<channel>.json` + a full `.nupkg` attached by
+    `release.yml`), nothing hosted. `Detect` looks for the installed layout on disk (`sq.version` beside the program, plus
+    `..\Update.exe` on Windows or `$APPIMAGE` and `UpdateNix` on Linux) before asking Velopack anything, because its
+    locator writes a log file as it is made.
+  - **Nothing is downloaded until the player asks.** The timer (30 s after start, then daily, F7 ▸ `check for updates`)
+    only checks, and says a release once per version; the notice's action and ⌃P download; once downloaded, the same
+    action restarts.
+  - **An update is put in place only after the loop ends and the configuration is saved** (`Program.RunLive`,
+    `UpdateToApply`), never while the client runs. The restart goes through the quit prompt (asking *Restart to update…*)
+    when anything would be lost or the host has a `RestartNote`, else at once.
+  - **How each host comes back**: the window through Velopack's `WaitExitThenApplyUpdates(restart: true)`; the Linux
+    terminal runs `UpdateNix --silent apply` itself, waits, then `execv`s the new AppImage with `--terminal` and the same
+    arguments, so it returns in the same terminal; the Windows terminal applies after it exits and says to run it again
+    (a console cannot be handed on). A launch that followed a link restarts with no arguments.
 
 **F4 and the quick bar read the host's keys** (`MacroKeys.Verdict(HostKeys, …)`, threaded through `ScreenField`,
 `KeyClashes`, the keypad renderer and `QuickBarRenderer`). `HostKeys.ReportsChordsWhole` says whether the host
@@ -3705,8 +3725,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `OpenLink(string)`. Nobody listening, or a stale socket: the launch runs its own client and listens. Only the live
     entry point listens (`RunLive`); the window's `Program` and the terminal's hand off before building anything.
     Verified between two `--plain` clients and two windows under Xvfb on Linux; Windows' AF_UNIX path is untried.
-  - **Registration is the package's, never the program's** — the `.desktop` file's `MimeType=` and an unchecked Inno
-    Setup task (`HKA\Software\Classes\telnet[s]`). See `docs/PACKAGING.md`.
+  - **Registration is the package's, never the program's** — the `.desktop` file's `MimeType=`. Windows registers
+    nothing since Velopack replaced the Inno Setup installer and its unchecked task. See `docs/PACKAGING.md`.
 - **Passwords go to the OS credential store, with `secrets.json` behind it** (`ICredentialStore`, `CredentialVault`,
   Core; `CredentialStores` in `Hosting/`). The `passwordRef` GUID is unchanged and is the key in both places.
   - **One vault per run, from the live entry points only** (`Program.LiveVault`, `ClientLaunch`): a snapshot, a test
@@ -3735,8 +3755,8 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   them (`WorldSession.AttentionRequested`, raised after the line is shown, never for a prompt or a gagged line). The
   client asks only with F7 ▸ `alert when away` on, the host not in front, and one per 10 s. The window
   (`WindowAttention`, `DesktopAlert`, which decides through an `IDesktopNative` seam tests fake) knows its focus.
-  Windows: `FlashWindowEx`, plus a toast only where the installer registered the AUMID `SharpMUTerm.Window`
-  (`HKA\Software\Classes\AppUserModelId\…`; the shortcuts carry it too; the process adopts it in `Program`),
+  Windows: `FlashWindowEx`, plus a toast only where the install hook registered the AUMID `SharpMUTerm.Window`
+  (`HKCU\Software\Classes\AppUserModelId\…`, `VelopackHooks`; the shortcuts carry it too; the process adopts it in `Program`),
   shown by `powershell.exe -EncodedCommand` reaching WinRT (`net10.0` has no WinRT), the text base64 inside a fixed
   script; built, never run on Windows. macOS: `/usr/bin/osascript`, argv; never run. Linux: `notify-send`, and on an
   `XID` handle the urgency hint (`X11Urgency`: `WM_HINTS` UrgencyHint and `_NET_WM_STATE_DEMANDS_ATTENTION` via a

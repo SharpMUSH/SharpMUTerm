@@ -375,9 +375,10 @@ public class ScreenModelTests
         // theme, and the preview's caption and seven rows, which are drawn and never a stop.
         // ALERTS adds three rows and one stop: its heading, its spacer and `alert when away`.
         // SCENE LOG adds four rows and two stops: its heading, its spacer, the format and what is recorded.
-        await Assert.That(screen.Rows.Count).IsEqualTo(46);
+        // UPDATES adds four rows and two stops: its heading, its spacer, `check for updates` and `include prereleases`.
+        await Assert.That(screen.Rows.Count).IsEqualTo(50);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(20);
+        await Assert.That(model.Sizes[0]).IsEqualTo(22);
     }
 
     /// <summary>

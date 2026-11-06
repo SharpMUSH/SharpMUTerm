@@ -57,6 +57,9 @@ public sealed record NoticeModel(string Text, NoticeSeverity Severity, string? K
 
         /// <summary>Scene logs: recording, saved.</summary>
         public const string Scene = "Scene log";
+
+        /// <summary>A newer release: found, downloading, ready to restart into.</summary>
+        public const string Updates = "Updates";
     }
 
     /// <summary>

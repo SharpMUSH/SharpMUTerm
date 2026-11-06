@@ -43,7 +43,8 @@ internal static class ClientLaunch
             return app.Run([]);
         }
 
-        return Tui.Program.RunLive(options.ClientArgs, config, notices, WindowHost.Create(driver, clipboard, options.Chrome), vault: _vault);
+        var host = WindowHost.Create(driver, clipboard, options.Chrome) with { Updates = VelopackUpdates.Detect(window: true) };
+        return Tui.Program.RunLive(options.ClientArgs, config, notices, host, vault: _vault);
     }
 
     /// <summary>The demo client, with its <c>--view</c> scene laid out and not yet running.</summary>

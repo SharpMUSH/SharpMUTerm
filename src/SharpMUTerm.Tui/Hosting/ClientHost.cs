@@ -183,6 +183,13 @@ internal sealed record ClientHost
     public required IWindowTranslucency? Translucency { get; init; }
 
     /// <summary>
+    /// Finding, downloading and applying a newer release (<see cref="VelopackUpdates"/>): only an installed copy of
+    /// the terminal or the window has one. Null for a build run from a folder, the snapshot, the tests, <c>--plain</c>
+    /// and the window's demo, so none of them asks the network anything.
+    /// </summary>
+    public required IUpdates? Updates { get; init; }
+
+    /// <summary>
     /// Whether the terminal driver's input path can decode a focus report. Not on Windows: the Windows branch of
     /// <c>NetConsoleDriver</c> is a <c>Console.ReadKey</c> loop with its own reassembly, and an <c>ESC [ I</c>
     /// arriving there would become something else entirely.
@@ -231,6 +238,7 @@ internal sealed record ClientHost
         FilePicker = null,
         WindowModes = null,
         Translucency = null,
+        Updates = VelopackUpdates.Detect(window: false),
     };
 
     /// <summary>
@@ -265,6 +273,7 @@ internal sealed record ClientHost
         FilePicker = null,
         WindowModes = null,
         Translucency = null,
+        Updates = null,
     };
 
     /// <summary>
@@ -316,6 +325,7 @@ internal sealed record ClientHost
             Presence = null, // nor talks to Discord
             Title = null, // nor retitles the terminal running the suite
             Attention = null, // nor rings its bell
+            Updates = null, // nor asks GitHub for a release
         };
 }
 
