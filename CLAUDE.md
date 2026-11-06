@@ -1588,6 +1588,15 @@ fallbacks) for inline images/maps.
     holds keeps that arrangement; any other bind applies the resolved layout; ⌥M ⏎ always applies. Only the live
     entry point applies on its own (`autoLayout:`, the `save:`/`logRoot:` family), so no test or snapshot that
     binds a session has its panes rearranged.
+  - **A panel the player closes stays closed** (`CharacterDefinition.ClosedPanels`, the world's for a session with no
+    character; null by default and left out of the file, no migration). `CloseWindow` records a panel window or the map
+    (`NoteClosedPanel`) and saves the workspace with it; `LayoutAvailability` counts a closed panel as having no data, so
+    every apply (bind, re-fold, narrow crossing, suggestion) leaves it out. It comes back only when asked for: `OpenPanel`
+    and `ShowMap` reopen that one, and an explicit apply (⌥M ⏎, the Layouts menu, ⌥M w/c, a layout chosen on F5) reopens
+    them all (`ReopenClosedPanels`). Before this a closed composer returned on the next connect or launch the restore did
+    not cover. `LayoutRestartTests`, in both chromes.
+  - **`_screens` is set before the panes are built**: a resumed workspace builds its panels in the constructor, and the
+    docked composer paints from that scheme; set after them, a saved composer pane threw on the next launch.
   - **Re-folding is gated twice.** Inputs (game data, the map recorder, a new spawn window) arm one 500 ms timer
     (`LayoutRefoldDelay`), and the re-fold rebuilds only if `LayoutRealiser.FoldShape` changed — a burst of GMCP
     that draws the same panels reflows nothing (`PaneAreaRebuilds` is the pin). It stands down for good once the

@@ -26,6 +26,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - In the desktop window, Choose… for a character's or world's picture now always opens the crop step. A photo over
   4 MB used to skip it and was set as a path the sidebar could not read, so the picture never appeared. Picture files
   up to 32 MB are accepted (downloads stay at 4 MB), and a file that cannot be used says why instead of being set.
+- A panel you close stays closed. Closing the docked composer (or who is here, vitals, the quick bar, the map) used to
+  last only until the layout was applied again, so it came back on the next connect or launch. It now stays closed
+  for that character until you open it again from the command palette, or apply a layout from Alt+M or the Layouts
+  menu. The same in the terminal and the desktop window.
+- The client no longer fails to start when it last quit with the docked composer open.
 - In the desktop window on a scaled display, right-click menus are as large as their entries: the keys beside them
   (Ctrl+B |, Shift+F11) are no longer cut off at the menu's right edge, and the last entry is no longer hidden under a
   scroll. This covers the output's, the sidebar's, the map's and the composer's menus.
