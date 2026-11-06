@@ -70,7 +70,8 @@ How each program comes back from an update: the window is restarted by Velopack'
 terminal on Linux applies the new AppImage and then replaces its own process with it (`execv`), so it comes back in
 the same terminal. The terminal on Windows cannot hand its console on, so it applies the update as it exits and says
 to run it again. Only a copy laid out by an installer updates; the `.tar.gz`, a build from the repository, and a
-copy from the old installer have no updater, and the client offers nothing.
+copy from the old installer have no updater, and the client offers nothing. What a player sees, the settings and
+troubleshooting are in [`UPDATES.md`](UPDATES.md).
 
 Both use `packaging/icons/sharpmuterm.png` / `.ico`; the `.ico` is also each executable's Windows icon.
 

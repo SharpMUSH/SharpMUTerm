@@ -14,7 +14,7 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   *Update* on the notice or in the command palette (Ctrl+P ▸ *Check for updates*, *Update*) to download it, then *Restart*
   to start the new version: the desktop window and the terminal on Linux come back by themselves, and the terminal on
   Windows asks you to run it again. Nothing is downloaded until you ask. F7 ▸ Updates turns the daily check off, or
-  includes prereleases.
+  includes prereleases. [docs/UPDATES.md](docs/UPDATES.md) explains it all.
 
 ### Changed
 

@@ -35,7 +35,8 @@ minor bump and is named in the changelog. A prerelease (`0.2.0-beta.1`) is publi
    and attaches the `.tar.gz`, the AppImage, the Windows installer and portable `.zip`, and the update feed
    (`releases.linux.json`, `releases.win.json` and a `.nupkg` per platform) to the release. Re-running the workflow
    replaces them. Installed copies find the release through that feed, so a release without it is never offered as an
-   update. A copy on the prerelease setting (F7 ▸ *include prereleases*) is offered prereleases too.
+   update. A copy on the prerelease setting (F7 ▸ *include prereleases*) is offered prereleases too. See
+   [`UPDATES.md`](UPDATES.md).
 
 A tag is never moved or reused. If a release goes wrong, release the next patch version. `v0.1.0` to `v0.1.3`
 shipped no packages, and the last three were immutable releases, which can never take files. The first release

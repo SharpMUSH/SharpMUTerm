@@ -33,7 +33,8 @@ holds both programs, and none needs a .NET runtime.
 
 The installed Windows copy, the portable one and the AppImage update themselves: they check GitHub for a newer
 release half a minute after start and once a day (F7 ▸ *check for updates*), say so when there is one, and download it
-and restart into it when you choose *Update*. Ctrl+P ▸ *Check for updates* asks at any time.
+and restart into it when you choose *Update*. Ctrl+P ▸ *Check for updates* asks at any time. See
+[docs/UPDATES.md](docs/UPDATES.md).
 
 ```bash
 sharpmuterm                      # open with no connection; the welcome helps you add a world
