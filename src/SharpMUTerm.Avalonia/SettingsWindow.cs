@@ -1133,24 +1133,36 @@ internal sealed partial class SettingsWindow : Window
                     ToolTip.SetTip(choose, "Pick an image file");
                     choose.Click += async (_, _) =>
                     {
-                        if (await PickPictureAsync() is not { } path)
+                        var (path, pickProblem) = await PickPictureAsync();
+                        if (path is null)
                         {
+                            if (pickProblem is not null)
+                            {
+                                ToolTip.SetTip(box, pickProblem);
+                                ToolTip.SetIsOpen(box, true);
+                            }
+
                             return;
                         }
 
-                        // A picture this window can draw goes through the crop step first; one it cannot (too large,
-                        // not a picture) is set as typed, and the box's rule says why.
-                        if (OpenPicture(path) is { } bitmap)
+                        // Every picture goes through the crop step. One this window cannot open is not set: the box
+                        // keeps its value and says why, rather than taking a path the sidebar could never draw.
+                        var (bitmap, problem) = OpenPicture(path);
+                        if (bitmap is null)
                         {
-                            using (bitmap)
-                            {
-                                if (await CropAsync(bitmap) is not { } crop)
-                                {
-                                    return;
-                                }
+                            ToolTip.SetTip(box, problem);
+                            ToolTip.SetIsOpen(box, true);
+                            return;
+                        }
 
-                                _form.PictureCropped?.Invoke(path, crop);
+                        using (bitmap)
+                        {
+                            if (await CropAsync(bitmap) is not { } crop)
+                            {
+                                return;
                             }
+
+                            _form.PictureCropped?.Invoke(path, crop);
                         }
 
                         box.Text = path;
@@ -1202,33 +1214,57 @@ internal sealed partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>The file at <paramref name="path"/> as a bitmap, or null when it is refused, too large or not a picture.</summary>
-    private static Bitmap? OpenPicture(string path)
+    /// <summary>The longest side a picture is decoded at for the crop step; the crop is in shares, so this loses nothing.</summary>
+    internal const int CropDecodeSide = 2048;
+
+    /// <summary>
+    /// The file at <paramref name="path"/> as a bitmap no larger than <see cref="CropDecodeSide"/> a side, or null and why:
+    /// refused by the field's rule, too large, or not a picture this window can decode.
+    /// </summary>
+    internal static (Bitmap? Bitmap, string? Problem) OpenPicture(string path)
     {
+        if (SharpMUTerm.Core.Avatars.AvatarSource.Problem(path) is { } problem)
+        {
+            return (null, problem);
+        }
+
         try
         {
-            var info = new FileInfo(path);
-            if (SharpMUTerm.Core.Avatars.AvatarSource.Problem(path) is not null || !info.Exists || info.Length > SharpMUTerm.Core.Avatars.AvatarSource.MaxBytes)
+            int width, height;
+            using (var codec = SkiaSharp.SKCodec.Create(path))
             {
-                return null;
+                if (codec is null || codec.Info.Width <= 0 || codec.Info.Height <= 0)
+                {
+                    return (null, "that file is not a picture this client can read");
+                }
+
+                (width, height) = (codec.Info.Width, codec.Info.Height);
             }
 
-            using var stream = info.OpenRead();
-            return new Bitmap(stream);
+            using var stream = File.OpenRead(path);
+            var bitmap = Math.Max(width, height) <= CropDecodeSide
+                ? new Bitmap(stream)
+                : width >= height
+                    ? Bitmap.DecodeToWidth(stream, CropDecodeSide, BitmapInterpolationMode.HighQuality)
+                    : Bitmap.DecodeToHeight(stream, CropDecodeSide, BitmapInterpolationMode.HighQuality);
+            return (bitmap, null);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // The decoder's own failure for bytes that are not a picture is not one documented type.
-            return null;
+            return (null, "that file is not a picture this client can read");
         }
     }
 
-    /// <summary>An image file picked with the window's own open dialog, or null.</summary>
-    private async Task<string?> PickPictureAsync()
+    /// <summary>
+    /// An image file picked with the window's own open dialog; no path and no problem when the dialog was cancelled, and
+    /// a problem when there is no dialog or the file picked has no path on this machine (a portal or a cloud file).
+    /// </summary>
+    private async Task<(string? Path, string? Problem)> PickPictureAsync()
     {
         if (StorageProvider is not { CanOpen: true } storage)
         {
-            return null;
+            return (null, "this window has no file picker here: type the picture's full path instead");
         }
 
         try
@@ -1245,11 +1281,18 @@ internal sealed partial class SettingsWindow : Window
                     },
                 ],
             });
-            return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+            if (files.Count == 0)
+            {
+                return (null, null);
+            }
+
+            return files[0].TryGetLocalPath() is { } local
+                ? (local, null)
+                : (null, "that file has no path on this computer: save a copy locally and choose that");
         }
         catch (InvalidOperationException)
         {
-            return null;
+            return (null, "the file picker could not open: type the picture's full path instead");
         }
     }
 

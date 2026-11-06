@@ -19,6 +19,12 @@ public static class AvatarSource
     /// <summary>The most bytes a picture may be, read or downloaded.</summary>
     public const int MaxBytes = 4 * 1024 * 1024;
 
+    /// <summary>
+    /// The most a picture <i>file</i> may be. Larger than <see cref="MaxBytes"/>, because a photo straight off a phone is
+    /// often 5–15 MB and is read once, to be cut down to a 128² copy; a download stays at <see cref="MaxBytes"/>.
+    /// </summary>
+    public const int MaxFileBytes = 32 * 1024 * 1024;
+
     /// <summary>How long a download may take.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -67,7 +73,19 @@ public static class AvatarSource
             return "the file needs to be a picture: " + string.Join(", ", Extensions);
         }
 
-        return File.Exists(path) ? null : "there is no file there";
+        if (!File.Exists(path))
+        {
+            return "there is no file there";
+        }
+
+        try
+        {
+            return new FileInfo(path).Length > MaxFileBytes ? $"a picture file is at most {MaxFileBytes / (1024 * 1024)} MB" : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return "that file cannot be read";
+        }
     }
 
     /// <summary>Whether <paramref name="source"/> names a picture on the web rather than a file.</summary>
@@ -144,7 +162,7 @@ public static class AvatarSource
 
             var path = ExpandPath(source)!;
             var info = new FileInfo(path);
-            if (!info.Exists || info.Length > MaxBytes)
+            if (!info.Exists || info.Length > MaxFileBytes)
             {
                 return null;
             }

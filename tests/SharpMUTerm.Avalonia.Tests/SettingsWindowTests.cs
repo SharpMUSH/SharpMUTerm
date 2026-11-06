@@ -563,6 +563,60 @@ public class SettingsWindowTests
         await Assert.That(gone).IsTrue();
     }
 
+    /// <summary>
+    /// Choose… opens the crop step for any picture: a large one is decoded at <see cref="SettingsWindow.CropDecodeSide"/>
+    /// a side (the crop is in shares), and a file that is not a picture is refused with a reason rather than set.
+    /// </summary>
+    [Test]
+    public async Task ALargePictureOpensForCroppingAndAFileThatIsNotOneSaysWhy()
+    {
+        var folder = Directory.CreateTempSubdirectory("avatar-open-");
+        try
+        {
+            var large = Path.Combine(folder.FullName, "large.png");
+            using (var bitmap = new SkiaSharp.SKBitmap(3000, 1000))
+            using (var data = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100))
+            using (var file = File.Create(large))
+            {
+                data.SaveTo(file);
+            }
+
+            var tall = Path.Combine(folder.FullName, "tall.png");
+            using (var bitmap = new SkiaSharp.SKBitmap(500, 4000))
+            using (var data = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100))
+            using (var file = File.Create(tall))
+            {
+                data.SaveTo(file);
+            }
+
+            var junk = Path.Combine(folder.FullName, "junk.png");
+            await File.WriteAllTextAsync(junk, "not a picture");
+
+            var (wideProblem, wideWidth, highHeight, none, problem) = await TerminalViewTests.Session.Dispatch(() =>
+            {
+                var (wide, wideProblem) = SettingsWindow.OpenPicture(large);
+                var (high, _) = SettingsWindow.OpenPicture(tall);
+                var (none, problem) = SettingsWindow.OpenPicture(junk);
+                using (wide)
+                using (high)
+                {
+                    return (wideProblem, wide?.PixelSize.Width, high?.PixelSize.Height, none, problem);
+                }
+            }, CancellationToken.None);
+
+            await Assert.That(wideProblem).IsNull();
+            await Assert.That(wideWidth).IsEqualTo(SettingsWindow.CropDecodeSide);
+            await Assert.That(highHeight).IsEqualTo(SettingsWindow.CropDecodeSide);
+
+            await Assert.That(none).IsNull();
+            await Assert.That(problem).Contains("not a picture");
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
+    }
+
     /// <summary>The window's worlds page has no door to the cell F5: everything F5 did is on the page.</summary>
     [Test]
     public async Task TheWorldsPageSendsNobodyToTheCellScreen()
