@@ -280,6 +280,9 @@ public class SurfaceParityTests
             (SurfaceCatalog.ScriptConsole, "script-console"),
             (SurfaceCatalog.Search, "search-older"),
             (SurfaceCatalog.HistoryView, "search-history"),
+            (SurfaceCatalog.PrefixPanel, "prefix-panel"),
+            (SurfaceCatalog.Messages, "messages"),
+            (SurfaceCatalog.GameData, "gamedata"),
         })
         {
             using var nativeDriver = new AvaloniaConsoleDriver(140, 36);
@@ -295,7 +298,8 @@ public class SurfaceParityTests
             await Assert.That(session).IsNotNull().Because($"{view}: opened in the window's controls");
             var drawn = cells.DrawnModel(surface);
             await Assert.That(drawn).IsNotNull().Because($"{view}: the cell modal is open in the cell client");
-            await Assert.That(drawn).IsEqualTo(ModelOf(session!)).Because(view);
+            // Two clients say their messages a few milliseconds apart, so the log is compared by what a row says.
+            await Assert.That(Comparable(drawn!)).IsEqualTo(Comparable(ModelOf(session!))).Because(view);
             covered.Add(surface);
         }
 
@@ -1136,6 +1140,19 @@ public class SurfaceParityTests
             app => app.SimulateHelpKey(new ConsoleKeyInfo('\0', ConsoleKey.PageDown, false, false, false)));
         probed.Add(SurfaceCatalog.HistoryView);
 
+        // The ⌃B panel: a key clicked in the window and the same key pressed into the cell panel both end in
+        // ConsumePrefixKey — here | splits the pane.
+        await SameModal("prefix: split", "prefix-panel",
+            (app, m) => ((PrefixPanelSession)m.Open(SurfaceCatalog.PrefixPanel)!).Press('|'),
+            app => app.SimulatePrefixPanelKey(new ConsoleKeyInfo('|', ConsoleKey.NoName, false, false, false)));
+        probed.Add(SurfaceCatalog.PrefixPanel);
+
+        // The client messages: More in the window and + in the cells both capture one level more.
+        await SameModal("messages: keep more", "messages",
+            (app, m) => ((MessageLogSession)m.Open(SurfaceCatalog.Messages)!).StepLevel(-1),
+            app => app.SimulateMessageLogKey(new ConsoleKeyInfo('+', ConsoleKey.OemPlus, false, false, false)));
+        probed.Add(SurfaceCatalog.Messages);
+
         var acting = SurfaceCatalog.All.Where(s => s.HasNative && s.Actions.Count > 0).Select(s => s.Id);
         // The tab overflow chip: an entry chosen from the window's menu and the same digit in the cell list bring the same
         // hidden tab forward.
@@ -1513,6 +1530,10 @@ public class SurfaceParityTests
         app.SimulateHelpKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
     }
 
+    private static object Comparable(object model) => model is MessageLogModel log
+        ? log.Level + "|" + string.Join("|", log.Entries.Select(e => e.Severity + ":" + e.Text))
+        : model;
+
     private static object ModelOf(ModalSession session) => session switch
     {
         QuitSession quit => quit.Model,
@@ -1526,6 +1547,9 @@ public class SurfaceParityTests
         ImportReviewSession import => import.Model,
         ScriptConsoleSession console => console.Model,
         ScrollbackViewSession history => history.Model,
+        PrefixPanelSession prefix => prefix.Model,
+        MessageLogSession messages => messages.Model,
+        GameDataSession data => data.Model,
         _ => throw new ArgumentException(session.GetType().Name),
     };
 
@@ -1562,6 +1586,7 @@ public class SurfaceParityTests
         "floating=" + string.Join(",", app.FloatingPublished.Select(f => f.Model.WindowId)),
         "split=" + string.Join(",", app.PaneWindows().Values.Where(app.IsScrollSplit)),
         "notice=" + app.LastNotice,
+        "level=" + app.MessageLogLevel,
         "recent=" + string.Join(",", app.RecentCommandIds));
 
     /// <summary>The index of the first console line that names a script line (the demo's corvid.lua error).</summary>

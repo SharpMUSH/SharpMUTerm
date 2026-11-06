@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Diagnostics;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -56,7 +57,8 @@ internal sealed class MessageLogOverlay
             return;
         }
 
-        var entries = _diagnostics.Messages.Entries;
+        Model = ModelOf(_diagnostics);
+        var entries = Model.Entries;
         var desktop = _system.DesktopDimensions;
         var width = Math.Clamp(ClientMessageRenderer.MaxWidth(entries) + 3, 44, Math.Max(44, desktop.Width - 6));
         var height = Math.Clamp(entries.Count + 4, 8, Math.Max(8, desktop.Height - 2));
@@ -66,7 +68,7 @@ internal sealed class MessageLogOverlay
         // Centered() after WithSize(): the builder reads the bounds set so far and falls back to 80x25,
         // so centring first places the window as if it were that size (see CommandPalette).
         _window = new WindowBuilder(_system)
-            .WithTitle("Client messages")
+            .WithTitle(MessageLogModel.Title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
@@ -87,26 +89,47 @@ internal sealed class MessageLogOverlay
     /// <summary>The header line plus one row per message, at the viewer's content width.</summary>
     private List<string> Lines(int width)
     {
+        var model = Model ?? ModelOf(_diagnostics);
         var lines = new List<string>
         {
-            $"[{ScreenPalette.Label}]capturing[/] [{ScreenPalette.Accent}]{Level(_diagnostics.MinimumLevel)}[/]" +
-            $" [{ScreenPalette.Label}]and louder · +/- level · Esc close[/]",
+            $"[{ScreenPalette.Label}]capturing[/] [{ScreenPalette.Accent}]{model.Level}[/]" +
+            $" [{ScreenPalette.Label}]and louder · {MessageLogModel.Keys}[/]",
             string.Empty,
         };
-        lines.AddRange(ClientMessageRenderer.Render(_diagnostics.Messages.Entries, width));
+        lines.AddRange(ClientMessageRenderer.Render(model, width));
         return lines;
+    }
+
+    /// <summary>The model the open overlay was last drawn from, for the surface parity test; null while closed.</summary>
+    internal MessageLogModel? Model { get; private set; }
+
+    /// <summary>The client's messages as both hosts draw them: what is kept, and the quietest level kept.</summary>
+    internal static MessageLogModel ModelOf(ClientDiagnostics diagnostics) =>
+        new(Level(diagnostics.MinimumLevel), [.. diagnostics.Messages.Entries]);
+
+    /// <summary>
+    /// Captures one level louder (−1) or quieter (+1), clamped to the levels offered: the cells' <c>+</c>/<c>-</c> and the
+    /// window's buttons both end here.
+    /// </summary>
+    internal static void Step(ClientDiagnostics diagnostics, int delta)
+    {
+        var index = Array.IndexOf(Levels, diagnostics.MinimumLevel);
+        index = index < 0 ? Array.IndexOf(Levels, LogLevel.Information) : index;
+        diagnostics.MinimumLevel = Levels[Math.Clamp(index + delta, 0, Levels.Length - 1)];
     }
 
     /// <summary>Steps the capture level and repaints, so the effect of the key is visible where it was pressed.</summary>
     internal void StepLevel(int delta)
     {
-        var index = Array.IndexOf(Levels, _diagnostics.MinimumLevel);
-        index = index < 0 ? Array.IndexOf(Levels, LogLevel.Information) : index;
-        _diagnostics.MinimumLevel = Levels[Math.Clamp(index + delta, 0, Levels.Length - 1)];
+        Step(_diagnostics, delta);
+        Model = ModelOf(_diagnostics);
         _content?.SetContent(Scheme.Lines(Lines(_window is { } window ? Math.Max(20, window.Width - 4) : 80), ScreenPalette.MenuBg));
     }
 
     private static string Level(LogLevel level) => level.ToString().ToLowerInvariant();
+
+    /// <summary>Feeds one key to the open log, for the tests.</summary>
+    internal void SimulateKey(ConsoleKeyInfo key) => OnKey(this, new KeyPressedEventArgs(key, false));
 
     private void OnKey(object? sender, KeyPressedEventArgs e)
     {
@@ -142,5 +165,6 @@ internal sealed class MessageLogOverlay
     {
         _window = null;
         _content = null;
+        Model = null;
     }
 }

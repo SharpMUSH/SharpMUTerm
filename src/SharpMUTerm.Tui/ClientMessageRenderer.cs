@@ -18,7 +18,11 @@ internal static class ClientMessageRenderer
     private const int GutterWidth = 8 + 2 + 5 + 2;
 
     /// <summary>What the viewer says when nothing has been recorded yet.</summary>
-    internal const string Empty = "no client messages yet";
+    internal const string Empty = SharpMUTerm.Client.Modals.MessageLogModel.Empty;
+
+    /// <summary>The rows of <paramref name="model"/>: the cells' drawing of the surface both hosts draw.</summary>
+    public static IReadOnlyList<string> Render(SharpMUTerm.Client.Modals.MessageLogModel model, int width = 80) =>
+        Render(model.Entries, width);
 
     public static IReadOnlyList<string> Render(IReadOnlyList<ClientMessage> entries, int width = 80)
     {
@@ -34,8 +38,8 @@ internal static class ClientMessageRenderer
 
         foreach (var entry in entries)
         {
-            var stamp = entry.At.ToLocalTime().ToString("HH:mm:ss");
-            var label = Label(entry.Severity);
+            var stamp = SharpMUTerm.Client.Modals.MessageLogModel.Stamp(entry);
+            var label = SharpMUTerm.Client.Modals.MessageLogModel.Label(entry.Severity);
             lines.Add(
                 $"[{ScreenPalette.Label}]{stamp}[/]  " +
                 $"[{Colour(entry.Severity)}]{label.PadRight(5)}[/]  " +
@@ -57,13 +61,6 @@ internal static class ClientMessageRenderer
 
         return widest;
     }
-
-    private static string Label(MessageSeverity severity) => severity switch
-    {
-        MessageSeverity.Error => "error",
-        MessageSeverity.Warning => "warn",
-        _ => "info",
-    };
 
     private static string Colour(MessageSeverity severity) => severity switch
     {

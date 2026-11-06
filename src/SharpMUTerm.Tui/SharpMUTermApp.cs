@@ -2139,7 +2139,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             _prefixArmed = true;
             RefreshHeader();
-            _prefixPanel.Open();
+            ShowPrefixPanel();
         }
 
         // The client message viewer, over a demo scene that has said a few things. It is the only way to
@@ -2154,7 +2154,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 MessageSeverity.Info,
                 action: new NoticeAction("world:reconnect", "Reconnect"));
             Notice("could not connect to aetherfall.mux:4201 — no route to host", MessageSeverity.Error);
-            _messageLog.Toggle();
+            ToggleMessages();
         }
 
         // Three notices over the demo workspace and no modal: in a terminal the status row carries the last of them,
@@ -6202,6 +6202,28 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// surface by. A refusal that named "a surface" would leave somebody looking for which one; every
     /// other refusal in this client names the thing it is talking about, and this is one string.
     /// </summary>
+    /// <summary>
+    /// Which cell-drawn form is open, or null: what a host that draws its own surfaces should never be left looking at.
+    /// The audit (<c>WindowOpensNoCellFormTests</c>) runs every command and key with every native host attached and fails
+    /// on any answer here.
+    /// </summary>
+    internal string? CellSurfaceOpen =>
+        _palette.IsOpen ? "palette"
+        : _settings.IsOpen ? "settings:" + _settings.OpenKey
+        : _quit.IsOpen ? "quit"
+        : _messageLog.IsOpen ? "messages"
+        : _historySearch.IsOpen ? "history"
+        : _prefixPanel.IsOpen ? "prefix"
+        : _composer.IsOpen ? "composer"
+        : _search.IsOpen ? "search"
+        : _gameData.IsOpen ? "game-data"
+        : _packageView.IsOpen ? "packages:" + _packageView.Mode
+        : _sendMenu.IsOpen ? "list:" + _sendMenu.Mode
+        : _layoutsView.IsOpen ? "layouts"
+        : _welcomeView.IsOpen ? "welcome"
+        : _helpView.IsOpen ? "list:" + _helpView.Mode
+        : null;
+
     private string OpenOverlayName() =>
         _settings.IsOpen ? "the settings screen"
         : PaletteIsOpen ? "the command surface"
@@ -9194,7 +9216,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     internal AppConfiguration Configuration => _config;
 
     /// <summary>Whether the ⌃P client message viewer is up.</summary>
-    internal bool MessageLogIsOpen => _messageLog.IsOpen;
+    internal bool MessageLogIsOpen => _messageLog.IsOpen || NativeModalOf(SurfaceCatalog.Messages) is not null;
 
     /// <summary>
     /// Does the work for a built-in command id: the <c>run</c> every contribution
@@ -9406,7 +9428,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "term:messages":
                 if (!ComposerIsInTheWay("the client messages"))
                 {
-                    _messageLog.Toggle();
+                    ToggleMessages();
                 }
 
                 return true;
@@ -10067,22 +10089,36 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
+        if (NativeModalOf(SurfaceCatalog.GameData) is { } open)
+        {
+            CloseNativeModal(open);
+            return;
+        }
+
         if (SendTarget() is { } session)
         {
-            _gameData.Toggle(session.GameData, SessionTitle(session));
+            if (!TryOpenNativeGameData(session.GameData, SessionTitle(session)))
+            {
+                _gameData.Toggle(session.GameData, SessionTitle(session));
+            }
+
             return;
         }
 
         if (_sessions.Sessions.Count == 0 && _demoGameData.Count > 0)
         {
-            _gameData.Toggle(_demoGameData, "Corvid");
+            if (!TryOpenNativeGameData(_demoGameData, "Corvid"))
+            {
+                _gameData.Toggle(_demoGameData, "Corvid");
+            }
+
             return;
         }
 
         RefuseCommand("no game data here — pick a character first (⌃P ▸ Switch to …)");
     }
 
-    internal bool GameDataIsOpen => _gameData.IsOpen;
+    internal bool GameDataIsOpen => _gameData.IsOpen || NativeModalOf(SurfaceCatalog.GameData) is not null;
 
     /// <summary>What an IRE-style server sends after the handshake, for the <c>meters</c> and <c>gamedata</c> views.</summary>
     private void LoadDemoGameData()
@@ -12361,6 +12397,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         _prefixArmed = true;
         RefreshHeader();
+
+        // The window draws the panel at once (SharpMUTermApp.NativeForms.cs); the terminal waits for a key first.
+        if (TryOpenNativePrefixPanel())
+        {
+            return;
+        }
+
         _prefixTimer ??= _time.CreateTimer(
             _ => OnUiThread(ShowPrefixPanel), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _prefixTimer.Change(PrefixPanelDelay, Timeout.InfiniteTimeSpan);
@@ -12381,6 +12424,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _prefixArmed = false;
         _prefixTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _prefixPanel.Close();
+        CloseNativePrefixPanel();
         RefreshHeader();
     }
 
@@ -12391,7 +12435,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void ShowPrefixPanel()
     {
-        if (_prefixArmed && !AnyOverlayOpen)
+        if (_prefixArmed && !AnyOverlayOpen && !TryOpenNativePrefixPanel())
         {
             _prefixPanel.Open();
         }
