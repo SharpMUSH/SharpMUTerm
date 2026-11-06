@@ -266,6 +266,13 @@ public sealed class WorldDefinition
     /// </summary>
     public string? AcceptedLayoutSuggestion { get; set; }
 
+    /// <summary>
+    /// The world's picture: an absolute path to an image file or an <c>https://</c> URL (<see cref="Avatars.AvatarSource"/>),
+    /// or null for none. The sidebar draws it beside the world's name and in place of the letter of any character of this
+    /// world that has no picture of its own. Absent means none, so no migration marks anybody.
+    /// </summary>
+    public string? Avatar { get; set; }
+
     /// <summary>The characters that can connect to this world.</summary>
     public List<CharacterDefinition> Characters { get; set; } = new();
 
@@ -307,6 +314,7 @@ public sealed class WorldDefinition
         HighlightNames = HighlightNames.ToList(),
         Layout = Layout,
         AcceptedLayoutSuggestion = AcceptedLayoutSuggestion,
+        Avatar = Avatar,
         Characters = Characters.Select(c => c.Clone()).ToList(),
     };
 

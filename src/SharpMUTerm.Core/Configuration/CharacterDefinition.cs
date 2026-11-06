@@ -150,6 +150,13 @@ public sealed class CharacterDefinition
     /// </summary>
     public bool ComposerProportional { get; set; }
 
+    /// <summary>
+    /// The character's picture: an absolute path to an image file or an <c>https://</c> URL (<see cref="Avatars.AvatarSource"/>),
+    /// or null for none, when the sidebar falls back to the world's picture and then to the character's initial. Absent
+    /// means none, so no migration marks anybody.
+    /// </summary>
+    public string? Avatar { get; set; }
+
     /// <summary>Logging is configured per character.</summary>
     public LoggingSettings Logging { get; set; } = new();
 
@@ -195,6 +202,7 @@ public sealed class CharacterDefinition
         Tint = Tint,
         Layout = Layout,
         ComposerProportional = ComposerProportional,
+        Avatar = Avatar,
         Logging = new LoggingSettings
         {
             Format = Logging.Format,

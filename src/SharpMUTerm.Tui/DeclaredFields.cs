@@ -49,6 +49,7 @@ internal static class DeclaredFields
                     TextRule.Pattern => ScreenField.OptionalPattern(field.Label, Get, Set),
                     TextRule.Secret => ScreenField.Password(field.Label, Get, Set),
                     TextRule.Defaulted => ScreenField.Defaulted(field.Label, Get, Set, text.Fallback ?? string.Empty),
+                    TextRule.Image => ScreenField.Optional(field.Label, Get, Set) with { Validate = v => TextRules.Check(text, v) },
                     _ => ScreenField.Optional(field.Label, Get, Set),
                 };
             }

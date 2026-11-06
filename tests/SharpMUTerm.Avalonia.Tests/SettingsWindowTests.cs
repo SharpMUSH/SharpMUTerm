@@ -489,6 +489,80 @@ public class SettingsWindowTests
         await Assert.That(harness.Commits).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// A world's picture is a text field with a named Choose button beside it; a relative path is refused and put back,
+    /// an https address is kept.
+    /// </summary>
+    [Test]
+    public async Task AWorldsPictureIsCheckedAndHasAChooseButton()
+    {
+        var harness = TwoWorlds();
+        var (refused, kept, choose) = await Run(harness, "worlds", window =>
+        {
+            var box = window.FieldControls["avatar"].GetVisualDescendants().OfType<TextBox>().First();
+            void Enter(string text)
+            {
+                box.Text = text;
+                box.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Enter });
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            Enter("pictures/me.png");
+            var refused = box.Text;
+            Enter("https://example.com/me.png");
+            var choose = window.GetVisualDescendants().OfType<Button>()
+                .Any(b => AutomationProperties.GetName(b) == "Choose a picture for avatar");
+            return (refused, box.Text, choose);
+        });
+
+        await Assert.That(refused ?? string.Empty).IsEqualTo(string.Empty);
+        await Assert.That(kept).IsEqualTo("https://example.com/me.png");
+        await Assert.That(harness.Config.Worlds[0].Avatar).IsEqualTo("https://example.com/me.png");
+        await Assert.That(choose).IsTrue();
+    }
+
+    /// <summary>
+    /// The crop step: it opens over the page with the keyboard on the picture, Esc cancels it without closing the window,
+    /// and Use hands back the square under the circle after a drag and a zoom.
+    /// </summary>
+    [Test]
+    public async Task TheCropStepHandsBackTheSquareUnderTheCircle()
+    {
+        var harness = TwoWorlds();
+        var (cancelled, stillOpen, focused, crop, expected, gone) = await Run(harness, "worlds", window =>
+        {
+            using var picture = new global::Avalonia.Media.Imaging.WriteableBitmap(
+                new global::Avalonia.PixelSize(400, 200), new global::Avalonia.Vector(96, 96),
+                global::Avalonia.Platform.PixelFormat.Rgba8888, global::Avalonia.Platform.AlphaFormat.Premul);
+
+            var first = window.CropAsync(picture);
+            Dispatcher.UIThread.RunJobs();
+            var focused = window.CropStep!.Stage.IsFocused;
+            window.CropStep.Stage.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Escape, Source = window.CropStep.Stage });
+            Dispatcher.UIThread.RunJobs();
+            var cancelled = first.IsCompleted && first.Result is null;
+            var stillOpen = window.IsVisible;
+
+            var second = window.CropAsync(picture);
+            Dispatcher.UIThread.RunJobs();
+            var stage = window.CropStep!.Stage;
+            stage.ZoomBy(1);
+            stage.Pan(-40, 0);
+            var expected = stage.Model.Crop;
+            window.CropStep.UseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return (cancelled, stillOpen, focused, second.Result, expected, window.CropStep is null);
+        });
+
+        await Assert.That(focused).IsTrue();
+        await Assert.That(cancelled).IsTrue();
+        await Assert.That(stillOpen).IsTrue();
+        await Assert.That(crop).IsEqualTo(expected);
+        await Assert.That(crop!.Value.Side).IsEqualTo(0.5);
+        await Assert.That(crop.Value.CentreX).IsGreaterThan(0.5);
+        await Assert.That(gone).IsTrue();
+    }
+
     /// <summary>The window's worlds page has no door to the cell F5: everything F5 did is on the page.</summary>
     [Test]
     public async Task TheWorldsPageSendsNobodyToTheCellScreen()

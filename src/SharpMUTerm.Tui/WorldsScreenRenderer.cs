@@ -101,6 +101,9 @@ internal static class WorldsScreenRenderer
     /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
     internal const int WorldLayoutField = 21;
 
+    /// <summary><see cref="WorldDefinition.Avatar"/>: the world's picture for the sidebar, which its characters fall back to.</summary>
+    internal const int WorldAvatarField = 22;
+
     /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
     internal const int JoinWrapsField = 11;
 
@@ -217,6 +220,9 @@ internal static class WorldsScreenRenderer
 
     /// <summary><see cref="CharacterDefinition.Layout"/>, appended after the tint: also about how the panes look.</summary>
     internal const int CharacterLayoutField = 10;
+
+    /// <summary><see cref="CharacterDefinition.Avatar"/>, after the layout: the character's picture for the sidebar.</summary>
+    internal const int CharacterAvatarField = 11;
 
     /// <summary>
     /// The trigger-set row's field ordinals. A set's name leads, as every list row's does — and here it
@@ -780,7 +786,7 @@ internal static class WorldsScreenRenderer
         "emoji", "join-wraps", "stacking", "edit-grab",
         "alert-on", "capture-channels", "highlight-names",
         "map-room", "map-exits", "walk-fail",
-        "sounds", "layout",
+        "sounds", "layout", "avatar",
     ];
 
     /// <summary>The world's two security checkboxes, drawn in the WORLD block (<see cref="SecurityPane"/>), by declared id.</summary>
@@ -789,7 +795,7 @@ internal static class WorldsScreenRenderer
     /// <summary>The character row's fields, in ⇥ order (<see cref="CharacterNameField"/> …), by declared id.</summary>
     internal static readonly IReadOnlyList<string> CharacterFieldOrder =
     [
-        "name", "password", "connect", "on-connect", "disconnect", "at-start", "log", "log-folder", "restore", "tint", "layout",
+        "name", "password", "connect", "on-connect", "disconnect", "at-start", "log", "log-folder", "restore", "tint", "layout", "avatar",
     ];
 
     /// <summary>A row of cell fields built from the declared fields <paramref name="order"/> names, editing <paramref name="target"/>.</summary>
@@ -1113,6 +1119,8 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 WorldLayoutField),
+            ["avatar"] = Field(
+                AvatarDetail(world.Avatar, "none · letters"), cursor, selectedWorld, WorldAvatarField),
         };
 
         var right = new List<string> { $"[{accent}]├ WORLD[/]" };
@@ -1420,6 +1428,12 @@ internal static class WorldsScreenRenderer
                 selectedCharacter,
                 CharacterLayoutField,
                 pane: CharactersPane)),
+            CharField("avatar", Field(
+                AvatarDetail(character.Avatar, "the world's"),
+                cursor,
+                selectedCharacter,
+                CharacterAvatarField,
+                pane: CharactersPane)),
         };
 
         // The log format and `restore` both sit near the foot of this block, so their lists are drawn
@@ -1437,6 +1451,10 @@ internal static class WorldsScreenRenderer
     internal static readonly IReadOnlyList<string> ContentChoices = WorldFieldValues.ContentChoices;
 
     internal static string ContentName(ContentFormat format) => WorldFieldValues.ContentName(format);
+
+    /// <summary>A picture's source, or what is shown with none (<paramref name="none"/>, in the label ink).</summary>
+    private static string AvatarDetail(string? source, string none) =>
+        string.IsNullOrWhiteSpace(source) ? $"[{Label}]{none}[/]" : $"[{Value}]{Escape(source)}[/]";
 
     internal static ContentFormat ContentOf(string name) => WorldFieldValues.ContentOf(name);
 

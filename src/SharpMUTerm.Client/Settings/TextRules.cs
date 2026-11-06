@@ -48,6 +48,12 @@ public enum TextRule
 
     /// <summary>A highlight-names list: <c>Name=colour, …</c>, each colour one of <see cref="HighlightColours.Palette"/>.</summary>
     NameHighlights,
+
+    /// <summary>
+    /// A picture's address (<see cref="Core.Avatars.AvatarSource"/>): blank for none, else a full path to an image file
+    /// that exists or an <c>https://</c> URL; trimmed, and stored as null when blank.
+    /// </summary>
+    Image,
 }
 
 /// <summary>
@@ -81,6 +87,7 @@ public static class TextRules
             TextRule.Name or TextRule.Secret or TextRule.Defaulted when text.Any(char.IsControl) =>
                 $"{field.Label} cannot contain control characters",
             TextRule.Pattern when !string.IsNullOrWhiteSpace(text) => PatternError(text),
+            TextRule.Image => Core.Avatars.AvatarSource.Problem(text),
             TextRule.NameHighlights => Core.Automation.NameHighlights.Parse(
                 text, colour => HighlightColours.Palette.Contains(colour) && colour != HighlightColours.None).Error,
             _ => null,

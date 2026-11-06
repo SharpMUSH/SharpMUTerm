@@ -659,6 +659,12 @@ public sealed partial class SettingsForm
     /// </summary>
     public Action<string, bool>? UndoRedo { get; init; }
 
+    /// <summary>
+    /// Records the square the window's crop step chose for a picture source, before the commit that sets that source, so
+    /// the copy the client keeps (<c>avatars/</c>) is that square rather than the centred one. Null where nothing is kept.
+    /// </summary>
+    public Action<string, Core.Avatars.AvatarCrop>? PictureCropped { get; init; }
+
     /// <summary>Undoes the last edit made on <paramref name="sectionId"/>; false when the client keeps no history.</summary>
     public bool Undo(string sectionId) => Step(sectionId, redo: false);
 
