@@ -151,6 +151,14 @@ public sealed class CharacterDefinition
     public bool ComposerProportional { get; set; }
 
     /// <summary>
+    /// The layout panels the player closed for this character (<see cref="Layouts.PanelIds"/>), which no layout re-opens on its
+    /// own: a connect, a re-fold or a narrow crossing leaves them out until the player asks for one again (⌃P ▸ Show …,
+    /// ⌥M applying a layout). Null — none — by default, and left out of the file while it is, so no migration marks
+    /// anybody.
+    /// </summary>
+    public List<string>? ClosedPanels { get; set; }
+
+    /// <summary>
     /// The character's picture: an absolute path to an image file or an <c>https://</c> URL (<see cref="Avatars.AvatarSource"/>),
     /// or null for none, when the sidebar falls back to the world's picture and then to the character's initial. Absent
     /// means none, so no migration marks anybody.
@@ -202,6 +210,7 @@ public sealed class CharacterDefinition
         Tint = Tint,
         Layout = Layout,
         ComposerProportional = ComposerProportional,
+        ClosedPanels = ClosedPanels is null ? null : new List<string>(ClosedPanels),
         Avatar = Avatar,
         Logging = new LoggingSettings
         {

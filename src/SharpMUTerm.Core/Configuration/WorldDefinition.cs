@@ -259,6 +259,13 @@ public sealed class WorldDefinition
     public string? Layout { get; set; }
 
     /// <summary>
+    /// The layout panels the player closed for a session of this world with no character (a host typed on the command
+    /// line); a character keeps its own (<see cref="CharacterDefinition.ClosedPanels"/>). Null — none — by default, and left
+    /// out of the file while it is.
+    /// </summary>
+    public List<string>? ClosedPanels { get; set; }
+
+    /// <summary>
     /// The layout the player accepted when the client suggested one for this world
     /// (<see cref="Layouts.LayoutSuggester"/>), or null when no suggestion was accepted. Below
     /// <see cref="Layout"/> in <see cref="Layouts.LayoutResolver"/>: a choice the player made outright wins
@@ -313,6 +320,7 @@ public sealed class WorldDefinition
         CaptureChannels = CaptureChannels,
         HighlightNames = HighlightNames.ToList(),
         Layout = Layout,
+        ClosedPanels = ClosedPanels is null ? null : new List<string>(ClosedPanels),
         AcceptedLayoutSuggestion = AcceptedLayoutSuggestion,
         Avatar = Avatar,
         Characters = Characters.Select(c => c.Clone()).ToList(),

@@ -806,6 +806,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _sessions.Logger = _diagnostics.For("SharpMUTerm.Session");
         _theme = SharpMUTerm.Client.Settings.ThemeChoices.Resolve(config);
         _ink = WorkspacePalette.Chrome(_theme);
+
+        // Before the panes are built: a resumed workspace holding a docked composer builds it in the constructor, and
+        // the composer paints from this scheme. Set after them, a saved composer pane threw on the next launch.
+        _screens = ScreenTheme.For(_theme);
         _formatter = new MarkupFormatter(_theme, config.Text);
 
         // A second formatter for the one thing this client paints outside a pane: the prompt row sits
@@ -987,7 +991,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         };
         _messageLog = new MessageLogOverlay(_system, _diagnostics);
         _gameData = new GameDataOverlay(_system, _time);
-        _screens = ScreenTheme.For(_theme);
         _settingsHistory = new Client.Settings.SettingsHistory(_config, id => _contributions.SettingsSections.Find(id)?.Title);
         _settings = new SettingsOverlay(_system, _screens)
         {
@@ -9761,6 +9764,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         var windowId = MapWindowId(key!);
+        ReopenClosedPanels(key!, Core.Layouts.PanelIds.Map); // asked for: layouts draw it again
         if (_workspace.FindWindow(windowId) is null)
         {
             _workspace.OpenWindow(windowId, "Map", WindowKind.Auxiliary, key);
@@ -13938,10 +13942,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void CloseWindow(string id)
     {
-        if (id == MainWindowId || _workspace.FindWindow(id) is null)
+        if (id == MainWindowId || _workspace.FindWindow(id) is not { } closing)
         {
             return;
         }
+
+        // A layout panel the player closes stays closed: recorded on its character, so no connect, re-fold or later
+        // launch puts it back until they ask for it (ClosedPanelsOf).
+        var closedPanel = NoteClosedPanel(closing);
 
         _panes.Remove(id);
         _paneScrolls.Remove(id);              // and its scroll position: a reopened window starts live
@@ -13957,6 +13965,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _freezePoints.Remove(id);
         _workspace.CloseWindow(id);
         RebuildPaneArea();
+        if (closedPanel)
+        {
+            PersistConfiguration(); // the workspace without it, too, so a crash before quitting does not bring it back
+        }
     }
 
     /// <summary>

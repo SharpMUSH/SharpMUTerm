@@ -157,6 +157,8 @@ internal sealed partial class SharpMUTermApp
             return null;
         }
 
+        ReopenClosedPanels(sessionKey, panelId); // asked for: layouts draw it again
+
         // Asked for in a pane: a panel floating in a window of its own docks back first.
         if (IsFloating(TerminalPanels.WindowId(panelId, sessionKey)))
         {
@@ -219,21 +221,131 @@ internal sealed partial class SharpMUTermApp
                 : null;
     }
 
-    /// <summary>What <paramref name="key"/>'s session has shown, as the fold reads it — with every panel nothing draws counted as having no data.</summary>
+    /// <summary>
+    /// What <paramref name="key"/>'s session has shown, as the fold reads it — with every panel nothing draws, and every
+    /// panel the player closed (<see cref="ClosedPanelsOf"/>), counted as having no data.
+    /// </summary>
     internal IPanelAvailability LayoutAvailability(string key)
     {
         var data = FindSession(key)?.GameData ?? (IsDemoKey(key) ? _demoGameData : null);
         var rooms = MapOf(key)?.Map.Rooms.Count ?? 0;
         var facts = PanelAvailability.From(data, rooms, SpawnWindowsOf(key).Count(), _config.Text.StatusMeters);
-        return new DrawableAvailability(facts, Panels);
+        return new DrawableAvailability(facts, Panels, ClosedPanelsOf(key));
     }
 
-    /// <summary><see cref="PanelAvailability"/>, less the panels this client has nothing to draw with.</summary>
-    private sealed class DrawableAvailability(IPanelAvailability facts, TerminalPanels panels) : IPanelAvailability
+    /// <summary><see cref="PanelAvailability"/>, less the panels this client has nothing to draw with and those the player closed.</summary>
+    private sealed class DrawableAvailability(IPanelAvailability facts, TerminalPanels panels, IReadOnlyCollection<string> closed)
+        : IPanelAvailability
     {
         public bool HasData(string panelId) =>
             facts.HasData(panelId)
+            && !closed.Contains(panelId)
             && (panelId is PanelIds.Output or PanelIds.Chat or PanelIds.Map || panels.IsRegistered(panelId));
+    }
+
+    // ── panels the player closed ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The panels the player closed for <paramref name="key"/>: its character's <see cref="CharacterDefinition.ClosedPanels"/>,
+    /// else its world's for a session with no character. Empty for a key nothing is configured for.
+    /// </summary>
+    /// <remarks>
+    /// <b>A layout is a template, and closing one of its panels is the player's word on it.</b> Every apply realises the
+    /// whole fold, so a closed composer came back on the next connect, the next re-fold, or the next launch whose restore
+    /// did not cover that character. Recording the close on the character, in <c>config.json</c>, is what makes it hold in
+    /// both hosts and across runs; asking for the panel again (⌃P ▸ Show …, the map) or applying a layout from ⌥M or the
+    /// Layouts menu is how it comes back.
+    /// </remarks>
+    internal IReadOnlyCollection<string> ClosedPanelsOf(string key)
+    {
+        var (world, character) = LayoutOwner(key);
+        return (character is not null ? character.ClosedPanels : world?.ClosedPanels) ?? (IReadOnlyCollection<string>)Array.Empty<string>();
+    }
+
+    /// <summary>The panel a closed window drew for its character, if it was one a layout places (a panel window or the map).</summary>
+    private static bool ClosedPanelOf(WorkspaceWindow window, out string panelId, out string key)
+    {
+        if (TerminalPanels.TryParseWindowId(window.Id, out panelId, out key))
+        {
+            return PanelIds.Known.Contains(panelId);
+        }
+
+        if (IsMapWindow(window.Id) && window.SessionKey is { Length: > 0 } owner)
+        {
+            (panelId, key) = (PanelIds.Map, owner);
+            return true;
+        }
+
+        (panelId, key) = (string.Empty, string.Empty);
+        return false;
+    }
+
+    /// <summary>Records that the player closed <paramref name="window"/>'s panel, so no layout puts it back on its own. True when it changed.</summary>
+    private bool NoteClosedPanel(WorkspaceWindow window)
+    {
+        if (!ClosedPanelOf(window, out var panelId, out var key))
+        {
+            return false;
+        }
+
+        var (world, character) = LayoutOwner(key);
+        if (character is null && world is null)
+        {
+            return false;
+        }
+
+        var list = character is not null
+            ? character.ClosedPanels ??= new List<string>()
+            : world!.ClosedPanels ??= new List<string>();
+        if (list.Contains(panelId, StringComparer.Ordinal))
+        {
+            return false;
+        }
+
+        // Replaced, never edited: the settings window reads the configuration from another thread.
+        var next = new List<string>(list) { panelId };
+        if (character is not null)
+        {
+            character.ClosedPanels = next;
+        }
+        else
+        {
+            world!.ClosedPanels = next;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The player asked for <paramref name="panelId"/> again (or, with null, for a whole layout): it is no longer closed for
+    /// <paramref name="key"/>. Saved when it changed; true when it did.
+    /// </summary>
+    private bool ReopenClosedPanels(string key, string? panelId = null)
+    {
+        var (world, character) = LayoutOwner(key);
+        var list = character is not null ? character.ClosedPanels : world?.ClosedPanels;
+        if (list is not { Count: > 0 } || panelId is not null && !list.Contains(panelId, StringComparer.Ordinal))
+        {
+            return false;
+        }
+
+        var next = panelId is null ? null : list.Where(p => !string.Equals(p, panelId, StringComparison.Ordinal)).ToList();
+        if (next is { Count: 0 })
+        {
+            next = null;
+        }
+
+        if (character is not null)
+        {
+            character.ClosedPanels = next;
+        }
+        else
+        {
+            world!.ClosedPanels = next;
+        }
+
+        PersistConfiguration();
+        return true;
     }
 
     // ── applying ────────────────────────────────────────────────────────────────────────────────────
@@ -396,6 +508,7 @@ internal sealed partial class SharpMUTermApp
         var resolved = ResolveLayout(live.SessionKey).Layout;
         if (!string.Equals(resolved.Id, live.LayoutId, StringComparison.Ordinal))
         {
+            ReopenClosedPanels(live.SessionKey); // a layout chosen on F5 is drawn whole
             ApplyLayout(live.SessionKey, resolved, ActiveWindowId());
         }
     }
@@ -702,6 +815,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>⏎: the panes are arranged by <paramref name="selected"/> now, and a notice says so.</summary>
     private LayoutActionResult ApplyFromList(string key, LayoutDefinition selected)
     {
+        ReopenClosedPanels(key); // an explicit apply draws the whole layout, closed panels included
         if (!ApplyLayout(key, selected))
         {
             var refused = $"no window to arrange for {Snippet(DisplayName(key))} — switch to the character first";
@@ -778,6 +892,7 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
+        ReopenClosedPanels(key); // the player chose this layout for the character: draw it whole
         ApplyLayout(key, resolved, ActiveWindowId());
     }
 

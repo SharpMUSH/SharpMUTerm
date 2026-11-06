@@ -146,6 +146,7 @@ internal sealed partial class SharpMUTermApp
                 return false;
             }
 
+            ReopenClosedPanels(key); // an explicit apply draws the whole layout, closed panels included
             if (!ApplyLayout(key, chosen))
             {
                 RefuseCommand($"no window to arrange for {Snippet(key)} — switch to the character first");
