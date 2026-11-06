@@ -99,6 +99,7 @@ internal sealed partial class SettingsWindow : Window
     {
         _form = form;
         NativeTokens.ApplyTextRendering(this);
+        AppIcon.Apply(this);
         _tokens = TokensFor(form);
         Title = "Settings";
         Width = DefaultWidth;

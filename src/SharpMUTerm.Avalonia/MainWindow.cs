@@ -52,6 +52,7 @@ internal sealed class MainWindow : Window
         _view = new TerminalView(_driver, foreground, background, options.FontPoints * 96f / 72f, options.FontFamily, options.LineHeight);
 
         Title = SharpMUTerm.Client.Chrome.WindowTitle.Product;
+        AppIcon.Apply(this);
 
         // Character@World — SharpMUTerm for what is in front, from the client's own header (WindowTitle).
         _driver.TitleBar.Changed += title => Dispatcher.UIThread.Post(() => Title = title);

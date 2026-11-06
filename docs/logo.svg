@@ -1,7 +1,39 @@
-<?xml version="1.0"?>
-<svg version="1.1" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    <g fill="#00f5b7">
-        <path d="M326 16 L186 16 L16 186 L16 326 L186 496 L326 496 L496 326 L496 186 L424 214 L424 298 L298 424 L214 424 L88 298 L88 214 L214 88 L298 88 Z"></path>
-        <path d="M212 214 L368 214 L368 292 Z"></path>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<title>SharpMUTerm</title>
+<defs>
+  <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#232b3d"/>
+    <stop offset="1" stop-color="#10131a"/>
+  </linearGradient>
+</defs>
+<rect x="16" y="16" width="480" height="480" rx="108" fill="url(#tile)"/>
+<g fill="#00f5b7" fill-opacity="0.13">
+  <rect x="152" y="78" width="60" height="60" rx="12"/>
+  <rect x="226" y="78" width="60" height="60" rx="12"/>
+  <rect x="300" y="78" width="60" height="60" rx="12"/>
+  <rect x="226" y="152" width="60" height="60" rx="12"/>
+  <rect x="152" y="226" width="60" height="60" rx="12"/>
+  <rect x="300" y="226" width="60" height="60" rx="12"/>
+  <rect x="152" y="300" width="60" height="60" rx="12"/>
+  <rect x="226" y="300" width="60" height="60" rx="12"/>
+  <rect x="300" y="300" width="60" height="60" rx="12"/>
+  <rect x="152" y="374" width="60" height="60" rx="12"/>
+  <rect x="226" y="374" width="60" height="60" rx="12"/>
+  <rect x="300" y="374" width="60" height="60" rx="12"/>
+</g>
+<g fill="#00f5b7">
+  <rect x="78" y="78" width="60" height="60" rx="12"/>
+  <rect x="374" y="78" width="60" height="60" rx="12"/>
+  <rect x="78" y="152" width="60" height="60" rx="12"/>
+  <rect x="152" y="152" width="60" height="60" rx="12"/>
+  <rect x="300" y="152" width="60" height="60" rx="12"/>
+  <rect x="374" y="152" width="60" height="60" rx="12"/>
+  <rect x="78" y="226" width="60" height="60" rx="12"/>
+  <rect x="226" y="226" width="60" height="60" rx="12"/>
+  <rect x="374" y="226" width="60" height="60" rx="12"/>
+  <rect x="78" y="300" width="60" height="60" rx="12"/>
+  <rect x="374" y="300" width="60" height="60" rx="12"/>
+  <rect x="78" y="374" width="60" height="60" rx="12"/>
+  <rect x="374" y="374" width="60" height="60" rx="12"/>
+</g>
 </svg>
