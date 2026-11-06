@@ -15,6 +15,8 @@ namespace SharpMUTerm.Avalonia;
 /// this put there is ever taken off);</item>
 /// <item>the Symbols Nerd Font Mono font for this user, so the terminal client can draw its icons (never removed, as before:
 /// a terminal profile may rely on it).</item>
+/// <item>the Start Menu shortcuts for the other two ways to run it, beside Velopack's own, and a Windows Terminal profile
+/// (<see cref="LaunchShortcuts"/>).</item>
 /// </list>
 /// Opening telnet:// links is not registered: Inno offered it unticked, and there is no page here to offer it on.
 /// Linux runs no hooks: the AppImage installs nothing.
@@ -60,10 +62,12 @@ internal static class VelopackHooks
             Try(RegisterAppId);
             Try(() => AddToPath(Current));
             Try(InstallFont);
+            LaunchShortcuts.Install(Current, Try);
         }
 
         public static void Uninstall()
         {
+            LaunchShortcuts.Uninstall(Try);
             Try(() => Registry.CurrentUser.DeleteSubKeyTree(AppIdKey, throwOnMissingSubKey: false));
             Try(() =>
             {
@@ -157,7 +161,7 @@ internal static class VelopackHooks
             {
                 step();
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or COMException or InvalidCastException)
             {
                 // The rest of the install goes on; Velopack logs the hook's run.
             }

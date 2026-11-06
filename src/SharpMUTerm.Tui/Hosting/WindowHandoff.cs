@@ -13,6 +13,15 @@ internal static class WindowHandoff
 {
     public const string Flag = "--window";
 
+    /// <summary>
+    /// <c>--emulated</c>: the terminal drawn by the window, everything in cells. The window's flag; given here it hands
+    /// off too, and is passed on.
+    /// </summary>
+    public const string EmulatedFlag = "--emulated";
+
+    /// <summary>Whether this launch belongs in the window: <see cref="Flag"/> or <see cref="EmulatedFlag"/>.</summary>
+    public static bool Wanted(string[] args) => args.Contains(Flag) || args.Contains(EmulatedFlag);
+
     /// <summary>The window executable's file name on this platform.</summary>
     public static string ExecutableName => OperatingSystem.IsWindows() ? "sharpmuterm-window.exe" : "sharpmuterm-window";
 

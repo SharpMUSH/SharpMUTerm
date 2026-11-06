@@ -25,7 +25,7 @@ internal static class Program
             return 0;
         }
 
-        if (args.Contains(WindowHandoff.Flag))
+        if (WindowHandoff.Wanted(args))
         {
             return WindowHandoff.Run(args, Console.Error);
         }

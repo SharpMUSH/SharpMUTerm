@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Three ways to start SharpMUTerm, side by side. The Windows install adds *SharpMUTerm (Emulated)* and *SharpMUTerm
+  (Native)* to the Start menu beside *SharpMUTerm*, and a SharpMUTerm profile to Windows Terminal. The AppImage offers
+  the same two on its launcher's right-click menu once your desktop integrates it, and opens a terminal for the native
+  one by itself (kitty or Ghostty first, for pictures). *Emulated* is the window drawn exactly as the terminal draws it,
+  every menu and panel in cells; start it with `--emulated`. On Windows the native terminal shows no inline pictures,
+  so the window is the better choice there.
+
 - SharpMUTerm updates itself. The Windows installer's copy, the portable Windows copy and the Linux AppImage check
   GitHub for a newer release half a minute after starting and once a day, and say so when there is one. Choose
   *Update* on the notice or in the command palette (Ctrl+P ▸ *Check for updates*, *Update*) to download it, then *Restart*

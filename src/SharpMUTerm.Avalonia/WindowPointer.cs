@@ -15,6 +15,13 @@ internal sealed class WindowPointer : IPointerPresenter
     private IReadOnlyList<HeaderAction> _actions = [];
     private ChromeOverlay? _chrome;
 
+    /// <summary>
+    /// <c>--emulated</c>: the window lays no native view over the cells. Panels, the header's buttons, the panes' tab
+    /// strips and bands, toasts and the hairline dividers are dropped as the client says them, so what is under them —
+    /// the cells, which the client paints in full either way — is what shows. Set before the client starts.
+    /// </summary>
+    public bool CellsOnly { get; set; }
+
     /// <summary>What the pointer is over, as of the client's last word.</summary>
     public PointerTarget Target => Volatile.Read(ref _target);
 
@@ -97,7 +104,7 @@ internal sealed class WindowPointer : IPointerPresenter
     }
 
     int? IPointerPresenter.VitalsCardRows(int meters, bool target) =>
-        CellHeightMeasured is > 0 and var cell ? VitalsGauges.CardRows(meters, target, cell) : null;
+        CellsOnly ? null : CellHeightMeasured is > 0 and var cell ? VitalsGauges.CardRows(meters, target, cell) : null;
 
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
@@ -107,12 +114,22 @@ internal sealed class WindowPointer : IPointerPresenter
 
     void IPointerPresenter.Panels(IReadOnlyList<PanelOverlay> panels)
     {
+        if (CellsOnly)
+        {
+            return;
+        }
+
         Volatile.Write(ref _panels, panels);
         PanelsChanged?.Invoke();
     }
 
     void IPointerPresenter.HeaderActions(IReadOnlyList<HeaderAction> actions)
     {
+        if (CellsOnly)
+        {
+            return;
+        }
+
         Volatile.Write(ref _actions, actions);
         ActionsChanged?.Invoke();
     }
@@ -133,6 +150,11 @@ internal sealed class WindowPointer : IPointerPresenter
 
     void IPointerPresenter.PaneChrome(PaneChromeOverlay chrome)
     {
+        if (CellsOnly)
+        {
+            return;
+        }
+
         Volatile.Write(ref _paneChrome, chrome);
         PaneChromeChanged?.Invoke();
     }
@@ -179,10 +201,15 @@ internal sealed class WindowPointer : IPointerPresenter
     /// </summary>
     public IReadOnlyList<PaneDividerOverlay> Dividers => Volatile.Read(ref _dividers);
 
-    void IPointerPresenter.Dividers(IReadOnlyList<PaneDividerOverlay> dividers) => Volatile.Write(ref _dividers, dividers);
+    void IPointerPresenter.Dividers(IReadOnlyList<PaneDividerOverlay> dividers) => Volatile.Write(ref _dividers, CellsOnly ? [] : dividers);
 
     void IPointerPresenter.Notice(NoticeOverlay notice)
     {
+        if (CellsOnly)
+        {
+            return;
+        }
+
         var next = Notices.Append(notice).TakeLast(NoticesKept).ToList();
         Volatile.Write(ref _notices, next);
         NoticeSaid?.Invoke(notice);

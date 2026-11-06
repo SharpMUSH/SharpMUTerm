@@ -11,6 +11,15 @@ public class WindowHandoffTests
     }
 
     [Test]
+    public async Task EmulatedHandsOffToTheWindowAndIsPassedOn()
+    {
+        await Assert.That(WindowHandoff.Wanted(["--emulated", "example.org"])).IsTrue();
+        await Assert.That(WindowHandoff.Wanted(["example.org"])).IsFalse();
+        await Assert.That(WindowHandoff.Arguments(["--emulated", "example.org"]))
+            .IsEquivalentTo(new[] { "--emulated", "example.org" });
+    }
+
+    [Test]
     public async Task TheWindowBesideThisProgramWinsOverOneOnPath()
     {
         using var beside = new TempDir();
