@@ -88,7 +88,7 @@ internal sealed class QuitView : DockPanel, IModalView
         Select(QuitChoice.Stay);
     }
 
-    public string Title => "Quit";
+    public string Title => _session.Model.Yes;
 
     public double PreferredWidth => 460;
 

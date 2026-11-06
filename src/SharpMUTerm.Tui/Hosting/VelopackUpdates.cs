@@ -28,6 +28,9 @@ internal sealed class VelopackUpdates : IUpdates
     /// <summary>Where the releases are.</summary>
     public const string Repository = "https://github.com/SharpMUSH/SharpMUTerm";
 
+    /// <summary>How long the Linux terminal waits for the AppImage's updater before giving up on the restart.</summary>
+    private static readonly TimeSpan ApplyTimeout = TimeSpan.FromMinutes(2);
+
     private readonly IVelopackLocator _locator;
     private readonly bool _window;
 
@@ -169,7 +172,11 @@ internal sealed class VelopackUpdates : IUpdates
                 return "SharpMUTerm could not start its updater.";
             }
 
-            updater.WaitForExit();
+            if (!updater.WaitForExit(ApplyTimeout))
+            {
+                return $"The update to {offer.Version} did not finish within {ApplyTimeout.TotalMinutes:0} minutes; the log is in {Path.GetTempPath()}.";
+            }
+
             if (updater.ExitCode != 0)
             {
                 return $"The update to {offer.Version} did not apply (updater exit code {updater.ExitCode}); the log is in {Path.GetTempPath()}.";

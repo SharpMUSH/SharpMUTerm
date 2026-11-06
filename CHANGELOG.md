@@ -39,6 +39,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Quitting the terminal client turns off the terminal's focus reporting again, so the shell no longer receives
+  `ESC [ I` / `ESC [ O` when you switch windows afterwards.
 - Servers now hear this client's name. Over TTYPE (MTTS) it introduced itself as `UNKNOWN`, because its own
   terminal types were handed to the telnet library after the library had already settled its answers; it now
   answers `SHARPMUTERM`, `XTERM`, `MTTS 2845`. An MXP `<VERSION>` reply names the real version instead of `1`, the same

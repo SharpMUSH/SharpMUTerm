@@ -146,9 +146,17 @@ internal static class Program
         // saved (the logs, the link socket, config.json): the new version may start before this process has gone.
         if (update is not null && host.Updates is { } updates)
         {
-            if (updates.ApplyAfterExit(update) is { } said)
+            try
             {
-                Console.Out.WriteLine(said);
+                if (updates.ApplyAfterExit(update) is { } said)
+                {
+                    Console.Out.WriteLine(said);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // The client has gone, so the console is all there is to say it on. The old version stays in place.
+                Console.Error.WriteLine($"SharpMUTerm could not install {update.Version}: {ex.Message}");
             }
         }
 

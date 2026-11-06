@@ -1160,7 +1160,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
         StartTitle();
-        var exitCode = _system.Run();
+        int exitCode;
+        try
+        {
+            exitCode = _system.Run();
+        }
+        finally
+        {
+            // Focus reporting is turned off as the loop ends rather than at disposal, which the live entry point never
+            // reaches: left on, the shell (or the new version an update execs into this terminal) gets ESC [ I.
+            _focus.Stop();
+        }
 
         // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
         // output translucent wherever it happens to use one of them.

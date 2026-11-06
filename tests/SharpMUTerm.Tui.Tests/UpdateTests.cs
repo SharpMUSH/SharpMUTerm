@@ -53,6 +53,11 @@ public class UpdateTests
         {
             await Task.Delay(10);
         }
+
+        if (!condition())
+        {
+            throw new TimeoutException("The condition did not hold within two seconds.");
+        }
     }
 
     [Test]
