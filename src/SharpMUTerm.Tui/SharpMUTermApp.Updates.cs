@@ -155,7 +155,9 @@ internal sealed partial class SharpMUTermApp
         var current = Host.Updates?.CurrentVersion;
         if (offer is null)
         {
-            _updatePhase = _updateOffer is null ? UpdatePhase.Idle : UpdatePhase.Found;
+            // Nothing newer now (a release withdrawn, prereleases turned off): an earlier offer is not one any more.
+            _updateOffer = null;
+            _updatePhase = UpdatePhase.Idle;
             if (manual)
             {
                 Notice($"SharpMUTerm {current} is the newest release.", MessageSeverity.Info, source: NoticeModel.Sources.Updates);
