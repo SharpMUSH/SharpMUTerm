@@ -294,9 +294,7 @@ internal sealed partial class SharpMUTermApp
             return false;
         }
 
-        var list = character is not null
-            ? character.ClosedPanels ??= new List<string>()
-            : world!.ClosedPanels ??= new List<string>();
+        var list = (character is not null ? character.ClosedPanels : world!.ClosedPanels) ?? [];
         if (list.Contains(panelId, StringComparer.Ordinal))
         {
             return false;
