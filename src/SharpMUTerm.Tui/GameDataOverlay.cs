@@ -1,4 +1,5 @@
 using System.Globalization;
+using SharpMUTerm.Client.Modals;
 using SharpMUTerm.Core.Protocols;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -29,8 +30,7 @@ internal sealed class GameDataOverlay
     /// </summary>
     internal ScreenTheme Scheme { get; set; } = ScreenTheme.Dark;
     private MarkupControl? _content;
-    private IReadOnlyList<GameDataEntry> _entries = [];
-    private string _owner = string.Empty;
+    private GameDataModel _model = new(string.Empty, []);
     private int _selected;
 
     public GameDataOverlay(ConsoleWindowSystem system, TimeProvider time)
@@ -50,8 +50,7 @@ internal sealed class GameDataOverlay
             return;
         }
 
-        _entries = data.Entries;
-        _owner = owner;
+        Model = _model = GameDataModel.From(data.Entries, owner, _time.GetUtcNow());
         _selected = 0;
 
         var desktop = _system.DesktopDimensions;
@@ -61,7 +60,7 @@ internal sealed class GameDataOverlay
 
         // Centered() after WithSize(), for CommandPalette's reason.
         _window = new WindowBuilder(_system)
-            .WithTitle("Game data")
+            .WithTitle(GameDataModel.Title)
             .AsModal()
             .WithBorderStyle(BorderStyle.Single)
             .WithBackgroundColor(Scheme.Colour(ScreenPalette.MenuBg))
@@ -83,39 +82,45 @@ internal sealed class GameDataOverlay
     /// The header, one row per package, a rule, and the selected package's data — as many of its lines as fit.
     /// Internal so the layout is testable without a window.
     /// </summary>
-    internal List<string> Lines(int width, int height)
+    /// <summary>The model the open inspector was drawn from, for the surface parity test; null while closed.</summary>
+    internal GameDataModel? Model { get; private set; }
+
+    internal List<string> Lines(int width, int height) => Lines(_model, _selected, width, height);
+
+    /// <summary>The inspector's rows for <paramref name="model"/> with row <paramref name="selected"/> open under the list.</summary>
+    internal static List<string> Lines(GameDataModel model, int selected, int width, int height)
     {
+        var rows = model.Rows;
         var lines = new List<string>
         {
-            $"[{ScreenPalette.Accent}]{Escape(_owner)}[/] [{ScreenPalette.Label}]· {Count(_entries.Count)} · ↑↓ select · Esc close[/]",
+            $"[{ScreenPalette.Accent}]{Escape(model.Owner)}[/] [{ScreenPalette.Label}]· {model.Count} · {GameDataModel.Keys}[/]",
             string.Empty,
         };
 
-        if (_entries.Count == 0)
+        if (rows.Count == 0)
         {
-            lines.Add($"[{ScreenPalette.Label}]nothing yet — this connection has received no GMCP or MSDP data.[/]");
+            lines.Add($"[{ScreenPalette.Label}]{Escape(GameDataModel.Empty)}[/]");
             return lines;
         }
 
         // The list takes at most half the room, so the payload under it is always readable; it scrolls to
         // keep the selection in view.
-        var listRows = Math.Clamp(_entries.Count, 1, Math.Max(3, (height - 4) / 2));
-        var first = Math.Clamp(_selected - (listRows - 1), 0, Math.Max(0, _entries.Count - listRows));
-        var nameWidth = Math.Min(32, _entries.Max(e => e.Package.Length));
-        var now = _time.GetUtcNow();
-        for (var i = first; i < first + listRows && i < _entries.Count; i++)
+        var listRows = Math.Clamp(rows.Count, 1, Math.Max(3, (height - 4) / 2));
+        var first = Math.Clamp(selected - (listRows - 1), 0, Math.Max(0, rows.Count - listRows));
+        var nameWidth = Math.Min(32, rows.Max(e => e.Package.Length));
+        for (var i = first; i < first + listRows && i < rows.Count; i++)
         {
-            var entry = _entries[i];
-            var marker = i == _selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
+            var entry = rows[i];
+            var marker = i == selected ? $"[bold {ScreenPalette.Accent}]▸[/]" : " ";
             var name = Elide(entry.Package, nameWidth).PadRight(nameWidth);
-            var age = Age(now - entry.UpdatedAt).PadLeft(7);
-            var preview = Elide(entry.Data?.ToJsonString() ?? "(no data)", Math.Max(4, width - nameWidth - 12));
-            lines.Add($"{marker} [{(i == _selected ? "bold " : string.Empty)}{ScreenPalette.Value}]{Escape(name)}[/]" +
+            var age = entry.Age.PadLeft(7);
+            var preview = Elide(entry.Preview, Math.Max(4, width - nameWidth - 12));
+            lines.Add($"{marker} [{(i == selected ? "bold " : string.Empty)}{ScreenPalette.Value}]{Escape(name)}[/]" +
                 $" [{ScreenPalette.Label}]{age}  {Escape(preview)}[/]");
         }
 
         lines.Add($"[{ScreenPalette.Label}]{new string('─', Math.Max(1, width))}[/]");
-        var payload = GameDataStore.Pretty(_entries[_selected].Data).Split('\n');
+        var payload = rows[selected].Payload.Split('\n');
         var room = Math.Max(1, height - lines.Count);
         foreach (var row in payload.Take(room))
         {
@@ -132,12 +137,12 @@ internal sealed class GameDataOverlay
 
     internal void Select(int delta)
     {
-        if (_entries.Count == 0)
+        if (_model.Rows.Count == 0)
         {
             return;
         }
 
-        _selected = Math.Clamp(_selected + delta, 0, _entries.Count - 1);
+        _selected = Math.Clamp(_selected + delta, 0, _model.Rows.Count - 1);
         Repaint();
     }
 
@@ -188,18 +193,9 @@ internal sealed class GameDataOverlay
     {
         _window = null;
         _content = null;
-        _entries = [];
+        _model = new(string.Empty, []);
+        Model = null;
     }
-
-    private static string Count(int n) => n == 1 ? "1 package" : $"{n.ToString(CultureInfo.InvariantCulture)} packages";
-
-    private static string Age(TimeSpan age) => age.TotalSeconds switch
-    {
-        < 1 => "now",
-        < 60 => $"{(int)age.TotalSeconds}s ago",
-        < 3600 => $"{(int)age.TotalMinutes}m ago",
-        _ => $"{(int)age.TotalHours}h ago",
-    };
 
     private static string Elide(string text, int width) => MarkupText.ElidePlain(text, width);
 

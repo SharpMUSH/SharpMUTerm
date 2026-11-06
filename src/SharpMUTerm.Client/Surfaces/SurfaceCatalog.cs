@@ -211,6 +211,18 @@ public static class SurfaceCatalog
     public const string HistoryView = "history-view";
 
     /// <summary>
+    /// The ⌃B which-key panel: the keymap explained, with why each key cannot run now. A cell modal in a terminal, a
+    /// moment after ⌃B; the window's own card at once.
+    /// </summary>
+    public const string PrefixPanel = "prefix-panel";
+
+    /// <summary>The client's own messages this run (⌃P ▸ Show client messages).</summary>
+    public const string Messages = "messages";
+
+    /// <summary>The game data inspector: every GMCP package and MSDP variable a connection holds (⌃P ▸ Show game data).</summary>
+    public const string GameData = "game-data";
+
+    /// <summary>
     /// The <c>+3 ▾</c> chip a tab strip carries when its tabs do not fit even at their floors, and the list of the tabs
     /// past its edges it opens: a cell list in a terminal, a native menu in the window (the chip itself is cells in both).
     /// </summary>
@@ -251,7 +263,7 @@ public static class SurfaceCatalog
     private static string[] PanelViews(string view) => ["SharpMUTerm.Avalonia." + view, "SharpMUTerm.Avalonia.PopOutButton"];
 
     /// <summary>The modals the window draws with its own controls in place of the cell modal (<c>ClientHost.NativeModals</c>).</summary>
-    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, BrowseWorlds, Import, ScriptConsole, HistoryView];
+    public static IReadOnlyList<string> Modals { get; } = [Quit, Search, History, Layouts, Welcome, Help, Dictionary, BrowseWorlds, Import, ScriptConsole, HistoryView, PrefixPanel, Messages, GameData];
 
     /// <summary>A cell modal in a terminal; the window's own modal in its place.</summary>
     private static readonly IReadOnlyDictionary<string, SurfaceDrawing> NativeModal = new Dictionary<string, SurfaceDrawing>
@@ -638,6 +650,30 @@ public static class SurfaceCatalog
             NativeModal,
             "SharpMUTerm.Tui.ScrollbackViewSurface.Render",
             ModalViews("ScrollbackView")),
+        new(
+            PrefixPanel,
+            typeof(HeaderPrefix),
+            [
+                // Any key, pressed or clicked, ends the panel in the one consumer a key before the panel appeared reaches.
+                new(SurfaceActionKind.Modal, "key", "ConsumePrefixKey"),
+            ],
+            NativeModal,
+            "SharpMUTerm.Tui.PrefixPanel.Render",
+            ModalViews("PrefixView")),
+        new(
+            Messages,
+            typeof(MessageLogModel),
+            [new(SurfaceActionKind.Modal, "level", "StepMessageLevel")],
+            NativeModal,
+            "SharpMUTerm.Tui.ClientMessageRenderer.Render",
+            ModalViews("MessageLogView")),
+        new(
+            GameData,
+            typeof(GameDataModel),
+            [],
+            NativeModal,
+            "SharpMUTerm.Tui.GameDataOverlay.Lines",
+            ModalViews("GameDataView")),
         new(
             TabOverflow,
             typeof(MenuModel),

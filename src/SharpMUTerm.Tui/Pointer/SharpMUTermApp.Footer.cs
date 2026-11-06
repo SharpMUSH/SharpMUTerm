@@ -286,9 +286,7 @@ internal sealed partial class SharpMUTermApp
     {
         // A native ⌃P or modal is drawn over the cells under its scrim, which leaves the bars where they are: the field stays
         // (veiled) rather than giving way to the bars' raw cells. Only a modal drawn in cells takes the bottom of the screen.
-        var cellModal = _palette.IsOpen || _settings.IsOpen || _quit.IsOpen || _messageLog.IsOpen || _historySearch.IsOpen
-            || _prefixPanel.IsOpen || _composer.IsOpen || _search.IsOpen || _gameData.IsOpen || _packageView.IsOpen
-            || _sendMenu.IsOpen || _layoutsView.IsOpen || _welcomeView.IsOpen || _helpView.IsOpen;
+        var cellModal = CellSurfaceOpen is not null;
         if (!Host.Chrome.Input || !MainWindowInFront() || cellModal || _input.ActualHeight <= 0)
         {
             return null;
