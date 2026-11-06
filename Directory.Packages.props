@@ -57,6 +57,9 @@
       rolling file and an in-memory buffer — deliberately never a console sink, which would write to
       the screen this app owns and wreck the display.
     -->
+    <!-- Update detection, download, apply and restart from the GitHub release feed (ClientHost.Updates). -->
+    <PackageVersion Include="Velopack" Version="1.2.161" />
+
     <PackageVersion Include="Serilog" Version="4.3.1" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />

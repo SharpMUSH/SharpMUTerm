@@ -104,6 +104,12 @@ public static class BuiltInCommands
     /// <summary>Windowed full screen, and back (⇧F11 in the window): a borderless window the size of the screen.</summary>
     public const string WindowedFullScreenCommand = "window:windowed-full-screen";
 
+    /// <summary>Asks the release feed for a newer SharpMUTerm now, whatever F7's <c>check for updates</c> says.</summary>
+    public const string CheckUpdatesCommand = "app:check-updates";
+
+    /// <summary>Downloads the newer release found, or, once it is downloaded, restarts into it.</summary>
+    public const string UpdateCommand = "app:update";
+
     /// <summary>Cancels a dropped connection's waiting reconnect.</summary>
     public const string StopReconnectCommand = "world:stop-reconnect";
 
@@ -300,6 +306,14 @@ public static class BuiltInCommands
         Add(BrowseWorldsCommand, CommandGroup.Help, "Browse worlds…", detail: "the mu*index directory · /browse");
         Add(ImportCommand, CommandGroup.Help, "Import from another client…", detail: "MUSHclient, Mudlet, TinTin++ · reviewed before anything is written");
         Add("term:tour", CommandGroup.Help, "Key tour", detail: "the keys worth knowing · again to hide it");
+
+        // Updates: offered only by an installed copy (the Windows installer's, the AppImage), which is the only one that
+        // can replace itself. The one entry for the release found reads what it will do next: download, or restart.
+        Add(CheckUpdatesCommand, CommandGroup.Help, "Check for updates",
+            detail: "asks GitHub for a newer release", when: c => c.State.Update is { Busy: false });
+        Add(UpdateCommand, CommandGroup.Help, "Update",
+            detail: "download it, then restart into it", when: c => c.State.Update is { Version: not null, Busy: false },
+            titleFor: c => c.State.Update is { Version: { } v, Ready: true } ? $"Restart to update to {v}" : $"Update to {c.State.Update?.Version}");
 
 
         // Packages: the list, and the install that starts at the review. F10 can be taken by a terminal's

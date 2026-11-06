@@ -8,6 +8,14 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Velopack's installer and updater call the window with a hook (install, update, uninstall) and expect it to do
+        // that and exit before anything else: no window, no console, no link handling.
+        if (VelopackHooks.IsHook(args))
+        {
+            VelopackHooks.Run(args);
+            return 0;
+        }
+
         // A desktop link handler's launch: the link and nothing else (ClientOptions.NarrowToLink says why).
         args = Tui.ClientOptions.NarrowToLink(args);
         // A window has no stdin to read, and the framework reads a redirected one as piped input, behind a modal

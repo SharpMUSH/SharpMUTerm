@@ -1160,7 +1160,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
         StartTitle();
-        var exitCode = _system.Run();
+        int exitCode;
+        try
+        {
+            exitCode = _system.Run();
+        }
+        finally
+        {
+            // Focus reporting is turned off as the loop ends rather than at disposal, which the live entry point never
+            // reaches: left on, the shell (or the new version an update execs into this terminal) gets ESC [ I.
+            _focus.Stop();
+        }
 
         // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
         // output translucent wherever it happens to use one of them.
@@ -3148,6 +3158,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         _startupRan = true;
+        ScheduleUpdateChecks();
         _avatarCopies.Prune(AvatarSources());
         _ = KeepAvatarCopies();
 
@@ -7823,6 +7834,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>Ends the UI loop. The one caller is a confirmed <see cref="QuitOverlay"/>.</summary>
     private void Quit()
     {
+        _restartForUpdate = _quitForUpdate;
         _exiting = true;
         _system.RequestExit(0);
     }
@@ -7862,7 +7874,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // — 3 unsaved edits", which was true while closing a screen could throw its edits away; now every
         // committed value is already written to disk when it is committed, so the count is always zero and a
         // line that could never appear is a line to delete rather than to leave hanging.
-        return new QuitModel(ConnectedCharacters().Select(DisplayName).ToList(), drafts, holding.Select(w => w.Title).ToList());
+        var restart = _quitForUpdate ? UpdateReadyVersion : null;
+        return new QuitModel(
+            ConnectedCharacters().Select(DisplayName).ToList(),
+            drafts,
+            holding.Select(w => w.Title).ToList(),
+            restart,
+            restart is null ? null : Host.Updates?.RestartNote);
     }
 
     /// <summary>
@@ -8962,6 +8980,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RecentAlerts: _recentAlerts.Count,
             Alerts: _alertsListed ? AlertRefs() : null,
             WindowMode: CanSetWindowMode ? Host.WindowModes!.Mode : null,
+            Update: UpdateCommandState(),
             ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }
 
@@ -9542,6 +9561,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case StopReconnectCommand:
                 StopReconnectCommandRun();
                 break;
+            case Client.Commands.BuiltInCommands.CheckUpdatesCommand:
+                return CheckForUpdates(manual: true);
+            case Client.Commands.BuiltInCommands.UpdateCommand:
+                return UpdateNow();
             case "world:reload-scripts":
                 ReloadScripts();
                 break;
@@ -15450,6 +15473,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _noticeTimer?.Dispose();    // and no row left to put a notice back on
         _prefixTimer?.Dispose();    // and no window left to float a which-key panel over
         _reconnectTicker?.Dispose(); // and no status row left to count down on
+        StopUpdateChecks();         // and no release feed asked for a client that is going
         foreach (var reconnect in _reconnects.Values)
         {
             reconnect.Dispose();    // before the sessions, so no try dials a session being closed

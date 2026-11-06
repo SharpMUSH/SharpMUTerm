@@ -127,7 +127,7 @@ internal static class QuitPrompt
     /// </summary>
     internal static List<string> Render(QuitModel facts, QuitChoice selected)
     {
-        var lines = new List<string> { $"[bold {Value}]Quit SharpMUTerm?[/]", string.Empty };
+        var lines = new List<string> { $"[bold {Value}]{Escape(facts.Heading)}[/]", string.Empty };
 
         var consequences = Consequences(facts);
         if (consequences.Count == 0)
@@ -144,15 +144,20 @@ internal static class QuitPrompt
             }
         }
 
+        if (facts.RestartNote is { } note)
+        {
+            lines.Add($"[{Muted}]{Escape(note)}[/]");
+        }
+
         lines.Add(string.Empty);
-        lines.Add($"{Chip("Quit  y", selected == QuitChoice.Quit)}   {Chip("Stay  n", selected == QuitChoice.Stay)}");
-        lines.Add($"[{Label}]{Hints(selected)}[/]");
+        lines.Add($"{Chip($"{facts.Yes}  y", selected == QuitChoice.Quit)}   {Chip("Stay  n", selected == QuitChoice.Stay)}");
+        lines.Add($"[{Label}]{Hints(selected, facts.Yes.ToLowerInvariant())}[/]");
         return lines;
     }
 
     /// <summary>The keys, including what ⏎ means <em>right now</em> — the second drawing of the default.</summary>
-    private static string Hints(QuitChoice selected) =>
-        $"←→ ⇥ pick · ⏎ {(selected == QuitChoice.Quit ? "quit" : "stay")} · Esc stays · ⌃Q again stays";
+    private static string Hints(QuitChoice selected, string yes) =>
+        $"←→ ⇥ pick · ⏎ {(selected == QuitChoice.Quit ? yes : "stay")} · Esc stays · ⌃Q again stays";
 
     /// <summary>
     /// One button. Both spellings are the same width, so the row does not shift as the pointer moves —

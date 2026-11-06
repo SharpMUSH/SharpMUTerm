@@ -13,10 +13,17 @@ namespace SharpMUTerm.Client.Modals;
 /// How many unsent lines there are, counted per command line rather than per window, plus the posts the composer holds.
 /// </param>
 /// <param name="DraftWindows">The windows those drafts are sitting in, by title.</param>
+/// <param name="RestartVersion">
+/// Set when the quit is a restart into a downloaded update: the version it installs. The prompt then asks to restart,
+/// and its yes button says Restart.
+/// </param>
+/// <param name="RestartNote">What restarting does in this host beyond the obvious, when there is anything (the host's words).</param>
 public sealed record QuitModel(
     IReadOnlyList<string> ConnectedCharacters,
     int Drafts,
-    IReadOnlyList<string> DraftWindows)
+    IReadOnlyList<string> DraftWindows,
+    string? RestartVersion = null,
+    string? RestartNote = null)
 {
     /// <summary>How many names a consequence line spells out before it starts counting instead.</summary>
     private const int MaxNames = 3;
@@ -26,6 +33,12 @@ public sealed record QuitModel(
 
     /// <summary>What the prompt says when quitting would cost nothing.</summary>
     public const string NothingAtStake = "Nothing is connected and nothing is unsent.";
+
+    /// <summary>The question: quit, or restart into the update.</summary>
+    public string Heading => RestartVersion is { } version ? $"Restart to update to SharpMUTerm {version}?" : "Quit SharpMUTerm?";
+
+    /// <summary>What the yes button is called.</summary>
+    public string Yes => RestartVersion is null ? "Quit" : "Restart";
 
     /// <summary>
     /// What quitting now would cost, one plain sentence per fact, and empty when it would cost nothing. A bare "are
@@ -55,11 +68,13 @@ public sealed record QuitModel(
     public bool Equals(QuitModel? other) =>
         other is not null
         && Drafts == other.Drafts
+        && RestartVersion == other.RestartVersion
+        && RestartNote == other.RestartNote
         && ModelLists.Same(ConnectedCharacters, other.ConnectedCharacters)
         && ModelLists.Same(DraftWindows, other.DraftWindows);
 
     public override int GetHashCode() =>
-        HashCode.Combine(Drafts, ModelLists.Hash(ConnectedCharacters), ModelLists.Hash(DraftWindows));
+        HashCode.Combine(Drafts, ModelLists.Hash(ConnectedCharacters), ModelLists.Hash(DraftWindows), RestartVersion, RestartNote);
 
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
 

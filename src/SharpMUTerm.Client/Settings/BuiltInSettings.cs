@@ -52,6 +52,9 @@ public static partial class BuiltInSettings
     /// <summary>How a scene log is written.</summary>
     public const string SceneLogGroup = "Scene log";
 
+    /// <summary>F7's updates group: looking for a newer release.</summary>
+    public const string UpdatesGroup = "Updates";
+
     /// <summary>The id of the meters field, which a host draws as a table rather than one value.</summary>
     public const string MetersField = "meters";
 
@@ -163,6 +166,14 @@ public static partial class BuiltInSettings
                     c => c.SceneLog.Content == SceneLogContent.Everything ? WorldFieldValues.SceneContents[1] : WorldFieldValues.SceneContents[0],
                     (c, v) => c.SceneLog.Content = v == WorldFieldValues.SceneContents[1] ? SceneLogContent.Everything : SceneLogContent.Poses),
             },
+
+            Flag("check-updates", "check for updates", UpdatesGroup,
+                c => c.Updates.Check, (c, v) => c.Updates.Check = v,
+                "look for a new release at start and once a day, and say so; nothing downloads until you ask",
+                "update upgrade release version new"),
+            Flag("prereleases", "include prereleases", UpdatesGroup,
+                c => c.Updates.Prereleases, (c, v) => c.Updates.Prereleases = v,
+                "count a release marked as a prerelease as an update", "update beta preview release"),
         ],
     };
 

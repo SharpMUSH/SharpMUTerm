@@ -79,7 +79,11 @@ internal sealed partial class SharpMUTermApp
     /// ⌃Q, and the window's close button (which sends it): opens the quit prompt, or dismisses it when it is up — the
     /// toggle <see cref="QuitPrompt"/> explains. Never refused, whatever is open.
     /// </summary>
-    private void ToggleQuit()
+    /// <param name="restart">
+    /// The prompt asks to restart into the downloaded update rather than to quit (⌃P ▸ Restart to update). Read by the
+    /// opening alone: a prompt that is already up is dismissed, as ⌃Q again would.
+    /// </param>
+    private void ToggleQuit(bool restart = false)
     {
         if (_nativeQuit is { } open)
         {
@@ -92,6 +96,8 @@ internal sealed partial class SharpMUTermApp
             _quit.Toggle();
             return;
         }
+
+        _quitForUpdate = restart;
 
         if (NativeModalsHost is { } native)
         {

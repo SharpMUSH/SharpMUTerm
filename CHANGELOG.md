@@ -7,7 +7,23 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Added
+
+- SharpMUTerm updates itself. The Windows installer's copy, the portable Windows copy and the Linux AppImage check
+  GitHub for a newer release half a minute after starting and once a day, and say so when there is one. Choose
+  *Update* on the notice or in the command palette (Ctrl+P ▸ *Check for updates*, *Update*) to download it, then *Restart*
+  to start the new version: the desktop window and the terminal on Linux come back by themselves, and the terminal on
+  Windows asks you to run it again. Nothing is downloaded until you ask. F7 ▸ Updates turns the daily check off, or
+  includes prereleases. [docs/UPDATES.md](docs/UPDATES.md) explains it all.
+
 ### Changed
+
+- The Windows installer and the Linux AppImage are now built with Velopack, which is what lets them update. Windows
+  installs per user under `%LocalAppData%\SharpMUTerm`, adds the `sharpmuterm` folder to PATH and installs the Symbols
+  Nerd Font Mono font, with no questions asked. If you installed an earlier version with the old installer, uninstall
+  it first, and download the new AppImage once by hand. The installer no longer offers to open `telnet://` links on
+  Windows. The release files are now `SharpMUTerm-win-Setup.exe`, `SharpMUTerm-win-Portable.zip` and
+  `SharpMUTerm.AppImage`; the `.tar.gz` stays and does not update itself.
 
 - The command line gives its whole width to what you type. The character and world it sends to
   (`Corvid · Aetherfall ›`) are shown as a placeholder while the line is empty and go away with the first character,
@@ -23,6 +39,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Quitting the terminal client turns off the terminal's focus reporting again, so the shell no longer receives
+  `ESC [ I` / `ESC [ O` when you switch windows afterwards.
 - Servers now hear this client's name. Over TTYPE (MTTS) it introduced itself as `UNKNOWN`, because its own
   terminal types were handed to the telnet library after the library had already settled its answers; it now
   answers `SHARPMUTERM`, `XTERM`, `MTTS 2845`. An MXP `<VERSION>` reply names the real version instead of `1`, the same

@@ -40,6 +40,11 @@
     <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
 
+  <!-- Finds, downloads and applies updates from the GitHub release feed. Used in Hosting/ only (VelopackUpdates). -->
+  <ItemGroup>
+    <PackageReference Include="Velopack" />
+  </ItemGroup>
+
   <!-- The composition root for client diagnostics: Serilog is referenced here and nowhere else. -->
   <ItemGroup>
     <PackageReference Include="Serilog" />

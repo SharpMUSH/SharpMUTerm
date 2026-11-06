@@ -80,6 +80,7 @@ public sealed record CharacterRef(
 /// How the desktop window covers the screen, so ⌃P offers full screen and windowed full screen (and leaving them); null
 /// in a host with no window to size (the terminal).
 /// </param>
+/// <param name="Update">Where this copy's update stands; null in a host that cannot update itself.</param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -108,7 +109,17 @@ public sealed record CommandContext(
     IReadOnlyList<ScriptFileRef>? ScriptFiles = null,
     int RecentAlerts = 0,
     IReadOnlyList<AlertRef>? Alerts = null,
-    Configuration.WindowMode? WindowMode = null);
+    Configuration.WindowMode? WindowMode = null,
+    UpdateState? Update = null);
+
+/// <summary>
+/// Where this copy's update stands, for ⌃P's update entries: null when the host cannot update itself at all (a build
+/// run from a folder, the snapshot, the tests).
+/// </summary>
+/// <param name="Version">The newer release found, or null while none has been.</param>
+/// <param name="Ready">Downloaded, so restarting puts it in place.</param>
+/// <param name="Busy">A check or a download is running now.</param>
+public sealed record UpdateState(string? Version, bool Ready, bool Busy);
 
 /// <summary>A page or alert the client kept this run, for ⌃P's <c>Recent alerts</c> entries.</summary>
 /// <param name="Id">Its number this run, which the entry's id carries.</param>

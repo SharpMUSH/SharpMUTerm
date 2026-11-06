@@ -110,5 +110,8 @@ internal static class WindowHost
 
         // F7's background transparency is drawn here: every plane at the level, over a translucent desktop window.
         Translucency = driver.Translucency,
+
+        // Set by the live launch alone (ClientLaunch.Run), so the demo and every test ask GitHub nothing.
+        Updates = null,
     };
 }

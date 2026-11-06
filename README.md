@@ -26,10 +26,15 @@ holds both programs, and none needs a .NET runtime.
 
 | Platform | Package | What to run |
 |---|---|---|
-| Windows | `SharpMUTerm-<version>-win-x64-setup.exe` | Start menu ▸ SharpMUTerm opens the window. Tick *Add to PATH* to run `sharpmuterm` from any terminal. Installs per user, with no administrator prompt. |
-| Windows | `sharpmuterm-win-x64.zip` | Unzip and run either `.exe`. |
-| Linux | `SharpMUTerm-<version>-x86_64.AppImage` | `chmod +x` it and run it to open the window. Put `--terminal` first to run the terminal client instead. |
-| Linux | `sharpmuterm-linux-x64.tar.gz` | Unpack and run either program. |
+| Windows | `SharpMUTerm-win-Setup.exe` | Start menu ▸ SharpMUTerm opens the window, and `sharpmuterm` runs from any terminal. Installs per user, with no administrator prompt. |
+| Windows | `SharpMUTerm-win-Portable.zip` | Unzip and run `SharpMUTerm.exe` for the window, or `current\sharpmuterm.exe`. |
+| Linux | `SharpMUTerm.AppImage` | `chmod +x` it and run it to open the window. Put `--terminal` first to run the terminal client instead. |
+| Linux | `sharpmuterm-linux-x64.tar.gz` | Unpack and run either program. This copy does not update itself. |
+
+The installed Windows copy, the portable one and the AppImage update themselves: they check GitHub for a newer
+release half a minute after start and once a day (F7 ▸ *check for updates*), say so when there is one, and download it
+and restart into it when you choose *Update*. Ctrl+P ▸ *Check for updates* asks at any time. See
+[docs/UPDATES.md](docs/UPDATES.md).
 
 ```bash
 sharpmuterm                      # open with no connection; the welcome helps you add a world
