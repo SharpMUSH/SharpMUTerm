@@ -488,6 +488,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- A new logo, used for the executables, the installer, the AppImage and every window's icon (the window had none on Linux).
+
 - Trigger sets stand out on the Triggers, Aliases, Keypad and Timers screens. Each set is a heading over its rules,
   with its name in bold and how many rules it holds, in the terminal and the desktop window alike; an empty set says
   "no triggers" on its heading. A trigger's second row no longer repeats its set's name.

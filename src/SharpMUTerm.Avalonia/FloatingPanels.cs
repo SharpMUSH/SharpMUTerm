@@ -197,6 +197,7 @@ internal sealed class FloatingPanelWindow : Window
         _view = view;
         Panel = panel;
         NativeTokens.ApplyTextRendering(this);
+        AppIcon.Apply(this);
         ShowActivated = false;
         ShowInTaskbar = false;
         CanResize = true;

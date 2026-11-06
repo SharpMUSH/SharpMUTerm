@@ -35,6 +35,11 @@
     <None Include="Fonts\*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="licenses\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- The logo as every window's icon (AppIcon). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\packaging\icons\sharpmuterm.png" LogicalName="Icons.sharpmuterm.png" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="SharpMUTerm.Avalonia.Tests" />
   </ItemGroup>
