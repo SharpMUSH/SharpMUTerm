@@ -142,7 +142,7 @@ public class ThemeRepaintTests
 
         // What 2,000 such lines weigh as StyledLines, the most a window can add by keeping them (a session window's
         // are the very instances its scrollback ring already holds, so there it is a reference per line).
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         var before = GC.GetTotalMemory(forceFullCollection: true);
         var kept = text.SelectMany(parser.Feed).ToList();
         var after = GC.GetTotalMemory(forceFullCollection: true);

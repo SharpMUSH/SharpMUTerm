@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Text;
 
 namespace SharpMUTerm.Core.Tests.Text;
@@ -6,7 +7,7 @@ public class AnsiParserTests
 {
     private static StyledLine ParseSingleLine(string input)
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         var lines = parser.Feed(input);
         if (lines.Count != 1)
         {
@@ -28,7 +29,7 @@ public class AnsiParserTests
     [Test]
     public async Task Feed_SplitsOnNewlines()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         var lines = parser.Feed("one\ntwo\nthree\n");
         await Assert.That(lines).Count().IsEqualTo(3);
         await Assert.That(lines[0].Text).IsEqualTo("one");
@@ -46,7 +47,7 @@ public class AnsiParserTests
     [Test]
     public async Task BlankLine_IsEmittedAsEmpty()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         var lines = parser.Feed("a\n\nb\n");
         await Assert.That(lines).Count().IsEqualTo(3);
         await Assert.That(lines[1].IsEmpty).IsTrue();
@@ -116,7 +117,7 @@ public class AnsiParserTests
     [Test]
     public async Task Sgr_Reset_ClearsEverything()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         parser.Feed("\x1b[1;31mred");
         var lines = parser.Feed("\x1b[0mplain\n");
         await Assert.That(lines).HasSingleItem();
@@ -136,7 +137,7 @@ public class AnsiParserTests
     [Test]
     public async Task Sgr_EmptyParameter_IsReset()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         parser.Feed("\x1b[31mred");
         var lines = parser.Feed("\x1b[mback\n");
         await Assert.That(lines[0].Spans[1].Style).IsEqualTo(TextStyle.Default);
@@ -156,7 +157,7 @@ public class AnsiParserTests
     [Test]
     public async Task StylePersists_AcrossFeedCalls()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         parser.Feed("\x1b[33m");
         var lines = parser.Feed("yellow\n");
         await Assert.That(lines[0].Spans[0].Style.Foreground).IsEqualTo(TerminalColor.FromIndex(3));
@@ -165,7 +166,7 @@ public class AnsiParserTests
     [Test]
     public async Task EscapeSequence_SplitAcrossFeeds_IsReassembled()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         await Assert.That(parser.Feed("\x1b[3")).IsEmpty();
         await Assert.That(parser.Feed("1m")).IsEmpty();
         var lines = parser.Feed("red\n");
@@ -219,7 +220,7 @@ public class AnsiParserTests
     [Test]
     public async Task Flush_ReturnsPendingPartialLine()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         await Assert.That(parser.Feed("\x1b[31mprompt> ")).IsEmpty();
         var line = parser.Flush();
         await Assert.That(line).IsNotNull();
@@ -230,7 +231,7 @@ public class AnsiParserTests
     [Test]
     public async Task Flush_ReturnsNull_WhenNothingBuffered()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         parser.Feed("done\n");
         await Assert.That(parser.Flush()).IsNull();
     }
@@ -238,10 +239,10 @@ public class AnsiParserTests
     [Test]
     public async Task Reset_ClearsStyleAndBuffers()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         parser.Feed("\x1b[31mpartial");
         parser.Reset();
-        await Assert.That(parser.CurrentStyle).IsEqualTo(TextStyle.Default);
+        await Assert.That(parser.Feed("x\n")[0].Spans[0].Style).IsEqualTo(TextStyle.Default);
         await Assert.That(parser.HasPendingContent).IsFalse();
         await Assert.That(parser.Flush()).IsNull();
     }
@@ -249,7 +250,7 @@ public class AnsiParserTests
     [Test]
     public async Task DefaultForeground_ResetsColorButKeepsAttributes()
     {
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         parser.Feed("\x1b[1;31mA");
         var lines = parser.Feed("\x1b[39mB\n");
         var second = lines[0].Spans[1].Style;
@@ -280,13 +281,13 @@ public class AnsiParserTests
     [Arguments("\u001b")] // a lone ESC, whose next byte would otherwise be eaten
     public async Task AnUnterminatedEscapeStringDoesNotEatTheNextLine(string escape)
     {
-        var atFlushBoundary = new AnsiParser();
+        var atFlushBoundary = new MarkupLineParser();
         atFlushBoundary.Feed("says '" + escape);
         atFlushBoundary.Flush();
         atFlushBoundary.Feed("the next line");
         await Assert.That(atFlushBoundary.Flush()?.Text).IsEqualTo("the next line");
 
-        var embedded = new AnsiParser().Feed("says '" + escape + "\nthe next line\n");
+        var embedded = new MarkupLineParser().Feed("says '" + escape + "\nthe next line\n");
         await Assert.That(embedded).Count().IsEqualTo(2);
         await Assert.That(embedded[1].Text).IsEqualTo("the next line");
     }

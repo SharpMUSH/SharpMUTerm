@@ -62,7 +62,8 @@ fallbacks) for inline images/maps.
 **M1 delivered, plus substantial M2–M4 work.** `SharpMUTerm.slnx` builds all fifteen projects on
 `net10.0`, with the full test suite passing. In place:
 
-- **Core** — `AnsiParser` (SGR 16/256/truecolor), styled-line + `ScrollbackBuffer` model (a capped
+- **Core** — `MarkupLineParser` (MarkupString's `Decoder` with `WithVt`, `WithMxp` and `WithPueblo`, folded into
+  `StyledLine`s), styled-line + `ScrollbackBuffer` model (a capped
   in-memory ring plus a **file-backed spill**, `FileScrollbackSpill`, so history deeper than memory is
   paged off an ephemeral per-session cache under `$XDG_CACHE_HOME`; absolute line indices, ranged
   reads capped at `MaxRangeLines`, and any disk failure degrades to memory-only. Emphatically **not**
@@ -3552,6 +3553,14 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     already wires one callback to both plugins, so the signal arrives on the version bump.
   - **What is still ours**: a server that sends no boundary marker at all — no GA, no EOR, no newline
     — is now `PacketPatchProtocol`'s, which infers a boundary from silence.
+- **The escape, MXP and Pueblo parsers are MarkupString's now (2026-11-07).** `Text/MarkupLineParser` wraps one
+  `MarkupString.Decoding.Decoder` per session (`WithVt`, a literal-tab plugin, `WithMxp(MxpOptions { ShowRefusedTags,
+  Supports })`, `WithPueblo`) and folds each decoded line into `StyledLine`/`StyledSpan`; `Switch(format)` turns
+  the protocols on and off. `AnsiParser`, `MxpParser`, `PuebloParser`, `ILineParser`, `SgrCodes`, `MxpTagCategory`
+  and `MxpLineMode` are gone. The notes below about them record why the behaviour is what it is; the behaviour
+  now lives in MarkupString, and the old parser test suites still run against the adapter. A gap found there is
+  fixed in MarkupString, not worked around here. Server links outside `UrlPolicy.Safe` (such as a forged
+  `mux:send:`) are read as text by the decoder, before the click-time http(s) gate.
 - **MXP's line-security model is the parser's real job, and the allow-list is chosen deliberately over
   a deny-list** (`MxpLineMode`, `MxpTagCategory`, `MxpParser` — the eight `ESC[#z` line tags: OPEN,
   SECURE, LOCKED, TEMP SECURE, and LOCK OPEN/SECURE/LOCKED plus RESET). The spec draws its own line in

@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Text;
 
@@ -10,7 +11,7 @@ public class MxpSendMenuTests
 
     private static StyledLine Line(string text)
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed(text);
         return parser.Flush() ?? StyledLine.Empty;
     }
@@ -73,7 +74,7 @@ public class MxpSendMenuTests
         var href = string.Join('|', Enumerable.Range(0, 30).Select(i => $"c{i}"));
         var send = Clickable(Line(Secure + $"<SEND \"{href}\">x</SEND>"));
 
-        await Assert.That(send.Choices!.Count).IsEqualTo(MxpParser.MaxSendChoices);
+        await Assert.That(send.Choices!.Count).IsEqualTo(MarkupLineParser.MaxSendChoices);
     }
 
     [Test]
