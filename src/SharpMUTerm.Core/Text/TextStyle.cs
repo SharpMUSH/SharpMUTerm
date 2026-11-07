@@ -17,7 +17,7 @@ public enum TextAttributes
 
 /// <summary>
 /// An immutable snapshot of terminal rendition state: foreground, background, and
-/// attribute flags. Produced by <see cref="AnsiParser"/> and consumed by the renderer.
+/// attribute flags. Produced by <see cref="MarkupLineParser"/> and consumed by the renderer.
 /// </summary>
 public readonly struct TextStyle : IEquatable<TextStyle>
 {

@@ -77,12 +77,7 @@ public sealed class ChannelCapture
                 text = text[..MaxTextLength];
             }
 
-            var parser = new AnsiParser();
-            var lines = new List<StyledLine>(parser.Feed(text.Replace("\r", string.Empty, StringComparison.Ordinal)));
-            if (parser.Flush() is { } last)
-            {
-                lines.Add(last);
-            }
+            var lines = new List<StyledLine>(MarkupLineParser.ParseAll(text.Replace("\r", string.Empty, StringComparison.Ordinal)));
 
             while (lines.Count > 0 && lines[^1].Text.Trim().Length == 0)
             {

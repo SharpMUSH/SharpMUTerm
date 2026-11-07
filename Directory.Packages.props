@@ -9,6 +9,15 @@
     <!-- TUI framework: compositor, split layouts, tabs, mouse, Kitty graphics (stable, net10). -->
     <PackageVersion Include="SharpConsoleUI" Version="2.7.8" />
 
+    <!--
+      Reading server output: ANSI/VT, MXP and Pueblo into MarkupText, which Core folds into StyledLine
+      (Text/MarkupLineParser). One version for the family.
+    -->
+    <PackageVersion Include="MarkupString" Version="2.27.0" />
+    <PackageVersion Include="MarkupString.Ansi" Version="2.27.0" />
+    <PackageVersion Include="MarkupString.Mxp" Version="2.27.0" />
+    <PackageVersion Include="MarkupString.Pueblo" Version="2.27.0" />
+
     <!-- Telnet negotiation: TELOPT/NAWS/MTTS/EOR/CHARSET/MSSP/GMCP/MSDP/MCCP/MXP negotiation. -->
     <PackageVersion Include="TelnetNegotiationCore" Version="4.5.3" />
 

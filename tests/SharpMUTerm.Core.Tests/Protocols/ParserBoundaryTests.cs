@@ -1,3 +1,5 @@
+using SharpMUTerm.Core.Text;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 
 namespace SharpMUTerm.Core.Tests.Protocols;
@@ -11,7 +13,7 @@ public class ParserBoundaryTests
     [Test]
     public async Task Mxp_BareSend_DoesNotLeakToNextLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         // SEND is a secure element: without the ESC[1z the tag would be echoed as literal text and
         // this test would pass without ever opening the interaction it exists to watch leak.
         var lines = parser.Feed("\x1b[1z<SEND HREF=\"go\">walk\nmore\n");
@@ -22,7 +24,7 @@ public class ParserBoundaryTests
     [Test]
     public async Task Mxp_NestedFormattingInsideSend_DoesNotLeakInteractionAcrossNewline()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         // Bold opened inside the SEND and closed on the next line must not resurrect the command.
         var lines = parser.Feed("\x1b[1z<SEND HREF=\"go\"><B>walk\nmore</B> tail\n");
         var second = lines[1];
@@ -32,7 +34,7 @@ public class ParserBoundaryTests
     [Test]
     public async Task Pueblo_UnclosedAnchor_DoesNotLeakToNextLine()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var lines = parser.Feed("<A XCH_CMD=\"look\">here\nnext\n");
         var second = lines[1];
         await Assert.That(second.Spans.All(s => !s.IsInteractive)).IsTrue();
@@ -41,7 +43,7 @@ public class ParserBoundaryTests
     [Test]
     public async Task Pueblo_UnclosedAnchor_DoesNotLeakIntoFlushedPrompt()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         parser.Feed("<A XCH_CMD=\"look\">here\n");
         parser.Feed("prompt> ");
         var prompt = parser.Flush();

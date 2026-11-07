@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Text;
 
@@ -14,7 +15,7 @@ public class MxpImageTests
     /// <summary>Feeds one line the way a session does — text, then <c>Flush</c> as the boundary.</summary>
     private static StyledLine Line(string text)
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed(text);
         return parser.Flush() ?? throw new InvalidOperationException("no line");
     }
@@ -35,7 +36,8 @@ public class MxpImageTests
             "http://mud.example/img/map.png",
             "map.png",
             new ImageExtent(200, ImageExtentUnit.Pixels),
-            new ImageExtent(10, ImageExtentUnit.Characters)));
+            // Sized in cells one way only, the other way is a cell's 16 pixels for each.
+            new ImageExtent(160, ImageExtentUnit.Pixels)));
     }
 
     /// <summary>Spec: "The classname is appended to the URL, along with the name of the graphics file".</summary>
@@ -121,7 +123,7 @@ public class MxpImageTests
     [Test]
     public async Task SupportsNamesImage()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var replies = new List<string>();
         parser.ClientReply += (_, r) => replies.Add(r);
 
@@ -202,7 +204,8 @@ public class MxpImageTests
     {
         var line = Line(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=20c H=4c> A dark room.");
 
-        await Assert.That(line.Text).IsEqualTo("[image: map.png]A dark room.");
+        // No blanks to draw it in: the picture goes in the line where its tag was, and nothing the server wrote is covered.
+        await Assert.That(line.Text).IsEqualTo("[image: map.png] A dark room.");
         await Assert.That(ImageSpan(line).Interaction!.Image!.Reserved).IsFalse();
     }
 
@@ -219,7 +222,7 @@ public class MxpImageTests
     [Test]
     public async Task TheBlanksOwedEndWithTheLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed(Secure + "<IMAGE map.png URL=\"http://mud.example/\" W=20c H=4c>");
         parser.Flush();
         parser.Feed("   next");

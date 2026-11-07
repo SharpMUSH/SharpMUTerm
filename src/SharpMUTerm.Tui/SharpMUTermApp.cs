@@ -1372,7 +1372,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             PaneCommands.Apply(_workspace.Layout, PaneCommand.SplitRight);
             RebuildPaneArea();
 
-            var parser = new AnsiParser();
+            var parser = new MarkupLineParser();
             foreach (var text in new[]
             {
                 "\x1b[0;37mThe noticeboard reads: patch notes at\x1b[0m",
@@ -1394,7 +1394,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // leaves the machine.
         if (string.Equals(view, "mxp-image", StringComparison.OrdinalIgnoreCase))
         {
-            var mxp = new MxpParser();
+            var mxp = new MarkupLineParser(ContentFormat.Mxp);
             foreach (var text in new[]
             {
                 "\x1b[1zThe survey office has pinned up a map of the coast road:",
@@ -1416,7 +1416,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // a snapshot host draws no menus, as a terminal does not, so the client's own chooser opens.
         if (string.Equals(view, "send-menu", StringComparison.OrdinalIgnoreCase))
         {
-            var mxp = new MxpParser();
+            var mxp = new MarkupLineParser(ContentFormat.Mxp);
             foreach (var text in new[]
             {
                 "A merchant lays out her wares on a striped cloth.",
@@ -1462,7 +1462,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
 
             rows.Add("\x1b[0;36m╰" + new string('─', inner) + "╯\x1b[0m");
-            var mxp = new MxpParser();
+            var mxp = new MarkupLineParser(ContentFormat.Mxp);
             foreach (var text in rows)
             {
                 mxp.Feed(text);
@@ -1578,7 +1578,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         if (string.Equals(view, "freeze", StringComparison.OrdinalIgnoreCase))
         {
             ToggleFreeze();
-            var parser = new AnsiParser();
+            var parser = new MarkupLineParser();
             foreach (var text in new[]
             {
                 "\x1b[0;32mA courier\x1b[0m jogs in from the east, breathless.",
@@ -1598,7 +1598,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // writer produces differently is a frame that shows something nobody will ever see.
         if (string.Equals(view, "prompt", StringComparison.OrdinalIgnoreCase))
         {
-            var parser = new AnsiParser();
+            var parser = new MarkupLineParser();
             var prompt = parser.Feed("\x1b[0;33mDo you want to be listed at right, Pemberton (Y/N)?\x1b[0m ")
                 .FirstOrDefault() ?? parser.Flush() ?? StyledLine.Empty;
             ShowPromptRow(prompt);
@@ -2783,7 +2783,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         InitDemoRuntimeState();
 
-        var parser = new AnsiParser();
+        var parser = new MarkupLineParser();
         void Feed(string windowId, string ansiLine)
         {
             foreach (var line in parser.Feed(ansiLine + "\n"))
@@ -2817,7 +2817,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // leave it in the background with unread, as if lines arrived while another tab was focused.
         var chatId = DemoScene.ChatWindowId;
         PaneContentFor(chatId, "Chat");
-        var chatParser = new AnsiParser();
+        var chatParser = new MarkupLineParser();
         foreach (var text in new[]
         {
             "\x1b[1;35m[Chat]\x1b[0m Rivane: anyone up for the crypt run?",

@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharpMUTerm.Core.Protocols;
@@ -53,7 +54,7 @@ public class MxpCapabilityTests
 
         await Assert.That(await WaitForTextAsync(transport, "<SUPPORTS")).IsTrue();
         var reply = Reply(transport, "<SUPPORTS");
-        foreach (var tag in MxpParser.SupportedTags)
+        foreach (var tag in MxpClientSupport.SupportedTags)
         {
             await Assert.That(reply).Contains("+" + tag);
         }
@@ -82,7 +83,7 @@ public class MxpCapabilityTests
     [Arguments(new[] { "h1.*", "b.*" }, new string[0], new[] { "h1.*" })]
     public async Task AnAnswerNamesWhatWasAskedAbout(string[] asked, string[] supported, string[] unsupported)
     {
-        var (yes, no) = MxpParser.AnswerSupport(asked);
+        var (yes, no) = MxpClientSupport.AnswerSupport(asked);
         await Assert.That(yes).IsEquivalentTo(supported);
         await Assert.That(no).IsEquivalentTo(unsupported);
     }

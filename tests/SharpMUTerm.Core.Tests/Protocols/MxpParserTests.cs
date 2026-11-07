@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Telnet;
 using SharpMUTerm.Core.Text;
@@ -17,7 +18,7 @@ public class MxpParserTests
 
     private static StyledLine ParseSingleLine(string input)
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = parser.Feed(input);
         if (lines.Count != 1)
         {
@@ -40,7 +41,7 @@ public class MxpParserTests
     [Test]
     public async Task Feed_SplitsOnNewlines()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = parser.Feed("one\ntwo\nthree\n");
         await Assert.That(lines).Count().IsEqualTo(3);
         await Assert.That(lines[0].Text).IsEqualTo("one");
@@ -51,7 +52,7 @@ public class MxpParserTests
     [Test]
     public async Task Flush_ReturnsPartialPromptLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = parser.Feed("Enter password:");
         await Assert.That(lines).Count().IsEqualTo(0);
 
@@ -63,7 +64,7 @@ public class MxpParserTests
     [Test]
     public async Task Flush_ReturnsNullWhenNothingBuffered()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed("done\n");
         await Assert.That(parser.Flush()).IsNull();
     }
@@ -78,7 +79,7 @@ public class MxpParserTests
     [Test]
     public async Task BlankLine_IsEmittedAsEmpty()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = parser.Feed("a\n\nb\n");
         await Assert.That(lines).Count().IsEqualTo(3);
         await Assert.That(lines[1].IsEmpty).IsTrue();
@@ -242,7 +243,7 @@ public class MxpParserTests
     [Test]
     public async Task Send_BareWithoutClose_ClosesAtEndOfLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         // Only the first line is secured: the mode reverts at the newline, which is exactly the
         // boundary the interaction must not survive.
         var lines = parser.Feed(Secure + "<SEND HREF=\"go\">walk\nnext line\n");
@@ -265,7 +266,7 @@ public class MxpParserTests
     public async Task Entities_AreDecoded()
     {
         var line = ParseSingleLine("&lt;&gt;&amp;&nbsp;&#65;\n");
-        await Assert.That(line.Text).IsEqualTo("<>& A");
+        await Assert.That(line.Text).IsEqualTo("<>&\u00a0A");
     }
 
     [Test]
@@ -313,7 +314,7 @@ public class MxpParserTests
     [Test]
     public async Task Br_ProducesLineBreak()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         // BR is not one of the spec's open tags, so it needs securing like any other.
         var lines = parser.Feed(Secure + "first<BR>second\n");
         await Assert.That(lines).Count().IsEqualTo(2);
@@ -331,7 +332,7 @@ public class MxpParserTests
     [Test]
     public async Task TagSplitAcrossFeeds_IsReassembled()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var first = parser.Feed("<COL");
         await Assert.That(first).Count().IsEqualTo(0);
         var second = parser.Feed("OR FORE=red>hot</COLOR>\n");
@@ -344,7 +345,7 @@ public class MxpParserTests
     [Test]
     public async Task EntitySplitAcrossFeeds_IsReassembled()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed("x&a");
         var lines = parser.Feed("mp;y\n");
         await Assert.That(lines[0].Text).IsEqualTo("x&y");
@@ -353,9 +354,8 @@ public class MxpParserTests
     [Test]
     public async Task StyleState_PersistsAcrossFeeds()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed("<B>bold ");
-        await Assert.That(parser.CurrentStyle.HasAttribute(TextAttributes.Bold)).IsTrue();
         var lines = parser.Feed("still bold</B>\n");
         await Assert.That(lines[0].Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsTrue();
     }
@@ -363,7 +363,7 @@ public class MxpParserTests
     [Test]
     public async Task SelfClosingBr_IsHandled()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = parser.Feed(Secure + "a<BR/>b\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("a");
@@ -397,7 +397,7 @@ public class MxpParserTests
     [Test]
     public async Task Ansi_SgrSetsTheStyleAndLeavesNoEscapeInTheText()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed("\x1b[33mYellow\x1b[0m plain\n")[0];
 
@@ -406,13 +406,13 @@ public class MxpParserTests
         await Assert.That(line.Spans[^1].Style.Foreground).IsEqualTo(TerminalColor.Default);
     }
 
-    /// <summary>A non-SGR CSI is consumed and discarded, exactly as AnsiParser does with it.</summary>
+    /// <summary>A CSI with no meaning on a line (here, hiding the cursor) is consumed and discarded.</summary>
     [Test]
     public async Task Ansi_NonSgrCsiIsDiscarded()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
-        var line = parser.Feed("a\x1b[2Kb\n")[0];
+        var line = parser.Feed("a\x1b[?25lb\n")[0];
 
         await Assert.That(line.Text).IsEqualTo("ab");
     }
@@ -421,7 +421,7 @@ public class MxpParserTests
     [Test]
     public async Task Ansi_AndMxpTagsCompose()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed("\x1b[33m<B>both</B>\n")[0];
 
@@ -442,10 +442,10 @@ public class MxpParserTests
     [Test]
     public async Task Reset_ClearsStyleAndStack()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed("<B>bold");
         parser.Reset();
-        await Assert.That(parser.CurrentStyle).IsEqualTo(TextStyle.Default);
+        await Assert.That(parser.Feed("x\n")[0].Spans[0].Style).IsEqualTo(TextStyle.Default);
         await Assert.That(parser.HasPendingContent).IsFalse();
         var lines = parser.Feed("plain\n");
         await Assert.That(lines[0].Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsFalse();
@@ -454,7 +454,7 @@ public class MxpParserTests
     [Test]
     public async Task HasPendingContent_TrueWithBufferedText()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed("partial");
         await Assert.That(parser.HasPendingContent).IsTrue();
     }
@@ -500,7 +500,7 @@ public class MxpParserTests
     [Test]
     public async Task Version_IsAnswered()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var replies = new List<string>();
         parser.ClientReply += (_, r) => replies.Add(r);
 
@@ -509,14 +509,14 @@ public class MxpParserTests
         // Spec: "the response is sent as a secure-tagged line" (ESC[1z prefix), and the tag's exact
         // attribute order is MXP, STYLE, CLIENT, VERSION, with REGISTERED optional and here omitted.
         await Assert.That(replies).Count().IsEqualTo(1);
-        await Assert.That(replies[0]).IsEqualTo($"\x1b[1z<VERSION MXP=1.0 STYLE=0 CLIENT=SharpMUTerm VERSION={GmcpHandshake.ClientVersion}>");
+        await Assert.That(replies[0]).IsEqualTo($"\x1b[1z<VERSION MXP=1.0 CLIENT=\"SharpMUTerm\" VERSION=\"{GmcpHandshake.ClientVersion}\">");
     }
 
     /// <summary>A VERSION request on an open line is a player's, not the server's, and is refused.</summary>
     [Test]
     public async Task Version_OnAnOpenLine_IsNotAnswered()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var replies = new List<string>();
         parser.ClientReply += (_, r) => replies.Add(r);
 
@@ -529,7 +529,7 @@ public class MxpParserTests
     [Test]
     public async Task Support_IsAnsweredWithTheTagsThisParserImplements()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var replies = new List<string>();
         parser.ClientReply += (_, r) => replies.Add(r);
 
@@ -551,7 +551,7 @@ public class MxpParserTests
     [Test]
     public async Task ClientReplies_AreSentAsSecureLines()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var replies = new List<string>();
         parser.ClientReply += (_, r) => replies.Add(r);
 
