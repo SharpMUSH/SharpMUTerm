@@ -37,6 +37,23 @@ public class InlineImageCacheTests
     }
 
     [Test]
+    public async Task NewCellMetricsResizeRowsWithoutRefetching()
+    {
+        var count = new Counting();
+        using var host = new InlineImageHost(count.Fetch(Task.FromResult<byte[]?>(TestImages.RgbaPng(240, 240))), run => run());
+        var request = Room with { Width = new ImageExtent(24, ImageExtentUnit.Characters) };
+        var drawn = new List<IReadOnlyList<string>>();
+        foreach (var cell in new[] { new ImageCellSize(10, 20), new ImageCellSize(10, 24) })
+        {
+            host.Load([request], InlineImagePresentation.HalfBlock, 100, () => null, (_, rows) => drawn.Add(rows), cellSize: cell);
+            await host.Pending;
+        }
+        await Assert.That(count.Fetches).IsEqualTo(1);
+        await Assert.That(drawn[0].Count).IsEqualTo(12);
+        await Assert.That(drawn[1].Count).IsEqualTo(10);
+    }
+
+    [Test]
     public async Task APictureShownAtAnotherWidthIsNotFetchedAgain()
     {
         var count = new Counting();

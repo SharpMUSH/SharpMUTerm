@@ -91,6 +91,16 @@ internal sealed class WindowPointer : IPointerPresenter
 
     int? IPointerPresenter.WindowColumns => WindowColumnsMeasured is > 0 and var columns ? columns : null;
 
+    private ImageCellSize? _imageCellSize;
+
+    internal ImageCellSize? ImageCellSizeMeasured
+    {
+        get => Volatile.Read(ref _imageCellSize);
+        set => Volatile.Write(ref _imageCellSize, value);
+    }
+
+    ImageCellSize? IPointerPresenter.ImageCellSize => ImageCellSizeMeasured;
+
     private double _cellHeight;
 
     /// <summary>

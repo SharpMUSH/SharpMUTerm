@@ -7,10 +7,11 @@ namespace SharpMUTerm.Tui;
 /// the world's <c>W=</c>/<c>H=</c> hints, then the room there is. Pure, so the sizing is testable
 /// without a terminal.
 /// <para>
-/// A cell is taken to be <see cref="CellPixelWidth"/> × <see cref="CellPixelHeight"/> pixels. The
+/// Desktop hosts supply measured logical-pixel cells. Without those, a cell is taken to be
+/// <see cref="CellPixelWidth"/> × <see cref="CellPixelHeight"/> pixels. The
 /// client cannot ask the terminal (the framework owns the input stream a <c>CSI 16 t</c> reply would
-/// arrive on), and the 1:2 ratio is the one thing that matters: it is what keeps a square picture
-/// square under both Kitty and half-blocks, which carry one pixel across and two down per cell.
+/// arrive on), so those hosts retain the established 1:2 fallback. Desktop sizing uses the measured
+/// aspect ratio instead; the final box is rounded to whole cells.
 /// </para>
 /// </summary>
 internal static class InlineImageLayout
@@ -38,19 +39,22 @@ internal static class InlineImageLayout
         ImageExtent? width,
         ImageExtent? height,
         int availableColumns,
-        int maxRows = MaxRows)
+        int maxRows = MaxRows,
+        ImageCellSize? cellSize = null)
     {
         if (pixelWidth <= 0 || pixelHeight <= 0 || availableColumns <= 0 || maxRows <= 0)
         {
             return new WebImageLayout.CellBox(0, 0);
         }
 
-        double columns = Math.Ceiling(pixelWidth / (double)CellPixelWidth);
-        double rows = Math.Ceiling(pixelHeight / (double)CellPixelHeight);
-        var aspect = rows / columns;
+        var cw = cellSize?.Width is > 0 and var measuredWidth && double.IsFinite(measuredWidth) ? measuredWidth : CellPixelWidth;
+        var ch = cellSize?.Height is > 0 and var measuredHeight && double.IsFinite(measuredHeight) ? measuredHeight : CellPixelHeight;
+        double columns = Math.Ceiling(pixelWidth / cw);
+        double rows = Math.Ceiling(pixelHeight / ch);
+        var aspect = cellSize is null ? rows / columns : (pixelHeight / ch) / (pixelWidth / cw);
 
-        var hintedColumns = Columns(width, availableColumns);
-        var hintedRows = Rows(height, maxRows);
+        var hintedColumns = Columns(width, availableColumns, cw);
+        var hintedRows = Rows(height, maxRows, ch);
         if (hintedColumns is { } c && hintedRows is { } r)
         {
             columns = c;
@@ -73,19 +77,22 @@ internal static class InlineImageLayout
             Math.Clamp((int)Math.Round(rows * scale, MidpointRounding.AwayFromZero), 1, maxRows));
     }
 
-    private static double? Columns(ImageExtent? extent, int available) => extent switch
+    private static double? Columns(ImageExtent? extent, int available, double cellWidth) => extent switch
     {
-        { Unit: ImageExtentUnit.Pixels } e => Math.Ceiling(e.Value / (double)CellPixelWidth),
+        { Unit: ImageExtentUnit.Pixels } e => Math.Ceiling(e.Value / cellWidth),
         { Unit: ImageExtentUnit.Characters } e => e.Value,
         { Unit: ImageExtentUnit.Percent } e => Math.Max(1, available * e.Value / 100.0),
         _ => null,
     };
 
-    private static double? Rows(ImageExtent? extent, int maxRows) => extent switch
+    private static double? Rows(ImageExtent? extent, int maxRows, double cellHeight) => extent switch
     {
-        { Unit: ImageExtentUnit.Pixels } e => Math.Ceiling(e.Value / (double)CellPixelHeight),
+        { Unit: ImageExtentUnit.Pixels } e => Math.Ceiling(e.Value / cellHeight),
         { Unit: ImageExtentUnit.Characters } e => e.Value,
         { Unit: ImageExtentUnit.Percent } e => Math.Max(1, maxRows * e.Value / 100.0),
         _ => null,
     };
 }
+
+/// <summary>One display cell in logical pixels; null metrics use the terminal fallback.</summary>
+internal sealed record ImageCellSize(double Width, double Height);

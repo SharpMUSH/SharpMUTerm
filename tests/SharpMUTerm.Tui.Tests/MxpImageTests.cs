@@ -66,6 +66,37 @@ public class MxpImageTests
         await Assert.That(box).IsEqualTo(new WebImageLayout.CellBox(40, 2));
     }
 
+    [Test]
+    public async Task MeasuredCellsKeepOneHintPhysicallySquare()
+    {
+        var box = InlineImageLayout.Fit(160, 160, new ImageExtent(24, ImageExtentUnit.Characters), null, 100,
+            cellSize: new ImageCellSize(10, 24));
+        await Assert.That(box).IsEqualTo(new WebImageLayout.CellBox(24, 10));
+    }
+
+    [Test]
+    public async Task MeasuredPixelHintsUseActualCells()
+    {
+        var box = InlineImageLayout.Fit(160, 160, new ImageExtent(120, ImageExtentUnit.Pixels),
+            new ImageExtent(120, ImageExtentUnit.Pixels), 100, cellSize: new ImageCellSize(10, 24));
+        await Assert.That(box).IsEqualTo(new WebImageLayout.CellBox(12, 5));
+    }
+
+    [Test]
+    public async Task ExplicitCellBoxRemainsTheServersGeometry()
+    {
+        var box = InlineImageLayout.Fit(160, 160, new ImageExtent(24, ImageExtentUnit.Characters),
+            new ImageExtent(12, ImageExtentUnit.Characters), 100, cellSize: new ImageCellSize(10, 24));
+        await Assert.That(box).IsEqualTo(new WebImageLayout.CellBox(24, 12));
+    }
+
+    [Test]
+    public async Task InvalidMeasuredCellsKeepTerminalFallback()
+    {
+        var box = InlineImageLayout.Fit(160, 160, null, null, 100, cellSize: new ImageCellSize(double.NaN, 0));
+        await Assert.That(box).IsEqualTo(new WebImageLayout.CellBox(20, 10));
+    }
+
     // ---- Rows ---------------------------------------------------------------------------------
 
     /// <summary>

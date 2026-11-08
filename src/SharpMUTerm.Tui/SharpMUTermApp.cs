@@ -4703,7 +4703,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 presentation,
                 Math.Min(InlineImageColumns(windowId), edges?.Columns ?? int.MaxValue),
                 Kitty,
-                (index, rows) => PlaceInlinePicture(windowId, anchor, shown, index, rows));
+                (index, rows) => PlaceInlinePicture(windowId, anchor, shown, index, rows),
+                cellSize: _pointer?.ImageCellSize);
         }
 
         foreach (var (picture, request, interaction, columns, rows) in reserved)
@@ -4714,7 +4715,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 columns,
                 Kitty,
                 (_, drawn) => DrawReservedPicture(windowId, picture, Linked(drawn, interaction)),
-                rows);
+                rows,
+                _pointer?.ImageCellSize);
         }
     }
 

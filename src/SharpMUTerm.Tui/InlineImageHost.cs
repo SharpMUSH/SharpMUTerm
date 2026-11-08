@@ -125,7 +125,8 @@ internal sealed class InlineImageHost : IDisposable
         int availableColumns,
         Func<IGraphicsProtocol?> kitty,
         Action<int, IReadOnlyList<string>> deliver,
-        int maxRows = InlineImageLayout.MaxRows)
+        int maxRows = InlineImageLayout.MaxRows,
+        ImageCellSize? cellSize = null)
     {
         ArgumentNullException.ThrowIfNull(requests);
         ArgumentNullException.ThrowIfNull(kitty);
@@ -156,7 +157,7 @@ internal sealed class InlineImageHost : IDisposable
                 for (var i = 0; i < requests.Count; i++)
                 {
                     var index = i;
-                    var rows = await RowsForAsync(requests[index], presentation, availableColumns, maxRows, kitty).ConfigureAwait(false);
+                    var rows = await RowsForAsync(requests[index], presentation, availableColumns, maxRows, kitty, cellSize).ConfigureAwait(false);
                     if (rows is not null && !_cts.IsCancellationRequested)
                     {
                         _onUi(() => deliver(index, rows));
@@ -191,16 +192,17 @@ internal sealed class InlineImageHost : IDisposable
         InlineImagePresentation presentation,
         int availableColumns,
         int maxRows,
-        Func<IGraphicsProtocol?> kitty)
+        Func<IGraphicsProtocol?> kitty,
+        ImageCellSize? cellSize)
     {
-        var key = $"{presentation}|{availableColumns}|{maxRows}|{request.Width}|{request.Height}|{request.Url}";
+        var key = $"{presentation}|{availableColumns}|{maxRows}|{cellSize}|{request.Width}|{request.Height}|{request.Url}";
         if (Cached(key) is { } hit)
         {
             return hit;
         }
 
         var source = await SourceFor(request.Url).ConfigureAwait(false);
-        var picture = source is null ? null : Fit(source, request, availableColumns, maxRows);
+        var picture = source is null ? null : Fit(source, request, availableColumns, maxRows, cellSize);
         if (picture is null)
         {
             return null;
@@ -358,7 +360,8 @@ internal sealed class InlineImageHost : IDisposable
         byte[] bytes,
         InlineImageRequest request,
         int availableColumns,
-        int maxRows = InlineImageLayout.MaxRows)
+        int maxRows = InlineImageLayout.MaxRows,
+        ImageCellSize? cellSize = null)
     {
         PixelBuffer source;
         try
@@ -370,7 +373,7 @@ internal sealed class InlineImageHost : IDisposable
             return null;
         }
 
-        return Fit(source, request, availableColumns, maxRows);
+        return Fit(source, request, availableColumns, maxRows, cellSize);
     }
 
     /// <summary>Sizes a decoded picture to its cell box, keeping the pixels either presentation needs.</summary>
@@ -378,9 +381,10 @@ internal sealed class InlineImageHost : IDisposable
         PixelBuffer source,
         InlineImageRequest request,
         int availableColumns,
-        int maxRows = InlineImageLayout.MaxRows)
+        int maxRows = InlineImageLayout.MaxRows,
+        ImageCellSize? cellSize = null)
     {
-        var box = InlineImageLayout.Fit(source.Width, source.Height, request.Width, request.Height, availableColumns, maxRows);
+        var box = InlineImageLayout.Fit(source.Width, source.Height, request.Width, request.Height, availableColumns, maxRows, cellSize);
         if (box.Columns <= 0 || box.Rows <= 0)
         {
             return null;
