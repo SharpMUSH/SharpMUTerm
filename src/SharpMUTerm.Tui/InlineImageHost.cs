@@ -235,7 +235,7 @@ internal sealed class InlineImageHost : IDisposable
     /// fetched and decoded now. Null when it cannot be had, and a failure is not remembered, so the next
     /// mention tries again.
     /// </summary>
-    private Task<PixelBuffer?> SourceFor(string url)
+    private Task<RgbaPicture?> SourceFor(string url)
     {
         lock (_gate)
         {
@@ -252,7 +252,7 @@ internal sealed class InlineImageHost : IDisposable
             _sources[url] = _sourceOrder.AddFirst(source);
             source.Picture = Task.Run(async () =>
             {
-                PixelBuffer? picture = null;
+                RgbaPicture? picture = null;
                 try
                 {
                     picture = await FetchAndDecodeAsync(url).ConfigureAwait(false);
@@ -267,7 +267,7 @@ internal sealed class InlineImageHost : IDisposable
         }
     }
 
-    private async Task<PixelBuffer?> FetchAndDecodeAsync(string url)
+    private async Task<RgbaPicture?> FetchAndDecodeAsync(string url)
     {
         byte[]? bytes;
         await _fetches.WaitAsync(_cts.Token).ConfigureAwait(false);
@@ -291,7 +291,7 @@ internal sealed class InlineImageHost : IDisposable
 
         try
         {
-            return ImageDecoder.Decode(bytes);
+            return ImageDecoder.DecodeRgba(bytes);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -300,7 +300,7 @@ internal sealed class InlineImageHost : IDisposable
     }
 
     /// <summary>Accounts for a finished fetch: forgets a failure, and trims the cache to its budget.</summary>
-    private void Settle(Source source, PixelBuffer? picture)
+    private void Settle(Source source, RgbaPicture? picture)
     {
         lock (_gate)
         {
@@ -360,10 +360,10 @@ internal sealed class InlineImageHost : IDisposable
         int availableColumns,
         int maxRows = InlineImageLayout.MaxRows)
     {
-        PixelBuffer source;
+        RgbaPicture source;
         try
         {
-            source = ImageDecoder.Decode(bytes);
+            source = ImageDecoder.DecodeRgba(bytes);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -375,7 +375,7 @@ internal sealed class InlineImageHost : IDisposable
 
     /// <summary>Sizes a decoded picture to its cell box, keeping the pixels either presentation needs.</summary>
     internal static DecodedPicture? Fit(
-        PixelBuffer source,
+        RgbaPicture source,
         InlineImageRequest request,
         int availableColumns,
         int maxRows = InlineImageLayout.MaxRows)
@@ -390,8 +390,8 @@ internal sealed class InlineImageHost : IDisposable
         var height = Math.Min(source.Height, box.Rows * InlineImageLayout.CellPixelHeight);
         try
         {
-            var scaled = PixelScale.Stretch(source, width, height);
-            return new DecodedPicture(box, scaled);
+            var scaled = source.Resize(width, height);
+            return new DecodedPicture(box, scaled.Pixels, scaled.Png);
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -444,7 +444,7 @@ internal sealed class InlineImageHost : IDisposable
 
         try
         {
-            protocol.TransmitRawRgb((uint)id, Rgb(picture.Pixels), picture.Pixels.Width, picture.Pixels.Height, columns, rows);
+            protocol.TransmitImage((uint)id, picture.Png, columns, rows);
         }
         catch (NotSupportedException)
         {
@@ -452,24 +452,6 @@ internal sealed class InlineImageHost : IDisposable
         }
 
         return InlineImageRows.Kitty(id, columns, rows);
-    }
-
-    private static byte[] Rgb(PixelBuffer pixels)
-    {
-        var data = new byte[pixels.Width * pixels.Height * 3];
-        var i = 0;
-        for (var y = 0; y < pixels.Height; y++)
-        {
-            for (var x = 0; x < pixels.Width; x++)
-            {
-                var p = pixels.GetPixel(x, y);
-                data[i++] = p.R;
-                data[i++] = p.G;
-                data[i++] = p.B;
-            }
-        }
-
-        return data;
     }
 
     private IReadOnlyList<string>? Cached(string key)
@@ -507,7 +489,7 @@ internal sealed class InlineImageHost : IDisposable
     {
         public string Url { get; } = url;
 
-        public Task<PixelBuffer?> Picture { get; set; } = Task.FromResult<PixelBuffer?>(null);
+        public Task<RgbaPicture?> Picture { get; set; } = Task.FromResult<RgbaPicture?>(null);
 
         /// <summary>Its size in the cache's budget; zero while the fetch is under way.</summary>
         public long Bytes { get; set; }
@@ -522,4 +504,4 @@ internal sealed class InlineImageHost : IDisposable
 }
 
 /// <summary>A decoded picture and the cell box it will fill.</summary>
-internal sealed record DecodedPicture(WebImageLayout.CellBox Box, PixelBuffer Pixels);
+internal sealed record DecodedPicture(WebImageLayout.CellBox Box, PixelBuffer Pixels, byte[] Png);
