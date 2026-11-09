@@ -85,6 +85,7 @@ internal sealed class TerminalView : Control
         _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
         _zoomRenderers[(1, 100)] = _renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         Focusable = true;
         ClipToBounds = true;
         Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -337,6 +338,7 @@ internal sealed class TerminalView : Control
 
         _renderer = renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         // Font changes leave the control's bounds alone, so OnSizeChanged will not do this for us.
         // Going through the driver resize also recomputes pane geometry and schedules per-pane NAWS.
         if (Bounds.Width > 0 && Bounds.Height > 0)

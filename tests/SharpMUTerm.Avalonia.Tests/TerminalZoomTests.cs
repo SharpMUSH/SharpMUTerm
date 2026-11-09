@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Headless;
 using SkiaSharp;
+using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Avalonia.Tests;
 
@@ -31,8 +32,12 @@ public class TerminalZoomTests
                 var zoomed = driver.ScreenSize;
                 var measured = driver.Pointer.CellHeightMeasured;
                 var height = view.CellExtent.Height;
+                var imageCells = ((IPointerPresenter)driver.Pointer).ImageCellSize;
+                var expectedImageCells = new ImageCellSize(view.CellExtent.Width, view.CellExtent.Height);
                 view.SetZoom(100);
-                return (original, zoomed, reset: driver.ScreenSize, sameFonts: ReferenceEquals(renderer, view.Renderer), resized, measured, height);
+                return (original, zoomed, reset: driver.ScreenSize, sameFonts: ReferenceEquals(renderer, view.Renderer), resized, measured, height, imageCells, expectedImageCells,
+                    resetImageCells: ((IPointerPresenter)driver.Pointer).ImageCellSize,
+                    expectedResetImageCells: new ImageCellSize(view.CellExtent.Width, view.CellExtent.Height));
             }
             finally
             {
@@ -46,6 +51,8 @@ public class TerminalZoomTests
         await Assert.That(result.sameFonts).IsTrue();
         await Assert.That(result.resized).IsEqualTo(2);
         await Assert.That(result.measured).IsEqualTo(result.height);
+        await Assert.That(result.imageCells).IsEqualTo(result.expectedImageCells);
+        await Assert.That(result.resetImageCells).IsEqualTo(result.expectedResetImageCells);
     }
 
     [Test]

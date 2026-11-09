@@ -50,23 +50,44 @@ internal static class ImageDecoder
         }
     }
 
-    private static PixelBuffer DecodeWithImageSharp(byte[] bytes)
+    /// <summary>Decode without the framework's RGB-only PixelBuffer discarding alpha.</summary>
+    public static RgbaPicture DecodeRgba(byte[] bytes)
     {
-        var options = new DecoderOptions
+        ArgumentNullException.ThrowIfNull(bytes);
+        try
         {
-            Configuration = WebPOnly,
-            MaxFrames = 1,
-            SkipMetadata = true,
-        };
+            using var input = new MemoryStream(bytes, writable: false);
+            var info = StbImageSharp.ImageInfo.FromStream(input);
+            if (info is null)
+            {
+                throw new UnsupportedImageFormatException();
+            }
+            if ((long)info.Value.Width * info.Value.Height > MaxPixels)
+            {
+                throw new InvalidImageContentException("Image exceeds the decode ceiling.");
+            }
+            var image = StbImageSharp.ImageResult.FromMemory(bytes, StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+            return new RgbaPicture(image.Width, image.Height, image.Data);
+        }
+        catch (UnsupportedImageFormatException)
+        {
+            return DecodeWebPRgba(bytes);
+        }
+    }
+
+    private static RgbaPicture DecodeWebPRgba(byte[] bytes)
+    {
+        var options = new DecoderOptions { Configuration = WebPOnly, MaxFrames = 1, SkipMetadata = true };
         var info = Image.Identify(options, bytes);
         if ((long)info.Width * info.Height > MaxPixels)
         {
-            throw new InvalidImageContentException($"{info.Width}x{info.Height} is past the decode ceiling.");
+            throw new InvalidImageContentException("Image exceeds the decode ceiling.");
         }
-
         using var image = Image.Load<Rgba32>(options, bytes);
         var rgba = new byte[image.Width * image.Height * 4];
         image.CopyPixelDataTo(rgba);
-        return PixelBuffer.FromRgba32Bytes(rgba, image.Width, image.Height);
+        return new RgbaPicture(image.Width, image.Height, rgba);
     }
+
+    private static PixelBuffer DecodeWithImageSharp(byte[] bytes) => DecodeWebPRgba(bytes).Pixels;
 }

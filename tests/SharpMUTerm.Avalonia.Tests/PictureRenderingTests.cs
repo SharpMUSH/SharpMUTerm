@@ -15,6 +15,55 @@ public class PictureRenderingTests
     private static readonly SKColor Back = new(0x20, 0x20, 0x20);
 
     [Test]
+    [Arguments(0)]
+    [Arguments(128)]
+    [Arguments(255)]
+    public async Task InlineKittyPngAlphaCompositesOverTheCellBackground(int alpha)
+    {
+        const int side = 16;
+        var rgba = new byte[side * side * 4];
+        for (var i = 0; i < rgba.Length; i += 4)
+        {
+            rgba[i] = 255;
+            rgba[i + 3] = (byte)alpha;
+        }
+        var png = SharpMUTerm.Core.Avatars.PngWriter.Rgba(side, side, rgba);
+        using var driver = new AvaloniaConsoleDriver(4, 3);
+        using var host = new SharpMUTerm.Tui.InlineImageHost((_, _) => Task.FromResult<byte[]?>(png), run => run());
+        host.Load([new SharpMUTerm.Core.Text.InlineImageRequest("https://example.test/alpha.png", "alpha")],
+            InlineImagePresentation.Kitty, 4, () => driver, (_, _) => { });
+        await host.Pending;
+        await Assert.That(driver.Pictures.TryGet(0xC00000, out var picture)).IsTrue();
+        using var decoded = SKBitmap.FromImage(picture.Image);
+        await Assert.That(decoded.GetPixel(0, 0).Alpha).IsEqualTo((byte)alpha);
+
+        var buffer = new CharacterBuffer(4, 3, Color.Default);
+        buffer.SetCell(1, 1, ToCell(Placeholder(0xC00000, 0, 0)));
+        driver.WriteBufferRegion(0, 1, buffer, 0, 1, 4, Color.Default);
+        driver.Flush();
+        using var fonts = new CellFonts(16);
+        using var surface = SKSurface.Create(new SKImageInfo(4 * fonts.CellWidth, 3 * fonts.CellHeight));
+        new CellRenderer(fonts, SKColors.White, Back).Render(surface.Canvas, driver.Frame, driver.Pictures, caretShown: false);
+        using var pixels = SKBitmap.FromImage(surface.Snapshot());
+        var actual = pixels.GetPixel(fonts.CellWidth + fonts.CellWidth / 2, fonts.CellHeight + fonts.CellHeight / 2);
+        var expectedR = (255 * alpha + Back.Red * (255 - alpha) + 127) / 255;
+        var expectedGB = (Back.Green * (255 - alpha) + 127) / 255;
+        await Assert.That(Math.Abs(actual.Red - expectedR) <= 1).IsTrue();
+        await Assert.That(Math.Abs(actual.Green - expectedGB) <= 1).IsTrue();
+        await Assert.That(Math.Abs(actual.Blue - expectedGB) <= 1).IsTrue();
+    }
+
+    [Test]
+    public async Task ResizingTransparentPixelsDoesNotBleedTheirHiddenColour()
+    {
+        var picture = new SharpMUTerm.Tui.RgbaPicture(2, 1, [255, 0, 0, 255, 0, 0, 255, 0]);
+        var resized = picture.Resize(1, 1);
+        await Assert.That(resized.Data[0]).IsEqualTo((byte)255);
+        await Assert.That(resized.Data[2]).IsEqualTo((byte)0);
+        await Assert.That(Math.Abs(resized.Data[3] - 128) <= 1).IsTrue();
+    }
+
+    [Test]
     public async Task APlaceholderNamesItsPictureRowAndColumn()
     {
         var cell = Placeholder(0xC00001, row: 2, column: 5);

@@ -30,6 +30,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Inline game images preserve full and partial transparency through Kitty transmission, including the desktop window, instead of losing their alpha channel.
+
 - The Windows installer and the Linux AppImage are now built with Velopack, which is what lets them update. Windows
   installs per user under `%LocalAppData%\SharpMUTerm`, adds the `sharpmuterm` folder to PATH and installs the Symbols
   Nerd Font Mono font, with no questions asked. If you installed an earlier version with the old installer, uninstall
@@ -50,6 +52,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   each closed group saying how many settings it holds and how many are changed.
 
 ### Fixed
+
+- Desktop MXP images use the measured font cell dimensions when sizing pictures, instead of assuming an 8×16 cell.
+  This avoids stretching pictures when the selected font has a different shape. Explicit server-specified cell boxes
+  stay unchanged, and terminal hosts without measured cells keep their existing sizing.
 
 - Quitting the terminal client turns off the terminal's focus reporting again, so the shell no longer receives
   `ESC [ I` / `ESC [ O` when you switch windows afterwards.
