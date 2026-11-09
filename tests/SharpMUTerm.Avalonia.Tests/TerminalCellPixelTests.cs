@@ -6,6 +6,8 @@ using SkiaSharp;
 
 namespace SharpMUTerm.Avalonia.Tests;
 
+// These cases create full client apps, as the native-composer fixture does.
+[NotInParallel]
 public class TerminalCellPixelTests
 {
     [Test]
