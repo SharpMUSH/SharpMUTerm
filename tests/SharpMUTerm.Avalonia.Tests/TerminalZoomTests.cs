@@ -9,6 +9,20 @@ namespace SharpMUTerm.Avalonia.Tests;
 public class TerminalZoomTests
 {
     [Test]
+    public async Task ReservedZoomChordsMatchTheirActions()
+    {
+        await Assert.That(WindowHost.Zoom.Count).IsEqualTo(7);
+        foreach (var reserved in WindowHost.Zoom)
+        {
+            var key = Enum.Parse<Key>(reserved.Chord.Key.ToString());
+            var modifiers = KeyModifiers.Control;
+            if (reserved.Chord.Modifiers.HasFlag(ConsoleModifiers.Shift)) modifiers |= KeyModifiers.Shift;
+            var expected = reserved.Action switch { "zooms in" => 10, "zooms out" => -10, "resets terminal zoom" => 0, _ => int.MinValue };
+            await Assert.That(TerminalView.ZoomFor(key, modifiers)).IsEqualTo(expected);
+        }
+    }
+
+    [Test]
     [Arguments(1.0)]
     [Arguments(1.25)]
     [Arguments(1.5)]

@@ -112,26 +112,43 @@ public class NativeComposerTests
     }
 
     [Test]
-    [Arguments(50)]
-    [Arguments(200)]
-    public async Task TerminalZoomKeepsNativeTabsAndComposerUsable(int zoom)
+    [Arguments(50, false)]
+    [Arguments(200, false)]
+    [Arguments(50, true)]
+    [Arguments(200, true)]
+    public async Task TerminalZoomKeepsNativeTabsAndComposerUsable(int zoom, bool proportional)
     {
         var result = await Run(rig =>
         {
             rig.App.RenderNextFrame();
             Drain();
             rig.Window.UpdateLayout();
-            var stripsFit = rig.Layer.Strips.Values.All(strip => strip.Bounds.Height > 0 && strip.Bounds.Width > 0);
             var overlay = OpenF1(rig);
+            overlay.Composer.ChooseFace(proportional);
+            rig.View.SetZoom(zoom == 50 ? 60 : 190);
+            Drain();
+            var changedHeight = overlay.Composer.Editor.LineHeight;
+            var expectedChangedHeight = proportional ? double.NaN : rig.View.CellExtent.Height;
+            rig.View.SetZoom(zoom);
+            Drain();
+            rig.Window.UpdateLayout();
+            var stripsFit = rig.Layer.Strips.Values.All(strip => strip.Bounds.Height > 0 && strip.Bounds.Width > 0);
             Type(overlay.Composer.Editor, "Zoom stays usable");
             using var composerFrame = rig.Window.CaptureRenderedFrame();
             return (stripsFit, text: overlay.Composer.Editor.Text, height: overlay.Composer.Editor.Bounds.Height,
-                rendered: composerFrame is not null);
+                rendered: composerFrame is not null, changedHeight, expectedChangedHeight,
+                lineHeight: overlay.Composer.Editor.LineHeight, expectedHeight: proportional ? double.NaN : rig.View.CellExtent.Height,
+                composerOpen: ReferenceEquals(rig.Driver.Composer.Overlay, overlay),
+                proportional: overlay.Composer.Proportional);
         }, zoom: zoom);
         await Assert.That(result.stripsFit).IsTrue();
         await Assert.That(result.text).IsEqualTo("Zoom stays usable");
         await Assert.That(result.height).IsGreaterThan(0);
         await Assert.That(result.rendered).IsTrue();
+        await Assert.That(result.changedHeight).IsEqualTo(result.expectedChangedHeight);
+        await Assert.That(result.lineHeight).IsEqualTo(result.expectedHeight);
+        await Assert.That(result.composerOpen).IsTrue();
+        await Assert.That(result.proportional).IsEqualTo(proportional);
     }
 
     // ── F1 ───────────────────────────────────────────────────────────────────────────────────
