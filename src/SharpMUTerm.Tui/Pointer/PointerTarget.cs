@@ -109,6 +109,9 @@ internal sealed record PaneScrollbar(
 /// </summary>
 internal interface IPointerPresenter
 {
+    /// <summary>Measured cell size in logical pixels, or null for terminal hosts with unknown metrics.</summary>
+    ImageCellSize? ImageCellSize => null;
+
     /// <summary>The pointer moved onto something else. <see cref="PointerTarget.Nothing"/> when it left everything.</summary>
     void Hover(PointerTarget target);
 

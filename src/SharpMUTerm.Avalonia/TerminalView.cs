@@ -59,6 +59,7 @@ internal sealed class TerminalView : Control
         _lineHeight = lineHeight;
         _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         Focusable = true;
         ClipToBounds = true;
         Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -302,6 +303,7 @@ internal sealed class TerminalView : Control
             _renderer.DefaultForeground,
             _renderer.DefaultBackground);
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         Repainted?.Invoke();
     }
 

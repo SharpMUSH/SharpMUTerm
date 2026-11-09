@@ -48,6 +48,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Desktop MXP images use the measured font cell dimensions when sizing pictures, instead of assuming an 8×16 cell.
+  This avoids stretching pictures when the selected font has a different shape. Explicit server-specified cell boxes
+  stay unchanged, and terminal hosts without measured cells keep their existing sizing.
+
 - Quitting the terminal client turns off the terminal's focus reporting again, so the shell no longer receives
   `ESC [ I` / `ESC [ O` when you switch windows afterwards.
 - Servers now hear this client's name. Over TTYPE (MTTS) it introduced itself as `UNKNOWN`, because its own
