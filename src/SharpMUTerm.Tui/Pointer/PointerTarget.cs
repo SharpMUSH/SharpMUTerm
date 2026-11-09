@@ -109,12 +109,6 @@ internal sealed record PaneScrollbar(
 /// </summary>
 internal interface IPointerPresenter
 {
-    /// <summary>Physical pixels for terminal reports; never inferred from a font guess.</summary>
-    SharpMUTerm.Core.Telnet.TerminalCellSize? TerminalCellPixels => null;
-
-    /// <summary>Pixel metrics can change on a DPI move even when the character grid does not.</summary>
-    event Action? TerminalCellPixelsChanged { add { } remove { } }
-
     /// <summary>Measured cell size in logical pixels, or null for terminal hosts with unknown metrics.</summary>
     ImageCellSize? ImageCellSize => null;
 

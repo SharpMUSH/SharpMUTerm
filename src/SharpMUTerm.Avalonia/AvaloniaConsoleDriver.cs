@@ -67,6 +67,8 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
     /// <summary>What the client says is under the pointer, for the window to show (<see cref="WindowPointer"/>).</summary>
     public WindowPointer Pointer { get; } = new();
 
+    public CellMetrics CellMetrics { get; } = new();
+
     /// <summary>The window's screen-reader regions; the window adds them beside the view.</summary>
     public WindowAnnouncer Announcer { get; } = new();
 

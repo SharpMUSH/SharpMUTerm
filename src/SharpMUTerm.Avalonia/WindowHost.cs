@@ -98,6 +98,7 @@ internal static class WindowHost
         Keys = Keys,
         RunsInline = false,
         Pointer = driver.Pointer,
+        CellMetrics = driver.CellMetrics,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
 
         // The same desktop device as the terminal: both are desktop processes on the same machine.

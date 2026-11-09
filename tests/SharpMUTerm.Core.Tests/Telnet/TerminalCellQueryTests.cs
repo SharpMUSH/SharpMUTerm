@@ -145,59 +145,6 @@ public class TerminalCellQueryTests
     }
 
     [Test]
-    public async Task ReturningToTheOldSizeDuringAnInFlightReportStillSendsTheFinalSize()
-    {
-        var size = new TerminalCellSize(10, 24);
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var replies = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var responder = new TerminalCellQueryResponder(() => size, async bytes =>
-        {
-            var reply = Encoding.ASCII.GetString(bytes.Span);
-            if (reply == "\u001b[6;40;16t")
-            {
-                started.TrySetResult();
-                await release.Task;
-            }
-
-            replies.Enqueue(reply);
-        });
-        foreach (var value in "\u001b[16t"u8.ToArray())
-        {
-            await responder.ObserveAsync(value, Encoding.UTF8);
-        }
-
-        size = new(16, 40);
-        var larger = responder.ReportAsync().AsTask();
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        size = new(10, 24);
-        var smaller = responder.ReportAsync().AsTask();
-        release.TrySetResult();
-        await Task.WhenAll(larger, smaller).WaitAsync(TimeSpan.FromSeconds(5));
-        await Assert.That(replies.ToArray()).IsEquivalentTo(new[] { "\u001b[6;24;10t", "\u001b[6;40;16t", "\u001b[6;24;10t" });
-    }
-
-    [Test]
-    public async Task AnEncodingWhoseBytesAreNotAsciiControlsCannotTriggerAReply()
-    {
-        var sent = 0;
-        var responder = new TerminalCellQueryResponder(() => new(10, 24), _ => { sent++; return ValueTask.CompletedTask; });
-        // Even exact ASCII-looking raw bytes are not CSI syntax in a UTF-16 stream.
-        foreach (var value in "\u001b[16t"u8.ToArray())
-        {
-            await responder.ObserveAsync(value, Encoding.Unicode);
-        }
-
-        await Assert.That(sent).IsEqualTo(0);
-        foreach (var value in "\u001b[16t"u8.ToArray())
-        {
-            await responder.ObserveAsync(value, Encoding.UTF8);
-        }
-
-        await Assert.That(sent).IsEqualTo(1);
-    }
-
-    [Test]
     public async Task AGoAheadPromptBoundaryRecoversAnUnfinishedControlString()
     {
         var transport = new ScriptedTransport { Fragmented = true };

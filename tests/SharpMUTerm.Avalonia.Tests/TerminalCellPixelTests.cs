@@ -11,9 +11,10 @@ namespace SharpMUTerm.Avalonia.Tests;
 public class TerminalCellPixelTests
 {
     [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task ADisplayMetricChangeReachesAConnectedSessionWithoutAFrameOrGridResize(bool duringHandshake)
+    [Arguments(false, false)]
+    [Arguments(true, false)]
+    [Arguments(false, true)]
+    public async Task ADisplayMetricChangeReachesAConnectedSessionWithoutAFrameOrGridResize(bool duringHandshake, bool withoutPointer)
     {
         var result = await TerminalViewTests.Session.Dispatch(() =>
         {
@@ -23,7 +24,9 @@ public class TerminalCellPixelTests
             var world = new WorldDefinition { Name = "Pixels", Host = "example.invalid", Port = 4000 };
             config.Worlds.Add(world);
             var telnet = new RecordingTelnetSession();
-            var app = new SharpMUTermApp(config, DesktopLayerTests.InlineHost(driver));
+            var host = DesktopLayerTests.InlineHost(driver);
+            if (withoutPointer) { host = host with { Pointer = null }; }
+            var app = new SharpMUTermApp(config, host);
             app.TelnetFactory = _ => telnet;
             try
             {
@@ -59,12 +62,12 @@ public class TerminalCellPixelTests
             var view = new TerminalView(driver, SKColors.White, SKColors.Black, 16, null);
             var changes = 0;
             var resizes = 0;
-            driver.Pointer.TerminalCellPixelsChanged += () => changes++;
+            driver.CellMetrics.Changed += () => changes++;
             driver.ScreenResized += (_, _) => resizes++;
             // No bounds: there is no character grid change to piggyback a report on.
             view.PrepareScale(2);
             view.PrepareScale(2);
-            return (changes, resizes, pixels: ((IPointerPresenter)driver.Pointer).TerminalCellPixels);
+            return (changes, resizes, pixels: driver.CellMetrics.Current);
         }, CancellationToken.None);
         await Assert.That(result.changes).IsEqualTo(1);
         await Assert.That(result.resizes).IsEqualTo(0);

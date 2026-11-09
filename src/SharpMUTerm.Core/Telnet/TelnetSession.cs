@@ -400,10 +400,10 @@ public sealed class TelnetSession : ITelnetSession
         _options.CharsetOrder is [var first, ..] ? first : Encoding.UTF8;
 
     public Func<TerminalCellSize?>? TerminalCellSizeProvider { get; set; }
-    private TerminalCellQueryResponder? _cellQueries;
+    private TerminalQueryProtocol? _cellQueries;
 
     public ValueTask RefreshTerminalCellSizeAsync() =>
-        IsConnected ? _cellQueries?.ReportAsync() ?? ValueTask.CompletedTask : ValueTask.CompletedTask;
+        IsConnected ? _cellQueries?.ReportCellSizeAsync() ?? ValueTask.CompletedTask : ValueTask.CompletedTask;
 
     public event EventHandler<TelnetOutputEventArgs>? OutputReceived;
 
@@ -445,11 +445,13 @@ public sealed class TelnetSession : ITelnetSession
         {
             // Building/wiring the interpreter failed after the socket opened; close it so we
             // don't leak a half-open connection, and stay in the not-connected state.
-            _cellQueries?.Stop();
+            var stopping = _cellQueries?.OnDisabledAsync() ?? ValueTask.CompletedTask;
+            _cellQueries = null;
             _interpreter = null;
             _seeded = null;
             _negotiated = null;
             await _transport.CloseAsync().ConfigureAwait(false);
+            await stopping.ConfigureAwait(false);
             throw;
         }
 
@@ -464,13 +466,16 @@ public sealed class TelnetSession : ITelnetSession
 
     private Task<TelnetInterpreter> BuildInterpreterAsync()
     {
-        _cellQueries = new TerminalCellQueryResponder(() => TerminalCellSizeProvider?.Invoke(), WriteToTransportAsync);
+        _cellQueries = new TerminalQueryProtocol().WithCellSizeProvider(() =>
+            TerminalCellSizeProvider?.Invoke() is { IsValid: true } size
+                ? new TelnetNegotiationCore.Models.TerminalCellSize(size.Width, size.Height)
+                : null);
         TelnetInterpreterBuilder builder = new TelnetInterpreterBuilder()
             .UseMode(TelnetInterpreter.TelnetMode.Client)
             .UseLogger(_logger)
             .OnNegotiation(WriteToTransportAsync)
             .OnSubmit(OnSubmitAsync)
-            .OnByte(_cellQueries.ObserveAsync)
+            .AddPlugin(_cellQueries)
             // Who this client is, for every protocol in the library that names it.
             .WithClientIdentity(Identity())
             // Explicit defaults let NAWS observe negotiation completion, so an early pane report
@@ -698,7 +703,6 @@ public sealed class TelnetSession : ITelnetSession
     /// </summary>
     private ValueTask OnPromptAsync()
     {
-        _cellQueries?.FinishLine();
         if (_interpreter?.LastPromptBytes is { Length: > 0 } bytes)
         {
             Emit(CurrentEncoding.Encoding.GetString(bytes.Span), isPrompt: true);
@@ -1033,13 +1037,16 @@ public sealed class TelnetSession : ITelnetSession
 
     public async Task DisconnectAsync()
     {
-        _cellQueries?.Stop();
+        // Disable queued replies immediately, but close transport before awaiting an active socket write.
+        var stopping = _cellQueries?.OnDisabledAsync() ?? ValueTask.CompletedTask;
+        _cellQueries = null;
         if (_loopCts is not null)
         {
             await _loopCts.CancelAsync().ConfigureAwait(false);
         }
 
         await _transport.CloseAsync().ConfigureAwait(false);
+        await stopping.ConfigureAwait(false);
 
         if (_readLoop is not null)
         {

@@ -1070,6 +1070,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         };
         _window.PreviewKeyPressed += OnWindowKey;
 
+        // Physical pixels can change without a character-grid resize or a new frame.
+        if (Host.CellMetrics is not null)
+        {
+            Host.CellMetrics.Changed += OnTerminalCellPixelsChanged;
+        }
+
         // NAWS rides the frame. Pane rectangles exist only while an arranged layout does, and every
         // layout change (a resize, a split, a closed tab, a zoom, a window moved between panes) tears
         // the pane area down and rebuilds it — so inside RebuildPaneArea, where the change is made,
@@ -1078,11 +1084,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // repaints. One hook therefore covers the lot, and none of them can be forgotten later.
         // (The event's adder is a silent no-op while a window has no renderer; this one has had one
         // since its constructor ran, and NawsPaneReportTests fails loudly if that ever stops holding.)
-        if (_pointer is not null)
-        {
-            _pointer.TerminalCellPixelsChanged += OnTerminalCellPixelsChanged;
-        }
-
         _window.PostBufferPaint += (buffer, _, _) =>
         {
             ReportPaneSizes();
@@ -1164,10 +1165,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Here and not in the constructor: this is the one method that means "there is a live terminal
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
-        StartTitle();
         int exitCode;
         try
         {
+            Host.CellMetrics?.Start();
+            StartTitle();
             exitCode = _system.Run();
         }
         finally
@@ -1175,6 +1177,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // Focus reporting is turned off as the loop ends rather than at disposal, which the live entry point never
             // reaches: left on, the shell (or the new version an update execs into this terminal) gets ESC [ I.
             _focus.Stop();
+            Host.CellMetrics?.Dispose();
         }
 
         // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
@@ -9664,7 +9667,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnSessionAdded(object? sender, WorldSession session)
     {
-        session.TerminalCellSizeProvider = () => _pointer?.TerminalCellPixels;
+        session.TerminalCellSizeProvider = () => Host.CellMetrics?.Current;
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         WatchPresence(session);
         StartReconnecting(session);
@@ -15502,9 +15505,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_pointer is not null)
+        if (Host.CellMetrics is not null)
         {
-            _pointer.TerminalCellPixelsChanged -= OnTerminalCellPixelsChanged;
+            Host.CellMetrics.Changed -= OnTerminalCellPixelsChanged;
+            Host.CellMetrics.Dispose();
         }
 
         _system.ConsoleDriver.MouseEvent -= OnDriverMouseEvent;
