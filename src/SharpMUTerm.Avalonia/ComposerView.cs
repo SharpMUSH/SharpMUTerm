@@ -43,6 +43,7 @@ internal sealed class ComposerView : Border, IEdgeRules
     }
 
     private readonly TerminalView _view;
+    private (double Height, double TextSize) _fontMetrics;
     private readonly bool _fullScreen;
     private readonly ComposerEditor _editor;
     private readonly MarkLayer _marks;
@@ -317,6 +318,8 @@ internal sealed class ComposerView : Border, IEdgeRules
     {
         base.OnAttachedToVisualTree(e);
         FaceChanged += ApplyFont;
+        _view.Repainted += RefreshFontMetrics;
+        RefreshFontMetrics();
         if (_model is { Armed: true })
         {
             Dispatcher.UIThread.Post(() => _editor.Focus(), DispatcherPriority.Input);
@@ -326,6 +329,7 @@ internal sealed class ComposerView : Border, IEdgeRules
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         FaceChanged -= ApplyFont;
+        _view.Repainted -= RefreshFontMetrics;
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -519,8 +523,18 @@ internal sealed class ComposerView : Border, IEdgeRules
         _marks.InvalidateVisual();
     }
 
+    /// <summary>Refreshes an open composer after zoom without changing its selected face.</summary>
+    private void RefreshFontMetrics()
+    {
+        if (_fontMetrics != (_view.CellExtent.Height, _view.CellTextSize))
+        {
+            ApplyFont();
+        }
+    }
+
     private void ApplyFont()
     {
+        _fontMetrics = (_view.CellExtent.Height, _view.CellTextSize);
         var cell = _view.CellExtent.Height > 0 ? _view.CellExtent.Height : 17;
         var ui = Math.Clamp(cell * 0.72, 11, 15);
         _title.FontSize = _fullScreen ? ui : PanelText.Size;

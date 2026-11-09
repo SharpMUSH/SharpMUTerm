@@ -22,6 +22,17 @@ internal static class WindowHost
     public static ReservedChord WindowedFullScreen { get; } = new(
         new HostChord(ConsoleKey.F11, ConsoleModifiers.Shift, "Shift+F11", "Shift+F11"), "goes in and out of windowed full screen");
 
+    public static IReadOnlyList<ReservedChord> Zoom { get; } =
+    [
+        new(new HostChord(ConsoleKey.OemPlus, ConsoleModifiers.Control, "Ctrl+=", "Ctrl+="), "zooms in"),
+        new(new HostChord(ConsoleKey.OemPlus, ConsoleModifiers.Control | ConsoleModifiers.Shift, "Ctrl++", "Ctrl++"), "zooms in"),
+        new(new HostChord(ConsoleKey.Add, ConsoleModifiers.Control, "Ctrl+Add", "Ctrl+Add"), "zooms in"),
+        new(new HostChord(ConsoleKey.OemMinus, ConsoleModifiers.Control, "Ctrl+-", "Ctrl+-"), "zooms out"),
+        new(new HostChord(ConsoleKey.Subtract, ConsoleModifiers.Control, "Ctrl+Subtract", "Ctrl+Subtract"), "zooms out"),
+        new(new HostChord(ConsoleKey.D0, ConsoleModifiers.Control, "Ctrl+0", "Ctrl+0"), "resets terminal zoom"),
+        new(new HostChord(ConsoleKey.NumPad0, ConsoleModifiers.Control, "Ctrl+NumPad0", "Ctrl+NumPad0"), "resets terminal zoom"),
+    ];
+
     /// <summary>Paste is the window's, on the terminal conventions, so a bare ⌃V still reaches the client as a key.</summary>
     public static IReadOnlyList<ReservedChord> Paste { get; } =
     [
@@ -36,7 +47,7 @@ internal static class WindowHost
     public static HostKeys Keys { get; } = new()
     {
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
-        Reserved = [Maximise, FullScreen, WindowedFullScreen, .. Paste],
+        Reserved = [Maximise, FullScreen, WindowedFullScreen, .. Paste, .. Zoom],
 
         // Avalonia reports the key and its modifiers: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O arrive as themselves.
         ReportsChordsWhole = true,

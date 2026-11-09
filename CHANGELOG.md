@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The desktop window now supports live terminal zoom: Ctrl++ (or Ctrl+=), Ctrl+-, and Ctrl+0, plus
+  Zoom in/out/reset in the output pane's right-click menu. Zoom ranges from 50% to 200% and resets to
+  the launch font size. It resizes the real terminal grid, including per-pane NAWS, rather than stretching
+  a screenshot. Zoom lasts for this window; `--font-size` still chooses the startup size.
+
 - Three ways to start SharpMUTerm, side by side. The Windows install adds *SharpMUTerm (Emulated)* and *SharpMUTerm
   (Native)* to the Start menu beside *SharpMUTerm*, and a SharpMUTerm profile to Windows Terminal. The AppImage offers
   the same two on its launcher's right-click menu once your desktop integrates it, and opens a terminal for the native

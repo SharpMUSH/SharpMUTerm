@@ -35,6 +35,31 @@ internal sealed class TerminalView : Control
     private readonly float _lineHeight;
     private CellRenderer _renderer;
     private double _scale = 1;
+    private int _zoomPercent = 100;
+    // Render operations can still hold the old fonts. Reuse each zoom level instead of leaking a new
+    // font set on every repeated +/- or reset, and never dispose fonts underneath the render thread.
+    private readonly Dictionary<(double Scale, int Zoom), CellRenderer> _zoomRenderers = [];
+
+    internal int ZoomPercent => _zoomPercent;
+
+    internal void SetZoom(int percent)
+    {
+        percent = Math.Clamp(percent, 50, 200);
+        if (percent == _zoomPercent)
+        {
+            return;
+        }
+
+        _zoomPercent = percent;
+        Rescale(_scale);
+    }
+
+    internal IReadOnlyList<PointerMenuItem> ZoomItems =>
+    [
+        new("Zoom in", "Ctrl++", () => SetZoom(_zoomPercent + 10), _zoomPercent < 200),
+        new("Zoom out", "Ctrl+-", () => SetZoom(_zoomPercent - 10), _zoomPercent > 50),
+        new($"Reset zoom ({_zoomPercent}%)", "Ctrl+0", () => SetZoom(100), _zoomPercent != 100),
+    ];
     private int _invalidatePending;
     private char? _swallowText;
     private double _wheelRemainder;
@@ -58,6 +83,7 @@ internal sealed class TerminalView : Control
         _family = family;
         _lineHeight = lineHeight;
         _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
+        _zoomRenderers[(1, 100)] = _renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
         _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         Focusable = true;
@@ -226,11 +252,16 @@ internal sealed class TerminalView : Control
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
-        var (columns, rows) = GridFor(e.NewSize);
+        ResizeGrid(e.NewSize);
+    }
+
+    private void ResizeGrid(Size size)
+    {
+        var (columns, rows) = GridFor(size);
 
         // The width a terminal this window's size would have, sidebar and all, said before the grid moves: the
         // client's narrow layout reads it with the resize, and it does not change when the sidebar folds.
-        _driver.Pointer.WindowColumnsMeasured = Math.Max(columns, (int)((e.NewSize.Width + Margin.Left + Margin.Right) / CellSize.Width));
+        _driver.Pointer.WindowColumnsMeasured = Math.Max(columns, (int)((size.Width + Margin.Left + Margin.Right) / CellSize.Width));
         _driver.Resize(columns, rows);
         Repainted?.Invoke();
     }
@@ -295,15 +326,27 @@ internal sealed class TerminalView : Control
 
     private void Rescale(double scale)
     {
-        // The old fonts are not disposed: a frame already queued on the render thread may still be drawing
-        // with them. A change of display scale is rare enough that one set of leaked fonts is the cheaper fix.
         _scale = scale;
-        _renderer = new CellRenderer(
-            new CellFonts((float)(_fontPoints * scale), _family, _lineHeight),
-            _renderer.DefaultForeground,
-            _renderer.DefaultBackground);
+        if (!_zoomRenderers.TryGetValue((scale, _zoomPercent), out var renderer))
+        {
+            renderer = new CellRenderer(
+                new CellFonts((float)(_fontPoints * scale * _zoomPercent / 100), _family, _lineHeight),
+                _renderer.DefaultForeground,
+                _renderer.DefaultBackground);
+            _zoomRenderers[(scale, _zoomPercent)] = renderer;
+        }
+
+        _renderer = renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
         _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
+        // Font changes leave the control's bounds alone, so OnSizeChanged will not do this for us.
+        // Going through the driver resize also recomputes pane geometry and schedules per-pane NAWS.
+        if (Bounds.Width > 0 && Bounds.Height > 0)
+        {
+            ResizeGrid(Bounds.Size);
+        }
+
+        InvalidateVisual();
         Repainted?.Invoke();
     }
 
@@ -321,6 +364,41 @@ internal sealed class TerminalView : Control
         }
     }
 
+    /// <summary>Keep zoom available while the native command editor owns keyboard focus.</summary>
+    internal void AttachZoomKeys(InputElement root)
+    {
+        char? swallowed = null;
+        root.AddHandler(KeyDownEvent, (_, e) =>
+        {
+            swallowed = null;
+            if (!e.Handled && ZoomFor(e.Key, e.KeyModifiers) is not null)
+            {
+                HandleKeyDown(e);
+                swallowed = _swallowText;
+            }
+        }, global::Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        root.AddHandler(TextInputEvent, (_, e) =>
+        {
+            if (swallowed is { } character && e.Text == character.ToString())
+            {
+                e.Handled = true;
+                _swallowText = null;
+            }
+
+            swallowed = null;
+        }, global::Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        root.AddHandler(LostFocusEvent, (_, _) => swallowed = null);
+    }
+
+    internal static int? ZoomFor(Key key, KeyModifiers modifiers) => (key, modifiers) switch
+    {
+        (Key.OemPlus, KeyModifiers.Control or (KeyModifiers.Control | KeyModifiers.Shift)) => 10,
+        (Key.Add, KeyModifiers.Control) => 10,
+        (Key.OemMinus or Key.Subtract, KeyModifiers.Control) => -10,
+        (Key.D0 or Key.NumPad0, KeyModifiers.Control) => 0,
+        _ => null,
+    };
+
     // ── Keys ────────────────────────────────────────────────────────────────────────────────────
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -336,6 +414,20 @@ internal sealed class TerminalView : Control
     internal void HandleKeyDown(KeyEventArgs e)
     {
         _swallowText = null;
+        if (ZoomFor(e.Key, e.KeyModifiers) is { } zoom)
+        {
+            SetZoom(zoom == 0 ? 100 : _zoomPercent + zoom);
+            _swallowText = e.Key switch
+            {
+                Key.D0 or Key.NumPad0 => '0',
+                Key.OemMinus or Key.Subtract => '-',
+                Key.Add => '+',
+                _ => e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? '+' : '=',
+            };
+            e.Handled = true;
+            return;
+        }
+
         var mapped = KeyMapper.FromKeyDown(e.Key, e.KeyModifiers);
 
         // The window's own chords (WindowHost): paste, and ⌥⏎ to maximise and restore. Read from the list the
@@ -731,7 +823,7 @@ internal sealed class TerminalView : Control
     }
 
     /// <summary>The client's right-click menu, as a native one. Each entry runs on the client's thread by itself.</summary>
-    private void OpenMenu(IReadOnlyList<PointerMenuItem> items) => OpenMenu(NativeMenu.Build(items, PlacementMode.Pointer, this));
+    private void OpenMenu(IReadOnlyList<PointerMenuItem> items) => OpenMenu(NativeMenu.Build([.. items, PointerMenuItem.Separator, .. ZoomItems], PlacementMode.Pointer, this));
 
     private void OpenMenu(ContextMenu menu)
     {
@@ -919,8 +1011,13 @@ internal sealed class TerminalView : Control
         public bool HitTest(Point p) => Bounds.Contains(p);
 
         public bool Equals(ICustomDrawOperation? other) =>
-            other is FrameDraw draw && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane
+            other is FrameDraw draw && ReferenceEquals(draw.Renderer, Renderer) && draw.Scale == Scale
+            && ReferenceEquals(draw.Frame, Frame) && draw.Bounds == Bounds && draw.Plane == Plane
             && draw.Rule == Rule && draw.Alpha == Alpha && draw.Covered.SequenceEqual(Covered);
+
+        private CellRenderer Renderer => renderer;
+
+        private double Scale => scale;
 
         private byte Alpha => alpha;
 

@@ -195,6 +195,7 @@ internal sealed class FloatingPanelWindow : Window
     public FloatingPanelWindow(FloatingPanel panel, TerminalView view)
     {
         _view = view;
+        view.AttachZoomKeys(this);
         Panel = panel;
         NativeTokens.ApplyTextRendering(this);
         AppIcon.Apply(this);
