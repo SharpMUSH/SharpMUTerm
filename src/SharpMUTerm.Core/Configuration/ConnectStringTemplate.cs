@@ -26,8 +26,8 @@ namespace SharpMUTerm.Core.Configuration;
 /// screenshots, because it is an ordinary text field and has to be readable to be editable. A secret in it
 /// is a secret on screen.</item>
 /// <item><b>Substitution at send time keeps the resolved line off every local surface.</b> Typed input is
-/// echoed and written to the session transcript (<c>WorldSession.SendUserInputAsync</c> →
-/// <c>Print</c>) and is offered to <c>InputHistory</c>; the login line goes straight out through
+/// offered to <c>InputHistory</c> and to local echo, which hides recognized credential commands
+/// from the output and transcript. The configured login line goes straight out through
 /// <c>SendRawAsync</c> with no echo, no transcript write and no history entry. That is unchanged by
 /// where the password is stored.</item>
 /// </list>

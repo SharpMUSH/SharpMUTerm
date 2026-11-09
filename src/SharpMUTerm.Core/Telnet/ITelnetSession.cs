@@ -9,6 +9,9 @@ public interface ITelnetSession : IAsyncDisposable
 {
     bool IsConnected { get; }
 
+    /// <summary>Whether the server has negotiated responsibility for echoing input.</summary>
+    bool ServerEchoesInput => false;
+
     /// <summary>
     /// The encoding this session is decoding and encoding with, and whether CHARSET negotiated it,
     /// the world pinned it, or it is merely what was assumed because nothing negotiated.

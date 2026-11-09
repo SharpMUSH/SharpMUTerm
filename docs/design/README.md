@@ -111,10 +111,8 @@ would re-impose it on the users who never chose it.
 
 #### Passwords live in `secrets.json`, not in `config.json`
 
-Character passwords are saved — a client that forgets them is a client whose users type credentials into
-the command line, where they are echoed, written to the session transcript and offered to history. But they
-are **not saved in `config.json`**, because that is the file people share: it goes into bug reports, help
-channels, screenshots and dotfiles repositories.
+Character passwords can be saved so players can log in automatically. They are stored outside
+`config.json` because people share that file in bug reports, help channels and dotfiles repositories.
 
 So there are two files, side by side in `~/.config/SharpMUTerm/`:
 

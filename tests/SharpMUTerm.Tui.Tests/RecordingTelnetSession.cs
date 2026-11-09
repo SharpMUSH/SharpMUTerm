@@ -10,6 +10,8 @@ namespace SharpMUTerm.Tui.Tests;
 /// </summary>
 internal sealed class RecordingTelnetSession : ITelnetSession
 {
+    public bool ServerEchoesInput { get; set; }
+
     private readonly List<(int Width, int Height)> _sizes = new();
     private readonly List<string> _lines = new();
 
