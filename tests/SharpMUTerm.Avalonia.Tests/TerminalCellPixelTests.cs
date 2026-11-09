@@ -9,7 +9,9 @@ namespace SharpMUTerm.Avalonia.Tests;
 public class TerminalCellPixelTests
 {
     [Test]
-    public async Task ADisplayMetricChangeReachesAConnectedSessionWithoutAFrameOrGridResize()
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task ADisplayMetricChangeReachesAConnectedSessionWithoutAFrameOrGridResize(bool duringHandshake)
     {
         var result = await TerminalViewTests.Session.Dispatch(() =>
         {
@@ -23,9 +25,18 @@ public class TerminalCellPixelTests
             app.TelnetFactory = _ => telnet;
             try
             {
-                app.BindWorldWithoutConnecting(world).ConnectAsync().GetAwaiter().GetResult();
+                if (duringHandshake)
+                {
+                    telnet.Connecting = () => view.PrepareScale(2);
+                }
+
                 var before = telnet.CellPixelReports.Count;
-                view.PrepareScale(2);
+                app.BindWorldWithoutConnecting(world).ConnectAsync().GetAwaiter().GetResult();
+                if (!duringHandshake)
+                {
+                    before = telnet.CellPixelReports.Count;
+                    view.PrepareScale(2);
+                }
                 var reports = telnet.CellPixelReports.Skip(before).ToArray();
                 return (reports, expected: new TerminalCellSize(view.Renderer.Fonts.CellWidth, view.Renderer.Fonts.CellHeight));
             }

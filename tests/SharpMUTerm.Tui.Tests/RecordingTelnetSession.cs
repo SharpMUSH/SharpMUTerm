@@ -38,6 +38,8 @@ internal sealed class RecordingTelnetSession : ITelnetSession
     /// <summary>How many times a connection was asked for, refused ones included.</summary>
     public int ConnectAttempts { get; private set; }
 
+    public Action? Connecting { get; set; }
+
     /// <summary>Every NAWS report this session was given, oldest first.</summary>
     public IReadOnlyList<(int Width, int Height)> Sizes
     {
@@ -153,6 +155,7 @@ internal sealed class RecordingTelnetSession : ITelnetSession
             return Task.FromException(fault);
         }
 
+        Connecting?.Invoke();
         IsConnected = true;
         return Task.CompletedTask;
     }

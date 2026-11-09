@@ -3571,6 +3571,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             if (e.State == ConnectionState.Connected)
             {
+                // A query may have arrived while ConnectAsync was still finishing. Catch a
+                // pixel change whose event occurred before the session entered Connected.
+                _ = RefreshCellPixelsAsync(session);
                 ReportAutomation(session);
 
                 // Recorded on the *connection*, not on the report — because "we reached this server and
