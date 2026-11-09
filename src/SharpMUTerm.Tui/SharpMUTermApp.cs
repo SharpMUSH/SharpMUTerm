@@ -1113,13 +1113,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
         // panels are now under it; the modal stack changing says it instead.
-        _system.ModalStateService.StateChanged += (_, _) =>
+        // The framework delivers this notification on the thread pool. Native overlay models read
+        // UI-owned layout state, so publish on the same thread as frame-driven updates.
+        _system.ModalStateService.StateChanged += (_, _) => OnUiThread(() =>
         {
             PublishPanels();
             PublishInputBand();
             PublishDividers();
             PublishPaneChrome();
-        };
+        });
         if (_sixel is not null)
         {
             // Another window over this one rewrites the cells a picture sits on, and the frame that puts

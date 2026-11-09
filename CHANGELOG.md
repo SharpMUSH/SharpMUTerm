@@ -53,6 +53,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Desktop overlays follow modal visibility changes on the client UI thread, avoiding background-thread reads of changing pane layouts.
+
 - The desktop window answers terminal cell-pixel queries with its actual measured pixels, allowing
   servers to size images correctly. Unix terminal mode also reports cells when the terminal publishes
   an exact pixel extent; unavailable dimensions stay unknown. Servers that asked receive refreshed
