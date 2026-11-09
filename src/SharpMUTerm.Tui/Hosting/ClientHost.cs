@@ -58,6 +58,9 @@ internal sealed record ClientHost
     /// </summary>
     public required IPointerPresenter? Pointer { get; init; }
 
+    /// <summary>Measured physical cell pixels, independent of pointer presentation; null when unavailable.</summary>
+    public required CellMetrics? CellMetrics { get; init; }
+
     /// <summary>The keys this host delivers differently from the others, or keeps for itself.</summary>
     public required HostKeys Keys { get; init; }
 
@@ -221,6 +224,7 @@ internal sealed record ClientHost
         FocusReporting = PlatformDecodesFocusReports,
         Keys = HostKeys.Terminal,
         Pointer = TerminalPointer.Create(driver),
+        CellMetrics = new TerminalCellMetrics(),
         RunsInline = false,
         SixelCell = SharpMUTermApp.SixelCellSize(Environment.GetEnvironmentVariable(SharpMUTermApp.SixelCellVariable)),
         Audio = () => DesktopAudio.TryCreate(),
@@ -256,6 +260,7 @@ internal sealed record ClientHost
         FocusReporting = false,
         Keys = HostKeys.Terminal,
         Pointer = null,
+        CellMetrics = null,
         RunsInline = true,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
         Audio = null,

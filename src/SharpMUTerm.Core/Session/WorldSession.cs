@@ -640,6 +640,7 @@ public sealed class WorldSession : IAsyncDisposable
 
         var telnet = _sessionFactory(World.ToConnectionOptions());
         _telnet = telnet;
+        telnet.TerminalCellSizeProvider = () => TerminalCellSizeProvider?.Invoke();
         telnet.OutputReceived += OnOutputReceived;
         GameData.Clear();
         Occupants.Clear();
@@ -1518,6 +1519,12 @@ public sealed class WorldSession : IAsyncDisposable
         await SendCommandAsync(macro.Command, cancellationToken).ConfigureAwait(false);
         return macro.Command;
     }
+
+    /// <summary>The host's current physical cell dimensions; null for hosts without measurements.</summary>
+    public Func<TerminalCellSize?>? TerminalCellSizeProvider { get; set; }
+
+    public ValueTask RefreshTerminalCellSizeAsync() =>
+        _telnet?.RefreshTerminalCellSizeAsync() ?? ValueTask.CompletedTask;
 
     public ValueTask SetWindowSizeAsync(int width, int height) =>
         _telnet?.SetWindowSizeAsync(width, height) ?? ValueTask.CompletedTask;

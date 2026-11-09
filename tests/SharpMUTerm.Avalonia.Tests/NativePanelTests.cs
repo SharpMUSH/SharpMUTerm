@@ -154,10 +154,28 @@ public class NativePanelTests
         app.RenderSnapshot("layout-combat");
 
         var panel = driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.QuickBar);
-        panel.Dispatch!(QuickBarModel.EditCommand);
-        app.RenderNextFrame();
-        await Assert.That(app.OpenSettingsKey).IsEqualTo(ConsoleKey.F4);
-        await Assert.That(driver.Pointer.Panels).IsEmpty().Because("a native view would sit over the modal's cells");
+        var hidden = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void ObservePanels()
+        {
+            if (driver.Pointer.Panels.Count == 0) { hidden.TrySetResult(); }
+        }
+
+        driver.Pointer.PanelsChanged += ObservePanels;
+        try
+        {
+            panel.Dispatch!(QuickBarModel.EditCommand);
+            app.RenderNextFrame();
+            await Assert.That(app.OpenSettingsKey).IsEqualTo(ConsoleKey.F4);
+            // A fullscreen modal occludes the main pane, so rendering cannot publish its overlays.
+            // Modal state notifications arrive asynchronously; await the actual host update rather
+            // than assuming a thread-pool callback has run before this assertion.
+            await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Assert.That(driver.Pointer.Panels).IsEmpty().Because("a native view would sit over the modal's cells");
+        }
+        finally
+        {
+            driver.Pointer.PanelsChanged -= ObservePanels;
+        }
     }
 
     private sealed class RecordingSettings : INativeSettings

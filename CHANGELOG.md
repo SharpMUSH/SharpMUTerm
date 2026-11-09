@@ -53,6 +53,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Desktop overlays follow modal visibility changes on the client UI thread, avoiding background-thread reads of changing pane layouts.
+
+- The desktop window answers terminal cell-pixel queries with its actual measured pixels, allowing
+  servers to size images correctly. Unix terminal mode also reports cells when the terminal publishes
+  an exact pixel extent; unavailable dimensions stay unknown. Servers that asked receive refreshed
+  dimensions after zoom or display-scaling changes, even when the character grid is unchanged.
+  Replies use the opted-in TNC terminal-query plugin and never forward server escapes to the local terminal.
+
 - Desktop MXP images use the measured font cell dimensions when sizing pictures, instead of assuming an 8×16 cell.
   This avoids stretching pictures when the selected font has a different shape. Explicit server-specified cell boxes
   stay unchanged, and terminal hosts without measured cells keep their existing sizing.

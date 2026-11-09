@@ -1070,6 +1070,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         };
         _window.PreviewKeyPressed += OnWindowKey;
 
+        // Physical pixels can change without a character-grid resize or a new frame.
+        if (Host.CellMetrics is not null)
+        {
+            Host.CellMetrics.Changed += OnTerminalCellPixelsChanged;
+        }
+
         // NAWS rides the frame. Pane rectangles exist only while an arranged layout does, and every
         // layout change (a resize, a split, a closed tab, a zoom, a window moved between panes) tears
         // the pane area down and rebuilds it — so inside RebuildPaneArea, where the change is made,
@@ -1107,13 +1113,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // A modal that covers the main window entirely leaves it unpainted, so no PostBufferPaint says the native
         // panels are now under it; the modal stack changing says it instead.
-        _system.ModalStateService.StateChanged += (_, _) =>
+        // The framework delivers this notification on the thread pool. Native overlay models read
+        // UI-owned layout state, so publish on the same thread as frame-driven updates.
+        _system.ModalStateService.StateChanged += (_, _) => OnUiThread(() =>
         {
             PublishPanels();
             PublishInputBand();
             PublishDividers();
             PublishPaneChrome();
-        };
+        });
         if (_sixel is not null)
         {
             // Another window over this one rewrites the cells a picture sits on, and the frame that puts
@@ -1159,10 +1167,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // Here and not in the constructor: this is the one method that means "there is a live terminal
         // in front of this app", and asking a terminal to report focus is a write to it.
         _focus.Start();
-        StartTitle();
         int exitCode;
         try
         {
+            Host.CellMetrics?.Start();
+            StartTitle();
             exitCode = _system.Run();
         }
         finally
@@ -1170,6 +1179,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // Focus reporting is turned off as the loop ends rather than at disposal, which the live entry point never
             // reaches: left on, the shell (or the new version an update execs into this terminal) gets ESC [ I.
             _focus.Stop();
+            Host.CellMetrics?.Dispose();
         }
 
         // The colours are kitty's, not this window's: left set, they would go on drawing the shell's own
@@ -3566,6 +3576,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         {
             if (e.State == ConnectionState.Connected)
             {
+                // A query may have arrived while ConnectAsync was still finishing. Catch a
+                // pixel change whose event occurred before the session entered Connected.
+                _ = RefreshCellPixelsAsync(session);
                 ReportAutomation(session);
 
                 // Recorded on the *connection*, not on the report — because "we reached this server and
@@ -9656,6 +9669,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnSessionAdded(object? sender, WorldSession session)
     {
+        session.TerminalCellSizeProvider = () => Host.CellMetrics?.Current;
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         WatchPresence(session);
         StartReconnecting(session);
@@ -14609,6 +14623,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Timeout.InfiniteTimeSpan);
     }
 
+    private void OnTerminalCellPixelsChanged() => OnUiThread(() =>
+    {
+        foreach (var session in _sessionWindows.Keys)
+        {
+            if (session.IsConnected)
+            {
+                _ = RefreshCellPixelsAsync(session);
+            }
+        }
+    });
+
+    private async Task RefreshCellPixelsAsync(WorldSession session)
+    {
+        try
+        {
+            await session.RefreshTerminalCellSizeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // A display-metrics event cannot await this send. Log without causing another repaint
+            // and retry loop; another metrics change or explicit query can retry an unsent size.
+            _diagnostics.For("SharpMUTerm.TerminalPixels").LogWarning(ex, "Could not report terminal cell pixels");
+        }
+    }
+
     /// <summary>
     /// Sends one session's NAWS report. The callers cannot await it — a paint callback, a timer and a
     /// connect continuation — but the failure is not swallowed the way the old fire-and-forget was: a
@@ -15468,6 +15507,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Host.CellMetrics is not null)
+        {
+            Host.CellMetrics.Changed -= OnTerminalCellPixelsChanged;
+            Host.CellMetrics.Dispose();
+        }
+
         _system.ConsoleDriver.MouseEvent -= OnDriverMouseEvent;
         _focus.Dispose();           // and the terminal is told to stop reporting focus at nobody
         ResetTransparentColours();  // and kitty's colours go back to its own

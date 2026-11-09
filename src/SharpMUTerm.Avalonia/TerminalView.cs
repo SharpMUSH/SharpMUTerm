@@ -85,6 +85,7 @@ internal sealed class TerminalView : Control
         _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
         _zoomRenderers[(1, 100)] = _renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        _driver.CellMetrics.Current = new SharpMUTerm.Core.Telnet.TerminalCellSize(_renderer.Fonts.CellWidth, _renderer.Fonts.CellHeight);
         _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         Focusable = true;
         ClipToBounds = true;
@@ -240,12 +241,35 @@ internal sealed class TerminalView : Control
     /// <summary>The window size that holds a grid of <paramref name="columns"/> × <paramref name="rows"/>.</summary>
     public Size SizeFor(int columns, int rows) => new(columns * CellSize.Width, (rows * CellSize.Height) + FieldReserve);
 
+    private TopLevel? _scalingOwner;
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        if (TopLevel.GetTopLevel(this) is { } top && Math.Abs(top.RenderScaling - _scale) > 0.001)
+        _scalingOwner = TopLevel.GetTopLevel(this);
+        if (_scalingOwner is { } top)
         {
-            Rescale(top.RenderScaling);
+            top.ScalingChanged += OnDisplayScalingChanged;
+            PrepareScale(top.RenderScaling);
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (_scalingOwner is { } top)
+        {
+            top.ScalingChanged -= OnDisplayScalingChanged;
+            _scalingOwner = null;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnDisplayScalingChanged(object? sender, EventArgs e)
+    {
+        if (_scalingOwner is { } top)
+        {
+            PrepareScale(top.RenderScaling);
         }
     }
 
@@ -338,6 +362,7 @@ internal sealed class TerminalView : Control
 
         _renderer = renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
+        _driver.CellMetrics.Current = new SharpMUTerm.Core.Telnet.TerminalCellSize(_renderer.Fonts.CellWidth, _renderer.Fonts.CellHeight);
         _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
         // Font changes leave the control's bounds alone, so OnSizeChanged will not do this for us.
         // Going through the driver resize also recomputes pane geometry and schedules per-pane NAWS.
