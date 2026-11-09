@@ -8,6 +8,22 @@ namespace SharpMUTerm.Tui.Tests;
 public class ImageDecoderTests
 {
     [Test]
+    public async Task KittyDecodePreservesPngAndWebPAlpha()
+    {
+        var png = ImageDecoder.DecodeRgba(TestImages.RgbaPng(16, 12));
+        var webp = ImageDecoder.DecodeRgba(TestImages.WebP(16, 12));
+        await Assert.That(png.Data.SequenceEqual(webp.Data)).IsTrue();
+        await Assert.That(Enumerable.Range(0, 16 * 12).Any(i => png.Data[i * 4 + 3] != 255)).IsTrue();
+    }
+
+    [Test]
+    public async Task KittyDecodeStillRejectsTiffAndInvalidBytes()
+    {
+        await Assert.That(() => ImageDecoder.DecodeRgba(TestImages.Tiff(8, 8))).ThrowsException();
+        await Assert.That(() => ImageDecoder.DecodeRgba([1, 2, 3, 4])).ThrowsException();
+    }
+
+    [Test]
     public async Task TheFrameworkStillRefusesWebP()
     {
         // The reason the fallback exists. If a release starts reading WebP, this fails and the

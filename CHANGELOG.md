@@ -25,6 +25,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Inline game images preserve full and partial transparency through Kitty transmission, including the desktop window, instead of losing their alpha channel.
+
 - The Windows installer and the Linux AppImage are now built with Velopack, which is what lets them update. Windows
   installs per user under `%LocalAppData%\SharpMUTerm`, adds the `sharpmuterm` folder to PATH and installs the Symbols
   Nerd Font Mono font, with no questions asked. If you installed an earlier version with the old installer, uninstall
