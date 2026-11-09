@@ -53,6 +53,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- The desktop window answers terminal cell-pixel queries with its actual measured pixels, allowing
+  servers to size images correctly. Servers that asked receive refreshed cell dimensions after zoom
+  or display-scaling changes. Replies do not add a command newline or forward server escapes to
+  the local terminal.
+
 - Desktop MXP images use the measured font cell dimensions when sizing pictures, instead of assuming an 8×16 cell.
   This avoids stretching pictures when the selected font has a different shape. Explicit server-specified cell boxes
   stay unchanged, and terminal hosts without measured cells keep their existing sizing.

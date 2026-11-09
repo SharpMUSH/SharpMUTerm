@@ -11,4 +11,8 @@
     <PackageReference Include="WeCantSpell.Hunspell" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharpMUTerm.Core.Tests" />
+  </ItemGroup>
+
 </Project>

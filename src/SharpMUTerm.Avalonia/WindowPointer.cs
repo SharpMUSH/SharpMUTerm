@@ -91,6 +91,23 @@ internal sealed class WindowPointer : IPointerPresenter
 
     int? IPointerPresenter.WindowColumns => WindowColumnsMeasured is > 0 and var columns ? columns : null;
 
+    private SharpMUTerm.Core.Telnet.TerminalCellSize? _terminalCellPixels;
+    internal SharpMUTerm.Core.Telnet.TerminalCellSize? TerminalCellPixelsMeasured
+    {
+        get => Volatile.Read(ref _terminalCellPixels);
+        set
+        {
+            if (Interlocked.Exchange(ref _terminalCellPixels, value) != value)
+            {
+                TerminalCellPixelsChanged?.Invoke();
+            }
+        }
+    }
+
+    public event Action? TerminalCellPixelsChanged;
+
+    SharpMUTerm.Core.Telnet.TerminalCellSize? IPointerPresenter.TerminalCellPixels => TerminalCellPixelsMeasured;
+
     private ImageCellSize? _imageCellSize;
 
     internal ImageCellSize? ImageCellSizeMeasured

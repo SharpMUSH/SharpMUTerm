@@ -49,7 +49,7 @@
     <PackageVersion Include="AngleSharp" Version="1.7.1" />
 
     <!-- Logging abstractions (TelnetNegotiationCore takes an ILogger). -->
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
 
     <!--
       Client diagnostics: Serilog behind Microsoft.Extensions.Logging. Only the Tui's composition root

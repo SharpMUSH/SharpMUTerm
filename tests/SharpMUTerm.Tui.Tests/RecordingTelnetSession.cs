@@ -15,6 +15,15 @@ internal sealed class RecordingTelnetSession : ITelnetSession
 
     public bool IsConnected { get; private set; }
 
+    public Func<TerminalCellSize?>? TerminalCellSizeProvider { get; set; }
+    public List<TerminalCellSize?> CellPixelReports { get; } = [];
+
+    public ValueTask RefreshTerminalCellSizeAsync()
+    {
+        CellPixelReports.Add(TerminalCellSizeProvider?.Invoke());
+        return ValueTask.CompletedTask;
+    }
+
     /// <summary>What this fake reports as in force; a test that cares sets it and raises the event.</summary>
     public SessionEncoding CurrentEncoding { get; set; } =
         new(new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), EncodingSource.Assumed);

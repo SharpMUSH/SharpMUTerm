@@ -1078,6 +1078,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // repaints. One hook therefore covers the lot, and none of them can be forgotten later.
         // (The event's adder is a silent no-op while a window has no renderer; this one has had one
         // since its constructor ran, and NawsPaneReportTests fails loudly if that ever stops holding.)
+        if (_pointer is not null)
+        {
+            _pointer.TerminalCellPixelsChanged += OnTerminalCellPixelsChanged;
+        }
+
         _window.PostBufferPaint += (buffer, _, _) =>
         {
             ReportPaneSizes();
@@ -9656,6 +9661,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void OnSessionAdded(object? sender, WorldSession session)
     {
+        session.TerminalCellSizeProvider = () => _pointer?.TerminalCellPixels;
         session.MsdpReports = StatusMeter.MsdpVariables(_config.Text.StatusMeters);
         WatchPresence(session);
         StartReconnecting(session);
@@ -14609,6 +14615,31 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             Timeout.InfiniteTimeSpan);
     }
 
+    private void OnTerminalCellPixelsChanged() => OnUiThread(() =>
+    {
+        foreach (var session in _sessionWindows.Keys)
+        {
+            if (session.IsConnected)
+            {
+                _ = RefreshCellPixelsAsync(session);
+            }
+        }
+    });
+
+    private async Task RefreshCellPixelsAsync(WorldSession session)
+    {
+        try
+        {
+            await session.RefreshTerminalCellSizeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // A display-metrics event cannot await this send. Log without causing another repaint
+            // and retry loop; another metrics change or explicit query can retry an unsent size.
+            _diagnostics.For("SharpMUTerm.TerminalPixels").LogWarning(ex, "Could not report terminal cell pixels");
+        }
+    }
+
     /// <summary>
     /// Sends one session's NAWS report. The callers cannot await it — a paint callback, a timer and a
     /// connect continuation — but the failure is not swallowed the way the old fire-and-forget was: a
@@ -15468,6 +15499,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_pointer is not null)
+        {
+            _pointer.TerminalCellPixelsChanged -= OnTerminalCellPixelsChanged;
+        }
+
         _system.ConsoleDriver.MouseEvent -= OnDriverMouseEvent;
         _focus.Dispose();           // and the terminal is told to stop reporting focus at nobody
         ResetTransparentColours();  // and kitty's colours go back to its own
