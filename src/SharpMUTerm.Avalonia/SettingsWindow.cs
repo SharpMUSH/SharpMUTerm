@@ -95,17 +95,23 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>The size the window first opens at, before the player resizes it.</summary>
     internal const double DefaultWidth = 1120, DefaultHeight = 760;
 
-    public SettingsWindow(SettingsForm form)
+    /// <summary>The scale the page is drawn at (the dialogs' text size and the zoom).</summary>
+    internal double Scale { get; }
+
+    /// <param name="form">The settings drawn and edited.</param>
+    /// <param name="scale">How much larger than designed the page is drawn: the window's dialog text size and zoom.</param>
+    public SettingsWindow(SettingsForm form, double scale = 1)
     {
         _form = form;
+        Scale = scale;
         NativeTokens.ApplyTextRendering(this);
         AppIcon.Apply(this);
         _tokens = TokensFor(form);
         Title = "Settings";
-        Width = DefaultWidth;
-        Height = DefaultHeight;
-        MinWidth = 640;
-        MinHeight = 440;
+        Width = DefaultWidth * scale;
+        Height = DefaultHeight * scale;
+        MinWidth = 640 * Math.Min(scale, 1.5);
+        MinHeight = 440 * Math.Min(scale, 1.5);
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         // The palette's frame, not the platform's: the window draws its own title, close button and edge, so it reads
@@ -274,7 +280,7 @@ internal sealed partial class SettingsWindow : Window
 
         // The frame is ours, so the resize border is too: a band along each edge, as the borderless main window has.
         CanResize = true;
-        _layers = WindowChrome.WithResizeBands(this, _frame);
+        _layers = WindowChrome.WithResizeBands(this, NativeScale.Wrap(_frame, scale));
         Content = _layers;
 
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());

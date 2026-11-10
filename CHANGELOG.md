@@ -9,10 +9,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
-- The desktop window now supports live terminal zoom: Ctrl++ (or Ctrl+=), Ctrl+-, and Ctrl+0, plus
-  Zoom in/out/reset in the output pane's right-click menu. Zoom ranges from 50% to 200% and resets to
-  the launch font size. It resizes the real terminal grid, including per-pane NAWS, rather than stretching
-  a screenshot. Zoom lasts for this window; `--font-size` still chooses the startup size.
+- Text size and zoom in the desktop window. Ctrl+= and Ctrl+- zoom the whole window in and out, as a browser does
+  (50% to 300%), Ctrl+0 goes back to 100%, and so does Ctrl with the mouse wheel or the output's right-click menu. The
+  zoom is kept between runs. *Text size & zoom* in the settings window (or the command palette) sets the game text's
+  size in points and, each on its own, the composer, the header and sidebar, the panels, and menus and dialogs. The
+  panes are re-measured and each game is told its new window size. In a terminal the text size is the terminal's own;
+  help says how to change it there.
 
 - Three ways to start SharpMUTerm, side by side. The Windows install adds *SharpMUTerm (Emulated)* and *SharpMUTerm
   (Native)* to the Start menu beside *SharpMUTerm*, and a SharpMUTerm profile to Windows Terminal. The AppImage offers

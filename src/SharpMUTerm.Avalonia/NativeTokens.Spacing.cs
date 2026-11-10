@@ -166,9 +166,7 @@ internal sealed partial record NativeTokens
     /// </summary>
     public static void ApplyTextRendering(Visual window) => TextOptions.SetTextHintingMode(window, TextHintingMode.Light);
 
-    private static double Scaling(Visual visual)
-    {
-        var scale = TopLevel.GetTopLevel(visual)?.RenderScaling ?? 1;
-        return scale > 0 ? scale : 1;
-    }
+    // The screen's scaling times any zoom the view is drawn at (NativeScale), so a hairline in a zoomed panel is still one
+    // device pixel rather than the zoom's share of one.
+    private static double Scaling(Visual visual) => NativeScale.DeviceScale(visual);
 }

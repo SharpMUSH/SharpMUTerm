@@ -523,6 +523,25 @@ internal sealed class ComposerView : Border, IEdgeRules
         _marks.InvalidateVisual();
     }
 
+    /// <summary>
+    /// How much larger than the cells' text the game text is drawn: the Text size page's composer size, over whatever
+    /// zoom the view is already drawn at (a docked composer sits in a panel drawn at the panels' scale).
+    /// </summary>
+    internal double TextScale
+    {
+        get => _textScale;
+        set
+        {
+            if (Math.Abs(value - _textScale) > 0.0005)
+            {
+                _textScale = value;
+                ApplyFont();
+            }
+        }
+    }
+
+    private double _textScale = 1;
+
     /// <summary>Refreshes an open composer after zoom without changing its selected face.</summary>
     private void RefreshFontMetrics()
     {
@@ -545,8 +564,11 @@ internal sealed class ComposerView : Border, IEdgeRules
         _textLabel.FontSize = PanelText.Size - 1;
         // Game text in the cells' own face and size (the mockups' 13 px JetBrains Mono beside the output's), not a share
         // of the row: a row carries the line height's leading, which made the text a size larger than the output's.
-        var text = _view.CellTextSize > 0 ? _view.CellTextSize : cell * 0.8;
-        _command.FontSize = Math.Clamp(text, 11, 18);
+        // The upper bounds keep a large --font-size from swamping the panel; a size the player chose on the Text size
+        // page or by zooming lifts them with it.
+        var text = (_view.CellTextSize > 0 ? _view.CellTextSize : cell * 0.8) * _textScale;
+        var most = 18 * Math.Max(1, _textScale * ZoomOf(_view));
+        _command.FontSize = Math.Clamp(text, 11, most);
         _command.FontFamily = NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
         foreach (var button in new[] { _previewButton, _sendButton })
         {
@@ -558,7 +580,7 @@ internal sealed class ComposerView : Border, IEdgeRules
         _previewHeading.FontSize = ui - 1.5;
         _previewText.FontSize = Math.Clamp(cell * 0.72, 11, 16);
         _previewText.FontFamily = NativeTokens.CellFace(_view.Renderer.Fonts.FamilyName);
-        _editor.FontSize = Proportional ? Math.Clamp(text * 1.08, 12, 19) : Math.Clamp(text, 11, 18);
+        _editor.FontSize = Proportional ? Math.Clamp(text * 1.08, 12, most * 19 / 18) : Math.Clamp(text, 11, most);
 
         // Rows as far apart as the output's (the mockups' 20 px line), so a post reads at the pitch it will be read at.
         _editor.LineHeight = Proportional ? double.NaN : cell;
@@ -570,6 +592,8 @@ internal sealed class ComposerView : Border, IEdgeRules
             Label(model);
         }
     }
+
+    private static double ZoomOf(TerminalView view) => view.ZoomPercent / 100.0;
 
     /// <summary>Where line <paramref name="line"/> (from 1) of <paramref name="text"/> starts; the end when it has fewer.</summary>
     internal static int LineStart(string text, int line)
@@ -675,6 +699,13 @@ internal sealed class ComposerView : Border, IEdgeRules
             // A docked composer too short for its footer keeps the editor and drops the footer: the heading, the footer
             // and an editor of two lines need about 136 px, and below that the footer would squeeze the well shut.
             _footer.IsVisible = Bounds.Height is 0 or >= 136;
+
+            // A panel too narrow for both buttons (a narrow column, or its text drawn larger) keeps Send and drops Preview,
+            // which F1 still offers (Alt+P), rather than squeezing it to a sliver.
+            _sendButton.Measure(Size.Infinity);
+            _previewButton.Measure(Size.Infinity);
+            var both = (2 * PanelText.Pad) + _sendButton.DesiredSize.Width + _previewButton.DesiredSize.Width + NativeTokens.Space8;
+            _previewButton.IsVisible = Bounds.Width is 0 || Bounds.Width >= both;
             ShowPlaceholder(!model.Armed);
             return;
         }

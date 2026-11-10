@@ -515,7 +515,8 @@ internal sealed class MapCanvas : Control, IEdgeRules
 
     /// <summary>
     /// The look buttons the view offers, left to right under the corner label: ▲ ▼ while the area has more than one level,
-    /// Areas ▾ while the map has more than one area, and Back to where I am while the view is elsewhere. Internal for tests.
+    /// Areas ▾ while the map has more than one area, and Back to where I am while the view is elsewhere, wrapping onto a
+    /// second row where the panel is too narrow for them. Internal for tests.
     /// </summary>
     internal IReadOnlyList<LookButton> LookButtons()
     {
@@ -530,6 +531,14 @@ internal sealed class MapCanvas : Control, IEdgeRules
         void Add(string id, string label, bool enabled)
         {
             var width = PanelText.Measure(label, ButtonSize, bold: false) + (2 * NativeTokens.Space10);
+
+            // A button the row has no room for starts the next (a narrow column, or the panels drawn larger).
+            if (Bounds.Width > 0 && x > PanelText.Pad && x + width > Bounds.Width - PanelText.Pad)
+            {
+                x = PanelText.Pad;
+                y += ButtonHeight + NativeTokens.Space6;
+            }
+
             buttons.Add(new LookButton(id, new Rect(x, y, width, ButtonHeight), label, enabled));
             x += width + NativeTokens.Space6;
         }
@@ -563,8 +572,8 @@ internal sealed class MapCanvas : Control, IEdgeRules
     /// <summary>What is drawn above the rooms: the heading, a walk line, and the look buttons while there are any.</summary>
     private double TopReserve()
     {
-        var top = UnderHeading();
-        return LookButtons().Count > 0 ? top + ButtonHeight + NativeTokens.Space8 : top;
+        var buttons = LookButtons();
+        return buttons.Count > 0 ? buttons.Max(b => b.Rect.Bottom) + NativeTokens.Space8 : UnderHeading();
     }
 
     /// <summary>What is drawn below the rooms: the legend and the hint, with a gap above them.</summary>

@@ -43,6 +43,16 @@ public static class HelpTopics
             "",
             "Copy: drag across output, then ⌃C.",
         ]),
+        new("text-size", "Text size", "make the text bigger or smaller", [
+            "In the window: ⌃= zooms in, ⌃- zooms out and ⌃0 goes back to 100%, as in a browser; so does ⌃ with",
+            "the wheel, and the output's right-click menu. The zoom covers the whole window and is kept between runs.",
+            "⌃P ▸ Text size & zoom sets the output's size in points, and the composer, the header and sidebar,",
+            "the panels, and menus and dialogs each on their own.",
+            "",
+            "In a terminal the text is the terminal's own, and nothing a program sends can change its size: use",
+            "the terminal's zoom (kitty ⌃⇧= and ⌃⇧-; WezTerm, Ghostty and Windows Terminal ⌃= and ⌃-).",
+            "The panes are re-measured and each game is told its pane's new size either way.",
+        ]),
         new("layouts", "Layouts", "panes, panels, and saving an arrangement", [
             "⌥M lists the layouts: Roleplay (who is here, a composer), Combat (vitals, a map, a quick bar)",
             "and your own. ⏎ applies one; n saves the panes as they are now as a new layout.",

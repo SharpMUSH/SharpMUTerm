@@ -38,6 +38,9 @@ internal sealed class ComposerPresenter : INativeComposer
         _attached = true;
     }
 
+    /// <summary>The window's text sizes, read when F1 opens (MainWindow sets it; designed sizes until then).</summary>
+    public Func<NativeScales> Scales { get; set; } = () => NativeScales.One;
+
     public void Open(ComposerSession session, PanelInk ink) => Dispatcher.UIThread.Post(() => OpenNow(session, ink));
 
     public void Close() => Dispatcher.UIThread.Post(CloseNow);
@@ -56,6 +59,7 @@ internal sealed class ComposerPresenter : INativeComposer
         }
 
         var overlay = new ComposerOverlay(view, session, ink);
+        overlay.Composer.TextScale = Scales().Composer;
         _overlay = overlay;
         var at = _below is not null ? root.Children.IndexOf(_below) : -1;
         root.Children.Insert(at < 0 ? root.Children.Count : at, overlay);

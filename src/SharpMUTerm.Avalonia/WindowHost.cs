@@ -70,6 +70,7 @@ internal static class WindowHost
     {
         var host = Build(driver, clipboard, emulated ? HostChrome.None : chrome);
         driver.Pointer.CellsOnly = emulated;
+        driver.TextSize.SizesAreas = !emulated;
         return emulated
             ? host with
             {
@@ -143,6 +144,9 @@ internal static class WindowHost
 
         // F7's background transparency is drawn here: every plane at the level, over a translucent desktop window.
         Translucency = driver.Translucency,
+
+        // The Text size page and the zoom: the window draws its cells and its native views at the sizes the client says.
+        TextSize = driver.TextSize,
 
         // Set by the live launch alone (ClientLaunch.Run), so the demo and every test ask GitHub nothing.
         Updates = null,

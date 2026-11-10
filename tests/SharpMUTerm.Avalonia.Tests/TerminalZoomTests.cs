@@ -17,7 +17,7 @@ public class TerminalZoomTests
             var key = Enum.Parse<Key>(reserved.Chord.Key.ToString());
             var modifiers = KeyModifiers.Control;
             if (reserved.Chord.Modifiers.HasFlag(ConsoleModifiers.Shift)) modifiers |= KeyModifiers.Shift;
-            var expected = reserved.Action switch { "zooms in" => 10, "zooms out" => -10, "resets terminal zoom" => 0, _ => int.MinValue };
+            var expected = reserved.Action switch { "zooms in" => 1, "zooms out" => -1, "resets terminal zoom" => 0, _ => int.MinValue };
             await Assert.That(TerminalView.ZoomFor(key, modifiers)).IsEqualTo(expected);
         }
     }
@@ -139,26 +139,71 @@ public class TerminalZoomTests
     }
 
     [Test]
-    public async Task ZoomIsBoundedAndMenuActionsResetToLaunchSize()
+    public async Task ZoomStepsThroughTheLevelsIsBoundedAndTheMenuResets()
     {
         var result = await TerminalViewTests.Session.Dispatch(() =>
         {
             using var driver = new AvaloniaConsoleDriver(80, 24);
             var view = new TerminalView(driver, SKColors.White, SKColors.Black, 20, null);
-            view.SetZoom(999);
+            var seen = new List<int>();
+            for (var i = 0; i < 20; i++)
+            {
+                view.RequestZoom(1);
+                seen.Add(view.ZoomPercent);
+            }
+
             var max = view.ZoomPercent;
             var disabledIn = !view.ZoomItems[0].Enabled;
-            view.SetZoom(-1);
+            for (var i = 0; i < 20; i++)
+            {
+                view.RequestZoom(-1);
+            }
+
             var min = view.ZoomPercent;
             var disabledOut = !view.ZoomItems[1].Enabled;
             view.ZoomItems[2].Run();
-            return (max, min, disabledIn, disabledOut, reset: view.ZoomPercent, text: view.CellTextSize);
+            return (seen, max, min, disabledIn, disabledOut, reset: view.ZoomPercent, text: view.CellTextSize);
         }, CancellationToken.None);
-        await Assert.That(result.max).IsEqualTo(200);
+        await Assert.That(result.seen.Take(4)).IsEquivalentTo(new[] { 110, 125, 150, 175 });
+        await Assert.That(result.max).IsEqualTo(300);
         await Assert.That(result.min).IsEqualTo(50);
         await Assert.That(result.disabledIn && result.disabledOut).IsTrue();
         await Assert.That(result.reset).IsEqualTo(100);
         await Assert.That(result.text).IsEqualTo(20);
+    }
+
+    [Test]
+    public async Task WithAListenerTheViewAsksAndDoesNotZoomItself()
+    {
+        var result = await TerminalViewTests.Session.Dispatch(() =>
+        {
+            using var driver = new AvaloniaConsoleDriver(80, 24);
+            var view = new TerminalView(driver, SKColors.White, SKColors.Black, 16, null);
+            var asked = new List<int>();
+            view.ZoomRequested += asked.Add;
+            view.ZoomShown = () => 125;
+            view.HandleKeyDown(new KeyEventArgs { Key = Key.OemMinus, KeyModifiers = KeyModifiers.Control });
+            return (asked, view.ZoomPercent, menu: view.ZoomItems.Select(i => i.Label).ToArray());
+        }, CancellationToken.None);
+        await Assert.That(result.asked).IsEquivalentTo(new[] { -1 });
+        await Assert.That(result.ZoomPercent).IsEqualTo(100);
+        await Assert.That(result.menu[0]).IsEqualTo("Zoom in (150%)");
+        await Assert.That(result.menu[2]).IsEqualTo("Reset zoom (125%)");
+    }
+
+    [Test]
+    public async Task CtrlAndTheWheelZoomANotchAtATime()
+    {
+        var remainder = 0.0;
+        await Assert.That(TerminalView.ZoomForWheel(ref remainder, KeyModifiers.Control, 1)).IsEqualTo(1);
+        await Assert.That(TerminalView.ZoomForWheel(ref remainder, KeyModifiers.Control, -1)).IsEqualTo(-1);
+        await Assert.That(TerminalView.ZoomForWheel(ref remainder, KeyModifiers.None, 1)).IsNull();
+        await Assert.That(TerminalView.ZoomForWheel(ref remainder, KeyModifiers.Control | KeyModifiers.Shift, 1)).IsNull();
+
+        // A touchpad's small deltas add up to a notch before they zoom.
+        remainder = 0;
+        await Assert.That(TerminalView.ZoomForWheel(ref remainder, KeyModifiers.Control, 0.4)).IsEqualTo(0);
+        await Assert.That(TerminalView.ZoomForWheel(ref remainder, KeyModifiers.Control, 0.7)).IsEqualTo(1);
     }
 
     [Test]
@@ -184,7 +229,7 @@ public class TerminalZoomTests
         await Assert.That(result.key).IsEqualTo(ConsoleKey.A);
         await Assert.That(TerminalView.ZoomFor(Key.OemPlus, KeyModifiers.None)).IsNull();
         await Assert.That(TerminalView.ZoomFor(Key.D0, KeyModifiers.Control | KeyModifiers.Alt)).IsNull();
-        await Assert.That(TerminalView.ZoomFor(Key.Subtract, KeyModifiers.Control)).IsEqualTo(-10);
+        await Assert.That(TerminalView.ZoomFor(Key.Subtract, KeyModifiers.Control)).IsEqualTo(-1);
         await Assert.That(TerminalView.ZoomFor(Key.NumPad0, KeyModifiers.Control)).IsEqualTo(0);
     }
 }

@@ -35,31 +35,90 @@ internal sealed class TerminalView : Control
     private readonly float _lineHeight;
     private CellRenderer _renderer;
     private double _scale = 1;
-    private int _zoomPercent = 100;
-    // Render operations can still hold the old fonts. Reuse each zoom level instead of leaking a new
-    // font set on every repeated +/- or reset, and never dispose fonts underneath the render thread.
+    // How much larger than the launch size the cells are drawn: the Text size page's output size against the launch's,
+    // times the zoom (MainWindow.ApplyTextSizes). In thousandths, so a renderer can be found again for a size.
+    private int _cellZoom = 1000;
+    // Render operations can still hold the old fonts. Reuse each size instead of leaking a new font set on every
+    // repeated +/- or reset, and never dispose fonts underneath the render thread.
     private readonly Dictionary<(double Scale, int Zoom), CellRenderer> _zoomRenderers = [];
 
-    internal int ZoomPercent => _zoomPercent;
-
-    internal void SetZoom(int percent)
+    /// <summary>
+    /// How much larger than designed the window's own words over the cells are drawn (the command line's hint, tooltips):
+    /// the Text size page's interface size and the zoom.
+    /// </summary>
+    internal double InterfaceScale
     {
-        percent = Math.Clamp(percent, 50, 200);
-        if (percent == _zoomPercent)
+        get => _interfaceScale;
+        set
+        {
+            if (Math.Abs(value - _interfaceScale) > 0.0005)
+            {
+                _interfaceScale = value;
+                _tipText.FontSize = NativeTokens.Body * value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private double _interfaceScale = 1;
+
+    /// <summary>The cells' size against the launch size, as a percentage.</summary>
+    internal int ZoomPercent => (int)Math.Round(_cellZoom / 10.0);
+
+    /// <summary>Draws the cells at <paramref name="percent"/> of the launch size.</summary>
+    internal void SetZoom(int percent) => SetCellZoom(percent / 100.0);
+
+    /// <summary>
+    /// Draws the cells <paramref name="factor"/> times the launch size, re-measuring the grid (so every pane's NAWS is
+    /// told its new size) without resizing the window.
+    /// </summary>
+    internal void SetCellZoom(double factor)
+    {
+        var thousandths = (int)Math.Round(Math.Clamp(factor, 0.25, 8) * 1000);
+        if (thousandths == _cellZoom)
         {
             return;
         }
 
-        _zoomPercent = percent;
+        _cellZoom = thousandths;
         Rescale(_scale);
     }
 
-    internal IReadOnlyList<PointerMenuItem> ZoomItems =>
-    [
-        new("Zoom in", "Ctrl++", () => SetZoom(_zoomPercent + 10), _zoomPercent < 200),
-        new("Zoom out", "Ctrl+-", () => SetZoom(_zoomPercent - 10), _zoomPercent > 50),
-        new($"Reset zoom ({_zoomPercent}%)", "Ctrl+0", () => SetZoom(100), _zoomPercent != 100),
-    ];
+    /// <summary>
+    /// Raised when the player zooms with the keys, Ctrl+wheel or the right-click menu: in for a positive step, out for a
+    /// negative one, back to 100% for zero. The window passes it to the client, which saves it and says the new sizes;
+    /// with nothing listening (a test of the view alone) the cells step here.
+    /// </summary>
+    internal event Action<int>? ZoomRequested;
+
+    /// <summary>The window's zoom as the right-click menu names it; the cells' own size until the window says.</summary>
+    internal Func<int>? ZoomShown { get; set; }
+
+    /// <summary>Asks for a zoom step (see <see cref="ZoomRequested"/>).</summary>
+    internal void RequestZoom(int step)
+    {
+        if (ZoomRequested is { } listener)
+        {
+            listener(step);
+            return;
+        }
+
+        SetZoom(SharpMUTerm.Core.Configuration.ZoomLevels.Stepped(ZoomPercent, step));
+    }
+
+    internal IReadOnlyList<PointerMenuItem> ZoomItems
+    {
+        get
+        {
+            var zoom = ZoomShown?.Invoke() ?? ZoomPercent;
+            return
+            [
+                new($"Zoom in ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(SharpMUTerm.Core.Configuration.ZoomLevels.Next(zoom))})", "Ctrl+=", () => RequestZoom(1), zoom < SharpMUTerm.Core.Configuration.ZoomLevels.Maximum),
+                new($"Zoom out ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(SharpMUTerm.Core.Configuration.ZoomLevels.Previous(zoom))})", "Ctrl+-", () => RequestZoom(-1), zoom > SharpMUTerm.Core.Configuration.ZoomLevels.Minimum),
+                new($"Reset zoom ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(zoom)})", "Ctrl+0", () => RequestZoom(0), zoom != 100),
+            ];
+        }
+    }
     private int _invalidatePending;
     private char? _swallowText;
     private double _wheelRemainder;
@@ -83,7 +142,7 @@ internal sealed class TerminalView : Control
         _family = family;
         _lineHeight = lineHeight;
         _renderer = new CellRenderer(new CellFonts(fontPoints, family, lineHeight), foreground, background);
-        _zoomRenderers[(1, 100)] = _renderer;
+        _zoomRenderers[(1, 1000)] = _renderer;
         _driver.Pointer.CellHeightMeasured = CellSize.Height;
         _driver.CellMetrics.Current = new SharpMUTerm.Core.Telnet.TerminalCellSize(_renderer.Fonts.CellWidth, _renderer.Fonts.CellHeight);
         _driver.Pointer.ImageCellSizeMeasured = new ImageCellSize(CellSize.Width, CellSize.Height);
@@ -351,13 +410,13 @@ internal sealed class TerminalView : Control
     private void Rescale(double scale)
     {
         _scale = scale;
-        if (!_zoomRenderers.TryGetValue((scale, _zoomPercent), out var renderer))
+        if (!_zoomRenderers.TryGetValue((scale, _cellZoom), out var renderer))
         {
             renderer = new CellRenderer(
-                new CellFonts((float)(_fontPoints * scale * _zoomPercent / 100), _family, _lineHeight),
+                new CellFonts((float)(_fontPoints * scale * _cellZoom / 1000), _family, _lineHeight),
                 _renderer.DefaultForeground,
                 _renderer.DefaultBackground);
-            _zoomRenderers[(scale, _zoomPercent)] = renderer;
+            _zoomRenderers[(scale, _cellZoom)] = renderer;
         }
 
         _renderer = renderer;
@@ -389,9 +448,26 @@ internal sealed class TerminalView : Control
         }
     }
 
-    /// <summary>Keep zoom available while the native command editor owns keyboard focus.</summary>
+    /// <summary>
+    /// Keeps the zoom keys and Ctrl+wheel working wherever the pointer or the keyboard is in <paramref name="root"/>: over
+    /// a native panel, the header or the sidebar, and while the native composer owns the keyboard.
+    /// </summary>
     internal void AttachZoomKeys(InputElement root)
     {
+        double remainder = 0;
+        root.AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            if (!e.Handled && ZoomForWheel(ref remainder, e.KeyModifiers, e.Delta.Y) is { } steps)
+            {
+                for (var i = 0; i < Math.Abs(steps); i++)
+                {
+                    RequestZoom(Math.Sign(steps));
+                }
+
+                e.Handled = true;
+            }
+        }, global::Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
         char? swallowed = null;
         root.AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -415,14 +491,30 @@ internal sealed class TerminalView : Control
         root.AddHandler(LostFocusEvent, (_, _) => swallowed = null);
     }
 
+    /// <summary>The zoom step a key asks for: 1 in, -1 out, 0 back to 100%; null for any other key.</summary>
     internal static int? ZoomFor(Key key, KeyModifiers modifiers) => (key, modifiers) switch
     {
-        (Key.OemPlus, KeyModifiers.Control or (KeyModifiers.Control | KeyModifiers.Shift)) => 10,
-        (Key.Add, KeyModifiers.Control) => 10,
-        (Key.OemMinus or Key.Subtract, KeyModifiers.Control) => -10,
+        (Key.OemPlus, KeyModifiers.Control or (KeyModifiers.Control | KeyModifiers.Shift)) => 1,
+        (Key.Add, KeyModifiers.Control) => 1,
+        (Key.OemMinus or Key.Subtract, KeyModifiers.Control) => -1,
         (Key.D0 or Key.NumPad0, KeyModifiers.Control) => 0,
         _ => null,
     };
+
+    /// <summary>
+    /// The zoom steps a Ctrl+wheel movement asks for, one per notch (a browser's), a touchpad's fractions carried in
+    /// <paramref name="remainder"/>; null when Ctrl alone is not held, so the wheel scrolls as it always did.
+    /// </summary>
+    internal static int? ZoomForWheel(ref double remainder, KeyModifiers modifiers, double delta)
+    {
+        if (modifiers != KeyModifiers.Control)
+        {
+            remainder = 0;
+            return null;
+        }
+
+        return MouseMapper.WheelNotches(ref remainder, delta);
+    }
 
     // ── Keys ────────────────────────────────────────────────────────────────────────────────────
 
@@ -441,7 +533,7 @@ internal sealed class TerminalView : Control
         _swallowText = null;
         if (ZoomFor(e.Key, e.KeyModifiers) is { } zoom)
         {
-            SetZoom(zoom == 0 ? 100 : _zoomPercent + zoom);
+            RequestZoom(zoom);
             _swallowText = e.Key switch
             {
                 Key.D0 or Key.NumPad0 => '0',
@@ -1466,7 +1558,7 @@ internal sealed class TerminalView : Control
 
         var hint = new FormattedText(
             NativeKeys.Words(band.Hint), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-            new Typeface(NativeTokens.UiFont), NativeTokens.Small, Brush(SKColors.White));
+            new Typeface(NativeTokens.UiFont), NativeTokens.Small * InterfaceScale, Brush(SKColors.White));
         // Moved with the field's edge where the field runs on past the grid's last column (FieldRect).
         var right = ((end - band.Pad) * cell.Width)
             + (end >= frame.Width ? Math.Clamp(Bounds.Width - (frame.Width * cell.Width), 0, cell.Width) : 0);

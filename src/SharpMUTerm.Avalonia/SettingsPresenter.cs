@@ -30,6 +30,9 @@ internal sealed class SettingsPresenter : INativeSettings
     internal Size? RememberedSize { get; private set; }
 
     /// <summary>Called on the window's thread once the settings window has opened or closed, so the main window can re-hide or show what sits under it.</summary>
+    /// <summary>The window's text sizes, read when the settings window opens (MainWindow sets it; designed sizes until then).</summary>
+    public Func<NativeScales> Scales { get; set; } = () => NativeScales.One;
+
     public Action? OpenedOrClosed { get; set; }
 
     /// <summary>The window the settings window belongs to, set once the main window exists.</summary>
@@ -56,7 +59,7 @@ internal sealed class SettingsPresenter : INativeSettings
             return open;
         }
 
-        var window = new SettingsWindow(form);
+        var window = new SettingsWindow(form, Scales().Dialogs);
         if (RememberedSize is { } remembered)
         {
             window.Width = remembered.Width;
@@ -135,7 +138,7 @@ internal sealed class SettingsPresenter : INativeSettings
         {
             var wasDocked = _docked;
             _docked = false;
-            var size = RememberedSize ?? new Size(SettingsWindow.DefaultWidth, SettingsWindow.DefaultHeight);
+            var size = RememberedSize ?? new Size(SettingsWindow.DefaultWidth * window.Scale, SettingsWindow.DefaultHeight * window.Scale);
 
             // Inside the screen the main window is on (WindowFit): the default 1120 × 760 is 1,140 device rows at 150%.
             if ((owner.Screens.ScreenFromWindow(owner) ?? owner.Screens.Primary ?? owner.Screens.All.FirstOrDefault()) is { } screen)

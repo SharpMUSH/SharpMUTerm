@@ -46,6 +46,8 @@ internal sealed class PaletteOverlay : Panel
     private readonly List<string?> _keyTexts = [];
     private PaletteView _view;
     private int _selected = -1;
+    private readonly double _scale;
+    private readonly double _top;
 
     /// <param name="session">What to list, and where a choice goes.</param>
     /// <param name="remove">Takes the overlay out of the window and gives the keyboard back to the cells.</param>
@@ -55,8 +57,12 @@ internal sealed class PaletteOverlay : Panel
     /// </summary>
     internal const string Placeholder = NativeHeader.SearchText + " — type a command, a character, a window or a setting";
 
-    public PaletteOverlay(PaletteSession session, Action<PaletteOverlay> remove)
+    /// <param name="scales">The window's text sizes: the card is drawn at the dialogs' scale, below the header's height.</param>
+    public PaletteOverlay(PaletteSession session, Action<PaletteOverlay> remove, NativeScales? scales = null)
     {
+        var sizes = scales ?? NativeScales.One;
+        _scale = sizes.Dialogs;
+        _top = (NativeLayout.Scaled(NativeLayout.HeaderHeight, sizes.Interface) + CardTop - NativeLayout.HeaderHeight) / _scale;
         _session = session;
         _remove = remove;
         _colours = NativeTokens.For(session.Theme, session.IsDark);
@@ -150,13 +156,13 @@ internal sealed class PaletteOverlay : Panel
             RequestedThemeVariant = session.IsDark ? ThemeVariant.Dark : ThemeVariant.Light,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(NativeTokens.Space16, CardTop, NativeTokens.Space16, NativeTokens.Space16),
+            Margin = new Thickness(NativeTokens.Space16, _top, NativeTokens.Space16, NativeTokens.Space16),
             Child = _card,
         };
         scope.Styles.Add(new FluentTheme());
         _colours.Apply(scope.Resources);
         _colours.ApplyFocusRing(scope);
-        Children.Add(scope);
+        Children.Add(NativeScale.Wrap(scope, _scale));
 
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
         PointerPressed += OnScrimPressed;
@@ -241,9 +247,10 @@ internal sealed class PaletteOverlay : Panel
 
     private void Fit()
     {
-        var width = Math.Max(240, Math.Min(CardWidth, Bounds.Width - 32));
+        var room = Bounds.Size / _scale;
+        var width = Math.Max(240, Math.Min(CardWidth, room.Width - 32));
         _card.Width = width;
-        _card.MaxHeight = Math.Max(160, Bounds.Height - CardTop - 32);
+        _card.MaxHeight = Math.Max(160, room.Height - _top - 32);
     }
 
     private void Refresh(bool resetSelection)

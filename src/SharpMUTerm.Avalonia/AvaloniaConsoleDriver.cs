@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using Color = SharpConsoleUI.Color;
 using Point = System.Drawing.Point;
 using SharpConsoleUI;
@@ -95,6 +96,9 @@ internal sealed class AvaloniaConsoleDriver : IConsoleDriver, IGraphicsProtocol,
 
     /// <summary>F7's background transparency, which the main window draws (<see cref="WindowTranslucency"/>).</summary>
     public WindowTranslucency Translucency { get; } = new();
+
+    /// <summary>The Text size page's sizes and the zoom, which the main window draws at (<see cref="WindowTextSize"/>).</summary>
+    public WindowTextSize TextSize { get; } = new();
 
     /// <summary>The window's alerts while it is behind another (<see cref="WindowAttention"/>).</summary>
     public WindowAttention Attention { get; } = new();
@@ -231,6 +235,63 @@ internal sealed class WindowTranslucency : IWindowTranslucency
         percent <= 0 || actual == global::Avalonia.Controls.WindowTransparencyLevel.None
             ? (byte)255
             : (byte)Math.Round(255 * (100 - Math.Min(percent, 100)) / 100.0);
+}
+
+/// <summary>
+/// The window's half of <see cref="IWindowTextSize"/>: the client says the sizes on its own thread, and the main window,
+/// which subscribes, redraws at them on Avalonia's; the window's zoom keys and Ctrl+wheel ask the client to step the zoom
+/// through <see cref="RequestZoom"/>. With no client listening (a test of the view alone) a request steps
+/// <see cref="Current"/> here, so the keys still zoom.
+/// </summary>
+internal sealed class WindowTextSize : IWindowTextSize
+{
+    private DisplaySettings _current = new();
+
+    /// <summary>The sizes in force: the configuration's until the client says otherwise.</summary>
+    public DisplaySettings Current => Volatile.Read(ref _current);
+
+    /// <summary>Whether the window draws native views whose sizes the page's areas set; false in <c>--emulated</c>.</summary>
+    public bool SizesAreas { get; set; } = true;
+
+    /// <summary>Raised with each new set of sizes, on whichever thread said them.</summary>
+    public event Action<DisplaySettings>? Changed;
+
+    /// <inheritdoc/>
+    public event Action<int>? ZoomRequested;
+
+    /// <summary>Starts from the configuration's sizes, before the client exists, so the first frame is drawn at them.</summary>
+    public void Start(DisplaySettings sizes) => Volatile.Write(ref _current, sizes.Clamped());
+
+    public void Show(DisplaySettings sizes)
+    {
+        Volatile.Write(ref _current, sizes.Clamped());
+        Changed?.Invoke(Current);
+    }
+
+    /// <summary>
+    /// The window's own zoom keys or wheel: in for a positive <paramref name="step"/>, out for a negative one, 100% for
+    /// zero. The client steps, saves and says the result; with none, the step is taken here.
+    /// </summary>
+    public void RequestZoom(int step)
+    {
+        if (ZoomRequested is { } client)
+        {
+            client(step);
+            return;
+        }
+
+        var current = Current;
+        var next = new DisplaySettings
+        {
+            Zoom = ZoomLevels.Stepped(current.Zoom, step),
+            OutputPoints = current.OutputPoints,
+            ComposerText = current.ComposerText,
+            InterfaceText = current.InterfaceText,
+            PanelText = current.PanelText,
+            DialogText = current.DialogText,
+        };
+        Show(next);
+    }
 }
 
 /// <summary>

@@ -186,6 +186,14 @@ internal sealed record ClientHost
     public required IWindowTranslucency? Translucency { get; init; }
 
     /// <summary>
+    /// Draws its own text and so can size it (<see cref="IWindowTextSize"/>): the window, which is told the Text size
+    /// page's sizes and the zoom, and asks the client to step the zoom on Ctrl+= / Ctrl+- / Ctrl+0 and Ctrl+wheel. Null in
+    /// the terminal (its font size is its emulator's), the snapshot, the tests and <c>--plain</c>, where the client lists
+    /// none of it.
+    /// </summary>
+    public required IWindowTextSize? TextSize { get; init; }
+
+    /// <summary>
     /// Finding, downloading and applying a newer release (<see cref="VelopackUpdates"/>): only an installed copy of
     /// the terminal or the window has one. Null for a build run from a folder, the snapshot, the tests, <c>--plain</c>
     /// and the window's demo, so none of them asks the network anything.
@@ -242,6 +250,7 @@ internal sealed record ClientHost
         FilePicker = null,
         WindowModes = null,
         Translucency = null,
+        TextSize = null,
         Updates = VelopackUpdates.Detect(window: false),
     };
 
@@ -278,6 +287,7 @@ internal sealed record ClientHost
         FilePicker = null,
         WindowModes = null,
         Translucency = null,
+        TextSize = null,
         Updates = null,
     };
 

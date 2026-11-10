@@ -104,6 +104,28 @@ internal sealed partial class DesktopLayer : Canvas
         Sync();
     }
 
+    /// <summary>
+    /// How much larger than designed each native area is drawn (the Text size page and the zoom). Setting it moves the
+    /// cells out of the way of a header and sidebar of the new size and places every view again.
+    /// </summary>
+    internal NativeScales Scales
+    {
+        get => _scales;
+        set
+        {
+            if (_scales == value)
+            {
+                return;
+            }
+
+            _scales = value;
+            SyncInsets(_pointer.Chrome?.Sidebar.Collapsed ?? false);
+            Sync();
+        }
+    }
+
+    private NativeScales _scales = NativeScales.One;
+
     /// <summary>Which chrome this layer draws. Internal for tests.</summary>
     internal HostChrome Chrome => _chrome;
 
@@ -119,7 +141,7 @@ internal sealed partial class DesktopLayer : Canvas
     /// </summary>
     private void SyncInsets(bool collapsed)
     {
-        var insets = NativeLayout.Insets(_chrome, collapsed);
+        var insets = NativeLayout.Insets(_chrome, collapsed, _scales.Interface);
         if (_view.Margin != insets)
         {
             _view.Margin = insets;
@@ -237,7 +259,7 @@ internal sealed partial class DesktopLayer : Canvas
             .Concat(_popOuts.Values.Where(b => b.Reserved));
         _view.Covered = views
             .Where(v => v.IsVisible && v.Width > 0 && v.Height > 0)
-            .Select(v => new Rect(GetLeft(v) - origin.X, GetTop(v) - origin.Y, v.Width, v.Height))
+            .Select(v => new Rect(new Point(GetLeft(v) - origin.X, GetTop(v) - origin.Y), NativeScale.Extent(v)))
             .ToList();
     }
 
@@ -260,7 +282,8 @@ internal sealed partial class DesktopLayer : Canvas
         var views = _strips.Values.Cast<Control>().Concat(_bands.Values).Concat(_gauges.Values).Concat(_maps.Values)
             .Concat(_whoHere.Values).Concat(_quickBars.Values).Concat(_collapsedBars.Values).Concat(_composers.Values)
             .Where(v => v.IsVisible && v.Width > 0 && v.Height > 0 && v is IEdgeRules)
-            .Select(v => (new Rect(GetLeft(v), GetTop(v), v.Width, v.Height), ((IEdgeRules)v).EdgeRules(new Size(v.Width, v.Height))));
+            .Select(v => (new Rect(new Point(GetLeft(v), GetTop(v)), NativeScale.Extent(v)),
+                ((IEdgeRules)v).EdgeRules(new Size(v.Width, v.Height)).Select(r => r with { Rect = NativeScale.Out(r.Rect, NativeScale.Of(v)) })));
         _seams.Show(SeamRules.Between(views, hairlines, cell.Width));
     }
 
@@ -327,8 +350,11 @@ internal sealed partial class DesktopLayer : Canvas
 
             SetLeft(control, origin.X + (row.X * cell.Width));
             SetTop(control, origin.Y + (row.Y * cell.Height));
-            control.Width = (row.Width * cell.Width) + RightOfGrid(row.X, row.Width, _view.Driver.Frame.Width, cell);
-            control.Height = row.Height * cell.Height;
+            NativeScale.Cover(
+                control,
+                (row.Width * cell.Width) + RightOfGrid(row.X, row.Width, _view.Driver.Frame.Width, cell),
+                row.Height * cell.Height,
+                _scales.Interface);
         }
     }
 
@@ -348,10 +374,10 @@ internal sealed partial class DesktopLayer : Canvas
         var origin = CellOrigin;
         SetLeft(_toasts, origin.X);
         SetTop(_toasts, origin.Y);
-        _toasts.Width = Math.Max(0, frame.Width * cell.Width);
-        _toasts.Height = Math.Max(0, frame.Height * cell.Height);
+        var toastScale = _scales.Interface;
+        NativeScale.Cover(_toasts, Math.Max(0, frame.Width * cell.Width), Math.Max(0, frame.Height * cell.Height), toastScale);
         var above = _noticeAboveRow > 0 && _noticeAboveRow < frame.Height ? _noticeAboveRow : Math.Max(0, frame.Height - 2);
-        _toasts.Bottom = above * cell.Height;
+        _toasts.Bottom = above * cell.Height / toastScale;
 
         // The native maps' legends, in the toasts' coordinates: a toast is stacked clear of one rather than over it.
         var avoid = new List<Rect>();
@@ -359,7 +385,7 @@ internal sealed partial class DesktopLayer : Canvas
         {
             if (map.LegendRect(new Size(map.Width, map.Height)) is { } legend)
             {
-                avoid.Add(legend.Translate(new Vector(GetLeft(map) - origin.X, GetTop(map) - origin.Y)));
+                avoid.Add(NativeScale.Out(legend, NativeScale.Of(map)).Translate(new Vector(GetLeft(map) - origin.X, GetTop(map) - origin.Y)));
             }
         }
 
@@ -369,11 +395,12 @@ internal sealed partial class DesktopLayer : Canvas
         {
             if (view.IsVisible && view.Width > 0 && view.Height > 0)
             {
-                avoid.Add(new Rect(GetLeft(view) - origin.X, GetTop(view) - origin.Y, view.Width, view.Height));
+                avoid.Add(new Rect(new Point(GetLeft(view) - origin.X, GetTop(view) - origin.Y), NativeScale.Extent(view)));
             }
         }
 
-        _toasts.Avoid = avoid;
+        // In the toasts' own units: they are drawn at the interface's scale.
+        _toasts.Avoid = avoid.Select(a => new Rect(a.X / toastScale, a.Y / toastScale, a.Width / toastScale, a.Height / toastScale)).ToList();
 
         // Hidden, not stacked under it, while something modal is in front: a settings window is a window of its own and a
         // toast under it showed as a clipped fragment past its edge, and ⌃P and the modals have a scrim the toast would sit
@@ -399,20 +426,22 @@ internal sealed partial class DesktopLayer : Canvas
         SyncInsets(chrome?.Sidebar.Collapsed ?? false);
         var width = Bounds.Width;
         var height = Bounds.Height;
-        var top = _chrome.Header ? NativeLayout.HeaderHeight : 0;
-        var bottom = _chrome.Status ? NativeLayout.StatusHeight : 0;
+        var scale = _scales.Interface;
+        var top = _chrome.Header ? NativeLayout.Scaled(NativeLayout.HeaderHeight, scale) : 0;
+        var bottom = _chrome.Status ? NativeLayout.Scaled(NativeLayout.StatusHeight, scale) : 0;
 
-        // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above the header.
+        // The header buttons' slots, plus the resize band, stay clear for the buttons drawn above the header (in the
+        // header's own units, which the interface's scale draws larger).
         _header.ReserveRight = _chrome.Header
-            ? (_pointer.Actions.Count * (NativeLayout.ButtonSize + NativeLayout.ButtonGap)) + WindowChrome.EdgeBand + 4
+            ? (_pointer.Actions.Count * (NativeLayout.ButtonSize + NativeLayout.ButtonGap)) + ((WindowChrome.EdgeBand + 4) / scale)
             : 0;
 
         // Before the client has said anything the bands are drawn empty, on the view's own colours, so a window never
         // opens with a hole where its header will be.
         var ink = chrome is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(chrome.Palette.Ink);
-        Place(_header, _chrome.Header, new Rect(0, 0, width, NativeLayout.HeaderHeight), chrome,
+        Place(_header, _chrome.Header, new Rect(0, 0, width, top), scale, chrome,
             Translucent(chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.HeaderPlane)), ink);
-        Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top - bottom)), chrome,
+        Place(_sidebar, _chrome.Rail, new Rect(0, top, _view.Margin.Left, Math.Max(0, height - top - bottom)), scale, chrome,
             Translucent(chrome is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(chrome.Palette.RailPlane)), ink);
 
         // The footer across the whole width under the cells and the sidebar, and the field's strip: the header's plane, as
@@ -428,8 +457,7 @@ internal sealed partial class DesktopLayer : Canvas
         {
             SetLeft(_footer, 0);
             SetTop(_footer, height - bottom);
-            _footer.Width = width;
-            _footer.Height = bottom;
+            NativeScale.Cover(_footer, width, bottom, scale);
             _footer.Show(_pointer.Status);
             _footer.IsVisible = true;
         }
@@ -439,7 +467,7 @@ internal sealed partial class DesktopLayer : Canvas
         }
     }
 
-    private static void Place(NativeChromeView view, bool drawn, Rect area, ChromeOverlay? chrome, Color plane, Color ink)
+    private static void Place(NativeChromeView view, bool drawn, Rect area, double scale, ChromeOverlay? chrome, Color plane, Color ink)
     {
         if (!drawn || area.Width <= 0 || area.Height <= 0)
         {
@@ -449,8 +477,7 @@ internal sealed partial class DesktopLayer : Canvas
 
         SetLeft(view, area.X);
         SetTop(view, area.Y);
-        view.Width = area.Width;
-        view.Height = area.Height;
+        NativeScale.Cover(view, area.Width, area.Height, scale);
         view.Show(chrome, plane, ink);
         view.IsVisible = true;
     }
@@ -481,11 +508,11 @@ internal sealed partial class DesktopLayer : Canvas
             if (_chrome.Header)
             {
                 // In the window's own header: right to left from its end, clear of the resize band, on its plane.
-                var side = NativeLayout.ButtonSize;
-                button.Width = side;
-                button.Height = side;
-                SetLeft(button, Bounds.Width - WindowChrome.EdgeBand - 4 - ((i + 1) * (side + NativeLayout.ButtonGap)) + NativeLayout.ButtonGap);
-                SetTop(button, Math.Round((NativeLayout.HeaderHeight - side) / 2));
+                var zoom = _scales.Interface;
+                var side = NativeLayout.ButtonSize * zoom;
+                NativeScale.Cover(button, side, side, zoom);
+                SetLeft(button, Bounds.Width - WindowChrome.EdgeBand - 4 - ((i + 1) * (side + (NativeLayout.ButtonGap * zoom))) + (NativeLayout.ButtonGap * zoom));
+                SetTop(button, Math.Round((NativeLayout.Scaled(NativeLayout.HeaderHeight, zoom) - side) / 2));
                 var said = _pointer.Chrome;
                 button.Ink = said is null ? Colour(_view.Renderer.DefaultForeground) : NativeChromeView.Parse(said.Palette.Ink);
                 button.Plane = said is null ? Colour(_view.Renderer.DefaultBackground) : NativeChromeView.Parse(said.Palette.HeaderPlane);
@@ -531,7 +558,7 @@ internal sealed partial class DesktopLayer : Canvas
             (gauges, panel, plane) =>
             {
                 gauges.Seams = (panel.RuleAbove, panel.RuleBelow);
-                gauges.Show(panel.Vitals!, panel.Ink, plane, text, cell.Height);
+                gauges.Show(panel.Vitals!, panel.Ink, plane, text, cell.Height / _scales.Panels);
             });
         Place(
             _maps,
@@ -546,7 +573,7 @@ internal sealed partial class DesktopLayer : Canvas
             () => new WhoHereList(_view),
             frame,
             cell,
-            (list, panel, plane) => list.Show(panel.WhoHere!, panel.Ink, plane, text, cell.Height, panel.Pick));
+            (list, panel, plane) => list.Show(panel.WhoHere!, panel.Ink, plane, text, cell.Height / _scales.Panels, panel.Pick));
         Place(
             _quickBars,
             _pointer.Panels.Where(p => p.PanelId == PanelIds.QuickBar && p.QuickBar is not null),
@@ -556,7 +583,7 @@ internal sealed partial class DesktopLayer : Canvas
             (bar, panel, plane) =>
             {
                 bar.Seams = (panel.RuleAbove, panel.RuleBelow);
-                bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height, panel.Pick, panel.Dispatch);
+                bar.Show(panel.QuickBar!, panel.Ink, plane, text, cell.Height / _scales.Panels, panel.Pick, panel.Dispatch);
             });
 
         // A collapsed panel's bar, at the foot of its column (HostChrome.Strips).
@@ -575,7 +602,13 @@ internal sealed partial class DesktopLayer : Canvas
             () => new ComposerView(_view, fullScreen: false),
             frame,
             cell,
-            (composer, panel, plane) => composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text));
+            (composer, panel, plane) =>
+            {
+                // The editor's text is the cells' size at the composer's own scale, inside a panel already drawn at the
+                // panels' scale.
+                composer.TextScale = _scales.Composer / _scales.Panels;
+                composer.Show(panel.Composer!, panel.ComposerSession!, panel.Ink, plane, text);
+            });
         SyncPopOuts(frame, cell);
 
         // A pane a native view covers draws no overlay scrollbar of its own: its cells are only the view's backing (the
@@ -702,8 +735,7 @@ internal sealed partial class DesktopLayer : Canvas
             {
                 // The strip's reserved end: the whole row's height, on the pane's own plane.
                 var reserve = PopOutReserve(cell);
-                button.Width = reserve;
-                button.Height = rect.Height * cell.Height;
+                NativeScale.Cover(button, reserve, rect.Height * cell.Height, _scales.Panels);
                 SetLeft(button, right - reserve);
                 SetTop(button, origin.Y + (rect.Y * cell.Height));
                 var inside = rect.X >= 0 && rect.Y >= 0 && rect.X < frame.Width && rect.Y < frame.Height;
@@ -711,8 +743,7 @@ internal sealed partial class DesktopLayer : Canvas
             }
             else
             {
-                button.Width = size;
-                button.Height = size;
+                NativeScale.Cover(button, size, size, _scales.Panels);
                 SetLeft(button, right - size - 3);
                 SetTop(button, origin.Y + (rect.Y * cell.Height) + 2);
                 button.Plane = null;
@@ -761,9 +792,12 @@ internal sealed partial class DesktopLayer : Canvas
             SetTop(control, origin.Y + (rect.Y * cell.Height));
             // A one-row strip that can pop out leaves its right end to the button (ReservesPopOut), so the button never
             // lies over its text (`88 / 100`, `F4 edits keys`); the button paints the pane's plane over the cells there.
-            control.Width = Math.Max(0, (rect.Width * cell.Width) + RightOfGrid(rect.X, rect.Width, frame.Width, cell)
-                - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0));
-            control.Height = (rect.Height * cell.Height) + BelowGrid(frame, rect, cell);
+            NativeScale.Cover(
+                control,
+                Math.Max(0, (rect.Width * cell.Width) + RightOfGrid(rect.X, rect.Width, frame.Width, cell)
+                    - (ReservesPopOut(panel) ? PopOutReserve(cell) : 0)),
+                (rect.Height * cell.Height) + BelowGrid(frame, rect, cell),
+                _scales.Panels);
 
             // The pane's own plane, read off the frame, so the native view sits on whatever the pane wears — its
             // character's tint, the focus lift — without the client having to say it twice.
@@ -963,9 +997,17 @@ internal static class NativeLayout
     public const double ButtonGap = NativeTokens.Space8;
 
     /// <summary>The cells' margin in the window: the space the native header and sidebar take.</summary>
-    public static Thickness Insets(HostChrome chrome, bool collapsed) => new(
-        chrome.Rail ? (collapsed ? SidebarSlim : SidebarWidth) + SidebarGutter : 0,
-        chrome.Header ? HeaderHeight : 0,
+    public static Thickness Insets(HostChrome chrome, bool collapsed, double scale = 1) => new(
+        chrome.Rail ? Scaled((collapsed ? SidebarSlim : SidebarWidth) + SidebarGutter, scale) : 0,
+        chrome.Header ? Scaled(HeaderHeight, scale) : 0,
         0,
-        chrome.Status ? StatusHeight : 0);
+        chrome.Status ? Scaled(StatusHeight, scale) : 0);
+
+    /// <summary>
+    /// A chrome size <paramref name="designed"/> at the interface's <paramref name="scale"/>, rounded to a multiple of 4
+    /// as every chrome size is, so the cells below and beside it still start on a whole device pixel at 125% and 150%.
+    /// Exactly the designed size at 1.
+    /// </summary>
+    public static double Scaled(double designed, double scale) =>
+        Math.Abs(scale - 1) < 0.0005 ? designed : Math.Max(4, Math.Round(designed * scale / 4) * 4);
 }

@@ -113,8 +113,14 @@ internal sealed class WindowPointer : IPointerPresenter
         set => Volatile.Write(ref _cellHeight, value);
     }
 
+    /// <summary>
+    /// The Text size page's panel scale the gauges are drawn at, read when the client asks; 1 until the main window says
+    /// how to read it. It reads the sizes the client last said, so a change is seen as soon as it is said.
+    /// </summary>
+    internal Func<double> PanelScale { get; set; } = () => 1;
+
     int? IPointerPresenter.VitalsCardRows(int meters, bool target) =>
-        CellsOnly ? null : CellHeightMeasured is > 0 and var cell ? VitalsGauges.CardRows(meters, target, cell) : null;
+        CellsOnly ? null : CellHeightMeasured is > 0 and var cell ? VitalsGauges.CardRows(meters, target, cell, PanelScale()) : null;
 
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
