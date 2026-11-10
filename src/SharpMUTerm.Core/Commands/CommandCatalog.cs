@@ -81,6 +81,11 @@ public sealed record CharacterRef(
 /// in a host with no window to size (the terminal).
 /// </param>
 /// <param name="Update">Where this copy's update stands; null in a host that cannot update itself.</param>
+/// <param name="TextSizePage">Whether the host has the Text size &amp; zoom page (the window, not <c>--emulated</c>).</param>
+/// <param name="TextZoom">
+/// The desktop window's zoom, a percentage, so ⌃P offers zooming in, out and back; null in a host that draws no text of
+/// its own (the terminal, whose font size is its emulator's).
+/// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
     bool Zoomed = false,
@@ -110,7 +115,9 @@ public sealed record CommandContext(
     int RecentAlerts = 0,
     IReadOnlyList<AlertRef>? Alerts = null,
     Configuration.WindowMode? WindowMode = null,
-    UpdateState? Update = null);
+    UpdateState? Update = null,
+    int? TextZoom = null,
+    bool TextSizePage = false);
 
 /// <summary>
 /// Where this copy's update stands, for ⌃P's update entries: null when the host cannot update itself at all (a build

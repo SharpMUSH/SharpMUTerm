@@ -979,6 +979,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         RegisterBuiltInContributions();
         RegisterBuiltInSettings();
+        RegisterTextSize();
         _palette = new CommandPalette(
             _system,
             BuildCatalog,
@@ -1089,6 +1090,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             ReportPaneSizes();
             SyncTabStripWidths();
             SyncTransparentColours();
+            SyncTextSizes();
             MeasureHeadingRuns(buffer);
             PaintHeaderDividers(buffer);
             PaintTabOverflow(buffer);
@@ -8016,6 +8018,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // repainted below is painted in it. See SharpMUTermApp.Theme.cs.
         ApplyThemeIfChanged();
 
+        // The Text size page: the window redraws at the new sizes now, not at the next frame the cells happen to paint.
+        SyncTextSizes();
+
         // F8 edits the live InputSettings, so a committed height applies to the bars immediately rather
         // than at the next launch.
         SyncInputBars();
@@ -8995,6 +9000,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             RecentAlerts: _recentAlerts.Count,
             Alerts: _alertsListed ? AlertRefs() : null,
             WindowMode: CanSetWindowMode ? Host.WindowModes!.Mode : null,
+            TextZoom: CanSizeText ? TextSizes.Zoom : null,
+            TextSizePage: HasTextSizePage,
             Update: UpdateCommandState(),
             ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }
@@ -9486,6 +9493,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 return true;
             case SharpMUTerm.Client.Commands.BuiltInCommands.FullScreenCommand:
                 return ToggleWindowMode(WindowMode.FullScreen);
+            case SharpMUTerm.Client.Commands.BuiltInCommands.ZoomInCommand:
+                return StepZoom(1);
+            case SharpMUTerm.Client.Commands.BuiltInCommands.ZoomOutCommand:
+                return StepZoom(-1);
+            case SharpMUTerm.Client.Commands.BuiltInCommands.ZoomResetCommand:
+                return StepZoom(0);
+            case SharpMUTerm.Client.Commands.BuiltInCommands.TextSizeCommand:
+                return OpenTextSizePage();
             case SharpMUTerm.Client.Commands.BuiltInCommands.WindowedFullScreenCommand:
                 return ToggleWindowMode(WindowMode.WindowedFullScreen);
             case "term:mute":

@@ -38,6 +38,12 @@ internal static class NativeMenu
             placement,
             target);
 
+    /// <summary>
+    /// How much larger than designed menus are drawn: the window's dialog text size and zoom (MainWindow sets it). A
+    /// menu is a popup window of its own, so it is sized rather than transformed.
+    /// </summary>
+    internal static double Scale { get; set; } = 1;
+
     private static ContextMenu Build(
         IEnumerable<(string Label, string? Hint, bool Enabled, bool Checked, Action Run)?> items, PlacementMode placement, Control target)
     {
@@ -53,7 +59,7 @@ internal static class NativeMenu
             BorderThickness = new Thickness(NativeTokens.Hairline),
             CornerRadius = new CornerRadius(NativeTokens.RadiusM),
             Padding = new Thickness(NativeTokens.Space6),
-            FontSize = NativeTokens.Body,
+            FontSize = NativeTokens.Body * Scale,
         };
         tokens.ApplySimple(menu.Resources);
 
@@ -86,7 +92,7 @@ internal static class NativeMenu
             {
                 Header = Header(entry.Label, entry.Hint, tokens),
                 IsEnabled = entry.Enabled,
-                MinHeight = NativeTokens.ControlHeightSmall,
+                MinHeight = NativeTokens.ControlHeightSmall * Scale,
             };
             if (entry.Checked)
             {
@@ -146,7 +152,7 @@ internal static class NativeMenu
             {
                 Text = NativeKeys.Words(key),
                 FontFamily = NativeTokens.KeyFace,
-                FontSize = NativeTokens.Small,
+                FontSize = NativeTokens.Small * Scale,
                 Foreground = tokens.Brush(tokens.Dim),
                 Margin = new Thickness(NativeTokens.Space32, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,

@@ -53,6 +53,13 @@ internal sealed class MainWindow : Window
 
         _view.AttachZoomKeys(this);
 
+        // Zoom and text sizes are the client's settings (F7 ▸ Text size & zoom): the window starts from the saved ones,
+        // asks the client for each zoom step, and redraws whenever the client says the sizes changed.
+        _driver.TextSize.Start(_config.Display);
+        _view.SetCellZoom(CellZoom(_driver.TextSize.Current));
+        _view.ZoomRequested += _driver.TextSize.RequestZoom;
+        _view.ZoomShown = () => _driver.TextSize.Current.Zoom;
+
         Title = SharpMUTerm.Client.Chrome.WindowTitle.Product;
         AppIcon.Apply(this);
 
@@ -106,7 +113,20 @@ internal sealed class MainWindow : Window
         // view out of their way, so no cell lies under either), the Layouts button, and native panels over their panes.
         var layer = new DesktopLayer(_view, options.Chrome);
         _layer = layer;
+        layer.Scales = Scales(_driver.TextSize.Current);
+        _view.InterfaceScale = layer.Scales.Interface;
+        NativeMenu.Scale = layer.Scales.Dialogs;
         root.Children.Add(layer);
+        _driver.TextSize.Changed += sizes => Dispatcher.UIThread.Post(() => ApplyTextSizes(sizes));
+
+        // Dialogs, F1, the settings window and floating panels read the sizes when they open.
+        Func<NativeScales> scales = () => Scales(_driver.TextSize.Current);
+        _driver.Modals.Scales = scales;
+        _driver.Palette.Scales = scales;
+        _driver.Composer.Scales = scales;
+        _driver.Settings.Scales = scales;
+        _driver.Floating.Scales = scales;
+        _driver.Pointer.PanelScale = () => scales().Panels;
 
         // The edge Avalonia would have drawn round a BorderOnly window on X11, drawn here (DecorationsFor): a hairline,
         // only while the window is an ordinary window.
@@ -159,7 +179,7 @@ internal sealed class MainWindow : Window
         // --size names the grid, so the window is that grid plus the native chrome around it — measured at the scale
         // of the screen it opens on, and shrunk by whole cells to that screen's working area (WindowFit): at 150% on a
         // 1080p screen the default grid is taller than the screen, and its command line opened below the edge.
-        var insets = NativeLayout.Insets(options.Chrome, collapsed: false);
+        var insets = NativeLayout.Insets(options.Chrome, collapsed: false, layer.Scales.Interface);
         var screen = Screens is { } screens ? screens.Primary ?? screens.All.FirstOrDefault() : null;
         if (screen is not null)
         {
@@ -231,6 +251,25 @@ internal sealed class MainWindow : Window
         TextOptions.SetTextRenderingMode(this, alpha == 255 ? TextRenderingMode.Unspecified : TextRenderingMode.Antialias);
 
         _layer.PlaneAlpha = alpha;
+    }
+
+    // The cells' size: the output's points (a --font-size given for this run wins over the saved one), at the zoom.
+    private double CellZoom(DisplaySettings sizes)
+    {
+        var points = _options.FontSizeGiven ? _options.FontPoints : sizes.OutputPoints;
+        return points / _options.FontPoints * sizes.Zoom / 100.0;
+    }
+
+    // The native views' scales; in Emulated mode there are none to scale, so only the cells follow the zoom.
+    private NativeScales Scales(DisplaySettings sizes) =>
+        _driver.TextSize.SizesAreas ? NativeScales.From(sizes) : NativeScales.One;
+
+    private void ApplyTextSizes(DisplaySettings sizes)
+    {
+        _view.SetCellZoom(CellZoom(sizes));
+        _layer.Scales = Scales(sizes);
+        _view.InterfaceScale = _layer.Scales.Interface;
+        NativeMenu.Scale = _layer.Scales.Dialogs;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

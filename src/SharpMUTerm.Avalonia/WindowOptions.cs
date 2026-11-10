@@ -27,7 +27,8 @@ internal sealed record WindowOptions(
     bool CellChrome = false,
     float LineHeight = WindowOptions.DefaultLineHeight,
     int? Transparency = null,
-    bool Emulated = false)
+    bool Emulated = false,
+    bool FontSizeGiven = false)
 {
     /// <summary>
     /// <c>--emulated</c>: the terminal in a window. The cells draw everything, as in a terminal: no native header,
@@ -69,6 +70,7 @@ internal sealed record WindowOptions(
         var rest = new List<string>();
         string? font = null, view = null, theme = null, png = null;
         var points = DefaultPoints;
+        var fontSizeGiven = false;
         var lineHeight = DefaultLineHeight;
         var demo = false;
         int? transparency = null;
@@ -86,6 +88,7 @@ internal sealed record WindowOptions(
                     if (float.TryParse(Next(), NumberStyles.Float, CultureInfo.InvariantCulture, out var p))
                     {
                         points = Math.Clamp(p, 6, 48);
+                        fontSizeGiven = true;
                     }
 
                     break;
@@ -123,7 +126,7 @@ internal sealed record WindowOptions(
             }
         }
 
-        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome, lineHeight, transparency, emulated);
+        return new WindowOptions([.. rest], font, points, demo, view, theme, png, columns, rows, titleBar, cellChrome, lineHeight, transparency, emulated, fontSizeGiven);
     }
 
     /// <summary>Applies <c>--theme</c>, the way the snapshot does: name and inline theme both; and <c>--transparency</c>.</summary>
@@ -174,7 +177,7 @@ internal sealed record WindowOptions(
             ("Window:",
             [
                 new("--font <family>", "An installed monospace font (default: the bundled JetBrains Mono)."),
-                new("--font-size <pt>", "Font size (default 10)."),
+                new("--font-size <pt>", "Output font size for this run, over the Text size page's (default 10)."),
                 new("--line-height <n>", "Row height as a multiple of the font's (1 to 2; default 1.12)."),
                 new("--size <WxH>", "The window's first size in cells, and the grid for --render-png (default 120x36)."),
                 new("--title-bar", "Keep the system title bar. Without it, drag the blank part of the header",

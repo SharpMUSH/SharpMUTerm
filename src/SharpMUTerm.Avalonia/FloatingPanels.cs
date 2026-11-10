@@ -27,6 +27,9 @@ internal sealed class FloatingPanelPresenter : IFloatingPanels
     private TerminalView? _view;
     private bool _attached;
 
+    /// <summary>The window's text sizes, read when a panel's window opens (MainWindow sets it; designed sizes until then).</summary>
+    public Func<NativeScales> Scales { get; set; } = () => NativeScales.One;
+
     /// <summary>What the client last said is floating; any thread.</summary>
     public IReadOnlyList<FloatingPanel> Panels => Volatile.Read(ref _panels);
 
@@ -101,7 +104,7 @@ internal sealed class FloatingPanelPresenter : IFloatingPanels
                 continue;
             }
 
-            var window = new FloatingPanelWindow(panel, _view);
+            var window = new FloatingPanelWindow(panel, _view, Scales().Panels);
             window.Update(panel, _view.CellExtent.Height);
             var bounds = panel.Model.Bounds.IsPlaced ? panel.Model.Bounds : BesideOwner(panel.Model.PanelId);
             window.Place(Clamp(bounds), Scaling());
@@ -192,7 +195,8 @@ internal sealed class FloatingPanelWindow : Window
     private bool _closingForClient;
     private bool _placing;
 
-    public FloatingPanelWindow(FloatingPanel panel, TerminalView view)
+    /// <param name="scale">How much larger than designed the panel is drawn: the window's panel text size and zoom.</param>
+    public FloatingPanelWindow(FloatingPanel panel, TerminalView view, double scale = 1)
     {
         _view = view;
         view.AttachZoomKeys(this);
@@ -232,7 +236,7 @@ internal sealed class FloatingPanelWindow : Window
         DockPanel.SetDock(_bar, Dock.Top);
         root.Children.Add(_bar);
         root.Children.Add(_content);
-        Content = root;
+        Content = NativeScale.Wrap(root, scale);
 
         _report = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _report.Tick += (_, _) =>

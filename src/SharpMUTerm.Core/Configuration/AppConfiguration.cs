@@ -142,6 +142,12 @@ public sealed class AppConfiguration
     /// </summary>
     public WindowMode WindowStart { get; set; }
 
+    /// <summary>
+    /// The desktop window's text sizes and zoom (the Text size settings page, Ctrl+= / Ctrl+- / Ctrl+0). Read by the
+    /// window alone; a terminal's font size is its emulator's.
+    /// </summary>
+    public DisplaySettings Display { get; set; } = new();
+
     /// <summary>The package index Browse packages reads: an https link to an <c>index.json</c>.</summary>
     public string PackageIndexUrl { get; set; } = DefaultPackageIndexUrl;
 

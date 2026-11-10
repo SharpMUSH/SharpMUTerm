@@ -26,12 +26,16 @@ internal sealed class ModalOverlay : Panel
     private readonly Action<ModalOverlay> _remove;
     private readonly IModalView _view;
     private readonly Border _card;
+    private readonly double _scale;
 
     /// <param name="session">What to draw, and where its gestures go.</param>
     /// <param name="remove">Takes the overlay out of the window.</param>
     /// <param name="forward">Hands a key to the client, as the cells would receive it.</param>
-    public ModalOverlay(ModalSession session, Action<ModalOverlay> remove, Action<ConsoleKeyInfo> forward)
+    /// <param name="scales">The window's text sizes: the card is drawn at the dialogs' scale, below the header's height.</param>
+    public ModalOverlay(ModalSession session, Action<ModalOverlay> remove, Action<ConsoleKeyInfo> forward, NativeScales? scales = null)
     {
+        var sizes = scales ?? NativeScales.One;
+        _scale = sizes.Dialogs;
         Session = session;
         _remove = remove;
         Colours = NativeTokens.For(session.Theme, session.IsDark);
@@ -82,13 +86,13 @@ internal sealed class ModalOverlay : Panel
             RequestedThemeVariant = session.IsDark ? ThemeVariant.Dark : ThemeVariant.Light,
             HorizontalAlignment = page ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
             VerticalAlignment = page ? VerticalAlignment.Stretch : _view.Centred ? VerticalAlignment.Center : VerticalAlignment.Top,
-            Margin = page ? default : new Thickness(NativeTokens.Space16, _view.Centred ? NativeTokens.Space16 : NativeLayout.HeaderHeight + NativeTokens.Space12, NativeTokens.Space16, NativeTokens.Space16),
+            Margin = page ? default : new Thickness(NativeTokens.Space16, _view.Centred ? NativeTokens.Space16 : (NativeLayout.Scaled(NativeLayout.HeaderHeight, sizes.Interface) / _scale) + NativeTokens.Space12, NativeTokens.Space16, NativeTokens.Space16),
             Child = _card,
         };
         scope.Styles.Add(new FluentTheme());
         Colours.Apply(scope.Resources);
         Colours.ApplyFocusRing(scope);
-        Children.Add(scope);
+        Children.Add(NativeScale.Wrap(scope, _scale));
 
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -191,8 +195,10 @@ internal sealed class ModalOverlay : Panel
             return;
         }
 
-        _card.Width = Math.Max(260, Math.Min(_view.PreferredWidth, Bounds.Width - 32));
-        _card.MaxHeight = Math.Max(180, Bounds.Height - (_view.Centred ? 32 : 88));
+        // The room the card is laid out in is the overlay's at the dialogs' scale.
+        var room = Bounds.Size / _scale;
+        _card.Width = Math.Max(260, Math.Min(_view.PreferredWidth, room.Width - 32));
+        _card.MaxHeight = Math.Max(180, room.Height - (_view.Centred ? 32 : 88));
     }
 }
 

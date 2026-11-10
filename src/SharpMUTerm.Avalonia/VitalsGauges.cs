@@ -161,8 +161,12 @@ internal sealed class VitalsGauges : Control, IEdgeRules
     /// gaps between the blocks (<see cref="RenderStacked"/>), so the last bar still ends <see cref="BottomPad"/> above the
     /// map. What the window answers for <see cref="SharpMUTerm.Tui.IPointerPresenter.VitalsCardRows"/>.
     /// </summary>
-    internal static int CardRows(int meters, bool target, double cellHeight) =>
-        (int)Math.Ceiling((NeededHeight(meters, target, cellHeight) / cellHeight) - 0.001);
+    /// <remarks>
+    /// The gauges are drawn at the Text size page's panel <paramref name="scale"/>: laid out on cells of
+    /// <c>cellHeight / scale</c> and magnified, so their height on screen is that layout's times the scale.
+    /// </remarks>
+    internal static int CardRows(int meters, bool target, double cellHeight, double scale = 1) =>
+        (int)Math.Ceiling((NeededHeight(meters, target, cellHeight / scale) * scale / cellHeight) - 0.001);
 
     private bool StackedFor(double height, VitalsModel model)
     {

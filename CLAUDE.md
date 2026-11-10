@@ -2033,6 +2033,33 @@ draws ⌃P natively (`INativePalette`, null for the cell popup), whether it draw
     cell short; each view says its rules (`EdgeRules(size)`) and an unhittable `SeamRules` layer draws the half cell to
     `TerminalView.VerticalHairlines()`. `DrawDividers` runs a horizontal divider and the field strip's top rule on to a vertical
     hairline the same way. Presses there are the cells' (grab area unchanged); no cell or NAWS moves. `DividerSeamTests`.
+- **Zoom and text sizes are client settings the window draws at** (Core `DisplaySettings`/`ZoomLevels`,
+  `AppConfiguration.Display`; Client `BuiltInSettings.TextSize`, page *Text size & zoom*; Tui `SharpMUTermApp.TextSize.cs`,
+  `ClientHost.TextSize` → `IWindowTextSize`, null in the terminal, headless and the parity harness; Avalonia `WindowTextSize`,
+  `NativeScale`/`NativeScales`, `MainWindow.ApplyTextSizes`). Decisions not to relitigate:
+  - **The zoom is the whole window's, as a browser's** (steps 50–300%, `ZoomLevels.Steps`), saved through
+    `PersistConfiguration` (a zoom is pressed in runs; the funnel re-periodises timers). The window's Ctrl+=/−/0, Ctrl+wheel
+    (`TerminalView.ZoomForWheel`, exactly Control) and its right-click menu *ask* (`TerminalView.ZoomRequested` →
+    `WindowTextSize.RequestZoom` → `StepZoom`); the client saves and says the sizes back (`SyncTextSizes`, on change only, from
+    `SaveConfiguration` and `PostBufferPaint`). ⌃P has zoom in/out/reset and *Text size & zoom…* (`CommandContext.TextZoom`,
+    `TextSizePage`).
+  - **The cells keep a real font size** (`TerminalView.SetCellZoom`: output points ÷ launch points × zoom; `--font-size` given
+    for a run wins over the saved points), so glyphs stay crisp and NAWS follows. **Every native view is scaled, not
+    re-sized**: `NativeScale.Cover` lays a view out at its area ÷ scale with a `ScaleTransform` (no layout rounding, or it
+    draws half a pixel past its area) — the header, sidebar, footer, strips, bands, toasts and buttons at *interface* × zoom,
+    panels and pop-out buttons at *panels* × zoom; dialogs (`ModalOverlay`, `PaletteOverlay`, the settings window, floating
+    panel windows) through `NativeScale.Wrap`, a `LayoutTransformControl`, read when each opens (presenters' `Scales`);
+    `NativeMenu.Scale` sizes menus. Chrome insets are `NativeLayout.Scaled` (a multiple of 4; exact at 1), so at 100% nothing
+    moves. Hairlines stay one device pixel (`NativeScale.DeviceScale` multiplies every ancestor's transform). The composer's
+    text is the cells' size × *composer* (`ComposerView.TextScale`, over the panel scale when docked).
+  - **A terminal lists none of it**: its text is its emulator's, and nothing a program writes resizes it. `/help` ▸ Text size
+    says to use the terminal's zoom. `--emulated` keeps the zoom and has no page (no native settings; output size by
+    `--font-size`), and its native views are none, so `SizesAreas` is false.
+  - **A panel laid out at the panel scale is told the cell height ÷ that scale** (`DesktopLayer` → gauges, who-here, quick
+    bar), and the vitals card's rows are the gauges' height at it (`VitalsGauges.CardRows(…, scale)`, `WindowPointer.PanelScale`,
+    read from the sizes last said); `SyncTextSizes` re-checks every card (`ResizeVitalsCard`) after saying new sizes. A
+    larger panel wraps the map's look buttons and drops the docked composer's Preview (F1 keeps it) rather than clip them.
+  - Not done: a dialog or floating window open during a zoom change keeps its scale until reopened.
 - **The window bundles its faces** (`BundledFonts`, Avalonia; `Fonts/README.md`). Inter 4.1 (four static weights, 1.67 MB)
   and JetBrains Mono are registered as `fonts:SharpMUTerm`, Inter is Avalonia's default family and the bare names map onto
   the bundle, so every view resolves them from the file on every OS; installed faces are only the fallback for glyphs the
