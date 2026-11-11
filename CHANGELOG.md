@@ -61,6 +61,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   such as `look;connect …`, is shown as `(credential command hidden)` and is kept out of history; the game still gets
   the real line.
 
+- When a game hands echo back after a password prompt (telnet `WONT ECHO`), the client now confirms it with `DONT ECHO`,
+  and it no longer answers every repeated `WILL ECHO`, which two programs can bounce back and forth. (TelnetNegotiationCore
+  4.11.0, was 4.9.0.)
+
 - Desktop overlays follow modal visibility changes on the client UI thread, avoiding background-thread reads of changing pane layouts.
 
 - The desktop window answers terminal cell-pixel queries with its actual measured pixels, allowing
