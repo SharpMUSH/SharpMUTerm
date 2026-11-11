@@ -338,6 +338,18 @@ public class MxpDefinitionTests
     }
 
     [Test]
+    public async Task AFlaggedElementKeepsABlankLineInsideIt()
+    {
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var flags = new List<MxpFlagText>();
+        parser.Flagged += (_, e) => flags.Add(e);
+
+        Lines(parser, Secure + "<!ELEMENT RDesc FLAG=RoomDesc>", Secure + "<RDesc>A wide plaza.", "", Secure + "A fountain.</RDesc>");
+
+        await Assert.That(flags.Single().Text).IsEqualTo("A wide plaza.\n\nA fountain.");
+    }
+
+    [Test]
     public async Task AUserLineTagOpensTheElementTiedToIt()
     {
         var parser = new MarkupLineParser(ContentFormat.Mxp);

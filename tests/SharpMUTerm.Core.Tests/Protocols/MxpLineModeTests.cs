@@ -362,10 +362,9 @@ public class MxpLineModeTests
     }
 
     /// <summary>
-    /// <see cref="MxpParser.Reset"/> clears all three mode fields, and it takes <em>two</em> lines to
-    /// say so. Line one catches <c>_lineMode</c> and <c>_tempSecure</c>; only line two catches
-    /// <c>_defaultMode</c>, because <c>_lineMode</c> is re-read from it in <c>CompleteLine</c> and
-    /// nowhere else — so a Reset that forgot the default alone would still refuse the first SEND.
+    /// <see cref="MarkupLineParser.Reset"/> clears the line mode, the default mode and a temporary
+    /// secure arming, and it takes <em>two</em> lines to say so: the first catches the line mode and
+    /// the arming, the second the default mode the next line starts from.
     /// </summary>
     [Test]
     public async Task Reset_ClearsEveryModeField()

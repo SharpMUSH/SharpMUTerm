@@ -265,11 +265,6 @@ public class AnsiParserTests
     /// never send. Both boundaries are asserted because only the second exists on a live connection:
     /// the telnet layer strips the terminator, so <c>WorldSession</c> feeds a line and then flushes,
     /// and a rule keyed on a <c>'\n'</c> in the text would never fire.
-    /// <para>
-    /// <see cref="SharpMUTerm.Core.Protocols.MxpParser"/> carries a near-duplicate of this escape state
-    /// machine and a matching test, deliberately: the two are not consolidated, so a fix to one has to
-    /// be applied to the other and each needs its own pin.
-    /// </para>
     /// </summary>
     [Test]
     [Arguments("\u001b]")] // OSC

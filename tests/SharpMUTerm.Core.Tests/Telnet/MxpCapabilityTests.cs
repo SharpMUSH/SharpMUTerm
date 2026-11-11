@@ -9,7 +9,7 @@ namespace SharpMUTerm.Core.Tests.Telnet;
 /// <summary>
 /// A server's <c>&lt;SUPPORT&gt;</c> and <c>&lt;VERSION&gt;</c> are answered. Since TelnetNegotiationCore 4.3
 /// the library takes both lines out of the stream once MXP mode has started and answers neither by itself, so
-/// <see cref="MxpParser"/> never sees them. Unanswered, SharpMUSH recorded that this client renders none of the
+/// the parser never sees them. Unanswered, SharpMUSH recorded that this client renders none of the
 /// tags it asked about and sent a picture's address as text instead of an <c>&lt;IMAGE&gt;</c>.
 /// </summary>
 public class MxpCapabilityTests

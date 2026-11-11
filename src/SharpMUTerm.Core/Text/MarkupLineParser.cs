@@ -633,7 +633,7 @@ public sealed class MarkupLineParser
 
     /// <summary>
     /// Ends the flagged element being read when it is over: at a line end where <paramref name="seen"/> (the flag the
-    /// line ended in) is not it, or when another begins. One left open at the line end goes on to the next line.
+    /// line ended in) is another one, or the element is no longer open, or when another begins. One left open at the line end goes on to the next line.
     /// </summary>
     private void EndFlags(MxpFlagMarkup? seen, bool lineEnd)
     {
@@ -642,9 +642,10 @@ public sealed class MarkupLineParser
             return;
         }
 
-        if (lineEnd && ReferenceEquals(seen, flag) && _decoder.OpenElements.Contains(flag))
+        if (lineEnd && (seen is null || ReferenceEquals(seen, flag)) && _decoder.OpenElements.Contains(flag))
         {
-            // Still open: a secure element spans lines, and its text keeps them.
+            // Still open: a secure element spans lines, and its text keeps them. A blank line inside it has no
+            // flagged text (seen is null) and is kept too.
             _flagText.Append('\n');
             return;
         }
