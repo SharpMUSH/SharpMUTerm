@@ -108,6 +108,18 @@ public sealed class TextSettings
     /// </summary>
     public const int MaxTabWidth = 16;
 
+    /// <summary>
+    /// The column a pane's output wraps at, and the width each connected world is told over NAWS (F7 ▸ TEXT ▸
+    /// <c>wrap output at</c>). Zero, the default, wraps at the pane, as before. A pane narrower than this wraps at the
+    /// pane, and that is what is reported: a server told a width the pane does not have wraps every line twice. The
+    /// cells past it are left blank; the pane's rectangle does not change. A display setting, read on the next frame,
+    /// so it rewraps what is already in the pane.
+    /// </summary>
+    public int WrapColumns { get; set; }
+
+    /// <summary>The widest a wrap column may be set to: far past any pane, short of being a number nobody means.</summary>
+    public const int MaxWrapColumns = 500;
+
     /// <summary>Underline MXP/Pueblo/web links so they read as clickable.</summary>
     public bool UnderlineHyperlinks { get; set; } = true;
 

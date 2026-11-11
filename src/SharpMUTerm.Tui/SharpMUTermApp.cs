@@ -1108,6 +1108,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncPanelSizes();
             SyncCollapsedBars();
             SyncScrollSplitBars();
+            SyncWrapWidths();
             SyncChromeBarWidths();
             SyncStatusMode();
             PublishPaneChrome();
@@ -5030,14 +5031,15 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// How wide a picture in this window may be: the pane's viewport, because a row wider than that
-    /// wraps, and a wrapped placeholder row is a picture cut in strips. Bounded by the Kitty diacritic
+    /// How wide a picture in this window may be: the pane's viewport, held to the wrap column
+    /// (<see cref="WrapWidth"/>), because a row wider than that wraps, and a wrapped placeholder row is a picture cut in
+    /// strips. Bounded by the Kitty diacritic
     /// table, which numbers at most that many columns.
     /// </summary>
     private int InlineImageColumns(string windowId)
     {
         var width = _paneScrolls.GetValueOrDefault(windowId) is { ViewportWidth: > 0 } panel
-            ? panel.ViewportWidth
+            ? WrapWidth(panel.ViewportWidth)
             : WebImageColumns();
         return Math.Clamp(width, 1, KittyGraphicsProtocol.RowColumnDiacritics.Length);
     }
@@ -14465,6 +14467,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// answer with less code.
     /// </para>
     /// <para>
+    /// The width is the wrap column when one is set and the pane is wider (<see cref="WrapWidth"/>): the pane's text
+    /// wraps there, so that is the width the server should wrap to.
+    /// </para>
+    /// <para>
     /// A session is told only when the answer has changed since the last thing we told it — an
     /// unchanged size is never re-sent, rate limit or no — and no more than once per
     /// <see cref="WindowSizeReportInterval"/>. What the interval holds back is coalesced to the
@@ -14505,8 +14511,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            OfferWindowSize(session, (Math.Max(1, rect.Width), Math.Max(1, rect.Height)), now);
-            SuggestJoinWraps(session, rect.Width);
+            // The wrap column, where one is set and the pane is wider: the width the pane's text is wrapped at.
+            var width = WrapWidth(rect.Width);
+            OfferWindowSize(session, (Math.Max(1, width), Math.Max(1, rect.Height)), now);
+            SuggestJoinWraps(session, width);
         }
 
         ArmSizeFlush(now);

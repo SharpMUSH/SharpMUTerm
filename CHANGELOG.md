@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Wrap output at a set width. F7 ▸ Text ▸ *wrap output at (columns)* wraps each pane's text at that many columns,
+  leaving the rest of the pane blank, and tells each connected game the same width, so a game that wraps to your
+  window wraps where the pane does. A pane narrower than the setting wraps at the pane, as before. 0, the default,
+  wraps at the pane.
+
 - Text size and zoom in the desktop window. Ctrl+= and Ctrl+- zoom the whole window in and out, as a browser does
   (50% to 300%), Ctrl+0 goes back to 100%, and so does Ctrl with the mouse wheel or the output's right-click menu. The
   zoom is kept between runs. *Text size & zoom* in the settings window (or the command palette) sets the game text's
