@@ -60,13 +60,7 @@ public sealed class WebPageFetcher : IDisposable
             }
 
             // Non-HTML: render as plain text lines.
-            var parser = new Core.Text.AnsiParser();
-            var textLines = parser.Feed(body.Replace("\r\n", "\n")).ToList();
-            var tail = parser.Flush();
-            if (tail is not null)
-            {
-                textLines.Add(tail);
-            }
+            var textLines = Core.Text.MarkupLineParser.ParseAll(body.Replace("\r\n", "\n")).ToList();
 
             return new WebPage(finalUri.ToString(), finalUri.Host, textLines);
         }

@@ -67,7 +67,7 @@ public sealed class TelnetSessionOptions
     /// MTTS bit vector claiming only what it actually does.
     /// <para>
     /// <b>2845</b> = ANSI (1) + UTF-8 (4) + 256 colours (8) + mouse tracking (16) + true colour (256)
-    /// + MNES (512) + SSL (2048). Every one of those is implemented: SGR through <c>AnsiParser</c>, UTF-8
+    /// + MNES (512) + SSL (2048). Every one of those is implemented: SGR through MarkupString (<c>MarkupLineParser</c>), UTF-8
     /// through CHARSET negotiation, mouse through the pane drag/wheel/click routing, MNES through
     /// <see cref="MnesVariables"/> on NEW-ENVIRON, TLS through <c>TcpTransport</c>.
     /// </para>
@@ -799,7 +799,7 @@ public sealed class TelnetSession : ITelnetSession
 
     /// <summary>
     /// A server's <c>&lt;SUPPORT&gt;</c>. Once MXP mode has started the library takes the line out of the
-    /// stream and sends nothing unless asked to, so <see cref="MxpParser"/> never sees it. Left unanswered, a
+    /// stream and sends nothing unless asked to, so <see cref="SharpMUTerm.Core.Text.MarkupLineParser"/> never sees it. Left unanswered, a
     /// server that waits for the reply (SharpMUSH does) records that this client renders none of the tags it
     /// asked about, and sends a picture's address as text instead of an <c>&lt;IMAGE&gt;</c>.
     /// </summary>
@@ -810,7 +810,7 @@ public sealed class TelnetSession : ITelnetSession
             return;
         }
 
-        var (supported, unsupported) = MxpParser.AnswerSupport(asked);
+        var (supported, unsupported) = MxpClientSupport.AnswerSupport(asked);
         try
         {
             await mxp.SendSupportsAsync(supported, unsupported).ConfigureAwait(false);
@@ -832,7 +832,7 @@ public sealed class TelnetSession : ITelnetSession
         try
         {
             await mxp.SendVersionAsync(new MxpVersion(
-                MxpParser.MxpRevision, MxpParser.StyleVersion, MxpParser.ClientName, MxpParser.ClientVersion, Registered: null))
+                MxpClientSupport.MxpRevision, MxpClientSupport.StyleVersion, MxpClientSupport.ClientName, MxpClientSupport.ClientVersion, Registered: null))
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)

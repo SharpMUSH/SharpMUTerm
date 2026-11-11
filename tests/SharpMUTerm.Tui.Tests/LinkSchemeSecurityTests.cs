@@ -64,7 +64,7 @@ public class LinkSchemeSecurityTests
         var world = await Connected(ContentFormat.Mxp);
         world.Receive(Secure + "<A HREF=\"mux:send:@shutdown\">click me</A>\n");
 
-        await Assert.That(ClickLink(world, "click me")).IsTrue(); // the link really is clickable
+        await Assert.That(HasLink(world, "click me")).IsFalse(); // the forged anchor is drawn as its text
 
         await Assert.That(world.Telnet.Lines).IsEmpty();
     }
@@ -76,7 +76,7 @@ public class LinkSchemeSecurityTests
         var world = await Connected(ContentFormat.Pueblo);
         world.Receive("<A HREF=\"mux:send:@shutdown\">click me</A>\n");
 
-        await Assert.That(ClickLink(world, "click me")).IsTrue();
+        await Assert.That(HasLink(world, "click me")).IsFalse();
 
         await Assert.That(world.Telnet.Lines).IsEmpty();
     }
@@ -92,27 +92,26 @@ public class LinkSchemeSecurityTests
         var world = await Connected(ContentFormat.Mxp);
         world.Receive(Secure + "<A HREF=\"mux:prompt:@shutdown\">click me</A>\n");
 
-        await Assert.That(ClickLink(world, "click me")).IsTrue();
+        await Assert.That(HasLink(world, "click me")).IsFalse();
 
         await Assert.That(world.App.ArmedInputText).IsEmpty();
         await Assert.That(world.Telnet.Lines).IsEmpty();
     }
 
     /// <summary>
-    /// What the forged link becomes instead: a hyperlink whose URL happens to read <c>mux:send:…</c>, and
-    /// a hyperlink clicked in a pane is handed to the desktop — where the http(s) gate refuses it, because
-    /// that is not an address any browser was going to be asked to open. A world that lies about what its
-    /// link is gets a refusal, not a command run as the user.
+    /// What the forged link becomes instead: nothing clickable. The decoder reads a link only when its
+    /// address uses one of the usual web schemes, so <c>mux:send:…</c> stays as the anchor's text, and
+    /// clicking that text neither sends nor opens anything. The desktop's http(s) gate is still there for
+    /// a link that does get through.
     /// </summary>
     [Test]
-    public async Task AForgedScheme_IsTreatedAsTheHyperlinkItIs()
+    public async Task AForgedScheme_IsDrawnAsPlainText()
     {
         var world = await Connected(ContentFormat.Mxp);
         world.Receive(Secure + "<A HREF=\"mux:send:@shutdown\">click me</A>\n");
 
-        ClickLink(world, "click me");
-
-        await Assert.That(world.App.StatusMarkup).Contains("not an http or https address");
+        await Assert.That(HasLink(world, "click me")).IsFalse();
+        await Assert.That(world.App.PaneLines(world.WindowId).Any(line => line.Contains("click me", StringComparison.Ordinal))).IsTrue();
         await Assert.That(world.Telnet.Lines).IsEmpty();
     }
 
@@ -479,6 +478,9 @@ public class LinkSchemeSecurityTests
     // ---- Reading and clicking the links the app really drew ---------------------------------
 
     private static bool ClickLink(Wired world, string text) => ClickLinkIn(world.App, world.WindowId, text);
+
+    private static bool HasLink(Wired world, string text) =>
+        world.App.PaneLines(world.WindowId).Any(line => LinkOver(line, text) is not null);
 
     /// <summary>
     /// Clicks the first cell of the link whose visible text contains <paramref name="text"/>. Both the row

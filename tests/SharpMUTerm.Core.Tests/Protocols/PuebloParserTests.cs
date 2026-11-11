@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Text;
 
@@ -7,7 +8,7 @@ public class PuebloParserTests
 {
     private static StyledLine ParseSingleLine(string input)
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var lines = parser.Feed(input);
         if (lines.Count != 1)
         {
@@ -30,7 +31,7 @@ public class PuebloParserTests
     [Test]
     public async Task Feed_SplitsOnNewlines()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var lines = parser.Feed("one\ntwo\nthree\n");
         await Assert.That(lines).Count().IsEqualTo(3);
         await Assert.That(lines[0].Text).IsEqualTo("one");
@@ -41,7 +42,7 @@ public class PuebloParserTests
     [Test]
     public async Task Flush_ReturnsPartialLine()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var lines = parser.Feed("prompt> ");
         await Assert.That(lines).Count().IsEqualTo(0);
         await Assert.That(parser.HasPendingContent).IsTrue();
@@ -176,7 +177,7 @@ public class PuebloParserTests
     public async Task Entities_ResolveToCharacters()
     {
         var line = ParseSingleLine("&lt;&gt;&amp;&nbsp;&#65;\n");
-        await Assert.That(line.Text).IsEqualTo("<>& A");
+        await Assert.That(line.Text).IsEqualTo("<>&\u00a0A");
     }
 
     [Test]
@@ -210,7 +211,7 @@ public class PuebloParserTests
     [Test]
     public async Task Br_BreaksLineMidText()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var lines = parser.Feed("a<BR>b\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("a");
@@ -220,7 +221,7 @@ public class PuebloParserTests
     [Test]
     public async Task Paragraph_BreaksLine()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var lines = parser.Feed("a<P>b</P>\n");
         await Assert.That(lines).Count().IsEqualTo(2);
         await Assert.That(lines[0].Text).IsEqualTo("a");
@@ -235,10 +236,10 @@ public class PuebloParserTests
     }
 
     [Test]
-    public async Task Img_IsIgnored()
+    public async Task Img_ShowsItsLabel()
     {
         var line = ParseSingleLine("before<IMG SRC=\"map.png\">after\n");
-        await Assert.That(line.Text).IsEqualTo("beforeafter");
+        await Assert.That(line.Text).IsEqualTo("before[image: map.png]after");
     }
 
     [Test]
@@ -258,7 +259,7 @@ public class PuebloParserTests
     [Test]
     public async Task TagSplitAcrossFeeds_IsReassembled()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         var first = parser.Feed("<FONT COL");
         await Assert.That(first).Count().IsEqualTo(0);
         var second = parser.Feed("OR=\"red\">x</FONT>\n");
@@ -270,7 +271,7 @@ public class PuebloParserTests
     [Test]
     public async Task EntitySplitAcrossFeeds_IsReassembled()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         parser.Feed("&a");
         parser.Feed("mp;");
         var line = parser.Flush();
@@ -320,7 +321,7 @@ public class PuebloParserTests
     public async Task Ansi_OtherSequencesAreConsumed()
     {
         // Cursor movement, an OSC title (BEL- and ST-terminated), a charset select and a two-byte escape.
-        var line = ParseSingleLine("a\x1b[2Kb\x1b]0;title\ac\x1b]2;t\x1b\\d\x1b(Be\x1bMf\n");
+        var line = ParseSingleLine("a\x1b[?25lb\x1b]0;title\ac\x1b]2;t\x1b\\d\x1b(Be\x1bMf\n");
 
         await Assert.That(line.Text).IsEqualTo("abcdef");
     }
@@ -332,7 +333,7 @@ public class PuebloParserTests
     [Test]
     public async Task Ansi_AnUnterminatedOscEndsWithTheLine()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         parser.Feed("before\x1b]0;never closed");
         var first = parser.Flush();
         parser.Feed("next line");
@@ -345,19 +346,18 @@ public class PuebloParserTests
     [Test]
     public async Task Reset_ClearsStyleAndStack()
     {
-        var parser = new PuebloParser();
+        var parser = new MarkupLineParser(ContentFormat.Pueblo);
         parser.Feed("<B><FONT COLOR=\"red\">bold");
-        await Assert.That(parser.CurrentStyle).IsNotEqualTo(TextStyle.Default);
 
         parser.Reset();
-        await Assert.That(parser.CurrentStyle).IsEqualTo(TextStyle.Default);
+        await Assert.That(parser.Feed("x\n")[0].Spans[0].Style).IsEqualTo(TextStyle.Default);
         await Assert.That(parser.HasPendingContent).IsFalse();
 
         var line = ParseSingleLineWith(parser, "plain\n");
         await Assert.That(line.Spans[0].Style).IsEqualTo(TextStyle.Default);
     }
 
-    private static StyledLine ParseSingleLineWith(PuebloParser parser, string input)
+    private static StyledLine ParseSingleLineWith(MarkupLineParser parser, string input)
     {
         var lines = parser.Feed(input);
         return lines[^1];

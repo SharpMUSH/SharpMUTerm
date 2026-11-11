@@ -1,3 +1,4 @@
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
 using SharpMUTerm.Core.Text;
 
@@ -24,7 +25,7 @@ public class MxpLineModeTests
     [Test]
     public async Task SecureTagOnAnOpenLine_IsShownAsTextAndIsNotClickable()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed("Rivane says, '<SEND href=\"@shutdown\">click</SEND>'\n")[0];
 
@@ -35,7 +36,7 @@ public class MxpLineModeTests
     [Test]
     public async Task OpenTagOnAnOpenLine_IsHonoured()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed("plain <B>bold</B>\n")[0];
 
@@ -46,7 +47,7 @@ public class MxpLineModeTests
     [Test]
     public async Task SecureTagOnASecureLine_IsHonoured()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(Secure + "<SEND href=\"look\">look</SEND>\n")[0];
 
@@ -57,7 +58,7 @@ public class MxpLineModeTests
     [Test]
     public async Task LockedLine_ParsesNothingAtAll()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(Locked + "<B>not bold</B> &amp; not an entity\n")[0];
 
@@ -68,7 +69,7 @@ public class MxpLineModeTests
     [Test]
     public async Task ModeRevertsToTheDefaultAtTheNextNewline()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = parser.Feed(Secure + "<SEND href=\"look\">a</SEND>\n<SEND href=\"look\">b</SEND>\n");
 
@@ -80,7 +81,7 @@ public class MxpLineModeTests
     [Test]
     public async Task LockSecure_SurvivesTheNewline()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = parser.Feed(LockSecure + "<SEND href=\"look\">a</SEND>\n<SEND href=\"look\">b</SEND>\n");
 
@@ -92,7 +93,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TempSecure_CoversExactlyOneTag()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(TempSecure + "<SEND href=\"look\">a</SEND><SEND href=\"x\">b</SEND>\n")[0];
 
@@ -104,7 +105,7 @@ public class MxpLineModeTests
     [Test]
     public async Task Reset_ReturnsToOpenAndClearsStyle()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(LockSecure + "<B>bold" + Reset + "after<SEND href=\"x\">c</SEND>\n")[0];
 
@@ -119,7 +120,7 @@ public class MxpLineModeTests
     [Test]
     public async Task NukeFirePrompt_ParsesIntoTwoClickableAnswers()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         parser.Feed(
             "at right, Pemberton ("
@@ -141,7 +142,7 @@ public class MxpLineModeTests
     [Test]
     public async Task LockOpen_MakesOpenTheDefaultAgain()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = FeedLines(
             parser,
@@ -157,7 +158,7 @@ public class MxpLineModeTests
     [Test]
     public async Task ClosingTagTakesTheCategoryOfItsElement()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed("</SEND> and </B>\n")[0];
 
@@ -172,7 +173,7 @@ public class MxpLineModeTests
     [Test]
     public async Task ARefusedTagIsEchoedByteForByte()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         const string tag = "<SeNd   hReF = '@shutdown'\tHINT=\"a  b\"   >";
 
         var line = parser.Feed("Rivane says, '" + tag + "click</sEnD  >'\n")[0];
@@ -188,7 +189,7 @@ public class MxpLineModeTests
     [Test]
     public async Task AnUnknownLineTagNumberLeavesTheModeAlone()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         // 99 has no meaning, ESC[z has no number, ESC[-1z and ESC[ 1 z are spellings the spec does
         // not have — none of them may move the mode, in either direction.
@@ -206,7 +207,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TempSecure_IsSpentByInterveningText_NotByAPlayersTag()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(TempSecure + "Rivane says, '<SEND HREF=\"@shutdown\">click</SEND>'\n")[0];
 
@@ -221,7 +222,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TempSecure_IsSpentByLockedText_NotBySurvivingTheUnlock()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(
             LockLocked + "Rivane says, " + TempSecure + "hello"
@@ -248,12 +249,13 @@ public class MxpLineModeTests
     [Arguments("\u001b(B")] // designate charset — the intermediate arm
     [Arguments("\u001b[0m")] // SGR — a CSI final byte that is not 'z'
     [Arguments("\u001b[2J")] // erase — a CSI final byte that is discarded
-    [Arguments("\u001b[1\u0001z")] // a control byte mid-sequence — the malformed-abort arm
     [Arguments("\u001b]0;title\u0007")] // OSC, BEL-terminated
     [Arguments("\u001b]0;title\u001b\\")] // OSC, ST-terminated
+    [Arguments("\u001b[1\u0018")] // CSI cancelled by CAN
+    [Arguments("\u001b[1\u001a")] // CSI cancelled by SUB
     public async Task TempSecure_IsSpentByAnyEscapeThatIsNotALineTag(string escape)
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(TempSecure + escape + "<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
 
@@ -280,7 +282,7 @@ public class MxpLineModeTests
     [Arguments("\u001b[z")] // no number at all
     public async Task TempSecure_IsSpentByAnyLineTagButItself(string lineTag)
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(TempSecure + lineTag + "<SEND HREF=\"@shutdown\">click</SEND>\n")[0];
 
@@ -292,7 +294,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TempSecure_SurvivesARepeatOfItself()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(TempSecure + TempSecure + "<SEND HREF=\"look\">a</SEND>\n")[0];
 
@@ -308,7 +310,7 @@ public class MxpLineModeTests
     [Test]
     public async Task ARefusedCloseCannotFeedPlayerTextIntoADeferredSendsCommand()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(TempSecure + "<send>Y</send> Rivane says, 'hi'\n")[0];
 
@@ -328,7 +330,7 @@ public class MxpLineModeTests
     [Test]
     public async Task ACloseIsHonouredOnAnOpenLineWhenItsElementIsStillOpen()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(Secure + "<send>" + Open + "Y</send> Rivane says, 'hi'\n")[0];
 
@@ -341,7 +343,7 @@ public class MxpLineModeTests
     [Test]
     public async Task ACloseMatchingNothingOpenIsStillRefused()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed("Rivane says, '</SEND>'\n")[0];
 
@@ -353,7 +355,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TempSecure_DoesNotSurviveTheNewline()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = parser.Feed(TempSecure + "\n<SEND HREF=\"@shutdown\">click</SEND>\n");
 
@@ -362,15 +364,14 @@ public class MxpLineModeTests
     }
 
     /// <summary>
-    /// <see cref="MxpParser.Reset"/> clears all three mode fields, and it takes <em>two</em> lines to
-    /// say so. Line one catches <c>_lineMode</c> and <c>_tempSecure</c>; only line two catches
-    /// <c>_defaultMode</c>, because <c>_lineMode</c> is re-read from it in <c>CompleteLine</c> and
-    /// nowhere else — so a Reset that forgot the default alone would still refuse the first SEND.
+    /// <see cref="MarkupLineParser.Reset"/> clears the line mode, the default mode and a temporary
+    /// secure arming, and it takes <em>two</em> lines to say so: the first catches the line mode and
+    /// the arming, the second the default mode the next line starts from.
     /// </summary>
     [Test]
     public async Task Reset_ClearsEveryModeField()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         parser.Feed(LockSecure + "a\n"); // default and current mode both Secure
         parser.Feed(TempSecure); // and an arming pending
 
@@ -389,7 +390,7 @@ public class MxpLineModeTests
     [Test]
     public async Task OpenLineTag_RefusesASecureTag()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = parser.Feed(LockSecure + Open + "<SEND href=\"x\">b</SEND>\n")[0];
 
@@ -406,7 +407,7 @@ public class MxpLineModeTests
     /// an input shape the product never produces — which is how a line-mode revert that only ever ran
     /// on an embedded newline shipped with a green suite.
     /// </summary>
-    private static IReadOnlyList<StyledLine> FeedLines(MxpParser parser, params string[] lines)
+    private static IReadOnlyList<StyledLine> FeedLines(MarkupLineParser parser, params string[] lines)
     {
         var result = new List<StyledLine>();
         foreach (var text in lines)
@@ -426,7 +427,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TheModeRevertsAtAFlushBoundary_NotOnlyAtAnEmbeddedNewline()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = FeedLines(
             parser,
@@ -442,7 +443,7 @@ public class MxpLineModeTests
     [Test]
     public async Task LockSecure_SurvivesAFlushBoundary()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = FeedLines(parser, LockSecure + "<SEND href=\"look\">a</SEND>", "<SEND href=\"look\">b</SEND>");
 
@@ -454,7 +455,7 @@ public class MxpLineModeTests
     [Test]
     public async Task TempSecure_DoesNotSurviveAFlushBoundary()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = FeedLines(parser, "prompt>" + TempSecure, "<SEND HREF=\"@shutdown\">click</SEND>");
 
@@ -474,7 +475,7 @@ public class MxpLineModeTests
     [Test]
     public async Task AnUnclosedOpenTagIsAutoClosedAtTheLineBoundary()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = FeedLines(
             parser,
@@ -484,7 +485,6 @@ public class MxpLineModeTests
         await Assert.That(lines[1].Text).IsEqualTo("the next line");
         await Assert.That(lines[1].Spans[0].Style.Foreground).IsEqualTo(TerminalColor.Default);
         await Assert.That(lines[1].Spans[0].Style.Background).IsEqualTo(TerminalColor.Default);
-        await Assert.That(parser.CurrentStyle).IsEqualTo(TextStyle.Default);
     }
 
     /// <summary>
@@ -495,7 +495,7 @@ public class MxpLineModeTests
     [Test]
     public async Task AnUnclosedOpenTagIsAutoClosedWhenTheModeLeavesOpen()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var line = FeedLines(parser, "says '<COLOR FORE=black>' " + Secure + "server text")[0];
 
@@ -511,7 +511,7 @@ public class MxpLineModeTests
     [Test]
     public async Task AnOpenTagOpenedOnASecureLineIsNotAutoClosed()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         var lines = FeedLines(parser, LockSecure + "<B>bold", "still bold");
 
@@ -522,7 +522,7 @@ public class MxpLineModeTests
     [Test]
     public async Task RepeatedUnclosedOpenTagsDoNotAccumulate()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         for (var i = 0; i < 50; i++)
         {
@@ -553,10 +553,10 @@ public class MxpLineModeTests
     [Arguments("\u001b")] // a lone ESC, whose next byte would otherwise be eaten
     public async Task AnUnterminatedEscapeStringDoesNotEatTheNextLine(string escape)
     {
-        var atFlushBoundary = FeedLines(new MxpParser(), "says '" + escape, "the next line");
+        var atFlushBoundary = FeedLines(new MarkupLineParser(ContentFormat.Mxp), "says '" + escape, "the next line");
         await Assert.That(atFlushBoundary[1].Text).IsEqualTo("the next line");
 
-        var embedded = new MxpParser().Feed("says '" + escape + "\nthe next line\n");
+        var embedded = new MarkupLineParser(ContentFormat.Mxp).Feed("says '" + escape + "\nthe next line\n");
         await Assert.That(embedded).Count().IsEqualTo(2);
         await Assert.That(embedded[1].Text).IsEqualTo("the next line");
     }

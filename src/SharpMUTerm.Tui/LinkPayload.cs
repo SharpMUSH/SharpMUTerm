@@ -37,7 +37,7 @@ internal enum LinkAction
 /// or hard to guess — a world can put any characters it likes in an <c>&lt;A HREF&gt;</c>, including
 /// these. What a world cannot choose is which <see cref="InteractionKind"/> its markup parses to:
 /// <c>&lt;SEND&gt;</c> becomes <see cref="InteractionKind.SendCommand"/> and <c>&lt;A HREF&gt;</c>
-/// becomes <see cref="InteractionKind.Hyperlink"/>, decided by <c>MxpParser</c>/<c>PuebloParser</c>.
+/// becomes <see cref="InteractionKind.Hyperlink"/>, decided by MarkupString's decoder (<c>MarkupLineParser</c>).
 /// Wrapping the hyperlink case in a scheme of its own is what makes the namespaces disjoint.
 /// </para>
 /// <para>

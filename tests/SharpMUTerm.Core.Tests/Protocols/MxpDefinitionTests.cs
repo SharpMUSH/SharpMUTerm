@@ -1,3 +1,5 @@
+using MarkupString.Mxp.Decoding;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Mapping;
 using SharpMUTerm.Core.Media;
 using SharpMUTerm.Core.Protocols;
@@ -13,7 +15,7 @@ public class MxpDefinitionTests
 {
     private const string Secure = "\x1b[1z";
 
-    private static List<StyledLine?> Lines(MxpParser parser, params string[] lines)
+    private static List<StyledLine?> Lines(MarkupLineParser parser, params string[] lines)
     {
         var result = new List<StyledLine?>();
         foreach (var text in lines)
@@ -30,7 +32,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AnUnclosedTagEndsWithItsLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, "a < b and <c", "next line");
 
         await Assert.That(lines[0]!.Text).IsEqualTo("a < b and <c");
@@ -40,7 +42,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AQuoteHoldsATagOpenOnlyWhereAValueCanStart()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, Secure + "<COLOR fore=red hint='a>b'>x</COLOR>", "<don't>y");
 
         await Assert.That(lines[0]!.Text).IsEqualTo("x");
@@ -52,7 +54,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AnElementOpensItsDefinitionAndItsCloserClosesIt()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, Secure + "<!ELEMENT warn '<COLOR red><B>'>", Secure + "<warn>Danger</warn> ahead");
 
         await Assert.That(lines[0]).IsNull();
@@ -65,7 +67,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task ALineThatIsOnlyDefinitionsIsSwallowedNotBlank()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
 
         parser.Feed(Secure + "<!ELEMENT a '<B>'><!ENTITY hp 10>");
         await Assert.That(parser.Flush()).IsNull();
@@ -79,7 +81,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AttributesAreFilledInByNameByPositionOrByDefault()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(
             parser,
             Secure + "<!ELEMENT go '<SEND href=\"go &dir;\" hint=\"&tip;\">' ATT='dir tip=Walk'>",
@@ -95,18 +97,19 @@ public class MxpDefinitionTests
     [Test]
     public async Task ADefinitionOnAnOpenLineIsRefusedAndEchoed()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, "<!ELEMENT evil '<SEND quit>'>", Secure + "<evil>x</evil>");
 
+        // Shown as it was typed, and the element it would have made is unknown, so its tag is dropped even on a secure line.
         await Assert.That(lines[0]!.Text).IsEqualTo("<!ELEMENT evil '<SEND quit>'>");
-        await Assert.That(parser.ElementCount).IsEqualTo(0);
+        await Assert.That(lines[1]!.Text).IsEqualTo("x");
         await Assert.That(lines[1]!.Spans.Any(s => s.IsInteractive)).IsFalse();
     }
 
     [Test]
     public async Task APlayerMayUseAnOpenElementButItCannotCarryASecureTag()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(
             parser,
             Secure + "<!ELEMENT hl '<COLOR &c;><SEND quit>' ATT='c' OPEN>",
@@ -123,7 +126,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task ANonOpenElementOnAnOpenLineIsEchoed()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, Secure + "<!ELEMENT b2 '<B>'>", "<b2>x</b2>");
 
         await Assert.That(lines[1]!.Text).IsEqualTo("<b2>x</b2>");
@@ -132,16 +135,26 @@ public class MxpDefinitionTests
     [Test]
     public async Task ABuiltInCannotBeRedefined()
     {
-        var parser = new MxpParser();
-        Lines(parser, Secure + "<!ELEMENT SEND '<B>'>", Secure + "<!ELEMENT color '<B>' OPEN>", Secure + "<!EL bold '<I>'>");
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var lines = Lines(
+            parser,
+            Secure + "<!ELEMENT SEND '<B>'>",
+            Secure + "<!ELEMENT color '<B>' OPEN>",
+            Secure + "<!EL bold '<I>'>",
+            Secure + "<SEND look>x</SEND> <color red>y</color> <bold>z</bold>");
 
-        await Assert.That(parser.ElementCount).IsEqualTo(0);
+        var spans = lines[3]!.Spans;
+        await Assert.That(spans.Single(s => s.Text == "x").IsInteractive).IsTrue();
+        await Assert.That(spans.Single(s => s.Text == "x").Style.HasAttribute(TextAttributes.Bold)).IsFalse();
+        await Assert.That(spans.Single(s => s.Text == "y").Style.HasAttribute(TextAttributes.Bold)).IsFalse();
+        await Assert.That(spans.Single(s => s.Text == "z").Style.HasAttribute(TextAttributes.Bold)).IsTrue();
+        await Assert.That(spans.Single(s => s.Text == "z").Style.HasAttribute(TextAttributes.Italic)).IsFalse();
     }
 
     [Test]
     public async Task ExpansionIsCappedInDepthAndPerLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         Lines(
             parser,
             Secure + "<!ELEMENT a '<b><b><b><b>'>",
@@ -158,32 +171,37 @@ public class MxpDefinitionTests
     [Test]
     public async Task ALongDefinitionAndTooManyElementsAreRefused()
     {
-        var parser = new MxpParser();
-        Lines(parser, Secure + $"<!ELEMENT big '{new string('x', MxpParser.MaxDefinitionLength + 1)}'>");
-        await Assert.That(parser.ElementCount).IsEqualTo(0);
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var big = Lines(parser, Secure + $"<!ELEMENT big '<B>{new string('x', MxpPlugin.MaxDefinitionLength)}'>", Secure + "<big>y</big>");
+        await Assert.That(big[1]!.Text).IsEqualTo("y");
 
-        Lines(parser, Enumerable.Range(0, MxpParser.MaxElements + 10).Select(i => Secure + $"<!ELEMENT e{i} '<B>'>").ToArray());
-        await Assert.That(parser.ElementCount).IsEqualTo(MxpParser.MaxElements);
+        Lines(parser, Enumerable.Range(0, MxpPlugin.MaxElements + 10).Select(i => Secure + $"<!ELEMENT e{i} '<B>'>").ToArray());
+        var last = Lines(parser, Secure + $"<e{MxpPlugin.MaxElements - 1}>kept</e{MxpPlugin.MaxElements - 1}>|<e{MxpPlugin.MaxElements}>refused</e{MxpPlugin.MaxElements}>")[0]!;
+        await Assert.That(last.Text).IsEqualTo("kept|refused");
+        await Assert.That(last.Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsTrue();
+        await Assert.That(last.Spans[^1].Style.HasAttribute(TextAttributes.Bold)).IsFalse();
     }
 
     [Test]
     public async Task DeleteRemovesAnElement()
     {
-        var parser = new MxpParser();
-        Lines(parser, Secure + "<!ELEMENT a '<B>'>", Secure + "<!ELEMENT a DELETE>");
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var lines = Lines(parser, Secure + "<!ELEMENT a '<B>'>", Secure + "<!ELEMENT a DELETE>", Secure + "<a>x</a>");
 
-        await Assert.That(parser.ElementCount).IsEqualTo(0);
+        await Assert.That(lines[2]!.Spans.Single().Style.HasAttribute(TextAttributes.Bold)).IsFalse();
     }
 
     [Test]
     public async Task AReconnectStartsWithoutDefinitions()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         Lines(parser, Secure + "<!ELEMENT a '<B>'>", Secure + "<!ENTITY hp 5>");
 
         parser.Reset();
 
-        await Assert.That(parser.ElementCount).IsEqualTo(0);
+        var line = Lines(parser, Secure + "<a>x</a> &hp;")[0]!;
+        await Assert.That(line.Spans[0].Style.HasAttribute(TextAttributes.Bold)).IsFalse();
+        await Assert.That(line.Text).IsEqualTo("x &hp;");
         await Assert.That(parser.Entity("hp")).IsNull();
     }
 
@@ -192,7 +210,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AnEntityIsSetExpandedAddedToRemovedAndDeleted()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var changes = new List<MxpEntityChange>();
         parser.EntityChanged += (_, e) => changes.Add(e);
 
@@ -212,7 +230,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task APrivateEntityExpandsButIsNotAnnounced()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var changes = new List<MxpEntityChange>();
         parser.EntityChanged += (_, e) => changes.Add(e);
 
@@ -225,7 +243,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task ABuiltInEntityCannotBeRedefinedAndAnEntityIsTextNotMarkup()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, Secure + "<!ENTITY lt X>", Secure + "<!ENTITY tag '<SEND quit>'>", Secure + "&lt;&tag;");
 
         await Assert.That(lines[2]!.Text).IsEqualTo("<<SEND quit>");
@@ -235,7 +253,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task VarShowsItsTextAndStoresIt()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, Secure + "Gold: <VAR gold>120</VAR>");
 
         await Assert.That(lines[0]!.Text).IsEqualTo("Gold: 120");
@@ -245,7 +263,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AnElementFlaggedSetStoresItsText()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         Lines(parser, Secure + "<!ELEMENT hpv '' FLAG='set hp'>", Secure + "HP: <hpv>17</hpv>");
 
         await Assert.That(parser.Entity("hp")).IsEqualTo("17");
@@ -254,7 +272,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task VarOnAnOpenLineIsEchoed()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, "<VAR gold>1</VAR>");
 
         await Assert.That(lines[0]!.Text).IsEqualTo("<VAR gold>1</VAR>");
@@ -266,7 +284,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task RoomFlagsReachTheRoomSource()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var flags = new List<MxpFlagText>();
         parser.Flagged += (_, e) => flags.Add(e);
 
@@ -295,7 +313,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task TheSpecsRoomLineTagsFlagTheirLine()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var flags = new List<MxpFlagText>();
         parser.Flagged += (_, e) => flags.Add(e);
 
@@ -310,7 +328,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AFlaggedElementSpanningLinesKeepsAllItsText()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var flags = new List<MxpFlagText>();
         parser.Flagged += (_, e) => flags.Add(e);
 
@@ -320,9 +338,21 @@ public class MxpDefinitionTests
     }
 
     [Test]
+    public async Task AFlaggedElementKeepsABlankLineInsideIt()
+    {
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var flags = new List<MxpFlagText>();
+        parser.Flagged += (_, e) => flags.Add(e);
+
+        Lines(parser, Secure + "<!ELEMENT RDesc FLAG=RoomDesc>", Secure + "<RDesc>A wide plaza.", "", Secure + "A fountain.</RDesc>");
+
+        await Assert.That(flags.Single().Text).IsEqualTo("A wide plaza.\n\nA fountain.");
+    }
+
+    [Test]
     public async Task AUserLineTagOpensTheElementTiedToIt()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var lines = Lines(parser, Secure + "<!ELEMENT hdr '<B>' TAG=20>", "\x1b[20zHeading", "plain");
 
         await Assert.That(lines[1]!.Spans.Single().Style.Attributes.HasFlag(TextAttributes.Bold)).IsTrue();
@@ -334,7 +364,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task AGaugeIsDeclaredOnASecureLineOnly()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var gauges = new List<MxpGauge>();
         parser.GaugeDeclared += (_, e) => gauges.Add(e);
 
@@ -347,7 +377,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task SoundAndMusicAreTheSameRequestsMspMakes()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var media = new List<MediaCommand>();
         parser.MediaRequested += (_, e) => media.Add(e);
 
@@ -369,7 +399,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task DestCutsItsTextOutOfTheLineAndSendsItToTheFrame()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var sent = new List<MxpRedirect>();
         parser.Redirected += (_, e) => sent.Add(e);
 
@@ -385,7 +415,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task ARedirectSendsWholeLinesUntilTop()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var sent = new List<MxpRedirect>();
         parser.Redirected += (_, e) => sent.Add(e);
 
@@ -398,20 +428,20 @@ public class MxpDefinitionTests
     [Test]
     public async Task OnlyAFewFramesMayBeNamedAndTheRestStayInTheMainWindow()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var sent = new List<MxpRedirect>();
         parser.Redirected += (_, e) => sent.Add(e);
 
-        var lines = Lines(parser, Enumerable.Range(0, MxpParser.MaxFrames + 2).Select(i => Secure + $"<DEST f{i}>t{i}</DEST>").ToArray());
+        var lines = Lines(parser, Enumerable.Range(0, MarkupLineParser.MaxFrames + 2).Select(i => Secure + $"<DEST f{i}>t{i}</DEST>").ToArray());
 
-        await Assert.That(sent.Count).IsEqualTo(MxpParser.MaxFrames);
-        await Assert.That(lines[^1]!.Text).IsEqualTo($"t{MxpParser.MaxFrames + 1}");
+        await Assert.That(sent.Count).IsEqualTo(MarkupLineParser.MaxFrames);
+        await Assert.That(lines[^1]!.Text).IsEqualTo($"t{MarkupLineParser.MaxFrames + 1}");
     }
 
     [Test]
     public async Task DestOnAnOpenLineIsEchoed()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         var sent = new List<MxpRedirect>();
         parser.Redirected += (_, e) => sent.Add(e);
 
@@ -426,7 +456,7 @@ public class MxpDefinitionTests
     [Test]
     public async Task TheSupportsListNamesWhatIsHandled()
     {
-        var parser = new MxpParser();
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
         string? reply = null;
         parser.ClientReply += (_, r) => reply = r;
 

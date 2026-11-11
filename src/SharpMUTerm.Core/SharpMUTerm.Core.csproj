@@ -9,6 +9,10 @@
     <PackageReference Include="TelnetNegotiationCore" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="WeCantSpell.Hunspell" />
+    <PackageReference Include="MarkupString" />
+    <PackageReference Include="MarkupString.Ansi" />
+    <PackageReference Include="MarkupString.Mxp" />
+    <PackageReference Include="MarkupString.Pueblo" />
   </ItemGroup>
 
 </Project>

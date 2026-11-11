@@ -29,7 +29,7 @@ public sealed class WorldSession : IAsyncDisposable
     public static TextStyle SystemLineStyle => SystemStyle;
 
     private readonly Func<ConnectionOptions, ITelnetSession> _sessionFactory;
-    private ILineParser _parser;
+    private MarkupLineParser _parser;
     private EmojiSubstitutor? _emoji;
     private ILogSink? _log;
     private readonly TextSettings? _text;
@@ -141,34 +141,20 @@ public sealed class WorldSession : IAsyncDisposable
     private static EmojiSubstitutor? NewEmoji(EmojiSettings emoji) =>
         emoji.Enabled ? new EmojiSubstitutor(emoji.Emoticons, emoji.Shortcodes) : null;
 
-    private static ILineParser CreateParser(ContentFormat format) => format switch
-    {
-        ContentFormat.Mxp => new MxpParser(),
-        ContentFormat.Pueblo => new PuebloParser(),
-        _ => new AnsiParser(),
-    };
-
     /// <summary>
-    /// The one place a parser is constructed for this session. Wraps <see cref="CreateParser"/> so
-    /// the two sites that build one — the constructor and <see cref="OnMxpEnabled"/>'s upgrade path —
-    /// cannot diverge on what an <see cref="MxpParser"/> is wired up to: its
-    /// <see cref="MxpParser.ClientReply"/> answers to a server's <c>&lt;VERSION&gt;</c>/<c>&lt;SUPPORT&gt;</c>
-    /// request must reach the wire on both paths, since the upgrade path is the one every session that
-    /// actually negotiates MXP takes.
+    /// The one place a reader is constructed for this session, so the constructor and a reconnect cannot diverge on
+    /// what it is wired up to: its <see cref="MarkupLineParser.ClientReply"/> answers a server's
+    /// <c>&lt;VERSION&gt;</c>/<c>&lt;SUPPORT&gt;</c>, and its other events carry what MXP declares.
     /// </summary>
-    private ILineParser NewParser(ContentFormat format)
+    private MarkupLineParser NewParser(ContentFormat format)
     {
-        var parser = CreateParser(format);
-        if (parser is MxpParser mxp)
-        {
-            mxp.ClientReply += (_, reply) => SendProtocolReply(reply);
-            mxp.EntityChanged += (_, e) => GameData.SetMxp(e.Name, e.Value);
-            mxp.Flagged += (_, e) => MxpFlagged?.Invoke(this, e);
-            mxp.GaugeDeclared += (_, e) => DeclareMeter(e);
-            mxp.MediaRequested += (_, e) => MediaReceived?.Invoke(this, e);
-            mxp.Redirected += (_, e) => SpawnLine?.Invoke(this, new SpawnLineEventArgs(e.Frame, ApplyLinks(ApplyEmoji(e.Line))));
-        }
-
+        var parser = new MarkupLineParser(format);
+        parser.ClientReply += (_, reply) => SendProtocolReply(reply);
+        parser.EntityChanged += (_, e) => GameData.SetMxp(e.Name, e.Value);
+        parser.Flagged += (_, e) => MxpFlagged?.Invoke(this, e);
+        parser.GaugeDeclared += (_, e) => DeclareMeter(e);
+        parser.MediaRequested += (_, e) => MediaReceived?.Invoke(this, e);
+        parser.Redirected += (_, e) => SpawnLine?.Invoke(this, new SpawnLineEventArgs(e.Frame, ApplyLinks(ApplyEmoji(e.Line))));
         return parser;
     }
 
@@ -330,7 +316,7 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     private void UpgradeParser(ContentFormat format)
     {
-        var forward = _parser is AnsiParser || (_parser is PuebloParser && format == ContentFormat.Mxp);
+        var forward = _parser.Format == ContentFormat.Ansi || (_parser.Format == ContentFormat.Pueblo && format == ContentFormat.Mxp);
         if (World.ContentFormat != ContentFormat.Ansi || !forward)
         {
             return;
@@ -345,9 +331,8 @@ public sealed class WorldSession : IAsyncDisposable
             }
 
             ReleaseEchoHeld();
+            _parser.Switch(format);
         }
-
-        _parser = NewParser(format);
     }
 
     /// <summary>
@@ -863,7 +848,7 @@ public sealed class WorldSession : IAsyncDisposable
             Reflow(tail);
             emitted = true;
         }
-        else if (!emitted && _parser is not MxpParser { LineSwallowed: true })
+        else if (!emitted && !_parser.LineSwallowed)
         {
             ReleaseHeldLine();
             ProcessOutputLine(StyledLine.Empty);
