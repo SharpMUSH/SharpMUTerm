@@ -251,6 +251,8 @@ public class MxpLineModeTests
     [Arguments("\u001b[2J")] // erase — a CSI final byte that is discarded
     [Arguments("\u001b]0;title\u0007")] // OSC, BEL-terminated
     [Arguments("\u001b]0;title\u001b\\")] // OSC, ST-terminated
+    [Arguments("\u001b[1\u0018")] // CSI cancelled by CAN
+    [Arguments("\u001b[1\u001a")] // CSI cancelled by SUB
     public async Task TempSecure_IsSpentByAnyEscapeThatIsNotALineTag(string escape)
     {
         var parser = new MarkupLineParser(ContentFormat.Mxp);

@@ -13,10 +13,10 @@
       Reading server output: ANSI/VT, MXP and Pueblo into MarkupText, which Core folds into StyledLine
       (Text/MarkupLineParser). One version for the family.
     -->
-    <PackageVersion Include="MarkupString" Version="2.28.0" />
-    <PackageVersion Include="MarkupString.Ansi" Version="2.28.0" />
-    <PackageVersion Include="MarkupString.Mxp" Version="2.28.0" />
-    <PackageVersion Include="MarkupString.Pueblo" Version="2.28.0" />
+    <PackageVersion Include="MarkupString" Version="2.28.1" />
+    <PackageVersion Include="MarkupString.Ansi" Version="2.28.1" />
+    <PackageVersion Include="MarkupString.Mxp" Version="2.28.1" />
+    <PackageVersion Include="MarkupString.Pueblo" Version="2.28.1" />
 
     <!-- Telnet negotiation: TELOPT/NAWS/MTTS/EOR/CHARSET/MSSP/GMCP/MSDP/MCCP/MXP negotiation. -->
     <PackageVersion Include="TelnetNegotiationCore" Version="4.11.0" />
