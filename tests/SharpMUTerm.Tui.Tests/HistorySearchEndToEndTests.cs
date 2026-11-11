@@ -453,6 +453,23 @@ public class HistorySearchEndToEndTests
     /// <c>connect guest</c> would be teaching the user that history is unreliable.
     /// </summary>
     [Test]
+    public async Task ServerEchoKeepsStandalonePasswordOutOfHistory()
+    {
+        var (app, telnet) = await Demo();
+        const string secret = "standalone-password";
+        var connection = telnet.Opened.Single();
+        connection.ServerEchoesInput = true;
+        Send(app, secret);
+
+        connection.ServerEchoesInput = false;
+        Send(app, "look");
+
+        await Assert.That(telnet.Sent).Contains(secret);
+        await Assert.That(app.HistoryEntries(InputBar.Primary)).DoesNotContain(secret);
+        await Assert.That(app.HistoryEntries(InputBar.Primary)).Contains("look");
+    }
+
+    [Test]
     public async Task ALoginLineWithNoPasswordIsKept()
     {
         var (app, _) = await Demo();

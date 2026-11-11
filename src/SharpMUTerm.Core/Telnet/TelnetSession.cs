@@ -329,6 +329,7 @@ public sealed class TelnetSession : ITelnetSession
     private CancellationTokenSource? _loopCts;
     private Task? _readLoop;
     private int _disconnected;
+    private volatile bool _serverEchoesInput;
 
     public TelnetSession(ITransport transport, ILogger? logger = null, TelnetSessionOptions? options = null)
     {
@@ -338,6 +339,8 @@ public sealed class TelnetSession : ITelnetSession
     }
 
     public bool IsConnected => _transport.IsConnected && _interpreter is not null;
+
+    public bool ServerEchoesInput => IsConnected && _serverEchoesInput;
 
     /// <summary>
     /// The encoding this session is decoding and encoding with now, and why — derived, never cached,
@@ -434,6 +437,7 @@ public sealed class TelnetSession : ITelnetSession
         await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
         _msdpAgreed = false;
         _mxpOn = false;
+        _serverEchoesInput = false;
 
         try
         {
@@ -488,6 +492,11 @@ public sealed class TelnetSession : ITelnetSession
             // Answers a server's DO NEW-ENVIRON; offers nothing on its own (the unsolicited-negotiation rule).
             .AddPlugin<NewEnvironProtocol>().WithClientEnvironmentVariables(TelnetSessionOptions.MnesIdentity(_options.TerminalTypes))
             .AddPlugin<CharsetProtocol>().WithCharsetOrder(_options.CharsetOrder)
+            .AddPlugin<EchoProtocol>().OnEchoStateChanged(enabled =>
+            {
+                _serverEchoesInput = enabled;
+                return ValueTask.CompletedTask;
+            })
             .AddPlugin<EORProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<SuppressGoAheadProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<PacketPatchProtocol>().OnPrompt(OnPromptAsync)

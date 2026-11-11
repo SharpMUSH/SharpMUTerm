@@ -146,26 +146,78 @@ public class PasswordLeakTests
         await Assert.That(log.Lines).IsNotEmpty();
     }
 
-    /// <summary>
-    /// The asymmetry that justifies the whole feature, pinned so nobody closes the gap from the wrong end.
-    /// A user who types <c>connect Corvid …</c> by hand has it echoed into the output window and written
-    /// into the transcript on disk, because that is what local echo and session logging are <em>for</em>.
-    /// Auto-login is the way out of that, not a reason to start filtering the command line.
-    /// </summary>
     [Test]
-    public async Task TypingTheLoginLineByHandIsEchoedAndTranscribed_WhichIsWhyTheFieldExists()
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task ALoginCommandReachesTelnetButIsHiddenInTheEcho(bool typed)
     {
         var log = new RecordingSink();
         var telnet = new FakeTelnetSession();
         var session = new WorldSession(World(), sessionFactory: _ => telnet, log: log);
         await session.ConnectAsync();
 
-        await session.SendUserInputAsync($"connect Corvid {Secret}");
+        var command = $"connect Corvid {Secret}";
+        if (typed)
+        {
+            await session.SendTypedAsync(command);
+        }
+        else
+        {
+            await session.SendUserInputAsync(command);
+        }
 
-        await Assert.That(telnet.SentLines).Contains($"connect Corvid {Secret}");
+        await Assert.That(telnet.SentLines).Contains(command);
         await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text.Contains(Secret, StringComparison.Ordinal)))
-            .IsTrue();
-        await Assert.That(log.Lines.Any(l => l.Contains(Secret, StringComparison.Ordinal))).IsTrue();
+            .IsFalse();
+        await Assert.That(log.Lines.Any(l => l.Contains(Secret, StringComparison.Ordinal))).IsFalse();
+        await Assert.That(log.Lines).Contains("(credential command hidden)");
+    }
+
+    [Test]
+    [Arguments("#1", true)]
+    [Arguments("#101", false)]
+    public async Task StackedInputKeepsCredentialsOutOfTheEcho(string repeat, bool accepted)
+    {
+        var log = new RecordingSink();
+        var telnet = new FakeTelnetSession();
+        var world = World();
+        world.CommandSeparator = ";";
+        var session = new WorldSession(world, sessionFactory: _ => telnet, log: log);
+        await session.ConnectAsync();
+
+        var command = $"connect Corvid {Secret}";
+        await session.SendTypedAsync($"look;{repeat} {command}");
+
+        await Assert.That(telnet.SentLines.Contains(command)).IsEqualTo(accepted);
+        await Assert.That(session.Scrollback.Snapshot().Any(l => l.Text.Contains(Secret, StringComparison.Ordinal)))
+            .IsFalse();
+        await Assert.That(log.Lines.Any(l => l.Contains(Secret, StringComparison.Ordinal))).IsFalse();
+    }
+
+    [Test]
+    public async Task ServerEchoNegotiationHidesStandalonePasswordAndRestoresLocalEcho()
+    {
+        var log = new RecordingSink();
+        var transport = new FakeTransport();
+        var telnet = new TelnetSession(transport);
+        await using var session = new WorldSession(World(), sessionFactory: _ => telnet, log: log);
+        await session.ConnectAsync();
+
+        transport.FeedInbound([255, 251, 1]); // IAC WILL ECHO
+        await Assert.That(await WaitUntilAsync(() => session.ServerEchoesInput)).IsTrue();
+        await session.SendTypedAsync(Secret);
+        await Assert.That(await WaitUntilAsync(() =>
+            Encoding.ASCII.GetString(transport.SentBytes).Contains(Secret, StringComparison.Ordinal))).IsTrue();
+
+        transport.FeedInbound([255, 252, 1]); // IAC WONT ECHO
+        await Assert.That(await WaitUntilAsync(() => !session.ServerEchoesInput)).IsTrue();
+        await session.SendTypedAsync("look");
+
+        var scrollback = session.Scrollback.Snapshot().Select(line => line.Text).ToArray();
+        await Assert.That(scrollback).Contains("look");
+        await Assert.That(log.Lines).Contains("look");
+        await Assert.That(scrollback.Any(line => line.Contains(Secret, StringComparison.Ordinal))).IsFalse();
+        await Assert.That(log.Lines.Any(line => line.Contains(Secret, StringComparison.Ordinal))).IsFalse();
     }
 
     /// <summary>

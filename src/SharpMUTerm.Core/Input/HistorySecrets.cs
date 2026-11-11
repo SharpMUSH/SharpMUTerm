@@ -1,8 +1,7 @@
 namespace SharpMUTerm.Core.Input;
 
 /// <summary>
-/// The rule that keeps typed passwords out of <see cref="InputHistory"/>: a login line carries a
-/// plaintext password, and history is the one place in this client that would keep it.
+/// Recognizes commands carrying typed passwords so command history and local echo can protect them.
 /// <para>
 /// A configured character never comes through here — <c>WorldSession.SendLoginAsync</c> writes its
 /// connect string straight to the transport and never touches the UI's history. The line this exists for

@@ -5548,8 +5548,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         // The entered command clears this window's draft for the bar it came from and its unsent-input
         // marker, and joins that bar's draft-safe history so ↑/↓ can recall it without clobbering a
-        // future draft. The bar has already emptied itself — ⏎ never moves the caret off it.
-        HistoryFor(bar).Add(command);
+        // future draft. A server echo window can carry a standalone password, so skip history in
+        // that case. The bar has already emptied itself — ⏎ never moves the caret off it.
+        if (SendTarget()?.ServerEchoesInput != true)
+        {
+            HistoryFor(bar).Add(command);
+        }
         var windowId = ActiveWindowId();
         _drafts.Clear(windowId, bar);
         _workspace.SetUnsentInput(windowId, AnyBarHasText());
