@@ -471,19 +471,27 @@ public class HistorySearchEndToEndTests
     /// sent (<c>#1</c>) or refused (<c>#101</c>, past the repeat cap), and the echo and the wire behave as they would.
     /// </summary>
     [Test]
-    [Arguments("#1")]
-    [Arguments("#101")]
-    public async Task AStackedLoginIsKeptOutOfHistoryAndSearch(string repeat)
+    [Arguments("#1", "connect")]
+    [Arguments("#101", "connect")]
+    [Arguments("#1", "con")]
+    [Arguments("#101", "con")]
+    public async Task AStackedLoginIsKeptOutOfHistoryAndSearch(string repeat, string verb)
     {
         var (app, _) = await Demo(separator: ";");
         const string secret = "stacked-secret";
 
-        Send(app, $"look;{repeat} connect Corvid {secret}");
+        Send(app, $"look;{repeat} {verb} Corvid {secret}");
         Send(app, "inventory");
 
         await Assert.That(app.HistoryEntries(InputBar.Primary).Any(e => e.Contains(secret, StringComparison.Ordinal)))
             .IsFalse();
         await Assert.That(app.HistoryEntries(InputBar.Primary)).Contains("inventory");
+        app.SimulateKey(Bare(ConsoleKey.UpArrow));
+        app.SimulateKey(Bare(ConsoleKey.UpArrow));
+        await Assert.That(app.ArmedInputText).IsEqualTo("inventory");
+        app.SimulateKey(Chord(ConsoleKey.R));
+        app.SimulateHistorySearchTyping(secret);
+        await Assert.That(app.HistorySearchRows).IsEmpty();
     }
 
     /// <summary>
