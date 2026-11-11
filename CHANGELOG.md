@@ -60,6 +60,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- Two exits, links or pictures side by side that look the same are no longer read as one. A game that marks
+  exits with MXP and prints them next to each other now records each exit, and two links to the same command are
+  two links.
+
 - Abbreviated login commands such as `c name password` and `con name password` are hidden from local echo,
   transcripts and credential-filtered command history, including when used inside a command stack.
 

@@ -311,6 +311,42 @@ public class MxpDefinitionTests
     }
 
     [Test]
+    public async Task TwoEqualFlaggedElementsSideBySideAreTwo()
+    {
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var flags = new List<MxpFlagText>();
+        parser.Flagged += (_, e) => flags.Add(e);
+
+        Lines(parser, Secure + "<!ELEMENT Ex FLAG=RoomExit>", Secure + "<Ex>north</Ex><Ex>south</Ex>");
+
+        await Assert.That(flags.Select(f => f.Text)).IsEquivalentTo(
+            new[] { "north", "south" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
+    [Arguments("<SEND href=go>a</SEND><SEND href=go>b</SEND>")]
+    [Arguments("<A href='https://example.com/'>a</A><A href='https://example.com/'>b</A>")]
+    [Arguments("<SEND href='go|look'>a</SEND><SEND href='go|look'>b</SEND>")]
+    public async Task TwoEqualLinksSideBySideAreTwoSpans(string markup)
+    {
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var line = Lines(parser, Secure + markup)[0]!;
+
+        await Assert.That(line.Spans.Where(s => s.IsInteractive).Select(s => s.Text)).IsEquivalentTo(
+            new[] { "a", "b" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
+    public async Task OneLinkStaysOneSpanAcrossALookAlikeBoundary()
+    {
+        var parser = new MarkupLineParser(ContentFormat.Mxp);
+        var line = Lines(parser, Secure + "<SEND href=go>a<I></I>b</SEND>")[0]!;
+
+        await Assert.That(line.Spans.Where(s => s.IsInteractive).Select(s => s.Text)).IsEquivalentTo(
+            new[] { "ab" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
     public async Task TheSpecsRoomLineTagsFlagTheirLine()
     {
         var parser = new MarkupLineParser(ContentFormat.Mxp);
