@@ -11,11 +11,12 @@ internal sealed partial class SharpMUTermApp
     private readonly Dictionary<string, int> _chromeBarWidths = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// The cells a bar in <paramref name="windowId"/> may take: its viewport's width, or 0 while the window has no
-    /// arranged pane (the bar then draws its fallback rule, and is redrawn once the pane is laid out).
+    /// The cells a bar in <paramref name="windowId"/> may take: its viewport's width, held to the wrap column
+    /// (<see cref="WrapWidth"/>) since the bar sits in the text that wraps there, or 0 while the window has no arranged
+    /// pane (the bar then draws its fallback rule, and is redrawn once the pane is laid out).
     /// </summary>
     internal int BarWidth(string windowId) =>
-        _paneScrolls.GetValueOrDefault(windowId) is { ViewportWidth: > 0 } panel ? panel.ViewportWidth : 0;
+        _paneScrolls.GetValueOrDefault(windowId) is { ViewportWidth: > 0 } panel ? WrapWidth(panel.ViewportWidth) : 0;
 
     /// <summary>
     /// Redraws the bars of every window whose pane width moved since they were drawn. Rides <c>PostBufferPaint</c>,

@@ -745,6 +745,16 @@ fallbacks) for inline images/maps.
   encoding and `⌃P palette` cells as it needs are given up; meters and the scrollback segment are never given up for
   it, and nothing may wrap the row (the D1 lesson). A change of mode alone repaints the row: `SyncStatusMode` rides
   `PostBufferPaint` as well as freeze, the composer's bands and the scroll path.
+- **F7 ▸ `wrap output at` is a right margin on the output controls, and the NAWS width** (`TextSettings.WrapColumns`,
+  0 = the pane; `SharpMUTermApp.WrapWidth.cs`). `WrapWidth(room)` is the column or the room, whichever is narrower, and
+  it is the one answer for three readers: `ReportPaneSizes` (the width told to the server), `BarWidth` (a buffer bar
+  sits in the wrapped text, so it is as wide as the column) and `InlineImageColumns`. `SyncWrapWidths` (on
+  `PostBufferPaint`, before `SyncChromeBarWidths`) sets each window's control, frozen half and split tail to
+  `Padding(0, 0, viewport − column, 0)`, read off that control's own viewport. **Not a narrower control or pane**: the
+  pane rectangle, dividers, scrollbar, selection and both split layouts are unchanged, and `MeasureRows` already copies
+  a control's padding, so a measured row is still a painted one. Never wider than the pane: a server told more than
+  the pane holds wraps every line twice. The web view is left alone. `WrapColumnTests` reads the painted cells;
+  `NawsPaneReportTests.AWrapColumnIsTheWidthReported…` the report.
 - **F5 ▸ `join wraps` joins the lines a server hard-wrapped** (`ServerWrapJoiner`, Core; `WorldSession.Reflow`;
   `WorldDefinition.JoinWrappedLines`, off by default; the `reflow` view). **A false join is worse than a missed
   one**, so every condition is a reason not to join: the wrap column is known (third-longest of the last 128

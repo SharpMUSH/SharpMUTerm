@@ -132,6 +132,34 @@ public class NawsPaneReportTests
         await Assert.That(left.Last.Width + right.Last.Width).IsLessThan(Width);
     }
 
+    /// <summary>
+    /// F7's wrap column is the width a world is told when the pane is wider, and the pane's own width when it is not:
+    /// the pane's text wraps at the narrower of the two, and a server told more would wrap every line twice.
+    /// </summary>
+    [Test]
+    public async Task AWrapColumnIsTheWidthReported_UnlessThePaneIsNarrower()
+    {
+        Console.SetIn(TextReader.Null);
+        var config = DemoScene.Build();
+        config.Text.WrapColumns = 40;
+        var clock = new ManualTimeProvider();
+        var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height), clock);
+
+        var world = await ConnectedAsync("Wrapped");
+        app.AttachSession(world.Session, "main");
+        app.RenderNextFrame();
+
+        var rect = OutputRectOf(app, "main");
+        await Assert.That(rect.Width).IsGreaterThan(40);
+        await Assert.That(world.Last).IsEqualTo((40, rect.Height));
+
+        // Past the rate limit's window, so the change goes out on the frame rather than after it.
+        config.Text.WrapColumns = 400;
+        clock.Advance(Interval);
+        app.RenderNextFrame();
+        await Assert.That(world.Last).IsEqualTo((rect.Width, rect.Height));
+    }
+
     // --- what the rectangle is ------------------------------------------------
 
     /// <summary>

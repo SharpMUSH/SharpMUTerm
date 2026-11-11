@@ -405,10 +405,10 @@ public class ScreenModelTests
         model.ToggleAt(0, Themes + 1)!.Value.Flip();
         await Assert.That(text.KeepTextLegible).IsFalse();
 
-        model.ToggleAt(0, Themes + 6)!.Value.Flip();
+        model.ToggleAt(0, Themes + 7)!.Value.Flip();
         await Assert.That(text.UnderlineHyperlinks).IsFalse();
 
-        model.ToggleAt(0, Themes + 7)!.Value.Flip();
+        model.ToggleAt(0, Themes + 8)!.Value.Flip();
         await Assert.That(text.DetectLinks).IsFalse();
 
         model.ToggleAt(0, Themes + 5)!.Value.Flip();
@@ -426,6 +426,13 @@ public class ScreenModelTests
         await Assert.That(transparency.Validate("101")).IsNotNull();
         transparency.Set("60");
         await Assert.That(text.BackgroundTransparency).IsEqualTo(60);
+
+        // Row 6 is the wrap column, a count under the emoji row at the foot of TEXT.
+        await Assert.That(model.ToggleAt(0, Themes + 6)).IsNull();
+        var wrap = model.FieldAt(0, Themes + 6, 0)!.Value;
+        await Assert.That(wrap.Validate("501")).IsNotNull();
+        wrap.Set("80");
+        await Assert.That(text.WrapColumns).IsEqualTo(80);
     }
 
     [Test]

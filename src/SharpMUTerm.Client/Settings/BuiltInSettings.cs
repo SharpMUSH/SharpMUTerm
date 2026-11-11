@@ -95,6 +95,10 @@ public static partial class BuiltInSettings
             Flag("emoji", "emoji substitution", TextGroup,
                 c => c.Text.EmojiSubstitution, (c, v) => c.Text.EmojiSubstitution = v,
                 "draw :smile: style codes as the emoji they name", "unicode"),
+            Number("wrap-columns", "wrap output at (columns)", 0, TextSettings.MaxWrapColumns, TextGroup,
+                c => c.Text.WrapColumns, (c, v) => c.Text.WrapColumns = v,
+                "wrap each pane's text at this width and tell the world so over NAWS; 0 wraps at the pane",
+                "width naws columns margin line length"),
 
             Flag("underline-links", "underline hyperlinks", LinksGroup,
                 c => c.Text.UnderlineHyperlinks, (c, v) => c.Text.UnderlineHyperlinks = v,
