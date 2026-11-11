@@ -1088,6 +1088,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _window.PostBufferPaint += (buffer, _, _) =>
         {
             ReportPaneSizes();
+            SyncWrapColumns();
             SyncTabStripWidths();
             SyncTransparentColours();
             SyncTextSizes();
@@ -1709,6 +1710,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SettleScroll();
             LoadLongScene(MainWindowId, 4, first: ScrollbackSceneLines + 1);
             SettleScroll();
+            ReArmWholeFrame();
+        }
+
+        // F5 ▸ wrap at: the demo world wraps its output at 60 columns in a wider pane, and NAWS would say 60.
+        if (string.Equals(view, "wrap-at", StringComparison.OrdinalIgnoreCase) && _config.Worlds.Count > 0)
+        {
+            _config.Worlds[0].WrapColumn = 60;
+            LoadLongScene(MainWindowId, 12);
+            SettleScroll();
+            SettleScroll(); // the first frame sets the margin, the second lays the output out at it
             ReArmWholeFrame();
         }
 
@@ -12179,16 +12190,16 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         // window's native strip draws (SurfaceCatalog.TabStrip).
         var strip = Drawing(SurfaceCatalog.TabStrip, pane.Id, StripModelFor(pane.Id, pane.Tabs, pane.ActiveTab, ActiveCharacterKey()));
         var titles = TabTitles.Strip(strip, _ink, ChipOf(pane.Id));
+        var paneWidth = LastPaneWidth(pane.Id);
         for (var i = 0; i < strip.Tabs.Count; i++)
         {
             var windowId = strip.Tabs[i].WindowId;
             var content = BuildTabContent(pane, windowId, _workspace.FindWindow(windowId)!);
-            if (Host.Chrome.PaneGutter)
-            {
-                // The gutter's row under the strip, for output only: a panel or a map is drawn natively over its pane and
-                // pads itself. Set every time, because a window's control is kept and re-parented across rebuilds.
-                content.Margin = new Margin(0, PaneGutterRowsFor(windowId), 0, 0);
-            }
+
+            // The gutter's row under the strip, for output only (a panel or a map is drawn natively over its pane and pads
+            // itself), and the world's wrap column as a right margin. Set every time, because a window's control is kept
+            // and re-parented across rebuilds; SyncWrapColumns corrects the margin once the pane is arranged.
+            ApplyContentMargin(content, windowId, paneWidth);
 
             builder.AddTab(titles[i], content);
             ids.Add(windowId);
@@ -14505,8 +14516,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                 continue;
             }
 
-            OfferWindowSize(session, (Math.Max(1, rect.Width), Math.Max(1, rect.Height)), now);
-            SuggestJoinWraps(session, rect.Width);
+            // A world that wraps at a column of its own is told that column, whatever the pane; the server formats for the
+            // width the text is read at. Its ragged-wrap check reads the narrower of the two, which is where text wraps.
+            OfferWindowSize(session, (Math.Max(1, ReportedWidth(session, rect.Width)), Math.Max(1, rect.Height)), now);
+            SuggestJoinWraps(session, Math.Min(rect.Width, ReportedWidth(session, rect.Width)));
         }
 
         ArmSizeFlush(now);

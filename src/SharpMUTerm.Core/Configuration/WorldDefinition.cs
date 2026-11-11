@@ -202,6 +202,16 @@ public sealed class WorldDefinition
     public bool JoinWrappedLines { get; set; }
 
     /// <summary>
+    /// The column this world's output wraps at, or 0 to wrap at the pane's width (F5 ▸ <c>wrap at</c>). Off by default.
+    /// Set, it is also the width NAWS reports, so the server formats for the width the text is read at rather than for
+    /// whatever pane the window is in. A pane narrower than it still wraps at the pane: nothing scrolls sideways.
+    /// </summary>
+    public int WrapColumn { get; set; }
+
+    /// <summary>The widest <see cref="WrapColumn"/> F5 offers.</summary>
+    public const int MaxWrapColumn = 500;
+
+    /// <summary>
     /// Whether a connection this world dropped is dialled again on its own (F5 ▸ <c>reconnect</c>). Off by default.
     /// Only a drop the player did not ask for counts: never after Disconnect, Reconnect or quitting, and never after a
     /// server closed the connection within <see cref="Session.AutoReconnect.LogoutWindow"/> of a command the player
@@ -311,6 +321,7 @@ public sealed class WorldDefinition
         DownloadMedia = DownloadMedia,
         GrabPrefix = GrabPrefix,
         JoinWrappedLines = JoinWrappedLines,
+        WrapColumn = WrapColumn,
         AutoReconnect = AutoReconnect,
         CommandSeparator = CommandSeparator,
         AlertOnName = AlertOnName,

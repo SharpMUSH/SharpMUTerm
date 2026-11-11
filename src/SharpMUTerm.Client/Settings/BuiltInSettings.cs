@@ -345,6 +345,13 @@ public static partial class BuiltInSettings
                 (_, w) => w.JoinWrappedLines ? WorldFieldValues.JoinWrapChoices[1] : WorldFieldValues.JoinWrapChoices[0],
                 (_, w, v) => w.JoinWrappedLines = v == WorldFieldValues.JoinWrapChoices[1],
                 "join lines the server wrapped at its own width", "reflow wrap hard"),
+            new NumberField("wrap-at", "wrap at", 0, WorldDefinition.MaxWrapColumn,
+                "wrap output at this many columns and tell the server so; 0 follows the pane")
+            {
+                Group = WorldTextGroup,
+                Keywords = "wrap width columns naws line length",
+                Binding = SettingBinding<int>.ForWorld((_, w) => w.WrapColumn, (_, w, v) => w.WrapColumn = v),
+            },
             WorldChoice("stacking", "command stacking", WorldFieldValues.SeparatorChoices, WorldTextGroup,
                 (_, w) => WorldFieldValues.SeparatorName(w.CommandSeparator),
                 (_, w, v) => w.CommandSeparator = WorldFieldValues.SeparatorOf(v),

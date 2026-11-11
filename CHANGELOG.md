@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- A world's output can wrap at a set width. F5 ▸ *wrap at* takes a number of columns: the game's text then wraps there
+  instead of at the pane's edge, and the game is told that width (NAWS), so it formats for it whatever size the pane is.
+  A pane narrower than the setting still wraps at the pane. `0`, the default, follows the pane as before. In the
+  terminal and the desktop window alike.
+
 - Text size and zoom in the desktop window. Ctrl+= and Ctrl+- zoom the whole window in and out, as a browser does
   (50% to 300%), Ctrl+0 goes back to 100%, and so does Ctrl with the mouse wheel or the output's right-click menu. The
   zoom is kept between runs. *Text size & zoom* in the settings window (or the command palette) sets the game text's
