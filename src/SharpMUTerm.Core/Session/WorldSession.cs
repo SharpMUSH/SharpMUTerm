@@ -557,6 +557,9 @@ public sealed class WorldSession : IAsyncDisposable
 
     public bool IsConnected => _telnet?.IsConnected == true;
 
+    /// <summary>Whether the server has taken over echo, as it can do at a password prompt.</summary>
+    public bool ServerEchoesInput => _telnet?.ServerEchoesInput == true;
+
     /// <summary>
     /// The encoding this session's text is actually going over the wire in, and why — negotiated by
     /// CHARSET, pinned by the world, or assumed because nothing negotiated. Null when there is no
@@ -1158,37 +1161,42 @@ public sealed class WorldSession : IAsyncDisposable
     /// <summary>
     /// Handles a line the player <em>typed</em> on the command line: the world's command stacking first
     /// (<see cref="Input.TypedCommands"/> — <c>n;e;e</c>, <c>#3 kill rat</c>), then each command through
-    /// <see cref="SendUserInputAsync"/>'s alias expansion. The line is echoed once, as typed. A composed post, a
-    /// grab and a script go through <see cref="SendUserInputAsync"/> or <see cref="SendRawAsync"/> instead, so a
+    /// <see cref="SendUserInputAsync"/>'s alias expansion. An accepted line is echoed once, with credential
+    /// lines hidden. A composed post, a grab and a script go through <see cref="SendUserInputAsync"/> or
+    /// <see cref="SendRawAsync"/> instead, so a
     /// <c>;</c> in a post is never a command boundary.
     /// </summary>
     public async Task SendTypedAsync(string input, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
         var stacked = Input.TypedCommands.Expand(input, World.CommandSeparator);
-        Echo(input);
         if (stacked.Refusal is { } refusal)
         {
             PrintSystem($"*** {refusal}");
             return;
         }
 
+        Echo(input, stacked.Commands);
         foreach (var command in stacked.Commands)
         {
             await ExpandAndSendAsync(command, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private void Echo(string input)
+    private void Echo(string input, IReadOnlyList<string>? commands = null)
     {
-        // Two switches, and both have to be on: the world's (some servers echo for you, some don't)
-        // and F8's app-wide one. The app-wide one is read per line, not captured, so unticking it
-        // stops the echo on the next command rather than the next session.
-        if (World.LocalEcho && _input?.LocalEcho != false)
+        // A server can take over echo during a password prompt. Otherwise both the world's and
+        // the app-wide local echo settings must be on.
+        if (!ServerEchoesInput && World.LocalEcho && _input?.LocalEcho != false)
         {
-            Print(StyledLine.FromText(input, EchoStyle));
+            var hidden = Input.HistorySecrets.CarriesCredential(input, World.CommandSeparator)
+                || commands?.Any(command => Input.HistorySecrets.CarriesCredential(command, null)) == true;
+            Print(StyledLine.FromText(hidden ? CredentialHidden : input, EchoStyle));
         }
     }
+
+    /// <summary>What local echo and the transcript show in place of a line carrying a password.</summary>
+    public const string CredentialHidden = "(credential command hidden)";
 
     private async Task ExpandAndSendAsync(string input, CancellationToken cancellationToken)
     {

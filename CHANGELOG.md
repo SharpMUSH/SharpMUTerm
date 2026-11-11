@@ -55,6 +55,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- A password is no longer echoed into the output or written to the session log. When a game takes over echo at its
+  password prompt (telnet `WILL ECHO`), the line you send is not echoed locally or kept in command history, and echo
+  comes back when the game hands it back. A typed `connect <name> <password>`, including one inside a stacked line
+  such as `look;connect …`, is shown as `(credential command hidden)` and is kept out of history; the game still gets
+  the real line.
+
 - Desktop overlays follow modal visibility changes on the client UI thread, avoiding background-thread reads of changing pane layouts.
 
 - The desktop window answers terminal cell-pixel queries with its actual measured pixels, allowing

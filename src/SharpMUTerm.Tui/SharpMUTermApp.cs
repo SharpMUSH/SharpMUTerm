@@ -5548,8 +5548,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     {
         // The entered command clears this window's draft for the bar it came from and its unsent-input
         // marker, and joins that bar's draft-safe history so ↑/↓ can recall it without clobbering a
-        // future draft. The bar has already emptied itself — ⏎ never moves the caret off it.
-        HistoryFor(bar).Add(command);
+        // future draft. A server echo window can carry a standalone password, so skip history in
+        // that case. The bar has already emptied itself — ⏎ never moves the caret off it.
+        if (SendTarget()?.ServerEchoesInput != true)
+        {
+            HistoryFor(bar).Add(command);
+        }
         var windowId = ActiveWindowId();
         _drafts.Clear(windowId, bar);
         _workspace.SetUnsentInput(windowId, AnyBarHasText());
@@ -6014,9 +6018,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <c>WorldSession.SendLoginAsync</c> → <c>SendRawAsync</c>, which never touches the UI's history at
     /// all; the line this is for is the one someone types on a world they have not configured yet.
     /// </para>
+    /// <para>
+    /// Judged as typed, stacking included: <c>look;#1 connect Corvid hunter2</c> is dropped on a world whose separator
+    /// is <c>;</c>, refused stack or not (<see cref="HistorySecrets.CarriesCredential"/>).
+    /// </para>
     /// </summary>
     private bool IgnoreForHistory(string command) =>
-        _config.Input.ExcludeCredentials && HistorySecrets.LooksLikeCredential(command);
+        _config.Input.ExcludeCredentials
+        && HistorySecrets.CarriesCredential(command, SendTarget()?.World.CommandSeparator);
 
     /// <summary>
     /// Which command line the ⌃R surface is showing the history of, in words — the second bar has its own

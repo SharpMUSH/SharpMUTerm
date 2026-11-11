@@ -58,12 +58,13 @@ public class HistorySearchEndToEndTests
     /// absence of a fifth line mean something.
     /// </para>
     /// </summary>
-    private static async Task<(SharpMUTermApp App, Transports Telnet)> Demo(string? password = null)
+    private static async Task<(SharpMUTermApp App, Transports Telnet)> Demo(string? password = null, string? separator = null)
     {
         Console.SetIn(TextReader.Null);
 
         var config = DemoScene.Build();
         config.Worlds[0].Characters[0].Password = password;
+        config.Worlds[0].CommandSeparator = separator;
 
         var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
         var telnet = new Transports();
@@ -446,6 +447,43 @@ public class HistorySearchEndToEndTests
         await Assert.That(app.ArmedInputText).IsEqualTo("look");
         app.SimulateKey(Bare(ConsoleKey.UpArrow));
         await Assert.That(app.ArmedInputText).IsEqualTo("look"); // there is nothing older
+    }
+
+    [Test]
+    public async Task ServerEchoKeepsStandalonePasswordOutOfHistory()
+    {
+        var (app, telnet) = await Demo();
+        const string secret = "standalone-password";
+        var connection = telnet.Opened.Single();
+        connection.ServerEchoesInput = true;
+        Send(app, secret);
+
+        connection.ServerEchoesInput = false;
+        Send(app, "look");
+
+        await Assert.That(telnet.Sent).Contains(secret);
+        await Assert.That(app.HistoryEntries(InputBar.Primary)).DoesNotContain(secret);
+        await Assert.That(app.HistoryEntries(InputBar.Primary)).Contains("look");
+    }
+
+    /// <summary>
+    /// A stacked line is judged as typed: a login inside it keeps the whole line out of history, whether the stack is
+    /// sent (<c>#1</c>) or refused (<c>#101</c>, past the repeat cap), and the echo and the wire behave as they would.
+    /// </summary>
+    [Test]
+    [Arguments("#1")]
+    [Arguments("#101")]
+    public async Task AStackedLoginIsKeptOutOfHistoryAndSearch(string repeat)
+    {
+        var (app, _) = await Demo(separator: ";");
+        const string secret = "stacked-secret";
+
+        Send(app, $"look;{repeat} connect Corvid {secret}");
+        Send(app, "inventory");
+
+        await Assert.That(app.HistoryEntries(InputBar.Primary).Any(e => e.Contains(secret, StringComparison.Ordinal)))
+            .IsFalse();
+        await Assert.That(app.HistoryEntries(InputBar.Primary)).Contains("inventory");
     }
 
     /// <summary>
