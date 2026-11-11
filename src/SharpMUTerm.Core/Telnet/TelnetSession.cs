@@ -329,6 +329,7 @@ public sealed class TelnetSession : ITelnetSession
     private CancellationTokenSource? _loopCts;
     private Task? _readLoop;
     private int _disconnected;
+    private volatile bool _serverEchoesInput;
 
     public TelnetSession(ITransport transport, ILogger? logger = null, TelnetSessionOptions? options = null)
     {
@@ -338,6 +339,8 @@ public sealed class TelnetSession : ITelnetSession
     }
 
     public bool IsConnected => _transport.IsConnected && _interpreter is not null;
+
+    public bool ServerEchoesInput => IsConnected && _serverEchoesInput;
 
     /// <summary>
     /// The encoding this session is decoding and encoding with now, and why — derived, never cached,
@@ -399,6 +402,12 @@ public sealed class TelnetSession : ITelnetSession
     private Encoding Fallback =>
         _options.CharsetOrder is [var first, ..] ? first : Encoding.UTF8;
 
+    public Func<TerminalCellSize?>? TerminalCellSizeProvider { get; set; }
+    private TerminalQueryProtocol? _cellQueries;
+
+    public ValueTask RefreshTerminalCellSizeAsync() =>
+        IsConnected ? _cellQueries?.ReportCellSizeAsync() ?? ValueTask.CompletedTask : ValueTask.CompletedTask;
+
     public event EventHandler<TelnetOutputEventArgs>? OutputReceived;
 
     /// <summary>Raised when <see cref="CurrentEncoding"/> changes — in practice, when CHARSET settles.</summary>
@@ -428,6 +437,7 @@ public sealed class TelnetSession : ITelnetSession
         await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
         _msdpAgreed = false;
         _mxpOn = false;
+        _serverEchoesInput = false;
 
         try
         {
@@ -439,10 +449,13 @@ public sealed class TelnetSession : ITelnetSession
         {
             // Building/wiring the interpreter failed after the socket opened; close it so we
             // don't leak a half-open connection, and stay in the not-connected state.
+            var stopping = _cellQueries?.OnDisabledAsync() ?? ValueTask.CompletedTask;
+            _cellQueries = null;
             _interpreter = null;
             _seeded = null;
             _negotiated = null;
             await _transport.CloseAsync().ConfigureAwait(false);
+            await stopping.ConfigureAwait(false);
             throw;
         }
 
@@ -457,11 +470,16 @@ public sealed class TelnetSession : ITelnetSession
 
     private Task<TelnetInterpreter> BuildInterpreterAsync()
     {
+        _cellQueries = new TerminalQueryProtocol().WithCellSizeProvider(() =>
+            TerminalCellSizeProvider?.Invoke() is { IsValid: true } size
+                ? new TelnetNegotiationCore.Models.TerminalCellSize(size.Width, size.Height)
+                : null);
         TelnetInterpreterBuilder builder = new TelnetInterpreterBuilder()
             .UseMode(TelnetInterpreter.TelnetMode.Client)
             .UseLogger(_logger)
             .OnNegotiation(WriteToTransportAsync)
             .OnSubmit(OnSubmitAsync)
+            .AddPlugin(_cellQueries)
             // Who this client is, for every protocol in the library that names it.
             .WithClientIdentity(Identity())
             // Explicit defaults let NAWS observe negotiation completion, so an early pane report
@@ -474,6 +492,11 @@ public sealed class TelnetSession : ITelnetSession
             // Answers a server's DO NEW-ENVIRON; offers nothing on its own (the unsolicited-negotiation rule).
             .AddPlugin<NewEnvironProtocol>().WithClientEnvironmentVariables(TelnetSessionOptions.MnesIdentity(_options.TerminalTypes))
             .AddPlugin<CharsetProtocol>().WithCharsetOrder(_options.CharsetOrder)
+            .AddPlugin<EchoProtocol>().OnEchoStateChanged(enabled =>
+            {
+                _serverEchoesInput = enabled;
+                return ValueTask.CompletedTask;
+            })
             .AddPlugin<EORProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<SuppressGoAheadProtocol>().OnPrompt(OnPromptAsync)
             .AddPlugin<PacketPatchProtocol>().OnPrompt(OnPromptAsync)
@@ -1023,12 +1046,16 @@ public sealed class TelnetSession : ITelnetSession
 
     public async Task DisconnectAsync()
     {
+        // Disable queued replies immediately, but close transport before awaiting an active socket write.
+        var stopping = _cellQueries?.OnDisabledAsync() ?? ValueTask.CompletedTask;
+        _cellQueries = null;
         if (_loopCts is not null)
         {
             await _loopCts.CancelAsync().ConfigureAwait(false);
         }
 
         await _transport.CloseAsync().ConfigureAwait(false);
+        await stopping.ConfigureAwait(false);
 
         if (_readLoop is not null)
         {

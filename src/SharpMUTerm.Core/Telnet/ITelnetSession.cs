@@ -9,6 +9,9 @@ public interface ITelnetSession : IAsyncDisposable
 {
     bool IsConnected { get; }
 
+    /// <summary>Whether the server has negotiated responsibility for echoing input.</summary>
+    bool ServerEchoesInput => false;
+
     /// <summary>
     /// The encoding this session is decoding and encoding with, and whether CHARSET negotiated it,
     /// the world pinned it, or it is merely what was assumed because nothing negotiated.
@@ -97,6 +100,12 @@ public interface ITelnetSession : IAsyncDisposable
 
     /// <summary>Connects the transport and begins negotiation and the receive loop.</summary>
     Task ConnectAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Measured physical cell pixels, if this host knows them. Read at query time.</summary>
+    Func<TerminalCellSize?>? TerminalCellSizeProvider { get => null; set { } }
+
+    /// <summary>Refresh a previously requested terminal cell report after a zoom or display change.</summary>
+    ValueTask RefreshTerminalCellSizeAsync() => ValueTask.CompletedTask;
 
     /// <summary>Sends a command line to the server (a trailing CR/LF is appended).</summary>
     ValueTask SendLineAsync(string text, CancellationToken cancellationToken = default);

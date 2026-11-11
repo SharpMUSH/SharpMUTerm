@@ -9,6 +9,13 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Text size and zoom in the desktop window. Ctrl+= and Ctrl+- zoom the whole window in and out, as a browser does
+  (50% to 300%), Ctrl+0 goes back to 100%, and so does Ctrl with the mouse wheel or the output's right-click menu. The
+  zoom is kept between runs. *Text size & zoom* in the settings window (or the command palette) sets the game text's
+  size in points and, each on its own, the composer, the header and sidebar, the panels, and menus and dialogs. The
+  panes are re-measured and each game is told its new window size. In a terminal the text size is the terminal's own;
+  help says how to change it there.
+
 - Three ways to start SharpMUTerm, side by side. The Windows install adds *SharpMUTerm (Emulated)* and *SharpMUTerm
   (Native)* to the Start menu beside *SharpMUTerm*, and a SharpMUTerm profile to Windows Terminal. The AppImage offers
   the same two on its launcher's right-click menu once your desktop integrates it, and opens a terminal for the native
@@ -25,7 +32,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
-- Game output is read by MarkupString 2.27.0 instead of SharpMUTerm's own ANSI, MXP and Pueblo readers. What you
+- Inline game images preserve full and partial transparency through Kitty transmission, including the desktop window, instead of losing their alpha channel.
+- Game output is read by MarkupString 2.28.0 instead of SharpMUTerm's own ANSI, MXP and Pueblo readers. What you
   see should not change, with a few exceptions: `&nbsp;` is a non-breaking space; an erase-line sequence now erases;
   Pueblo pictures show an `[image: …]` label; an MXP picture that would cover text the world wrote shows inline
   instead; and a world's link whose address is not a web address (such as one that spells out a command) is shown
@@ -51,6 +59,31 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   each closed group saying how many settings it holds and how many are changed.
 
 ### Fixed
+
+- Abbreviated login commands such as `c name password` and `con name password` are hidden from local echo,
+  transcripts and credential-filtered command history, including when used inside a command stack.
+
+- A password is no longer echoed into the output or written to the session log. When a game takes over echo at its
+  password prompt (telnet `WILL ECHO`), the line you send is not echoed locally or kept in command history, and echo
+  comes back when the game hands it back. A typed `connect <name> <password>`, including one inside a stacked line
+  such as `look;connect …`, is shown as `(credential command hidden)` and is kept out of history; the game still gets
+  the real line.
+
+- When a game hands echo back after a password prompt (telnet `WONT ECHO`), the client now confirms it with `DONT ECHO`,
+  and it no longer answers every repeated `WILL ECHO`, which two programs can bounce back and forth. (TelnetNegotiationCore
+  4.11.0, was 4.9.0.)
+
+- Desktop overlays follow modal visibility changes on the client UI thread, avoiding background-thread reads of changing pane layouts.
+
+- The desktop window answers terminal cell-pixel queries with its actual measured pixels, allowing
+  servers to size images correctly. Unix terminal mode also reports cells when the terminal publishes
+  an exact pixel extent; unavailable dimensions stay unknown. Servers that asked receive refreshed
+  dimensions after zoom or display-scaling changes, even when the character grid is unchanged.
+  Replies use the opted-in TNC terminal-query plugin and never forward server escapes to the local terminal.
+
+- Desktop MXP images use the measured font cell dimensions when sizing pictures, instead of assuming an 8×16 cell.
+  This avoids stretching pictures when the selected font has a different shape. Explicit server-specified cell boxes
+  stay unchanged, and terminal hosts without measured cells keep their existing sizing.
 
 - Quitting the terminal client turns off the terminal's focus reporting again, so the shell no longer receives
   `ESC [ I` / `ESC [ O` when you switch windows afterwards.

@@ -1,3 +1,6 @@
+using SharpMUTerm.Tui;
+using SkiaSharp;
+
 namespace SharpMUTerm.Avalonia.Tests;
 
 /// <summary>
@@ -6,6 +9,23 @@ namespace SharpMUTerm.Avalonia.Tests;
 /// </summary>
 public class BundledFontTests
 {
+    [Test]
+    public async Task ImageSizingUsesTheViewsMeasuredCellsAfterScaling()
+    {
+        var measurements = await TerminalViewTests.Session.Dispatch(() =>
+        {
+            var driver = new AvaloniaConsoleDriver(80, 24);
+            var view = new TerminalView(driver, SKColors.White, SKColors.Black, 16, null, WindowOptions.DefaultLineHeight);
+            var first = ((IPointerPresenter)driver.Pointer).ImageCellSize;
+            var initial = new ImageCellSize(view.CellExtent.Width, view.CellExtent.Height);
+            view.PrepareScale(1.5);
+            return (first, initial, current: ((IPointerPresenter)driver.Pointer).ImageCellSize,
+                expected: new ImageCellSize(view.CellExtent.Width, view.CellExtent.Height));
+        }, CancellationToken.None);
+        await Assert.That(measurements.first).IsEqualTo(measurements.initial);
+        await Assert.That(measurements.current).IsEqualTo(measurements.expected);
+    }
+
     [Test]
     public async Task TheBundledFacesAreInTheBuild()
     {

@@ -10,10 +10,21 @@ namespace SharpMUTerm.Tui.Tests;
 /// </summary>
 internal sealed class RecordingTelnetSession : ITelnetSession
 {
+    public bool ServerEchoesInput { get; set; }
+
     private readonly List<(int Width, int Height)> _sizes = new();
     private readonly List<string> _lines = new();
 
     public bool IsConnected { get; private set; }
+
+    public Func<TerminalCellSize?>? TerminalCellSizeProvider { get; set; }
+    public List<TerminalCellSize?> CellPixelReports { get; } = [];
+
+    public ValueTask RefreshTerminalCellSizeAsync()
+    {
+        CellPixelReports.Add(TerminalCellSizeProvider?.Invoke());
+        return ValueTask.CompletedTask;
+    }
 
     /// <summary>What this fake reports as in force; a test that cares sets it and raises the event.</summary>
     public SessionEncoding CurrentEncoding { get; set; } =
@@ -28,6 +39,8 @@ internal sealed class RecordingTelnetSession : ITelnetSession
 
     /// <summary>How many times a connection was asked for, refused ones included.</summary>
     public int ConnectAttempts { get; private set; }
+
+    public Action? Connecting { get; set; }
 
     /// <summary>Every NAWS report this session was given, oldest first.</summary>
     public IReadOnlyList<(int Width, int Height)> Sizes
@@ -144,6 +157,7 @@ internal sealed class RecordingTelnetSession : ITelnetSession
             return Task.FromException(fault);
         }
 
+        Connecting?.Invoke();
         IsConnected = true;
         return Task.CompletedTask;
     }

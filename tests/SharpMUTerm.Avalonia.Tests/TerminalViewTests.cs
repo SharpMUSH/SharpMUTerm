@@ -237,7 +237,7 @@ public class TerminalViewTests
             return (labels, ran);
         });
 
-        await Assert.That(labels).IsEquivalentTo(new[] { "True", "-", "False" });
+        await Assert.That(labels).IsEquivalentTo(new[] { "True", "-", "False", "-", "True", "True", "False" });
         await Assert.That(ran).IsEquivalentTo(new[] { "split" });
     }
 

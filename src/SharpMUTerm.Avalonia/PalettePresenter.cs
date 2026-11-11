@@ -30,6 +30,9 @@ internal sealed class PalettePresenter : INativePalette
         _refocus = refocus;
     }
 
+    /// <summary>The window's text sizes, read when a surface opens (MainWindow sets it; designed sizes until then).</summary>
+    public Func<NativeScales> Scales { get; set; } = () => NativeScales.One;
+
     public void Show(PaletteSession session) => Dispatcher.UIThread.Post(() => ShowNow(session));
 
     public void Close() => Dispatcher.UIThread.Post(() =>
@@ -56,7 +59,7 @@ internal sealed class PalettePresenter : INativePalette
             return null;
         }
 
-        var overlay = new PaletteOverlay(session, Remove);
+        var overlay = new PaletteOverlay(session, Remove, Scales());
         _overlay = overlay;
         host.Children.Add(overlay);
         overlay.SearchBox.Focus();

@@ -24,6 +24,26 @@ public class FloatingPanelTests
 {
     private static readonly SKColor Back = new(0x10, 0x20, 0x30);
 
+    [Test]
+    public async Task OneFloatingWindowZoomKeyIsAppliedOnce()
+    {
+        var zoom = await Session.Dispatch(() =>
+        {
+            using var driver = new AvaloniaConsoleDriver(80, 24);
+            var view = new TerminalView(driver, SKColors.White, Back, 16, null);
+            var panel = Floating(PanelIds.Vitals, new FloatingBounds(0, 0, 400, 300), _ => { }, () => { });
+            var window = new FloatingPanelWindow(panel, view);
+            window.Show();
+            try
+            {
+                window.KeyPressQwerty(global::Avalonia.Input.PhysicalKey.Equal, global::Avalonia.Input.RawInputModifiers.Control);
+                return view.ZoomPercent;
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+        await Assert.That(zoom).IsEqualTo(110);
+    }
+
     // ── The client's half ────────────────────────────────────────────────────────────────────────
 
     [Test]

@@ -59,6 +59,9 @@ internal sealed class ModalPresenter : INativeModals
         _attached = true;
     }
 
+    /// <summary>The window's text sizes, read when a surface opens (MainWindow sets it; designed sizes until then).</summary>
+    public Func<NativeScales> Scales { get; set; } = () => NativeScales.One;
+
     public void Show(ModalSession session) => Dispatcher.UIThread.Post(() => ShowNow(session));
 
     public void Close(ModalSession session) => Dispatcher.UIThread.Post(() =>
@@ -83,7 +86,7 @@ internal sealed class ModalPresenter : INativeModals
         }
 
         var previousFocus = TopLevel.GetTopLevel(root)?.FocusManager?.GetFocusedElement();
-        var overlay = new ModalOverlay(session, Remove, Forward);
+        var overlay = new ModalOverlay(session, Remove, Forward, Scales());
         if (session.AlwaysInFront)
         {
             if (_quit is { } old)

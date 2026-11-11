@@ -22,6 +22,17 @@ internal static class WindowHost
     public static ReservedChord WindowedFullScreen { get; } = new(
         new HostChord(ConsoleKey.F11, ConsoleModifiers.Shift, "Shift+F11", "Shift+F11"), "goes in and out of windowed full screen");
 
+    public static IReadOnlyList<ReservedChord> Zoom { get; } =
+    [
+        new(new HostChord(ConsoleKey.OemPlus, ConsoleModifiers.Control, "Ctrl+=", "Ctrl+="), "zooms in"),
+        new(new HostChord(ConsoleKey.OemPlus, ConsoleModifiers.Control | ConsoleModifiers.Shift, "Ctrl++", "Ctrl++"), "zooms in"),
+        new(new HostChord(ConsoleKey.Add, ConsoleModifiers.Control, "Ctrl+Add", "Ctrl+Add"), "zooms in"),
+        new(new HostChord(ConsoleKey.OemMinus, ConsoleModifiers.Control, "Ctrl+-", "Ctrl+-"), "zooms out"),
+        new(new HostChord(ConsoleKey.Subtract, ConsoleModifiers.Control, "Ctrl+Subtract", "Ctrl+Subtract"), "zooms out"),
+        new(new HostChord(ConsoleKey.D0, ConsoleModifiers.Control, "Ctrl+0", "Ctrl+0"), "resets terminal zoom"),
+        new(new HostChord(ConsoleKey.NumPad0, ConsoleModifiers.Control, "Ctrl+NumPad0", "Ctrl+NumPad0"), "resets terminal zoom"),
+    ];
+
     /// <summary>Paste is the window's, on the terminal conventions, so a bare ⌃V still reaches the client as a key.</summary>
     public static IReadOnlyList<ReservedChord> Paste { get; } =
     [
@@ -36,7 +47,7 @@ internal static class WindowHost
     public static HostKeys Keys { get; } = new()
     {
         Newline = new HostChord(ConsoleKey.Enter, ConsoleModifiers.Control, "Ctrl+⏎", "Ctrl+Enter"),
-        Reserved = [Maximise, FullScreen, WindowedFullScreen, .. Paste],
+        Reserved = [Maximise, FullScreen, WindowedFullScreen, .. Paste, .. Zoom],
 
         // Avalonia reports the key and its modifiers: ⌃digit, ⌃⇧letter, ⌃Tab and ⌥O arrive as themselves.
         ReportsChordsWhole = true,
@@ -59,6 +70,7 @@ internal static class WindowHost
     {
         var host = Build(driver, clipboard, emulated ? HostChrome.None : chrome);
         driver.Pointer.CellsOnly = emulated;
+        driver.TextSize.SizesAreas = !emulated;
         return emulated
             ? host with
             {
@@ -87,6 +99,7 @@ internal static class WindowHost
         Keys = Keys,
         RunsInline = false,
         Pointer = driver.Pointer,
+        CellMetrics = driver.CellMetrics,
         SixelCell = SharpMUTermApp.SixelCellSize(null),
 
         // The same desktop device as the terminal: both are desktop processes on the same machine.
@@ -131,6 +144,9 @@ internal static class WindowHost
 
         // F7's background transparency is drawn here: every plane at the level, over a translucent desktop window.
         Translucency = driver.Translucency,
+
+        // The Text size page and the zoom: the window draws its cells and its native views at the sizes the client says.
+        TextSize = driver.TextSize,
 
         // Set by the live launch alone (ClientLaunch.Run), so the demo and every test ask GitHub nothing.
         Updates = null,

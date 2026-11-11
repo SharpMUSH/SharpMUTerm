@@ -104,6 +104,18 @@ public static class BuiltInCommands
     /// <summary>Windowed full screen, and back (⇧F11 in the window): a borderless window the size of the screen.</summary>
     public const string WindowedFullScreenCommand = "window:windowed-full-screen";
 
+    /// <summary>Zooms the window in a step (Ctrl+= in the window). Offered only by a host that draws its own text.</summary>
+    public const string ZoomInCommand = "window:zoom-in";
+
+    /// <summary>Zooms the window out a step (Ctrl+- in the window).</summary>
+    public const string ZoomOutCommand = "window:zoom-out";
+
+    /// <summary>Puts the window's zoom back to 100% (Ctrl+0 in the window).</summary>
+    public const string ZoomResetCommand = "window:zoom-reset";
+
+    /// <summary>Opens the Text size &amp; zoom page (the window only).</summary>
+    public const string TextSizeCommand = "window:text-size";
+
     /// <summary>Asks the release feed for a newer SharpMUTerm now, whatever F7's <c>check for updates</c> says.</summary>
     public const string CheckUpdatesCommand = "app:check-updates";
 
@@ -273,6 +285,18 @@ public static class BuiltInCommands
         Add(WindowedFullScreenCommand, CommandGroup.Layout, "Windowed full screen", "⇧F11", "a borderless window the size of the screen",
             when: c => c.State.WindowMode is not null,
             titleFor: c => c.State.WindowMode == Core.Configuration.WindowMode.WindowedFullScreen ? "Leave windowed full screen" : "Windowed full screen");
+        // Zoom, where the host draws its own text (TextZoom is null in a terminal, whose emulator zooms its own font).
+        Add(ZoomInCommand, CommandGroup.Layout, "Zoom in", "⌃=", "make everything in the window bigger",
+            when: c => c.State.TextZoom is { } zoom && zoom < Core.Configuration.ZoomLevels.Maximum,
+            titleFor: c => "Zoom in to " + Core.Configuration.ZoomLevels.Label(Core.Configuration.ZoomLevels.Next(c.State.TextZoom ?? 100)));
+        Add(ZoomOutCommand, CommandGroup.Layout, "Zoom out", "⌃-", "make everything in the window smaller",
+            when: c => c.State.TextZoom is { } zoom && zoom > Core.Configuration.ZoomLevels.Minimum,
+            titleFor: c => "Zoom out to " + Core.Configuration.ZoomLevels.Label(Core.Configuration.ZoomLevels.Previous(c.State.TextZoom ?? 100)));
+        Add(ZoomResetCommand, CommandGroup.Layout, "Reset zoom", "⌃0", "back to 100% · sizes by area are on the Text size page",
+            when: c => c.State.TextZoom is { } zoom && zoom != 100,
+            titleFor: c => "Reset zoom (" + Core.Configuration.ZoomLevels.Label(c.State.TextZoom ?? 100) + ")");
+        Add(TextSizeCommand, CommandGroup.Settings, "Text size & zoom…", detail: "font sizes for the output, composer, panels and menus",
+            when: c => c.State.TextSizePage);
         Add("term:walk-stop", CommandGroup.Map, "Stop walking", detail: "ends the speedwalk", when: c => c.State.Walking);
 
         // Game sound, for this run. The levels and the off switch are F7's; this is the quick one.

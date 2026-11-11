@@ -12,6 +12,12 @@ public class HistorySecretsTests
     /// <summary>The lines that must never be recorded, in the spellings a user actually types.</summary>
     [Test]
     [Arguments("connect Corvid hunter2")]
+    [Arguments("c Corvid hunter2")]
+    [Arguments("co Corvid hunter2")]
+    [Arguments("Con Corvid hunter2")]
+    [Arguments("conn Corvid hunter2")]
+    [Arguments("conne Corvid hunter2")]
+    [Arguments("connec Corvid hunter2")]
     [Arguments("CONNECT Corvid hunter2")]          // MU* dispatch is case-insensitive; so is this
     [Arguments("connect  Corvid   hunter2")]        // runs of spaces are one separator
     [Arguments("cd Corvid hunter2")]                // connect-dark
@@ -33,6 +39,9 @@ public class HistorySecretsTests
     [Test]
     [Arguments("connect")]
     [Arguments("connect guest")]
+    [Arguments("c guest")]
+    [Arguments("con guest")]
+    [Arguments("connection Corvid hunter2")]
     [Arguments("cd")]
     [Arguments("create")]
     [Arguments("@password")]
@@ -59,5 +68,32 @@ public class HistorySecretsTests
     {
         await Assert.That(HistorySecrets.Verbs).Contains("connect");
         await Assert.That(HistorySecrets.Verbs).Contains("@password");
+    }
+    /// <summary>A typed line is judged as typed: any physical line, and any stacked piece once its repeat is stripped.</summary>
+    [Test]
+    [Arguments("connect Corvid hunter2", null)]
+    [Arguments("look\nconnect Corvid hunter2", null)]
+    [Arguments("look;connect Corvid hunter2", ";")]
+    [Arguments("look;#1 connect Corvid hunter2", ";")]
+    [Arguments("look;#101 connect Corvid hunter2", ";")]   // a refused stack is still kept out
+    [Arguments("look;#1 con Corvid hunter2", ";")]
+    [Arguments("look;#101 con Corvid hunter2", ";")]
+    [Arguments("look | @password old=new", "|")]
+    [Arguments("look;;connect Corvid hunter2", ";;")]
+    public async Task AStackedOrMultiLineLoginCarriesACredential(string line, string? separator)
+    {
+        await Assert.That(HistorySecrets.CarriesCredential(line, separator)).IsTrue();
+    }
+
+    [Test]
+    [Arguments("look;connect Corvid hunter2", null)]       // no stacking: `look;connect` is the verb
+    [Arguments("look;#1 connect guest", ";")]
+    [Arguments("look;say connect Corvid hunter2", ";")]
+    [Arguments("#3 north", ";")]
+    [Arguments("", ";")]
+    [Arguments(null, ";")]
+    public async Task OtherLinesDoNot(string? line, string? separator)
+    {
+        await Assert.That(HistorySecrets.CarriesCredential(line, separator)).IsFalse();
     }
 }
