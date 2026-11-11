@@ -31,8 +31,10 @@ public static class HistorySecrets
     /// The MU* login verbs, which take <c>&lt;name&gt; &lt;password&gt;</c>. <c>cd</c> is connect-dark and
     /// <c>ch</c> connect-hidden (PennMUSH/TinyMUX wizard variants), and both take the same two arguments;
     /// <c>create</c> chooses a password rather than presenting one, which is no less a secret.
+    /// PennMUSH also accepts every nonempty prefix of <c>connect</c> at login.
     /// </summary>
-    private static readonly string[] LoginVerbs = { "connect", "cd", "ch", "create" };
+    private static readonly string[] LoginVerbs =
+        { "connect", "c", "co", "con", "conn", "conne", "connec", "cd", "ch", "create" };
 
     /// <summary>
     /// Verbs whose <em>first</em> argument is already the secret — <c>@password old=new</c>,

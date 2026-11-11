@@ -147,16 +147,19 @@ public class PasswordLeakTests
     }
 
     [Test]
-    [Arguments(true)]
-    [Arguments(false)]
-    public async Task ALoginCommandReachesTelnetButIsHiddenInTheEcho(bool typed)
+    [Arguments(true, "connect")]
+    [Arguments(false, "connect")]
+    [Arguments(true, "con")]
+    [Arguments(false, "con")]
+    [Arguments(true, "c")]
+    public async Task ALoginCommandReachesTelnetButIsHiddenInTheEcho(bool typed, string verb)
     {
         var log = new RecordingSink();
         var telnet = new FakeTelnetSession();
         var session = new WorldSession(World(), sessionFactory: _ => telnet, log: log);
         await session.ConnectAsync();
 
-        var command = $"connect Corvid {Secret}";
+        var command = $"{verb} Corvid {Secret}";
         if (typed)
         {
             await session.SendTypedAsync(command);
