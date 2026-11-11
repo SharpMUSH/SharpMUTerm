@@ -95,6 +95,23 @@ public class StyledTextTests
     }
 
     [Test]
+    public async Task StripColour_KeepsTwoEqualLinksSideBySideApart()
+    {
+        // The parser leaves two look-alike links as two spans only when they are two elements.
+        var style = new TextStyle(TerminalColor.FromIndex(2), TerminalColor.Default, TextAttributes.None);
+        var line = new StyledLine(new[]
+        {
+            new StyledSpan("a", style, SpanInteraction.Command("go")),
+            new StyledSpan("b", style, SpanInteraction.Command("go")),
+        });
+
+        var stripped = StyledText.StripColour(line);
+
+        await Assert.That(stripped.Spans.Select(s => s.Text)).IsEquivalentTo(
+            new[] { "a", "b" }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
     public async Task StripColour_LeavesAnUncolouredLineExactlyAsItWas()
     {
         var line = StyledLine.FromText("plain", TextStyle.Default);
