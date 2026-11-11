@@ -21,7 +21,7 @@ internal static class SnapshotViews
         "menu", "menu-split", "menu-fuzzy", "menu-recent", "menu-alerts", "menu-scrolled", "messages", "notices", "quit", "connections", "characters",
         "tint", "tint-input", "tint-input-moved", "tint-tabs",
         "compose", "compose-literal", "compose-preview", "moo-edit", "mssp", "mssp-none", "mssp-never", "web",
-        "rail-long", "scrollback", "scrollback-up", "scrollback-split", "reflow", "links", "away", "away-scrollback",
+        "rail-long", "scrollback", "scrollback-up", "scrollback-split", "reflow", "wrap-at", "links", "away", "away-scrollback",
         "search", "search-regex", "search-all", "search-landed", "activity-bar",
         "mxp-image", "mxp-figure", "input-selection", "selection", "trigger-builder",
         "prefix", "prefix-panel", "focus", "focus-moved", "tabs", "tabs-many",

@@ -78,19 +78,19 @@ internal static class WorldsScreenRenderer
     internal const int EmojiField = 10;
 
     /// <summary><see cref="MapSettings.RoomNamePattern"/>: the line naming a room, for a game that sends no GMCP room.</summary>
-    internal const int MapRoomField = 17;
+    internal const int MapRoomField = 18;
 
     /// <summary><see cref="MapSettings.ExitsPattern"/>: the line listing a room's exits.</summary>
-    internal const int MapExitsField = 18;
+    internal const int MapExitsField = 19;
 
     /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
-    internal const int WalkFailField = 19;
+    internal const int WalkFailField = 20;
 
     /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
-    internal const int SoundsField = 20;
+    internal const int SoundsField = 21;
 
     /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
-    internal const int GrabField = 13;
+    internal const int GrabField = 14;
 
     /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
     internal const int GmcpLoginField = 8;
@@ -99,28 +99,31 @@ internal static class WorldsScreenRenderer
     internal const int DiscordField = 9;
 
     /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
-    internal const int WorldLayoutField = 21;
+    internal const int WorldLayoutField = 22;
 
     /// <summary><see cref="WorldDefinition.Avatar"/>: the world's picture for the sidebar, which its characters fall back to.</summary>
-    internal const int WorldAvatarField = 22;
+    internal const int WorldAvatarField = 23;
 
     /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
     internal const int JoinWrapsField = 11;
+
+    /// <summary><see cref="WorldDefinition.WrapColumn"/>: the column output wraps at and NAWS reports, or 0 for the pane.</summary>
+    internal const int WrapColumnField = 12;
 
     /// <summary><see cref="WorldDefinition.AutoReconnect"/>, as one of <see cref="ReconnectChoices"/>.</summary>
     internal const int ReconnectField = 5;
 
     /// <summary><see cref="WorldDefinition.CommandSeparator"/>, as one of <see cref="SeparatorChoices"/>.</summary>
-    internal const int StackingField = 12;
+    internal const int StackingField = 13;
 
     /// <summary><see cref="WorldDefinition.AlertOnPage"/> and <see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
-    internal const int AlertOnField = 14;
+    internal const int AlertOnField = 15;
 
     /// <summary><see cref="WorldDefinition.CaptureChannels"/>, as one of <see cref="ChannelCaptureChoices"/>.</summary>
-    internal const int CaptureChannelsField = 15;
+    internal const int CaptureChannelsField = 16;
 
     /// <summary><see cref="WorldDefinition.HighlightNames"/>: <c>Name=colour, …</c>.</summary>
-    internal const int HighlightNamesField = 16;
+    internal const int HighlightNamesField = 17;
 
     /// <summary>F5's words for <see cref="WorldDefinition.CaptureChannels"/>.</summary>
     internal static readonly IReadOnlyList<string> ChannelCaptureChoices = WorldFieldValues.ChannelCaptureChoices;
@@ -783,7 +786,7 @@ internal static class WorldsScreenRenderer
     [
         "name", "host", "port", "encoding", "keepalive", "reconnect",
         "content", "gmcp-modules", "gmcp-login", "discord",
-        "emoji", "join-wraps", "stacking", "edit-grab",
+        "emoji", "join-wraps", "wrap-at", "stacking", "edit-grab",
         "alert-on", "capture-channels", "highlight-names",
         "map-room", "map-exits", "walk-fail",
         "sounds", "layout", "avatar",
@@ -1063,6 +1066,13 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 JoinWrapsField),
+            ["wrap-at"] = Field(
+                world.WrapColumn > 0
+                    ? $"[{Value}]{world.WrapColumn.ToString(CultureInfo.InvariantCulture)} columns · NAWS says so[/]"
+                    : $"[{Label}]pane · 0 follows the pane's width[/]",
+                cursor,
+                selectedWorld,
+                WrapColumnField),
             ["stacking"] = Field(
                 world.CommandSeparator is { } separator
                     ? $"[{Value}]{Escape(separator)} splits · #3 repeats[/]"
