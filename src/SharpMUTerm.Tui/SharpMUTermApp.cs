@@ -6018,9 +6018,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <c>WorldSession.SendLoginAsync</c> → <c>SendRawAsync</c>, which never touches the UI's history at
     /// all; the line this is for is the one someone types on a world they have not configured yet.
     /// </para>
+    /// <para>
+    /// Judged as typed, stacking included: <c>look;#1 connect Corvid hunter2</c> is dropped on a world whose separator
+    /// is <c>;</c>, refused stack or not (<see cref="HistorySecrets.CarriesCredential"/>).
+    /// </para>
     /// </summary>
     private bool IgnoreForHistory(string command) =>
-        _config.Input.ExcludeCredentials && HistorySecrets.LooksLikeCredential(command);
+        _config.Input.ExcludeCredentials
+        && HistorySecrets.CarriesCredential(command, SendTarget()?.World.CommandSeparator);
 
     /// <summary>
     /// Which command line the ⌃R surface is showing the history of, in words — the second bar has its own

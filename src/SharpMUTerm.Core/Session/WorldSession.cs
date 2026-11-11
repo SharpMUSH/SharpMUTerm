@@ -1189,13 +1189,14 @@ public sealed class WorldSession : IAsyncDisposable
         // the app-wide local echo settings must be on.
         if (!ServerEchoesInput && World.LocalEcho && _input?.LocalEcho != false)
         {
-            var containsCredential = ContainsCredential(input) || commands?.Any(ContainsCredential) == true;
-            Print(StyledLine.FromText(containsCredential ? "(credential command hidden)" : input, EchoStyle));
+            var hidden = Input.HistorySecrets.CarriesCredential(input, World.CommandSeparator)
+                || commands?.Any(command => Input.HistorySecrets.CarriesCredential(command, null)) == true;
+            Print(StyledLine.FromText(hidden ? CredentialHidden : input, EchoStyle));
         }
-
-        static bool ContainsCredential(string text) =>
-            text.Split(['\r', '\n']).Any(Input.HistorySecrets.LooksLikeCredential);
     }
+
+    /// <summary>What local echo and the transcript show in place of a line carrying a password.</summary>
+    public const string CredentialHidden = "(credential command hidden)";
 
     private async Task ExpandAndSendAsync(string input, CancellationToken cancellationToken)
     {

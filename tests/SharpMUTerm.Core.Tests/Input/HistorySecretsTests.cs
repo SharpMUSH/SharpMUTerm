@@ -60,4 +60,29 @@ public class HistorySecretsTests
         await Assert.That(HistorySecrets.Verbs).Contains("connect");
         await Assert.That(HistorySecrets.Verbs).Contains("@password");
     }
+    /// <summary>A typed line is judged as typed: any physical line, and any stacked piece once its repeat is stripped.</summary>
+    [Test]
+    [Arguments("connect Corvid hunter2", null)]
+    [Arguments("look\nconnect Corvid hunter2", null)]
+    [Arguments("look;connect Corvid hunter2", ";")]
+    [Arguments("look;#1 connect Corvid hunter2", ";")]
+    [Arguments("look;#101 connect Corvid hunter2", ";")]   // a refused stack is still kept out
+    [Arguments("look | @password old=new", "|")]
+    [Arguments("look;;connect Corvid hunter2", ";;")]
+    public async Task AStackedOrMultiLineLoginCarriesACredential(string line, string? separator)
+    {
+        await Assert.That(HistorySecrets.CarriesCredential(line, separator)).IsTrue();
+    }
+
+    [Test]
+    [Arguments("look;connect Corvid hunter2", null)]       // no stacking: `look;connect` is the verb
+    [Arguments("look;#1 connect guest", ";")]
+    [Arguments("look;say connect Corvid hunter2", ";")]
+    [Arguments("#3 north", ";")]
+    [Arguments("", ";")]
+    [Arguments(null, ";")]
+    public async Task OtherLinesDoNot(string? line, string? separator)
+    {
+        await Assert.That(HistorySecrets.CarriesCredential(line, separator)).IsFalse();
+    }
 }
