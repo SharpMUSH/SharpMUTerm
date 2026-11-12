@@ -274,13 +274,14 @@ public sealed class MarkupLineParser
         var panes = new List<(string Name, List<StyledSpan> Spans)>();
         var lineFrame = FrameName(decoded.Destination);
         MxpFlagMarkup? flagSeen = null;
+        var elements = new Dictionary<List<StyledSpan>, ElementMarkup?>(ReferenceEqualityComparer.Instance);
         var at = 0;
 
         foreach (var run in content.Runs)
         {
             if (run.Start > at)
             {
-                Add(main, content.Text.Substring(at, run.Start - at), TextStyle.Default, null);
+                Add(main, content.Text.Substring(at, run.Start - at), TextStyle.Default, null, null, elements);
             }
 
             at = run.End;
@@ -291,7 +292,7 @@ public sealed class MarkupLineParser
             }
 
             var text = content.Text.Substring(run.Start, run.Length);
-            var (style, interaction, pane, flag) = Style(markups, ref text);
+            var (style, interaction, pane, flag, element) = Style(markups, ref text);
             if (flag is not null)
             {
                 flagSeen = flag;
@@ -307,16 +308,16 @@ public sealed class MarkupLineParser
                     target = panes.Count - 1;
                 }
 
-                Add(panes[target].Spans, text, style, interaction);
+                Add(panes[target].Spans, text, style, interaction, element, elements);
                 continue;
             }
 
-            Add(main, text, style, interaction);
+            Add(main, text, style, interaction, element, elements);
         }
 
         if (at < content.Text.Length)
         {
-            Add(main, content.Text[at..], TextStyle.Default, null);
+            Add(main, content.Text[at..], TextStyle.Default, null, null, elements);
         }
 
         EndFlags(flagSeen, lineEnd: true);
@@ -340,14 +341,21 @@ public sealed class MarkupLineParser
         return (line, panes.Count > 0);
     }
 
-    private static void Add(List<StyledSpan> spans, string text, TextStyle style, SpanInteraction? interaction)
+    /// <summary>
+    /// Appends text to a span list, joining it to the last span when it looks the same and belongs to the same element:
+    /// two links, pictures or exits side by side that look alike stay two spans. <paramref name="elements"/> holds the
+    /// element of each list's last span.
+    /// </summary>
+    private static void Add(List<StyledSpan> spans, string text, TextStyle style, SpanInteraction? interaction, ElementMarkup? element, Dictionary<List<StyledSpan>, ElementMarkup?> elements)
     {
         if (text.Length == 0)
         {
             return;
         }
 
-        if (spans.Count > 0 && spans[^1].Style == style && Equals(spans[^1].Interaction, interaction))
+        var last = elements.GetValueOrDefault(spans);
+        elements[spans] = element;
+        if (spans.Count > 0 && Equals(last, element) && spans[^1].Style == style && Equals(spans[^1].Interaction, interaction))
         {
             spans[^1] = new StyledSpan(spans[^1].Text + text, style, interaction);
             return;
@@ -430,13 +438,14 @@ public sealed class MarkupLineParser
     /// Folds one run's markup, innermost last, into SharpMUTerm's style and interaction, and finds the pane it is sent
     /// to and the flag over it. <paramref name="text"/> is replaced for a picture, whose text is its label.
     /// </summary>
-    private static (TextStyle Style, SpanInteraction? Interaction, PaneMarkup? Pane, MxpFlagMarkup? Flag) Style(MarkupSet markups, ref string text)
+    private static (TextStyle Style, SpanInteraction? Interaction, PaneMarkup? Pane, MxpFlagMarkup? Flag, ElementMarkup? Element) Style(MarkupSet markups, ref string text)
     {
         var folded = AnsiStyle.None;
         CommandMenuMarkup? menu = null;
         ImageMarkup? image = null;
         PaneMarkup? pane = null;
         MxpFlagMarkup? flag = null;
+        ElementMarkup? element = null;
         for (var i = markups.Count - 1; i >= 0; i--)
         {
             var markup = markups[i];
@@ -459,6 +468,10 @@ public sealed class MarkupLineParser
                 case MxpFlagMarkup m:
                     flag = m;
                     break;
+                case ElementMarkup m:
+                    // Read outermost to innermost, so the last one is the element opened last.
+                    element = m;
+                    break;
             }
         }
 
@@ -469,7 +482,7 @@ public sealed class MarkupLineParser
             interaction = Picture(image, interaction, ref text);
         }
 
-        return (style, interaction, pane, flag);
+        return (style, interaction, pane, flag, element);
     }
 
     private static SpanInteraction? Interaction(AnsiStyle style, CommandMenuMarkup? menu)

@@ -78,6 +78,7 @@ public static class StyledText
         }
 
         var spans = new List<StyledSpan>(line.Spans.Count);
+        var previous = default(TextStyle);
         foreach (var span in line.Spans)
         {
             var style = span.Style
@@ -85,16 +86,21 @@ public static class StyledText
                 .WithBackground(TerminalColor.Default);
 
             // Merge with the previous span when stripping made them identical, so the result has as
-            // few spans as the text really needs (the renderer emits one markup tag per span).
+            // few spans as the text really needs (the renderer emits one markup tag per span). Two
+            // spans that were already identical are kept apart: they are two elements side by side
+            // (two exits, two links to one command), which the parser left as two on purpose.
             if (spans.Count > 0 &&
                 spans[^1].Style == style &&
-                Equals(spans[^1].Interaction, span.Interaction))
+                Equals(spans[^1].Interaction, span.Interaction) &&
+                previous != span.Style)
             {
                 spans[^1] = new StyledSpan(spans[^1].Text + span.Text, style, span.Interaction);
+                previous = span.Style;
                 continue;
             }
 
             spans.Add(new StyledSpan(span.Text, style, span.Interaction));
+            previous = span.Style;
         }
 
         return new StyledLine(spans, line.RuleColor);
