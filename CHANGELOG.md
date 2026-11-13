@@ -38,7 +38,7 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 ### Changed
 
 - Inline game images preserve full and partial transparency through Kitty transmission, including the desktop window, instead of losing their alpha channel.
-- Game output is read by MarkupString 2.28.1 instead of SharpMUTerm's own ANSI, MXP and Pueblo readers. What you
+- Game output is read by MarkupString 2.31.0 instead of SharpMUTerm's own ANSI, MXP and Pueblo readers. What you
   see should not change, with a few exceptions: `&nbsp;` is a non-breaking space; an erase-line sequence now erases;
   Pueblo pictures show an `[image: …]` label; an MXP picture that would cover text the world wrote shows inline
   instead; and a world's link whose address is not a web address (such as one that spells out a command) is shown
