@@ -3578,7 +3578,10 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
   - **WebSocket worlds** (`WorldDefinition.WebSocketPath`, null = telnet; `WebSocketTransport`, `WebSocketAddress`,
     Core; F5 ▸ `websocket path`; `/connect ws://…|wss://…`; Browse lists mu*index's `websocket` endpoints, `wss` where
     TLS was measured, at the endpoint's optional `path`, else `/`). Dialled through `TelnetWebSocketClient`
-    (subprotocols `telnet.mudstandards.org`, then `telnet`), binary frames, telnet inside unchanged. A path is
+    (offers `telnet.mudstandards.org`, `telnet`, then `gmcp.mudstandards.org`, `terminal.mudstandards.org`) and run by
+    `TelnetTransport.WebSocketClient`: telnet inside unchanged, or on gmcp/terminal TNC's bridge (text in BINARY, GMCP
+    in TEXT, opened as if the server sent `WILL GMCP`, every telnet byte we write dropped). Evennia offers no telnet and
+    lands on gmcp, so no NAWS, TTYPE, CHARSET, echo, MSSP or MXP there. A path is
     refused, not tidied (`IsPath`: starts with `/`, ASCII address characters, 256 at most); an address with user
     information or a fragment is refused. A `telnet://` link never matches a WebSocket world.
   - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A

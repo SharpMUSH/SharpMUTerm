@@ -6,9 +6,10 @@ namespace SharpMUTerm.Core.Transport;
 
 /// <summary>
 /// A world reached over a WebSocket (<see cref="ConnectionOptions.WebSocketPath"/>). TelnetNegotiationCore connects the
-/// socket, offering <c>telnet.mudstandards.org</c> and then <c>telnet</c>, and its own transport runs the session over
-/// it (<see cref="ForTelnet"/>), so the framing — one BINARY message per write, frames fed as they arrive, and the
-/// Base64 variant — is the library's.
+/// socket, offering <c>telnet.mudstandards.org</c> and <c>telnet</c>, then <c>gmcp.mudstandards.org</c> and
+/// <c>terminal.mudstandards.org</c>, and its own transport runs the session over whichever the server picked
+/// (<see cref="ForTelnet"/>). Evennia offers no telnet and picks <c>gmcp</c>: text and GMCP only, with no NAWS, TTYPE,
+/// CHARSET, echo or MXP, and the library drops every telnet byte this client writes before it reaches the server.
 /// </summary>
 public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
 {
@@ -53,7 +54,7 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
     }
 
     public ITelnetTransport ForTelnet(int receiveBufferSize) =>
-        TelnetTransport.WebSocket(_socket ?? throw new InvalidOperationException("Transport is not connected."));
+        TelnetTransport.WebSocketClient(_socket ?? throw new InvalidOperationException("Transport is not connected."));
 
     public async ValueTask SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {

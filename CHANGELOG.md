@@ -14,6 +14,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   and F5 has a *websocket path* field: blank keeps the world on plain telnet. Everything else (triggers, GMCP, MXP,
   logging) works the same over either.
 
+- Evennia games can be reached over their WebSocket. Evennia speaks no telnet there, so the connection used to close
+  at once with no reason given; it now uses Evennia's GMCP channel, so the game's text, colours and GMCP data (the
+  status meters, game data, Lua's `gmcp.get`) all arrive. Window size, terminal type and MXP are not available over it.
+
 ### Changed
 
 - Updated TelnetNegotiationCore to 4.13.3, MarkupString to 2.31.3 and Microsoft.Extensions.Logging.Abstractions to

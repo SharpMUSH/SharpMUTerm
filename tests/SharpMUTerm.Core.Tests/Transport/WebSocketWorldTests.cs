@@ -42,6 +42,38 @@ public class WebSocketWorldTests
     }
 
     [Test]
+    public async Task AnEvenniaGameIsReachedOverGmcpWithNoTelnetByteSent()
+    {
+        // Evennia offers no telnet subprotocol: it picks gmcp, sends text in BINARY frames and GMCP in TEXT frames.
+        await using var server = await WebSocketServer.StartAsync(pick: "gmcp.mudstandards.org");
+        var world = new WorldDefinition { Name = "Synapse", Host = "127.0.0.1", Port = server.Port, WebSocketPath = "/ws" };
+        await using var session = new WorldSession(world, null);
+        var lines = new List<string>();
+        session.LinePrinted += (_, line) =>
+        {
+            lock (lines)
+            {
+                lines.Add(line.Text);
+            }
+        };
+
+        await session.ConnectAsync();
+        await server.SendAsync("Welcome, runner.\r\n");
+        await server.SendTextAsync("Char.Vitals {\"hp\":10,\"maxhp\":12}");
+        await Until(() => { lock (lines) { return lines.Contains("Welcome, runner."); } });
+        await Until(() => session.GameData.GetText("Char.Vitals.hp") == "10");
+
+        // The client says hello once the server's choice reads as WILL GMCP, and never as a telnet byte.
+        await Until(() => server.Text.Any(t => t.StartsWith("Core.Hello ", StringComparison.Ordinal)));
+        await session.SendCommandAsync("look");
+        await Until(() => Encoding.UTF8.GetString(server.Received).Contains("look\r\n", StringComparison.Ordinal));
+
+        await Assert.That(server.SubProtocol).IsEqualTo("gmcp.mudstandards.org");
+        await Assert.That(server.Received).DoesNotContain((byte)0xFF);
+        await Assert.That(Encoding.UTF8.GetString(server.Received)).IsEqualTo("look\r\n");
+    }
+
+    [Test]
     public async Task AServerThatClosesTheSocketEndsTheConnection()
     {
         await using var server = await WebSocketServer.StartAsync();
@@ -130,11 +162,14 @@ public class WebSocketWorldTests
         private readonly TaskCompletionSource<WebSocket> _socket = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Lock _gate = new();
         private readonly List<byte> _received = [];
+        private readonly List<string> _text = [];
+        private readonly string? _pick;
         private readonly CancellationTokenSource _cts = new();
 
-        private WebSocketServer(int port)
+        private WebSocketServer(int port, string? pick)
         {
             Port = port;
+            _pick = pick;
             _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
         }
 
@@ -155,14 +190,27 @@ public class WebSocketWorldTests
             }
         }
 
-        public static Task<WebSocketServer> StartAsync()
+        /// <summary>Text frames the client sent.</summary>
+        public string[] Text
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _text];
+                }
+            }
+        }
+
+        /// <param name="pick">The subprotocol to pick when the client offers it; the first offered otherwise.</param>
+        public static Task<WebSocketServer> StartAsync(string? pick = null)
         {
             var probe = new TcpListener(IPAddress.Loopback, 0);
             probe.Start();
             var port = ((IPEndPoint)probe.LocalEndpoint).Port;
             probe.Stop();
 
-            var server = new WebSocketServer(port);
+            var server = new WebSocketServer(port, pick);
             server._listener.Start();
             _ = Task.Run(server.AcceptAsync);
             return Task.FromResult(server);
@@ -172,6 +220,12 @@ public class WebSocketWorldTests
         {
             var socket = await _socket.Task.WaitAsync(TimeSpan.FromSeconds(10));
             await socket.SendAsync(Encoding.ASCII.GetBytes(text), WebSocketMessageType.Binary, true, CancellationToken.None);
+        }
+
+        public async Task SendTextAsync(string text)
+        {
+            var socket = await _socket.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, CancellationToken.None);
         }
 
         public async Task CloseAsync()
@@ -187,7 +241,8 @@ public class WebSocketWorldTests
                 var context = await _listener.GetContextAsync();
                 Path = context.Request.Url?.PathAndQuery;
                 var offered = context.Request.Headers["Sec-WebSocket-Protocol"] ?? string.Empty;
-                SubProtocol = offered.Split(',', StringSplitOptions.TrimEntries).FirstOrDefault();
+                var names = offered.Split(',', StringSplitOptions.TrimEntries);
+                SubProtocol = _pick is not null && names.Contains(_pick) ? _pick : names.FirstOrDefault();
                 var accepted = await context.AcceptWebSocketAsync(SubProtocol);
                 _socket.SetResult(accepted.WebSocket);
                 var buffer = new byte[4096];
@@ -201,7 +256,14 @@ public class WebSocketWorldTests
 
                     lock (_gate)
                     {
-                        _received.AddRange(buffer.AsSpan(0, result.Count));
+                        if (result.MessageType == WebSocketMessageType.Text)
+                        {
+                            _text.Add(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                        }
+                        else
+                        {
+                            _received.AddRange(buffer.AsSpan(0, result.Count));
+                        }
                     }
                 }
             }
