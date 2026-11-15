@@ -54,6 +54,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- The quick bar lists every key you have bound, not only function keys. Keypad and letter-chord bindings
+  (`Num8`, `Ctrl+E`) used to be left off it. Function keys come first, then other chords, then the keypad in the pad's
+  own order. When the bar is short of room it says `nw` for `northwest` and `Num 7 nw  8 n` for the keypad before it
+  hides any key, and in the terminal `+N` is now a link that lists the hidden keys to run. A key the terminal cannot
+  deliver (the keypad) keeps its name readable, since clicking it still runs it. In the terminal and the window alike.
+
 - Inline game images preserve full and partial transparency through Kitty transmission, including the desktop window, instead of losing their alpha channel.
 - Game output is read by MarkupString 2.31.0 instead of SharpMUTerm's own ANSI, MXP and Pueblo readers. What you
   see should not change, with a few exceptions: `&nbsp;` is a non-breaking space; an erase-line sequence now erases;

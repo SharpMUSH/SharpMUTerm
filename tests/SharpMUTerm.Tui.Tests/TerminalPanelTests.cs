@@ -1,4 +1,5 @@
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Client.Panels;
 using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Layouts;
@@ -117,12 +118,67 @@ public class TerminalPanelTests
         Bindings.FirstOrDefault(m => m.Enabled && string.Equals(MacroKey.Canonicalise(m.Key), descriptor, StringComparison.OrdinalIgnoreCase));
 
     [Test]
-    public async Task TheQuickBarListsFunctionKeysPlainFirstAndByNumber()
+    public async Task TheQuickBarListsEveryBoundKeyFunctionKeysThenChordsThenTheKeypad()
     {
         var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Bindings, Resolve);
 
-        await Assert.That(entries.Items.Select(e => e.Key)).IsEquivalentTo(new[] { "F11", "F12", "⌃F3" });
+        await Assert.That(entries.Items.Select(e => e.Key)).IsEquivalentTo(new[] { "F11", "F12", "⌃F3", "Num5" });
         await Assert.That(entries.Items[2].Title).IsEqualTo("cast 'cure light'");
+        await Assert.That(entries.Items[3].Group).IsEqualTo(QuickBarGroup.Keypad);
+    }
+
+    /// <summary>The bindings the report was about: a movement pad, a function key and a letter chord, none named.</summary>
+    private static readonly Macro[] Pad =
+    [
+        new() { Key = "Num1", Command = "look at altar" },
+        new() { Key = "Num2", Command = "south" },
+        new() { Key = "Num4", Command = "west" },
+        new() { Key = "Num5", Command = "look" },
+        new() { Key = "Num6", Command = "east" },
+        new() { Key = "Num7", Command = "northwest" },
+        new() { Key = "Num8", Command = "north" },
+        new() { Key = "Num9", Command = "northeast" },
+        new() { Key = "Ctrl+F1", Command = "score" },
+        new() { Name = "New Binding", Key = "Ctrl+E", Command = "look" },
+    ];
+
+    private static Macro? ResolvePad(string descriptor) =>
+        Pad.FirstOrDefault(m => string.Equals(MacroKey.Canonicalise(m.Key), descriptor, StringComparison.OrdinalIgnoreCase));
+
+    [Test]
+    public async Task KeypadAndChordBindingsAreListedTheKeypadInThePadsOrder()
+    {
+        var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Pad, ResolvePad);
+
+        await Assert.That(entries.Items.Select(e => e.Key)).IsEquivalentTo(
+            new[] { "⌃F1", "⌃E", "Num7", "Num8", "Num9", "Num4", "Num5", "Num6", "Num1", "Num2" });
+        await Assert.That(entries.Items.Select(e => e.Title).Take(3)).IsEquivalentTo(new[] { "score", "New Binding", "northwest" });
+        await Assert.That(entries.Items[2].Short).IsEqualTo("nw");
+        await Assert.That(entries.Items[8].Short).IsNull().Because("look at altar is no direction, so it keeps its words");
+    }
+
+    [Test]
+    public async Task ANarrowBarSaysTheKeypadShortBeforeItHidesAnyBinding()
+    {
+        var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Pad, ResolvePad);
+
+        var wide = StripMarkup(QuickBarRenderer.Render(entries, 200, "#00f5b7"));
+        await Assert.That(wide).Contains("Num7 northwest").And.Contains("⌃E New Binding").And.Contains("│");
+
+        var narrow = StripMarkup(QuickBarRenderer.Render(entries, 100, "#00f5b7"));
+        await Assert.That(narrow).Contains("Num 7 nw  8 n  9 ne  4 w  5 look").And.DoesNotContain("+");
+        await Assert.That(narrow.Split("Num").Length - 1).IsEqualTo(1).Because("the run says Num once");
+    }
+
+    [Test]
+    public async Task AKeyTheTerminalNeverDeliversIsDimButItsNameIsStillABodyInkButton()
+    {
+        var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Pad, ResolvePad);
+        var pad = entries.Items.First(e => e.Key == "Num8");
+        await Assert.That(pad.Fires).IsFalse();
+
+        var row = QuickBarRenderer.Render(entries, 200, "#00f5b7");
+        await Assert.That(row).Contains("[dim]Num8[/] north[/]");
     }
 
     [Test]
@@ -173,6 +229,25 @@ public class TerminalPanelTests
 
         await Assert.That(world.App.LastQuickMacro).IsEqualTo("Ctrl+F1");
         await Assert.That(world.Telnet.Lines).Contains("score");
+    }
+
+    [Test]
+    public async Task ACellBarsPlusNListsWhatItHoldsAndADigitRunsItOnThePanelsCharacter()
+    {
+        var entries = QuickBarRenderer.Entries(HostKeys.Terminal, Pad, ResolvePad);
+        var row = QuickBarRenderer.Render(entries, 40, "#00f5b7");
+        var first = QuickBarRenderer.ParseMoreLink(QuickBarRenderer.MoreLink + row.Split(QuickBarRenderer.MoreLink)[1].Split(']')[0]);
+        await Assert.That(first).IsNotNull().Because("a +N in the cells is a link, so what it hides can be reached");
+
+        var world = await Connected();
+        var hidden = entries.Items.Skip(first!.Value).ToList();
+        await Assert.That(world.App.OpenQuickBarMore(world.Session.SessionKey, hidden)).IsTrue();
+        await Assert.That(StripMarkup(string.Join("\n", world.App.SendMenu.Lines))).Contains(hidden[0].Title);
+
+        world.App.SendMenu.SimulateKey(new ConsoleKeyInfo('1', ConsoleKey.D1, false, false, false));
+
+        await Assert.That(world.App.SendMenu.IsOpen).IsFalse();
+        await Assert.That(world.App.LastQuickMacro).IsEqualTo(hidden[0].Descriptor);
     }
 
     [Test]

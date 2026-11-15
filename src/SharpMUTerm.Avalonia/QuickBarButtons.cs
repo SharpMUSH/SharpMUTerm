@@ -149,12 +149,15 @@ internal sealed class QuickBarButtons : Control, IEdgeRules
     /// <summary>The key cap's face: the cells' mono, as every key chip in the window.</summary>
     private static FontFamily KeyFace => NativeTokens.KeyFace;
 
-    private static string Trim(QuickBarItem item) => item.Title;
+    /// <summary>Whether the last layout drew the short wording (<see cref="QuickBarItem.Label"/>). Internal for tests.</summary>
+    internal bool ShortForm { get; private set; }
 
-    private double ItemWidth(QuickBarItem item)
+    private string Trim(QuickBarItem item) => item.Label(ShortForm);
+
+    private double ItemWidth(QuickBarItem item, bool shortForm)
     {
         var size = FontSize;
-        var title = Math.Min(MaxTitleWidth, PanelText.Measure(Trim(item), size, false));
+        var title = Math.Min(MaxTitleWidth, PanelText.Measure(item.Label(shortForm), size, false));
         return PadX + PanelText.Measure(NativeKeys.Words(item.Key), KeySize, false, KeyFace) + NativeTokens.Space8 + title + PadX;
     }
 
@@ -163,8 +166,9 @@ internal sealed class QuickBarButtons : Control, IEdgeRules
     private double EditWidth => PanelText.Measure(QuickBarModel.BindLabel, FontSize, false) + (PadX * 2);
 
     /// <summary>
-    /// The cells' rule, in pixels: the link first, then as many bindings as fit in order, with <c>+N</c> for the
-    /// rest; without room for the link, the bindings alone.
+    /// The cells' rule, in pixels: every binding at full wording, then at the short wording (<c>nw</c> for
+    /// <c>northwest</c>), each first with the link and then without it, then as many short ones as fit with <c>+N</c> for
+    /// the rest. A wider gap parts two runs (<see cref="QuickBarGroup"/>).
     /// </summary>
     private void Layout(Size size)
     {
@@ -184,41 +188,76 @@ internal sealed class QuickBarButtons : Control, IEdgeRules
         var height = Math.Max(4, Math.Min(ButtonHeight, size.Height - 4));
         var top = Math.Round((size.Height - height) / 2);
         var items = _model.Items;
-        var widths = items.Select(ItemWidth).ToList();
+        var full = items.Select(i => ItemWidth(i, false)).ToList();
+        var brief = items.Select(i => ItemWidth(i, true)).ToList();
+
+        // Every binding, full then short, with the link and then without; then the most short ones that fit with +N.
         foreach (var withEdit in new[] { true, false })
         {
-            var room = size.Width - EndRoom - Lead - Gap - (withEdit ? EditWidth + Gap : 0);
-            for (var take = items.Count; take >= 0 && room >= 0; take--)
+            foreach (var shortForm in new[] { false, true })
             {
-                var hidden = items.Count - take;
-                var used = widths.Take(take).Sum() + (Gap * Math.Max(0, take - 1))
-                    + (hidden > 0 ? (take > 0 ? Gap : 0) + MoreWidth(hidden) : 0);
-                if (used > room)
+                if (TryPlace(shortForm ? brief : full, items.Count, withEdit, shortForm))
                 {
-                    continue;
+                    return;
                 }
-
-                var x = Lead;
-                for (var i = 0; i < take; i++)
-                {
-                    _slots.Add(new Slot(SlotKind.Item, i, new Rect(x, top, widths[i], height)));
-                    x += widths[i] + Gap;
-                }
-
-                if (hidden > 0)
-                {
-                    _slots.Add(new Slot(SlotKind.More, hidden, new Rect(x, top, MoreWidth(hidden), height)));
-                }
-
-                if (withEdit)
-                {
-                    _slots.Add(new Slot(SlotKind.Edit, -1, new Rect(size.Width - EndRoom - Gap - EditWidth, top, EditWidth, height)));
-                }
-
-                return;
             }
         }
+
+        foreach (var withEdit in new[] { true, false })
+        {
+            for (var take = items.Count - 1; take >= 0; take--)
+            {
+                if (TryPlace(brief, take, withEdit, true))
+                {
+                    return;
+                }
+            }
+        }
+
+        bool TryPlace(List<double> widths, int take, bool withEdit, bool shortForm)
+        {
+            var room = size.Width - EndRoom - Lead - Gap - (withEdit ? EditWidth + Gap : 0);
+            var hidden = items.Count - take;
+            var used = widths.Take(take).Sum() + GapsBefore(take)
+                + (hidden > 0 ? (take > 0 ? Gap : 0) + MoreWidth(hidden) : 0);
+            if (room < 0 || used > room)
+            {
+                return false;
+            }
+
+            ShortForm = shortForm;
+            var x = Lead;
+            for (var i = 0; i < take; i++)
+            {
+                if (i > 0)
+                {
+                    x += GapBetween(i);
+                }
+
+                _slots.Add(new Slot(SlotKind.Item, i, new Rect(x, top, widths[i], height)));
+                x += widths[i];
+            }
+
+            if (hidden > 0)
+            {
+                _slots.Add(new Slot(SlotKind.More, hidden, new Rect(x + (take > 0 ? Gap : 0), top, MoreWidth(hidden), height)));
+            }
+
+            if (withEdit)
+            {
+                _slots.Add(new Slot(SlotKind.Edit, -1, new Rect(size.Width - EndRoom - Gap - EditWidth, top, EditWidth, height)));
+            }
+
+            return true;
+        }
+
+        double GapBetween(int i) => items[i - 1].Group == items[i].Group ? Gap : GroupGap;
+
+        double GapsBefore(int take) => Enumerable.Range(1, Math.Max(0, take - 1)).Sum(GapBetween);
     }
+
+    /// <summary>The gap between two runs of bindings: twice the gap within one.</summary>
+    private const double GroupGap = NativeTokens.Space16;
 
     private Slot? SlotAt(Point point)
     {
@@ -422,7 +461,8 @@ internal sealed class QuickBarButtons : Control, IEdgeRules
                     var danger = item.Danger ? PanelText.Parse(_ink.Low) : (Color?)null;
                     Plate(context, rect, hot, down, dashed: false, danger);
                     var keyInk = item.Fires ? danger is { } d ? PanelText.Mix(d, _text, 0.3) : dim : PanelText.Mix(dim, _plane, 0.35);
-                    var titleInk = item.Fires ? danger is { } t ? PanelText.Mix(t, _text, 0.55) : _text : dim;
+                    // A key this host never delivers is dimmed; the name keeps the body ink, as a click still runs it.
+                    var titleInk = danger is { } t ? PanelText.Mix(t, _text, 0.55) : _text;
                     var x = rect.Left + PadX;
                     x += PanelText.Draw(context, NativeKeys.Words(item.Key), x, middle, KeySize, keyInk, false, rect.Width, face: KeyFace) + NativeTokens.Space8;
                     PanelText.Draw(context, Trim(item), x, middle, size, titleInk, false, rect.Right - PadX - x + 0.5);

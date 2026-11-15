@@ -274,7 +274,7 @@ public static class BuiltInCommands
         // and says so when there is none yet, so they are listed unconditionally, like the map.
         Add("panel:who-here", CommandGroup.Panels, "Show who is here", detail: "players and creatures in the room · click a name to look");
         Add("panel:vitals", CommandGroup.Panels, "Show vitals", detail: "the F7 meters as bars, and your target");
-        Add("panel:quick-bar", CommandGroup.Panels, "Show quick bar", detail: "this character's function-key macros · click one to run it");
+        Add("panel:quick-bar", CommandGroup.Panels, "Show quick bar", detail: "every key this character has bound · click one to run it");
         Add("panel:composer", CommandGroup.Panels, "Dock the composer", detail: "a pane to write posts in · ⌃S sends");
 
         // A panel in a window of its own, for a second monitor — only where the host can draw one (the desktop window;
