@@ -49,6 +49,13 @@ internal sealed record ClientHost
     /// </summary>
     public required Action<string>? OpenFile { get; init; }
 
+    /// <summary>
+    /// Shows a folder the client writes to (a character's log folder) in the desktop's file manager, or null for a
+    /// client that refuses and says where the folder is. The opener takes only an existing folder
+    /// (<see cref="FolderOpener.Open"/>).
+    /// </summary>
+    public required Action<string>? OpenFolder { get; init; }
+
     /// <summary>Whether to ask for terminal focus reports (<see cref="TerminalFocusWatcher"/>).</summary>
     public required bool FocusReporting { get; init; }
 
@@ -229,6 +236,7 @@ internal sealed record ClientHost
         Clipboard = SharpConsoleUI.Helpers.ClipboardHelper.SetText,
         OpenUrl = ExternalBrowser.Open,
         OpenFile = ExternalBrowser.OpenFile,
+        OpenFolder = FolderOpener.Open,
         FocusReporting = PlatformDecodesFocusReports,
         Keys = HostKeys.Terminal,
         Pointer = TerminalPointer.Create(driver),
@@ -266,6 +274,7 @@ internal sealed record ClientHost
         Clipboard = null,
         OpenUrl = null,
         OpenFile = null,
+        OpenFolder = null,
         FocusReporting = false,
         Keys = HostKeys.Terminal,
         Pointer = null,
@@ -335,6 +344,7 @@ internal sealed record ClientHost
             Clipboard = clipboard,
             OpenUrl = openUrl,
             OpenFile = null, // a test never opens a viewer
+            OpenFolder = null, // nor a file manager
             FocusReporting = focusReporting ?? PlatformDecodesFocusReports,
             Audio = null, // a test never makes a noise
             Presence = null, // nor talks to Discord

@@ -8304,7 +8304,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             selection.SelectionIn(WorldsScreenRenderer.CharactersPane),
             selection.SelectionIn(WorldsScreenRenderer.TriggerSetsPane),
             OpenMsspScreen,
-            Layouts.All),
+            Layouts.All,
+            _logRoot is null ? null : OpenLogFolderAt),
             SaveConfiguration);
         session.Selection.Seed(WorldsScreenRenderer.WorldsPane, ActiveWorldIndex());
         session.Selection.Seed(WorldsScreenRenderer.CharactersPane, ActiveCharacterIndex());
@@ -8326,7 +8327,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _system.DesktopDimensions.Height,
             info: true,
             layouts: Layouts.All,
-            joinWrapsAdvice: JoinWrapsAdvice));
+            joinWrapsAdvice: JoinWrapsAdvice,
+            logFolder: _logRoot is not null));
     }
 
     /// <summary>
@@ -8994,6 +8996,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var mapState = MapCommandState();
         return new CommandContext(
             LoggingOn: _active?.IsLogging == true,
+            LogFolder: _logRoot is not null,
             Zoomed: _workspace.Layout.ZoomedPaneId is not null,
             Frozen: _workspace.Layout.FocusedPane.Frozen,
             TimestampsOn: ShowTimestamps,
@@ -9583,6 +9586,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             case "term:log-off":
                 StopLogging();
                 break;
+            case SharpMUTerm.Client.Commands.BuiltInCommands.OpenLogFolderCommand:
+                OpenFocusedLogFolder();
+                return true;
             case "term:clear":
                 if (_panes.TryGetValue(ActiveWindowId(), out var pane))
                 {

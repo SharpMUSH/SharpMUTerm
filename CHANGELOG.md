@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- *Open log folder* shows the folder a character's logs are written to in your file manager (Explorer, Finder, or
+  whatever your desktop opens folders with). It is on the command palette (⌃P) for the character in front, on a
+  character's page in the desktop window's Worlds & Characters settings, and on F5 in the terminal (`o` on a
+  character). A folder that does not exist yet is created first.
+
 - F7 ▸ Scrollback ▸ *live tail when split* sets how much of the pane the newest lines take under the history while it
   is scrolled back: a number of rows, or a share such as `25%` (`50%` is the old half). The default is now 6 rows. Turning off *split the pane when scrolled back* (now
   also found by searching settings for "pause") scrolls the whole pane instead. In the terminal and the desktop window.

@@ -155,6 +155,15 @@ public sealed partial class SettingsForm
     /// </summary>
     public Action<string>? Connect { get; init; }
 
+    /// <summary>
+    /// Shows a character's log folder (by session key) in the desktop's file manager, making it first if it is missing;
+    /// the client runs it on its own thread. Null where the client keeps no logs, and the page offers no button.
+    /// </summary>
+    public Action<string>? OpenLogFolder { get; init; }
+
+    /// <summary>Whether the character page offers <em>Open log folder</em>.</summary>
+    public bool CanOpenLogFolder => OpenLogFolder is not null;
+
     /// <summary>The command that opens Browse worlds, the one the worlds page may run.</summary>
     public const string BrowseWorlds = Commands.BuiltInCommands.BrowseWorldsCommand;
 
@@ -433,6 +442,20 @@ public sealed partial class SettingsForm
         }
 
         connect(KeyOf(world, character));
+        return true;
+    }
+
+    /// <summary>Opens <paramref name="character"/>'s log folder; false where the client offers no way.</summary>
+    public bool OpenLogFolderOf(WorldDefinition world, CharacterDefinition character)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(character);
+        if (OpenLogFolder is not { } open)
+        {
+            return false;
+        }
+
+        open(KeyOf(world, character));
         return true;
     }
 
