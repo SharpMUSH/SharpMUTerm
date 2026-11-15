@@ -17,7 +17,7 @@ public static class SlashCommands
     [
         new("/help", "/help [words]", "This help: keys, slash commands and short how-tos, searched for the words", "/help "),
         new("/connect", "/connect <world>", "Open a configured world by name", "/connect "),
-        new("/connect", "/connect <host> [port] [tls]", "Add a world for a host and connect to it (port 4000 by default)", "/connect "),
+        new("/connect", "/connect <host> [port] [tls]", "Add a world for a host, or a ws:// or wss:// address, and connect to it (port 4000 by default)", "/connect "),
         new("/welcome", "/welcome", "Show the first-run welcome again", "/welcome"),
         new("/welcome", "/welcome layout roleplay|combat|suggested", "Choose the starting layout the welcome offers", "/welcome layout "),
         new("/browse", "/browse [words]", "Browse worlds listed on mu*index, searched for the words; a pick fills in the connect form", "/browse "),

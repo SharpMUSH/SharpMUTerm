@@ -55,8 +55,8 @@ internal static class DemoWorldDirectory
 
     private static string Page(Game g)
     {
-        // Aetherfall, listed TLS first as the directory might: TLS and plain both active, an old port the directory has not reached lately, a gone one and a
-        // websocket (neither offered), and a charset — the address choice. Everything else: one usable address.
+        // Aetherfall, listed TLS first as the directory might: TLS and plain both active, an old port the directory has not reached lately, a gone one (not offered),
+        // a WebSocket, and a charset — the address choice. Everything else: one usable address.
         var endpoints = g.Name == "Aetherfall"
             ? string.Join(",",
                 Endpoint(g.Host, g.Port + 1, "tls", "active"),

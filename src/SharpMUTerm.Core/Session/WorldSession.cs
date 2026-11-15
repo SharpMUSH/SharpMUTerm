@@ -1688,7 +1688,7 @@ public sealed class WorldSession : IAsyncDisposable
             TelnetSessionOptions.ResolveWorldEncoding(World.Encoding, _charsetOrder);
 
         return new TelnetSession(
-            new TcpTransport(options),
+            options.WebSocketPath is null ? new TcpTransport(options) : new WebSocketTransport(options),
             Logger,
             options: new TelnetSessionOptions
             {

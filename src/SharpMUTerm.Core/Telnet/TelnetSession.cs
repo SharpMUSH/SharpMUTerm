@@ -449,7 +449,7 @@ public sealed class TelnetSession : ITelnetSession
             var builder = ConfigureInterpreter();
             var loopToken = _loopCts.Token;
             _connection = await Task.Run(
-                () => builder.StartAsync(new TransportBridge(_transport, _options.ReceiveBufferSize), loopToken),
+                () => builder.StartAsync(_transport.ForTelnet(_options.ReceiveBufferSize), loopToken),
                 CancellationToken.None).ConfigureAwait(false);
         }
         catch
@@ -469,7 +469,7 @@ public sealed class TelnetSession : ITelnetSession
             throw;
         }
 
-        _readLoop = WatchReadLoopAsync(_connection);
+        _readLoop = WatchReadLoopAsync(_connection, _loopCts.Token);
 
         // Nothing else goes out from here. The interpreter's own opening WILL NAWS offers an option of
         // ours; what this client never sends is an IAC DO the server has not offered — see
@@ -979,7 +979,8 @@ public sealed class TelnetSession : ITelnetSession
         return ValueTask.CompletedTask;
     }
 
-    private async Task WatchReadLoopAsync(TelnetNegotiationCore.Connections.TelnetConnection connection)
+    private async Task WatchReadLoopAsync(
+        TelnetNegotiationCore.Connections.TelnetConnection connection, CancellationToken stopping)
     {
         Exception? error = null;
         try
@@ -991,6 +992,11 @@ public sealed class TelnetSession : ITelnetSession
         catch (OperationCanceledException)
         {
             // graceful shutdown
+        }
+        catch (Exception) when (stopping.IsCancellationRequested)
+        {
+            // This side is disconnecting: closing a WebSocket under a read fails that read, which is the close
+            // asked for and not a fault.
         }
         catch (Exception ex)
         {

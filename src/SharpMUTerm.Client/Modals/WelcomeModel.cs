@@ -57,7 +57,8 @@ public sealed record WelcomeModel(
     string? Problem,
     string? IndexProblem,
     string? WorldName = null,
-    string? Encoding = null)
+    string? Encoding = null,
+    string? WebSocketPath = null)
 {
     /// <summary>The example the surface names, a host nobody owns (RFC 2606).</summary>
     public const string ExampleCommand = "/connect mud.example.org 4201 tls";
@@ -95,9 +96,8 @@ public sealed record WelcomeModel(
     /// </summary>
     public string FormIntroLine => WorldName is null
         ? FormIntro
-        : Encoding is { } encoding
-            ? $"{WorldName}, as listed on mu*index, saved with encoding {encoding}. Check it and press ⏎ to save and connect."
-            : $"{WorldName}, as listed on mu*index. Check it and press ⏎ to save and connect.";
+        : $"{WorldName}, as listed on mu*index{(WebSocketPath is null ? string.Empty : ", over a WebSocket")}"
+            + $"{(Encoding is { } encoding ? $", saved with encoding {encoding}" : string.Empty)}. Check it and press ⏎ to save and connect.";
 
     /// <summary>The TLS row's words when on; the window's check box carries these words.</summary>
     public const string TlsOn = "On, encrypted";

@@ -169,10 +169,10 @@ public class WorldBrowseTests
         await Assert.That(run.App.WorldBrowseOpen).IsTrue();
         var game = run.App.WorldBrowseModelNow.Choosing!;
         await Assert.That(string.Join(",", game.Endpoints.Select(WorldBrowseModel.EndpointText)))
-            .IsEqualTo("aetherfall.example:4202 — TLS — active,aetherfall.example:4201 — plain — active,aetherfall.example:4000 — plain — stale · not reached lately");
+            .IsEqualTo("aetherfall.example:4202 — TLS — active,aetherfall.example:4201 — plain — active,aetherfall.example:4000 — plain — stale · not reached lately,aetherfall.example:4280 — WebSocket — active");
         await Assert.That(game.Charset).IsEqualTo("ISO-8859-1");
         var drawn = string.Join('\n', run.App.CellWorldBrowse!.Render(run.App.WorldBrowseModelNow, 96, 20).Select(MarkupText.Plain));
-        await Assert.That(drawn).Contains("Aetherfall answers at 3 addresses").And.Contains("▸ aetherfall.example:4202").And.Contains("charset ISO-8859-1");
+        await Assert.That(drawn).Contains("Aetherfall answers at 4 addresses").And.Contains("▸ aetherfall.example:4202").And.Contains("charset ISO-8859-1");
 
         run.App.SimulateWorldBrowseKey(Key(ConsoleKey.DownArrow));
         run.App.SimulateWorldBrowseKey(Key(ConsoleKey.Enter, '\r'));
@@ -340,7 +340,7 @@ public class WorldBrowseTests
 
         TypeCommand(run.App, "/browse 1");
 
-        await Assert.That(heard.Heard).Contains("Aetherfall answers at 3 addresses — choose one:");
+        await Assert.That(heard.Heard).Contains("Aetherfall answers at 4 addresses — choose one:");
         await Assert.That(heard.Heard).Contains("1. aetherfall.example:4202 — TLS — active");
         await Assert.That(heard.Heard).Contains("3. aetherfall.example:4000 — plain — stale · not reached lately");
         await Assert.That(heard.Heard).Contains("mu*index names its charset ISO-8859-1, for the whole game rather than per address.");
@@ -352,8 +352,11 @@ public class WorldBrowseTests
         await Assert.That(heard.Heard).Contains("To add it and connect, type: /connect aetherfall.example 4201");
         await Assert.That(heard.Heard).Contains(line => line.Contains("set the world's encoding to ISO-8859-1", StringComparison.Ordinal));
 
+        TypeCommand(run.App, "/browse 1 4");
+        await Assert.That(heard.Heard).Contains("To add it and connect, type: /connect ws://aetherfall.example:4280/");
+
         TypeCommand(run.App, "/browse 1 7");
-        await Assert.That(run.App.LastNotice).Contains("Aetherfall has 3 addresses");
+        await Assert.That(run.App.LastNotice).Contains("Aetherfall has 4 addresses");
         await Assert.That(run.Config.Worlds.Count).IsEqualTo(0);
     }
 

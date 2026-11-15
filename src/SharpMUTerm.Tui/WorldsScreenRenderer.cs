@@ -61,69 +61,72 @@ internal static class WorldsScreenRenderer
 
     internal const int PortField = 2;
 
-    internal const int EncodingField = 3;
+    /// <summary><see cref="WorldDefinition.WebSocketPath"/>: telnet over TCP when blank, else a WebSocket at that path.</summary>
+    internal const int WebSocketField = 3;
 
-    internal const int KeepaliveField = 4;
+    internal const int EncodingField = 4;
+
+    internal const int KeepaliveField = 5;
 
     /// <summary>
     /// <see cref="WorldDefinition.GmcpModules"/>: the GMCP modules asked for beyond the client's own, as a
     /// comma-separated list of <c>Name Version</c>.
     /// </summary>
-    internal const int GmcpModulesField = 7;
+    internal const int GmcpModulesField = 8;
 
     /// <summary><see cref="WorldDefinition.ContentFormat"/>, as <see cref="ContentChoices"/>.</summary>
-    internal const int ContentField = 6;
+    internal const int ContentField = 7;
 
     /// <summary><see cref="WorldDefinition.Emoji"/>'s three switches, as one of <see cref="EmojiChoices"/>.</summary>
-    internal const int EmojiField = 10;
+    internal const int EmojiField = 11;
 
     /// <summary><see cref="MapSettings.RoomNamePattern"/>: the line naming a room, for a game that sends no GMCP room.</summary>
-    internal const int MapRoomField = 18;
+    internal const int MapRoomField = 19;
 
     /// <summary><see cref="MapSettings.ExitsPattern"/>: the line listing a room's exits.</summary>
-    internal const int MapExitsField = 19;
+    internal const int MapExitsField = 20;
 
     /// <summary><see cref="MapSettings.WalkFailurePattern"/>: a line that stops a speedwalk.</summary>
-    internal const int WalkFailField = 20;
+    internal const int WalkFailField = 21;
 
     /// <summary><see cref="WorldDefinition.DownloadMedia"/>, as one of <see cref="SoundChoices"/>.</summary>
-    internal const int SoundsField = 21;
+    internal const int SoundsField = 22;
 
     /// <summary><see cref="WorldDefinition.GrabPrefix"/>: the line prefix a MUSH hands text back to edit with.</summary>
-    internal const int GrabField = 14;
+    internal const int GrabField = 15;
 
     /// <summary><see cref="WorldDefinition.GmcpLogin"/>, as one of <see cref="LoginChoices"/>.</summary>
-    internal const int GmcpLoginField = 8;
+    internal const int GmcpLoginField = 9;
 
     /// <summary><see cref="WorldDefinition.DiscordPresence"/>, as one of <see cref="DiscordChoices"/>.</summary>
-    internal const int DiscordField = 9;
+    internal const int DiscordField = 10;
 
     /// <summary><see cref="WorldDefinition.Layout"/>: the layout this world's characters use, or the suggestion.</summary>
-    internal const int WorldLayoutField = 22;
+    internal const int WorldLayoutField = 23;
 
     /// <summary><see cref="WorldDefinition.Avatar"/>: the world's picture for the sidebar, which its characters fall back to.</summary>
-    internal const int WorldAvatarField = 23;
+    internal const int WorldAvatarField = 24;
 
     /// <summary><see cref="WorldDefinition.JoinWrappedLines"/>, as one of <see cref="JoinWrapChoices"/>.</summary>
-    internal const int JoinWrapsField = 11;
+    internal const int JoinWrapsField = 12;
 
     /// <summary><see cref="WorldDefinition.WrapColumn"/>: the column output wraps at and NAWS reports, or 0 for the pane.</summary>
-    internal const int WrapColumnField = 12;
+    internal const int WrapColumnField = 13;
 
     /// <summary><see cref="WorldDefinition.AutoReconnect"/>, as one of <see cref="ReconnectChoices"/>.</summary>
-    internal const int ReconnectField = 5;
+    internal const int ReconnectField = 6;
 
     /// <summary><see cref="WorldDefinition.CommandSeparator"/>, as one of <see cref="SeparatorChoices"/>.</summary>
-    internal const int StackingField = 13;
+    internal const int StackingField = 14;
 
     /// <summary><see cref="WorldDefinition.AlertOnPage"/> and <see cref="WorldDefinition.AlertOnName"/>, as one of <see cref="AlertChoices"/>.</summary>
-    internal const int AlertOnField = 15;
+    internal const int AlertOnField = 16;
 
     /// <summary><see cref="WorldDefinition.CaptureChannels"/>, as one of <see cref="ChannelCaptureChoices"/>.</summary>
-    internal const int CaptureChannelsField = 16;
+    internal const int CaptureChannelsField = 17;
 
     /// <summary><see cref="WorldDefinition.HighlightNames"/>: <c>Name=colour, …</c>.</summary>
-    internal const int HighlightNamesField = 17;
+    internal const int HighlightNamesField = 18;
 
     /// <summary>F5's words for <see cref="WorldDefinition.CaptureChannels"/>.</summary>
     internal static readonly IReadOnlyList<string> ChannelCaptureChoices = WorldFieldValues.ChannelCaptureChoices;
@@ -788,7 +791,7 @@ internal static class WorldsScreenRenderer
     /// </summary>
     internal static readonly IReadOnlyList<string> WorldFieldOrder =
     [
-        "name", "host", "port", "encoding", "keepalive", "reconnect",
+        "name", "host", "port", "websocket", "encoding", "keepalive", "reconnect",
         "content", "gmcp-modules", "gmcp-login", "discord",
         "emoji", "join-wraps", "wrap-at", "stacking", "edit-grab",
         "alert-on", "capture-channels", "highlight-names",
@@ -1028,6 +1031,13 @@ internal static class WorldsScreenRenderer
                 cursor,
                 selectedWorld,
                 PortField),
+            ["websocket"] = Field(
+                world.WebSocketPath is { } socketPath
+                    ? $"[{Value}]{Escape(socketPath)}[/] [{Label}]· {(world.UseTls ? "wss" : "ws")}://[/]"
+                    : $"[{Label}]off · telnet[/]",
+                cursor,
+                selectedWorld,
+                WebSocketField),
             ["encoding"] = Field(
                 EncodingDetail(world.Encoding), cursor, selectedWorld, EncodingField),
             ["keepalive"] = Field(

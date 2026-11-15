@@ -18,11 +18,19 @@ public sealed class ConnectionOptions
     /// </summary>
     public bool AllowInvalidCertificates { get; init; }
 
+    /// <summary>
+    /// Null for telnet over TCP; a path for a WebSocket at that path on <see cref="Host"/> and <see cref="Port"/>
+    /// (<see cref="WebSocketTransport"/>).
+    /// </summary>
+    public string? WebSocketPath { get; init; }
+
     /// <summary>SNI / certificate target host. Defaults to <see cref="Host"/> when null.</summary>
     public string? TlsTargetHost { get; init; }
 
     /// <summary>Socket connect timeout. Defaults to 30 seconds.</summary>
     public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
-    public override string ToString() => $"{(UseTls ? "telnets" : "telnet")}://{Host}:{Port}";
+    public override string ToString() => WebSocketPath is { } path
+        ? WebSocketAddress.Format(Host, Port, UseTls, path)
+        : $"{(UseTls ? "telnets" : "telnet")}://{Host}:{Port}";
 }

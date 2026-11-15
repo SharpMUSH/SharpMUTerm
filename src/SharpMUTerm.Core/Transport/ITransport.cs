@@ -26,4 +26,12 @@ public interface ITransport : IAsyncDisposable
 
     /// <summary>Closes the connection.</summary>
     Task CloseAsync();
+
+    /// <summary>
+    /// What TelnetNegotiationCore's read loop runs on once this transport is open. By default a bridge that reads
+    /// through <see cref="ReceiveAsync"/> and writes through <see cref="SendAsync"/>; a WebSocket hands over the
+    /// library's own, which knows the framing.
+    /// </summary>
+    TelnetNegotiationCore.Connections.ITelnetTransport ForTelnet(int receiveBufferSize) =>
+        new Telnet.TransportBridge(this, receiveBufferSize);
 }

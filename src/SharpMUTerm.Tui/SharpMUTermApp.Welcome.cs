@@ -246,6 +246,12 @@ internal sealed partial class SharpMUTermApp
                 world.Encoding = encoding;
             }
 
+            // A WebSocket address Browse worlds picked: the world dials it rather than plain telnet.
+            if (Core.Transport.WebSocketAddress.IsPath(request.WebSocketPath))
+            {
+                world.WebSocketPath = request.WebSocketPath;
+            }
+
             if (request.Character is { } name)
             {
                 world.Characters.Add(new CharacterDefinition { Name = name });

@@ -56,6 +56,35 @@ public class ConnectCommandTests
     }
 
     [Test]
+    public async Task AWebSocketAddressAddsAWorldThatDialsIt()
+    {
+        var (app, _, config) = Open();
+        await using var _app = app;
+
+        Type(app, "/connect wss://mud.example.org/telnet");
+        await app.LastCommand;
+
+        var world = config.Worlds.Single();
+        await Assert.That(world.Host).IsEqualTo("mud.example.org");
+        await Assert.That(world.Port).IsEqualTo(443);
+        await Assert.That(world.UseTls).IsTrue();
+        await Assert.That(world.WebSocketPath).IsEqualTo("/telnet");
+    }
+
+    [Test]
+    public async Task AWebSocketAddressCarryingAUserIsRefused()
+    {
+        var (app, wire, config) = Open();
+        await using var _app = app;
+
+        Type(app, "/connect ws://me:pw@mud.example.org/");
+
+        await Assert.That(config.Worlds).IsEmpty();
+        await Assert.That(wire.Lines).IsEmpty();
+        await Assert.That(app.LastNotice).Contains("user name");
+    }
+
+    [Test]
     public async Task AConfiguredWorldIsReachedByNameAndNotAddedAgain()
     {
         var (app, _, config) = Open(c => c.Worlds.Add(new WorldDefinition

@@ -58,7 +58,7 @@ public sealed record WorldListPage(IReadOnlyList<WorldListing> Rows, int Total, 
 /// The encoding a world added from here is set to (one of F5's names), or null to leave it <c>auto</c>: set only when the
 /// directory names a charset that is not UTF-8 and not ASCII (<see cref="WorldDirectory.EncodingFor"/>).
 /// </param>
-public sealed record WorldAddress(string Name, string Host, int Port, bool Tls, string? Encoding = null);
+public sealed record WorldAddress(string Name, string Host, int Port, bool Tls, string? Encoding = null, string? WebSocketPath = null);
 
 /// <summary>
 /// One address a game answers at, as the directory lists it: a <c>telnet</c> or <c>tls</c> endpoint it does not call gone.
@@ -71,7 +71,15 @@ public sealed record WorldAddress(string Name, string Host, int Port, bool Tls, 
 /// Whether <see cref="ConnectEndpoint.Parse"/> — the reader <c>/connect</c> uses — takes it. One it refuses is still listed,
 /// marked not connectable, and is never put in the connect form.
 /// </param>
-public sealed record WorldEndpoint(string Host, int Port, bool Tls, bool Stale, bool Connectable = true)
+/// <param name="WebSocket">
+/// Whether it is the directory's <c>websocket</c> kind: telnet inside a WebSocket on that host and port, <c>wss://</c>
+/// when TLS was measured there.
+/// </param>
+/// <param name="WebSocketPath">
+/// The endpoint's <c>path</c> when the directory gives one that <see cref="Transport.WebSocketAddress.IsPath"/> takes;
+/// otherwise null, and the address is dialled at <see cref="WorldGame.WebSocketRoot"/>.
+/// </param>
+public sealed record WorldEndpoint(string Host, int Port, bool Tls, bool Stale, bool Connectable = true, bool WebSocket = false, string? WebSocketPath = null)
 {
     /// <summary><c>host:port</c>, an IPv6 host in brackets.</summary>
     public string Address => $"{(Host.Contains(':') ? $"[{Host}]" : Host)}:{Port.ToString(CultureInfo.InvariantCulture)}";
@@ -106,11 +114,14 @@ public sealed record WorldGame(string Name, IReadOnlyList<WorldEndpoint> Endpoin
     /// <summary>The encoding a world added from this game is set to, or null to leave it <c>auto</c>.</summary>
     public string? Encoding => WorldDirectory.EncodingFor(Charset);
 
+    /// <summary>The path a directory's <c>websocket</c> address is dialled at when it gives none.</summary>
+    public const string WebSocketRoot = "/";
+
     /// <summary>Endpoint <paramref name="index"/> as the address the connect form is filled in with.</summary>
     public WorldAddress Address(int index)
     {
         var endpoint = Endpoints[index];
-        return new WorldAddress(Name, endpoint.Host, endpoint.Port, endpoint.Tls, Encoding);
+        return new WorldAddress(Name, endpoint.Host, endpoint.Port, endpoint.Tls, Encoding, endpoint.WebSocket ? endpoint.WebSocketPath ?? WebSocketRoot : null);
     }
 
     public bool Equals(WorldGame? other) =>
@@ -268,7 +279,7 @@ public static class WorldDirectory
 
     /// <summary>
     /// Reads a <c>GET /games/{id}</c> answer (<c>GameView</c>) down to its addresses, in the order the directory lists
-    /// them: <c>telnet</c> and <c>tls</c> endpoints (a websocket or http one is not a telnet address) that it does not call
+    /// them: <c>telnet</c>, <c>tls</c> and <c>websocket</c> endpoints (an http one is not a telnet address) that it does not call
     /// <c>gone</c>, at most <see cref="MaxEndpoints"/>. An address <see cref="ConnectEndpoint.Parse"/> refuses is listed and
     /// marked not connectable. The charset is the game's <c>fields.CHARSET</c> value — the directory's one charset field,
     /// which names no address.
@@ -305,7 +316,7 @@ public static class WorldDirectory
 
                 var kind = Text(endpoint, "kind");
                 var state = Text(endpoint, "state");
-                if (endpoint.ValueKind != JsonValueKind.Object || kind is not ("telnet" or "tls") || state == "gone")
+                if (endpoint.ValueKind != JsonValueKind.Object || kind is not ("telnet" or "tls" or "websocket") || state == "gone")
                 {
                     continue;
                 }
@@ -317,9 +328,12 @@ public static class WorldDirectory
                 var parsed = host.Length is > 0 and <= 253 && !host.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)) && port is > 0 and <= 65535
                     ? ConnectEndpoint.Parse([host, port.ToString(CultureInfo.InvariantCulture)])
                     : null;
+                var path = kind == "websocket" && Text(endpoint, "path") is { } given && Transport.WebSocketAddress.IsPath(given)
+                    ? given
+                    : null;
                 listed.Add(parsed is { } ok
-                    ? new WorldEndpoint(ok.Host, ok.Port, tls, state == "stale")
-                    : new WorldEndpoint(Clean(host, MaxHostShown), Math.Clamp(port, 0, 65535), tls, state == "stale", Connectable: false));
+                    ? new WorldEndpoint(ok.Host, ok.Port, tls, state == "stale", WebSocket: kind == "websocket", WebSocketPath: path)
+                    : new WorldEndpoint(Clean(host, MaxHostShown), Math.Clamp(port, 0, 65535), tls, state == "stale", Connectable: false, WebSocket: kind == "websocket"));
             }
 
             if (listed.Count == 0)

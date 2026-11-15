@@ -131,7 +131,13 @@ public sealed record WorldBrowseModel(
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         var state = endpoint.Stale ? "stale · not reached lately" : "active";
-        return (endpoint.Address, endpoint.Tls ? "TLS" : "plain", endpoint.Connectable ? state : $"{state} · not connectable");
+        return (endpoint.Address, (endpoint.WebSocket, endpoint.Tls) switch
+        {
+            (true, true) => "WebSocket, TLS",
+            (true, false) => "WebSocket",
+            (false, true) => "TLS",
+            _ => "plain",
+        }, endpoint.Connectable ? state : $"{state} · not connectable");
     }
 
     /// <summary>An address as one line (<c>--plain</c>, a tooltip).</summary>
