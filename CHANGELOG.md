@@ -9,8 +9,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
-- F7 ▸ Scrollback ▸ *live tail rows when split* sets how many rows the newest lines take under the history while a pane
-  is scrolled back. `0`, the default, is half the pane, as before. Turning off *split the pane when scrolled back* (now
+- F7 ▸ Scrollback ▸ *live tail when split* sets how much of the pane the newest lines take under the history while it
+  is scrolled back: a number of rows, or a share such as `25%` (`50%` is the old half). The default is now 6 rows. Turning off *split the pane when scrolled back* (now
   also found by searching settings for "pause") scrolls the whole pane instead. In the terminal and the desktop window.
 
 - A world's output can wrap at a set width. F5 ▸ *wrap at* takes a number of columns: the game's text then wraps there

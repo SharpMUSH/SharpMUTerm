@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Surfaces;
+using SharpMUTerm.Core.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Builders;
@@ -59,12 +60,11 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// The rows a live tail gets in a pane whose viewport is <paramref name="paneRows"/> tall, or zero when the
-    /// pane is too short to split. With no <paramref name="wanted"/> (F7's <c>live tail rows</c> at 0) it is half of
-    /// what the band leaves, the odd row to the tail (both mockups give the rows still arriving at least as much
-    /// room as the rows being read); otherwise that many rows. Either way at least <see cref="MinimumSplitRows"/>,
+    /// pane is too short to split. <paramref name="wanted"/> is F7's <c>live tail when split</c>: rows, or a share of
+    /// what the band leaves (<see cref="ScrollTail.Rows"/>). Either way at least <see cref="MinimumSplitRows"/>,
     /// leaving the history at least that many.
     /// </summary>
-    internal static int TailRowsFor(int paneRows, int bandRows = 1, int wanted = 0)
+    internal static int TailRowsFor(int paneRows, int bandRows = 1, string? wanted = ScrollTail.Default)
     {
         var left = paneRows - bandRows;
         if (left - MinimumSplitRows < MinimumSplitRows)
@@ -72,7 +72,7 @@ internal sealed partial class SharpMUTermApp
             return 0;
         }
 
-        var tail = wanted > 0 ? wanted : (left + 1) / 2;
+        var tail = ScrollTail.Rows(wanted, left);
         return Math.Clamp(tail, MinimumSplitRows, left - MinimumSplitRows);
     }
 
@@ -125,7 +125,7 @@ internal sealed partial class SharpMUTermApp
 
         if (!open && wanted)
         {
-            var tail = TailRowsFor(live!.ViewportHeight, ScrollBandRows, _config.Text.ScrollTailRows);
+            var tail = TailRowsFor(live!.ViewportHeight, ScrollBandRows, _config.Text.ScrollTail);
             if (tail == 0)
             {
                 return;

@@ -54,6 +54,9 @@ public enum TextRule
     /// that exists or an <c>https://</c> URL; trimmed, and stored as null when blank.
     /// </summary>
     Image,
+
+    /// <summary>A split pane's live tail (<see cref="Core.Configuration.ScrollTail"/>): rows, or a share such as <c>25%</c>.</summary>
+    ScrollTail,
 }
 
 /// <summary>
@@ -88,6 +91,7 @@ public static class TextRules
                 $"{field.Label} cannot contain control characters",
             TextRule.Pattern when !string.IsNullOrWhiteSpace(text) => PatternError(text),
             TextRule.Image => Core.Avatars.AvatarSource.Problem(text),
+            TextRule.ScrollTail => Core.Configuration.ScrollTail.Problem(text),
             TextRule.NameHighlights => Core.Automation.NameHighlights.Parse(
                 text, colour => HighlightColours.Palette.Contains(colour) && colour != HighlightColours.None).Error,
             _ => null,
@@ -103,6 +107,7 @@ public static class TextRules
         {
             TextRule.Required or TextRule.Name or TextRule.Window => text.Trim(),
             TextRule.RequiredPattern or TextRule.TriggerPattern or TextRule.Lines => text,
+            TextRule.ScrollTail => Core.Configuration.ScrollTail.Normalise(text),
             TextRule.Template => string.IsNullOrWhiteSpace(text) ? null : text.Trim(),
             TextRule.Pattern => string.IsNullOrWhiteSpace(text) ? null : text,
             TextRule.Secret => text.Length == 0 ? null : text,

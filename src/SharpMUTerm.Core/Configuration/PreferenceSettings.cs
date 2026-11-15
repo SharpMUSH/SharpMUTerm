@@ -164,14 +164,11 @@ public sealed class TextSettings
     public bool SplitScrollback { get; set; } = true;
 
     /// <summary>
-    /// How many rows a split pane's live tail takes (F7 ▸ SCROLLBACK, <c>live tail rows</c>). Zero, the default, is
-    /// half the pane; any other number is that many rows, held so the tail and the history above it each keep at
-    /// least three. Read when a pane is next scrolled back.
+    /// How tall a split pane's live tail is (F7 ▸ SCROLLBACK, <c>live tail when split</c>): rows (<c>6</c>, the
+    /// default) or a share of the pane (<c>25%</c>), read by <see cref="Configuration.ScrollTail"/> and held so the
+    /// tail and the history above it each keep at least three rows. Read when a pane is next scrolled back.
     /// </summary>
-    public int ScrollTailRows { get; set; }
-
-    /// <summary>The most rows <see cref="ScrollTailRows"/> may ask for; a pane shorter than that is held anyway.</summary>
-    public const int MaxScrollTailRows = 100;
+    public string ScrollTail { get; set; } = Configuration.ScrollTail.Default;
 
     /// <summary>
     /// Whether a trigger marked <c>alert</c>, or a world's name-and-pages alert, may tell the desktop while the

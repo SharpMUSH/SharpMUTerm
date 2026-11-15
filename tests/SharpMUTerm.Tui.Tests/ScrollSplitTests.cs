@@ -18,12 +18,12 @@ public class ScrollSplitTests
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-    private static SharpMUTermApp App(bool split = true, int tailRows = 0)
+    private static SharpMUTermApp App(bool split = true, string? tail = null)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.Text.SplitScrollback = split;
-        config.Text.ScrollTailRows = tailRows;
+        if (tail is not null) config.Text.ScrollTail = tail;
         var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(120, 32));
         app.RenderSnapshot("scrollback");
         return app;
@@ -259,7 +259,7 @@ public class ScrollSplitTests
     [Test]
     public async Task TheLiveTailTakesTheRowsTheSettingAsksFor()
     {
-        var app = App(tailRows: 5);
+        var app = App(tail: "5");
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.SimulateKey(Key(ConsoleKey.PageUp));
         Settled(app);
@@ -329,18 +329,39 @@ public class ScrollSplitTests
     [Arguments(30, 2, 14)]
     [Arguments(8, 2, 3)]
     [Arguments(7, 2, 0)]
-    public async Task TheLiveTailIsHalfWhatTheBandLeavesAndAtLeastThreeRows(int pane, int band, int tail)
+    public async Task FiftyPercentIsHalfWhatTheBandLeavesAndAtLeastThreeRows(int pane, int band, int tail)
+    {
+        await Assert.That(SharpMUTermApp.TailRowsFor(pane, band, "50%")).IsEqualTo(tail);
+    }
+
+    [Test]
+    [Arguments(30, 1, 6)]
+    [Arguments(30, 2, 6)]
+    [Arguments(10, 1, 6)]
+    [Arguments(8, 1, 4)]
+    [Arguments(6, 1, 0)]
+    public async Task TheDefaultTailIsSixRowsHeldToThreeEitherSide(int pane, int band, int tail)
     {
         await Assert.That(SharpMUTermApp.TailRowsFor(pane, band)).IsEqualTo(tail);
     }
 
     [Test]
-    [Arguments(30, 1, 8, 8)]
-    [Arguments(30, 1, 1, 3)]
-    [Arguments(30, 1, 40, 26)]
-    [Arguments(30, 2, 26, 25)]
-    [Arguments(6, 1, 3, 0)]
-    public async Task AChosenTailIsThatManyRowsHeldToThreeEitherSide(int pane, int band, int wanted, int tail)
+    [Arguments(30, 1, "25%", 7)]
+    [Arguments(30, 1, "10 %", 3)]
+    [Arguments(30, 1, "100%", 26)]
+    [Arguments(30, 1, "nonsense", 6)]
+    public async Task AShareIsThatShareOfWhatTheBandLeaves(int pane, int band, string wanted, int tail)
+    {
+        await Assert.That(SharpMUTermApp.TailRowsFor(pane, band, wanted)).IsEqualTo(tail);
+    }
+
+    [Test]
+    [Arguments(30, 1, "8", 8)]
+    [Arguments(30, 1, "1", 3)]
+    [Arguments(30, 1, "40", 26)]
+    [Arguments(30, 2, "26", 25)]
+    [Arguments(6, 1, "3", 0)]
+    public async Task AChosenTailIsThatManyRowsHeldToThreeEitherSide(int pane, int band, string wanted, int tail)
     {
         await Assert.That(SharpMUTermApp.TailRowsFor(pane, band, wanted)).IsEqualTo(tail);
     }
