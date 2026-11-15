@@ -1637,8 +1637,10 @@ public sealed class WorldSession : IAsyncDisposable
                 await SendRawAsync(command, timeout.Token).ConfigureAwait(false);
             }
         }
-        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or InvalidOperationException)
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or InvalidOperationException
+            or System.Net.WebSockets.WebSocketException)
         {
+            // A WebSocket world's write fails with its own exception, not an IOException; either way the close goes on.
             Logger.LogDebug(ex, "{World}: the on-disconnect commands were not all sent", World.Name);
         }
     }

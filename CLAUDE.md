@@ -3571,7 +3571,7 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     `TelnetConnection`). `TelnetSession` hands it `ITransport.ForTelnet(bufferSize)`: a `TransportBridge` over
     `TcpTransport` (socket, TLS and the test fakes stay ours), or the library's own `TelnetTransport.WebSocket`
     for `WebSocketTransport`. Seeding the encoding and wiring CHARSET is `OnStarting` (before the first read);
-    `ReceiveBatchEnded` and the encoding report are `OnInputProcessed`; the MSDP `DO` spotting is `WrapOutput`.
+    `ReceiveBatchEnded` and the encoding report run after each read through `AfterEachRead` (not `OnInputProcessed`, which polls the interpreter's queue with `Task.Delay(1)` per read: ~15 ms a read on Windows); the MSDP `DO` spotting is `WrapOutput`.
     The bridge writes with `CancellationToken.None`, because the library passes its start token, which a
     disconnect cancels before the socket closes. Disposing the connection disposes the interpreter, never the
     transport. A read that faults after this side began stopping is a close, not a failure (`WatchReadLoopAsync`).

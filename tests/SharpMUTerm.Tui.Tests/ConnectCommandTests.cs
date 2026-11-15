@@ -85,6 +85,19 @@ public class ConnectCommandTests
     }
 
     [Test]
+    public async Task TlsBesideAPlainWebSocketAddressIsRefusedRatherThanDroppedSilently()
+    {
+        var (app, wire, config) = Open();
+        await using var _app = app;
+
+        Type(app, "/connect ws://mud.example.org:4000/telnet tls");
+
+        await Assert.That(config.Worlds).IsEmpty();
+        await Assert.That(wire.Lines).IsEmpty();
+        await Assert.That(app.LastNotice).Contains("wss://");
+    }
+
+    [Test]
     public async Task AConfiguredWorldIsReachedByNameAndNotAddedAgain()
     {
         var (app, _, config) = Open(c => c.Worlds.Add(new WorldDefinition

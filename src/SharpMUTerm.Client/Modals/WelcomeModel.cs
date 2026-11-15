@@ -209,14 +209,20 @@ public sealed record WelcomeModel(
     /// <summary>
     /// The command line that does what the form would with these fields: <c>/connect mud.example.org 4201 tls</c>. An
     /// empty host or port reads as its placeholder, so the line always shows the shape; an IPv6 host is bracketed, as
-    /// <c>/connect</c> wants it.
+    /// <c>/connect</c> wants it. With a WebSocket <paramref name="path"/> (a world Browse worlds picked at a WebSocket
+    /// address) it is the <c>ws://</c> or <c>wss://</c> address instead, which is the only way <c>/connect</c> takes one.
     /// </summary>
-    public static string CommandFor(string host, string port, bool tls)
+    public static string CommandFor(string host, string port, bool tls, string? path = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(port);
         host = host.Trim();
         port = port.Trim();
+        if (path is not null && host.Length > 0 && int.TryParse(port, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number))
+        {
+            return "/connect " + Core.Transport.WebSocketAddress.Format(host.Trim('[', ']'), number, tls, path);
+        }
+
         host = host.Length == 0 ? HostPlaceholder : host.Contains(':', StringComparison.Ordinal) && !host.StartsWith('[') ? $"[{host}]" : host;
         port = port.Length == 0 ? "4000" : port;
         return $"/connect {host} {port}" + (tls ? " tls" : string.Empty);

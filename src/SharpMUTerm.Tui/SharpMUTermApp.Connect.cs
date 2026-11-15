@@ -63,6 +63,13 @@ internal sealed partial class SharpMUTermApp
                 return;
             }
 
+            // tls beside ws:// asks for two different things; dialling plaintext would drop the one that matters.
+            if (tls && !socket.Tls)
+            {
+                RefuseCommand("ws:// is not encrypted; use wss:// for TLS");
+                return;
+            }
+
             ConnectToEndpoint(socket.Host, socket.Port, socket.Tls, added =>
             {
                 added.WebSocketPath = socket.Path;

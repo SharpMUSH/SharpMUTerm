@@ -449,7 +449,7 @@ public sealed class TelnetSession : ITelnetSession
             var builder = ConfigureInterpreter();
             var loopToken = _loopCts.Token;
             _connection = await Task.Run(
-                () => builder.StartAsync(_transport.ForTelnet(_options.ReceiveBufferSize), loopToken),
+                () => builder.StartAsync(new AfterEachRead(_transport.ForTelnet(_options.ReceiveBufferSize), OnReadProcessed), loopToken),
                 CancellationToken.None).ConfigureAwait(false);
         }
         catch
@@ -487,7 +487,6 @@ public sealed class TelnetSession : ITelnetSession
             .UseLogger(_logger)
             .WrapOutput(write => data => ObserveOutput(data, write))
             .OnStarting(OnStartingAsync)
-            .OnInputProcessed(OnInputProcessedAsync)
             .OnSubmit(OnSubmitAsync)
             .AddPlugin(_cellQueries)
             // Who this client is, for every protocol in the library that names it.
@@ -555,8 +554,8 @@ public sealed class TelnetSession : ITelnetSession
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>After each read has been handled, its callbacks included.</summary>
-    private ValueTask OnInputProcessedAsync(TelnetInterpreter interpreter)
+    /// <summary>After the interpreter has taken each read (<see cref="AfterEachRead"/>).</summary>
+    private void OnReadProcessed()
     {
         ReceiveBatchEnded?.Invoke(this, EventArgs.Empty);
 
@@ -564,7 +563,6 @@ public sealed class TelnetSession : ITelnetSession
         // does not raise (see WireCharsetCallback). Cheap — a reference comparison — and
         // idempotent, so the arm that already fired mid-batch makes this a no-op.
         ReportEncodingIfChanged();
-        return ValueTask.CompletedTask;
     }
 
     /// <summary>
