@@ -66,7 +66,8 @@ internal readonly record struct ScreenButton(
     Func<ScreenPress> Run,
     ScreenButtonKind Kind = ScreenButtonKind.Add,
     string? Target = null,
-    Func<string>? Describe = null)
+    Func<string>? Describe = null,
+    string? Verb = null)
 {
     /// <summary>
     /// What a destructive button's row is labelled with, which is the <em>key</em> that runs it rather
@@ -109,6 +110,9 @@ internal readonly record struct ScreenButton(
     /// </summary>
     internal const string DetailKeyLabel = "i";
 
+    /// <summary>The key that shows a character's log folder on F5, drawn as its row's key the way <see cref="DetailKeyLabel"/> is.</summary>
+    internal const string LogFolderKeyLabel = "o";
+
     /// <summary>
     /// Opens a read-only report about the selected row. A <see cref="ScreenButton"/> so the drawn row and
     /// the key that runs it come from one place — but it changes nothing, so it returns no undo, moves no
@@ -118,19 +122,22 @@ internal readonly record struct ScreenButton(
     /// </summary>
     /// <param name="target">The row this would report on, named on the drawn key-hint row.</param>
     /// <param name="open">Puts the report on the screen.</param>
-    internal static ScreenButton Detail(string target, Action open)
+    /// <param name="key">The letter that runs it; <see cref="DetailKeyLabel"/> unless the pane offers a second such action.</param>
+    /// <param name="verb">What its row says between the key and the target; null for the report's <c>info on</c>.</param>
+    internal static ScreenButton Detail(string target, Action open, string key = DetailKeyLabel, string? verb = null)
     {
         ArgumentNullException.ThrowIfNull(open);
 
         return new ScreenButton(
-            DetailKeyLabel,
+            key,
             () =>
             {
                 open();
                 return new ScreenPress(null);
             },
             ScreenButtonKind.Detail,
-            target);
+            target,
+            Verb: verb);
     }
 
     /// <summary>
@@ -503,7 +510,7 @@ internal sealed class ScreenModel
     /// way: a pane that does not offer the button does not answer the key, which is what keeps <c>i</c>
     /// from meaning anything in a pane that has editable fields.
     /// </summary>
-    internal ScreenButton? DetailIn(int pane)
+    internal ScreenButton? DetailIn(int pane, string key = ScreenButton.DetailKeyLabel)
     {
         if (pane < 0 || pane >= _panes.Length)
         {
@@ -512,7 +519,7 @@ internal sealed class ScreenModel
 
         foreach (var row in _panes[pane])
         {
-            if (row.Button is { Kind: ScreenButtonKind.Detail } button)
+            if (row.Button is { Kind: ScreenButtonKind.Detail } button && button.Label == key)
             {
                 return button;
             }

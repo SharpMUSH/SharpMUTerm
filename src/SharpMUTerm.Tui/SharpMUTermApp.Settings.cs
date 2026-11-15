@@ -247,6 +247,7 @@ internal sealed partial class SharpMUTermApp
                 }
             }),
             ServerInfo = ServerInfoNow(),
+            OpenLogFolder = _logRoot is null ? null : key => OnUiThread(() => OpenLogFolderOf(key)),
             RunCommand = id => OnUiThread(() =>
             {
                 // Browse worlds and the import are surfaces of their own: the settings window gets out of their way.

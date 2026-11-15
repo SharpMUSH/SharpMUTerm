@@ -254,6 +254,9 @@ internal sealed class SettingsSession
             case ConsoleKey.I when key.Modifiers == 0:
                 return Detail(model);
 
+            case ConsoleKey.O when key.Modifiers == 0:
+                return Detail(model, ScreenButton.LogFolderKeyLabel);
+
             case ConsoleKey.R when key.Modifiers == 0:
                 return Reset(model);
 
@@ -333,10 +336,10 @@ internal sealed class SettingsSession
     /// the second it could not be typed into a world's name.
     /// </para>
     /// </summary>
-    private ScreenAction Detail(ScreenModel model)
+    private ScreenAction Detail(ScreenModel model, string key = ScreenButton.DetailKeyLabel)
     {
         if (!model.IsListRow(Selection.Pane, Selection.Index)
-            || model.DetailIn(Selection.Pane) is not { } button)
+            || model.DetailIn(Selection.Pane, key) is not { } button)
         {
             return ScreenAction.None;
         }

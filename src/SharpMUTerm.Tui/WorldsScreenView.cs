@@ -30,7 +30,8 @@ internal static class WorldsScreenView
         int height = 0,
         bool info = false,
         IReadOnlyList<LayoutDefinition>? layouts = null,
-        Func<WorldDefinition, string?>? joinWrapsAdvice = null)
+        Func<WorldDefinition, string?>? joinWrapsAdvice = null,
+        bool logFolder = false)
     {
         // Both panes end in button rows, so a raw cursor can point past its list; resolving once here
         // keeps every block of the screen agreeing on which world and character are selected.
@@ -41,7 +42,7 @@ internal static class WorldsScreenView
         // The model is rebuilt here only to derive the header's hints, so the INFO row's presence is all
         // it needs of the action — a no-op stands in for it, and the delegate stays with the session.
         var model = WorldsScreenRenderer.Model(
-            worlds, triggerSets, selectedWorld, selectedCharacter, selectedSet, info ? _ => { } : null, layouts);
+            worlds, triggerSets, selectedWorld, selectedCharacter, selectedSet, info ? _ => { } : null, layouts, logFolder ? (_, _) => { } : null);
         var header = ScreenChrome.Band(
             WorldsScreenRenderer.HeaderLine(width, model, focus, fkey), ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
@@ -79,7 +80,7 @@ internal static class WorldsScreenView
         // value too long for it (`[x] TLS — encrypt this conne`) is elided to it rather than clipped by the control.
         var detailCol = ScreenChrome.Stretch(ScreenChrome.Panel(
             WorldsScreenRenderer
-                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts, joinWrapsAdvice)
+                .DetailColumn(worlds, triggerSets, selectedWorld, selectedCharacter, accent, focus, rows, layouts, joinWrapsAdvice, logFolder)
                 .ConvertAll(line => MarkupText.FitVisible(line, width - 32)),
             scheme));
         var body = Controls.HorizontalGrid()

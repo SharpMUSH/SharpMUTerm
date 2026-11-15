@@ -62,6 +62,9 @@ public static class BuiltInCommands
     /// <summary>The ⌃P id that opens script <paramref name="name"/> in the editor.</summary>
     public static string ScriptOpen(string name) => ScriptOpenPrefix + name;
 
+    /// <summary>⌃P ▸ Open log folder: the focused character's log folder in the desktop's file manager.</summary>
+    public const string OpenLogFolderCommand = "term:open-log-folder";
+
     /// <summary>⌃P ▸ Start scene log.</summary>
     public const string SceneStartCommand = "term:scene-on";
 
@@ -203,6 +206,8 @@ public static class BuiltInCommands
         // OUTPUT (CommandGroup.Terminal) — stateful labels.
         Add("term:log-off", CommandGroup.Terminal, "Pause logging", when: c => c.State.LoggingOn);
         Add("term:log-on", CommandGroup.Terminal, "Start logging", when: c => !c.State.LoggingOn);
+        Add(OpenLogFolderCommand, CommandGroup.Terminal, "Open log folder",
+            detail: "where this character's logs are written", when: c => c.State.LogFolder);
         Family("term:scene-saved", ScenePrefix, _ => []);
         Add(SceneStopCommand, CommandGroup.Terminal, "Stop scene log", detail: "closes the file", when: c => c.State.SceneLogging);
         Add(SceneStartCommand, CommandGroup.Terminal, "Start scene log",

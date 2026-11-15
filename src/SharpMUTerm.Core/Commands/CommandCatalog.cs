@@ -58,6 +58,7 @@ public sealed record CharacterRef(
 /// The worlds whose connected pane is narrower than the column their server wraps at, and which do not join wraps — so
 /// <c>Join server wraps for …</c> is offered (and suggested) only while it would change what the pane shows.
 /// </param>
+/// <param name="LogFolder">Whether this client keeps logs at all (it owns a log folder), so ⌃P offers to open it.</param>
 /// <param name="SceneLogging">Whether the focused window is being recorded as a scene, so ⌃P offers to stop it.</param>
 /// <param name="NoDictionary">
 /// Whether the client's own dictionaries folder holds none, so <c>Get a spelling dictionary</c> is offered.
@@ -88,6 +89,7 @@ public sealed record CharacterRef(
 /// </param>
 public sealed record CommandContext(
     bool LoggingOn = false,
+    bool LogFolder = false,
     bool Zoomed = false,
     bool Frozen = false,
     bool TimestampsOn = false,

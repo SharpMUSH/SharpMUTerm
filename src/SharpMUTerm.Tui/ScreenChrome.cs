@@ -784,7 +784,7 @@ internal static class ScreenChrome
             lines.Add(button.Kind switch
             {
                 ScreenButtonKind.Remove => KeyHintRow(button, RemovesWord),
-                ScreenButtonKind.Detail => KeyHintRow(button, InfoWords),
+                ScreenButtonKind.Detail => KeyHintRow(button, button.Verb ?? InfoWords),
                 _ => Cursor(AddRow(button), cursor.IsOn(pane, firstIndex + i), width),
             });
 

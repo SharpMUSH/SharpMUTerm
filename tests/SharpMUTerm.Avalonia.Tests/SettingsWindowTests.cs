@@ -38,6 +38,9 @@ public class SettingsWindowTests
         /// <summary>The characters the client says are connected.</summary>
         public List<string> Connected { get; } = [];
 
+        /// <summary>The characters whose log folder the page asked the client to open, by session key.</summary>
+        public List<string> LogFolders { get; } = [];
+
         /// <summary>The sections the form lists; every built-in one is declared now, so a test adds one that is not.</summary>
         public IReadOnlyList<SettingsSectionContribution> Sections { get; init; } = BuiltInSettings.All;
 
@@ -83,6 +86,7 @@ public class SettingsWindowTests
                 WorldNotes = Notes,
                 ConnectedKeys = () => Connected.ToArray(),
                 Connect = Connects.Add,
+                OpenLogFolder = LogFolders.Add,
                 RunCommand = Ran.Add,
                 CommitAs = History is null ? null : (change, what) =>
                 {
@@ -815,6 +819,24 @@ public class SettingsWindowTests
         });
 
         await Assert.That(harness.Connects).IsEquivalentTo(new[] { "Aetherfall.Corvid" });
+        await Assert.That(harness.Commits).IsEqualTo(0);
+    }
+
+    /// <summary>A character's <em>Open log folder</em> asks the client for that character's folder and changes nothing.</summary>
+    [Test]
+    public async Task TheOpenLogFolderButtonAsksTheClient()
+    {
+        var harness = TwoWorlds();
+        var name = await Run(harness, "logging", window =>
+        {
+            var button = window.OpenLogFolderButton!;
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return button.Content as string;
+        });
+
+        await Assert.That(name).IsEqualTo("Open log folder");
+        await Assert.That(harness.LogFolders).IsEquivalentTo(new[] { "Aetherfall.Corvid" });
         await Assert.That(harness.Commits).IsEqualTo(0);
     }
 

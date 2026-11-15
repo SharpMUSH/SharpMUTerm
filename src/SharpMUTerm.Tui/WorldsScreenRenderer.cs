@@ -376,6 +376,9 @@ internal static class WorldsScreenRenderer
     /// </summary>
     
 
+    /// <summary>What the character list's <c>o</c> row says between the key and the character.</summary>
+    internal const string LogFolderWords = "opens the log folder of";
+
     /// <summary>The label the WORLDS list's add button carries, and the row the renderer draws for it.</summary>
     internal const string AddWorldLabel = "+ world";
 
@@ -513,7 +516,8 @@ internal static class WorldsScreenRenderer
         int selectedCharacter,
         int selectedSet = 0,
         Action<int>? info = null,
-        IReadOnlyList<LayoutDefinition>? layouts = null)
+        IReadOnlyList<LayoutDefinition>? layouts = null,
+        Action<int, int>? logFolder = null)
     {
         ArgumentNullException.ThrowIfNull(worlds);
         ArgumentNullException.ThrowIfNull(triggerSets);
@@ -542,7 +546,7 @@ internal static class WorldsScreenRenderer
             // rows and the trigger-set assignments, both of which render a real `[x]`.
             : ScreenModel.Rows(world.Characters, c => ScreenRow.Of(
                 DeclaredRow(BuiltInSettings.Character, CharacterFieldOrder, new SettingTarget(context, world, c))))
-                .Concat(CharacterButtons(world, selectedCharacter))
+                .Concat(CharacterButtons(world, selectedWorld, selectedCharacter, logFolder))
                 .ToArray();
 
         var securityRows = world is null ? Array.Empty<ScreenRow>() : SecurityRows(new SettingTarget(context, world));
@@ -853,8 +857,14 @@ internal static class WorldsScreenRenderer
     /// its logging settings with the original, so editing one would silently edit both — and the copy
     /// is renamed rather than left as a second identical name, because a session is keyed
     /// <c>world.character</c> and two of those would collide.
+    /// <para>
+    /// <c>o</c> shows the selected character's log folder in the file manager, offered only where the client keeps logs
+    /// (<paramref name="logFolder"/>, handed the world's and the character's index). A targeted key like <c>Del</c>, so
+    /// it trails with it.
+    /// </para>
     /// </summary>
-    private static List<ScreenRow> CharacterButtons(WorldDefinition world, int selectedCharacter)
+    private static List<ScreenRow> CharacterButtons(
+        WorldDefinition world, int selectedWorld, int selectedCharacter, Action<int, int>? logFolder = null)
     {
         var characters = world.Characters;
         var rows = new List<ScreenRow>
@@ -875,6 +885,13 @@ internal static class WorldsScreenRenderer
                     return copy;
                 },
                 target: source.Name)));
+            if (logFolder is not null)
+            {
+                var (atWorld, atCharacter) = (selectedWorld, selectedCharacter);
+                rows.Add(ScreenRow.Of(ScreenButton.Detail(
+                    source.Name, () => logFolder(atWorld, atCharacter), ScreenButton.LogFolderKeyLabel, LogFolderWords)));
+            }
+
             rows.Add(ScreenRow.Of(ScreenButton.Remove(
                 characters, selectedCharacter, target: source.Name, describe: () => WorldEditing.Deletion(source))));
         }
@@ -980,7 +997,8 @@ internal static class WorldsScreenRenderer
         ScreenFocus? focus = null,
         int height = 0,
         IReadOnlyList<LayoutDefinition>? layouts = null,
-        Func<WorldDefinition, string?>? joinWrapsAdvice = null)
+        Func<WorldDefinition, string?>? joinWrapsAdvice = null,
+        bool logFolder = false)
     {
         var all = layouts ?? BuiltInLayouts.All;
         var cursor = focus ?? ScreenFocus.None;
@@ -1196,7 +1214,7 @@ internal static class WorldsScreenRenderer
 
         right.Add(string.Empty);
         right.AddRange(ScreenChrome.Buttons(
-            CharacterButtons(world, selectedCharacter),
+            CharacterButtons(world, selectedWorld, selectedCharacter, logFolder ? (_, _) => { } : null),
             cursor,
             CharactersPane,
             world.Characters.Count,

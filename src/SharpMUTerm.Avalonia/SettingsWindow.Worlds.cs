@@ -71,6 +71,8 @@ internal sealed partial class SettingsWindow
 
     internal Button? CopyCharacterButton { get; private set; }
 
+    internal Button? OpenLogFolderButton { get; private set; }
+
     internal Button? DeleteButton { get; private set; }
 
     internal Button? MoveUpButton { get; private set; }
@@ -685,6 +687,7 @@ internal sealed partial class SettingsWindow
         ConfirmDeleteButton = null;
         AddCharacterButton = null;
         CopyCharacterButton = null;
+        OpenLogFolderButton = null;
         var entry = _form.WorldList().FirstOrDefault(w => ReferenceEquals(w.World, world));
         var actions = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, NativeTokens.Space6, 0, 0) };
         if (_shownCharacter is { } character)
@@ -729,6 +732,19 @@ internal sealed partial class SettingsWindow
                 }
             };
             AddAction(actions, CopyCharacterButton);
+
+            if (_form.CanOpenLogFolder)
+            {
+                OpenLogFolderButton = HeadButton("Open log folder", $"Show the folder {character.Name}'s logs are written to");
+                OpenLogFolderButton.Click += (_, _) =>
+                {
+                    if (_shownWorld is { } shownWorld && _shownCharacter is { } shown)
+                    {
+                        _form.OpenLogFolderOf(shownWorld, shown);
+                    }
+                };
+                AddAction(actions, OpenLogFolderButton);
+            }
         }
         else
         {
