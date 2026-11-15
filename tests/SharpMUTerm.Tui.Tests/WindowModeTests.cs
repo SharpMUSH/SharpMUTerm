@@ -26,6 +26,10 @@ public class WindowModeTests
 
         public event Action? Changed;
 
+        public List<bool> TitleBars { get; } = [];
+
+        public void ShowTitleBar(bool show) => TitleBars.Add(show);
+
         public void Toggle(WindowMode mode)
         {
             Toggled.Add(mode);
@@ -34,11 +38,33 @@ public class WindowModeTests
         }
     }
 
-    private static SharpMUTermApp App(IWindowModes? modes)
+    private static SharpMUTermApp App(IWindowModes? modes, AppConfiguration? config = null)
     {
         Console.SetIn(TextReader.Null);
         var host = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 40), null, null, null) with { WindowModes = modes };
-        return new SharpMUTermApp(new AppConfiguration(), host);
+        return new SharpMUTermApp(config ?? new AppConfiguration(), host);
+    }
+
+    [Test]
+    public async Task TheWindowPageTurnsTheTitleBarOnAndOffAtOnce()
+    {
+        var modes = new FakeModes();
+        var config = new AppConfiguration();
+        var app = App(modes, config);
+        var field = app.Contributions.SettingsSections.Find(BuiltInSettings.Window.Id)!.Fields.Single(f => f.Id == "title-bar");
+        await Assert.That(field.Label).IsEqualTo("system title bar");
+
+        app.RenderSnapshot();
+        await Assert.That(modes.TitleBars).IsEquivalentTo(new[] { false });
+
+        config.WindowTitleBar = true;
+        app.SaveConfiguration();
+        app.RenderSnapshot();
+        await Assert.That(modes.TitleBars).IsEquivalentTo(new[] { false, true });
+
+        config.WindowTitleBar = false;
+        app.SaveConfiguration();
+        await Assert.That(modes.TitleBars).IsEquivalentTo(new[] { false, true, false });
     }
 
     [Test]

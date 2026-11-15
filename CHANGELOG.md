@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The desktop window can wear the system's own title bar again. Settings ▸ Window ▸ *system title bar* puts it back
+  (with the desktop's minimise, maximise and close buttons) and takes it away at once, and it is kept between runs.
+  Off by default, as before. Window only: a terminal's title bar is its emulator's.
+
 - F7 ▸ Scrollback ▸ *live tail when split* sets how much of the pane the newest lines take under the history while it
   is scrolled back: a number of rows, or a share such as `25%` (`50%` is the old half). The default is now 6 rows. Turning off *split the pane when scrolled back* (now
   also found by searching settings for "pause") scrolls the whole pane instead. In the terminal and the desktop window.

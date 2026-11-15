@@ -194,10 +194,14 @@ public static partial class BuiltInSettings
     /// <summary>The Window page's one group.</summary>
     public const string WindowGroup = "Opening";
 
+    /// <summary>The Window page's group for the window's frame.</summary>
+    public const string FrameGroup = "Frame";
+
     /// <summary>
     /// The desktop window: how it opens. Not in <see cref="All"/> and not on any F-key: a host registers it only when it
     /// is a window that can cover the screen (the terminal has no window to size), so the terminal's settings never list
-    /// a choice that does nothing there. F11 and ⇧F11 change the mode for the run; this is where it starts.
+    /// a choice that does nothing there. F11 and ⇧F11 change the mode for the run; this is where it starts. The system title
+    /// bar is here too, for the same reason.
     /// </summary>
     public static SettingsSectionContribution Window { get; } = new()
     {
@@ -214,6 +218,10 @@ public static partial class BuiltInSettings
                     c => WindowStarts[(int)c.WindowStart],
                     (c, v) => c.WindowStart = WindowStartFor(v)),
             },
+            Flag("title-bar", "system title bar", FrameGroup,
+                c => c.WindowTitleBar, (c, v) => c.WindowTitleBar = v,
+                "the desktop's own title bar above the header, with its buttons; off, drag the header's blank space to move the window",
+                "title bar titlebar decorations frame border caption minimise minimize close buttons system native"),
         ],
     };
 
