@@ -1634,7 +1634,7 @@ public sealed class WorldSession : IAsyncDisposable
         {
             foreach (var command in SplitCommands(character.OnDisconnect))
             {
-                await SendRawAsync(command, timeout.Token).ConfigureAwait(false);
+                await SendRawAsync(command, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or InvalidOperationException

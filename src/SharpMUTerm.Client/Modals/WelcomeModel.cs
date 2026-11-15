@@ -218,6 +218,11 @@ public sealed record WelcomeModel(
         ArgumentNullException.ThrowIfNull(port);
         host = host.Trim();
         port = port.Trim();
+        if (path is not null && port.Length == 0)
+        {
+            port = "4000";
+        }
+
         if (path is not null && host.Length > 0 && int.TryParse(port, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number))
         {
             return "/connect " + Core.Transport.WebSocketAddress.Format(host.Trim('[', ']'), number, tls, path);

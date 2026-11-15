@@ -355,6 +355,14 @@ internal sealed class WelcomeSurface
             return WelcomeAction.Redraw;
         }
 
+        // Before the endpoint is read, so a changed host with a bad port does not keep the pick's path.
+        if (WorldName is not null && !string.Equals(Host, _prefilledHost, StringComparison.OrdinalIgnoreCase))
+        {
+            WorldName = null;
+            Encoding = null;
+            WebSocketPath = null;
+        }
+
         if (parse(Port.Length == 0 ? [Host] : [Host, Port]) is not { } endpoint)
         {
             Problem = Port.Length > 0 && !(int.TryParse(Port, out var port) && port is > 0 and <= 65535)
@@ -365,13 +373,6 @@ internal sealed class WelcomeSurface
         }
 
         var character = Character.Trim();
-        if (WorldName is not null && !string.Equals(Host, _prefilledHost, StringComparison.OrdinalIgnoreCase))
-        {
-            WorldName = null;
-            Encoding = null;
-            WebSocketPath = null;
-        }
-
         Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater, WorldName, Encoding, WebSocketPath);
         return WelcomeAction.Connect;
     }
