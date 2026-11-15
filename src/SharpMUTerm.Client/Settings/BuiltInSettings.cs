@@ -189,7 +189,7 @@ public static partial class BuiltInSettings
     };
 
     /// <summary>The Window page's words for each <see cref="WindowMode"/>, in its order.</summary>
-    public static IReadOnlyList<string> WindowStarts { get; } = ["windowed", "maximised", "full screen", "windowed full screen"];
+    public static IReadOnlyList<string> WindowStarts { get; } = ["as last closed", "maximised", "full screen", "windowed full screen"];
 
     /// <summary>The Window page's one group.</summary>
     public const string WindowGroup = "Opening";
@@ -206,10 +206,10 @@ public static partial class BuiltInSettings
         Order = 75,
         Fields =
         [
-            new ChoiceField("start", "window opens", WindowStarts, "next time it opens; F11 is full screen and Shift+F11 windowed full screen at any time")
+            new ChoiceField("start", "window opens", WindowStarts, "next time it opens; as last closed is the place and size it was left at, maximised if it was. F11 is full screen and Shift+F11 windowed full screen at any time")
             {
                 Group = WindowGroup,
-                Keywords = "full screen fullscreen windowed borderless maximised maximized start launch window size",
+                Keywords = "full screen fullscreen windowed borderless maximised maximized start launch window size position remember restore",
                 Binding = new SettingBinding<string>(
                     c => WindowStarts[(int)c.WindowStart],
                     (c, v) => c.WindowStart = WindowStartFor(v)),
@@ -217,7 +217,8 @@ public static partial class BuiltInSettings
         ],
     };
 
-    /// <summary>The <see cref="WindowMode"/> one of <see cref="WindowStarts"/> names; anything else is windowed.</summary>
+    /// <summary>The <see cref="WindowMode"/> one of <see cref="WindowStarts"/> names; anything else (and the old word
+    /// <c>windowed</c>) is <see cref="WindowMode.Windowed"/>, which opens the window as it was last closed.</summary>
     public static WindowMode WindowStartFor(string? words)
     {
         for (var i = 0; i < WindowStarts.Count; i++)

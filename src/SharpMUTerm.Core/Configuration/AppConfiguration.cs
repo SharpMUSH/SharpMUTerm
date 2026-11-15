@@ -143,6 +143,13 @@ public sealed class AppConfiguration
     public WindowMode WindowStart { get; set; }
 
     /// <summary>
+    /// Where the desktop window was left: place, size and whether it was maximised (<see cref="WindowPlacement"/>). Kept up
+    /// to date by the window as it moves, and saved with everything else. Null until a window has been opened; a terminal
+    /// never reads it.
+    /// </summary>
+    public WindowPlacement? Window { get; set; }
+
+    /// <summary>
     /// The desktop window's text sizes and zoom (the Text size settings page, Ctrl+= / Ctrl+- / Ctrl+0). Read by the
     /// window alone; a terminal's font size is its emulator's.
     /// </summary>

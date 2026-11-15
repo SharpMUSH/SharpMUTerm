@@ -3,7 +3,10 @@ namespace SharpMUTerm.Core.Configuration;
 /// <summary>How the desktop window covers the screen.</summary>
 public enum WindowMode
 {
-    /// <summary>An ordinary window, at the size it was left.</summary>
+    /// <summary>
+    /// An ordinary window, at the place and size it was left (<see cref="AppConfiguration.Window"/>). As a way to open, the
+    /// window is also maximised again if it was maximised when it was closed.
+    /// </summary>
     Windowed,
 
     /// <summary>Maximised to the screen's working area: the taskbar or panels stay.</summary>
