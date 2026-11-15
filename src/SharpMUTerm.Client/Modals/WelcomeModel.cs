@@ -57,7 +57,8 @@ public sealed record WelcomeModel(
     string? Problem,
     string? IndexProblem,
     string? WorldName = null,
-    string? Encoding = null)
+    string? Encoding = null,
+    string? WebSocketPath = null)
 {
     /// <summary>The example the surface names, a host nobody owns (RFC 2606).</summary>
     public const string ExampleCommand = "/connect mud.example.org 4201 tls";
@@ -95,9 +96,8 @@ public sealed record WelcomeModel(
     /// </summary>
     public string FormIntroLine => WorldName is null
         ? FormIntro
-        : Encoding is { } encoding
-            ? $"{WorldName}, as listed on mu*index, saved with encoding {encoding}. Check it and press ⏎ to save and connect."
-            : $"{WorldName}, as listed on mu*index. Check it and press ⏎ to save and connect.";
+        : $"{WorldName}, as listed on mu*index{(WebSocketPath is null ? string.Empty : ", over a WebSocket")}"
+            + $"{(Encoding is { } encoding ? $", saved with encoding {encoding}" : string.Empty)}. Check it and press ⏎ to save and connect.";
 
     /// <summary>The TLS row's words when on; the window's check box carries these words.</summary>
     public const string TlsOn = "On, encrypted";
@@ -209,14 +209,25 @@ public sealed record WelcomeModel(
     /// <summary>
     /// The command line that does what the form would with these fields: <c>/connect mud.example.org 4201 tls</c>. An
     /// empty host or port reads as its placeholder, so the line always shows the shape; an IPv6 host is bracketed, as
-    /// <c>/connect</c> wants it.
+    /// <c>/connect</c> wants it. With a WebSocket <paramref name="path"/> (a world Browse worlds picked at a WebSocket
+    /// address) it is the <c>ws://</c> or <c>wss://</c> address instead, which is the only way <c>/connect</c> takes one.
     /// </summary>
-    public static string CommandFor(string host, string port, bool tls)
+    public static string CommandFor(string host, string port, bool tls, string? path = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(port);
         host = host.Trim();
         port = port.Trim();
+        if (path is not null && port.Length == 0)
+        {
+            port = "4000";
+        }
+
+        if (path is not null && host.Length > 0 && int.TryParse(port, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number))
+        {
+            return "/connect " + Core.Transport.WebSocketAddress.Format(host.Trim('[', ']'), number, tls, path);
+        }
+
         host = host.Length == 0 ? HostPlaceholder : host.Contains(':', StringComparison.Ordinal) && !host.StartsWith('[') ? $"[{host}]" : host;
         port = port.Length == 0 ? "4000" : port;
         return $"/connect {host} {port}" + (tls ? " tls" : string.Empty);

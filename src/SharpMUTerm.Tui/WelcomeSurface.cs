@@ -24,7 +24,7 @@ internal enum WelcomeAction
 }
 
 /// <summary>What the connect form asks for, read once ⏎ has checked it.</summary>
-internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? Character, bool PasswordLater, string? WorldName = null, string? Encoding = null);
+internal sealed record WelcomeConnect(string Host, int Port, bool Tls, string? Character, bool PasswordLater, string? WorldName = null, string? Encoding = null, string? WebSocketPath = null);
 
 /// <summary>
 /// The first-run welcome: what it says and what a key on it means, with no window in it — the
@@ -88,18 +88,24 @@ internal sealed class WelcomeSurface
     /// </summary>
     public string? Encoding { get; private set; }
 
+    /// <summary>
+    /// The WebSocket path when Browse worlds picked a WebSocket address (null: telnet); dropped with <see cref="WorldName"/>
+    /// once the host is changed.
+    /// </summary>
+    public string? WebSocketPath { get; private set; }
+
     /// <summary>The host Browse worlds filled in, so a changed host drops the name that went with it.</summary>
     private string? _prefilledHost;
 
     /// <summary>Everything the surface says now: what the cells draw and the window's native welcome draws.</summary>
     public WelcomeModel Model =>
-        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem, WorldName, Encoding);
+        new(InForm, Selected, Layout, Field, Host, Port, Tls, Character, PasswordLater, Problem, _indexProblem, WorldName, Encoding, WebSocketPath);
 
     /// <summary>
     /// The form, filled in from a world Browse worlds picked: its host, port and TLS, and its name for the world it will
     /// be saved as. Only fills it in — the player's own ⏎ there is what saves and dials, through <c>/connect</c>'s path.
     /// </summary>
-    public void Prefill(string worldName, string host, int port, bool tls, string? encoding = null)
+    public void Prefill(string worldName, string host, int port, bool tls, string? encoding = null, string? webSocketPath = null)
     {
         InForm = true;
         Field = WelcomeField.Character;
@@ -108,6 +114,7 @@ internal sealed class WelcomeSurface
         Tls = tls;
         WorldName = worldName;
         Encoding = encoding;
+        WebSocketPath = webSocketPath;
         _prefilledHost = Host;
         Problem = null;
         Request = null;
@@ -195,6 +202,7 @@ internal sealed class WelcomeSurface
         PasswordLater = false;
         WorldName = null;
         Encoding = null;
+        WebSocketPath = null;
         _prefilledHost = null;
         Problem = null;
         Request = null;
@@ -347,6 +355,14 @@ internal sealed class WelcomeSurface
             return WelcomeAction.Redraw;
         }
 
+        // Before the endpoint is read, so a changed host with a bad port does not keep the pick's path.
+        if (WorldName is not null && !string.Equals(Host, _prefilledHost, StringComparison.OrdinalIgnoreCase))
+        {
+            WorldName = null;
+            Encoding = null;
+            WebSocketPath = null;
+        }
+
         if (parse(Port.Length == 0 ? [Host] : [Host, Port]) is not { } endpoint)
         {
             Problem = Port.Length > 0 && !(int.TryParse(Port, out var port) && port is > 0 and <= 65535)
@@ -357,13 +373,7 @@ internal sealed class WelcomeSurface
         }
 
         var character = Character.Trim();
-        if (WorldName is not null && !string.Equals(Host, _prefilledHost, StringComparison.OrdinalIgnoreCase))
-        {
-            WorldName = null;
-            Encoding = null;
-        }
-
-        Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater, WorldName, Encoding);
+        Request = new WelcomeConnect(endpoint.Host, endpoint.Port, Tls, character.Length == 0 ? null : character, PasswordLater, WorldName, Encoding, WebSocketPath);
         return WelcomeAction.Connect;
     }
 

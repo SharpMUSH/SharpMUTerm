@@ -54,5 +54,8 @@ public class PanelHeadingTests
         await Assert.That(WelcomeModel.CommandFor("", "", false)).IsEqualTo($"/connect {WelcomeModel.HostPlaceholder} 4000");
         await Assert.That(WelcomeModel.CommandFor(" mud.example.org ", "4201", true)).IsEqualTo("/connect mud.example.org 4201 tls");
         await Assert.That(WelcomeModel.CommandFor("::1", "23", false)).IsEqualTo("/connect [::1] 23");
+        // A WebSocket world Browse worlds picked is typed as its address, the only way /connect takes one.
+        await Assert.That(WelcomeModel.CommandFor("mume.org", "443", true, "/ws-play/")).IsEqualTo("/connect wss://mume.org:443/ws-play/");
+        await Assert.That(WelcomeModel.CommandFor("mume.org", "", false, "/")).IsEqualTo("/connect ws://mume.org:4000/");
     }
 }

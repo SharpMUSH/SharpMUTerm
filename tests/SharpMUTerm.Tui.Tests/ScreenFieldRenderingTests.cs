@@ -88,7 +88,7 @@ public class ScreenFieldRenderingTests
         await Assert.That(port).Contains("port");
 
         var keepalive = WorldsScreenRenderer.DetailColumn(
-            worlds, Sets(), 0, 0, ScreenPalette.Accent, Edit(0, 0, 4, "30")).Single(HasCaret);
+            worlds, Sets(), 0, 0, ScreenPalette.Accent, Edit(0, 0, WorldsScreenRenderer.KeepaliveField, "30")).Single(HasCaret);
         await Assert.That(keepalive).Contains("keepalive");
     }
 

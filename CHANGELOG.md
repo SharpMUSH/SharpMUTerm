@@ -9,6 +9,11 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- Worlds can be reached over a WebSocket, as a browser client would. Browse worlds now lists a game's WebSocket
+  addresses and can connect to them, `/connect ws://host/path` (or `wss://` for an encrypted one) adds and dials one,
+  and F5 has a *websocket path* field: blank keeps the world on plain telnet. Everything else (triggers, GMCP, MXP,
+  logging) works the same over either.
+
 - *Open log folder* shows the folder a character's logs are written to in your file manager (Explorer, Finder, or
   whatever your desktop opens folders with). It is on the command palette (⌃P) for the character in front, on a
   character's page in the desktop window's Worlds & Characters settings, and on F5 in the terminal (`o` on a
@@ -53,6 +58,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   includes prereleases. [docs/UPDATES.md](docs/UPDATES.md) explains it all.
 
 ### Changed
+
+- Updated TelnetNegotiationCore to 4.13.3, MarkupString to 2.31.3 and Microsoft.Extensions.Logging.Abstractions to 11.0.0 (which 4.13.3
+  needs). Nothing a player does changes: the new library releases add WebSocket transports and connection hooks this
+  client does not use yet.
 
 - The quick bar lists every key you have bound, not only function keys. Keypad and letter-chord bindings
   (`Num8`, `Ctrl+E`) used to be left off it. Function keys come first, then other chords, then the keypad in the pad's

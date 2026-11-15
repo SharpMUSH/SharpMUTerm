@@ -102,10 +102,12 @@ public class WorldDirectoryTests
 
         await Assert.That(problem).IsNull();
         await Assert.That(string.Join(",", parsed!.Endpoints.Select(e => $"{e.Address}:{(e.Tls ? "tls" : "plain")}:{(e.Stale ? "stale" : "active")}")))
-            .IsEqualTo("stale.example:4000:plain:stale,a.example:4201:plain:active,b.example:4202:tls:active,a.example:4201:plain:active")
+            .IsEqualTo("ws.example:443:plain:active,stale.example:4000:plain:stale,a.example:4201:plain:active,b.example:4202:tls:active,a.example:4201:plain:active")
             .Because("the client neither re-ranks nor de-duplicates what the directory lists");
         await Assert.That(parsed.FirstConnectable).IsEqualTo(0);
-        await Assert.That(parsed.Address(2)).IsEqualTo(new WorldAddress("Aetherfall", "b.example", 4202, true));
+        await Assert.That(parsed.Endpoints[0].WebSocket).IsTrue();
+        await Assert.That(parsed.Address(0).WebSocketPath).IsEqualTo("/").Because("mu*index gives no path yet, so the root is dialled");
+        await Assert.That(parsed.Address(3)).IsEqualTo(new WorldAddress("Aetherfall", "b.example", 4202, true));
         await Assert.That(parsed.Charset).IsNull();
     }
 

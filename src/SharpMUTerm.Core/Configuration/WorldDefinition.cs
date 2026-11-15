@@ -119,6 +119,13 @@ public sealed class WorldDefinition
 
     public bool AllowInvalidCertificates { get; set; }
 
+    /// <summary>
+    /// Null (the default) dials telnet over TCP. A path such as <c>/</c> or <c>/ws</c> dials a WebSocket at
+    /// <c>ws://host:port/path</c> instead (<c>wss://</c> with <see cref="UseTls"/>), speaking telnet inside it as the
+    /// mudstandards.org proposal writes it. Checked by <see cref="Transport.WebSocketAddress.IsPath"/>.
+    /// </summary>
+    public string? WebSocketPath { get; set; }
+
     /// <summary>Echo typed commands locally into the output window.</summary>
     public bool LocalEcho { get; set; } = true;
 
@@ -305,6 +312,7 @@ public sealed class WorldDefinition
         Port = Port,
         UseTls = UseTls,
         AllowInvalidCertificates = AllowInvalidCertificates,
+        WebSocketPath = WebSocketPath,
         LocalEcho = LocalEcho,
         Encoding = Encoding,
         KeepaliveSeconds = KeepaliveSeconds,
@@ -344,5 +352,6 @@ public sealed class WorldDefinition
         Port = Port,
         UseTls = UseTls,
         AllowInvalidCertificates = AllowInvalidCertificates,
+        WebSocketPath = WebSocketPath,
     };
 }

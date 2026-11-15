@@ -22,7 +22,7 @@ internal sealed partial class SharpMUTermApp
     internal const int DefaultConnectPort = ConnectEndpoint.DefaultPort;
 
     /// <summary>What <c>/connect</c> with nothing after it says.</summary>
-    internal const string ConnectUsage = "/connect <world>, or /connect <host> [port] [tls] to add one";
+    internal const string ConnectUsage = "/connect <world>, or /connect <host> [port] [tls] or a ws:// address to add one";
 
     /// <param name="shape">
     /// Finishes a world this adds before it is saved — the welcome's form adds the character it named. Not
@@ -51,6 +51,30 @@ internal sealed partial class SharpMUTermApp
         if (world is not null)
         {
             DialWorld(world);
+            return;
+        }
+
+        // A ws:// or wss:// address: telnet inside a WebSocket, at the address's path.
+        if (words.Length == 1 && Core.Transport.WebSocketAddress.LooksLikeOne(words[0]))
+        {
+            if (Core.Transport.WebSocketAddress.TryParse(words[0], out var refusal) is not { } socket)
+            {
+                RefuseCommand($"not dialling that address: {refusal}");
+                return;
+            }
+
+            // tls beside ws:// asks for two different things; dialling plaintext would drop the one that matters.
+            if (tls && !socket.Tls)
+            {
+                RefuseCommand("ws:// is not encrypted; use wss:// for TLS");
+                return;
+            }
+
+            ConnectToEndpoint(socket.Host, socket.Port, socket.Tls, added =>
+            {
+                added.WebSocketPath = socket.Path;
+                shape?.Invoke(added);
+            });
             return;
         }
 
@@ -88,7 +112,8 @@ internal sealed partial class SharpMUTermApp
         var world = _config.Worlds.FirstOrDefault(known =>
             string.Equals(known.Host, link.Host, StringComparison.OrdinalIgnoreCase)
             && known.Port == link.Port
-            && known.UseTls == link.Tls);
+            && known.UseTls == link.Tls
+            && known.WebSocketPath is null);
         if (world is not null)
         {
             DialWorld(world);

@@ -654,7 +654,10 @@ internal sealed class WelcomeView : DockPanel, IModalView
         var (lead, tail) = WelcomeModel.CommandWords;
         _command.Inlines!.Clear();
         _command.Inlines.Add(new Run(lead + " "));
-        _command.Inlines.Add(new Run(WelcomeModel.CommandFor(_host.Text ?? string.Empty, _port.Text ?? string.Empty, _tls.IsChecked == true))
+        // The path goes with the host Browse worlds filled in; a host typed over it is a telnet world, as the form saves it.
+        var host = _host.Text ?? string.Empty;
+        var path = string.Equals(host.Trim(), _model.Host, StringComparison.OrdinalIgnoreCase) ? _model.WebSocketPath : null;
+        _command.Inlines.Add(new Run(WelcomeModel.CommandFor(host, _port.Text ?? string.Empty, _tls.IsChecked == true, path))
         {
             FontFamily = Mono,
             Foreground = _colours.Brush(_colours.Text),

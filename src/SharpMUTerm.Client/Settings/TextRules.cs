@@ -55,6 +55,12 @@ public enum TextRule
     /// </summary>
     Image,
 
+    /// <summary>
+    /// A world's WebSocket path (<see cref="Core.Transport.WebSocketAddress.IsPath"/>): blank for telnet, stored as null;
+    /// else starting with <c>/</c>; trimmed.
+    /// </summary>
+    WebSocketPath,
+
     /// <summary>A split pane's live tail (<see cref="Core.Configuration.ScrollTail"/>): rows, or a share such as <c>25%</c>.</summary>
     ScrollTail,
 }
@@ -92,6 +98,8 @@ public static class TextRules
             TextRule.Pattern when !string.IsNullOrWhiteSpace(text) => PatternError(text),
             TextRule.Image => Core.Avatars.AvatarSource.Problem(text),
             TextRule.ScrollTail => Core.Configuration.ScrollTail.Problem(text),
+            TextRule.WebSocketPath when !string.IsNullOrWhiteSpace(text) && !Core.Transport.WebSocketAddress.IsPath(text.Trim()) =>
+                $"{field.Label} starts with / and holds no spaces or characters past ASCII",
             TextRule.NameHighlights => Core.Automation.NameHighlights.Parse(
                 text, colour => HighlightColours.Palette.Contains(colour) && colour != HighlightColours.None).Error,
             _ => null,

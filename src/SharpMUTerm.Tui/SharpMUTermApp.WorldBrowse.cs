@@ -411,7 +411,7 @@ internal sealed partial class SharpMUTermApp
         {
             _formFromBrowse = false;
             PublishWorldModel(_worldModel);
-            current.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding);
+            current.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding, address.WebSocketPath);
             page.Publish(current.Model);
             return;
         }
@@ -419,7 +419,7 @@ internal sealed partial class SharpMUTermApp
         _formFromBrowse = CellWorldBrowse is not null || NativeWorldBrowse is not null;
         CloseWorldBrowse();
         var welcome = new WelcomeSurface(WorldDirectoryProblem()) { Layout = _welcomeLayout };
-        welcome.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding);
+        welcome.Prefill(address.Name, address.Host, address.Port, address.Tls, address.Encoding, address.WebSocketPath);
         if (WelcomeIsOpen)
         {
             CloseWelcome();
@@ -726,7 +726,9 @@ internal sealed partial class SharpMUTermApp
 
             var address = game.Address(index);
             var host = address.Host.Contains(':') ? $"[{address.Host}]" : address.Host;
-            var command = $"/connect {host} {address.Port}" + (address.Tls ? " tls" : string.Empty);
+            var command = address.WebSocketPath is { } path
+                ? "/connect " + Core.Transport.WebSocketAddress.Format(address.Host, address.Port, address.Tls, path)
+                : $"/connect {host} {address.Port}" + (address.Tls ? " tls" : string.Empty);
             if (Host.ScreenIsSeen)
             {
                 OpenWorldForm(address);
@@ -735,7 +737,7 @@ internal sealed partial class SharpMUTermApp
 
             var said = new List<string>
             {
-                $"{row.Name} is at {address.Host} port {address.Port}{(address.Tls ? ", encrypted" : string.Empty)}, as listed on mu*index.",
+                $"{row.Name} is at {address.Host} port {address.Port}{(address.WebSocketPath is null ? "" : " over a WebSocket")}{(address.Tls ? ", encrypted" : string.Empty)}, as listed on mu*index.",
                 $"To add it and connect, type: {command}",
             };
             if (address.Encoding is { } encoding)

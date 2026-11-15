@@ -325,7 +325,8 @@ public sealed class TelnetSession : ITelnetSession
 
     private SessionEncoding _lastReported;
 
-    private TelnetInterpreter? _interpreter;
+    private volatile TelnetInterpreter? _interpreter;
+    private TelnetNegotiationCore.Connections.TelnetConnection? _connection;
     private CancellationTokenSource? _loopCts;
     private Task? _readLoop;
     private int _disconnected;
@@ -441,9 +442,15 @@ public sealed class TelnetSession : ITelnetSession
 
         try
         {
-            _interpreter = await BuildInterpreterAsync().ConfigureAwait(false);
-            SeedInterpreterEncoding(_interpreter);
-            WireCharsetCallback(_interpreter);
+            // The read loop is the library's (StartAsync), on our transport. OnStarting sets the fields every
+            // callback reads before a byte is read, and Task.Run keeps the loop off the caller's context: the
+            // library awaits without ConfigureAwait, and the caller is often the UI thread.
+            _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var builder = ConfigureInterpreter();
+            var loopToken = _loopCts.Token;
+            _connection = await Task.Run(
+                () => builder.StartAsync(_transport.ForTelnet(_options.ReceiveBufferSize), loopToken),
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {
@@ -452,6 +459,9 @@ public sealed class TelnetSession : ITelnetSession
             var stopping = _cellQueries?.OnDisabledAsync() ?? ValueTask.CompletedTask;
             _cellQueries = null;
             _interpreter = null;
+            _connection = null;
+            _loopCts?.Dispose();
+            _loopCts = null;
             _seeded = null;
             _negotiated = null;
             await _transport.CloseAsync().ConfigureAwait(false);
@@ -459,16 +469,14 @@ public sealed class TelnetSession : ITelnetSession
             throw;
         }
 
-        _lastReported = CurrentEncoding;
-        _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _readLoop = Task.Run(() => ReadLoopAsync(_loopCts.Token), CancellationToken.None);
+        _readLoop = WatchReadLoopAsync(_connection, _loopCts.Token);
 
         // Nothing else goes out from here. The interpreter's own opening WILL NAWS offers an option of
         // ours; what this client never sends is an IAC DO the server has not offered — see
         // UnsolicitedNegotiationTests for the login that paid for the rule.
     }
 
-    private Task<TelnetInterpreter> BuildInterpreterAsync()
+    private TelnetInterpreterBuilder ConfigureInterpreter()
     {
         _cellQueries = new TerminalQueryProtocol().WithCellSizeProvider(() =>
             TerminalCellSizeProvider?.Invoke() is { IsValid: true } size
@@ -477,7 +485,9 @@ public sealed class TelnetSession : ITelnetSession
         TelnetInterpreterBuilder builder = new TelnetInterpreterBuilder()
             .UseMode(TelnetInterpreter.TelnetMode.Client)
             .UseLogger(_logger)
-            .OnNegotiation(WriteToTransportAsync)
+            .WrapOutput(write => data => ObserveOutput(data, write))
+            .OnStarting(OnStartingAsync)
+            .OnInputProcessed(OnInputProcessedAsync)
             .OnSubmit(OnSubmitAsync)
             .AddPlugin(_cellQueries)
             // Who this client is, for every protocol in the library that names it.
@@ -529,7 +539,32 @@ public sealed class TelnetSession : ITelnetSession
             builder = builder.WithKeepAlive(interval);
         }
 
-        return builder.BuildAsync();
+        return builder;
+    }
+
+    /// <summary>
+    /// The library's start hook: runs after the opening negotiation is written and before anything is read, so no
+    /// callback ever finds the interpreter unset or unseeded.
+    /// </summary>
+    private ValueTask OnStartingAsync(TelnetNegotiationCore.Connections.TelnetConnection connection)
+    {
+        _interpreter = connection.Interpreter;
+        SeedInterpreterEncoding(connection.Interpreter);
+        WireCharsetCallback(connection.Interpreter);
+        _lastReported = CurrentEncoding;
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>After each read has been handled, its callbacks included.</summary>
+    private ValueTask OnInputProcessedAsync(TelnetInterpreter interpreter)
+    {
+        ReceiveBatchEnded?.Invoke(this, EventArgs.Empty);
+
+        // The second arm of charset observation: the direction whose callback the library
+        // does not raise (see WireCharsetCallback). Cheap — a reference comparison — and
+        // idempotent, so the arm that already fired mid-batch makes this a no-op.
+        ReportEncodingIfChanged();
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>
@@ -645,18 +680,18 @@ public sealed class TelnetSession : ITelnetSession
     /// <c>WILL</c> is the moment it is. Only negotiation passes through here, never data, so the three bytes
     /// cannot be a literal in someone's text.
     /// </summary>
-    private ValueTask WriteToTransportAsync(ReadOnlyMemory<byte> data)
+    private ValueTask ObserveOutput(ReadOnlyMemory<byte> data, Func<ReadOnlyMemory<byte>, ValueTask> write)
     {
         if (!_msdpAgreed && Contains(data.Span, [Iac, DoCommand, MsdpOption]))
         {
             _msdpAgreed = true;
             _logger.LogInformation("MSDP negotiated.");
-            var transportWrite = _transport.SendAsync(data);
+            var transportWrite = write(data);
             MsdpEnabled?.Invoke(this, EventArgs.Empty);
             return transportWrite;
         }
 
-        return _transport.SendAsync(data);
+        return write(data);
     }
 
     private const byte Iac = 255;
@@ -944,32 +979,24 @@ public sealed class TelnetSession : ITelnetSession
         return ValueTask.CompletedTask;
     }
 
-    private async Task ReadLoopAsync(CancellationToken cancellationToken)
+    private async Task WatchReadLoopAsync(
+        TelnetNegotiationCore.Connections.TelnetConnection connection, CancellationToken stopping)
     {
-        var buffer = new byte[_options.ReceiveBufferSize];
         Exception? error = null;
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var read = await _transport.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
-                if (read == 0)
-                {
-                    break; // clean end of stream
-                }
-
-                await _interpreter!.InterpretByteArrayAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
-                ReceiveBatchEnded?.Invoke(this, EventArgs.Empty);
-
-                // The second arm of charset observation: the direction whose callback the library
-                // does not raise (see WireCharsetCallback). Cheap — a reference comparison — and
-                // idempotent, so the arm that already fired mid-batch makes this a no-op.
-                ReportEncodingIfChanged();
-            }
+            // Completes when the server closes or the loop is cancelled; faults when the transport or a
+            // callback fails.
+            await connection.Completion.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // graceful shutdown
+        }
+        catch (Exception) when (stopping.IsCancellationRequested)
+        {
+            // This side is disconnecting: closing a WebSocket under a read fails that read, which is the close
+            // asked for and not a fault.
         }
         catch (Exception ex)
         {
@@ -1072,13 +1099,15 @@ public sealed class TelnetSession : ITelnetSession
         // Dispose and clear the interpreter here (not in DisposeAsync, which calls this first
         // and would then see it already null) so no interpreter leaks per disconnect/reconnect,
         // and so the "not connected" send guards observe the disconnected state.
-        var interpreter = _interpreter;
+        // The connection owns the interpreter and disposes it.
+        var connection = _connection;
+        _connection = null;
         _interpreter = null;
         _seeded = null;
         _negotiated = null;
-        if (interpreter is not null)
+        if (connection is not null)
         {
-            await interpreter.DisposeAsync().ConfigureAwait(false);
+            await connection.DisposeAsync().ConfigureAwait(false);
         }
 
         RaiseDisconnected(null);

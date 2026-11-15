@@ -118,6 +118,8 @@ public class WorldBrowseModelTests
         await Assert.That((Ready() with { Choosing = Game(null) }).CharsetLine).IsEqualTo("mu*index names no charset for it; the world's encoding stays auto");
         await Assert.That(WorldBrowseModel.Endpoint(model.Choosing!.Endpoints[0])).IsEqualTo(("a.example:4202", "TLS", "active"));
         await Assert.That(WorldBrowseModel.Endpoint(model.Choosing.Endpoints[2])).IsEqualTo(("a.example:4000", "plain", "stale · not reached lately"));
+        await Assert.That(WorldBrowseModel.Endpoint(new WorldEndpoint("a.example", 443, true, false, WebSocket: true)).Security).IsEqualTo("WebSocket, TLS");
+        await Assert.That(WorldBrowseModel.Endpoint(new WorldEndpoint("a.example", 80, false, false, WebSocket: true)).Security).IsEqualTo("WebSocket");
         await Assert.That(WorldBrowseModel.Endpoint(new WorldEndpoint("2001:db8::1", 23, false, false)).Address).IsEqualTo("[2001:db8::1]:23");
         await Assert.That(WorldBrowseModel.Endpoint(new WorldEndpoint("bad host", 4000, false, false, Connectable: false)).State).IsEqualTo("active · not connectable");
         await Assert.That(model).IsEqualTo(Ready() with { Choosing = Game("ISO-8859-1") });

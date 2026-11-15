@@ -3567,6 +3567,20 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     What the jump *makes available* and is not yet used: a GMCP `Core` client session
     (`UseGmcpClientSession`, `TelnetNegotiationCore.Gmcp`), typed GMCP packages, MSDP over GMCP,
     `PuebloProtocol`, and MCP 2.1 (`MudClientProtocol`, now used — see below).
+  - **The read loop is the library's** (4.12+: `TelnetInterpreterBuilder.StartAsync(ITelnetTransport)` →
+    `TelnetConnection`). `TelnetSession` hands it `ITransport.ForTelnet(bufferSize)`: a `TransportBridge` over
+    `TcpTransport` (socket, TLS and the test fakes stay ours), or the library's own `TelnetTransport.WebSocket`
+    for `WebSocketTransport`. Seeding the encoding and wiring CHARSET is `OnStarting` (before the first read);
+    `ReceiveBatchEnded` and the encoding report run after each read through `OnInputProcessed` (4.13.3+: it awaits a signal; before that it polled with `Task.Delay(1)`, ~15 ms a read on Windows); the MSDP `DO` spotting is `WrapOutput`.
+    The bridge writes with `CancellationToken.None`, because the library passes its start token, which a
+    disconnect cancels before the socket closes. Disposing the connection disposes the interpreter, never the
+    transport. A read that faults after this side began stopping is a close, not a failure (`WatchReadLoopAsync`).
+  - **WebSocket worlds** (`WorldDefinition.WebSocketPath`, null = telnet; `WebSocketTransport`, `WebSocketAddress`,
+    Core; F5 ▸ `websocket path`; `/connect ws://…|wss://…`; Browse lists mu*index's `websocket` endpoints, `wss` where
+    TLS was measured, at the endpoint's optional `path`, else `/`). Dialled through `TelnetWebSocketClient`
+    (subprotocols `telnet.mudstandards.org`, then `telnet`), binary frames, telnet inside unchanged. A path is
+    refused, not tidied (`IsPath`: starts with `/`, ASCII address characters, 256 at most); an address with user
+    information or a fragment is refused. A `telnet://` link never matches a WebSocket world.
   - **Never pin a version that is not on nuget.org, and never work around it with a local feed.** A
     pin that only resolves from a local `nuget.config` builds here and fails `NU1101` everywhere else;
     if a locally-built nupkg of that version is already in `~/.nuget/packages/`, the real package
