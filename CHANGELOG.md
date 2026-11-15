@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- The desktop window opens where you last closed it: the same place and size, and maximised again if it was left
+  maximised. A window left on a monitor that is no longer there opens on one that is. `--size` still sets the size for
+  one run. On the Window settings page the first choice is now *as last closed*.
+
 - F7 ▸ Scrollback ▸ *live tail when split* sets how much of the pane the newest lines take under the history while it
   is scrolled back: a number of rows, or a share such as `25%` (`50%` is the old half). The default is now 6 rows. Turning off *split the pane when scrolled back* (now
   also found by searching settings for "pause") scrolls the whole pane instead. In the terminal and the desktop window.

@@ -37,8 +37,8 @@ public sealed class SettingsHistory
     /// <summary>How many edits each section keeps to undo.</summary>
     public const int Depth = 50;
 
-    /// <summary>Paths that are not settings and that saving writes (the workspace, the tour flag, the schema version).</summary>
-    private static readonly HashSet<string> NotSettings = new(StringComparer.Ordinal) { "lastSession", "keyTourPending", "version" };
+    /// <summary>Paths that are not settings and that saving writes (the workspace, the tour flag, the schema version, where the window was left).</summary>
+    private static readonly HashSet<string> NotSettings = new(StringComparer.Ordinal) { "lastSession", "keyTourPending", "version", "window" };
 
     private static readonly JsonSerializerOptions Options = CreateOptions();
 
