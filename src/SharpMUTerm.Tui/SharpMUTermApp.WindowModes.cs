@@ -27,4 +27,28 @@ internal sealed partial class SharpMUTermApp
         modes.Toggle(mode);
         return true;
     }
+
+    /// <summary>What the host was last told about the system title bar; null until it is told.</summary>
+    private bool? _titleBarShown;
+
+    /// <summary>
+    /// Tells the window whether to wear the system title bar when the Window page's setting differs from what it was last
+    /// told: after every settings commit and every frame (an undo changes it too), the text sizes' rule.
+    /// </summary>
+    private void SyncWindowTitleBar()
+    {
+        if (Host.WindowModes is not { Available: true } modes)
+        {
+            return;
+        }
+
+        var show = _config.WindowTitleBar;
+        if (_titleBarShown == show)
+        {
+            return;
+        }
+
+        _titleBarShown = show;
+        modes.ShowTitleBar(show);
+    }
 }

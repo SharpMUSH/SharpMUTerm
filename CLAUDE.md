@@ -1245,6 +1245,14 @@ fallbacks) for inline images/maps.
     (titled *Leave …* while in it) and the output's right-click menu list them only while `CommandContext.WindowMode`
     is set, and F7's *Window* page (`BuiltInSettings.Window`, registered only where the host has modes, not in `All`)
     sets `AppConfiguration.WindowStart`, applied when the window opens, never live.
+  - **The window opens where it was last closed** (`AppConfiguration.Window`, Core `WindowPlacement`: ordinary bounds in
+    screen pixels plus `Maximised`; `MainWindow.NotePlacement`, `WindowFit.Remembered`). Nothing persisted it before, on
+    any OS. The window writes the record into the shared configuration 500 ms after the last move, resize or state change,
+    only while ordinary or maximised (a minimised Windows window reports −32000), and the client's save on exit keeps it.
+    On open it is clamped to the screens there are now (`FloatingBounds.ClampTo`, with `RememberedSlack` so a snapped
+    window's invisible Windows border does not creep it inward) and sized in the landing screen's logical pixels.
+    `WindowStart` *as last closed* (`Windowed`) also re-maximises; `--size` skips the record for the run. It is not a
+    settings edit (`SettingsHistory.NotSettings`). Verified under Xvfb + openbox; not yet run on Windows.
   - **Restoring re-applies the remembered normal size by hand** (`MainWindow.OnPropertyChanged`). On X11 a
     `BorderOnly` window's border is Avalonia's own (`DecorationInset`, part of the window only while it is not
     maximised); a restore laid out before the window manager's restored size arrives pushes the *maximised*

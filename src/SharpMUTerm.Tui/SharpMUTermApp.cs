@@ -1092,6 +1092,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             SyncTabStripWidths();
             SyncTransparentColours();
             SyncTextSizes();
+            SyncWindowTitleBar();
             MeasureHeadingRuns(buffer);
             PaintHeaderDividers(buffer);
             PaintTabOverflow(buffer);
@@ -8040,6 +8041,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // The Text size page: the window redraws at the new sizes now, not at the next frame the cells happen to paint.
         SyncTextSizes();
+
+        // The Window page's system title bar: on or off now, not at the next launch.
+        SyncWindowTitleBar();
 
         // F8 edits the live InputSettings, so a committed height applies to the bars immediately rather
         // than at the next launch.

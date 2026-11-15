@@ -14,6 +14,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   character's page in the desktop window's Worlds & Characters settings, and on F5 in the terminal (`o` on a
   character). A folder that does not exist yet is created first.
 
+- The desktop window can wear the system's own title bar again. Settings ▸ Window ▸ *system title bar* puts it back
+  (with the desktop's minimise, maximise and close buttons) and takes it away at once, and it is kept between runs.
+  Off by default, as before. Window only: a terminal's title bar is its emulator's.
+
+- The desktop window opens where you last closed it: the same place and size, and maximised again if it was left
+  maximised. A window left on a monitor that is no longer there opens on one that is. `--size` still sets the size for
+  one run. On the Window settings page the first choice is now *as last closed*.
+
 - F7 ▸ Scrollback ▸ *live tail when split* sets how much of the pane the newest lines take under the history while it
   is scrolled back: a number of rows, or a share such as `25%` (`50%` is the old half). The default is now 6 rows. Turning off *split the pane when scrolled back* (now
   also found by searching settings for "pause") scrolls the whole pane instead. In the terminal and the desktop window.

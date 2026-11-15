@@ -1,4 +1,6 @@
 using Avalonia;
+using SharpMUTerm.Core.Configuration;
+using SharpMUTerm.Core.Workspaces;
 
 namespace SharpMUTerm.Avalonia;
 
@@ -69,5 +71,46 @@ internal static class WindowFit
         var x = workingArea.X + Math.Max(0, (int)Math.Round((workingArea.Width - (size.Width * scale)) / 2));
         var y = workingArea.Y + Math.Max(0, (int)Math.Round((workingArea.Height - (size.Height * scale)) / 2));
         return new PixelPoint(x, y);
+    }
+
+    /// <summary>
+    /// How far, in screen pixels, a remembered window may reach past a screen's working area and still count as on it.
+    /// A window snapped to an edge on Windows has its invisible resize border outside the working area, so without this
+    /// a window left against the left edge would come back eight pixels in, and move again each run.
+    /// </summary>
+    public const int RememberedSlack = 16;
+
+    /// <summary>
+    /// Where a window left at <paramref name="saved"/> opens on the screens there are now (each one's working area in
+    /// screen pixels and its scaling): its position in screen pixels and its size in logical pixels of the screen it lands
+    /// on, kept wholly on a screen (<see cref="WindowPlacement.ClampTo"/>). Null when nothing usable was saved or there is
+    /// no screen to put it on, and the window opens at its <c>--size</c> as before.
+    /// </summary>
+    public static (PixelPoint Position, Size Size)? Remembered(WindowPlacement? saved, IReadOnlyList<(PixelRect WorkingArea, double Scaling)> screens)
+    {
+        if (saved is not { IsUsable: true } || screens.Count == 0)
+        {
+            return null;
+        }
+
+        var areas = screens
+            .Select(s => new FloatingBounds(
+                s.WorkingArea.X - RememberedSlack,
+                s.WorkingArea.Y - RememberedSlack,
+                s.WorkingArea.Width + (2 * RememberedSlack),
+                s.WorkingArea.Height + (2 * RememberedSlack)))
+            .ToList();
+        var placed = saved.ClampTo(areas);
+        var rect = new PixelRect(placed.X, placed.Y, placed.Width, placed.Height);
+
+        static long Overlap(PixelRect a, PixelRect b)
+        {
+            var i = a.Intersect(b);
+            return (long)i.Width * i.Height;
+        }
+
+        var screen = screens.OrderByDescending(s => Overlap(s.WorkingArea, rect)).First();
+        var scale = screen.Scaling > 0 ? screen.Scaling : 1;
+        return (new PixelPoint(placed.X, placed.Y), new Size(placed.Width / scale, placed.Height / scale));
     }
 }

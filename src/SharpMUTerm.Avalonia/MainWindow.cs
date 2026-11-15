@@ -95,8 +95,9 @@ internal sealed class MainWindow : Window
 
         // No title bar: the header is the top of the window — the window's own (NativeHeader), or the client's cells
         // with --cell-chrome. The header's empty space moves the window and its edges resize it (WindowChrome).
-        // --title-bar brings it back.
-        _decorations = DecorationsFor(options.TitleBar);
+        // The Window page's system title bar brings it back (SetTitleBar applies a change at once), and so does
+        // --title-bar for one run.
+        _decorations = DecorationsFor(options.TitleBar || _config.WindowTitleBar);
         WindowDecorations = _decorations;
         _opaque = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
         Background = _opaque;
@@ -129,14 +130,15 @@ internal sealed class MainWindow : Window
         _driver.Pointer.PanelScale = () => scales().Panels;
 
         // The edge Avalonia would have drawn round a BorderOnly window on X11, drawn here (DecorationsFor): a hairline,
-        // only while the window is an ordinary window.
-        if (_decorations == WindowDecorations.None)
+        // only while the window is an ordinary window with no frame of its own.
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD())
         {
             _edge = new Border
             {
                 BorderBrush = new SolidColorBrush(NativeTokens.For(_config.Theme).Edge),
                 BorderThickness = new Thickness(NativeTokens.Hairline),
                 IsHitTestVisible = false,
+                IsVisible = _decorations == WindowDecorations.None,
             };
             root.Children.Add(_edge);
         }
@@ -200,19 +202,44 @@ internal sealed class MainWindow : Window
             }
         }
 
+        // Where the window was last left, unless --size asked for a size for this run: the same pixels on the desktop,
+        // kept on the screens there are now, at the scaling of the screen it lands on.
+        if (!options.SizeGiven && Screens is { } all
+            && WindowFit.Remembered(_config.Window, [.. all.All.Select(s => (s.WorkingArea, s.Scaling))]) is { } remembered)
+        {
+            size = remembered.Size;
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Position = remembered.Position;
+            _restored = true;
+        }
+
         Width = size.Width;
         Height = size.Height;
         _normalSize = size;
 
+        // Moving, resizing, maximising and restoring are written to the configuration once they settle, so the client's
+        // save on the way out (and any save before it) keeps where the window was left.
+        _placementTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SettleMilliseconds) };
+        _placementTimer.Tick += (_, _) => NotePlacement();
+        PositionChanged += (_, _) => NotePlacementSoon();
+
         Opened += (_, _) =>
         {
             _view.Focus();
+            _opened = true;
 
-            // How the configuration says the window opens (the Window settings page). Windowed is how it already is.
+            // How the configuration says the window opens (the Window settings page). Windowed is as it was last
+            // closed: where it already is, and maximised again if it was left maximised.
             if (_config.WindowStart != WindowMode.Windowed)
             {
                 SetMode(_config.WindowStart);
             }
+            else if (_restored && _config.Window is { Maximised: true })
+            {
+                SetMode(WindowMode.Maximised);
+            }
+
+            NotePlacementSoon();
 
             // After the first layout, so the driver already holds the window's real grid when the client
             // measures its chrome against it.
@@ -299,6 +326,7 @@ internal sealed class MainWindow : Window
             }
 
             NoteMode();
+            NotePlacementSoon();
         }
         else if (change.Property == ClientSizeProperty
                  && WindowState == WindowState.Normal
@@ -309,11 +337,84 @@ internal sealed class MainWindow : Window
             // way out, or the oversized one this exists to undo.
             _normalSize = change.GetNewValue<Size>();
         }
+
+        if (change.Property == ClientSizeProperty)
+        {
+            NotePlacementSoon();
+        }
     }
 
     private const int SettleMilliseconds = 500;
 
-    private readonly WindowDecorations _decorations;
+    private readonly DispatcherTimer _placementTimer;
+    private bool _opened;
+    private bool _restored;
+
+    // The last ordinary bounds seen, in screen pixels: what a maximised window is recorded as restoring to.
+    private PixelRect? _normalBounds;
+
+    /// <summary>Records where the window is once nothing has moved it for <see cref="SettleMilliseconds"/>.</summary>
+    private void NotePlacementSoon()
+    {
+        if (!_opened)
+        {
+            return;
+        }
+
+        _placementTimer.Stop();
+        _placementTimer.Start();
+    }
+
+    /// <summary>
+    /// Writes where the window is to the configuration (<see cref="AppConfiguration.Window"/>): its ordinary bounds, and
+    /// whether it is maximised over them. Only from an ordinary or maximised window that has settled — a minimised window
+    /// on Windows reports its position as −32000, a full screen covers the screen, and the sizes reported while a change
+    /// of state settles are the maximised one on its way out. Nothing else of the configuration is touched, and the record
+    /// is replaced, never edited, because the client's thread reads it when it saves.
+    /// </summary>
+    private void NotePlacement()
+    {
+        _placementTimer.Stop();
+        if (_windowedFullScreen || WindowState is WindowState.Minimized or WindowState.FullScreen)
+        {
+            return;
+        }
+
+        if (Environment.TickCount64 - _stateChangedAt <= SettleMilliseconds)
+        {
+            NotePlacementSoon();
+            return;
+        }
+
+        var maximised = WindowState == WindowState.Maximized;
+        if (!maximised)
+        {
+            var scale = Screens?.ScreenFromWindow(this)?.Scaling is > 0 and var s ? s : DesktopScaling > 0 ? DesktopScaling : 1;
+            _normalBounds = new PixelRect(
+                Position,
+                new PixelSize((int)Math.Round(ClientSize.Width * scale), (int)Math.Round(ClientSize.Height * scale)));
+        }
+
+        if (PlacementFor(_normalBounds, maximised, _config.Window) is { } placement && placement != _config.Window)
+        {
+            _config.Window = placement;
+        }
+    }
+
+    /// <summary>
+    /// What is recorded for a window whose last ordinary bounds were <paramref name="normal"/> (screen pixels; null when it
+    /// has been maximised since it opened), maximised or not, over what was <paramref name="saved"/>: those bounds when
+    /// known, else the saved ones, with the window's maximised state either way. Null when neither holds a usable size.
+    /// </summary>
+    internal static WindowPlacement? PlacementFor(PixelRect? normal, bool maximised, WindowPlacement? saved)
+    {
+        var placement = normal is { } bounds
+            ? new WindowPlacement(bounds.X, bounds.Y, bounds.Width, bounds.Height, maximised)
+            : saved is not null ? saved with { Maximised = maximised } : null;
+        return placement is { IsUsable: true } ? placement : null;
+    }
+
+    private WindowDecorations _decorations;
     private readonly Border? _edge;
 
     /// <summary>
@@ -330,6 +431,27 @@ internal sealed class MainWindow : Window
         titleBar ? WindowDecorations.Full
         : OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD() ? WindowDecorations.None
         : WindowDecorations.BorderOnly;
+
+    /// <summary>
+    /// Puts the system title bar on or takes it off (the Window settings page), at once. <c>--title-bar</c> keeps it on
+    /// for the run whatever the setting says. A windowed full screen keeps no frame and takes this one when it ends.
+    /// </summary>
+    internal void SetTitleBar(bool show)
+    {
+        var decorations = DecorationsFor(show || _options.TitleBar);
+        if (decorations == _decorations)
+        {
+            return;
+        }
+
+        _decorations = decorations;
+        if (!_windowedFullScreen)
+        {
+            WindowDecorations = decorations;
+        }
+
+        NoteMode();
+    }
 
     /// <summary>The mode the window is in now.</summary>
     internal WindowMode Mode =>
@@ -441,7 +563,7 @@ internal sealed class MainWindow : Window
         var mode = Mode;
         if (_edge is not null)
         {
-            _edge.IsVisible = mode == WindowMode.Windowed;
+            _edge.IsVisible = mode == WindowMode.Windowed && _decorations == WindowDecorations.None;
         }
 
         _driver.WindowModes.Note(mode);

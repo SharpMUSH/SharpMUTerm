@@ -23,6 +23,12 @@ internal interface IWindowModes
     /// </summary>
     void Toggle(WindowMode mode);
 
+    /// <summary>
+    /// Shows or hides the system title bar (the Window page's <c>system title bar</c>). Called on the client's thread
+    /// whenever the setting differs from what the host was last told; the host does it on its own.
+    /// </summary>
+    void ShowTitleBar(bool show);
+
     /// <summary>Raised on the host's thread whenever <see cref="Mode"/> changes, however it was changed.</summary>
     event Action? Changed;
 }
