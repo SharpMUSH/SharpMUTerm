@@ -18,11 +18,12 @@ public class ScrollSplitTests
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-    private static SharpMUTermApp App(bool split = true)
+    private static SharpMUTermApp App(bool split = true, string? tail = null)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.Text.SplitScrollback = split;
+        if (tail is not null) config.Text.ScrollTail = tail;
         var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(120, 32));
         app.RenderSnapshot("scrollback");
         return app;
@@ -220,6 +221,53 @@ public class ScrollSplitTests
         await Assert.That(app.IsScrollSplit(Main)).IsFalse();
     }
 
+    /// <summary>
+    /// The reported defect: scrolled back and then down again, the split stayed open until the history reached its very
+    /// end, so the reader scrolled on through every row the tail was already showing. It closes where the history meets
+    /// the tail: a notch up and a notch down is back to following the output.
+    /// </summary>
+    [Test]
+    public async Task ScrollingDownToWhereTheTailBeginsClosesTheSplit()
+    {
+        var (app, driver, pane) = WheelApp();
+        var at = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
+
+        Wheel(app, driver, up: true, at);
+        await Assert.That(app.IsScrollSplit(Main)).IsTrue();
+
+        Wheel(app, driver, up: false, at);
+        await Assert.That(app.IsScrollSplit(Main)).IsFalse();
+        await Assert.That(app.ScrollbackOf(Main)!.Value.AutoScroll).IsTrue();
+    }
+
+    /// <summary>Scrolled further back, one notch down is not enough: the history has rows the tail does not show.</summary>
+    [Test]
+    public async Task ScrollingDownPartWayKeepsTheSplit()
+    {
+        var (app, driver, pane) = WheelApp();
+        var at = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
+
+        for (var i = 0; i < 6; i++)
+        {
+            Wheel(app, driver, up: true, at);
+        }
+
+        Wheel(app, driver, up: false, at);
+        await Assert.That(app.IsScrollSplit(Main)).IsTrue();
+    }
+
+    [Test]
+    public async Task TheLiveTailTakesTheRowsTheSettingAsksFor()
+    {
+        var app = App(tail: "5");
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(app);
+
+        await Assert.That(app.IsScrollSplit(Main)).IsTrue();
+        await Assert.That(app.ScrollTailOf(Main)!.Value.ViewportRows).IsEqualTo(5);
+    }
+
     [Test]
     public async Task WithTheSettingOffThePaneScrollsAsAWhole()
     {
@@ -281,9 +329,41 @@ public class ScrollSplitTests
     [Arguments(30, 2, 14)]
     [Arguments(8, 2, 3)]
     [Arguments(7, 2, 0)]
-    public async Task TheLiveTailIsHalfWhatTheBandLeavesAndAtLeastThreeRows(int pane, int band, int tail)
+    public async Task FiftyPercentIsHalfWhatTheBandLeavesAndAtLeastThreeRows(int pane, int band, int tail)
+    {
+        await Assert.That(SharpMUTermApp.TailRowsFor(pane, band, "50%")).IsEqualTo(tail);
+    }
+
+    [Test]
+    [Arguments(30, 1, 6)]
+    [Arguments(30, 2, 6)]
+    [Arguments(10, 1, 6)]
+    [Arguments(8, 1, 4)]
+    [Arguments(6, 1, 0)]
+    public async Task TheDefaultTailIsSixRowsHeldToThreeEitherSide(int pane, int band, int tail)
     {
         await Assert.That(SharpMUTermApp.TailRowsFor(pane, band)).IsEqualTo(tail);
+    }
+
+    [Test]
+    [Arguments(30, 1, "25%", 7)]
+    [Arguments(30, 1, "10 %", 3)]
+    [Arguments(30, 1, "100%", 26)]
+    [Arguments(30, 1, "nonsense", 6)]
+    public async Task AShareIsThatShareOfWhatTheBandLeaves(int pane, int band, string wanted, int tail)
+    {
+        await Assert.That(SharpMUTermApp.TailRowsFor(pane, band, wanted)).IsEqualTo(tail);
+    }
+
+    [Test]
+    [Arguments(30, 1, "8", 8)]
+    [Arguments(30, 1, "1", 3)]
+    [Arguments(30, 1, "40", 26)]
+    [Arguments(30, 2, "26", 25)]
+    [Arguments(6, 1, "3", 0)]
+    public async Task AChosenTailIsThatManyRowsHeldToThreeEitherSide(int pane, int band, string wanted, int tail)
+    {
+        await Assert.That(SharpMUTermApp.TailRowsFor(pane, band, wanted)).IsEqualTo(tail);
     }
 
     [Test]

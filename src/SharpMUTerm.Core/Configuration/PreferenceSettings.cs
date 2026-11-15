@@ -164,6 +164,13 @@ public sealed class TextSettings
     public bool SplitScrollback { get; set; } = true;
 
     /// <summary>
+    /// How tall a split pane's live tail is (F7 ▸ SCROLLBACK, <c>live tail when split</c>): rows (<c>6</c>, the
+    /// default) or a share of the pane (<c>25%</c>), read by <see cref="Configuration.ScrollTail"/> and held so the
+    /// tail and the history above it each keep at least three rows. Read when a pane is next scrolled back.
+    /// </summary>
+    public string ScrollTail { get; set; } = Configuration.ScrollTail.Default;
+
+    /// <summary>
     /// Whether a trigger marked <c>alert</c>, or a world's name-and-pages alert, may tell the desktop while the
     /// player is in another window (F7 ▸ ALERTS, on by default). Nothing alerts until a trigger or a world asks for
     /// it, so on costs nothing; off silences every alert at once, including the window title's unread count.

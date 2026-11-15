@@ -678,6 +678,16 @@ internal static class OptionsScreenRenderer
                     ScreenField.Choice(field.Label, () => named.Get(config), v => named.Set(config, v), choice.ChoicesIn(config)),
                     Reset: reset, FieldId: field.Id);
 
+            case TextField { Rule: TextRule.ScrollTail } tail when field.Binding is SettingBinding<string?> text:
+                return new OptionRow(
+                    field.Label, text.Get(config) ?? string.Empty, null, null, null,
+                    new ScreenField(
+                        field.Label,
+                        () => text.Get(config) ?? string.Empty,
+                        v => TextRules.Check(tail, v),
+                        v => text.Set(config, TextRules.Store(tail, v))),
+                    Reset: reset, FieldId: field.Id);
+
             case TextField when field.Binding is SettingBinding<string?> text:
                 return new OptionRow(
                     field.Label, text.Get(config) ?? string.Empty, null, null, null,

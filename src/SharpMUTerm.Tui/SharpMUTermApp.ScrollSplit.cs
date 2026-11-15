@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Client.Surfaces;
+using SharpMUTerm.Core.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Builders;
@@ -59,16 +60,27 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// The rows a live tail gets in a pane whose viewport is <paramref name="paneRows"/> tall, or zero when the
-    /// pane is too short to split: half of what the band leaves, the odd row to the tail (both mockups give the
-    /// rows still arriving at least as much room as the rows being read), at least <see cref="MinimumSplitRows"/>,
+    /// pane is too short to split. <paramref name="wanted"/> is F7's <c>live tail when split</c>: rows, or a share of
+    /// what the band leaves (<see cref="ScrollTail.Rows"/>). Either way at least <see cref="MinimumSplitRows"/>,
     /// leaving the history at least that many.
     /// </summary>
-    internal static int TailRowsFor(int paneRows, int bandRows = 1)
+    internal static int TailRowsFor(int paneRows, int bandRows = 1, string? wanted = ScrollTail.Default)
     {
         var left = paneRows - bandRows;
-        var tail = Math.Max(MinimumSplitRows, (left + 1) / 2);
-        return left - tail >= MinimumSplitRows ? tail : 0;
+        if (left - MinimumSplitRows < MinimumSplitRows)
+        {
+            return 0;
+        }
+
+        var tail = ScrollTail.Rows(wanted, left);
+        return Math.Clamp(tail, MinimumSplitRows, left - MinimumSplitRows);
     }
+
+    /// <summary>
+    /// The history viewport's height each split was opened for (the pane's rows less the band and the tail). Until
+    /// the frame after a split opens, the viewport still reports the whole pane, and the rows below it read short.
+    /// </summary>
+    private readonly Dictionary<string, int> _scrollSplitHistoryRows = new(StringComparer.Ordinal);
 
     /// <summary>Whether the workspace counts a window as scrolled back, which is what unread badging reads.</summary>
     internal bool IsWindowScrolledBack(string windowId) => _workspace.FindWindow(windowId)?.ScrolledBack ?? false;
@@ -78,7 +90,7 @@ internal sealed partial class SharpMUTermApp
 
     /// <summary>
     /// Opens or closes a window's split to match its viewport: open while the viewport is off its live tail,
-    /// closed once it is back (the reader scrolled the history down to its end, ⌃End, or End), when the pane is
+    /// closed once it is back (the reader scrolled the history down to where the tail begins, ⌃End, or End), when the pane is
     /// frozen (freeze is the other split, and takes over), and when the setting is off. Called from
     /// <see cref="SyncScrollbackState"/>, where every scroll route lands.
     /// </summary>
@@ -95,6 +107,15 @@ internal sealed partial class SharpMUTermApp
             && live is not null;
         var wanted = eligible && !live!.AutoScroll && Scrollable(live);
 
+        // Scrolled down to where the tail begins, the history has nothing left to show that the tail does not, so the
+        // pane goes back to following its output. Waiting for the history's own end made the reader scroll on through
+        // every row the tail was already showing, which read as having to reach the newest line before the rest came.
+        if (open && wanted && MeetsTail(windowId, live!))
+        {
+            BackToLive(live!);
+            wanted = false;
+        }
+
         if (open && !wanted)
         {
             CloseScrollSplit(windowId);
@@ -104,13 +125,14 @@ internal sealed partial class SharpMUTermApp
 
         if (!open && wanted)
         {
-            var tail = TailRowsFor(live!.ViewportHeight, ScrollBandRows);
+            var tail = TailRowsFor(live!.ViewportHeight, ScrollBandRows, _config.Text.ScrollTail);
             if (tail == 0)
             {
                 return;
             }
 
             _scrollSplits[windowId] = tail;
+            _scrollSplitHistoryRows[windowId] = live.ViewportHeight - ScrollBandRows - tail;
             RefreshScrollTail(windowId);
             RebuildPaneArea();
         }
@@ -121,10 +143,29 @@ internal sealed partial class SharpMUTermApp
         }
     }
 
+    /// <summary>
+    /// Whether a split window's history has been scrolled down to the rows its live tail shows: the rows below the
+    /// history are no more than the band and the tail cover, so the unsplit pane would show them all. Asked only once the history viewport has its split height, since the
+    /// frame that opens a split still measures the whole pane.
+    /// </summary>
+    private bool MeetsTail(string windowId, ScrollablePanelControl live)
+    {
+        if (!_scrollSplits.TryGetValue(windowId, out var tail)
+            || !_scrollSplitHistoryRows.TryGetValue(windowId, out var history)
+            || live.ViewportHeight <= 0 || live.ViewportHeight > history)
+        {
+            return false;
+        }
+
+        var below = live.TotalContentHeight - live.ViewportHeight - live.VerticalScrollOffset;
+        return below <= tail + ScrollBandRows;
+    }
+
     /// <summary>Forgets a window's split without rebuilding; the caller rebuilds (or is about to).</summary>
     private void CloseScrollSplit(string windowId)
     {
         _scrollSplits.Remove(windowId);
+        _scrollSplitHistoryRows.Remove(windowId);
         if (_scrollTails.TryGetValue(windowId, out var tail))
         {
             tail.ClearSelection();
@@ -136,6 +177,7 @@ internal sealed partial class SharpMUTermApp
     private void ForgetScrollSplit(string windowId)
     {
         _scrollSplits.Remove(windowId);
+        _scrollSplitHistoryRows.Remove(windowId);
         _scrollHistorySurfaces.Remove(windowId);
         _scrollTails.Remove(windowId);
         _scrollSplitBars.Remove(windowId);
@@ -210,13 +252,14 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void RefreshScrollTail(string windowId)
     {
-        if (!_scrollSplits.ContainsKey(windowId) || !_lines.TryGetValue(windowId, out var buffer))
+        if (!_scrollSplits.TryGetValue(windowId, out var rows) || !_lines.TryGetValue(windowId, out var buffer))
         {
             return;
         }
 
+        // At least as many lines as the tail has rows, so a tall tail is never part empty.
         var tail = ScrollTailFor(windowId);
-        var from = Math.Max(0, buffer.Count - TailLines);
+        var from = Math.Max(0, buffer.Count - Math.Max(TailLines, rows));
         FeedRange(tail, buffer, from, buffer.Count - from);
         if (_paneScrolls.GetValueOrDefault(TailRegionKey(windowId)) is { } panel)
         {

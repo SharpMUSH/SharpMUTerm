@@ -670,11 +670,13 @@ fallbacks) for inline images/maps.
     or picture has a split point to move — which is why it is not built on `_freezePoints`.
   - **Opened and closed in `SyncScrollbackState`**, where every scroll route lands: open while the window's
     viewport is detached (`!AutoScroll`) and scrollable, closed once it re-attaches — scrolling the history down
-    to its end, ⌃End, or bare End. **Bare End is claimed only while a split is open and the command line's
+    to where the live tail begins (`MeetsTail`: the rows below the history fit under the band and the tail; waiting
+    for the history's own end made the reader scroll through rows the tail already showed), ⌃End, or bare End. **Bare End is claimed only while a split is open and the command line's
     caret is already at its end** (`CaretAtEnd`), where End has nothing left to do in the editor and where a
     caret rests after typing; anywhere else End is the editor's and a second press returns. Also closed by ⌥F
     (freeze takes over and splits at its freeze point, as it always does), by a frozen pane, and with the setting off.
-  - **The tail is half of what the band leaves, the odd row to it, at least 3 rows, and the history keeps at least 3**
+  - **The tail is F7 ▸ `live tail when split` (`TextSettings.ScrollTail`, read by Core `ScrollTail`: rows, `6` by
+    default, or a share of what the band leaves such as `25%`; `TextRule.ScrollTail` in both hosts), held to at least 3 rows with the history keeping at least 3**
     (`TailRowsFor(rows, band)`; wave 25, after both mockups, which give the arriving rows at least the history's room;
     it was 30%); a pane shorter than 7 rows does not split. Fixed when the split opens (a `Cells` row), not re-derived
     per frame.
