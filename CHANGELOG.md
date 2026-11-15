@@ -54,7 +54,7 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
-- Updated TelnetNegotiationCore to 4.13.2 and Microsoft.Extensions.Logging.Abstractions to 11.0.0 (which 4.13.2
+- Updated TelnetNegotiationCore to 4.13.2, MarkupString to 2.31.3 and Microsoft.Extensions.Logging.Abstractions to 11.0.0 (which 4.13.2
   needs). Nothing a player does changes: the new library releases add WebSocket transports and connection hooks this
   client does not use yet.
 
