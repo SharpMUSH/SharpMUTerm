@@ -54,6 +54,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
+- Updated TelnetNegotiationCore to 4.13.2 and Microsoft.Extensions.Logging.Abstractions to 11.0.0 (which 4.13.2
+  needs). Nothing a player does changes: the new library releases add WebSocket transports and connection hooks this
+  client does not use yet.
+
 - The quick bar lists every key you have bound, not only function keys. Keypad and letter-chord bindings
   (`Num8`, `Ctrl+E`) used to be left off it. Function keys come first, then other chords, then the keypad in the pad's
   own order. When the bar is short of room it says `nw` for `northwest` and `Num 7 nw  8 n` for the keypad before it
