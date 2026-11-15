@@ -277,6 +277,10 @@ internal sealed partial class SharpMUTermApp
             {
                 DispatchCommand(QuickBarModel.EditCommand);
             }
+            else if (QuickBarRenderer.ParseMoreLink(url) is { } first && first < drawn.Count)
+            {
+                OpenQuickBarMore(context.SessionKey, drawn.Skip(first).ToList());
+            }
             else if (QuickBarRenderer.ParseLink(url) is { } index && index < drawn.Count)
             {
                 RunQuickMacro(context.SessionKey, drawn[index].Descriptor);
@@ -285,8 +289,52 @@ internal sealed partial class SharpMUTermApp
         return view.Control;
     }
 
+    private int _quickMoreSelected;
+
     /// <summary>
-    /// The function-key bindings a character's quick bar lists: its session's engine when it has one (so a script's
+    /// The bindings a cell bar's <c>+N</c> holds, as a cell list (the window's is a native menu): a pick runs it through
+    /// <see cref="RunQuickMacro"/> on the panel's own character, the path a click on the bar takes. Internal for tests.
+    /// </summary>
+    internal bool OpenQuickBarMore(string sessionKey, IReadOnlyList<QuickBarItem> hidden)
+    {
+        if (hidden.Count == 0 || AnyOverlayOpen)
+        {
+            return false;
+        }
+
+        _quickMoreSelected = 0;
+        _sendMenu.Open(
+            "quick",
+            $"{hidden.Count} more keys",
+            _ => QuickBarRenderer.MoreLines(hidden, _quickMoreSelected),
+            key =>
+            {
+                switch (key.Key)
+                {
+                    case ConsoleKey.UpArrow:
+                        _quickMoreSelected = Math.Max(0, _quickMoreSelected - 1);
+                        return true;
+                    case ConsoleKey.DownArrow:
+                        _quickMoreSelected = Math.Min(hidden.Count - 1, _quickMoreSelected + 1);
+                        return true;
+                    case ConsoleKey.Enter:
+                        _sendMenu.Close();
+                        RunQuickMacro(sessionKey, hidden[_quickMoreSelected].Descriptor);
+                        return false;
+                    case >= ConsoleKey.D1 and <= ConsoleKey.D9 when key.Key - ConsoleKey.D1 < hidden.Count:
+                        _sendMenu.Close();
+                        RunQuickMacro(sessionKey, hidden[key.Key - ConsoleKey.D1].Descriptor);
+                        return false;
+                    default:
+                        return true;
+                }
+            },
+            width: QuickBarRenderer.MoreLines(hidden, 0).Max(MarkupText.VisibleLength));
+        return true;
+    }
+
+    /// <summary>
+    /// The bindings a character's quick bar lists (every key, not only function keys): its session's engine when it has one (so a script's
     /// runtime binding shows), else the bindings its trigger sets configure.
     /// </summary>
     internal QuickBarModel QuickBarEntries(string sessionKey)
@@ -807,7 +855,7 @@ internal sealed partial class SharpMUTermApp
     /// <summary>
     /// The four panel views, each opened through its real ⌃P entry and placed the way its layout places it:
     /// <c>panel-who</c> a narrow column beside the output; <c>panel-vitals</c> a strip over it, with a target;
-    /// <c>panel-quickbar</c> a strip under it, with function-key bindings the demo does not otherwise carry;
+    /// <c>panel-quickbar</c> a strip under it, with function-key bindings added to the demo's keypad and chords;
     /// <c>panel-composer</c> the Roleplay column — the composer armed and holding a post typed through the real key
     /// path, over who is here. The data is written through <see cref="GameDataStore.SetGmcp"/> and
     /// <see cref="RoomOccupants.Apply"/>, the calls the wire makes.

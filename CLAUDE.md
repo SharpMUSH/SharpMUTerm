@@ -1635,7 +1635,7 @@ fallbacks) for inline images/maps.
     each, the low mark's cells whether shown or not, the target name padded. The level of detail (bar length,
     word or `!` low mark, gap, target bar, then percentages) is chosen from the width alone, so it changes only
     when the pane does. It reads F7's meters through `StatusMeterRenderer.Read`; the meter model is unchanged.
-  - **The quick bar elides, never wraps**: `+N` counts what did not fit and `F4 edits keys` goes first.
+  - **The quick bar lists every bound key and never wraps** (`QuickBarRenderer.Entries`, `QuickBarItem.Group`/`Short`): function keys, then other chords, then the keypad in pad order, a rule between runs. Full wording, then short (`nw`, `Num 7 nw  8 n`), then without `F4 edits keys`, then `+N`; the cells' `+N` is a link to a list of the hidden keys (`OpenQuickBarMore`), the window's a menu. A key the host never delivers is dim but its name stays body ink.
   - **The docked composer shares F1's draft** (`_composeDrafts`, per character, in memory) and sends through
     `ComposeMessage.Build`, so ⌃S, ⌥L and the `%r` join are F1's exactly. F1 from it opens the same buffer full
     screen; F1's close writes the draft back into the docked copy (`SyncDockedComposers`).

@@ -80,7 +80,7 @@ public class NativePanelTests
         await Assert.That(panel.QuickBar).IsEqualTo(app.QuickBarEntries(DemoScene.ActiveSessionKey));
         await Assert.That(panel.QuickBar!.Items.Select(i => i.Key).Take(2)).IsEquivalentTo(new[] { "F11", "F12" });
 
-        var row = QuickBarRenderer.Render(panel.QuickBar, 140, "#00f5b7");
+        var row = QuickBarRenderer.Render(panel.QuickBar, 400, "#00f5b7"); // wide enough for every binding at its full wording
         for (var i = 0; i < panel.QuickBar.Items.Count; i++)
         {
             var item = panel.QuickBar.Items[i];
@@ -312,6 +312,35 @@ public class NativePanelTests
         await Assert.That(more.Index).IsEqualTo(overflowed.Length).Because("+N counts what it holds");
         await Assert.That(menu).IsEqualTo(overflowed.Length);
         await Assert.That(picked).IsEquivalentTo(new[] { overflowed[^1] });
+    }
+
+    /// <summary>A movement pad, the bindings the quick bar used to leave out.</summary>
+    private static readonly QuickBarModel Compass = new(
+        new[] { ("Num7", "northwest"), ("Num8", "north"), ("Num9", "northeast"), ("Num4", "west"), ("Num6", "east"), ("Num2", "south") }
+            .Select(p => new QuickBarItem(p.Item1, p.Item1, p.Item2, true, Group: QuickBarGroup.Keypad, Short: QuickBarItem.ShortFor(p.Item2)))
+            .ToList());
+
+    [Test]
+    public async Task ABarTooNarrowForTheFullWordsShowsEveryBindingShortBeforeHidingAny()
+    {
+        var (wide, narrow) = await Run((window, view, layer, driver) =>
+        {
+            (bool Short, int Items, bool More) At(int columns)
+            {
+                ((IPointerPresenter)driver.Pointer).Panels(
+                    [new PanelOverlay(PanelIds.QuickBar, "panel:quickbar:demo", new PaneRect(0, 8, columns, 1), Ink, null, QuickBar: Compass, Pick: _ => { }, Dispatch: _ => { })]);
+                Drain();
+                window.UpdateLayout();
+                var bar = layer.QuickBars.Values.Single();
+                var slots = bar.Slots;
+                return (bar.ShortForm, slots.Count(s => s.Kind == QuickBarButtons.SlotKind.Item), slots.Any(s => s.Kind == QuickBarButtons.SlotKind.More));
+            }
+
+            return (At(130), At(60));
+        }, columns: 130, rows: 10);
+
+        await Assert.That(wide).IsEqualTo((false, 6, false));
+        await Assert.That(narrow).IsEqualTo((true, 6, false)).Because("nw, n, ne… fit where northwest, north… did not");
     }
 
     [Test]
