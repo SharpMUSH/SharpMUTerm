@@ -5,7 +5,7 @@ namespace SharpMUTerm.Core.Telnet;
 /// <summary>
 /// Hands one of our <see cref="ITransport"/>s to TelnetNegotiationCore as the transport its read loop runs on
 /// (<c>TelnetInterpreterBuilder.StartAsync</c>). The read loop is the library's, so its start hook
-/// (<c>OnStarting</c>) applies, and <see cref="AfterEachRead"/> wraps it for the per-read work; the socket, TLS and the test fakes stay ours.
+/// (<c>OnStarting</c>) applies; the socket, TLS and the test fakes stay ours.
 /// </summary>
 internal sealed class TransportBridge(ITransport transport, int receiveBufferSize)
     : TelnetNegotiationCore.Connections.ITelnetTransport
