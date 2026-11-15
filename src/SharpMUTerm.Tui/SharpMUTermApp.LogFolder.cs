@@ -71,7 +71,7 @@ internal sealed partial class SharpMUTermApp
         try
         {
             open(folder);
-            Notice($"opened {folder}", MessageSeverity.Info, toast: false);
+            Notice($"asked the file manager to open {folder}", MessageSeverity.Info, toast: false);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
