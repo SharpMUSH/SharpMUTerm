@@ -9,6 +9,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Added
 
+- F7 ▸ Scrollback ▸ *live tail rows when split* sets how many rows the newest lines take under the history while a pane
+  is scrolled back. `0`, the default, is half the pane, as before. Turning off *split the pane when scrolled back* (now
+  also found by searching settings for "pause") scrolls the whole pane instead. In the terminal and the desktop window.
+
 - A world's output can wrap at a set width. F5 ▸ *wrap at* takes a number of columns: the game's text then wraps there
   instead of at the pane's edge, and the game is told that width (NAWS), so it formats for it whatever size the pane is.
   A pane narrower than the setting still wraps at the pane. `0`, the default, follows the pane as before. In the
@@ -64,6 +68,10 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   each closed group saying how many settings it holds and how many are changed.
 
 ### Fixed
+
+- Scrolling back down a split pane goes back to following the output as soon as the history reaches the rows the live
+  tail already shows. Before, the split stayed open until the history itself reached the newest line, so you had to
+  scroll on through rows that were already on screen below.
 
 - Two exits, links or pictures side by side that look the same are no longer read as one. A game that marks
   exits with MXP and prints them next to each other now records each exit, and two links to the same command are

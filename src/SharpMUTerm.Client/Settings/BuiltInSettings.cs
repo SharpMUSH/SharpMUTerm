@@ -135,7 +135,12 @@ public static partial class BuiltInSettings
 
             Flag("split-scrollback", "split the pane when scrolled back", ScrollbackGroup,
                 c => c.Text.SplitScrollback, (c, v) => c.Text.SplitScrollback = v,
-                "keep the newest lines in view below the history you are reading", "live tail history split"),
+                "keep the newest lines in view below the history you are reading; off, the pane scrolls as a whole",
+                "live tail history split pause"),
+            Number("scroll-tail-rows", "live tail rows when split", 0, TextSettings.MaxScrollTailRows, ScrollbackGroup,
+                c => c.Text.ScrollTailRows, (c, v) => c.Text.ScrollTailRows = v,
+                "how many rows the newest lines take under the history; 0 is half the pane",
+                "live tail history split pause height size"),
 
             Flag("sound", "game sound", SoundGroup,
                 c => c.Sound.Enabled, (c, v) => c.Sound.Enabled = v,
