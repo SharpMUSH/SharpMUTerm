@@ -252,13 +252,14 @@ internal sealed partial class SharpMUTermApp
     /// </summary>
     private void RefreshScrollTail(string windowId)
     {
-        if (!_scrollSplits.ContainsKey(windowId) || !_lines.TryGetValue(windowId, out var buffer))
+        if (!_scrollSplits.TryGetValue(windowId, out var rows) || !_lines.TryGetValue(windowId, out var buffer))
         {
             return;
         }
 
+        // At least as many lines as the tail has rows, so a tall tail is never part empty.
         var tail = ScrollTailFor(windowId);
-        var from = Math.Max(0, buffer.Count - TailLines);
+        var from = Math.Max(0, buffer.Count - Math.Max(TailLines, rows));
         FeedRange(tail, buffer, from, buffer.Count - from);
         if (_paneScrolls.GetValueOrDefault(TailRegionKey(windowId)) is { } panel)
         {
