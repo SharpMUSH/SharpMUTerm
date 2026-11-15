@@ -47,7 +47,7 @@ public class WindowModeCommandTests
     [Test]
     public async Task TheOpeningSettingRoundTripsEveryMode()
     {
-        var field = (ChoiceField)BuiltInSettings.Window.Fields.Single();
+        var field = (ChoiceField)BuiltInSettings.Window.Fields.Single(f => f.Id == "start");
         var binding = (SettingBinding<string>)field.Binding!;
         foreach (var mode in Enum.GetValues<WindowMode>())
         {
@@ -56,6 +56,17 @@ public class WindowModeCommandTests
             await Assert.That(field.Choices).Contains(word);
             await Assert.That(BuiltInSettings.WindowStartFor(word)).IsEqualTo(mode);
         }
+    }
+
+    [Test]
+    public async Task TheTitleBarSettingIsOffByDefaultAndWritesTheConfiguration()
+    {
+        var field = (BoolField)BuiltInSettings.Window.Fields.Single(f => f.Id == "title-bar");
+        var binding = (SettingBinding<bool>)field.Binding!;
+        var config = new AppConfiguration();
+        await Assert.That(binding.Get(config)).IsFalse();
+        binding.Set(config, true);
+        await Assert.That(config.WindowTitleBar).IsTrue();
     }
 
     [Test]

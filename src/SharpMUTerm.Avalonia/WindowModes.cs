@@ -26,6 +26,8 @@ internal sealed class WindowModes : IWindowModes
 
     public void Toggle(WindowMode mode) => Dispatcher.UIThread.Post(() => _window?.ToggleMode(mode));
 
+    public void ShowTitleBar(bool show) => Dispatcher.UIThread.Post(() => _window?.SetTitleBar(show));
+
     /// <summary>The window's mode changed; on the window's thread.</summary>
     internal void Note(WindowMode mode)
     {

@@ -95,8 +95,9 @@ internal sealed class MainWindow : Window
 
         // No title bar: the header is the top of the window — the window's own (NativeHeader), or the client's cells
         // with --cell-chrome. The header's empty space moves the window and its edges resize it (WindowChrome).
-        // --title-bar brings it back.
-        _decorations = DecorationsFor(options.TitleBar);
+        // The Window page's system title bar brings it back (SetTitleBar applies a change at once), and so does
+        // --title-bar for one run.
+        _decorations = DecorationsFor(options.TitleBar || _config.WindowTitleBar);
         WindowDecorations = _decorations;
         _opaque = new SolidColorBrush(Color.FromRgb(background.Red, background.Green, background.Blue));
         Background = _opaque;
@@ -129,14 +130,15 @@ internal sealed class MainWindow : Window
         _driver.Pointer.PanelScale = () => scales().Panels;
 
         // The edge Avalonia would have drawn round a BorderOnly window on X11, drawn here (DecorationsFor): a hairline,
-        // only while the window is an ordinary window.
-        if (_decorations == WindowDecorations.None)
+        // only while the window is an ordinary window with no frame of its own.
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD())
         {
             _edge = new Border
             {
                 BorderBrush = new SolidColorBrush(NativeTokens.For(_config.Theme).Edge),
                 BorderThickness = new Thickness(NativeTokens.Hairline),
                 IsHitTestVisible = false,
+                IsVisible = _decorations == WindowDecorations.None,
             };
             root.Children.Add(_edge);
         }
@@ -412,7 +414,7 @@ internal sealed class MainWindow : Window
         return placement is { IsUsable: true } ? placement : null;
     }
 
-    private readonly WindowDecorations _decorations;
+    private WindowDecorations _decorations;
     private readonly Border? _edge;
 
     /// <summary>
@@ -429,6 +431,27 @@ internal sealed class MainWindow : Window
         titleBar ? WindowDecorations.Full
         : OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD() ? WindowDecorations.None
         : WindowDecorations.BorderOnly;
+
+    /// <summary>
+    /// Puts the system title bar on or takes it off (the Window settings page), at once. <c>--title-bar</c> keeps it on
+    /// for the run whatever the setting says. A windowed full screen keeps no frame and takes this one when it ends.
+    /// </summary>
+    internal void SetTitleBar(bool show)
+    {
+        var decorations = DecorationsFor(show || _options.TitleBar);
+        if (decorations == _decorations)
+        {
+            return;
+        }
+
+        _decorations = decorations;
+        if (!_windowedFullScreen)
+        {
+            WindowDecorations = decorations;
+        }
+
+        NoteMode();
+    }
 
     /// <summary>The mode the window is in now.</summary>
     internal WindowMode Mode =>
@@ -540,7 +563,7 @@ internal sealed class MainWindow : Window
         var mode = Mode;
         if (_edge is not null)
         {
-            _edge.IsVisible = mode == WindowMode.Windowed;
+            _edge.IsVisible = mode == WindowMode.Windowed && _decorations == WindowDecorations.None;
         }
 
         _driver.WindowModes.Note(mode);

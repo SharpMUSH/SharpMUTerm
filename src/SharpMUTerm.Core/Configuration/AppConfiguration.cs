@@ -143,6 +143,13 @@ public sealed class AppConfiguration
     public WindowMode WindowStart { get; set; }
 
     /// <summary>
+    /// Whether the desktop window wears the system's own title bar above its header. Off by default: the header is the
+    /// top of the window, and its blank space moves it. Read by the window alone, and applied as soon as it changes;
+    /// <c>--title-bar</c> turns it on for one run without saving.
+    /// </summary>
+    public bool WindowTitleBar { get; set; }
+
+    /// <summary>
     /// Where the desktop window was left: place, size and whether it was maximised (<see cref="WindowPlacement"/>). Kept up
     /// to date by the window as it moves, and saved with everything else. Null until a window has been opened; a terminal
     /// never reads it.
