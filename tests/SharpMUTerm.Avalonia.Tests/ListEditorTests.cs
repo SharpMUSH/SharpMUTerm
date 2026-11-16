@@ -188,7 +188,7 @@ public class ListEditorTests
 
         await Assert.That(lines[0]).Contains("matches 2 of the last 3");
         await Assert.That(lines.Skip(1).Count()).IsEqualTo(2);
-        await Assert.That(marked).All().Satisfy(m => m.StartsWith("You gain", StringComparison.Ordinal), m => m.IsTrue());
+        await Assert.That(marked).All().Satisfy(m => m!.StartsWith("You gain", StringComparison.Ordinal), m => m.IsTrue());
     }
 
     [Test]

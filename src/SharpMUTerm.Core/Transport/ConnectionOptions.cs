@@ -24,6 +24,12 @@ public sealed class ConnectionOptions
     /// </summary>
     public string? WebSocketPath { get; init; }
 
+    /// <summary>
+    /// The world's keepalive, or null for none. A WebSocket pings at least this often: on gmcp and terminal the
+    /// telnet NOP that would otherwise keep a quiet connection open never reaches the server.
+    /// </summary>
+    public TimeSpan? KeepaliveInterval { get; init; }
+
     /// <summary>SNI / certificate target host. Defaults to <see cref="Host"/> when null.</summary>
     public string? TlsTargetHost { get; init; }
 

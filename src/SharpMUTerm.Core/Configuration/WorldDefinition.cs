@@ -353,5 +353,6 @@ public sealed class WorldDefinition
         UseTls = UseTls,
         AllowInvalidCertificates = AllowInvalidCertificates,
         WebSocketPath = WebSocketPath,
+        KeepaliveInterval = Telnet.TelnetSessionOptions.ResolveKeepalive(KeepaliveSeconds),
     };
 }

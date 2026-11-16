@@ -6,13 +6,15 @@ namespace SharpMUTerm.Core.Transport;
 
 /// <summary>
 /// A world reached over a WebSocket (<see cref="ConnectionOptions.WebSocketPath"/>). TelnetNegotiationCore connects the
-/// socket, offering <c>telnet.mudstandards.org</c> and then <c>telnet</c>, and its own transport runs the session over
-/// it (<see cref="ForTelnet"/>), so the framing — one BINARY message per write, frames fed as they arrive, and the
-/// Base64 variant — is the library's.
+/// socket, offering <c>telnet.mudstandards.org</c> and <c>telnet</c>, then <c>gmcp.mudstandards.org</c> and
+/// <c>terminal.mudstandards.org</c>, and its own transport runs the session over whichever the server picked
+/// (<see cref="ForTelnet"/>). Evennia offers no telnet and picks <c>gmcp</c>: text and GMCP only, with no NAWS, TTYPE,
+/// CHARSET, echo or MXP, and the library drops every telnet byte this client writes before it reaches the server.
 /// </summary>
 public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
 {
     private static readonly TimeSpan CloseWait = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultPing = TimeSpan.FromSeconds(30);
 
     private readonly ConnectionOptions _options = options ?? throw new ArgumentNullException(nameof(options));
     private ClientWebSocket? _socket;
@@ -41,7 +43,7 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
             socket =>
             {
                 // A quiet connection behind a proxy is kept open, and one that stops answering is noticed.
-                socket.KeepAliveInterval = TimeSpan.FromSeconds(30);
+                socket.KeepAliveInterval = PingInterval(_options.KeepaliveInterval);
                 socket.KeepAliveTimeout = TimeSpan.FromSeconds(30);
                 if (_options.AllowInvalidCertificates)
                 {
@@ -52,8 +54,15 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
         RemoteDescription = address.ToString();
     }
 
+    /// <summary>
+    /// 30 seconds, or the world's keepalive when that is shorter: a ping is the only keepalive a gmcp or terminal
+    /// socket carries.
+    /// </summary>
+    public static TimeSpan PingInterval(TimeSpan? keepalive) =>
+        keepalive is { } wanted && wanted < DefaultPing ? wanted : DefaultPing;
+
     public ITelnetTransport ForTelnet(int receiveBufferSize) =>
-        TelnetTransport.WebSocket(_socket ?? throw new InvalidOperationException("Transport is not connected."));
+        TelnetTransport.WebSocketClient(_socket ?? throw new InvalidOperationException("Transport is not connected."));
 
     public async ValueTask SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
