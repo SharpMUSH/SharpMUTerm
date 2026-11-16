@@ -57,7 +57,10 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
                 try
                 {
                     await socket.ConnectAsync(context.DnsEndPoint, token).ConfigureAwait(false);
-                    reached = socket.RemoteEndPoint;
+                    // A dual-mode socket reports an IPv4 peer as ::ffff:a.b.c.d; say it as the address it is.
+                    reached = socket.RemoteEndPoint is IPEndPoint { Address.IsIPv4MappedToIPv6: true } mapped
+                        ? new IPEndPoint(mapped.Address.MapToIPv4(), mapped.Port)
+                        : socket.RemoteEndPoint;
                     return new NetworkStream(socket, ownsSocket: true);
                 }
                 catch
