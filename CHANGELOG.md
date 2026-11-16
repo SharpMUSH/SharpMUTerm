@@ -7,6 +7,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-11-16
+
 ### Added
 
 - Worlds can be reached over a WebSocket, as a browser client would. Browse worlds now lists a game's WebSocket
