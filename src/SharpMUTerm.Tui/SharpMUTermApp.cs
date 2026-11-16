@@ -8058,9 +8058,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // F5 also adds and removes worlds and characters, which are what the header's fraction and the
         // rail are drawn from. Neither is repainted by anything else here, so a world added on F5 used to
-        // leave both reading the configuration as it was before.
+        // leave both reading the configuration as it was before. The tab strips too: a deleted character's
+        // main window becomes closable (CanClose), and its × has to be there now.
         RefreshHeader();
-        RefreshRail();
+        RefreshTabTitles(); // and the rail
 
         // And F5 sets a character's pane tint, which is read off the configuration every time a plane is
         // painted — but the planes are only repainted when something moves (a focus change, an
@@ -9731,7 +9732,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         scripts.Reload();
     }
 
-    private void OnSessionRemoved(object? sender, WorldSession session)
+    private void OnSessionRemoved(object? sender, WorldSession session) =>
+        // Raised after the session is disposed, which can finish off the UI thread; everything below is the UI's.
+        OnUiThread(() => ForgetRemovedSession(session));
+
+    private void ForgetRemovedSession(WorldSession session)
     {
         StopSound(session);
         StopReconnecting(session);
@@ -14001,11 +14006,41 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
     /// <summary>
     /// Whether a tab carries the framework's <c>×</c> close button. Only the pane's <em>active</em>
-    /// tab does — the design shows one close affordance per pane, not one per tab — and never the
-    /// main window, which <see cref="CloseWindow"/> refuses to close anyway.
+    /// tab does — the design shows one close affordance per pane, not one per tab — and only a window
+    /// <see cref="CanClose"/> allows.
     /// </summary>
-    private static bool CanCloseTab(string windowId, string? activeTab) =>
-        windowId != MainWindowId && string.Equals(windowId, activeTab, StringComparison.Ordinal);
+    private bool CanCloseTab(string windowId, string? activeTab) =>
+        CanClose(windowId) && string.Equals(windowId, activeTab, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether a window may be closed: any but the main window, and the main window too once the character
+    /// it belongs to has been deleted. The main window is the session, so it stays while the session has a
+    /// character; with the character gone nothing else reaches it (the rail and ⌃P list configured
+    /// characters only), and refusing left a pane the player could not get rid of.
+    /// </summary>
+    private bool CanClose(string windowId) => windowId != MainWindowId || OwnerWasDeleted(windowId);
+
+    /// <summary>
+    /// Whether the character a window belongs to has been deleted from the configuration. With a session,
+    /// the session's own <see cref="CharacterDefinition"/> is looked for by instance (a rename edits it in
+    /// place) and by key (an undone deletion puts back a copy). Without one, the owner the workspace records
+    /// names no configured character or world. A window that belongs to no one, or to a session with no
+    /// character, was never a character's and is not counted.
+    /// </summary>
+    private bool OwnerWasDeleted(string windowId)
+    {
+        if (SessionFor(windowId) is { } session)
+        {
+            return session.Character is { } character
+                && FindCharacter(session.SessionKey) is null
+                && !_config.Worlds.Any(w => w.Characters.Any(c => ReferenceEquals(c, character)));
+        }
+
+        return _workspace.FindWindow(windowId)?.SessionKey is { Length: > 0 } owner
+            && _sessions.Find(owner) is null
+            && FindCharacter(owner) is null
+            && !_config.Worlds.Any(w => string.Equals(w.Name, owner, StringComparison.Ordinal));
+    }
 
     /// <summary>
     /// Closes the tab whose <c>×</c> the user clicked. The framework raises this from its own hit
@@ -14070,10 +14105,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void CloseWindow(string id)
     {
-        if (id == MainWindowId || _workspace.FindWindow(id) is not { } closing)
+        if (!CanClose(id) || _workspace.FindWindow(id) is not { } closing)
         {
             return;
         }
+
+        // A deleted character's own window: once it is closed nothing can reach the session (no rail row,
+        // no ⌃P entry), so the session is ended with it rather than left connected out of sight.
+        var orphan = SessionFor(id) is { } owner && OwnerWasDeleted(id) ? owner : null;
 
         // A layout panel the player closes stays closed: recorded on its character, so no connect, re-fold or later
         // launch puts it back until they ask for it (ClosedPanelsOf).
@@ -14092,11 +14131,41 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         _reservedPictures.Remove(id);
         _freezePoints.Remove(id);
         _workspace.CloseWindow(id);
+        if (_workspace.Windows.Count == 0)
+        {
+            // The last window went (a deleted character's main window): the shell gets its resting main
+            // window back, as at a start with nothing open, rather than a pane with nothing in it.
+            _workspace.OpenWindow(MainWindowId, "Main", WindowKind.Main, null);
+            PaneContentFor(MainWindowId, "Main");
+        }
+
+        if (orphan is not null)
+        {
+            EndDeletedSession(orphan);
+        }
+
         RebuildPaneArea();
         if (closedPanel)
         {
             PersistConfiguration(); // the workspace without it, too, so a crash before quitting does not bring it back
         }
+    }
+
+    /// <summary>
+    /// Ends the session of a deleted character whose window has just been closed: it is forgotten as that
+    /// window's session, the command line is pointed at the window now in front, and the session is closed
+    /// (disconnected if it was connected), which stops its scripts, sound, map and reconnects.
+    /// </summary>
+    private void EndDeletedSession(WorldSession session)
+    {
+        _sessionWindows.Remove(session);
+        _sizeReports.Remove(session);
+        if (ReferenceEquals(_active, session))
+        {
+            _active = WindowSession(ActiveWindowId()) is { } front && !ReferenceEquals(front, session) ? front : null;
+        }
+
+        LastCommand = _sessions.CloseAsync(session);
     }
 
     /// <summary>
