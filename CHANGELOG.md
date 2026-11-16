@@ -20,8 +20,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Changed
 
-- Updated TelnetNegotiationCore to 4.13.3, MarkupString to 2.31.3 and Microsoft.Extensions.Logging.Abstractions to
-  11.0.0 (which 4.13.3 needs). The connection is now read by the telnet library itself, which is what lets a world be
+- Updated TelnetNegotiationCore to 4.13.5, MarkupString to 2.31.3 and Microsoft.Extensions.Logging.Abstractions to
+  11.0.0 (which it needs). The connection is now read by the telnet library itself, which is what lets a world be
   reached over a WebSocket; a telnet world behaves as before.
 
 ## [0.3.5] - 2026-11-15
