@@ -58,9 +58,12 @@ public class WebSocketWorldTests
         };
 
         await session.ConnectAsync();
-        await server.SendAsync("Welcome, runner.\r\n");
+        // Evennia sends each message with no line ending; each is still a line of its own.
+        await server.SendAsync("Welcome, runner.\u001b[0m");
         await server.SendTextAsync("Char.Vitals {\"hp\":10,\"maxhp\":12}");
-        await Until(() => { lock (lines) { return lines.Contains("Welcome, runner."); } });
+        await server.SendAsync("Type your name.\u001b[0m");
+        await server.SendAsync("Name: ");
+        await Until(() => { lock (lines) { return lines.Contains("Welcome, runner.") && lines.Contains("Type your name."); } });
         await Until(() => session.GameData.GetText("Char.Vitals.hp") == "10");
 
         // The client says hello once the server's choice reads as WILL GMCP, and never as a telnet byte.
@@ -71,6 +74,16 @@ public class WebSocketWorldTests
         await Assert.That(server.SubProtocol).IsEqualTo("gmcp.mudstandards.org");
         await Assert.That(server.Received).DoesNotContain((byte)0xFF);
         await Assert.That(Encoding.UTF8.GetString(server.Received)).IsEqualTo("look\r\n");
+    }
+
+    [Test]
+    public async Task AWorldKeepaliveShorterThanTheDefaultPingSetsThePing()
+    {
+        var world = new WorldDefinition { Name = "W", Host = "example.org", Port = 443, WebSocketPath = "/ws", KeepaliveSeconds = 10 };
+
+        await Assert.That(WebSocketTransport.PingInterval(world.ToConnectionOptions().KeepaliveInterval)).IsEqualTo(TimeSpan.FromSeconds(10));
+        await Assert.That(WebSocketTransport.PingInterval(TimeSpan.FromMinutes(5))).IsEqualTo(TimeSpan.FromSeconds(30));
+        await Assert.That(WebSocketTransport.PingInterval(null)).IsEqualTo(TimeSpan.FromSeconds(30));
     }
 
     [Test]
@@ -246,6 +259,7 @@ public class WebSocketWorldTests
                 var accepted = await context.AcceptWebSocketAsync(SubProtocol);
                 _socket.SetResult(accepted.WebSocket);
                 var buffer = new byte[4096];
+                var message = new List<byte>();
                 while (!_cts.IsCancellationRequested)
                 {
                     var result = await accepted.WebSocket.ReceiveAsync(buffer, _cts.Token);
@@ -258,7 +272,12 @@ public class WebSocketWorldTests
                     {
                         if (result.MessageType == WebSocketMessageType.Text)
                         {
-                            _text.Add(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                            message.AddRange(buffer.AsSpan(0, result.Count));
+                            if (result.EndOfMessage)
+                            {
+                                _text.Add(Encoding.UTF8.GetString([.. message]));
+                                message.Clear();
+                            }
                         }
                         else
                         {
