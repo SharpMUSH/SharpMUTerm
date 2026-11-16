@@ -7,6 +7,14 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Fixed
+
+- A character whose name has a space, connected as `"first last"` on a MUSH, gets a session log again. The quotes
+  went into the log's file name, which Windows refuses, so no log was written. World and character names are now made
+  safe for Windows, Linux and macOS before they name a file: quotes and control characters are dropped, `< > : / \ | ? *`
+  become `_`, and a name like `CON` is changed so Windows will take it. A name that needed none of this names the same
+  file as before.
+
 ## [0.3.6] - 2026-11-16
 
 ### Added
