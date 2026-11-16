@@ -205,6 +205,39 @@ public class LogRootTests
         }
     }
 
+    /// <summary>
+    /// A MUSH character whose name has a space is connected as <c>"first last"</c>, and the quotes used to go into the
+    /// transcript's file name, which Windows refuses: the log was never made. The name is made portable instead.
+    /// </summary>
+    [Test]
+    public async Task AQuotedCharacterNameStillGetsATranscriptWithoutTheQuotes()
+    {
+        Console.SetIn(TextReader.Null);
+        var root = Path.Combine(Path.GetTempPath(), $"smuterm-logroot-{Guid.NewGuid():N}");
+        try
+        {
+            var config = DemoScene.Build();
+            config.Worlds[0].Name = "Aether:fall";
+            var character = config.Worlds[0].Characters.First(c => c.Name == DemoScene.MainCharacterName);
+            character.Name = "\"first last\"";
+            var app = new SharpMUTermApp(
+                config, Headless, new HeadlessConsoleDriver(Width, Height), logRoot: root);
+            app.BindWorldWithoutConnecting(config.Worlds[0]);
+
+            var written = Directory.GetFiles(root);
+            await Assert.That(written.Length).IsEqualTo(1);
+            await Assert.That(Path.GetFileName(written[0])).StartsWith("Aether_fall.first last-");
+            await Assert.That(Path.GetFileName(written[0]).IndexOfAny(['"', ':'])).IsEqualTo(-1);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     // ---- What the surfaces say when there is no root ----------------------------------------
 
     /// <summary>

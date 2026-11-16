@@ -3495,9 +3495,9 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return null;
         }
 
-        var stem = $"{world.Name}.{character?.Name ?? "anonymous"}-{DateTime.Now:yyyyMMdd-HHmmss}"
-            .Replace(Path.DirectorySeparatorChar, '_')
-            .Replace(Path.AltDirectorySeparatorChar, '_');
+        // Each name is made portable on its own: a character connected as "first last" carries its quotes, which
+        // Windows refuses in a file name, and a world called CON is a device there.
+        var stem = $"{PortableFileName.Of(world.Name, "world")}.{PortableFileName.Of(character?.Name, "anonymous")}-{DateTime.Now:yyyyMMdd-HHmmss}";
 
         try
         {
