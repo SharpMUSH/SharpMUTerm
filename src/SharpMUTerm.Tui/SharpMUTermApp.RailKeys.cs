@@ -240,8 +240,9 @@ internal sealed partial class SharpMUTermApp
                     Offer(entries, front ? $"{title} is in front" : $"Go to {title}", row.Chord, target, enabled: !front && !row.Closed);
                     if (!row.Closed)
                     {
-                        // ⌃W closes the window in front; the session's main window is the session and never closes.
-                        Offer(entries, "Close this window", "⌃W", "layout:close", enabled: window?.Id != MainWindowId);
+                        // ⌃W closes the window in front; the session's main window is the session and closes only once
+                        // its character is deleted (CanClose).
+                        Offer(entries, "Close this window", "⌃W", "layout:close", enabled: window is null || CanClose(window.Id));
                         Offer(entries, "Clear this window", null, "term:clear");
                     }
 

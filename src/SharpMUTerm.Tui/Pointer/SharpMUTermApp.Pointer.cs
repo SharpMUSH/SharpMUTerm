@@ -692,7 +692,7 @@ internal sealed partial class SharpMUTermApp
     private void AddTabMenu(List<PointerMenuItem> items, string tabWindow)
     {
         Activate(tabWindow);
-        if (tabWindow != MainWindowId)
+        if (CanClose(tabWindow))
         {
             items.Add(new PointerMenuItem("Close tab", "⌃W", () => OnUiThread(() => CloseWindow(tabWindow))));
         }

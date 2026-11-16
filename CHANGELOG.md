@@ -20,6 +20,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   11.0.0 (which 4.13.3 needs). The connection is now read by the telnet library itself, which is what lets a world be
   reached over a WebSocket; a telnet world behaves as before.
 
+### Fixed
+
+- The pane of a character you have deleted can be closed again (⌃W, the tab's ×, its menu, or the window's tab).
+  The first character opened shares the client's main window, which never closed, so after deleting that character
+  its pane stayed for good. Closing it also ends that character's session, which no longer had any way to reach it.
+
 ## [0.3.5] - 2026-11-15
 
 ### Added
