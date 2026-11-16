@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using TelnetNegotiationCore.Connections;
 using TelnetNegotiationCore.WebSockets;
@@ -10,6 +13,9 @@ namespace SharpMUTerm.Core.Transport;
 /// <c>terminal.mudstandards.org</c>, and its own transport runs the session over whichever the server picked
 /// (<see cref="ForTelnet"/>). Evennia offers no telnet and picks <c>gmcp</c>: text and GMCP only, with no NAWS, TTYPE,
 /// CHARSET, echo or MXP, and the library drops every telnet byte this client writes before it reaches the server.
+/// The handshake runs through a handler of this transport's own, so the socket is dialled with no delay, the
+/// certificate is checked by the same rule <see cref="TcpTransport"/> uses, and the endpoint reached is the one
+/// <see cref="RemoteDescription"/> names (through a proxy, that is the proxy).
 /// </summary>
 public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
 {
@@ -18,6 +24,7 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
 
     private readonly ConnectionOptions _options = options ?? throw new ArgumentNullException(nameof(options));
     private ClientWebSocket? _socket;
+    private HttpMessageInvoker? _invoker;
 
     public bool IsConnected => _socket?.State == WebSocketState.Open;
 
@@ -38,20 +45,43 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
         var address = new Uri(WebSocketAddress.Format(_options.Host, _options.Port, _options.UseTls, _options.WebSocketPath!));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_options.ConnectTimeout);
+        EndPoint? reached = null;
+        var handler = new SocketsHttpHandler
+        {
+            // A redirect is a second address nobody configured.
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            ConnectCallback = async (context, token) =>
+            {
+                var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                try
+                {
+                    await socket.ConnectAsync(context.DnsEndPoint, token).ConfigureAwait(false);
+                    reached = socket.RemoteEndPoint;
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            },
+        };
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, errors) =>
+            errors == System.Net.Security.SslPolicyErrors.None || _options.AllowInvalidCertificates;
+        _invoker = new HttpMessageInvoker(handler);
         _socket = await TelnetWebSocketClient.ConnectAsync(
             address,
+            _invoker,
             socket =>
             {
                 // A quiet connection behind a proxy is kept open, and one that stops answering is noticed.
                 socket.KeepAliveInterval = PingInterval(_options.KeepaliveInterval);
                 socket.KeepAliveTimeout = TimeSpan.FromSeconds(30);
-                if (_options.AllowInvalidCertificates)
-                {
-                    socket.RemoteCertificateValidationCallback = static (_, _, _, _) => true;
-                }
             },
+            bridges: null,
             timeout.Token).ConfigureAwait(false);
-        RemoteDescription = address.ToString();
+        RemoteDescription = reached is null ? address.ToString() : $"{address} ({reached})";
     }
 
     /// <summary>
@@ -114,5 +144,7 @@ public sealed class WebSocketTransport(ConnectionOptions options) : ITransport
         await CloseAsync().ConfigureAwait(false);
         _socket?.Dispose();
         _socket = null;
+        _invoker?.Dispose();
+        _invoker = null;
     }
 }

@@ -77,6 +77,18 @@ public class WebSocketWorldTests
     }
 
     [Test]
+    public async Task TheTransportSaysWhichEndpointTheHandshakeReached()
+    {
+        await using var server = await WebSocketServer.StartAsync();
+        await using var transport = new WebSocketTransport(new ConnectionOptions { Host = "127.0.0.1", Port = server.Port, WebSocketPath = "/ws" });
+
+        await transport.ConnectAsync();
+
+        await Assert.That(transport.IsConnected).IsTrue();
+        await Assert.That(transport.RemoteDescription).IsEqualTo($"ws://127.0.0.1:{server.Port}/ws (127.0.0.1:{server.Port})");
+    }
+
+    [Test]
     public async Task AWorldKeepaliveShorterThanTheDefaultPingSetsThePing()
     {
         var world = new WorldDefinition { Name = "W", Host = "example.org", Port = 443, WebSocketPath = "/ws", KeepaliveSeconds = 10 };
