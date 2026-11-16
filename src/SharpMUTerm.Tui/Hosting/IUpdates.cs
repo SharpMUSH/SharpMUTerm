@@ -8,6 +8,13 @@ namespace SharpMUTerm.Tui;
 /// </summary>
 internal interface IUpdates
 {
+    /// <summary>
+    /// The folder of a copy the old Inno Setup installer left that is still installed (<see cref="OldInstall"/>), or
+    /// null. The install hook removes this user's own; one installed for everyone needs an administrator, and anything
+    /// still pointing at it starts a version that never updates, so the client says it at start.
+    /// </summary>
+    string? OldInstallFolder => null;
+
     /// <summary>The version running now, as the package says it (<c>0.2.0</c>).</summary>
     string CurrentVersion { get; }
 

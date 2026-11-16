@@ -43,6 +43,8 @@ internal sealed class VelopackUpdates : IUpdates
 
     public string CurrentVersion { get; }
 
+    public string? OldInstallFolder { get; private init; }
+
     public bool Relaunches => _window || !OperatingSystem.IsWindows();
 
     public string? RestartNote => OperatingSystem.IsWindows()
@@ -72,7 +74,10 @@ internal sealed class VelopackUpdates : IUpdates
                 return null;
             }
 
-            return new VelopackUpdates(locator, window, version.ToNormalizedString());
+            return new VelopackUpdates(locator, window, version.ToNormalizedString())
+            {
+                OldInstallFolder = OldInstall.Find(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory)).FirstOrDefault()?.Folder,
+            };
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

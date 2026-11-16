@@ -20,6 +20,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   11.0.0 (which 4.13.3 needs). The connection is now read by the telnet library itself, which is what lets a world be
   reached over a WebSocket; a telnet world behaves as before.
 
+### Fixed
+
+- Installing or updating on Windows now retires a copy the old installer (0.2.0 and earlier) left behind. Its desktop
+  shortcut, taskbar pin and Start menu entry used to keep starting the old version, which never updates and reads
+  the same settings, so changes made in the new one seemed to be lost on the next start. Those shortcuts now start
+  the new version, the old copy is uninstalled (which also takes it off `PATH`), a `telnet://` handler chosen in the
+  old installer follows it, and the Start menu entry is put back if the old uninstaller had removed it. A copy
+  installed for every user needs an administrator to remove, so the client says at start where it is.
+
 ## [0.3.5] - 2026-11-15
 
 ### Added

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
+using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Avalonia;
 
@@ -27,6 +28,9 @@ internal static class LaunchShortcuts
         new("SharpMUTerm (Native)", "sharpmuterm.exe", "",
             "SharpMUTerm in your terminal (no inline pictures on Windows)"),
     ];
+
+    /// <summary>The Start menu entry for the window, which Velopack makes (<c>--shortcuts StartMenuRoot</c>).</summary>
+    public const string MainShortcut = "SharpMUTerm.lnk";
 
     /// <summary>The Windows Terminal profile's name, and the folder its fragment lives in.</summary>
     public const string TerminalProfile = "SharpMUTerm";
@@ -55,6 +59,19 @@ internal static class LaunchShortcuts
     {
         var menu = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
         var icon = Path.Combine(current, "sharpmuterm-window.exe");
+
+        // Velopack's own entry has the old installer's name, and that installer's uninstaller deletes it by name: a
+        // player who removed the old copy by hand after installing this one was left with no way to start it but a
+        // shortcut of their own. Put back when it is missing; Velopack replaces it with its own whenever it writes one.
+        var main = Path.Combine(menu, MainShortcut);
+        attempt(() =>
+        {
+            if (!File.Exists(main))
+            {
+                ShellLink.Save(main, icon, "", current, "SharpMUTerm", icon, WindowsAppId.Value);
+            }
+        });
+
         foreach (var launcher in Added)
         {
             attempt(() => ShellLink.Save(
@@ -84,6 +101,16 @@ internal static class LaunchShortcuts
             attempt(() => File.Delete(Path.Combine(menu, launcher.Name + ".lnk")));
         }
 
+        // The main entry, if it is the one Install put back (it starts this install); Velopack removes its own.
+        attempt(() =>
+        {
+            var main = Path.Combine(menu, MainShortcut);
+            if (ShellLink.Read(main) is { } link && OldInstall.IsUnder(link.Target, Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory)))
+            {
+                File.Delete(main);
+            }
+        });
+
         attempt(() =>
         {
             var folder = FragmentFolder();
@@ -99,12 +126,16 @@ internal static class LaunchShortcuts
 
     /// <summary>A <c>.lnk</c> through the shell's own <c>ShellLink</c> object.</summary>
     [SupportedOSPlatform("windows")]
-    private static class ShellLink
+    internal static class ShellLink
     {
-        public static void Save(string file, string target, string arguments, string workingDirectory, string description, string icon)
+        private const int MaxPath = 1024;
+
+        /// <summary>The AppUserModelID property (<c>PKEY_AppUserModel_ID</c>).</summary>
+        private static readonly PropertyKey AppUserModelId = new(new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);
+
+        public static void Save(string file, string target, string arguments, string workingDirectory, string description, string icon, string? appId = null)
         {
-            var type = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"), throwOnError: true)!;
-            var link = (IShellLinkW)Activator.CreateInstance(type)!;
+            var link = Create();
             try
             {
                 link.SetPath(target);
@@ -112,12 +143,90 @@ internal static class LaunchShortcuts
                 link.SetWorkingDirectory(workingDirectory);
                 link.SetDescription(description);
                 link.SetIconLocation(icon, 0);
+                if (appId is not null)
+                {
+                    SetAppId((IPropertyStore)link, appId);
+                }
+
                 ((IPersistFile)link).Save(file, true);
             }
             finally
             {
                 Marshal.FinalReleaseComObject(link);
             }
+        }
+
+        /// <summary>What a <c>.lnk</c> starts, or null when it cannot be read.</summary>
+        public static ShortcutFile? Read(string file)
+        {
+            var link = Create();
+            try
+            {
+                ((IPersistFile)link).Load(file, 0);
+                var target = new System.Text.StringBuilder(MaxPath);
+                link.GetPath(target, MaxPath, IntPtr.Zero, 0x4); // SLGP_RAWPATH: as written, not resolved
+                var arguments = new System.Text.StringBuilder(MaxPath);
+                link.GetArguments(arguments, MaxPath);
+                var directory = new System.Text.StringBuilder(MaxPath);
+                link.GetWorkingDirectory(directory, MaxPath);
+                var description = new System.Text.StringBuilder(MaxPath);
+                link.GetDescription(description, MaxPath);
+                var icon = new System.Text.StringBuilder(MaxPath);
+                link.GetIconLocation(icon, MaxPath, out _);
+                return new ShortcutFile(file, Environment.ExpandEnvironmentVariables(target.ToString()), arguments.ToString(),
+                    Environment.ExpandEnvironmentVariables(directory.ToString()), description.ToString(), Environment.ExpandEnvironmentVariables(icon.ToString()));
+            }
+            catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or InvalidCastException)
+            {
+                return null;
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(link);
+            }
+        }
+
+        private static IShellLinkW Create()
+        {
+            var type = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"), throwOnError: true)!;
+            return (IShellLinkW)Activator.CreateInstance(type)!;
+        }
+
+        private static void SetAppId(IPropertyStore store, string appId)
+        {
+            var value = new PropVariant { Type = 31 /* VT_LPWSTR */, Pointer = Marshal.StringToCoTaskMemUni(appId) };
+            try
+            {
+                var key = AppUserModelId;
+                store.SetValue(ref key, ref value);
+                store.Commit();
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(value.Pointer);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        private readonly record struct PropertyKey(Guid FormatId, uint PropertyId);
+
+        [StructLayout(LayoutKind.Explicit, Size = 24)]
+        private struct PropVariant
+        {
+            [FieldOffset(0)] public ushort Type;
+            [FieldOffset(8)] public IntPtr Pointer;
+        }
+
+        [ComImport]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+        private interface IPropertyStore
+        {
+            void GetCount(out uint count);
+            void GetAt(uint index, out PropertyKey key);
+            void GetValue(ref PropertyKey key, out PropVariant value);
+            void SetValue(ref PropertyKey key, ref PropVariant value);
+            void Commit();
         }
 
         [ComImport]

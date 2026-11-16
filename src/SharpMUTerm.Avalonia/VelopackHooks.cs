@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
+using SharpMUTerm.Tui;
 using Velopack;
 
 namespace SharpMUTerm.Avalonia;
@@ -18,7 +19,10 @@ namespace SharpMUTerm.Avalonia;
 /// <item>the Start Menu shortcuts for the other two ways to run it, beside Velopack's own, and a Windows Terminal profile
 /// (<see cref="LaunchShortcuts"/>).</item>
 /// </list>
-/// Opening telnet:// links is not registered: Inno offered it unticked, and there is no page here to offer it on.
+/// It also retires a copy the old Inno Setup installer left (<see cref="OldInstallMigration"/>), so a desktop shortcut,
+/// a pin or <c>PATH</c> stops starting a version that never updates.
+/// Opening telnet:// links is not registered: Inno offered it unticked, and there is no page here to offer it on. A
+/// handler the player chose there is pointed at this copy when the old one is retired, and removed with it.
 /// Linux runs no hooks: the AppImage installs nothing.
 /// </summary>
 internal static class VelopackHooks
@@ -47,8 +51,8 @@ internal static class VelopackHooks
     [SupportedOSPlatform("windows")]
     private static class Windows
     {
-        private const string OwnKey = @"Software\SharpMUTerm\Updater"; // not the Inno installer's key, which its uninstaller deletes
-        private const string AddedToPath = "AddedToPathByUpdater";
+        private const string OwnKey = WindowsDesktop.OwnKey;
+        private const string AddedToPath = WindowsDesktop.AddedToPath;
         private const string AppIdKey = @"Software\Classes\AppUserModelId\" + WindowsAppId.Value;
         private const string FontName = "Symbols Nerd Font Mono Regular (TrueType)";
         private const string FontFile = "SymbolsNerdFontMono-Regular.ttf";
@@ -59,6 +63,8 @@ internal static class VelopackHooks
         public static void Install()
         {
             // Each step on its own: one failing (a locked font file, a policy on the registry) must not cost the others.
+            // The old installer's copy goes first: its uninstaller deletes keys and shortcuts the steps below write.
+            OldInstallMigration.Run(OldInstall.Find(Current), Current, new WindowsDesktop(), Try);
             Try(RegisterAppId);
             Try(() => AddToPath(Current));
             Try(InstallFont);
@@ -68,6 +74,7 @@ internal static class VelopackHooks
         public static void Uninstall()
         {
             LaunchShortcuts.Uninstall(Try);
+            Try(RemoveOwnLinkHandlers);
             Try(() => Registry.CurrentUser.DeleteSubKeyTree(AppIdKey, throwOnMissingSubKey: false));
             Try(() =>
             {
@@ -78,6 +85,19 @@ internal static class VelopackHooks
                     own.DeleteValue(AddedToPath, throwOnMissingValue: false);
                 }
             });
+        }
+
+        /// <summary>The <c>telnet://</c> handlers a migration pointed here (<see cref="OldInstallMigration"/>), and only those.</summary>
+        private static void RemoveOwnLinkHandlers()
+        {
+            var desktop = new WindowsDesktop();
+            foreach (var scheme in OldInstallMigration.LinkSchemes)
+            {
+                if (OldInstall.Unquote(desktop.LinkCommand(scheme)) is { } program && OldInstall.IsUnder(program, Current))
+                {
+                    Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\" + scheme, throwOnMissingSubKey: false);
+                }
+            }
         }
 
         private static void RegisterAppId()

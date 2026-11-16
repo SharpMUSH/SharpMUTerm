@@ -63,8 +63,12 @@ package the programs reference). It builds the installer and the update feed the
   `current\` on the user's `PATH` (taken off on uninstall only if the hook put it there), and the Symbols Nerd Font Mono
   font for this user, for the terminal client's icons (never removed: a terminal profile may rely on it). A terminal
   that does not fall back to it on its own needs it added to its font list (Windows Terminal 1.21 or later: *Font
-  face* `Cascadia Mono, Symbols Nerd Font Mono`). A copy installed by the old Inno Setup installer has no updater;
-  uninstall it and run Setup.
+  face* `Cascadia Mono, Symbols Nerd Font Mono`). A copy installed by the old Inno Setup installer has no updater.
+  The hooks retire it (`OldInstallMigration`): every shortcut starting it (desktop, Start menu, taskbar pins) is
+  pointed at `current\`, a per-user copy is uninstalled silently (its folder leaves `PATH`), a `telnet://` handler
+  it registered is pointed at the new window, and Velopack's Start menu entry, which shares the old one's name and so
+  is deleted by the old uninstaller, is put back. A copy installed for everyone is left, and the client says so at
+  start.
 
 How each program comes back from an update: the window is restarted by Velopack's updater once it has exited. The
 terminal on Linux applies the new AppImage and then replaces its own process with it (`execv`), so it comes back in

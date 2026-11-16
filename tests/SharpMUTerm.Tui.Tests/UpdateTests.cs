@@ -17,9 +17,11 @@ public class UpdateTests
     private static readonly TerminalCapabilities Caps =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-    private sealed class FakeUpdates(string? restartNote = null) : IUpdates
+    private sealed class FakeUpdates(string? restartNote = null, string? oldInstall = null) : IUpdates
     {
         public int Downloads;
+
+        public string? OldInstallFolder => oldInstall;
 
         public string CurrentVersion => "1.0.0";
 
@@ -99,6 +101,25 @@ public class UpdateTests
         await Assert.That(app.QuitPromptModel?.Yes).IsEqualTo("Restart");
         await Assert.That(app.QuitPromptModel?.RestartNote).IsEqualTo("Any SharpMUTerm terminal still open closes too.");
         await Assert.That(app.UpdateToApply).IsNull().Because("the player has not answered");
+    }
+
+    [Test]
+    public async Task AnOldInstallStillOnTheMachineIsSaidAtStart()
+    {
+        await using var app = App(new FakeUpdates(oldInstall: @"C:\Program Files\SharpMUTerm"));
+        await app.StartAsync([]);
+
+        var said = app.Messages.Entries.Select(m => m.Text).ToList();
+        await Assert.That(said.Any(t => t.Contains("An older SharpMUTerm is still installed in C:\\Program Files\\SharpMUTerm", StringComparison.Ordinal))).IsTrue();
+    }
+
+    [Test]
+    public async Task NoOldInstallSaysNothingAboutOne()
+    {
+        await using var app = App(new FakeUpdates());
+        await app.StartAsync([]);
+
+        await Assert.That(app.Messages.Entries.Any(m => m.Text.Contains("older SharpMUTerm", StringComparison.Ordinal))).IsFalse();
     }
 
     [Test]

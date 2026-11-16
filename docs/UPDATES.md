@@ -13,7 +13,14 @@ downloads it when you ask, and restarts into it. The terminal client (`sharpmute
 | Linux, `SharpMUTerm.AppImage` | yes; the AppImage file is replaced |
 | Linux, `sharpmuterm-linux-x64.tar.gz` | no |
 | A build from the repository | no |
-| Windows, installed by the old Inno Setup installer (before Velopack) | no; uninstall it and run Setup once |
+| Windows, installed by the old Inno Setup installer (before Velopack) | no; run Setup once, which retires it |
+
+Setup, and every update after it, looks for a copy the old installer left. A copy installed for this user is uninstalled
+silently, and every shortcut that started it (the desktop, the Start menu, taskbar pins) is pointed at the new one, as
+is a `telnet://` handler chosen in the old installer. A copy installed for every user needs an administrator to remove:
+its shortcuts in your own folders are still pointed at the new copy, and the client says at start that it is there
+(*An older SharpMUTerm is still installed in …; uninstall it in Settings ▸ Apps*). Until it is gone, a shortcut
+anyone else made to it starts a version that never updates, over the same settings.
 
 A copy that cannot update offers nothing: no ⌃P entries and no notices. Asking it anyway (the command id
 `app:check-updates`) says *This copy cannot update itself: only the installed one can.*

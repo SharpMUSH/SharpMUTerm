@@ -74,6 +74,8 @@ internal sealed partial class SharpMUTermApp
             return;
         }
 
+        NoteOldInstall(Host.Updates.OldInstallFolder);
+
         _updateTimer = _time.CreateTimer(_ => OnUi(() =>
         {
             if (_config.Updates.Check && _updatePhase is UpdatePhase.Idle or UpdatePhase.Found)
@@ -81,6 +83,28 @@ internal sealed partial class SharpMUTermApp
                 CheckForUpdates(manual: false);
             }
         }), null, FirstCheckDelay, CheckInterval);
+    }
+
+    /// <summary>
+    /// Says, once at start, that a copy from the old installer is still on this machine: a shortcut or a pin still
+    /// starting it brings up a version that never updates, over the same configuration, and every change made in this
+    /// one looks lost the next time. The install hook removes this user's own copy, so one that is left was installed
+    /// for everyone (or its uninstaller failed), and only the player can remove it.
+    /// </summary>
+    private void NoteOldInstall(string? folder)
+    {
+        if (folder is null)
+        {
+            return;
+        }
+
+        var source = NoticeModel.Sources.Updates;
+        Notice(FirstFitting(NoticeRoom(source + ":"),
+                $"An older SharpMUTerm is still installed in {folder} and never updates; uninstall it in Settings ▸ Apps",
+                $"An older SharpMUTerm is still installed in {folder}; uninstall it in Settings ▸ Apps",
+                "An older SharpMUTerm is still installed; uninstall it in Settings ▸ Apps",
+                "An old copy is still installed; uninstall it"),
+            MessageSeverity.Warning, source: source);
     }
 
     private void StopUpdateChecks()
