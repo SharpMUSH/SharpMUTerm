@@ -696,12 +696,18 @@ internal sealed class TerminalView : Control
         }
     }
 
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        LetGoOfScrollbar();
+    }
+
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
         if (_scrollDrag is not null)
         {
-            _scrollDrag = null;
+            LetGoOfScrollbar();
             e.Pointer.Capture(null);
             HoverScrollbar(e.GetPosition(this));
             UpdateCursor(e.GetPosition(this));
@@ -958,7 +964,17 @@ internal sealed class TerminalView : Control
     /// </summary>
     private const double BarWidth = 4, BarWidthHovered = 8, BarZone = 12, MinimumThumb = 18;
 
-    private sealed record ScrollDrag(string WindowId, double Grab);
+    private sealed record ScrollDrag(string WindowId, double Grab, Action<bool>? Held);
+
+    /// <summary>Ends a thumb drag and tells the client the thumb is let go, so a split held off while it was dragged catches up.</summary>
+    private void LetGoOfScrollbar()
+    {
+        if (_scrollDrag is { } drag)
+        {
+            _scrollDrag = null;
+            drag.Held?.Invoke(false);
+        }
+    }
 
     /// <summary>A bar's track and thumb in logical pixels, or null when the pane has nothing to scroll.</summary>
     /// <summary>The windows a native view lies over (<see cref="DesktopLayer"/>): their panes draw no overlay scrollbar.</summary>
@@ -1018,8 +1034,9 @@ internal sealed class TerminalView : Control
         }
 
         var grab = g.Thumb.Top <= position.Y && position.Y < g.Thumb.Bottom ? position.Y - g.Thumb.Top : g.Thumb.Height / 2;
-        _scrollDrag = new ScrollDrag(bar.WindowId, grab);
+        _scrollDrag = new ScrollDrag(bar.WindowId, grab, bar.Held);
         _barHovered = bar.WindowId;
+        bar.Held?.Invoke(true);
         e.Pointer.Capture(this);
         DragScrollbar(_scrollDrag, position.Y);
         return true;

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using SharpConsoleUI.Drivers;
+using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Graphics;
 using SharpMUTerm.Tui;
@@ -18,11 +19,12 @@ public class ScrollSplitTests
     private static readonly TerminalCapabilities Headless =
         new(GraphicsProtocol.None, supportsTrueColor: true, supportsKittyGraphics: false, supportsSixel: false);
 
-    private static SharpMUTermApp App(bool split = true, string? tail = null)
+    private static SharpMUTermApp App(bool split = true, string? tail = null, int? page = null)
     {
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.Text.SplitScrollback = split;
+        if (page is { } lines) config.Text.PageLines = lines;
         if (tail is not null) config.Text.ScrollTail = tail;
         var app = new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(120, 32));
         app.RenderSnapshot("scrollback");
@@ -54,11 +56,13 @@ public class ScrollSplitTests
         Settled(app);
     }
 
-    private static (SharpMUTermApp App, HeadlessConsoleDriver Driver, PaneRect Pane) WheelApp()
+    private static (SharpMUTermApp App, HeadlessConsoleDriver Driver, PaneRect Pane) WheelApp(int? wheel = null)
     {
         Console.SetIn(TextReader.Null);
         var driver = new HeadlessConsoleDriver(120, 32);
-        var app = new SharpMUTermApp(DemoScene.Build(), Headless, driver);
+        var config = DemoScene.Build();
+        if (wheel is { } lines) config.Text.WheelLines = lines;
+        var app = new SharpMUTermApp(config, Headless, driver);
         app.RenderSnapshot("scrollback");
         Settled(app);
         var paneId = app.PaneWindows().First(p => p.Value == Main).Key;
@@ -83,7 +87,7 @@ public class ScrollSplitTests
         var tailAt = app.ScrollTailOf(Main)!.Value;
 
         Wheel(app, driver, up: true, tail);
-        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - 3);
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - TextSettings.DefaultScrollLines);
         await Assert.That(app.ScrollTailOf(Main)!.Value.Offset).IsEqualTo(tailAt.Offset);
         await Assert.That(app.ScrollTailOf(Main)!.Value.AutoScroll).IsTrue();
 
@@ -92,9 +96,9 @@ public class ScrollSplitTests
         await Assert.That(app.ScrollTailOf(Main)!.Value.Offset).IsEqualTo(tailAt.Offset);
     }
 
-    /// <summary>A notch is three rows wherever the pointer is, never three plus the framework's own one.</summary>
+    /// <summary>A notch is F7's lines per notch (10 by default) wherever the pointer is, never that plus the framework's own one.</summary>
     [Test]
-    public async Task AWheelNotchOverTheHistoryMovesItThreeRows()
+    public async Task AWheelNotchOverTheHistoryMovesItTheSettingsLines()
     {
         var (app, driver, pane) = WheelApp();
         var history = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
@@ -103,7 +107,56 @@ public class ScrollSplitTests
         var opened = app.ScrollbackOf(Main)!.Value.Offset;
         Wheel(app, driver, up: true, history);
 
-        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - 3);
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - TextSettings.DefaultScrollLines);
+    }
+
+    [Test]
+    public async Task AWheelNotchMovesAsManyLinesAsTheSettingSays()
+    {
+        var (app, driver, pane) = WheelApp(wheel: 4);
+        var history = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
+
+        Wheel(app, driver, up: true, history);
+        var opened = app.ScrollbackOf(Main)!.Value.Offset;
+        Wheel(app, driver, up: true, history);
+        Wheel(app, driver, up: false, history);
+        Wheel(app, driver, up: true, history);
+
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(opened - 4);
+    }
+
+    [Test]
+    public async Task PageUpMovesTenLinesByDefaultAndTheSettingsCountOtherwise()
+    {
+        var app = App();
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(app);
+        var first = app.ScrollbackOf(Main)!.Value.Offset;
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(app);
+        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(first - TextSettings.DefaultScrollLines);
+
+        var custom = App(page: 25);
+        custom.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(custom);
+        var at = custom.ScrollbackOf(Main)!.Value.Offset;
+        custom.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(custom);
+        await Assert.That(custom.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(at - 25);
+    }
+
+    /// <summary>Zero is a page: the viewport less two rows of overlap, as PgUp always was.</summary>
+    [Test]
+    public async Task PageLinesOfZeroPagesByTheViewport()
+    {
+        var app = App(page: 0);
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(app);
+        var view = app.ScrollbackOf(Main)!.Value;
+        app.SimulateKey(Key(ConsoleKey.PageUp));
+        Settled(app);
+
+        await Assert.That(view.Offset - app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(view.ViewportRows - 2);
     }
 
     [Test]

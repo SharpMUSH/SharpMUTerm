@@ -687,11 +687,21 @@ fallbacks) for inline images/maps.
     passed (`TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane`, all three themes). The
     history viewport is wrapped in a grid wearing it (`_scrollHistorySurfaces`, re-coloured in `RefreshPaneFocus`); the
     tail keeps the pane's plane. Where the host keeps a gutter, `PaintScrollHistoryGutters` paints the blank gutter and
-    pad-row cells beside it after the frame, and the window's overlay scrollbar runs beside the history alone.
-  - **The window's band is two rows** (`ScrollBandRows`: 2 under `HostChrome.Tabs`, else 1; the second row is blank band),
-    published across the gutter with `ScrollBandOverlay.Inset`, so `ScrollBandView` lines its words up with the output
-    and keeps its button as far from the right edge — the mockup's 40 px band with a real button. Still `rows`, not the
-    mockup's `lines`: a buffer index is not a viewport row.
+    pad-row cells beside it after the frame.
+  - **The window's scrollbar measures a split pane as if it were whole** (`ScrollbarViewportRows`: the track is the pane,
+    the viewport the rows it had before it split), so the split opening or closing moves the thumb not at all; the history
+    cannot scroll further down than that before `MeetsTail` closes the split. **A held thumb holds the split**
+    (`PaneScrollbar.Held`, `HoldScrollbar`, `_scrollbarHeld`): while the window's thumb is dragged `SyncScrollSplit` opens
+    and closes nothing, and catches up on release. A split opened mid-drag rebuilt the pane under the pointer and moved
+    the track (reported).
+  - **The window's band is 40 px at every text size** (`ScrollBandView.BandHeight`): the client gives it whole rows
+    (`ScrollBandRows` reads `IPointerPresenter.ScrollBandRows`, the window's `ScrollBandView.RowsFor(cell, interface
+    scale)`; 2 where nothing measured, 1 in the cells), and the view draws the band at the foot of them with what is left
+    above in the history's plane, read off the cell over it. Published across the gutter with `ScrollBandOverlay.Inset`,
+    so `ScrollBandView` lines its words up with the output and keeps its button as far from the right edge. Still `rows`,
+    not the mockup's `lines`: a buffer index is not a viewport row.
+  - **The wheel and the page keys move F7's lines** (`TextSettings.WheelLines`/`PageLines`, 10 each; `PageLines` 0 is a
+    page less two rows of overlap), in both hosts: the window's wheel arrives as notches through the same driver path.
   - **Inside the pane rectangle, so NAWS never moves**: the band and the tail are rows of the tab's content;
     `PaneOutputRects` is unchanged (`ScrollingBackSplitsThePane…` pins it).
   - **A split pane is not "scrolled back" for the workspace** (`SetScrolledBack(…, !AutoScroll && !split)`):

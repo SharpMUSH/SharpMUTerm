@@ -128,6 +128,7 @@ internal sealed class MainWindow : Window
         _driver.Settings.Scales = scales;
         _driver.Floating.Scales = scales;
         _driver.Pointer.PanelScale = () => scales().Panels;
+        _driver.Pointer.InterfaceScale = () => scales().Interface;
 
         // The edge Avalonia would have drawn round a BorderOnly window on X11, drawn here (DecorationsFor): a hairline,
         // only while the window is an ordinary window with no frame of its own.

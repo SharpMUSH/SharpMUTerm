@@ -7,7 +7,23 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Changed
+
+- The mouse wheel and PgUp/PgDn now scroll the output 10 lines at a time, in the window and the terminal alike. F7 ▸
+  Scrollback has *lines per wheel notch* and *lines per page key* to change that; 0 page-key lines scrolls a whole page,
+  as PgUp used to.
+
 ### Fixed
+
+- Dragging a pane's scrollbar in the window no longer opens the scrolled-back band under the pointer. The band used to
+  appear mid-drag, which moved the scrollbar away from the pointer and redrew the pane on every movement. The pane now
+  splits when the scrollbar is let go, and the scrollbar stays exactly where it was when it does.
+
+- The scrolled-back band in the window is the same height at every text size. It used to be two rows of text tall, so it
+  was thin with a small font and thick with a large one.
+
+- Reading a few lines back from the newest output no longer jumps further back when a busy pane drops its oldest
+  lines. A reader closer to the bottom than the lines dropped was moved up by the difference.
 
 - A character whose name has a space, connected as `"first last"` on a MUSH, gets a session log again. The quotes
   went into the log's file name, which Windows refuses, so no log was written. World and character names are now made

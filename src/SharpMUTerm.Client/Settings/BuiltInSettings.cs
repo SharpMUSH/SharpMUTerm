@@ -147,6 +147,12 @@ public static partial class BuiltInSettings
                     c => c.Text.ScrollTail,
                     (c, v) => c.Text.ScrollTail = v ?? ScrollTail.Default),
             },
+            Number("wheel-lines", "lines per wheel notch", 1, TextSettings.MaxWheelLines, ScrollbackGroup,
+                c => c.Text.WheelLines, (c, v) => c.Text.WheelLines = v,
+                "how far one notch of the mouse wheel scrolls the output", "mouse scroll speed step"),
+            Number("page-lines", "lines per page key", 0, TextSettings.MaxPageLines, ScrollbackGroup,
+                c => c.Text.PageLines, (c, v) => c.Text.PageLines = v,
+                "how far PgUp and PgDn scroll the output; 0 scrolls a whole page", "pgup pgdn page up down scroll step"),
 
             Flag("sound", "game sound", SoundGroup,
                 c => c.Sound.Enabled, (c, v) => c.Sound.Enabled = v,

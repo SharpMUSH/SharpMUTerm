@@ -264,9 +264,9 @@ public class OutputScrollbackTests
         await Assert.That(up.CanScrollDown).IsTrue();
         await Assert.That(Shows(upRows, SharpMUTermApp.ScrollbackSceneLines)).IsFalse();
 
-        // A page keeps a couple of rows of overlap, so the jump is a page less that.
+        // F7's lines per page key, ten by default.
         var moved = bottom.Offset - up.Offset;
-        await Assert.That(moved).IsEqualTo(up.ViewportRows - 2);
+        await Assert.That(moved).IsEqualTo(TextSettings.DefaultScrollLines);
 
         app.SimulateKey(Chord(ConsoleKey.PageDown));
         var back = app.ScrollbackOf(Main)!.Value;
@@ -310,11 +310,12 @@ public class OutputScrollbackTests
     }
 
     /// <summary>The demo app with a pane cap small enough for a test to cross it.</summary>
-    private static SharpMUTermApp CappedApp(int paneLines)
+    private static SharpMUTermApp CappedApp(int paneLines, int? pageLines = null)
     {
         Console.SetIn(TextReader.Null);
         var config = WholePane();
         config.PaneLines = paneLines;
+        if (pageLines is { } lines) config.Text.PageLines = lines;
         return new SharpMUTermApp(config, Headless, new HeadlessConsoleDriver(Width, Height));
     }
 
@@ -354,6 +355,26 @@ public class OutputScrollbackTests
         await Assert.That(app.PaneLines(Main).Count).IsLessThanOrEqualTo(250); // a trim did happen
 
         var after = VisibleLines(SettledRows(app));
+        await Assert.That(before.Count).IsGreaterThan(0);
+        await Assert.That(after).IsEquivalentTo(before);
+    }
+
+    /// <summary>
+    /// A reader a few rows from the live tail, closer to it than a trim takes: the re-feed clamped the offset against
+    /// the shorter content before the trimmed rows were taken off it, so they landed that many rows too far up.
+    /// </summary>
+    [Test]
+    public async Task AReaderCloseToTheLiveTailStaysOnTheSameLinesThroughATrim()
+    {
+        var app = CappedApp(200, pageLines: 5);
+        app.LoadLongScene(Main, 240);
+        SettledRows(app);
+        app.SimulateKey(Chord(ConsoleKey.PageUp));
+        var before = VisibleLines(Rows(app.RenderWholeFrame()));
+
+        app.LoadLongScene(Main, 60, first: 5001);
+        var after = VisibleLines(SettledRows(app));
+
         await Assert.That(before.Count).IsGreaterThan(0);
         await Assert.That(after).IsEquivalentTo(before);
     }
@@ -537,7 +558,7 @@ public class OutputScrollbackTests
 
         driver.SimulateMouseEvent(new List<MouseFlags> { MouseFlags.WheeledUp }, pointer);
         var up = app.ScrollbackOf(Main)!.Value;
-        await Assert.That(up.Offset).IsEqualTo(bottom.Offset - 3);
+        await Assert.That(up.Offset).IsEqualTo(bottom.Offset - TextSettings.DefaultScrollLines);
         await Assert.That(up.AutoScroll).IsFalse();
         await Assert.That(Shows(SettledRows(app), SharpMUTermApp.ScrollbackSceneLines)).IsFalse();
 

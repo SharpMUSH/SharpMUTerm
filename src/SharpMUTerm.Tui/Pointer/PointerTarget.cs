@@ -93,8 +93,13 @@ internal sealed record PointerMenuItem(string Label, string? Hint, Action Run, b
 /// <param name="ViewportRows">Rows it shows at once.</param>
 /// <param name="Offset">Rows hidden above what it shows.</param>
 /// <param name="ScrollTo">Scrolls the pane so that many rows are above it; safe to call from any thread.</param>
+/// <param name="Held">
+/// Told true when the host's thumb is picked up and false when it is let go; safe to call from any thread. While it is
+/// held the pane neither splits nor closes its split (<c>SharpMUTermApp.ScrollSplit</c>): a layout that changed under a
+/// dragged thumb moved the thumb away from the pointer and redrew the pane on every move.
+/// </param>
 internal sealed record PaneScrollbar(
-    string WindowId, PaneRect Track, int ContentRows, int ViewportRows, int Offset, Action<int> ScrollTo)
+    string WindowId, PaneRect Track, int ContentRows, int ViewportRows, int Offset, Action<int> ScrollTo, Action<bool>? Held = null)
 {
     /// <summary>Same position, ignoring the callback, which is a fresh closure each time.</summary>
     public bool SameAs(PaneScrollbar other) =>
@@ -187,6 +192,13 @@ internal interface IPointerPresenter
     /// Asked on the client's thread; only a side column's rows change with it, never an output pane's (NAWS).
     /// </summary>
     int? VitalsCardRows(int meters, bool target) => null;
+
+    /// <summary>
+    /// The rows a split pane's band takes where this host draws the band natively (<c>HostChrome.Tabs</c>): its fixed
+    /// pixel height rounded up to whole rows, so the band is one height at every font size. Null when the host does not
+    /// know (no view measured yet, the terminal, the default), and the band takes two rows. Asked on the client's thread.
+    /// </summary>
+    int? ScrollBandRows => null;
 
     /// <summary>
     /// A notice was said, as it is drawn on the status row. The status row's cells carry it in every host; a host that

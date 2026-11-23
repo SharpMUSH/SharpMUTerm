@@ -858,12 +858,13 @@ internal sealed partial class SharpMUTermApp
                 continue;
             }
 
-            // A pane split by scrolling back scrolls only its history, so its bar runs beside the history alone.
-            var span = _scrollHistorySurfaces.GetValueOrDefault(windowId) is { } history && BoundsOf(history) is { Height: > 0 } h
-                ? new PaneRect(rect.X, h.Y, rect.Width, h.Height)
-                : rect;
+            // A pane split by scrolling back is measured as if it were whole: the track is the pane and the viewport the
+            // rows the pane had before it split. The history can scroll no further down than that before the split closes
+            // (MeetsTail), so the bar maps the same offsets either way, and opening or closing the split under a thumb
+            // moves the thumb not at all.
+            var viewport = ScrollbarViewportRows(windowId, panel);
             bars.Add(new PaneScrollbar(
-                windowId, span, panel.TotalContentHeight, panel.ViewportHeight, panel.VerticalScrollOffset,
+                windowId, rect, panel.TotalContentHeight, viewport, panel.VerticalScrollOffset,
                 offset => OnUiThread(() =>
                 {
                     if (_paneScrolls.GetValueOrDefault(windowId) is { } live && live.VerticalScrollOffset != offset)
@@ -871,7 +872,8 @@ internal sealed partial class SharpMUTermApp
                         live.ScrollVerticalBy(offset - live.VerticalScrollOffset);
                         SyncScrollbackState(windowId);
                     }
-                })));
+                }),
+                held => OnUiThread(() => HoldScrollbar(windowId, held))));
         }
 
         if (bars.Count == _scrollbars.Count && bars.Zip(_scrollbars).All(pair => pair.First.SameAs(pair.Second)))

@@ -52,11 +52,47 @@ internal sealed partial class SharpMUTermApp
     internal const int TailLines = 64;
 
     /// <summary>
-    /// How many rows the band takes: two where the host draws the pane chrome natively (<see cref="HostChrome.Tabs"/>,
-    /// the window), so its band has the mockup's height with a real button in it; one in the cells. Inside the pane
-    /// either way, so the pane rectangle — and NAWS — never moves.
+    /// How many rows the band takes: where the host draws the pane chrome natively (<see cref="HostChrome.Tabs"/>, the
+    /// window), as many as its band's fixed pixel height needs at the cells' size (<see cref="IPointerPresenter.ScrollBandRows"/>),
+    /// so the band is one height at every font size; two when the host has not measured, one in the cells. Inside the
+    /// pane either way, so the pane rectangle — and NAWS — never moves.
     /// </summary>
-    internal int ScrollBandRows => Host.Chrome.Tabs ? 2 : 1;
+    internal int ScrollBandRows => Host.Chrome.Tabs ? Math.Max(1, _pointer?.ScrollBandRows ?? 2) : 1;
+
+    /// <summary>
+    /// The window whose scrollbar thumb the host is holding, or null. While it is held, <see cref="SyncScrollSplit"/>
+    /// leaves the pane as it is: a split that opened under a dragged thumb rebuilt the pane area and moved the thumb's
+    /// track away from the pointer, and one that closed and opened again as the thumb crossed the tail did so on every
+    /// move. The split catches up when the thumb is let go (<see cref="HoldScrollbar"/>).
+    /// </summary>
+    private string? _scrollbarHeld;
+
+    /// <summary>The host picked a pane's scrollbar thumb up (<paramref name="held"/>) or let it go.</summary>
+    internal void HoldScrollbar(string windowId, bool held)
+    {
+        if (held)
+        {
+            _scrollbarHeld = windowId;
+            return;
+        }
+
+        if (!string.Equals(_scrollbarHeld, windowId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _scrollbarHeld = null;
+        SyncScrollbackState(windowId);
+    }
+
+    /// <summary>
+    /// The viewport a pane's scrollbar is measured against: the rows it shows, or while split the rows it showed before
+    /// it split (history, band and tail), so the bar reads the same offsets either way.
+    /// </summary>
+    private int ScrollbarViewportRows(string windowId, ScrollablePanelControl panel) =>
+        _scrollSplits.TryGetValue(windowId, out var tail) && _scrollSplitHistoryRows.TryGetValue(windowId, out var history)
+            ? history + ScrollBandRows + tail
+            : panel.ViewportHeight;
 
     /// <summary>
     /// The rows a live tail gets in a pane whose viewport is <paramref name="paneRows"/> tall, or zero when the
@@ -106,6 +142,17 @@ internal sealed partial class SharpMUTermApp
             && !string.Equals(windowId, WebWindowId, StringComparison.Ordinal)
             && live is not null;
         var wanted = eligible && !live!.AutoScroll && Scrollable(live);
+
+        // A thumb being dragged keeps the pane as it is until it is let go.
+        if (string.Equals(_scrollbarHeld, windowId, StringComparison.Ordinal) && eligible)
+        {
+            if (open)
+            {
+                RefreshScrollSplitBar(windowId);
+            }
+
+            return;
+        }
 
         // Scrolled down to where the tail begins, the history has nothing left to show that the tail does not, so the
         // pane goes back to following its output. Waiting for the history's own end made the reader scroll on through

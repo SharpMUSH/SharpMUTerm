@@ -323,9 +323,16 @@ internal sealed partial class DesktopLayer : Canvas
         }
 
         Sync(_bands, bands.Select(b => (b.Model.WindowId, b.Row)), () => new ScrollBandView(), origin, cell);
+        var frame = _view.Driver.Frame;
         foreach (var band in bands)
         {
-            _bands[band.Model.WindowId].Show(band, tokens, said!.Interactive);
+            // What of its rows the band leaves is the history's: read the plane off the cell just above it.
+            var view = _bands[band.Model.WindowId];
+            var x = Math.Clamp(band.Row.X, 0, Math.Max(0, frame.Width - 1));
+            view.Above = band.Row.Y > 0 && band.Row.Y - 1 < frame.Height && frame.Width > 0
+                ? Colour(_view.Renderer.Background(frame[x, band.Row.Y - 1]))
+                : null;
+            view.Show(band, tokens, said!.Interactive);
         }
     }
 
