@@ -178,7 +178,7 @@ internal sealed class TerminalView : Control
         pointer.ScrollbarsChanged += _ => Dispatcher.UIThread.Post(() =>
         {
             _bars = pointer.Bars;
-            InvalidateVisual();
+            InvalidateBars();
         });
         pointer.MenuRequested += (_, items) => Dispatcher.UIThread.Post(() => OpenMenu(items));
         pointer.ModelMenuRequested += (_, menu, dispatch) => Dispatcher.UIThread.Post(() => OpenMenu(NativeMenu.Build(menu, dispatch, PlacementMode.Pointer, this)));
@@ -363,8 +363,22 @@ internal sealed class TerminalView : Control
         }
 
         DrawHover(context);
-        DrawScrollbars(context);
+        if (ScrollbarLayer is { } layer)
+        {
+            // Drawn over the native views instead (a band lies over a pane's foot): repaint it with this frame.
+            Dispatcher.UIThread.Post(layer.InvalidateVisual, DispatcherPriority.Render);
+        }
+        else
+        {
+            DrawScrollbars(context);
+        }
     }
+
+    /// <summary>
+    /// Where the scrollbars are drawn when the window lays native views over the cells (<see cref="DesktopLayer"/>):
+    /// over them, so a pane's native scrolled-back band does not hide the foot of its track. Null draws them here.
+    /// </summary>
+    internal Control? ScrollbarLayer { get; set; }
 
     /// <summary>A bar caret's width in logical units, which the placeholder's plate leaves uncovered.</summary>
     private double CaretWidth => _renderer.CaretThickness / _scale;
@@ -892,7 +906,7 @@ internal sealed class TerminalView : Control
         if (_barHovered is not null && _scrollDrag is null)
         {
             _barHovered = null;
-            InvalidateVisual();
+            InvalidateBars();
         }
     }
 
@@ -962,7 +976,10 @@ internal sealed class TerminalView : Control
     /// The scrollbars are drawn over the pane's right edge rather than in a column of it: a column would make
     /// the pane narrower in this host than in a terminal, and every connected world is told the pane's width.
     /// </summary>
-    private const double BarWidth = 4, BarWidthHovered = 8, BarZone = 12, MinimumThumb = 18;
+    private const double BarWidth = 4, BarWidthHovered = 8, MinimumThumb = 18;
+
+    /// <summary>How far in from a pane's right edge a press is its scrollbar's.</summary>
+    internal const double BarZone = 12;
 
     private sealed record ScrollDrag(string WindowId, double Grab, Action<bool>? Held);
 
@@ -986,7 +1003,7 @@ internal sealed class TerminalView : Control
             if (!_covered.SetEquals(value))
             {
                 _covered = value;
-                InvalidateVisual();
+                InvalidateBars();
             }
         }
     }
@@ -1012,6 +1029,12 @@ internal sealed class TerminalView : Control
         return (new Rect(right - BarZone, top, BarZone, height), new Rect(right - width - 2, y, width, thumb), travel);
     }
 
+    /// <summary>Each drawn bar's press zone (its whole track) by window, in this view's pixels. Internal for tests.</summary>
+    internal IReadOnlyDictionary<string, Rect> ScrollbarZones() =>
+        _bars.Select(bar => (bar.WindowId, Geometry: BarGeometry(bar)))
+            .Where(b => b.Geometry is not null)
+            .ToDictionary(b => b.WindowId, b => b.Geometry!.Value.Zone, StringComparer.Ordinal);
+
     private PaneScrollbar? BarAt(Point position) =>
         _bars.FirstOrDefault(bar => BarGeometry(bar) is { } g && g.Zone.Contains(position));
 
@@ -1021,7 +1044,7 @@ internal sealed class TerminalView : Control
         if (hovered != _barHovered)
         {
             _barHovered = hovered;
-            InvalidateVisual();
+            InvalidateBars();
         }
     }
 
@@ -1054,7 +1077,14 @@ internal sealed class TerminalView : Control
         bar.ScrollTo((int)Math.Round(fraction * hidden));
     }
 
-    private void DrawScrollbars(DrawingContext context)
+    /// <summary>Repaints the scrollbars wherever they are drawn.</summary>
+    private void InvalidateBars()
+    {
+        InvalidateVisual();
+        ScrollbarLayer?.InvalidateVisual();
+    }
+
+    internal void DrawScrollbars(DrawingContext context)
     {
         var colour = _renderer.DefaultForeground;
         foreach (var bar in _bars)

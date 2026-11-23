@@ -531,6 +531,26 @@ internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
     /// <summary>Where the band begins in a view <paramref name="height"/> tall: at its foot, under what of the rows it leaves.</summary>
     private static double BandTop(double height) => Math.Max(0, Math.Round(height - BandHeight));
 
+    /// <summary>
+    /// How much of the band's right end, in its own pixels, the pane's scrollbar takes: the button stays left of it, so a
+    /// press there is the bar's (the band passes every press but the button's on to the cells).
+    /// </summary>
+    internal double ClearRight
+    {
+        get => _clearRight;
+        set
+        {
+            if (Math.Abs(_clearRight - value) > 0.01)
+            {
+                _clearRight = value;
+                Lay();
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private double _clearRight;
+
     /// <summary>The plane the rows above the band are drawn in: the history's, read off the cells above. Internal for tests.</summary>
     internal Color? Above { get; set; }
 
@@ -598,7 +618,7 @@ internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
         var band = height - top;
         var w = PanelText.Measure(ButtonText, Size, bold: true) + 20;
         var h = Math.Max(4, Math.Min(band - 4, 24));
-        _button = new Rect(Math.Max(0, width - w - TextInset), top + Math.Round((band - h) / 2), w, h);
+        _button = new Rect(Math.Max(0, width - w - Math.Max(TextInset, ClearRight + 4)), top + Math.Round((band - h) / 2), w, h);
     }
 
     public bool HitTest(Point point) => Interactive && _button.Contains(point);

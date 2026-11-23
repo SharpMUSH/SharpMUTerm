@@ -694,6 +694,10 @@ fallbacks) for inline images/maps.
     (`PaneScrollbar.Held`, `HoldScrollbar`, `_scrollbarHeld`): while the window's thumb is dragged `SyncScrollSplit` opens
     and closes nothing, and catches up on release. A split opened mid-drag rebuilt the pane under the pointer and moved
     the track (reported).
+    **The bars are drawn over the native views** (`ScrollbarLayer`, in `DesktopLayer` above the pane views; `TerminalView`
+    draws them itself only with no layer), so the band does not hide the track's foot, and the band's button keeps clear of
+    the bar's press zone (`ScrollBandView.ClearRight`, from `TerminalView.ScrollbarZones`). Once a split's history viewport
+    is arranged its height is read live (`SplitHistoryRows`), so a resize while split keeps the bar and `MeetsTail` agreed.
   - **The window's band is 40 px at every text size** (`ScrollBandView.BandHeight`): the client gives it whole rows
     (`ScrollBandRows` reads `IPointerPresenter.ScrollBandRows`, the window's `ScrollBandView.RowsFor(cell, interface
     scale)`; 2 where nothing measured, 1 in the cells), and the view draws the band at the foot of them with what is left
