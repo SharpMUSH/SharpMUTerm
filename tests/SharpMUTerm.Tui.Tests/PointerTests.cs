@@ -404,4 +404,34 @@ public class PointerTests
         app.RenderNextFrame();
         await Assert.That(app.IsScrollSplit(bar.WindowId)).IsFalse();
     }
+    /// <summary>
+    /// The pane shrinks while split (here the second command line comes up, taking rows from the panes): the bar is
+    /// measured on the history's new height, so the foot of its track is still the live tail.
+    /// </summary>
+    [Test]
+    public async Task AThumbLetGoAtTheFootAfterTheSplitPaneShrankStillReturnsToTheLiveTail()
+    {
+        var (app, pointer) = App("scrollback");
+        var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
+        bar.ScrollTo(bar.Offset - 40);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
+        var before = pointer.Bars.Single(b => b.WindowId == bar.WindowId).ViewportRows;
+
+        await Assert.That(app.DispatchCommand("term:input2-on")).IsTrue();
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
+
+        var split = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
+        await Assert.That(split.ViewportRows).IsLessThan(before).Because("the pane is shorter now");
+        split.Held!(true);
+        split.ScrollTo(split.ContentRows - split.ViewportRows);
+        app.RenderNextFrame();
+        split.Held(false);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsFalse();
+    }
 }

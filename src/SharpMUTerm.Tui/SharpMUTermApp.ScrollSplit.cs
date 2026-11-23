@@ -90,9 +90,36 @@ internal sealed partial class SharpMUTermApp
     /// it split (history, band and tail), so the bar reads the same offsets either way.
     /// </summary>
     private int ScrollbarViewportRows(string windowId, ScrollablePanelControl panel) =>
-        _scrollSplits.TryGetValue(windowId, out var tail) && _scrollSplitHistoryRows.TryGetValue(windowId, out var history)
+        _scrollSplits.TryGetValue(windowId, out var tail) && SplitHistoryRows(windowId, panel) is { } history
             ? history + ScrollBandRows + tail
             : panel.ViewportHeight;
+
+    /// <summary>
+    /// The height of a split window's history viewport. On the frame that opens a split the viewport still reports
+    /// the whole pane, so the height recorded at opening stands in for it; once the viewport has been arranged at
+    /// its split height it is read live, so a resize while split moves the bar and <see cref="MeetsTail"/> together.
+    /// Null for a window that is not split.
+    /// </summary>
+    private int? SplitHistoryRows(string windowId, ScrollablePanelControl live)
+    {
+        if (!_scrollSplitHistoryRows.TryGetValue(windowId, out var recorded))
+        {
+            return null;
+        }
+
+        var arranged = live.ViewportHeight;
+        if (arranged > 0 && (_scrollSplitSettled.Contains(windowId) || arranged <= recorded))
+        {
+            _scrollSplitSettled.Add(windowId);
+            _scrollSplitHistoryRows[windowId] = arranged;
+            return arranged;
+        }
+
+        return recorded;
+    }
+
+    /// <summary>The split windows whose history viewport has been arranged at its split height at least once.</summary>
+    private readonly HashSet<string> _scrollSplitSettled = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The rows a live tail gets in a pane whose viewport is <paramref name="paneRows"/> tall, or zero when the
@@ -198,8 +225,8 @@ internal sealed partial class SharpMUTermApp
     private bool MeetsTail(string windowId, ScrollablePanelControl live)
     {
         if (!_scrollSplits.TryGetValue(windowId, out var tail)
-            || !_scrollSplitHistoryRows.TryGetValue(windowId, out var history)
-            || live.ViewportHeight <= 0 || live.ViewportHeight > history)
+            || SplitHistoryRows(windowId, live) is null
+            || !_scrollSplitSettled.Contains(windowId))
         {
             return false;
         }
@@ -213,6 +240,7 @@ internal sealed partial class SharpMUTermApp
     {
         _scrollSplits.Remove(windowId);
         _scrollSplitHistoryRows.Remove(windowId);
+        _scrollSplitSettled.Remove(windowId);
         if (_scrollTails.TryGetValue(windowId, out var tail))
         {
             tail.ClearSelection();
@@ -225,6 +253,7 @@ internal sealed partial class SharpMUTermApp
     {
         _scrollSplits.Remove(windowId);
         _scrollSplitHistoryRows.Remove(windowId);
+        _scrollSplitSettled.Remove(windowId);
         _scrollHistorySurfaces.Remove(windowId);
         _scrollTails.Remove(windowId);
         _scrollSplitBars.Remove(windowId);
