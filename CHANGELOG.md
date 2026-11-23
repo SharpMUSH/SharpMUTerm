@@ -7,7 +7,18 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Added
+
+- The docked composer's heading has a close button (`×`), in the terminal and the window. A composer in a pane of its
+  own, as the Roleplay layout puts it, had no tab to close it by. The draft is kept, and *Dock the composer* brings it
+  back.
+
 ### Fixed
+
+- Esc in the docked composer goes back to the tab you came from. It used to leave the keyboard on the composer's own
+  pane, so the command line was your character's main window's even when you had been reading Chat.
+- Closing the docked composer (Ctrl+W or the new button) puts the keyboard focus straight back on the command line, so
+  a paste lands there.
 
 - A character whose name has a space, connected as `"first last"` on a MUSH, gets a session log again. The quotes
   went into the log's file name, which Windows refuses, so no log was written. World and character names are now made

@@ -33,10 +33,21 @@ internal static class HeadingBand
     /// the right part goes first, then the rest is elided. Never wider than <paramref name="width"/>. The first cell is
     /// the band's margin, or <paramref name="lead"/> (one cell of markup: the docked composer's armed <c>▌</c>) in it.
     /// </summary>
-    internal static string Row(string label, string rest, string right, int width, Ink ink, string? lead = null)
+    /// <param name="close">
+    /// One cell of markup kept at the far end whatever else gives way, before the last margin cell: the docked composer's
+    /// <c>×</c>. Null for none.
+    /// </param>
+    internal static string Row(string label, string rest, string right, int width, Ink ink, string? lead = null, string? close = null)
     {
         width = Math.Max(1, width);
         var left = $"[bold]{label}[/]{rest}";
+        if (close is not null && width >= 5)
+        {
+            // The rest of the row is laid out two cells narrower, and the button and the margin take those two.
+            var row = Row(label, rest, right, width - 2, ink, lead);
+            return row[..^" [/]".Length] + $" {close} [/]";
+        }
+
         var inner = Math.Max(1, width - 2);
         var body = right.Length > 0 && VisibleLength(left) + VisibleLength(right) + 2 <= inner
             ? SpreadLR(left, right, inner)

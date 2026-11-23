@@ -14145,6 +14145,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         }
 
         RebuildPaneArea();
+
+        // A docked composer's editor held the framework's focus and has gone with its pane: the keyboard goes back to the
+        // command line, or nothing would hold it until the next focus move.
+        if (_dockedComposers.ContainsKey(id))
+        {
+            SyncComposerArm();
+        }
+
         if (closedPanel)
         {
             PersistConfiguration(); // the workspace without it, too, so a crash before quitting does not bring it back

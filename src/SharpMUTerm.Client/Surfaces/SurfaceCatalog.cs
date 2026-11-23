@@ -485,7 +485,11 @@ public static class SurfaceCatalog
             typeof(ComposerModel),
             [
                 new(SurfaceActionKind.Compose, "send", "SendDocked"),
-                new(SurfaceActionKind.Compose, "release", "ReleaseComposer"),
+                // Esc: the keyboard goes back to the window in front before the composer took it.
+                new(SurfaceActionKind.Compose, "release", "LeaveComposer"),
+
+                // The heading's × (a link in the cells, a button in the window): the composer's window closes.
+                new(SurfaceActionKind.Compose, "close", "CloseDockedComposer"),
 
                 // A click on the cell editor arms it through the framework's focus (ArmClickedComposer); the native
                 // editor asks for the same thing by name.
