@@ -246,22 +246,21 @@ public class RailClickTests
     }
 
     /// <summary>
-    /// A world with no characters already prints "no characters"; clicking it has to say so rather than
-    /// look broken. It reports through the transient status mechanism, so it is visible with nothing
-    /// connected, clears itself, and stays findable in the ⌃P message log.
+    /// A world with no character still has a session of its own (<c>/connect host</c> makes one), so its row opens
+    /// it, keyed by the world's name. It used to say "no characters yet", which left a world connected that way
+    /// with no way back to it.
     /// </summary>
     [Test]
-    public async Task ClickingAWorldWithNoCharacters_SaysSo()
+    public async Task ClickingAWorldWithNoCharacters_OpensTheWorldItself()
     {
         var app = App(WithAnEmptyWorld());
         app.RenderSnapshot();
-        var before = app.ActiveSessionKey;
 
-        ClickRailRow(app, "no characters");
+        ClickRailRow(app, "no character");
 
-        await Assert.That(app.ActiveSessionKey).IsEqualTo(before); // nothing to switch to, nothing switched
-        await Assert.That(app.StatusMarkup).Contains("Hollow has no characters yet");
-        await Assert.That(app.Messages.Entries.Any(m => m.Text.Contains("Hollow has no characters"))).IsTrue();
+        await Assert.That(app.ActiveSessionKey).IsEqualTo("Hollow");
+        await Assert.That(app.FindSession("Hollow")).IsNotNull();
+        await Assert.That(app.StatusMarkup).Contains("switched to Hollow");
     }
 
     /// <summary>

@@ -143,6 +143,6 @@ public sealed record SidebarModel(IReadOnlyList<RailWorld> Worlds, string? Selec
 
     private static bool SameCharacter(RailCharacter a, RailCharacter b) =>
         a.Name == b.Name && a.SessionKey == b.SessionKey && a.Connected == b.Connected && a.Active == b.Active
-        && a.Unread == b.Unread && a.Chord == b.Chord && a.InGroup == b.InGroup && Equals(a.Avatar, b.Avatar)
+        && a.Unread == b.Unread && a.Chord == b.Chord && a.InGroup == b.InGroup && a.Alone == b.Alone && Equals(a.Avatar, b.Avatar)
         && a.Windows.SequenceEqual(b.Windows); // RailWindow has no list member, so its record equality is by value
 }

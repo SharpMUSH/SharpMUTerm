@@ -513,6 +513,11 @@ public class WorldBrowseTests
         await Frame("form", "⏎ connect", "Esc back");
         run.App.SimulateWelcomeKey(Key(ConsoleKey.Enter, '\r'));
         await run.App.LastCommand;
+
+        // The world was added with no character, so connecting gives the sidebar its "no character" row and the pane
+        // narrows by that much. The tour row is re-laddered to the new width as that frame paints and shows on the next,
+        // which a terminal draws 16 ms later; a test reading one frame drives that one on.
+        run.App.RenderNextFrame();
         await Frame("connected", SharpMUTermApp.KeyTourLead, "⌃P", "Key tour");
     }
 }

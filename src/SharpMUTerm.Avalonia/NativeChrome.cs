@@ -863,8 +863,9 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
             foreach (var character in world.Characters)
             {
                 var area = folded ? new Rect((width - 36) / 2, y, 36, row) : new Rect(RowInset, y, width - (2 * RowInset), row);
+                var who = character.Alone ? $"{world.Name}, no character" : $"{character.Name} on {world.Name}";
                 var tip = folded
-                    ? $"{character.Name} on {world.Name}{(character.Connected ? string.Empty : " (offline)")}{(character.Unread > 0 ? $", {UnreadText(character.Unread)} unread" : string.Empty)}"
+                    ? $"{who}{(character.Connected ? string.Empty : " (offline)")}{(character.Unread > 0 ? $", {UnreadText(character.Unread)} unread" : string.Empty)}"
                     : $"Switch to {character.Name}";
                 Add(new Row(RailRowKind.Character, area, world, character), SidebarModel.TargetOf(character), tip);
                 y += row;
@@ -1286,7 +1287,7 @@ internal sealed class NativeSidebar(TerminalView view) : NativeChromeView(view, 
         }
 
         var x = r.Area.X + CharacterIndent;
-        Text(context, character.Name, x, middle, size, character.Connected ? Ink : Dim, bold: character.Active, maxWidth: Math.Max(1, right - x));
+        Text(context, character.Label, x, middle, size, character.Connected ? Ink : Dim, bold: character.Active, maxWidth: Math.Max(1, right - x));
     }
 
     private void DrawWindow(DrawingContext context, Row r, RailWindow window, Color accent, bool selected, double middle, double right, double size)

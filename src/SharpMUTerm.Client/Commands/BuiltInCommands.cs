@@ -499,7 +499,7 @@ public static class BuiltInCommands
                 : string.Empty;
             yield return new CommandItem(
                 CommandGroup.GoTo,
-                $"Switch to {character.CharacterName}",
+                $"Switch to {(character.CharacterName.Length > 0 ? character.CharacterName : character.WorldName)}",
                 CommandIds.Character(character.SessionKey),
                 $"{chord}{character.WorldName} · {state}")
             {

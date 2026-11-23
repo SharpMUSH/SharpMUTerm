@@ -211,7 +211,8 @@ internal sealed partial class SharpMUTermApp
             var world = model.Worlds.FirstOrDefault(w => RowsOf(w).Contains(rowKey));
             var character = world?.Characters.FirstOrDefault(c => c.Windows.Any(w => CommandIds.Window(w.Id) == target)
                 || CommandIds.Character(c.SessionKey) == target);
-            var title = Snippet(row.Label);
+            // A world's own session (no character) is named by its world, as everywhere else; its row only says what is missing.
+            var title = Snippet(character is { Alone: true } ? character.Name : row.Label);
             switch (row.Kind)
             {
                 case RailRowKind.World:
@@ -231,7 +232,15 @@ internal sealed partial class SharpMUTermApp
                         row.Connected ? "world:disconnect" : "world:reconnect");
                     entries.Add(MenuEntry.Separator);
                     Offer(entries, $"Edit {Snippet(world?.Name ?? string.Empty)} in F5", "F5", ScreenCommandPrefix + "worlds");
-                    Offer(entries, $"Edit {title} in F9", "F9", ScreenCommandPrefix + "logging");
+                    if (character is { Alone: true })
+                    {
+                        Offer(entries, $"Add a character to {title} in F5", "F5", ScreenCommandPrefix + "worlds");
+                    }
+                    else
+                    {
+                        Offer(entries, $"Edit {title} in F9", "F9", ScreenCommandPrefix + "logging");
+                    }
+
                     break;
 
                 case RailRowKind.Window:
