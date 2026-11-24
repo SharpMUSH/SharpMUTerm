@@ -54,6 +54,7 @@ internal sealed partial class DesktopLayer : Canvas
     private readonly Dictionary<string, NativeTabStrip> _strips = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ScrollBandView> _bands = new(StringComparer.Ordinal);
     private readonly SeamRules _seams = new();
+    private readonly ScrollbarLayer _scrollbars;
     private (SharpMUTerm.Core.Theming.Theme Theme, NativeTokens Tokens)? _paneTokens;
     private int _noticeAboveRow;
 
@@ -85,6 +86,11 @@ internal sealed partial class DesktopLayer : Canvas
 
         // The runs of the native views' rules into the divider cells beside them: over the cells, under nothing it touches.
         Children.Add(_seams);
+
+        // The panes' overlay scrollbars over every native view laid on a pane (a scrolled-back band lies over its foot).
+        _scrollbars = new ScrollbarLayer(view);
+        view.ScrollbarLayer = _scrollbars;
+        Children.Add(_scrollbars);
         _pointer.StatusChanged += () => Dispatcher.UIThread.Post(Sync);
 
         // A dragged tab's hint over the panels; the toasts still over it.
@@ -266,6 +272,9 @@ internal sealed partial class DesktopLayer : Canvas
     /// <summary>The native views' rules carried on to the pane dividers' hairlines beside them. Internal for tests.</summary>
     internal SeamRules Seams => _seams;
 
+    /// <summary>Where the panes' scrollbars are drawn. Internal for tests.</summary>
+    internal ScrollbarLayer Scrollbars => _scrollbars;
+
     /// <summary>
     /// Runs each full-width rule a native view over a pane draws (<see cref="IEdgeRules"/>) on through the half divider
     /// cell between the view's edge and the divider's hairline (<see cref="TerminalView.VerticalHairlines"/>), so a tab
@@ -273,6 +282,12 @@ internal sealed partial class DesktopLayer : Canvas
     /// </summary>
     private void SyncSeams(Size cell)
     {
+        var at = CellOrigin;
+        SetLeft(_scrollbars, at.X);
+        SetTop(_scrollbars, at.Y);
+        _scrollbars.Width = Math.Max(0, _view.Bounds.Width);
+        _scrollbars.Height = Math.Max(0, _view.Bounds.Height);
+
         SetLeft(_seams, 0);
         SetTop(_seams, 0);
         _seams.Width = Math.Max(0, Bounds.Width);
@@ -323,9 +338,22 @@ internal sealed partial class DesktopLayer : Canvas
         }
 
         Sync(_bands, bands.Select(b => (b.Model.WindowId, b.Row)), () => new ScrollBandView(), origin, cell);
+        var frame = _view.Driver.Frame;
+        var zones = _view.ScrollbarZones();
         foreach (var band in bands)
         {
-            _bands[band.Model.WindowId].Show(band, tokens, said!.Interactive);
+            // What of its rows the band leaves is the history's: read the plane off the cell just above it.
+            var view = _bands[band.Model.WindowId];
+            var x = Math.Clamp(band.Row.X, 0, Math.Max(0, frame.Width - 1));
+            view.Above = band.Row.Y > 0 && band.Row.Y - 1 < frame.Height && frame.Width > 0
+                ? Colour(_view.Renderer.Background(frame[x, band.Row.Y - 1]))
+                : null;
+            // The pane's scrollbar runs on under the band, at its right edge: the button keeps clear of where a press is the bar's.
+            var outerRight = GetLeft(view) + NativeScale.Extent(view).Width;
+            view.ClearRight = zones.TryGetValue(band.Model.WindowId, out var zone)
+                ? Math.Max(0, outerRight - (origin.X + zone.Left)) / Math.Max(0.1, NativeScale.Of(view))
+                : 0;
+            view.Show(band, tokens, said!.Interactive);
         }
     }
 

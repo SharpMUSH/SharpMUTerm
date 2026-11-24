@@ -4042,7 +4042,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// buffer, split at the freeze point, so the lines above it come off the pinned half and any beyond
     /// it off the live tail.
     /// </summary>
-    private List<(ScrollablePanelControl Panel, int Rows)> RowsToKeepReadingPosition(
+    private List<(ScrollablePanelControl Panel, int Target)> RowsToKeepReadingPosition(
         string windowId, List<PaneLine> buffer, int excess)
     {
         var result = new List<(ScrollablePanelControl, int)>();
@@ -4071,7 +4071,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var rows = MeasureRows(buffer, from, panel.ViewportWidth, like, count);
             if (rows > 0)
             {
-                result.Add((panel, rows));
+                // Where the viewport is to end up, not how far to move it: the re-feed can clamp the offset against the
+                // shorter content first, and a move by the trimmed rows from there lands short by the clamp — which is
+                // every reader within a trim's worth of rows of the live tail.
+                result.Add((panel, Math.Max(0, panel.VerticalScrollOffset - rows)));
             }
         }
     }
@@ -4081,12 +4084,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// re-pins a following one: a whole-buffer re-feed leaves its offset a frame behind (the same
     /// pairing <see cref="MarkMissedLines"/> makes after an insert).
     /// </summary>
-    private void KeepReadingPosition(string windowId, List<(ScrollablePanelControl Panel, int Rows)> keep)
+    private void KeepReadingPosition(string windowId, List<(ScrollablePanelControl Panel, int Target)> keep)
     {
-        foreach (var (panel, rows) in keep)
+        foreach (var (panel, target) in keep)
         {
-            // Upwards only, so the clamp against a viewport not yet re-arranged cannot bite.
-            panel.ScrollVerticalBy(-rows);
+            // Settle the offset against the content as it now is, then move up to the target. Upwards only, so the
+            // clamp against a viewport not yet re-arranged cannot bite.
+            panel.ScrollVerticalBy(0);
+            if (target < panel.VerticalScrollOffset)
+            {
+                panel.ScrollVerticalBy(target - panel.VerticalScrollOffset);
+            }
         }
 
         if (_paneScrolls.GetValueOrDefault(windowId) is { AutoScroll: true } following)
@@ -7210,8 +7218,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         Action<ScrollablePanelControl>? scroll = (key, ctrl, shift) switch
         {
-            (ConsoleKey.PageUp, false, _) => panel => panel.ScrollVerticalBy(-PageRows(panel)),
-            (ConsoleKey.PageDown, false, _) => panel => panel.ScrollVerticalBy(PageRows(panel)),
+            (ConsoleKey.PageUp, false, _) => panel => panel.ScrollVerticalBy(-PageRows(panel, _config.Text.PageLines)),
+            (ConsoleKey.PageDown, false, _) => panel => panel.ScrollVerticalBy(PageRows(panel, _config.Text.PageLines)),
             (ConsoleKey.UpArrow, false, true) => panel => panel.ScrollVerticalBy(-1),
             (ConsoleKey.DownArrow, false, true) => panel => panel.ScrollVerticalBy(1),
 
@@ -7242,12 +7250,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Rows one page key moves. Read off the viewport the last frame arranged the panel at — the panel
-    /// is the only thing that knows how tall its content box came out after the pane's chrome, and the
-    /// figure it reports is the one it will clamp the scroll against.
+    /// Rows one page key moves: F7's <c>lines per page key</c> (<see cref="TextSettings.PageLines"/>, 10 by default),
+    /// or with 0 a page — read off the viewport the last frame arranged the panel at, since the panel is the only
+    /// thing that knows how tall its content box came out after the pane's chrome, and the figure it reports is the
+    /// one it will clamp the scroll against.
     /// </summary>
-    private static int PageRows(ScrollablePanelControl panel) =>
-        Math.Max(1, panel.ViewportHeight - PageOverlapRows);
+    internal static int PageRows(ScrollablePanelControl panel, int lines) =>
+        lines > 0 ? lines : Math.Max(1, panel.ViewportHeight - PageOverlapRows);
 
     /// <summary>
     /// Returns a viewport to the newest line <em>and re-arms auto-scroll</em>, so it stays there as
@@ -12398,7 +12407,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         grid.Rows(GridLength.Star(3), GridLength.Cells(1), GridLength.Star(1)).Columns(GridLength.Star(1));
         grid.Place(ScrollViewFor(FrozenRegionKey(windowId), frozen), 0, 0, 1, 1);
         grid.Place(bar, 1, 0, 1, 1);
-        grid.Place(ScrollViewFor(windowId, live), 2, 0, 1, 1);
+        grid.Place(InnerView(ScrollViewFor(windowId, live)), 2, 0, 1, 1);
         return grid.Build();
     }
 
@@ -13679,7 +13688,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (WheelLines(flags) is { } lines)
+        if (WheelLines(flags, _config.Text.WheelLines) is { } lines)
         {
             OnUiThread(() => ScrollPaneUnderPointer(point, lines));
             return;
@@ -13695,22 +13704,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// How many lines a mouse frame asks the scrollback to move, or null when it is not a wheel frame.
-    /// Three, the customary notch: one line makes a wheel useless on a transcript and a whole page makes
-    /// it unusable for reading one.
+    /// How many lines a mouse frame asks the scrollback to move, or null when it is not a wheel frame: F7's
+    /// <c>lines per wheel notch</c> (<see cref="TextSettings.WheelLines"/>, 10 by default), held to at least one.
     /// </summary>
-    private static int? WheelLines(List<MouseFlags> flags)
+    private static int? WheelLines(List<MouseFlags> flags, int notch)
     {
+        notch = Math.Max(1, notch);
         if (flags.Contains(MouseFlags.WheeledUp))
         {
-            return -WheelNotchRows;
+            return -notch;
         }
 
-        return flags.Contains(MouseFlags.WheeledDown) ? WheelNotchRows : null;
+        return flags.Contains(MouseFlags.WheeledDown) ? notch : null;
     }
-
-    /// <summary>Lines one wheel notch moves the scrollback.</summary>
-    private const int WheelNotchRows = 3;
 
     /// <summary>
     /// Scrolls whichever pane the pointer is over.

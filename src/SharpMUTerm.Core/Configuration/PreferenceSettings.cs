@@ -171,6 +171,27 @@ public sealed class TextSettings
     public string ScrollTail { get; set; } = Configuration.ScrollTail.Default;
 
     /// <summary>
+    /// How many lines one notch of the mouse wheel moves a pane's scrollback (F7 ▸ SCROLLBACK, 10 by default). One
+    /// notch, in both hosts: the window counts a touchpad's fractions into whole notches first.
+    /// </summary>
+    public int WheelLines { get; set; } = DefaultScrollLines;
+
+    /// <summary>
+    /// How many lines PgUp and PgDn move a pane's scrollback (F7 ▸ SCROLLBACK, 10 by default); 0 is a page, the pane's
+    /// height less two rows of overlap.
+    /// </summary>
+    public int PageLines { get; set; } = DefaultScrollLines;
+
+    /// <summary>What <see cref="WheelLines"/> and <see cref="PageLines"/> start at.</summary>
+    public const int DefaultScrollLines = 10;
+
+    /// <summary>The most lines a wheel notch may move.</summary>
+    public const int MaxWheelLines = 100;
+
+    /// <summary>The most lines a page key may move.</summary>
+    public const int MaxPageLines = 500;
+
+    /// <summary>
     /// Whether a trigger marked <c>alert</c>, or a world's name-and-pages alert, may tell the desktop while the
     /// player is in another window (F7 ▸ ALERTS, on by default). Nothing alerts until a trigger or a world asks for
     /// it, so on costs nothing; off silences every alert at once, including the window title's unread count.

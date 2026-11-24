@@ -344,4 +344,94 @@ public class PointerTests
         await Assert.That(top.Offset).IsEqualTo(0);
         await Assert.That(bar.Offset).IsGreaterThan(0);
     }
+
+    /// <summary>
+    /// The reported defect: dragging the window's scrollbar opened the split under the thumb, which rebuilt the pane and
+    /// moved the bar's track away from the pointer. The pane stays whole while the thumb is held, splits once it is let go,
+    /// and the bar reads the same track, viewport and offset before and after, so the thumb does not move.
+    /// </summary>
+    [Test]
+    public async Task AHeldThumbSplitsThePaneOnlyWhenLetGoAndTheBarDoesNotMove()
+    {
+        var (app, pointer) = App("scrollback");
+        var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
+
+        bar.Held!(true);
+        bar.ScrollTo(bar.Offset - 40);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        var held = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
+        held.ScrollTo(held.Offset - 10);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        var dragged = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
+
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsFalse().Because("nothing moves under a held thumb");
+        await Assert.That(dragged.Offset).IsEqualTo(bar.Offset - 50);
+
+        dragged.Held!(false);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        var after = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
+
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
+        await Assert.That(after.Track).IsEqualTo(dragged.Track);
+        await Assert.That(after.ViewportRows).IsEqualTo(dragged.ViewportRows);
+        await Assert.That(after.ContentRows).IsEqualTo(dragged.ContentRows);
+        await Assert.That(after.Offset).IsEqualTo(dragged.Offset);
+    }
+
+    /// <summary>A split pane's thumb dragged to the foot of its track takes the pane back to its live tail when let go.</summary>
+    [Test]
+    public async Task AThumbLetGoAtTheFootOfASplitPanesTrackReturnsToTheLiveTail()
+    {
+        var (app, pointer) = App("scrollback");
+        var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
+        bar.ScrollTo(bar.Offset - 40);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
+
+        var split = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
+        split.Held!(true);
+        split.ScrollTo(split.ContentRows - split.ViewportRows);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue().Because("still held");
+
+        split.Held(false);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsFalse();
+    }
+    /// <summary>
+    /// The pane shrinks while split (here the second command line comes up, taking rows from the panes): the bar is
+    /// measured on the history's new height, so the foot of its track is still the live tail.
+    /// </summary>
+    [Test]
+    public async Task AThumbLetGoAtTheFootAfterTheSplitPaneShrankStillReturnsToTheLiveTail()
+    {
+        var (app, pointer) = App("scrollback");
+        var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
+        bar.ScrollTo(bar.Offset - 40);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
+        var before = pointer.Bars.Single(b => b.WindowId == bar.WindowId).ViewportRows;
+
+        await Assert.That(app.DispatchCommand("term:input2-on")).IsTrue();
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
+
+        var split = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
+        await Assert.That(split.ViewportRows).IsLessThan(before).Because("the pane is shorter now");
+        split.Held!(true);
+        split.ScrollTo(split.ContentRows - split.ViewportRows);
+        app.RenderNextFrame();
+        split.Held(false);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsFalse();
+    }
 }

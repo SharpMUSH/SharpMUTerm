@@ -122,6 +122,15 @@ internal sealed class WindowPointer : IPointerPresenter
     int? IPointerPresenter.VitalsCardRows(int meters, bool target) =>
         CellsOnly ? null : CellHeightMeasured is > 0 and var cell ? VitalsGauges.CardRows(meters, target, cell, PanelScale()) : null;
 
+    /// <summary>
+    /// The Text size page's interface scale the pane chrome is drawn at (the scrolled-back band among it), read when the
+    /// client asks; 1 until the main window says how to read it.
+    /// </summary>
+    internal Func<double> InterfaceScale { get; set; } = () => 1;
+
+    int? IPointerPresenter.ScrollBandRows =>
+        CellsOnly ? null : CellHeightMeasured is > 0 and var cell ? ScrollBandView.RowsFor(cell, InterfaceScale()) : null;
+
     public void Scrollbars(IReadOnlyList<PaneScrollbar> bars)
     {
         Volatile.Write(ref _bars, bars);

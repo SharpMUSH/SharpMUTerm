@@ -31,7 +31,8 @@ public class SurfaceParityTests
     // The focus ring is an adorner drawing one rule round whatever control has the keyboard: it carries no model and says nothing.
     // FittedText is a TextBlock part the composer's footer is built from: it draws the words its view hands it.
     // SeamRules carries the declared views' own rules on to a divider's hairline: no model, no input, nothing said.
-    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing), typeof(FittedText), typeof(SeamRules)];
+    // ScrollbarLayer is where TerminalView draws its own overlay scrollbars, over the native views: no model, no input.
+    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing), typeof(FittedText), typeof(SeamRules), typeof(ScrollbarLayer)];
 
     private static readonly Assembly Window = typeof(DesktopLayer).Assembly;
 
