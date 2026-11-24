@@ -398,10 +398,11 @@ public sealed partial class SettingsForm
             return false;
         }
 
-        var name = set.Name;
+        // The name is read when the change lands, so a rename queued ahead of it is the name written.
         Commit(
             () =>
             {
+                var name = set.Name;
                 var names = character.TriggerSets.Where(n => !string.Equals(n, name, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (on)
                 {
@@ -410,7 +411,7 @@ public sealed partial class SettingsForm
 
                 character.TriggerSets = names;
             },
-            on ? $"using set {name}" : $"dropping set {name}");
+            on ? $"using set {set.Name}" : $"dropping set {set.Name}");
         return true;
     }
 

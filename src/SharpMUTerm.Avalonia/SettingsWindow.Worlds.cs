@@ -91,6 +91,9 @@ internal sealed partial class SettingsWindow
     /// <summary>Each set's check box on a character's page, by set name, for a test.</summary>
     internal Dictionary<string, CheckBox> SetBoxes { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The character page's link that makes a new set used by that character, for a test.</summary>
+    internal Button? NewSetLink { get; private set; }
+
     /// <summary>The server-information card's rows, as text, for a test.</summary>
     internal List<string> ServerInfoLines { get; } = [];
 
@@ -1004,6 +1007,22 @@ internal sealed partial class SettingsWindow
             heading.Children.Add(edit);
         }
 
+        // A set is made where it is wanted: here it is made for this character, already ticked.
+        var make = LinkButton("+ New set", NativeTokens.PageSmall);
+        AutomationProperties.SetName(make, $"Make a new trigger set used by {character.Name}");
+        make.Margin = new Thickness(0, 0, NativeTokens.Space12, 0);
+        make.Click += (_, _) => _form.NewSet(character);
+        NewSetLink = make;
+        var links = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        foreach (var link in heading.Children.OfType<Button>().ToList())
+        {
+            heading.Children.Remove(link);
+            links.Children.Add(link);
+        }
+
+        links.Children.Insert(0, make);
+        Grid.SetColumn(links, 1);
+        heading.Children.Add(links);
         body.Children.Add(heading);
         body.Children.Add(new TextBlock
         {
@@ -1017,7 +1036,7 @@ internal sealed partial class SettingsWindow
         var assignments = _form.Assignments(character);
         if (assignments.Count == 0)
         {
-            body.Children.Add(new TextBlock { Text = "There is no trigger set yet. Make one on the Triggers page.", Foreground = DimInk, Margin = new Thickness(0, 0, 0, NativeTokens.Space12) });
+            body.Children.Add(new TextBlock { Text = "There is no trigger set yet. Make one with + New set; it starts ticked for this character.", Foreground = DimInk, Margin = new Thickness(0, 0, 0, NativeTokens.Space12) });
             return;
         }
 

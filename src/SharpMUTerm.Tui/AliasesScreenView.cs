@@ -15,10 +15,11 @@ namespace SharpMUTerm.Tui;
 internal static class AliasesScreenView
 {
     public static IWindowControl Build(
-        IReadOnlyList<TriggerSet> sets, int selected, int width, ScreenTheme scheme, ScreenFocus? focus = null, int height = 0)
+        IReadOnlyList<TriggerSet> sets, int selected, int width, ScreenTheme scheme, ScreenFocus? focus = null, int height = 0,
+        IReadOnlyList<WorldDefinition>? worlds = null)
     {
         var header = ScreenChrome.Band(
-            AliasesScreenRenderer.HeaderLine(width, AliasesScreenRenderer.Model(sets, selected), focus),
+            AliasesScreenRenderer.HeaderLine(width, AliasesScreenRenderer.Model(sets, selected), focus, sets: worlds is not null),
             ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
             AliasesScreenRenderer.FooterLine(sets, selected, width, focus), ScreenPalette.FooterBg, scheme);
@@ -29,7 +30,7 @@ internal static class AliasesScreenView
             AliasesScreenRenderer.MinColumnWidth,
             AliasesScreenRenderer.MinEditorWidth);
         var rows = ScreenChrome.Rows(height);
-        var left = AliasesScreenRenderer.ListColumn(sets, selected, focus, list);
+        var left = AliasesScreenRenderer.ListColumn(sets, selected, focus, list, worlds);
         var right = AliasesScreenRenderer.EditorColumn(
             sets, selected, focus, width <= 0 ? list : width - list - ScreenChrome.ColumnDivider, rows);
 

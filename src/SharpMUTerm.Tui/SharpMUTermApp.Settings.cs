@@ -1,5 +1,6 @@
 using SharpMUTerm.Client.Contributions;
 using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Automation;
 using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Core.Protocols;
@@ -228,7 +229,7 @@ internal sealed partial class SharpMUTermApp
             Selections = _listSelections,
             PictureCropped = (source, crop) => OnUiThread(() => ChooseAvatarCrop(source, crop)),
             Theme = () => _theme.Clone(),
-            BesideOutput = item is not null,
+            BesideOutput = item is Trigger,
             WorldNotes = WorldNotesNow(),
             ConnectedKeys = () => _connectedKeys,
             Connect = key => OnUiThread(() =>

@@ -32,7 +32,9 @@ internal static class ScreenChrome
         bool removable = false,
         bool detailed = false,
         bool resettable = false,
-        int room = 0)
+        int room = 0,
+        bool sets = false,
+        bool back = false)
     {
         if (focus?.Edit is { } edit)
         {
@@ -60,7 +62,11 @@ internal static class ScreenChrome
                 editing.Add(new LadderKey("⇥", "next field", "next", Drop: 1));
             }
 
-            editing.Add(new LadderKey(fkey, "close", Drop: 3));
+            // A screen opened over another closes with Esc, which here reverts the edit: one key, one meaning.
+            if (!back)
+            {
+                editing.Add(new LadderKey(fkey, "close", Drop: 3));
+            }
             return HintMarkup(KeyLadder.Choose(editing, room), fkey, closesWithEsc: false);
         }
 
@@ -89,21 +95,29 @@ internal static class ScreenChrome
             keys.Add(new LadderKey("i", "info", Drop: 4));
         }
 
+        if (sets)
+        {
+            keys.Add(new LadderKey(SetsKey, "sets", Drop: 5));
+        }
+
         keys.Add(new LadderKey(UndoKey, "undo", Drop: 2));
         keys.Add(new LadderKey("/", "search", Drop: 1));
-        keys.Add(new LadderKey($"{fkey}/Esc", "close"));
+        // A screen opened over another (the trigger sets over F2) goes back to it on Esc rather than closing.
+        var closeKey = back ? "Esc" : $"{fkey}/Esc";
+        var closeWord = back ? "back" : "close";
+        keys.Add(new LadderKey(closeKey, closeWord));
         if (focus?.Note is { } note)
         {
             // What ⌃Z or ⌃Y just did takes the verbs' place until the next key: the undo pair and the way out stay.
-            var undo = new List<LadderKey> { new(UndoKey, "undo", Drop: 2), new(RedoKey, "redo", Drop: 1), new($"{fkey}/Esc", "close") };
+            var undo = new List<LadderKey> { new(UndoKey, "undo", Drop: 2), new(RedoKey, "redo", Drop: 1), new(closeKey, closeWord) };
             var said = MarkupText.Escape(note);
             said = room <= 0 ? said : MarkupText.FitVisible(said, Math.Max(8, room - 24));
             var rest = room <= 0 ? 0 : Math.Max(1, room - MarkupText.VisibleLength(said) - 3);
             return $"[{ScreenPalette.Value}]{said}[/][{ScreenPalette.Label}] · [/]"
-                + HintMarkup(KeyLadder.Choose(undo, rest), fkey, closesWithEsc: true);
+                + HintMarkup(KeyLadder.Choose(undo, rest), back ? "Esc" : fkey, closesWithEsc: !back, closeWord);
         }
 
-        return HintMarkup(KeyLadder.Choose(keys, room), fkey, closesWithEsc: true);
+        return HintMarkup(KeyLadder.Choose(keys, room), back ? "Esc" : fkey, closesWithEsc: !back, closeWord);
     }
 
     /// <summary>
@@ -140,14 +154,14 @@ internal static class ScreenChrome
     /// A header's hints as markup: the keys in the label ink, then the close — its keys in the accent, as every screen
     /// has drawn them. The close is always the last key <see cref="KeyLadder.Choose"/> kept (it is never dropped).
     /// </summary>
-    private static string HintMarkup(IReadOnlyList<(string Key, string Label)> keys, string fkey, bool closesWithEsc)
+    private static string HintMarkup(IReadOnlyList<(string Key, string Label)> keys, string fkey, bool closesWithEsc, string word = "close")
     {
         var verbs = string.Join(" · ", keys.Take(keys.Count - 1).Select(k => k.Label.Length == 0 ? k.Key : $"{k.Key} {k.Label}"));
         var lead = verbs.Length == 0 ? string.Empty : $"[{ScreenPalette.Label}]{verbs} · [/]";
         var close = closesWithEsc
             ? $"[{ScreenPalette.Accent}]{fkey}[/][{ScreenPalette.Label}]/[/][{ScreenPalette.Accent}]Esc[/]"
             : $"[{ScreenPalette.Accent}]{fkey}[/]";
-        return lead + close + $"[{ScreenPalette.Label}] close [/]";
+        return lead + close + $"[{ScreenPalette.Label}] {word} [/]";
     }
 
     /// <summary>
@@ -736,13 +750,27 @@ internal static class ScreenChrome
     /// <param name="noun">One item, singular — <c>trigger</c>.</param>
     /// <param name="plural">What the screen's rows are called — <c>triggers</c>, <c>timers</c>.</param>
     /// <param name="width">How wide the column runs; the band is padded to it and the name elided to fit.</param>
-    internal static string SetHeading(string set, int count, string noun, string plural, int width)
+    /// <param name="usage">
+    /// Who uses the set (<see cref="SharpMUTerm.Client.Settings.TriggerSetEditing.Usage"/>), said after the count, or null
+    /// to say nothing. A set no character uses says so in the warning ink: its rules do nothing, the commonest surprise.
+    /// Dropped before the name is cut short.
+    /// </param>
+    internal static string SetHeading(string set, int count, string noun, string plural, int width, string? usage = null)
     {
         var tally = SharpMUTerm.Client.Settings.SetHeading.Count(count, noun, plural);
-        var room = Math.Max(4, width - tally.Length - 5);
+        var unused = string.Equals(usage, SharpMUTerm.Client.Settings.TriggerSetEditing.Unused, StringComparison.Ordinal);
+        if (usage is not null && width > 0 && width - tally.Length - usage.Length - 8 < Math.Min(set.Length, 12))
+        {
+            usage = null;
+        }
+
+        var said = usage is null ? tally : $"{tally} · {usage}";
+        var room = Math.Max(4, width - said.Length - 5);
         var name = MarkupText.Escape(MarkupText.ElidePlain(set, room));
         var left = $"[{ScreenPalette.Accent}] ▪[/] [bold {ScreenPalette.Value}]{name}[/]";
-        var right = $"[{ScreenPalette.Label}]{MarkupText.Escape(tally)}[/] ";
+        var right = usage is null
+            ? $"[{ScreenPalette.Label}]{MarkupText.Escape(tally)}[/] "
+            : $"[{ScreenPalette.Label}]{MarkupText.Escape(tally)} · [/][{(unused ? ScreenPalette.Warn : ScreenPalette.Label)}]{MarkupText.Escape(usage)}[/] ";
         var gap = Math.Max(1, width - MarkupText.VisibleLength(left) - MarkupText.VisibleLength(right));
         return $"[on {ScreenPalette.HeaderBg}]{left}{new string(' ', gap)}{right}[/]";
     }
@@ -815,6 +843,21 @@ internal static class ScreenChrome
         $"[{ScreenPalette.Accent}]{MarkupText.Escape(button.Label)}[/]"
         + $"  [{ScreenPalette.Label}]{verb}[/] "
         + $"[{ScreenPalette.Value}]{MarkupText.Escape(button.Target ?? string.Empty)}[/]";
+
+    /// <summary>The key that opens the trigger sets screen from a list screen (F2, F3, F4, F6).</summary>
+    internal const string SetsKey = "s";
+
+    /// <summary>
+    /// The row under a list screen's buttons naming the sets key: where sets are made, renamed and given their
+    /// characters. Drawn as a key row, like Delete's, because it acts on no row and is not a cursor stop.
+    /// </summary>
+    internal static string SetsKeyRow() =>
+        $"[{ScreenPalette.Accent}]{SetsKey}[/]  [{ScreenPalette.Label}]trigger sets:[/] "
+        + $"[{ScreenPalette.Value}]make, rename, choose who uses them[/]";
+
+    /// <summary>A set's usage for its heading, or null when the screen was given no worlds to read it from.</summary>
+    internal static string? UsageOf(IReadOnlyList<SharpMUTerm.Core.Configuration.WorldDefinition>? worlds, string set) =>
+        worlds is null ? null : SharpMUTerm.Client.Settings.TriggerSetEditing.Usage(worlds, set);
 
     /// <summary>The keys a list row is moved with, as its hint row names them.</summary>
     internal const string MoveKeyLabel = "⌥↑↓";

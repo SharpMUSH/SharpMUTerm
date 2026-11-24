@@ -600,7 +600,7 @@ internal sealed partial class SharpMUTermApp
         }
 
         SaveConfiguration();
-        var said = $"Copied {package.Sets.Count} set(s) to yours; assign them on F5, and switch the package off (Space) to use only your copy.";
+        var said = $"Copied {package.Sets.Count} set(s) to yours; choose who uses them on F5 (or F2, then s), and switch the package off (Space) to use only your copy.";
         Notice(said, MessageSeverity.Info, source: SharpMUTerm.Client.Chrome.NoticeModel.Sources.Packages);
         _packageManager?.PublishStatus(said);
         _packageManager?.NotifyChanged();

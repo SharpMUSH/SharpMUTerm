@@ -25,11 +25,12 @@ internal static class TriggersScreenView
         ScreenFocus? focus = null,
         int height = 0,
         Theme? theme = null,
-        IReadOnlyList<string>? recent = null)
+        IReadOnlyList<string>? recent = null,
+        IReadOnlyList<WorldDefinition>? worlds = null)
     {
         var header = ScreenChrome.Band(
             TriggersScreenRenderer.HeaderLine(
-                width, TriggersScreenRenderer.Model(sets, selectedTrigger, routeTargets), focus),
+                width, TriggersScreenRenderer.Model(sets, selectedTrigger, routeTargets), focus, sets: worlds is not null),
             ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
             TriggersScreenRenderer.FooterLine(sets, selectedTrigger, width, focus), ScreenPalette.FooterBg, scheme);
@@ -45,7 +46,7 @@ internal static class TriggersScreenView
             // ⏎ has opened one of the rule's fields, which are drawn in the editor and nowhere else.
             var only = focus is { } f && (f.InPane(1) || f.IsEditing)
                 ? TriggersScreenRenderer.EditorColumn(sets, selectedTrigger, routeTargets, focus, width, body, theme, recent)
-                : TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, width);
+                : TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, width, worlds);
             return ScreenChrome.Single(
                 header, footer, ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(only, body), scheme)),
                 only.Count, body);
@@ -56,7 +57,7 @@ internal static class TriggersScreenView
             TriggersScreenRenderer.ColumnWidth,
             TriggersScreenRenderer.MinColumnWidth,
             TriggersScreenRenderer.MinEditorWidth);
-        var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules);
+        var left = TriggersScreenRenderer.RulesColumn(sets, selectedTrigger, focus, rules, worlds);
         var right = TriggersScreenRenderer.EditorColumn(
             sets, selectedTrigger, routeTargets, focus,
             width <= 0 ? rules : width - rules - ScreenChrome.ColumnDivider, body, theme, recent);

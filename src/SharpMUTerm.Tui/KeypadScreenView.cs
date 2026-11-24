@@ -29,10 +29,11 @@ internal static class KeypadScreenView
         int width,
         ScreenTheme scheme,
         ScreenFocus? focus = null,
-        int height = 0)
+        int height = 0,
+        IReadOnlyList<WorldDefinition>? worlds = null)
     {
         var header = ScreenChrome.Band(
-            KeypadScreenRenderer.HeaderLine(width, KeypadScreenRenderer.Model(keys, macros, sets, selected), focus),
+            KeypadScreenRenderer.HeaderLine(width, KeypadScreenRenderer.Model(keys, macros, sets, selected), focus, sets: worlds is not null),
             ScreenPalette.HeaderBg, scheme);
         var footer = ScreenChrome.Band(
             KeypadScreenRenderer.FooterLine(keys, macros, width, focus, selected), ScreenPalette.FooterBg, scheme);
@@ -48,7 +49,7 @@ internal static class KeypadScreenView
         {
             // The diagram is a picture of the bindings the list already holds, so a narrow screen drops it
             // and keeps the list, which is where every key on this screen acts.
-            var only = KeypadScreenRenderer.HotkeysColumn(keys, macros, focus, sets, selected, width);
+            var only = KeypadScreenRenderer.HotkeysColumn(keys, macros, focus, sets, selected, width, worlds);
             return ScreenChrome.Single(
                 header, footer, ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(only, rows), scheme)),
                 only.Count, rows);
@@ -61,7 +62,7 @@ internal static class KeypadScreenView
             hotkeysMinimum);
         var left = KeypadScreenRenderer.NumpadColumn(keys, macros, numpad);
         var right = KeypadScreenRenderer.HotkeysColumn(
-            keys, macros, focus, sets, selected, width <= 0 ? numpad : width - numpad - ScreenChrome.ColumnDivider);
+            keys, macros, focus, sets, selected, width <= 0 ? numpad : width - numpad - ScreenChrome.ColumnDivider, worlds);
 
         var numpadCol = ScreenChrome.Stretch(ScreenChrome.Panel(ScreenChrome.Window(left, rows), scheme));
         var hotkeysCol = ScreenChrome.Stretch(

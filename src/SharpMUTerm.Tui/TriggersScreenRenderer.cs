@@ -290,12 +290,12 @@ internal static class TriggersScreenRenderer
     /// hints are derived from <paramref name="model"/> and <paramref name="focus"/> rather than
     /// written here, so the header cannot advertise an edit the screen doesn't offer.
     /// </summary>
-    internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
+    internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null, bool sets = false)
     {
         var title = $"[bold {Value}]Triggers & spawn routing[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints, "F2", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
-            room: ScreenChrome.HeaderRoom(" " + title, width));
+            room: ScreenChrome.HeaderRoom(" " + title, width), sets: sets);
         return SpreadTitle(" " + title, hints, width);
     }
 
@@ -442,8 +442,10 @@ internal static class TriggersScreenRenderer
     /// screen (see <see cref="ScreenChrome.SplitWidth"/>), and a bar padded to a width the column no
     /// longer has would run under the hairline.
     /// </param>
+    /// <param name="worlds">The worlds whose characters use the sets, so each heading says who; null says nothing.</param>
     internal static List<string> RulesColumn(
-        IReadOnlyList<TriggerSet> sets, int selectedTrigger, ScreenFocus? focus = null, int width = ColumnWidth)
+        IReadOnlyList<TriggerSet> sets, int selectedTrigger, ScreenFocus? focus = null, int width = ColumnWidth,
+        IReadOnlyList<WorldDefinition>? worlds = null)
     {
         ArgumentNullException.ThrowIfNull(sets);
 
@@ -462,7 +464,7 @@ internal static class TriggersScreenRenderer
         var row = 0;
         foreach (var set in sets)
         {
-            left.Add(ScreenChrome.SetHeading(set.Name, set.Triggers.Count, "trigger", "triggers", width));
+            left.Add(ScreenChrome.SetHeading(set.Name, set.Triggers.Count, "trigger", "triggers", width, ScreenChrome.UsageOf(worlds, set.Name)));
             foreach (var trigger in set.Triggers)
             {
                 left.Add(ScreenChrome.Cursor(
@@ -475,6 +477,11 @@ internal static class TriggersScreenRenderer
         left.Add(string.Empty);
         left.AddRange(ScreenChrome.Buttons(
             Buttons(sets, selectedTrigger), cursor, 0, flattened.Count, width, movable: true));
+        if (worlds is not null)
+        {
+            left.Add(ScreenChrome.SetsKeyRow());
+        }
+
         left.Add(string.Empty);
         left.AddRange(FlagLegend(Selected(flattened, selectedTrigger), width));
         return left;

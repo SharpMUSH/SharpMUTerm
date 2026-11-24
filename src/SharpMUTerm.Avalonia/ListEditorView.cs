@@ -44,6 +44,12 @@ internal sealed class ListEditorView : Grid
     private readonly List<string> _headings = [];
     private readonly StackPanel _preview = new() { Spacing = NativeTokens.Space4 };
     private object? _shownItem;
+    private TriggerSet? _chosenSet;
+    private TriggerSet? _shownSet;
+    private bool _chosenSetLanded;
+    private bool _confirmingSetDelete;
+    private readonly List<(TriggerSet Set, ListBoxItem Row)> _setRows = [];
+    private readonly List<(SetUser User, CheckBox Box)> _userBoxes = [];
     private bool _syncing;
     private bool _choosing;
 
@@ -59,11 +65,13 @@ internal sealed class ListEditorView : Grid
         Margin = new Thickness(0, NativeTokens.Space10, 0, 0);
 
         AddButton = ToolButton("+ Add", $"Add a {_collection.Noun} to the selected set");
+        NewSetButton = ToolButton("+ Set", "Make a new trigger set, used by the character in front");
         DuplicateButton = ToolButton("Copy", $"Copy the selected {_collection.Noun}");
         DeleteButton = ToolButton("Delete", $"Delete the selected {_collection.Noun}");
         UpButton = ToolButton("↑", "Move up within its set");
         DownButton = ToolButton("↓", "Move down within its set");
         AddButton.Click += (_, _) => Add();
+        NewSetButton.Click += (_, _) => NewSet();
         DuplicateButton.Click += (_, _) => Act(item => _form.Duplicate(_section, item));
         DeleteButton.Click += (_, _) => Act(item => _form.Delete(_section, item) ? null : item);
         UpButton.Click += (_, _) => Act(item => _form.Move(_section, item, -1) ? item : item);
@@ -71,7 +79,7 @@ internal sealed class ListEditorView : Grid
         DuplicateButton.IsVisible = _collection.CanDuplicate;
 
         var tools = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, NativeTokens.Space6) };
-        foreach (var button in new[] { AddButton, DuplicateButton, DeleteButton, UpButton, DownButton })
+        foreach (var button in new[] { AddButton, DuplicateButton, DeleteButton, UpButton, DownButton, NewSetButton })
         {
             button.Margin = new Thickness(0, 0, NativeTokens.Space4, NativeTokens.Space4);
             tools.Children.Add(button);
@@ -99,6 +107,9 @@ internal sealed class ListEditorView : Grid
         SetColumn(detailCard, 1);
         Children.Add(detailCard);
 
+        // A form opened on a set (the terminal's `s` key has one, ⌃P's way into a set) opens that set's page.
+        var openSet = _form.Item as TriggerSet;
+
         // The item this section had selected last (switched away from, or the window closed) wins over the first —
         // unless the form opened on an item of this list (the trigger builder's new rule).
         if (_form.Item is not { } chosen || !_collection.IsItem(chosen) || FindGroup(chosen) is null)
@@ -110,12 +121,45 @@ internal sealed class ListEditorView : Grid
             _form.Remember(_section.Id, chosen);
         }
 
+        if (openSet is not null && _form.IsOwnSet(openSet))
+        {
+            _chosenSet = openSet;
+        }
+
         BuildList();
         BuildDetail();
     }
 
     /// <summary>The add button.</summary>
     public Button AddButton { get; }
+
+    /// <summary>The button that makes a new trigger set.</summary>
+    public Button NewSetButton { get; }
+
+    /// <summary>The set whose own page is shown (its name, who uses it), or null while an item's fields are.</summary>
+    public TriggerSet? ShownSet => _shownSet;
+
+    /// <summary>The set page's check box for each character, for a test.</summary>
+    public IReadOnlyList<(SetUser User, CheckBox Box)> SetUserBoxes => _userBoxes;
+
+    /// <summary>The set page's name box, or null while no set page is shown.</summary>
+    public TextBox? SetNameBox { get; private set; }
+
+    /// <summary>The set page's description box, or null while no set page is shown.</summary>
+    public TextBox? SetDescriptionBox { get; private set; }
+
+    /// <summary>The set page's delete button (first press asks), or null while no set page is shown.</summary>
+    public Button? SetDeleteButton { get; private set; }
+
+    /// <summary>Shows <paramref name="set"/>'s own page: its name, its description and who uses it.</summary>
+    public void ChooseSet(TriggerSet set)
+    {
+        _chosenSet = set;
+        _chosenSetLanded = _form.IsOwnSet(set);
+        _confirmingSetDelete = false;
+        SelectRow(null);
+        BuildDetail();
+    }
 
     /// <summary>The duplicate button (hidden where the list offers none).</summary>
     public Button DuplicateButton { get; }
@@ -156,6 +200,7 @@ internal sealed class ListEditorView : Grid
     /// <summary>Selects <paramref name="item"/> and shows its fields.</summary>
     public void Choose(object? item)
     {
+        _chosenSet = null;
         Select(item);
         SelectRow(item);
         BuildDetail();
@@ -186,6 +231,20 @@ internal sealed class ListEditorView : Grid
 
     private void RefreshNow()
     {
+        if (_chosenSet is { } chosen)
+        {
+            if (_form.IsOwnSet(chosen))
+            {
+                _chosenSetLanded = true;
+            }
+            else if (_chosenSetLanded)
+            {
+                // The set went (deleted, or an undo took back its making): back to the items.
+                _chosenSet = null;
+            }
+        }
+
+
         if (_form.Item is { } item && FindGroup(item) is null)
         {
             // The selected item went (deleted, or moved by another surface): take the first there is.
@@ -198,7 +257,7 @@ internal sealed class ListEditorView : Grid
         }
 
         BuildList();
-        if (!ReferenceEquals(_shownItem, _form.Item))
+        if (!ReferenceEquals(_shownItem, _form.Item) || !ReferenceEquals(_shownSet, _chosenSet) || _chosenSet is not null && _userBoxes.Count != _form.UsersOf(_chosenSet).Count)
         {
             BuildDetail();
             return;
@@ -263,6 +322,7 @@ internal sealed class ListEditorView : Grid
     private void BuildList()
     {
         _rows.Clear();
+        _setRows.Clear();
         _copyButtons.Clear();
         _headings.Clear();
         var items = new List<ListBoxItem>();
@@ -281,7 +341,7 @@ internal sealed class ListEditorView : Grid
         {
             items.Add(new ListBoxItem
             {
-                Content = new TextBlock { Text = "No trigger set yet — make one on F5.", Foreground = DimInk, TextWrapping = TextWrapping.Wrap },
+                Content = new TextBlock { Text = $"No trigger set yet. {TriggerSetEditing.Explainer} Make one with + Set.", Foreground = DimInk, TextWrapping = TextWrapping.Wrap },
                 IsEnabled = false,
             });
         }
@@ -289,7 +349,7 @@ internal sealed class ListEditorView : Grid
         _choosing = true;
         _list.ItemsSource = items;
         _choosing = false;
-        SelectRow(_form.Item);
+        SelectRow(_chosenSet is null ? _form.Item : null);
         UpdateTools();
     }
 
@@ -342,6 +402,20 @@ internal sealed class ListEditorView : Grid
         {
             words.Children.Add(new TextBlock { Text = "package · read-only", FontSize = NativeTokens.Small, Foreground = DimInk });
         }
+        else
+        {
+            // Who runs these rules: a set no character uses does nothing, and that is the commonest surprise.
+            var usage = _form.UsageOf(group.Set);
+            var unused = !_form.IsUsed(group.Set);
+            words.Children.Add(new TextBlock
+            {
+                Text = usage,
+                FontSize = NativeTokens.Small,
+                Foreground = unused ? page.Brush(page.Text) : DimInk,
+                FontWeight = unused ? FontWeight.SemiBold : FontWeight.Normal,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+        }
 
         row.Children.Add(words);
         var band = new Border
@@ -355,15 +429,25 @@ internal sealed class ListEditorView : Grid
         };
         _headings.Add($"{group.Label}, {_collection.CountOf(group.Items.Count)}");
         AutomationProperties.SetName(band, $"Set {_headings[^1]}");
-        return new ListBoxItem
+        var header = new ListBoxItem
         {
             Content = band,
-            Focusable = false,
-            IsHitTestVisible = group.ReadOnly,
+            Focusable = !group.ReadOnly,
+            IsHitTestVisible = true,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Padding = new Thickness(0, NativeTokens.Space12, 0, NativeTokens.Space4),
             Background = Brushes.Transparent,
         };
+        if (!group.ReadOnly)
+        {
+            // A heading of one of the player's own sets opens the set's page: its name, its description, who uses it.
+            header.Tag = group.Set;
+            ToolTip.SetTip(band, "Rename this set, describe it or choose which characters use it");
+            AutomationProperties.SetName(header, $"Set {group.Label}, {_form.UsageOf(group.Set)}");
+            _setRows.Add((group.Set, header));
+        }
+
+        return header;
     }
 
     private ListBoxItem ItemRow(SettingsItemGroup group, object item)
@@ -420,24 +504,42 @@ internal sealed class ListEditorView : Grid
     private void SelectRow(object? item)
     {
         _choosing = true;
-        _list.SelectedItem = _rows.FirstOrDefault(r => ReferenceEquals(r.Item, item)).Row;
+        _list.SelectedItem = _chosenSet is { } set
+            ? _setRows.FirstOrDefault(r => ReferenceEquals(r.Set, set)).Row
+            : _rows.FirstOrDefault(r => ReferenceEquals(r.Item, item)).Row;
         _choosing = false;
     }
 
     private void OnRowChosen()
     {
-        if (_choosing || _list.SelectedItem is not ListBoxItem { Tag: { } item } || ReferenceEquals(item, _form.Item))
+        if (_choosing || _list.SelectedItem is not ListBoxItem { Tag: { } tag })
         {
             return;
         }
 
-        Select(item);
+        if (tag is TriggerSet set)
+        {
+            if (!ReferenceEquals(set, _chosenSet))
+            {
+                ChooseSet(set);
+            }
+
+            return;
+        }
+
+        if (ReferenceEquals(tag, _form.Item) && _chosenSet is null)
+        {
+            return;
+        }
+
+        _chosenSet = null;
+        Select(tag);
         BuildDetail();
     }
 
     private void OnListKey(object? sender, KeyEventArgs e)
     {
-        if (_form.Item is not { } item)
+        if (_chosenSet is not null || _form.Item is not { } item)
         {
             return;
         }
@@ -462,13 +564,27 @@ internal sealed class ListEditorView : Grid
     private void Add()
     {
         var groups = _form.Groups(_section);
-        var set = (_form.Item is { } item ? FindGroup(item) : null) is { ReadOnly: false } own
-            ? own.Set
-            : groups.FirstOrDefault(g => !g.ReadOnly)?.Set;
+        // A set made a moment ago is the destination even before its commit lands: the add is queued behind it.
+        var set = _chosenSet is { } chosen && !_form.IsPackageSet(chosen)
+            ? chosen
+            : (_form.Item is { } item ? FindGroup(item) : null) is { ReadOnly: false } own
+                ? own.Set
+                : groups.FirstOrDefault(g => !g.ReadOnly)?.Set;
         if (set is not null)
         {
+            _chosenSet = null;
             _form.Add(_section, set);
         }
+    }
+
+    /// <summary>Makes a new set and shows its page, so it can be named and given its characters at once.</summary>
+    private void NewSet()
+    {
+        _chosenSet = _form.NewSet();
+        _chosenSetLanded = _form.IsOwnSet(_chosenSet);
+        _confirmingSetDelete = false;
+        BuildList();
+        BuildDetail();
     }
 
     private void Act(Func<object, object?> action)
@@ -483,7 +599,7 @@ internal sealed class ListEditorView : Grid
     {
         var item = _form.Item;
         var group = item is null ? null : FindGroup(item);
-        var editable = group is { ReadOnly: false };
+        var editable = group is { ReadOnly: false } && _chosenSet is null;
         var at = group is null ? -1 : group.Items.ToList().FindIndex(i => ReferenceEquals(i, item));
         AddButton.IsEnabled = _form.Groups(_section).Any(g => !g.ReadOnly);
         DuplicateButton.IsEnabled = editable;
@@ -507,7 +623,19 @@ internal sealed class ListEditorView : Grid
         }
 
         _shownItem = _form.Item;
+        _shownSet = _chosenSet;
+        _userBoxes.Clear();
+        SetNameBox = null;
+        SetDescriptionBox = null;
+        SetDeleteButton = null;
         UpdateTools();
+
+        if (_chosenSet is { } chosenSet)
+        {
+            ShownFields = [];
+            BuildSetDetail(chosenSet);
+            return;
+        }
 
         if (_form.Item is not { } item || FindGroup(item) is not { } group)
         {
@@ -516,7 +644,7 @@ internal sealed class ListEditorView : Grid
             {
                 Text = _form.Groups(_section).Any(g => !g.ReadOnly)
                     ? $"No {_collection.Noun} selected. Add one with + Add."
-                    : $"There is no trigger set to hold {_collection.Plural} yet.",
+                    : $"There is no trigger set to hold {_collection.Plural} yet. Make one with + Set.",
                 Opacity = 0.7,
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -545,7 +673,33 @@ internal sealed class ListEditorView : Grid
         }
         else
         {
-            _detail.Children.Add(new TextBlock { Text = $"in {group.Label}", Foreground = DimInk, Margin = new Thickness(0, 0, 0, NativeTokens.Space4) });
+            // Where the item lives and who runs it, with the way to the set's page: an item in a set no character uses
+            // does nothing, and this line is where that is said.
+            var owner = group.Set;
+            var line = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, NativeTokens.Space4) };
+            line.Children.Add(new TextBlock { Text = $"in {group.Label} · {_form.UsageOf(owner)}", Foreground = DimInk, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, NativeTokens.Space8, 0) });
+            var open = new Button
+            {
+                Content = "Set…",
+                Padding = new Thickness(NativeTokens.Space8, NativeTokens.Hairline),
+                FontSize = NativeTokens.Small,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            ToolTip.SetTip(open, $"Rename {owner.Name}, or choose which characters use it");
+            AutomationProperties.SetName(open, $"Open set {owner.Name}");
+            open.Click += (_, _) => ChooseSet(owner);
+            line.Children.Add(open);
+            _detail.Children.Add(line);
+            if (!_form.IsUsed(owner))
+            {
+                _detail.Children.Add(new TextBlock
+                {
+                    Text = $"No character uses {owner.Name}, so this {_collection.Noun} does nothing yet. Open the set to choose who uses it.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontWeight = FontWeight.SemiBold,
+                    Margin = new Thickness(0, 0, 0, NativeTokens.Space4),
+                });
+            }
         }
 
         var shown = new List<string>();
@@ -594,6 +748,149 @@ internal sealed class ListEditorView : Grid
         }
 
         ShownFields = shown;
+    }
+
+    /// <summary>
+    /// A set's own page: its name and description (committed on Enter or leaving the box), what it holds, a check box
+    /// per character for who uses it, and Delete, which asks once first.
+    /// </summary>
+    private void BuildSetDetail(TriggerSet set)
+    {
+        _detail.Children.Add(new TextBlock { Text = set.Name, FontSize = NativeTokens.PageTitle - 2, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        _detail.Children.Add(new TextBlock { Text = $"Trigger set · {TriggerSetEditing.Holds(set)}", Foreground = DimInk, Margin = new Thickness(0, 0, 0, NativeTokens.Space4) });
+        _detail.Children.Add(new TextBlock { Text = TriggerSetEditing.Explainer, Foreground = DimInk, TextWrapping = TextWrapping.Wrap, FontSize = NativeTokens.PageSmall, Margin = new Thickness(0, 0, 0, NativeTokens.Space8) });
+
+        var name = new TextBox { Text = set.Name };
+        AutomationProperties.SetName(name, "Set name");
+        void CommitName()
+        {
+            if (_syncing || name.Text == set.Name)
+            {
+                return;
+            }
+
+            if (_form.RenameSet(set, name.Text ?? string.Empty) is { } refused)
+            {
+                name.Text = set.Name;
+                ToolTip.SetTip(name, refused);
+                ToolTip.SetIsOpen(name, true);
+            }
+        }
+
+        name.LostFocus += (_, _) => CommitName();
+        name.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                CommitName();
+                e.Handled = true;
+            }
+        };
+        _refreshers.Add(() =>
+        {
+            if (Rewritable(name))
+            {
+                name.Text = set.Name;
+            }
+        });
+        SetNameBox = name;
+        _detail.Children.Add(LabelledRow("Name", "What characters use it by; renaming it keeps every character using it.", name));
+
+        var description = new TextBox { Text = set.Description ?? string.Empty, PlaceholderText = "What these rules are for" };
+        AutomationProperties.SetName(description, "Set description");
+        void CommitDescription()
+        {
+            if (!_syncing && (description.Text ?? string.Empty) != (set.Description ?? string.Empty))
+            {
+                _form.DescribeSet(set, description.Text);
+            }
+        }
+
+        description.LostFocus += (_, _) => CommitDescription();
+        description.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                CommitDescription();
+                e.Handled = true;
+            }
+        };
+        _refreshers.Add(() =>
+        {
+            if (Rewritable(description))
+            {
+                description.Text = set.Description ?? string.Empty;
+            }
+        });
+        SetDescriptionBox = description;
+        _detail.Children.Add(LabelledRow("Description", null, description));
+
+        _detail.Children.Add(new TextBlock { Text = "USED BY", FontSize = NativeTokens.Small, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.8, Foreground = _tokens.Brush(_tokens.Header), Margin = new Thickness(0, NativeTokens.Space16, 0, NativeTokens.Space4) });
+        var users = _form.UsersOf(set);
+        if (users.Count == 0)
+        {
+            _detail.Children.Add(new TextBlock { Text = "There are no characters yet. Add one on Worlds & Characters, then tick it here.", Foreground = DimInk, TextWrapping = TextWrapping.Wrap });
+        }
+
+        foreach (var user in users)
+        {
+            var box = new CheckBox { Content = user.Name, IsChecked = user.Uses, Margin = new Thickness(0, NativeTokens.Space2) };
+            AutomationProperties.SetName(box, $"{user.Name} uses {set.Name}");
+            var character = user.Character;
+            box.IsCheckedChanged += (_, _) =>
+            {
+                if (!_syncing && box.IsChecked is { } on && on != TriggerSetEditing.Uses(character, set.Name))
+                {
+                    _form.Assign(character, set, on);
+                }
+            };
+            _refreshers.Add(() => box.IsChecked = TriggerSetEditing.Uses(character, set.Name));
+            _userBoxes.Add((user, box));
+            _detail.Children.Add(box);
+        }
+
+        var delete = new Button { Content = "Delete set…", Padding = new Thickness(NativeTokens.Space10, NativeTokens.Space4), Margin = new Thickness(0, NativeTokens.Space16, NativeTokens.Space8, 0) };
+        AutomationProperties.SetName(delete, $"Delete set {set.Name}");
+        var question = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, NativeTokens.Space16, 0, 0) };
+        delete.Click += (_, _) =>
+        {
+            if (!_confirmingSetDelete)
+            {
+                _confirmingSetDelete = true;
+                question.Text = $"Delete {_form.SetDeletion(set)}? Press again to delete.";
+                question.IsVisible = true;
+                delete.Content = "Delete";
+                return;
+            }
+
+            _confirmingSetDelete = false;
+            _chosenSet = null;
+            _form.DeleteSet(set);
+        };
+        SetDeleteButton = delete;
+        var foot = new WrapPanel { Orientation = Orientation.Horizontal };
+        foot.Children.Add(delete);
+        foot.Children.Add(question);
+        _detail.Children.Add(foot);
+    }
+
+    /// <summary>A set page's row: its label (with the help as a tooltip) and the box.</summary>
+    private static Grid LabelledRow(string label, string? help, Control control)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), Margin = new Thickness(0, NativeTokens.Space4), MinHeight = 34 };
+        var words = new TextBlock { Text = label, FontSize = NativeTokens.Label, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        if (help is not null)
+        {
+            ToolTip.SetTip(words, help);
+            ToolTip.SetTip(control, help);
+        }
+
+        grid.Children.Add(words);
+        control.VerticalAlignment = VerticalAlignment.Center;
+        control.HorizontalAlignment = HorizontalAlignment.Stretch;
+        SetColumn(control, 1);
+        grid.Children.Add(control);
+        return grid;
     }
 
     private static Grid Row(SettingsField field, Control control)
