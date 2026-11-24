@@ -806,6 +806,23 @@ public class SettingsWindowTests
         await Assert.That(harness.Commits).IsEqualTo(1);
     }
 
+    /// <summary>A character's page makes a set too, already ticked for that character, in one commit.</summary>
+    [Test]
+    public async Task ACharactersPageMakesANewSetItUses()
+    {
+        var harness = TwoWorlds();
+        var ticked = await Run(harness, "logging", window =>
+        {
+            window.NewSetLink!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            return window.SetBoxes.TryGetValue("New Set", out var box) && box.IsChecked == true;
+        });
+
+        await Assert.That(ticked).IsTrue();
+        await Assert.That(harness.Config.Worlds[0].Characters[0].TriggerSets).Contains("New Set");
+        await Assert.That(harness.Commits).IsEqualTo(1);
+    }
+
     /// <summary>A character's connect button asks the client for that session; the page never dials itself.</summary>
     [Test]
     public async Task TheConnectButtonAsksTheClient()

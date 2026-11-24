@@ -110,12 +110,12 @@ internal static class TimersScreenRenderer
     /// hints are derived from <paramref name="model"/> and <paramref name="focus"/> rather than
     /// written here, so the header cannot advertise an edit the screen doesn't offer.
     /// </summary>
-    internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
+    internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null, bool sets = false)
     {
         var title = $"[bold {Value}]Timers[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.ListHints, "F6", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
-            room: ScreenChrome.HeaderRoom(" " + title, width));
+            room: ScreenChrome.HeaderRoom(" " + title, width), sets: sets);
         return SpreadTitle(" " + title, hints, width);
     }
 
@@ -240,7 +240,8 @@ internal static class TimersScreenRenderer
     /// back to the editor on a narrow screen (see <see cref="ScreenChrome.SplitWidth"/>).
     /// </param>
     internal static List<string> ListColumn(
-        IReadOnlyList<TriggerSet> sets, int selected, ScreenFocus? focus = null, int width = ColumnWidth)
+        IReadOnlyList<TriggerSet> sets, int selected, ScreenFocus? focus = null, int width = ColumnWidth,
+        IReadOnlyList<WorldDefinition>? worlds = null)
     {
         ArgumentNullException.ThrowIfNull(sets);
 
@@ -259,7 +260,7 @@ internal static class TimersScreenRenderer
         var index = 0;
         foreach (var set in sets)
         {
-            lines.Add(ScreenChrome.SetHeading(set.Name, set.Timers.Count, "timer", "timers", width));
+            lines.Add(ScreenChrome.SetHeading(set.Name, set.Timers.Count, "timer", "timers", width, ScreenChrome.UsageOf(worlds, set.Name)));
 
             foreach (var timer in set.Timers)
             {
@@ -271,6 +272,11 @@ internal static class TimersScreenRenderer
 
         lines.Add(string.Empty);
         lines.AddRange(ScreenChrome.Buttons(Buttons(sets, selected), cursor, 0, entries.Count, width, movable: true));
+        if (worlds is not null)
+        {
+            lines.Add(ScreenChrome.SetsKeyRow());
+        }
+
         lines.Add(string.Empty);
         var picked = selected >= 0 && selected < entries.Count ? entries[selected].Timer : null;
         lines.AddRange(ScreenChrome.Legend(

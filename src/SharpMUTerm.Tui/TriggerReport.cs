@@ -39,14 +39,14 @@ internal static class TriggerReport
         if (resolved.Count == 0)
         {
             var none = orphans.Count > 0
-                ? $"no trigger set called {Join(orphans)} exists — F2 defines sets, F5 assigns them"
-                : $"no trigger set is assigned to {who} — F5 assigns one";
+                ? $"no trigger set called {Join(orphans)} exists — F2, then s, makes one and chooses who uses it"
+                : $"{who} uses no trigger set — F2, then s, makes one and chooses who uses it";
             return $"Automation: {none}.";
         }
 
         var counts = Counts(resolved);
         var tail = orphans.Count > 0
-            ? $"; {Join(orphans)} assigned but missing (F2 defines sets)"
+            ? $"; {Join(orphans)} assigned but missing (F2, then s, makes sets)"
             : string.Empty;
         return $"Automation: {Join(resolved.Select(s => s.Name).ToList())} — {counts}{tail}.";
     }
@@ -99,7 +99,7 @@ internal static class TriggerReport
         }
 
         lines.Add(live.Count == 0
-            ? "Nothing can match: F5 assigns a trigger set to this character, F2 adds rules to a set."
+            ? "Nothing can match: this character uses no trigger set. On F2, s makes a set and chooses who uses it."
             : "Each rule's regex is matched against a line's plain text — the ANSI is already stripped — "
               + "top to bottom; a rule with a route sends its line to that spawn window, which is created "
               + "the first time it matches.");

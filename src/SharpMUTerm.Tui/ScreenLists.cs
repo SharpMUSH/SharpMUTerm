@@ -109,8 +109,9 @@ internal static class ScreenLists
     /// It is a closed list over the configured set names, deliberately: unlike a spawn window (which
     /// comes into existence by being routed to), a set is a real object with rules, timers and character
     /// assignments hanging off it, so a name typed here could only ever be a set that does not exist.
-    /// Sets are made and unmade on F5, where they are listed as things in their own right — including
-    /// the empty ones, which a flattened pane cannot show.
+    /// Sets are made, renamed and given their characters on the trigger sets screen (<c>s</c> from this one) and on
+    /// F5, where they are listed as things in their own right — including the empty ones, which a flattened pane
+    /// cannot show.
     /// </para>
     /// <para>
     /// Writing it moves the item: out of its current set's list, onto the end of the target's. It is a

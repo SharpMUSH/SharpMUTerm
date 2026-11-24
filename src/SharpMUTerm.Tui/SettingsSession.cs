@@ -97,11 +97,15 @@ internal sealed class SettingsSession
     /// <see cref="ScreenEdits"/> for why that is where it belongs. Null in the tests that only exercise
     /// navigation.
     /// </param>
-    internal SettingsSession(Func<ScreenSelection, ScreenModel> model, Action? save = null)
+    /// <param name="edits">
+    /// The log to commit through, when this screen is opened over another and its changes belong to that screen's undo
+    /// history and closing review (the trigger sets over F2); null for a log of its own.
+    /// </param>
+    internal SettingsSession(Func<ScreenSelection, ScreenModel> model, Action? save = null, ScreenEdits? edits = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         _model = model;
-        Edits = new ScreenEdits(save);
+        Edits = edits ?? new ScreenEdits(save);
         Selection = new ScreenSelection(model(new ScreenSelection(1)).PaneCount);
     }
 
@@ -112,6 +116,12 @@ internal sealed class SettingsSession
     /// The screen's one path into config, and the log of the deletions its host reviews on close.
     /// </summary>
     internal ScreenEdits Edits { get; }
+
+    /// <summary>
+    /// Opens the trigger sets screen over this one, on <c>s</c> while navigating; null on a screen that has no sets to
+    /// offer. A plain letter is safe for the reason <c>i</c> is: an open field edit has the whole keyboard.
+    /// </summary>
+    internal Action? OpenSets { get; set; }
 
     /// <summary>Whether a field edit is open — the screens' one modal state.</summary>
     internal bool IsEditing => _edit is not null;
@@ -259,6 +269,10 @@ internal sealed class SettingsSession
 
             case ConsoleKey.R when key.Modifiers == 0:
                 return Reset(model);
+
+            case ConsoleKey.S when key.Modifiers == 0 && OpenSets is { } openSets:
+                openSets();
+                return ScreenAction.Consumed;
 
             case ConsoleKey.Spacebar:
                 return Toggle(model);

@@ -207,12 +207,12 @@ internal static class KeypadScreenRenderer
     /// hints are derived from <paramref name="model"/> and <paramref name="focus"/> rather than
     /// written here, so the header cannot advertise an edit the screen doesn't offer.
     /// </summary>
-    internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null)
+    internal static string HeaderLine(int width, ScreenModel? model = null, ScreenFocus? focus = null, bool sets = false)
     {
         var title = $"[bold {Value}]Keypad & hotkeys[/]";
         var hints = ScreenChrome.Hints(
             ScreenChrome.SingleListHints, "F4", model?.HasEditableRow ?? false, focus, model?.HasRemovableRow ?? false,
-            room: ScreenChrome.HeaderRoom(" " + title, width));
+            room: ScreenChrome.HeaderRoom(" " + title, width), sets: sets);
         return SpreadTitle(" " + title, hints, width);
     }
 
@@ -471,7 +471,8 @@ internal static class KeypadScreenRenderer
         ScreenFocus? focus = null,
         IReadOnlyList<TriggerSet>? sets = null,
         int selected = -1,
-        int width = HotkeysColumnWidth)
+        int width = HotkeysColumnWidth,
+        IReadOnlyList<WorldDefinition>? worlds = null)
     {
         ArgumentNullException.ThrowIfNull(macros);
 
@@ -492,7 +493,7 @@ internal static class KeypadScreenRenderer
             if (owner is not null && !ReferenceEquals(owner, heading))
             {
                 heading = owner;
-                lines.Add(ScreenChrome.SetHeading(owner.Name, owner.Macros.Count, "binding", "bindings", width));
+                lines.Add(ScreenChrome.SetHeading(owner.Name, owner.Macros.Count, "binding", "bindings", width, ScreenChrome.UsageOf(worlds, owner.Name)));
             }
 
             lines.Add(ScreenChrome.Cursor(
@@ -517,13 +518,18 @@ internal static class KeypadScreenRenderer
         {
             if (set.Macros.Count == 0)
             {
-                lines.Add(ScreenChrome.SetHeading(set.Name, 0, "binding", "bindings", width));
+                lines.Add(ScreenChrome.SetHeading(set.Name, 0, "binding", "bindings", width, ScreenChrome.UsageOf(worlds, set.Name)));
             }
         }
 
         lines.Add(string.Empty);
         lines.AddRange(ScreenChrome.Buttons(
             Buttons(keys, sets, selected), cursor, 0, macros.Count, width, movable: sets is not null));
+        if (worlds is not null)
+        {
+            lines.Add(ScreenChrome.SetsKeyRow());
+        }
+
         return ScreenChrome.Choices(lines, cursor.Edit, width);
     }
 

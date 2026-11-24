@@ -7,6 +7,15 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Changed
+
+- Trigger sets are made where rules are written. On F2, F3, F4 and F6, `s` opens a trigger sets screen: make a set
+  (the character in front uses it at once), rename it (every character's reference follows), describe it, delete it,
+  and tick which characters use it. Each set's heading now says who uses it, and a set nobody uses says so in the
+  warning colour, since its rules do nothing. Undo on the list screen covers changes made there. The window's
+  settings get the same: a *+ Set* button and a page per set on Triggers, Aliases, Keypad and Timers, a *Set…* link
+  from a rule to its set, and *+ New set* on a character's page. Nothing tells you to go to F5 for a set any more.
+
 ### Fixed
 
 - A character whose name has a space, connected as `"first last"` on a MUSH, gets a session log again. The quotes

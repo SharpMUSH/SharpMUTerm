@@ -2542,6 +2542,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _settings.SimulateKey(Stroke('\0', ConsoleKey.Escape));
         }
 
+        // The trigger sets screen, reached the way a player reaches it: F2, then `s`, which opens it on the set holding
+        // the selected rule, with who uses each set beside it.
+        if (string.Equals(view, "trigger-sets", StringComparison.OrdinalIgnoreCase))
+        {
+            // The window has no `s`: its list pages make sets with + Set and open one from its heading, so the view
+            // opens the native F2 on the first set's page.
+            if (_config.TriggerSets.Count > 0 && TryOpenNativeSettings(Section("triggers"), _config.TriggerSets[0]))
+            {
+                SyncInputWidth();
+                return RenderFrame();
+            }
+
+            _settings.OpenForSnapshot(ConsoleKey.F2, TriggersScreen());
+            _settings.SimulateKey(Stroke('s', ConsoleKey.S));
+            SyncInputWidth();
+            return RenderFrame();
+        }
+
         // The MSSP report, reached the only way a user can reach it: open F5 and press `i` on the
         // selected world. Nothing about the screen is faked here — the key runs the real button, which
         // opens the real binding over the real overlay.
@@ -3693,7 +3711,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         foreach (var orphan in TriggerReport.Orphans(character.TriggerSets, sets))
         {
             Notice(
-                $"{who} is assigned a trigger set called {orphan}, and no such set exists — F2 defines sets, F5 assigns them",
+                $"{who} uses a trigger set called {orphan}, and no such set exists — make it on F2 with s, or untick it on F5",
                 MessageSeverity.Warning,
                 "⌃P",
                 new NoticeAction("screen:worlds", "Open F5"));
@@ -8353,6 +8371,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var session = new SettingsSession(selection =>
             TriggersScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0), RouteTargets()),
             SaveConfiguration);
+        session.OpenSets = () => OpenTriggerSets(session, s => s.Triggers.Count);
         if (editPattern is { } rule)
         {
             session.Selection.Seed(0, rule);
@@ -8368,7 +8387,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             session.Focus(),
             _system.DesktopDimensions.Height,
             _theme,
-            TriggerTestLines()));
+            TriggerTestLines(),
+            worlds: _config.Worlds));
     }
 
     /// <summary>Opens the F3 Aliases screen: the alias list, then the alias's toggles.</summary>
@@ -8377,6 +8397,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var session = new SettingsSession(selection =>
             AliasesScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0)),
             SaveConfiguration);
+        session.OpenSets = () => OpenTriggerSets(session, s => s.Aliases.Count);
 
         return new ScreenBinding(session, () => AliasesScreenView.Build(
             _config.TriggerSets,
@@ -8384,7 +8405,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _system.DesktopDimensions.Width,
             _screens,
             session.Focus(),
-            _system.DesktopDimensions.Height));
+            _system.DesktopDimensions.Height,
+            worlds: _config.Worlds));
     }
 
     /// <summary>
@@ -8397,6 +8419,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var session = new SettingsSession(selection =>
             KeypadScreenRenderer.Model(Host.Keys, Macros(), _config.TriggerSets, selection.SelectionIn(0)),
             SaveConfiguration);
+        session.OpenSets = () => OpenTriggerSets(session, s => s.Macros.Count);
 
         return new ScreenBinding(session, () => KeypadScreenView.Build(
             Host.Keys,
@@ -8406,7 +8429,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             _system.DesktopDimensions.Width,
             _screens,
             session.Focus(),
-            _system.DesktopDimensions.Height));
+            _system.DesktopDimensions.Height,
+            worlds: _config.Worlds));
     }
 
     /// <summary>Opens the F6 Timers screen: the timer list, then the timer's toggles.</summary>
@@ -8415,10 +8439,69 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var session = new SettingsSession(selection =>
             TimersScreenRenderer.Model(_config.TriggerSets, selection.SelectionIn(0)),
             SaveConfiguration);
+        session.OpenSets = () => OpenTriggerSets(session, s => s.Timers.Count);
 
         return new ScreenBinding(session, () => TimersScreenView.Build(
             _config.TriggerSets,
             session.Selection.SelectionIn(0),
+            _system.DesktopDimensions.Width,
+            _screens,
+            session.Focus(),
+            _system.DesktopDimensions.Height,
+            worlds: _config.Worlds));
+    }
+
+    /// <summary>
+    /// Opens the trigger sets screen over a list screen (<c>s</c> on F2, F3, F4, F6), on the set that holds the rule the
+    /// list has selected, committing through that screen's log so its undo and closing review cover the sets too.
+    /// </summary>
+    /// <param name="parent">The list screen's session.</param>
+    /// <param name="count">How many of the list's rows each set holds, in the order the list flattens them.</param>
+    private void OpenTriggerSets(SettingsSession parent, Func<TriggerSet, int> count)
+    {
+        var selected = parent.Selection.SelectionIn(0);
+        var seed = 0;
+        for (var i = 0; i < _config.TriggerSets.Count; i++)
+        {
+            var held = count(_config.TriggerSets[i]);
+            if (selected < held)
+            {
+                seed = i;
+                break;
+            }
+
+            selected -= held;
+        }
+
+        _settings.OpenDetail(TriggerSetsScreen(parent.Edits, seed));
+    }
+
+    /// <summary>The character a set made on the trigger sets screen is used by: the one in front, or none.</summary>
+    private CharacterDefinition? CharacterInFront()
+    {
+        var world = ActiveWorldIndex();
+        var character = ActiveCharacterIndex();
+        return world >= 0 && world < _config.Worlds.Count
+            && character >= 0 && character < _config.Worlds[world].Characters.Count
+                ? _config.Worlds[world].Characters[character]
+                : null;
+    }
+
+    private ScreenBinding TriggerSetsScreen(ScreenEdits edits, int seed)
+    {
+        var usedBy = CharacterInFront();
+        var session = new SettingsSession(
+            selection => TriggerSetsScreenRenderer.Model(
+                _config.Worlds, _config.TriggerSets, selection.SelectionIn(TriggerSetsScreenRenderer.SetsPane), usedBy),
+            SaveConfiguration,
+            edits);
+        session.Selection.Seed(TriggerSetsScreenRenderer.SetsPane, seed);
+
+        return new ScreenBinding(session, () => TriggerSetsScreenView.Build(
+            _config.Worlds,
+            _config.TriggerSets,
+            session.Selection.SelectionIn(TriggerSetsScreenRenderer.SetsPane),
+            usedBy,
             _system.DesktopDimensions.Width,
             _screens,
             session.Focus(),

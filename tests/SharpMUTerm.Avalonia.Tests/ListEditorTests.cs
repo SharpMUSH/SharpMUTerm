@@ -3,6 +3,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SharpMUTerm.Client.Contributions;
 using SharpMUTerm.Client.Settings;
 using SharpMUTerm.Core.Automation;
@@ -256,6 +257,104 @@ public class ListEditorTests
         await Assert.That(shown.Item2).Contains("gag");
         await Assert.That(shown.Item2).DoesNotContain("pattern");
     }
+
+    [Test]
+    public async Task PlusSetMakesASetUsedByTheCharacterInFrontAndOpensItsPage()
+    {
+        var harness = new Harness();
+        var corvid = new CharacterDefinition { Name = "Corvid" };
+        harness.Config.Worlds = [new WorldDefinition { Name = "Aetherfall", Host = "a.example", Characters = { corvid } }];
+        var (shown, sets) = await RunWith(harness, "triggers", corvid, window =>
+        {
+            var editor = window.ListEditor!;
+            Click(editor.NewSetButton);
+            Dispatcher.UIThread.RunJobs();
+            return (editor.ShownSet?.Name, harness.Config.TriggerSets.Select(s => s.Name).ToArray());
+        });
+
+        await Assert.That(shown).IsEqualTo(TriggerSetEditing.NewSetName);
+        await Assert.That(sets).Contains(TriggerSetEditing.NewSetName);
+        await Assert.That(corvid.TriggerSets).IsEquivalentTo(new[] { TriggerSetEditing.NewSetName });
+    }
+
+    [Test]
+    public async Task TheSetPageRenamesTicksUsersAndDeletes()
+    {
+        var harness = new Harness();
+        var corvid = new CharacterDefinition { Name = "Corvid", TriggerSets = ["public"] };
+        var wren = new CharacterDefinition { Name = "Wren" };
+        harness.Config.Worlds = [new WorldDefinition { Name = "Aetherfall", Host = "a.example", Characters = { corvid, wren } }];
+        var (users, renamed, after) = await RunWith(harness, "triggers", corvid, window =>
+        {
+            var editor = window.ListEditor!;
+            editor.ChooseSet(harness.Own);
+            Dispatcher.UIThread.RunJobs();
+            var users = editor.SetUserBoxes.Select(u => (u.User.Character.Name, u.Box.IsChecked == true)).ToArray();
+
+            editor.SetNameBox!.Text = "Channels";
+            editor.SetNameBox.RaiseEvent(new global::Avalonia.Input.KeyEventArgs { RoutedEvent = global::Avalonia.Input.InputElement.KeyDownEvent, Key = global::Avalonia.Input.Key.Enter, Source = editor.SetNameBox });
+            Dispatcher.UIThread.RunJobs();
+            var renamed = (harness.Own.Name, corvid.TriggerSets.ToArray());
+
+            editor.SetUserBoxes.Single(u => u.User.Character == wren).Box.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+
+            Click(editor.SetDeleteButton!);
+            Dispatcher.UIThread.RunJobs();
+            Click(editor.SetDeleteButton!);
+            Dispatcher.UIThread.RunJobs();
+            return (users, renamed, (harness.Config.TriggerSets.Count, wren.TriggerSets.Count, corvid.TriggerSets.Count));
+        });
+
+        await Assert.That(users).IsEquivalentTo(new[] { ("Corvid", true), ("Wren", false) });
+        await Assert.That(renamed.Name).IsEqualTo("Channels");
+        await Assert.That(renamed.Item2).IsEquivalentTo(new[] { "Channels" });
+        await Assert.That(after).IsEqualTo((0, 0, 0));
+    }
+
+    [Test]
+    public async Task ARuleInASetNobodyUsesSaysSo()
+    {
+        var harness = new Harness();
+        harness.Config.Worlds = [new WorldDefinition { Name = "Aetherfall", Host = "a.example", Characters = { new CharacterDefinition { Name = "Corvid" } } }];
+        var text = await Run(harness, "triggers", window =>
+        {
+            window.ListEditor!.Choose(harness.Own.Triggers[0]);
+            Dispatcher.UIThread.RunJobs();
+            return string.Join("\n", window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text));
+        });
+
+        await Assert.That(text).Contains("No character uses public");
+    }
+
+    private static Task<T> RunWith<T>(Harness harness, string initial, CharacterDefinition character, Func<SettingsWindow, T> body) =>
+        TerminalViewTests.Session.Dispatch(() =>
+        {
+            SettingsForm? form = null;
+            form = new SettingsForm(
+                BuiltInSettings.All,
+                harness.Config,
+                change =>
+                {
+                    change();
+                    form!.NotifyChanged();
+                },
+                _ => { },
+                initial,
+                isDark: true,
+                character: character);
+            var window = new SettingsWindow(form);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            try
+            {
+                return body(window);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }, CancellationToken.None);
 
     private static Task<T> Run<T>(Harness harness, string initial, Func<SettingsWindow, T> body, object? item = null) =>
         TerminalViewTests.Session.Dispatch(() =>
