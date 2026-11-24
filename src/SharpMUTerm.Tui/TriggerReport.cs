@@ -98,8 +98,10 @@ internal static class TriggerReport
             lines.Add($"  set {orphan} — assigned to {who} but no such set exists (F2 defines sets)");
         }
 
-        lines.Add(live.Count == 0
+        lines.Add(live.Count == 0 && assigned.Count == 0
             ? "Nothing can match: this character uses no trigger set. Choose one on F5, or make one on F2 with s."
+            : live.Count == 0
+            ? "Nothing can match: its sets hold no trigger. F2 adds one."
             : "Each rule's regex is matched against a line's plain text — the ANSI is already stripped — "
               + "top to bottom; a rule with a route sends its line to that spawn window, which is created "
               + "the first time it matches.");

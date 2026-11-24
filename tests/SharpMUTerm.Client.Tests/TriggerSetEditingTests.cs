@@ -129,4 +129,26 @@ public class TriggerSetEditingTests
         TriggerSetEditing.Use(rookery, "COMMS", on: false);
         await Assert.That(rookery.TriggerSets).IsEquivalentTo(new[] { "Combat" });
     }
+    [Test]
+    public async Task SetsMadeAndRenamedBeforeTheirCommitsLandAreNamedApartAndUsedByTheirNewNames()
+    {
+        var config = Config();
+        var thistle = config.Worlds[0].Characters[2];
+        var queued = new List<Action>();
+        var form = new SettingsForm(
+            BuiltInSettings.All, config, change => change(), _ => { }, "triggers", isDark: true, character: thistle)
+        {
+            CommitAs = (change, _) => queued.Add(change),
+        };
+
+        var first = form.NewSet();
+        var second = form.NewSet();
+        await Assert.That(form.RenameSet(config.TriggerSets[1], "Market")).IsNull();
+        form.Assign(thistle, config.TriggerSets[1], on: true);
+        queued.ForEach(change => change());
+
+        await Assert.That(first.Name).IsNotEqualTo(second.Name);
+        await Assert.That(thistle.TriggerSets).Contains("Market");
+        await Assert.That(thistle.TriggerSets).DoesNotContain("Trade");
+    }
 }

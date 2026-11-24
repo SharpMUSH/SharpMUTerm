@@ -567,7 +567,8 @@ public sealed partial class SettingsForm
             ? TriggerPreview.Run(_context.Lines, trigger.MatchType, pattern ?? trigger.Pattern, trigger.CaseSensitive, samples)
             : null;
 
-    private bool IsPackageSet(TriggerSet set) => _config.Packages.Any(p => p.Sets.Contains(set));
+    /// <summary>Whether <paramref name="set"/> is an installed package's, which no edit may change.</summary>
+    public bool IsPackageSet(TriggerSet set) => _config.Packages.Any(p => p.Sets.Contains(set));
 
     private static IEnumerable<object> ItemsOf(TriggerSet set) =>
         set.Triggers.Cast<object>().Concat(set.Aliases).Concat(set.Timers).Concat(set.Macros);

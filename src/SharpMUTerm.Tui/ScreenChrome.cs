@@ -62,7 +62,11 @@ internal static class ScreenChrome
                 editing.Add(new LadderKey("⇥", "next field", "next", Drop: 1));
             }
 
-            editing.Add(new LadderKey(fkey, "close", Drop: 3));
+            // A screen opened over another closes with Esc, which here reverts the edit: one key, one meaning.
+            if (!back)
+            {
+                editing.Add(new LadderKey(fkey, "close", Drop: 3));
+            }
             return HintMarkup(KeyLadder.Choose(editing, room), fkey, closesWithEsc: false);
         }
 

@@ -49,6 +49,8 @@ public sealed partial class SettingsForm
         Commit(
             () =>
             {
+                // Named again as it lands: two sets made before either commit would otherwise share a name.
+                set.Name = WorldEditing.Available(_config.TriggerSets.ToArray().Select(s => s.Name), TriggerSetEditing.NewSetName);
                 _config.TriggerSets = [.. _config.TriggerSets, set];
                 if (owner is not null)
                 {

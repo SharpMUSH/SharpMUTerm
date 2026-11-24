@@ -564,7 +564,8 @@ internal sealed class ListEditorView : Grid
     private void Add()
     {
         var groups = _form.Groups(_section);
-        var set = _chosenSet is { } chosen && _form.IsOwnSet(chosen)
+        // A set made a moment ago is the destination even before its commit lands: the add is queued behind it.
+        var set = _chosenSet is { } chosen && !_form.IsPackageSet(chosen)
             ? chosen
             : (_form.Item is { } item ? FindGroup(item) : null) is { ReadOnly: false } own
                 ? own.Set

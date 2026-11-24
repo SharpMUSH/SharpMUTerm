@@ -8479,12 +8479,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// <summary>The character a set made on the trigger sets screen is used by: the one in front, or none.</summary>
     private CharacterDefinition? CharacterInFront()
     {
-        var world = ActiveWorldIndex();
-        var character = ActiveCharacterIndex();
-        return world >= 0 && world < _config.Worlds.Count
-            && character >= 0 && character < _config.Worlds[world].Characters.Count
-                ? _config.Worlds[world].Characters[character]
-                : null;
+        // The focused window's owner (the command line's rule), matched on the key: the index helpers fall back to 0,
+        // which would name the first character when nobody is in front.
+        var owner = HistoryOwner();
+        var key = owner.Length > 0 ? owner : ActiveCharacterKey();
+        return _config.Worlds
+            .SelectMany(w => w.Characters.Select(c => (Key: $"{w.Name}.{c.Name}", Character: c)))
+            .FirstOrDefault(x => x.Key == key).Character;
     }
 
     private ScreenBinding TriggerSetsScreen(ScreenEdits edits, int seed)
