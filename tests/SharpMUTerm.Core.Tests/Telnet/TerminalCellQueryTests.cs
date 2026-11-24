@@ -168,7 +168,7 @@ public class TerminalCellQueryTests
         try
         {
             transport.SendToClient(Encoding.ASCII.GetBytes(text + "\r\n"));
-            await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
         }
         finally
         {

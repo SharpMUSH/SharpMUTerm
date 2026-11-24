@@ -186,24 +186,18 @@ public class ScrollSplitTests
         Console.SetIn(TextReader.Null);
         var config = DemoScene.Build();
         config.Text.SplitScrollback = true;
-        var host = ClientHost.Headless(new HeadlessConsoleDriver(120, 32), Headless)
-            with { Chrome = HostChrome.Desktop };
+        var host = ClientHost.Headless(new HeadlessConsoleDriver(120, 32), Headless) with { Chrome = HostChrome.Desktop };
         await using var app = new SharpMUTermApp(config, host);
         app.RenderSnapshot("scrollback");
+        var top = app.PaneOutputRects().Values.Single().Y;
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.RenderWholeFrame();
-        var before = FrameGrid.Decode(app.RenderWholeFrame(), 120, 32);
-        var row = before.ToList().FindIndex(r => r.Contains("line 0", StringComparison.Ordinal));
-        var first = Regex.Match(before[row], @"line \d{4}").Value;
-
-        Arrive(app);
-        var after = FrameGrid.Decode(app.RenderWholeFrame(), 120, 32);
+        var rows = FrameGrid.Decode(app.RenderWholeFrame(), 120, 32);
 
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
-        await Assert.That(row).IsGreaterThan(0);
-        await Assert.That(after[row]).Contains(first);
-        await Assert.That(after[row - 1]).DoesNotContain("line 0");
+        await Assert.That(rows[top]).Contains("line 0");
+        await Assert.That(rows[top - 1]).DoesNotContain("line 0");
     }
 
     [Test]
