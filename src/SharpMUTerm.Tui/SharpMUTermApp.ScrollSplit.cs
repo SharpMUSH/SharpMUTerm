@@ -323,7 +323,7 @@ internal sealed partial class SharpMUTermApp
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill);
         history.Rows(GridLength.Star(1)).Columns(GridLength.Star(1));
-        history.Place(ScrollViewFor(windowId, live), 0, 0, 1, 1);
+        history.Place(InnerView(ScrollViewFor(windowId, live)), 0, 0, 1, 1);
         var surface = history.Build();
         surface.BackgroundColor = HistoryPlaneColor(windowId);
         _scrollHistorySurfaces[windowId] = surface;
@@ -331,6 +331,22 @@ internal sealed partial class SharpMUTermApp
         grid.Place(bar, 1, 0, 1, 1);
         grid.Place(ScrollViewFor(TailRegionKey(windowId), tail), 2, 0, 1, 1);
         return grid.Build();
+    }
+
+    /// <summary>
+    /// A window's own viewport placed inside a split (scrolled back or frozen). Outside one it is the tab's content and
+    /// carries the gutter's top row (<see cref="ApplyContentMargin"/>); inside one the split's grid is the tab's content
+    /// and carries that row, so the kept viewport must give it up, or the history starts a row lower than the pane did
+    /// and the text jumps down as the split opens.
+    /// </summary>
+    private static ScrollablePanelControl InnerView(ScrollablePanelControl view)
+    {
+        if (view.Margin.Top != 0)
+        {
+            view.Margin = new Margin(view.Margin.Left, 0, view.Margin.Right, view.Margin.Bottom);
+        }
+
+        return view;
     }
 
     private MarkupControl ScrollTailFor(string windowId)

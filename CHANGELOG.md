@@ -21,6 +21,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ### Fixed
 
+- In the window, scrolled-back or frozen text no longer drops a row when the pane splits. A blank row used to appear
+  above the history, so the text jumped down as the band opened.
 - Dragging a pane's scrollbar in the window no longer opens the scrolled-back band under the pointer. The band used to
   appear mid-drag, which moved the scrollbar away from the pointer and redrew the pane on every movement. The pane now
   does not split when the scrollbar is let go either: the band appears with the first new line that arrives while you

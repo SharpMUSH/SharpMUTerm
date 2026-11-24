@@ -12413,7 +12413,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         grid.Rows(GridLength.Star(3), GridLength.Cells(1), GridLength.Star(1)).Columns(GridLength.Star(1));
         grid.Place(ScrollViewFor(FrozenRegionKey(windowId), frozen), 0, 0, 1, 1);
         grid.Place(bar, 1, 0, 1, 1);
-        grid.Place(ScrollViewFor(windowId, live), 2, 0, 1, 1);
+        grid.Place(InnerView(ScrollViewFor(windowId, live)), 2, 0, 1, 1);
         return grid.Build();
     }
 
