@@ -39,8 +39,8 @@ internal static class TriggerReport
         if (resolved.Count == 0)
         {
             var none = orphans.Count > 0
-                ? $"no trigger set called {Join(orphans)} exists — F2, then s, makes one and chooses who uses it"
-                : $"{who} uses no trigger set — F2, then s, makes one and chooses who uses it";
+                ? $"no trigger set called {Join(orphans)} exists — F2, then s, makes one"
+                : $"{who} uses no trigger set — choose one on F5, or make one on F2 with s";
             return $"Automation: {none}.";
         }
 
@@ -99,7 +99,7 @@ internal static class TriggerReport
         }
 
         lines.Add(live.Count == 0
-            ? "Nothing can match: this character uses no trigger set. On F2, s makes a set and chooses who uses it."
+            ? "Nothing can match: this character uses no trigger set. Choose one on F5, or make one on F2 with s."
             : "Each rule's regex is matched against a line's plain text — the ANSI is already stripped — "
               + "top to bottom; a rule with a route sends its line to that spawn window, which is created "
               + "the first time it matches.");

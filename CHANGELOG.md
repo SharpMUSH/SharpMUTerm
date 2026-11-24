@@ -14,7 +14,7 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   and tick which characters use it. Each set's heading now says who uses it, and a set nobody uses says so in the
   warning colour, since its rules do nothing. Undo on the list screen covers changes made there. The window's
   settings get the same: a *+ Set* button and a page per set on Triggers, Aliases, Keypad and Timers, a *Set…* link
-  from a rule to its set, and *+ New set* on a character's page. Nothing tells you to go to F5 for a set any more.
+  from a rule to its set, and *+ New set* on a character's page. A character's own page (F5) still chooses its sets.
 
 ### Fixed
 
