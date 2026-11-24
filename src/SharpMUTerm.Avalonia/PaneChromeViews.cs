@@ -513,9 +513,46 @@ internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
             yield break;
         }
 
-        yield return new EdgeRule(NativeTokens.HorizontalRule(this, 0, 0, size.Width), Tokens.Rule);
+        var top = BandTop(size.Height);
+        yield return new EdgeRule(NativeTokens.HorizontalRule(this, top, 0, size.Width), Tokens.Rule);
         yield return new EdgeRule(NativeTokens.HorizontalRule(this, size.Height - NativeTokens.DevicePixel(this), 0, size.Width), Tokens.Rule);
     }
+
+    /// <summary>
+    /// The band's height in logical pixels: the mockups' 40, at every font size. The client gives it whole rows
+    /// (<see cref="RowsFor"/>); the part of a row it does not need is drawn above it in the history's plane.
+    /// </summary>
+    internal const double BandHeight = 40;
+
+    /// <summary>The rows a band of <see cref="BandHeight"/> needs at a cell <paramref name="cellHeight"/> tall, drawn at <paramref name="scale"/>.</summary>
+    internal static int RowsFor(double cellHeight, double scale) =>
+        cellHeight <= 0 ? 2 : Math.Max(1, (int)Math.Ceiling((BandHeight * Math.Max(0.1, scale) / cellHeight) - 0.001));
+
+    /// <summary>Where the band begins in a view <paramref name="height"/> tall: at its foot, under what of the rows it leaves.</summary>
+    private static double BandTop(double height) => Math.Max(0, Math.Round(height - BandHeight));
+
+    /// <summary>
+    /// How much of the band's right end, in its own pixels, the pane's scrollbar takes: the button stays left of it, so a
+    /// press there is the bar's (the band passes every press but the button's on to the cells).
+    /// </summary>
+    internal double ClearRight
+    {
+        get => _clearRight;
+        set
+        {
+            if (Math.Abs(_clearRight - value) > 0.01)
+            {
+                _clearRight = value;
+                Lay();
+                InvalidateVisual();
+            }
+        }
+    }
+
+    private double _clearRight;
+
+    /// <summary>The plane the rows above the band are drawn in: the history's, read off the cells above. Internal for tests.</summary>
+    internal Color? Above { get; set; }
 
     private Rect _button;
     private bool _hover;
@@ -538,7 +575,7 @@ internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
     internal Rect Button => _button;
 
     /// <summary>The band's words and button: the mockups' 12 px over the output's 13.</summary>
-    private double Size => (double.IsNaN(Height) ? Bounds.Height : Height) >= 20 ? NativeTokens.Caption : NativeTokens.Small;
+    private double Size => Math.Min(BandHeight, double.IsNaN(Height) ? Bounds.Height : Height) >= 20 ? NativeTokens.Caption : NativeTokens.Small;
 
     private string ButtonText => $"{ScrollBandModel.Action}  {NativeKeys.Words(ScrollBandModel.ReturnKey)}";
 
@@ -577,9 +614,11 @@ internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
     {
         var width = double.IsNaN(Width) ? Bounds.Width : Width;
         var height = double.IsNaN(Height) ? Bounds.Height : Height;
+        var top = BandTop(height);
+        var band = height - top;
         var w = PanelText.Measure(ButtonText, Size, bold: true) + 20;
-        var h = Math.Max(4, Math.Min(height - 4, 24));
-        _button = new Rect(Math.Max(0, width - w - TextInset), Math.Round((height - h) / 2), w, h);
+        var h = Math.Max(4, Math.Min(band - 4, 24));
+        _button = new Rect(Math.Max(0, width - w - Math.Max(TextInset, ClearRight + 4)), top + Math.Round((band - h) / 2), w, h);
     }
 
     public bool HitTest(Point point) => Interactive && _button.Contains(point);
@@ -637,15 +676,21 @@ internal sealed class ScrollBandView : Control, ICustomHitTest, IEdgeRules
             return;
         }
 
-        var bounds = new Rect(Bounds.Size);
+        var top = BandTop(Bounds.Height);
+        if (top > 0 && Above is { } above)
+        {
+            context.FillRectangle(new SolidColorBrush(above), new Rect(0, 0, Bounds.Width, top));
+        }
+
+        var bounds = new Rect(0, top, Bounds.Width, Bounds.Height - top);
         var plane = Tokens.Raised;
         context.FillRectangle(new SolidColorBrush(plane), bounds);
         var rule = new SolidColorBrush(Tokens.Rule);
-        context.FillRectangle(rule, NativeTokens.HorizontalRule(this, 0, 0, bounds.Width));
-        context.FillRectangle(rule, NativeTokens.HorizontalRule(this, bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
+        context.FillRectangle(rule, NativeTokens.HorizontalRule(this, top, 0, bounds.Width));
+        context.FillRectangle(rule, NativeTokens.HorizontalRule(this, Bounds.Height - NativeTokens.DevicePixel(this), 0, bounds.Width));
 
         var size = Size;
-        var middle = bounds.Height / 2;
+        var middle = bounds.Y + (bounds.Height / 2);
         var x = TextInset;
         var room = _button.X - 12;
         x += PanelText.Draw(context, band.Model.Lead(band.Count), x, middle, size, NativeTabStrip.Held(Tokens.Text, plane), true, room - x);

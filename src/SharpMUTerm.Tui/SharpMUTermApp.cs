@@ -3798,13 +3798,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var session = _sessions.Find(sessionKey);
         if (session is null)
         {
-            if (FindCharacter(sessionKey) is not { } found)
+            if (FindCharacter(sessionKey) is { } found)
+            {
+                session = OpenSession(found.World, found.Character);
+            }
+
+            // A world with no character is opened as itself (its session key is its name), the way /connect opened it.
+            else if (_config.Worlds.FirstOrDefault(w => string.Equals(w.Name, sessionKey, StringComparison.Ordinal)) is { } world)
+            {
+                session = OpenSession(world, null);
+            }
+            else
             {
                 Notice($"no character called {Snippet(DisplayName(sessionKey))} is configured — F5 adds one");
                 return;
             }
 
-            session = OpenSession(found.World, found.Character);
             BindSession(session, OpenSessionWindow(session));
         }
         else
@@ -4051,7 +4060,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// buffer, split at the freeze point, so the lines above it come off the pinned half and any beyond
     /// it off the live tail.
     /// </summary>
-    private List<(ScrollablePanelControl Panel, int Rows)> RowsToKeepReadingPosition(
+    private List<(ScrollablePanelControl Panel, int Target)> RowsToKeepReadingPosition(
         string windowId, List<PaneLine> buffer, int excess)
     {
         var result = new List<(ScrollablePanelControl, int)>();
@@ -4080,7 +4089,10 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             var rows = MeasureRows(buffer, from, panel.ViewportWidth, like, count);
             if (rows > 0)
             {
-                result.Add((panel, rows));
+                // Where the viewport is to end up, not how far to move it: the re-feed can clamp the offset against the
+                // shorter content first, and a move by the trimmed rows from there lands short by the clamp — which is
+                // every reader within a trim's worth of rows of the live tail.
+                result.Add((panel, Math.Max(0, panel.VerticalScrollOffset - rows)));
             }
         }
     }
@@ -4090,12 +4102,17 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// re-pins a following one: a whole-buffer re-feed leaves its offset a frame behind (the same
     /// pairing <see cref="MarkMissedLines"/> makes after an insert).
     /// </summary>
-    private void KeepReadingPosition(string windowId, List<(ScrollablePanelControl Panel, int Rows)> keep)
+    private void KeepReadingPosition(string windowId, List<(ScrollablePanelControl Panel, int Target)> keep)
     {
-        foreach (var (panel, rows) in keep)
+        foreach (var (panel, target) in keep)
         {
-            // Upwards only, so the clamp against a viewport not yet re-arranged cannot bite.
-            panel.ScrollVerticalBy(-rows);
+            // Settle the offset against the content as it now is, then move up to the target. Upwards only, so the
+            // clamp against a viewport not yet re-arranged cannot bite.
+            panel.ScrollVerticalBy(0);
+            if (target < panel.VerticalScrollOffset)
+            {
+                panel.ScrollVerticalBy(target - panel.VerticalScrollOffset);
+            }
         }
 
         if (_paneScrolls.GetValueOrDefault(windowId) is { AutoScroll: true } following)
@@ -7219,8 +7236,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         Action<ScrollablePanelControl>? scroll = (key, ctrl, shift) switch
         {
-            (ConsoleKey.PageUp, false, _) => panel => panel.ScrollVerticalBy(-PageRows(panel)),
-            (ConsoleKey.PageDown, false, _) => panel => panel.ScrollVerticalBy(PageRows(panel)),
+            (ConsoleKey.PageUp, false, _) => panel => panel.ScrollVerticalBy(-PageRows(panel, _config.Text.PageLines)),
+            (ConsoleKey.PageDown, false, _) => panel => panel.ScrollVerticalBy(PageRows(panel, _config.Text.PageLines)),
             (ConsoleKey.UpArrow, false, true) => panel => panel.ScrollVerticalBy(-1),
             (ConsoleKey.DownArrow, false, true) => panel => panel.ScrollVerticalBy(1),
 
@@ -7251,12 +7268,13 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Rows one page key moves. Read off the viewport the last frame arranged the panel at — the panel
-    /// is the only thing that knows how tall its content box came out after the pane's chrome, and the
-    /// figure it reports is the one it will clamp the scroll against.
+    /// Rows one page key moves: F7's <c>lines per page key</c> (<see cref="TextSettings.PageLines"/>, 10 by default),
+    /// or with 0 a page — read off the viewport the last frame arranged the panel at, since the panel is the only
+    /// thing that knows how tall its content box came out after the pane's chrome, and the figure it reports is the
+    /// one it will clamp the scroll against.
     /// </summary>
-    private static int PageRows(ScrollablePanelControl panel) =>
-        Math.Max(1, panel.ViewportHeight - PageOverlapRows);
+    internal static int PageRows(ScrollablePanelControl panel, int lines) =>
+        lines > 0 ? lines : Math.Max(1, panel.ViewportHeight - PageOverlapRows);
 
     /// <summary>
     /// Returns a viewport to the newest line <em>and re-arms auto-scroll</em>, so it stays there as
@@ -8873,6 +8891,26 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Avatar: _avatars.Get(character.Avatar) ?? worldAvatar));
             }
 
+            // A world with no character still has a session of its own — /connect host, a link and Browse all make
+            // one — so it gets a row to open it by, under the world's own name, as every other surface names it.
+            if (world.Characters.Count == 0)
+            {
+                var key = world.Name;
+                var active = key == activeKey;
+                var windows = active ? BuildRailWindows(key, chords) : Array.Empty<RailWindow>();
+                characters.Add(new RailCharacter(
+                    world.Name,
+                    key,
+                    Connected: connected.Contains(key),
+                    Active: active,
+                    Unread: windows.Sum(w => w.Unread),
+                    windows,
+                    Chord: characterChords.GetValueOrDefault(key),
+                    InGroup: _sendGroup.Contains(key),
+                    Avatar: worldAvatar,
+                    Alone: true));
+            }
+
             worlds.Add(new RailWorld(world.Name, world.Host, world.Port, accent, characters, worldAvatar));
             index++;
         }
@@ -9152,6 +9190,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Connected: connected.Contains(key),
                     Open: _sessions.Find(key) is not null,
                     InGroup: _sendGroup.Contains(key)));
+            }
+
+            // A world with no character is reached as itself: its session key is its name.
+            if (world.Characters.Count == 0)
+            {
+                refs.Add(new CharacterRef(
+                    world.Name,
+                    string.Empty,
+                    world.Name,
+                    Connected: connected.Contains(world.Name),
+                    Open: _sessions.Find(world.Name) is not null,
+                    InGroup: _sendGroup.Contains(world.Name)));
             }
         }
 
@@ -12441,7 +12491,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         grid.Rows(GridLength.Star(3), GridLength.Cells(1), GridLength.Star(1)).Columns(GridLength.Star(1));
         grid.Place(ScrollViewFor(FrozenRegionKey(windowId), frozen), 0, 0, 1, 1);
         grid.Place(bar, 1, 0, 1, 1);
-        grid.Place(ScrollViewFor(windowId, live), 2, 0, 1, 1);
+        grid.Place(InnerView(ScrollViewFor(windowId, live)), 2, 0, 1, 1);
         return grid.Build();
     }
 
@@ -12619,7 +12669,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private PrefixFacts PrefixFactsNow() => new(
         _workspace.Layout.Panes.Count,
         _workspace.Layout.FocusedPane.Tabs.Count,
-        ActiveWindowId() == MainWindowId,
+        !CanClose(ActiveWindowId()),
         _workspace.Layout.ZoomedPaneId is not null,
         _railCollapsed,
         _second.Visible);
@@ -13722,7 +13772,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             return;
         }
 
-        if (WheelLines(flags) is { } lines)
+        if (WheelLines(flags, _config.Text.WheelLines) is { } lines)
         {
             OnUiThread(() => ScrollPaneUnderPointer(point, lines));
             return;
@@ -13738,22 +13788,19 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// How many lines a mouse frame asks the scrollback to move, or null when it is not a wheel frame.
-    /// Three, the customary notch: one line makes a wheel useless on a transcript and a whole page makes
-    /// it unusable for reading one.
+    /// How many lines a mouse frame asks the scrollback to move, or null when it is not a wheel frame: F7's
+    /// <c>lines per wheel notch</c> (<see cref="TextSettings.WheelLines"/>, 10 by default), held to at least one.
     /// </summary>
-    private static int? WheelLines(List<MouseFlags> flags)
+    private static int? WheelLines(List<MouseFlags> flags, int notch)
     {
+        notch = Math.Max(1, notch);
         if (flags.Contains(MouseFlags.WheeledUp))
         {
-            return -WheelNotchRows;
+            return -notch;
         }
 
-        return flags.Contains(MouseFlags.WheeledDown) ? WheelNotchRows : null;
+        return flags.Contains(MouseFlags.WheeledDown) ? notch : null;
     }
-
-    /// <summary>Lines one wheel notch moves the scrollback.</summary>
-    private const int WheelNotchRows = 3;
 
     /// <summary>
     /// Scrolls whichever pane the pointer is over.
@@ -14100,9 +14147,32 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// Whether a window may be closed: any but the main window, and the main window too once the character
     /// it belongs to has been deleted. The main window is the session, so it stays while the session has a
     /// character; with the character gone nothing else reaches it (the rail and ⌃P list configured
-    /// characters only), and refusing left a pane the player could not get rid of.
+    /// characters only), and refusing left a pane the player could not get rid of. A world connected with no
+    /// character (<c>/connect host</c>, a link, Browse) is not a character's either: its window closes, and the
+    /// session with it (<see cref="WorldAloneOwns"/>).
     /// </summary>
-    private bool CanClose(string windowId) => windowId != MainWindowId || OwnerWasDeleted(windowId);
+    private bool CanClose(string windowId) =>
+        windowId != MainWindowId || OwnerWasDeleted(windowId) || WorldAloneOwns(windowId);
+
+    /// <summary>
+    /// Whether <paramref name="windowId"/> is the own window of a world's session with no character, or a window a
+    /// resumed workspace recorded for one. Such a session is reached again from the world's <c>no character</c> row
+    /// in the sidebar or ⌃P, so closing its window ends it rather than leaving it connected out of sight.
+    /// </summary>
+    private bool WorldAloneOwns(string windowId)
+    {
+        if (SessionFor(windowId) is { } session)
+        {
+            return session.Character is null
+                && _sessionWindows.TryGetValue(session, out var own)
+                && string.Equals(own, windowId, StringComparison.Ordinal);
+        }
+
+        return _workspace.FindWindow(windowId) is { Kind: WindowKind.Main, SessionKey: { Length: > 0 } owner }
+            && _sessions.Find(owner) is null
+            && FindCharacter(owner) is null
+            && _config.Worlds.Any(w => string.Equals(w.Name, owner, StringComparison.Ordinal));
+    }
 
     /// <summary>
     /// Whether the character a window belongs to has been deleted from the configuration. With a session,
@@ -14189,14 +14259,25 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void CloseWindow(string id)
     {
-        if (!CanClose(id) || _workspace.FindWindow(id) is not { } closing)
+        if (_workspace.FindWindow(id) is not { } closing)
         {
             return;
         }
 
+        if (!CanClose(id))
+        {
+            // Said, not swallowed: ⌃W, ⌃B x and the menu all end here, and a key that does nothing reads as broken.
+            Notice(FirstFitting(
+                NoticeRoom(),
+                $"{Snippet(closing.Title)} is its character's own window and stays open",
+                "the main window stays open"));
+            return;
+        }
+
         // A deleted character's own window: once it is closed nothing can reach the session (no rail row,
-        // no ⌃P entry), so the session is ended with it rather than left connected out of sight.
-        var orphan = SessionFor(id) is { } owner && OwnerWasDeleted(id) ? owner : null;
+        // no ⌃P entry), so the session is ended with it rather than left connected out of sight. A world's
+        // session with no character is its window, so closing that ends it too.
+        var orphan = SessionFor(id) is { } owner && (OwnerWasDeleted(id) || WorldAloneOwns(id)) ? owner : null;
 
         // A layout panel the player closes stays closed: recorded on its character, so no connect, re-fold or later
         // launch puts it back until they ask for it (ClosedPanelsOf).
@@ -14225,10 +14306,24 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (orphan is not null)
         {
+            if (orphan.Character is null && orphan.IsConnected)
+            {
+                Notice(FirstFitting(NoticeRoom(), $"closed {Snippet(orphan.World.Name)} and disconnected", "closed and disconnected"),
+                    MessageSeverity.Info);
+            }
+
             EndDeletedSession(orphan);
         }
 
         RebuildPaneArea();
+
+        // A docked composer's editor held the framework's focus and has gone with its pane: the keyboard goes back to the
+        // command line, or nothing would hold it until the next focus move.
+        if (_dockedComposers.ContainsKey(id))
+        {
+            SyncComposerArm();
+        }
+
         if (closedPanel)
         {
             PersistConfiguration(); // the workspace without it, too, so a crash before quitting does not bring it back

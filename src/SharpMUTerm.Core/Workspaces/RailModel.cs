@@ -76,6 +76,11 @@ public sealed record RailWorld(
 /// <paramref name="Avatar"/> is the picture to draw for the character: its own once loaded, else its world's, else
 /// null and the views draw the dot or the initial they always drew.
 /// </para>
+/// <para>
+/// <paramref name="Alone"/> marks a world's own session, for a world with no character configured (one added by
+/// <c>/connect host</c>, a link or Browse): <paramref name="Name"/> and <paramref name="SessionKey"/> are the world's
+/// name, as every other surface names that session, and the row reads <see cref="RailModel.AloneLabel"/> under its world.
+/// </para>
 /// </summary>
 public sealed record RailCharacter(
     string Name,
@@ -86,7 +91,12 @@ public sealed record RailCharacter(
     IReadOnlyList<RailWindow> Windows,
     string? Chord = null,
     bool InGroup = false,
-    AvatarPicture? Avatar = null);
+    AvatarPicture? Avatar = null,
+    bool Alone = false)
+{
+    /// <summary>What the row says: the character's name, or <see cref="RailModel.AloneLabel"/> for a world's own session.</summary>
+    public string Label => Alone ? RailModel.AloneLabel : Name;
+}
 
 /// <summary>
 /// A window in the rail: its title, the workspace id a click activates, the <c>⌥N</c> chord that goes
@@ -138,6 +148,12 @@ public static class RailModel
     /// </summary>
     public const string NoCharactersPrefix = "rail:no-characters:";
 
+    /// <summary>
+    /// The row a world's own session is drawn as when the world has no character (<see cref="RailCharacter.Alone"/>):
+    /// under the world's name, so the row says what is missing rather than the name a second time.
+    /// </summary>
+    public const string AloneLabel = "no character";
+
     /// <summary>The target a click on a character-less <paramref name="worldName"/> reports through.</summary>
     public static string NoCharactersTarget(string worldName) => NoCharactersPrefix + worldName;
 
@@ -163,7 +179,7 @@ public static class RailModel
                 rows.Add(new RailRow(
                     RailRowKind.Character,
                     1,
-                    character.Name,
+                    character.Label,
                     Accent: world.Accent,
                     Active: character.Active,
                     Connected: character.Connected,

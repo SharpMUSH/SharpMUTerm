@@ -687,11 +687,25 @@ fallbacks) for inline images/maps.
     passed (`TheHistoryIsAVisibleStepOffEveryPaneAndNeverPastTheReadingPlane`, all three themes). The
     history viewport is wrapped in a grid wearing it (`_scrollHistorySurfaces`, re-coloured in `RefreshPaneFocus`); the
     tail keeps the pane's plane. Where the host keeps a gutter, `PaintScrollHistoryGutters` paints the blank gutter and
-    pad-row cells beside it after the frame, and the window's overlay scrollbar runs beside the history alone.
-  - **The window's band is two rows** (`ScrollBandRows`: 2 under `HostChrome.Tabs`, else 1; the second row is blank band),
-    published across the gutter with `ScrollBandOverlay.Inset`, so `ScrollBandView` lines its words up with the output
-    and keeps its button as far from the right edge — the mockup's 40 px band with a real button. Still `rows`, not the
-    mockup's `lines`: a buffer index is not a viewport row.
+    pad-row cells beside it after the frame.
+  - **The window's scrollbar measures a split pane as if it were whole** (`ScrollbarViewportRows`: the track is the pane,
+    the viewport the rows it had before it split), so the split opening or closing moves the thumb not at all; the history
+    cannot scroll further down than that before `MeetsTail` closes the split. **A held thumb holds the split**
+    (`PaneScrollbar.Held`, `HoldScrollbar`, `_scrollbarHeld`): while the window's thumb is dragged `SyncScrollSplit` opens
+    and closes nothing, and catches up on release. A split opened mid-drag rebuilt the pane under the pointer and moved
+    the track (reported).
+    **The bars are drawn over the native views** (`ScrollbarLayer`, in `DesktopLayer` above the pane views; `TerminalView`
+    draws them itself only with no layer), so the band does not hide the track's foot, and the band's button keeps clear of
+    the bar's press zone (`ScrollBandView.ClearRight`, from `TerminalView.ScrollbarZones`). Once a split's history viewport
+    is arranged its height is read live (`SplitHistoryRows`), so a resize while split keeps the bar and `MeetsTail` agreed.
+  - **The window's band is 40 px at every text size** (`ScrollBandView.BandHeight`): the client gives it whole rows
+    (`ScrollBandRows` reads `IPointerPresenter.ScrollBandRows`, the window's `ScrollBandView.RowsFor(cell, interface
+    scale)`; 2 where nothing measured, 1 in the cells), and the view draws the band at the foot of them with what is left
+    above in the history's plane, read off the cell over it. Published across the gutter with `ScrollBandOverlay.Inset`,
+    so `ScrollBandView` lines its words up with the output and keeps its button as far from the right edge. Still `rows`,
+    not the mockup's `lines`: a buffer index is not a viewport row.
+  - **The wheel and the page keys move F7's lines** (`TextSettings.WheelLines`/`PageLines`, 10 each; `PageLines` 0 is a
+    page less two rows of overlap), in both hosts: the window's wheel arrives as notches through the same driver path.
   - **Inside the pane rectangle, so NAWS never moves**: the band and the tail are rows of the tab's content;
     `PaneOutputRects` is unchanged (`ScrollingBackSplitsThePane…` pins it).
   - **A split pane is not "scrolled back" for the workspace** (`SetScrolledBack(…, !AutoScroll && !split)`):
@@ -1653,13 +1667,19 @@ fallbacks) for inline images/maps.
     not been released (`_composerReleased`). While armed, `PinFocusToArmedBar` pins the framework's focus to the
     *editor* instead of the bar — so typing, paste and the caret all land there by the pin's existing rule — and
     both command lines wear the idle band. `HandleWindowKey` hands an armed composer's keys to
-    `HandleComposerKey` (macros, resize, ⌃C/⌃X, ⌃S, ⌥L, Esc, the ⌃arrows, else the editor). **Esc releases** (the
-    bar arms and ⏎ sends from it, to the same character); the ⌃↑/⌃↓ ladder releases too; **arriving** at the
+    `HandleComposerKey` (macros, resize, ⌃C/⌃X, ⌃S, ⌥L, Esc, the ⌃arrows, else the editor). **Esc releases and goes
+    back** (`LeaveComposer`, both hosts): the window in front before the composer took the keyboard (`_windowBeforeComposer`,
+    say Chat) is activated, so the bar arms there and ⏎ sends from *that* window's command line; leaving the focus on the
+    composer's pane gave the main window's bar, which read as "Esc goes to the first tab". The ⌃↑/⌃↓ ladder releases too; **arriving** at the
     composer's pane (⌃O, ⌃arrows, a tab, a click in the editor — `ArmClickedComposer` on `FocusChanged`, guarded by
     `_pinningFocus` so the pin's own focus moves never count) arms it again. `ArmBar` does **not** release: it is
     re-asserted on every layout change, and releasing there disarmed the composer the moment its pane was built.
     ⌥⏎ arrives as Esc then Enter, so an Enter within 50 ms of the releasing Esc re-arms and inserts a newline
-    (`TryComposerAltEnter`). `DockedComposerTests` covers each of these.
+    (`TryComposerAltEnter`, which activates the composer's window again first). `DockedComposerTests` covers each of these.
+  - **A lone composer pane draws no tab strip, so its heading carries a close** (`DockedComposer.CloseLink`, a `×` link only
+    its header answers, the last cell but one of the band; the window's `ComposerView` close button →
+    `ComposerSession.ClosePanel`). Both end in `CloseDockedComposer` → `CloseWindow`, which records the panel closed and keeps
+    the draft; closing any composer window re-pins the focus to the command line (it was left on the gone editor).
 - **The window can pop a native panel out into a window of its own** (map, vitals, who-here, quick bar;
   `SharpMUTermApp.Floating.cs`, Avalonia `FloatingPanels.cs`: `FloatingPanelPresenter`, `FloatingPanelWindow`,
   `PopOutButton`; Core `FloatingBounds`; Client `PanelFloatCommands`, `FloatingPanelModel`; ⌃P `panel:popout:<window>`

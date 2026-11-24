@@ -28,8 +28,9 @@ public static class HelpTopics
             "⌃Q quits and says first what a quit would end.",
         ]),
         new("reading", "Reading output", "scroll back, search, freeze, join a server's wraps", [
-            "Scroll: PgUp/PgDn a page, ⇧↑/⇧↓ a line, the wheel. Scrolled back, the pane splits: history on",
-            "top, the live tail below. End or ⌃End goes back to live output.",
+            "Scroll: PgUp/PgDn and the wheel, 10 lines unless F7 ▸ Scrollback says otherwise; ⇧↑/⇧↓ a line.",
+            "Scrolled back, the pane splits: history on top, the live tail below. End or ⌃End goes back",
+            "to live output.",
             "",
             "Search: ⌃F finds text in what the panes hold. ⌥E reads the query as a pattern, ⌥A widens it",
             "to every window, ⏎ goes to the line, ⌥G to the next one.",

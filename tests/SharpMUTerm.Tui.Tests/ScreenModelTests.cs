@@ -376,10 +376,10 @@ public class ScreenModelTests
         // ALERTS adds three rows and one stop: its heading, its spacer and `alert when away`.
         // SCENE LOG adds four rows and two stops: its heading, its spacer, the format and what is recorded.
         // UPDATES adds four rows and two stops: its heading, its spacer, `check for updates` and `include prereleases`.
-        // SCROLLBACK's `live tail rows when split` adds one row and one stop.
-        await Assert.That(screen.Rows.Count).IsEqualTo(51);
+        // SCROLLBACK's `live tail rows when split` adds one row and one stop, and its wheel and page-key lines two more.
+        await Assert.That(screen.Rows.Count).IsEqualTo(53);
         await Assert.That(model.PaneCount).IsEqualTo(1);
-        await Assert.That(model.Sizes[0]).IsEqualTo(23);
+        await Assert.That(model.Sizes[0]).IsEqualTo(25);
     }
 
     /// <summary>

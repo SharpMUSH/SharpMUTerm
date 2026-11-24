@@ -418,6 +418,57 @@ public class NativeComposerRoutingTests
         await Assert.That(session.Model.Armed).IsTrue();
     }
 
+    /// <summary>
+    /// The window's side composer (Roleplay), reached from the output pane's Chat tab: Esc in the host's editor hands the
+    /// keyboard back to Chat, as the cells' Esc does — not to the composer's pane, whose command line is the main window's.
+    /// </summary>
+    [Test]
+    public async Task EscFromTheHostsEditorGoesBackToTheTabItWasReachedFrom()
+    {
+        Console.SetIn(TextReader.Null);
+        var host = ClientHost.ForHarness(Headless, new HeadlessConsoleDriver(120, 34), null, null, null) with
+        {
+            NativeComposer = new FakeComposer(),
+            Pointer = new PanelPresenter(),
+        };
+        await using var app = new SharpMUTermApp(DemoScene.Build(), host);
+        app.RenderSnapshot("layout-roleplay");
+        app.RenderNextFrame();
+        app.SimulateKey(Key(ConsoleKey.N, ConsoleModifiers.Control));
+        var chat = app.ActiveWindowId();
+        app.SimulateKey(Key(ConsoleKey.RightArrow, ConsoleModifiers.Control));
+        app.RenderNextFrame();
+        var composer = app.ActiveWindowId();
+        await Assert.That(app.ComposerArmed).IsTrue();
+        await Assert.That(chat).DoesNotStartWith("panel:");
+
+        app.DockedComposerSession(composer)!.Release();
+
+        await Assert.That(app.ComposerArmed).IsFalse();
+        await Assert.That(app.ActiveWindowId()).IsEqualTo(chat);
+        await Assert.That(app.FocusedPaneId).IsEqualTo(app.PaneIdOf(chat));
+    }
+
+    /// <summary>The host's close button closes the composer's pane, as the cells' heading × does, and keeps the draft.</summary>
+    [Test]
+    public async Task TheHostsCloseButtonClosesTheDockedComposer()
+    {
+        var world = await Connected();
+        await using var _ = world.App;
+        var windowId = OpenDocked(world);
+        var session = world.App.DockedComposerSession(windowId)!;
+        session.Edited("half a post");
+
+        session.ClosePanel();
+        world.App.RenderNextFrame();
+
+        await Assert.That(world.App.PaneIdOf(windowId)).IsNull();
+        await Assert.That(world.App.ArmedBarHasFocus).IsTrue();
+        await Assert.That(DockedPanel(world, windowId)).IsNull().Because("a closed composer is no longer published");
+        world.App.DispatchCommand("panel:composer");
+        await Assert.That(world.App.DockedComposerIn(windowId)!.Body).IsEqualTo("half a post");
+    }
+
     [Test]
     public async Task TheDockedEditorIsNotPublishedWhileF1IsOpenNatively()
     {

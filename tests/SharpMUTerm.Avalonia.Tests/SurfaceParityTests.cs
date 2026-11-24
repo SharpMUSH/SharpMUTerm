@@ -31,7 +31,8 @@ public class SurfaceParityTests
     // The focus ring is an adorner drawing one rule round whatever control has the keyboard: it carries no model and says nothing.
     // FittedText is a TextBlock part the composer's footer is built from: it draws the words its view hands it.
     // SeamRules carries the declared views' own rules on to a divider's hairline: no model, no input, nothing said.
-    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing), typeof(FittedText), typeof(SeamRules)];
+    // ScrollbarLayer is where TerminalView draws its own overlay scrollbars, over the native views: no model, no input.
+    private static readonly HashSet<Type> Infrastructure = [typeof(TerminalView), typeof(DesktopLayer), typeof(MainWindow), typeof(FocusRing), typeof(FittedText), typeof(SeamRules), typeof(ScrollbarLayer)];
 
     private static readonly Assembly Window = typeof(DesktopLayer).Assembly;
 
@@ -791,6 +792,14 @@ public class SurfaceParityTests
             await Assert.That(native).IsEqualTo("hello there|True|FullScreen");
         }
 
+        // The docked composer's close: the window's heading button and the cells' heading × close its pane alike.
+        {
+            var native = await DockedClosed(native: true);
+            var cells = await DockedClosed(native: false);
+            await Assert.That(native).IsEqualTo(cells).Because("composer: close");
+            await Assert.That(native).Contains("closed=True");
+        }
+
         // The quit prompt: Y quits and N stays, from the window's buttons and from the cell prompt's keys.
         await SameModal("quit: yes", "quit",
             (app, m) => ((QuitSession)m.Open(SurfaceCatalog.Quit)!).Answer(true),
@@ -1361,6 +1370,28 @@ public class SurfaceParityTests
 
         var docked = app.DockedComposerIn(windowId)!;
         return (telnet.Lines.ToList(), $"{Outcome(app)} | armed={app.ComposerArmed} | docked={docked.Body} verb={docked.Verb}");
+    }
+
+    /// <summary>A connected client docks its composer and closes it from the heading: the window's button, or the cells' ×.</summary>
+    private static async Task<string> DockedClosed(bool native)
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        var (app, _) = await Connected(driver, native ? new FakeComposer() : null);
+        await using var __ = app;
+        app.DispatchCommand("panel:composer");
+        app.RenderNextFrame();
+        var windowId = TerminalPanels.WindowId(PanelIds.Composer, "Quiet.Ann");
+        if (native)
+        {
+            driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.Composer).ComposerSession!.ClosePanel();
+        }
+        else
+        {
+            app.DockedComposerIn(windowId)!.SimulateHeaderLink(SharpMUTerm.Tui.Panels.DockedComposer.CloseLink);
+        }
+
+        app.RenderNextFrame();
+        return $"{Outcome(app)} | closed={app.PaneIdOf(windowId) is null} | armed={app.ComposerArmed}";
     }
 
     /// <summary>A connected client docks its composer, types a draft and asks for the preview; the F1 it opens, read back.</summary>

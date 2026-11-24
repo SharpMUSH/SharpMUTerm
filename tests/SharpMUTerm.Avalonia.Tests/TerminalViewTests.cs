@@ -7,6 +7,7 @@ using Color = SharpConsoleUI.Color;
 using Window = Avalonia.Controls.Window;
 using SharpConsoleUI.Drivers;
 using SkiaSharp;
+using SharpMUTerm.Core.Workspaces;
 using SharpMUTerm.Tui;
 
 namespace SharpMUTerm.Avalonia.Tests;
@@ -244,13 +245,14 @@ public class TerminalViewTests
     [Test]
     public async Task APanesScrollbarIsPaintedOnItsRightEdgeAndDraggingItScrollsInsteadOfSelecting()
     {
+        var held = new List<bool>();
         var (thumb, empty, scrolledTo, clientSaw) = await Run(window =>
         {
             var (view, driver) = ((TerminalView, AvaloniaConsoleDriver))window.Tag!;
             var scrolledTo = new List<int>();
             var clientSaw = 0;
             driver.MouseEvent += (_, _, _) => clientSaw++;
-            driver.Pointer.Scrollbars([new PaneScrollbar("main", new(0, 0, 10, 4), 40, 4, 0, scrolledTo.Add)]);
+            driver.Pointer.Scrollbars([new PaneScrollbar("main", new(0, 0, 10, 4), 40, 4, 0, scrolledTo.Add, held.Add)]);
             Dispatch.Drain();
             using var frame = window.CaptureRenderedFrame()!;
             var cell = view.SizeFor(1, 1);
@@ -271,6 +273,46 @@ public class TerminalViewTests
         await Assert.That(scrolledTo.Count).IsGreaterThan(0);
         await Assert.That(scrolledTo[^1]).IsGreaterThan(0);
         await Assert.That(clientSaw).IsEqualTo(0).Because("a press on the bar is the window's, not a selection");
+        await Assert.That(held).IsEquivalentTo(new[] { true, false }, TUnit.Assertions.Enums.CollectionOrdering.Matching)
+            .Because("the client is told the thumb is held, so the pane does not split under it, and when it is let go");
+    }
+
+    /// <summary>The band is 40 px at every font size: the rows it is given are that rounded up, and what they leave is above it.</summary>
+    [Test]
+    [Arguments(20.0, 1.0, 2)]
+    [Arguments(14.0, 1.0, 3)]
+    [Arguments(16.0, 1.0, 3)]
+    [Arguments(30.0, 1.0, 2)]
+    [Arguments(40.0, 1.0, 1)]
+    [Arguments(48.0, 1.0, 1)]
+    [Arguments(20.0, 1.5, 3)]
+    public async Task TheScrolledBackBandTakesTheRowsItsFixedHeightNeeds(double cell, double scale, int rows)
+    {
+        await Assert.That(ScrollBandView.RowsFor(cell, scale)).IsEqualTo(rows);
+    }
+
+    [Test]
+    [Arguments(42.0)]
+    [Arguments(48.0)]
+    [Arguments(60.0)]
+    public async Task TheBandIsDrawnAtItsFixedHeightAtTheFootOfItsRows(double rowsHeight)
+    {
+        (Rect Button, double[] Rules) drawn = await Session.Dispatch(() =>
+        {
+            var band = new ScrollBandView { Width = 400, Height = rowsHeight };
+            band.Show(
+                new ScrollBandOverlay(new PaneRect(0, 0, 40, 3), new SharpMUTerm.Client.Chrome.ScrollBandModel("main", 12), "12", _ => { }),
+                NativeTokens.Dark,
+                interactive: true);
+            band.Measure(new Size(400, rowsHeight));
+            band.Arrange(new Rect(0, 0, 400, rowsHeight));
+            return (band.Button, band.EdgeRules(new Size(400, rowsHeight)).Select(r => r.Rect.Y).ToArray());
+        }, CancellationToken.None);
+
+        var top = rowsHeight - ScrollBandView.BandHeight;
+        var (button, rules) = drawn;
+        await Assert.That(rules[0]).IsEqualTo(top).Because("the band's top rule is 40 px above its foot, whatever the rows");
+        await Assert.That(Math.Abs(button.Center.Y - (top + (ScrollBandView.BandHeight / 2)))).IsLessThanOrEqualTo(1.0);
     }
 
     private static global::Avalonia.Media.Color Pixel(global::Avalonia.Media.Imaging.WriteableBitmap bitmap, double x, double y)
