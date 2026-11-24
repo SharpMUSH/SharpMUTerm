@@ -347,11 +347,12 @@ public class PointerTests
 
     /// <summary>
     /// The reported defect: dragging the window's scrollbar opened the split under the thumb, which rebuilt the pane and
-    /// moved the bar's track away from the pointer. The pane stays whole while the thumb is held, splits once it is let go,
-    /// and the bar reads the same track, viewport and offset before and after, so the thumb does not move.
+    /// moved the bar's track away from the pointer. The pane stays whole while the thumb is held and when it is let go;
+    /// it splits with the next line to arrive, and the bar reads the same track, viewport and offset before and after,
+    /// so the thumb does not move.
     /// </summary>
     [Test]
-    public async Task AHeldThumbSplitsThePaneOnlyWhenLetGoAndTheBarDoesNotMove()
+    public async Task AHeldThumbLetGoLeavesThePaneWholeAndALineSplitsItWithoutMovingTheBar()
     {
         var (app, pointer) = App("scrollback");
         var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
@@ -372,12 +373,17 @@ public class PointerTests
         dragged.Held!(false);
         app.RenderNextFrame();
         app.RenderNextFrame();
+        await Assert.That(app.IsScrollSplit(bar.WindowId)).IsFalse().Because("letting go is not new output");
+
+        app.LoadLongScene(bar.WindowId, 1, first: SharpMUTermApp.ScrollbackSceneLines + 1);
+        app.RenderNextFrame();
+        app.RenderNextFrame();
         var after = pointer.Bars.Single(b => b.WindowId == bar.WindowId);
 
         await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
         await Assert.That(after.Track).IsEqualTo(dragged.Track);
         await Assert.That(after.ViewportRows).IsEqualTo(dragged.ViewportRows);
-        await Assert.That(after.ContentRows).IsEqualTo(dragged.ContentRows);
+        await Assert.That(after.ContentRows).IsEqualTo(dragged.ContentRows + 1).Because("only the new line was added");
         await Assert.That(after.Offset).IsEqualTo(dragged.Offset);
     }
 
@@ -388,6 +394,8 @@ public class PointerTests
         var (app, pointer) = App("scrollback");
         var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
         bar.ScrollTo(bar.Offset - 40);
+        app.RenderNextFrame();
+        app.LoadLongScene(bar.WindowId, 1, first: SharpMUTermApp.ScrollbackSceneLines + 1);
         app.RenderNextFrame();
         app.RenderNextFrame();
         await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();
@@ -414,6 +422,8 @@ public class PointerTests
         var (app, pointer) = App("scrollback");
         var bar = pointer.Bars.Single(b => b.ContentRows > b.ViewportRows);
         bar.ScrollTo(bar.Offset - 40);
+        app.RenderNextFrame();
+        app.LoadLongScene(bar.WindowId, 1, first: SharpMUTermApp.ScrollbackSceneLines + 1);
         app.RenderNextFrame();
         app.RenderNextFrame();
         await Assert.That(app.IsScrollSplit(bar.WindowId)).IsTrue();

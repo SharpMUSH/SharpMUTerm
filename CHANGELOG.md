@@ -17,7 +17,9 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 - Dragging a pane's scrollbar in the window no longer opens the scrolled-back band under the pointer. The band used to
   appear mid-drag, which moved the scrollbar away from the pointer and redrew the pane on every movement. The pane now
-  splits when the scrollbar is let go, and the scrollbar stays exactly where it was when it does.
+  does not split when the scrollbar is let go either: the band appears with the first new line that arrives while you
+  are scrolled back, and the scrollbar stays exactly where it was when it does. This holds for the wheel and page keys
+  too, in the window and the terminal.
 - A pane's scrollbar in the window now runs the whole height of the pane while it is scrolled back. It used to stop at
   the scrolled-back band, which was drawn over it, so the bar looked shorter than the pane it scrolls.
 

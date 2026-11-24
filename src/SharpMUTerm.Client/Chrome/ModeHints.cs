@@ -13,7 +13,7 @@ public enum StatusMode
     /// <summary>Nothing special: the row names the pane, tab and command-line chords (<c>FocusHints</c>).</summary>
     None,
 
-    /// <summary>The focused pane is scrolled back with the split off: the history fills the pane.</summary>
+    /// <summary>The focused pane is scrolled back and not split (the setting is off, or nothing has arrived since): the history fills the pane.</summary>
     ScrolledBack,
 
     /// <summary>The focused pane is scrolled back and split, the live tail under a band.</summary>
