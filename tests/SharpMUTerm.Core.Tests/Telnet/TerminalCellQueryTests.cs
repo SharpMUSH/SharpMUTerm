@@ -176,9 +176,13 @@ public class TerminalCellQueryTests
         }
     }
 
+    // A reply is written by the library's read loop, one fragmented byte per read. On a loaded CI runner
+    // that loop can be starved for seconds while the rest of the suite runs in parallel, so the wait is a
+    // deadline rather than a count: 2.5 s was once not enough on ubuntu-latest.
     private static async Task Until(Func<bool> predicate)
     {
-        for (var i = 0; i < 250 && !predicate(); i++)
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!predicate() && DateTime.UtcNow < deadline)
         {
             await Task.Delay(10);
         }
