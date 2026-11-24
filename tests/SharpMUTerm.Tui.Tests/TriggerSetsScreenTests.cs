@@ -1,5 +1,6 @@
 using SharpConsoleUI.Drivers;
 using SharpMUTerm.Client.Settings;
+using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Configuration;
 using SharpMUTerm.Graphics;
 
@@ -100,6 +101,26 @@ public class TriggerSetsScreenTests
         // Back on F2 the new set is a heading, an empty one, and the rule's set field offers it.
         app.Settings.SimulateKey(Key(ConsoleKey.Escape));
         await Assert.That(app.RenderWholeFrame()).Contains(TriggerSetEditing.NewSetName);
+    }
+
+    [Test]
+    public async Task ANewSetMadeFromAWindowNobodyOwnsIsUsedByNobody()
+    {
+        // A character's session left active behind the web view, which belongs to nobody: the set must not go to them.
+        var (app, _) = App();
+        app.TelnetFactory = _ => new RecordingTelnetSession();
+        await Assert.That(app.DispatchCommand(CommandIds.Character("Aetherfall.Corvid"))).IsTrue();
+        await app.FindSession("Aetherfall.Corvid")!.ConnectAsync();
+        app.SimulateWebPage();
+        app.SimulateKey(Key(ConsoleKey.F2));
+        app.Settings.SimulateKey(Key(ConsoleKey.S, 's'));
+
+        app.Settings.SimulateKey(Key(ConsoleKey.End));
+        app.Settings.SimulateKey(Key(ConsoleKey.Enter, '\r'));
+
+        var made = app.Configuration.TriggerSets[^1];
+        await Assert.That(made.Name).IsEqualTo(TriggerSetEditing.NewSetName);
+        await Assert.That(TriggerSetEditing.IsUsed(app.Configuration.Worlds, made.Name)).IsFalse();
     }
 
     [Test]

@@ -8498,9 +8498,14 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private CharacterDefinition? CharacterInFront()
     {
         // The focused window's owner (the command line's rule), matched on the key: the index helpers fall back to 0,
-        // which would name the first character when nobody is in front.
-        var owner = HistoryOwner();
-        var key = owner.Length > 0 ? owner : ActiveCharacterKey();
+        // which would name the first character when nobody is in front. An unowned window (the web view) names nobody,
+        // never the session left active behind it.
+        var key = HistoryOwner();
+        if (key.Length == 0)
+        {
+            return null;
+        }
+
         return _config.Worlds
             .SelectMany(w => w.Characters.Select(c => (Key: $"{w.Name}.{c.Name}", Character: c)))
             .FirstOrDefault(x => x.Key == key).Character;
