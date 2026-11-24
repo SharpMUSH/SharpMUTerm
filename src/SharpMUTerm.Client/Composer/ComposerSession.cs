@@ -39,6 +39,9 @@ public sealed record ComposerCallbacks
     /// <summary>A click in a docked composer: it takes the keyboard.</summary>
     public Action? Arm { get; init; }
 
+    /// <summary>The docked composer's close button: its pane closes, the draft kept for the next one.</summary>
+    public Action? ClosePanel { get; init; }
+
     /// <summary>Esc (or F1) in F1: the window closes, with the buffer to keep.</summary>
     public Action<string>? Closed { get; init; }
 
@@ -195,6 +198,15 @@ public sealed class ComposerSession
         if (!IsEnded)
         {
             _callbacks.Arm?.Invoke();
+        }
+    }
+
+    /// <summary>The host's: the docked composer's close button.</summary>
+    public void ClosePanel()
+    {
+        if (!IsEnded)
+        {
+            _callbacks.ClosePanel?.Invoke();
         }
     }
 

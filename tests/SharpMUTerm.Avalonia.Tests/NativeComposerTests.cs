@@ -414,6 +414,30 @@ public class NativeComposerTests
         await Assert.That(width).IsGreaterThan(0);
     }
 
+    /// <summary>The docked heading has a close button (the pane draws no tab strip), and pressing it closes the composer.</summary>
+    [Test]
+    public async Task TheDockedHeadingsCloseButtonClosesTheComposer()
+    {
+        var (shows, before, after, composers) = await Run(rig =>
+        {
+            var composer = Dock(rig);
+            var windowId = rig.Layer.Composers.Keys.Single();
+            var shows = composer.ShowsClose;
+            var before = rig.App.PaneIdOf(windowId) is not null;
+            composer.PressClose();
+            rig.App.RenderNextFrame();
+            Drain();
+            rig.Window.UpdateLayout();
+            Drain();
+            return (shows, before, rig.App.PaneIdOf(windowId) is not null, rig.Layer.Composers.Count);
+        });
+
+        await Assert.That(shows).IsTrue();
+        await Assert.That(before).IsTrue();
+        await Assert.That(after).IsFalse();
+        await Assert.That(composers).IsEqualTo(0).Because("a closed composer's editor leaves the window");
+    }
+
     [Test]
     public async Task TypingInTheDockedEditorIsTheDraftAndCtrlSSendsIt()
     {

@@ -112,6 +112,10 @@ internal sealed class DockedComposer
         };
 
         _header = new MarkupControl(new List<string>()) { HorizontalAlignment = HorizontalAlignment.Stretch };
+
+        // The heading's × is the panel's own link, answered here and never by the output panes' handler: a pane holding
+        // the composer alone draws no tab strip, so without it the pane could be closed only by ⌃W from inside it.
+        _header.LinkClicked += (_, e) => OnHeaderLink(e.Url);
         _footer = new MarkupControl(new List<string>()) { HorizontalAlignment = HorizontalAlignment.Stretch };
 
         var grid = Controls.Grid()
@@ -255,6 +259,24 @@ internal sealed class DockedComposer
     /// <summary>Raised after the buffer or the mode changed by the writer's hand (never by <see cref="Load"/>).</summary>
     internal event EventHandler? Changed;
 
+    /// <summary>Raised when the heading's <c>×</c> is clicked: the host closes the composer's window.</summary>
+    internal event EventHandler? CloseRequested;
+
+    /// <summary>The heading's close link, a payload only this composer's header answers.</summary>
+    internal const string CloseLink = "mux:composer:close";
+
+    /// <summary>A link clicked in the heading: only the close link means anything.</summary>
+    private void OnHeaderLink(string url)
+    {
+        if (string.Equals(url, CloseLink, StringComparison.Ordinal))
+        {
+            CloseRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>A click on a link in the heading, as the header control raises it. Internal for tests.</summary>
+    internal void SimulateHeaderLink(string url) => OnHeaderLink(url);
+
     /// <summary>The header row's markup, for the tests.</summary>
     internal string HeaderMarkup => _header.Text;
 
@@ -336,7 +358,8 @@ internal sealed class DockedComposer
             var rest = (verb.Length > 0 ? $"  {Escape(verb)}" : string.Empty) + $"  {bandMode}";
             var lead = model.Armed ? $"[{band.Accent}]▌[/]" : null;
             var chars = ComposerModel.CharactersLabel(model.Characters);
-            _header.SetContent(new List<string> { HeadingBand.Row("COMPOSE", rest, chars, _width > 0 ? _width : VisibleLength(rest) + 9, band, lead) });
+            var close = $"[link={CloseLink}]×[/]";
+            _header.SetContent(new List<string> { HeadingBand.Row("COMPOSE", rest, chars, _width > 0 ? _width : VisibleLength(rest) + 11, band, lead, close) });
             RenderFooter(model);
             return;
         }
@@ -347,11 +370,12 @@ internal sealed class DockedComposer
 
         // The length cell at the right edge, as F1 has it; the title gives way first, and a pane too narrow for both
         // keeps the title.
-        var length = $"[dim]{ComposerModel.CharactersLabel(model.Characters)}[/] ";
+        var length = $"[dim]{ComposerModel.CharactersLabel(model.Characters)}[/] [link={CloseLink}]×[/] ";
         _header.SetContent(new List<string>
         {
             _width <= 0 ? $"{title}  {length}"
                 : _width >= VisibleLength(title) + VisibleLength(length) + 2 ? SpreadLR(title, length, _width)
+                : _width >= 6 ? ElideVisible(title, _width - 3) + $" [link={CloseLink}]×[/] "
                 : ElideVisible(title, _width),
         });
 

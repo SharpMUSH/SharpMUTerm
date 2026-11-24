@@ -791,6 +791,14 @@ public class SurfaceParityTests
             await Assert.That(native).IsEqualTo("hello there|True|FullScreen");
         }
 
+        // The docked composer's close: the window's heading button and the cells' heading × close its pane alike.
+        {
+            var native = await DockedClosed(native: true);
+            var cells = await DockedClosed(native: false);
+            await Assert.That(native).IsEqualTo(cells).Because("composer: close");
+            await Assert.That(native).Contains("closed=True");
+        }
+
         // The quit prompt: Y quits and N stays, from the window's buttons and from the cell prompt's keys.
         await SameModal("quit: yes", "quit",
             (app, m) => ((QuitSession)m.Open(SurfaceCatalog.Quit)!).Answer(true),
@@ -1361,6 +1369,28 @@ public class SurfaceParityTests
 
         var docked = app.DockedComposerIn(windowId)!;
         return (telnet.Lines.ToList(), $"{Outcome(app)} | armed={app.ComposerArmed} | docked={docked.Body} verb={docked.Verb}");
+    }
+
+    /// <summary>A connected client docks its composer and closes it from the heading: the window's button, or the cells' ×.</summary>
+    private static async Task<string> DockedClosed(bool native)
+    {
+        using var driver = new AvaloniaConsoleDriver(140, 36);
+        var (app, _) = await Connected(driver, native ? new FakeComposer() : null);
+        await using var __ = app;
+        app.DispatchCommand("panel:composer");
+        app.RenderNextFrame();
+        var windowId = TerminalPanels.WindowId(PanelIds.Composer, "Quiet.Ann");
+        if (native)
+        {
+            driver.Pointer.Panels.Single(p => p.PanelId == PanelIds.Composer).ComposerSession!.ClosePanel();
+        }
+        else
+        {
+            app.DockedComposerIn(windowId)!.SimulateHeaderLink(SharpMUTerm.Tui.Panels.DockedComposer.CloseLink);
+        }
+
+        app.RenderNextFrame();
+        return $"{Outcome(app)} | closed={app.PaneIdOf(windowId) is null} | armed={app.ComposerArmed}";
     }
 
     /// <summary>A connected client docks its composer, types a draft and asks for the preview; the F1 it opens, read back.</summary>

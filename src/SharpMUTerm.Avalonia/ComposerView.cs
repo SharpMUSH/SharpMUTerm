@@ -80,6 +80,9 @@ internal sealed class ComposerView : Border, IEdgeRules
     private readonly FittedText _summary = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly Border _previewButton;
     private readonly Border _sendButton;
+
+    // The docked heading's ×: closes the composer's pane (ComposerSession.ClosePanel), which draws no tab strip of its own.
+    private readonly Border _closeButton;
     private ComposerSession? _session;
     private ComposerModel? _model;
     private long _applied = -1;
@@ -164,17 +167,21 @@ internal sealed class ComposerView : Border, IEdgeRules
         _target = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         _chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = NativeTokens.Space6, VerticalAlignment = VerticalAlignment.Center };
         _count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(NativeTokens.Space10, 0, 0, 0) };
+        _closeButton = CloseButton(() => _session?.ClosePanel());
+        _closeButton.IsVisible = !fullScreen;
         var headerRow = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_title, Dock.Left);
+        DockPanel.SetDock(_closeButton, Dock.Right);
         DockPanel.SetDock(_count, Dock.Right);
         DockPanel.SetDock(_chips, Dock.Right);
         headerRow.Children.Add(_title);
+        headerRow.Children.Add(_closeButton);
         headerRow.Children.Add(_count);
         headerRow.Children.Add(_chips);
         headerRow.Children.Add(_target);
-        // The docked panel's heading is every panel's (PanelText.Heading): 16 px in, a rule under it, the pop-out button
-        // clear at the right.
-        _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(NativeTokens.Space24, NativeTokens.Space10) : new Thickness(PanelText.Pad, 0, NativeTokens.Space32, 0) };
+        // The docked panel's heading is every panel's (PanelText.Heading): 16 px in, a rule under it, the close button at
+        // the right (the composer never pops out, so no pop-out button needs the corner).
+        _header = new Border { Child = headerRow, Padding = fullScreen ? new Thickness(NativeTokens.Space24, NativeTokens.Space10) : new Thickness(PanelText.Pad, 0, NativeTokens.Space8, 0) };
         if (!fullScreen)
         {
             // Every panel's heading height, so the composer's rule meets the one beside it (who is here, the map).
@@ -515,6 +522,11 @@ internal sealed class ComposerView : Border, IEdgeRules
         _title.Foreground = new SolidColorBrush(_text);
         _target.Foreground = new SolidColorBrush(Dim);
         _count.Foreground = new SolidColorBrush(Dim);
+        if (_closeButton.Child is TextBlock cross)
+        {
+            cross.Foreground = new SolidColorBrush(Dim);
+        }
+
         _preview.Background = new SolidColorBrush(Band);
         _preview.BorderBrush = _header.BorderBrush;
         _preview.BorderThickness = new Thickness(0, NativeTokens.Hairline, 0, 0);
@@ -1192,6 +1204,42 @@ internal sealed class ComposerView : Border, IEdgeRules
         };
         return button;
     }
+
+    /// <summary>The docked heading's ×: a quiet square that takes a plate under the pointer, as a tab's × does.</summary>
+    private Border CloseButton(Action click)
+    {
+        var button = new Border
+        {
+            Child = new TextBlock { Text = "×", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            Width = NativeTokens.ControlHeightSmall,
+            Height = NativeTokens.ControlHeightSmall,
+            Margin = new Thickness(NativeTokens.Space8, 0, 0, 0),
+            CornerRadius = new CornerRadius(NativeTokens.RadiusControl),
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        button.Name = "Close composer";
+        ToolTip.SetTip(button, "Close the composer (Ctrl+W). The draft is kept.");
+        AutomationProperties.SetName(button, "Close composer");
+        button.PointerEntered += (_, _) => button.Background = new SolidColorBrush(Mix(_plane, _text, 0.1));
+        button.PointerExited += (_, _) => button.Background = Brushes.Transparent;
+        button.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(button).Properties.IsLeftButtonPressed)
+            {
+                e.Handled = true;
+                click();
+            }
+        };
+        return button;
+    }
+
+    /// <summary>Presses the docked heading's close button, as a click on it does. Internal for tests.</summary>
+    internal void PressClose() => _session?.ClosePanel();
+
+    /// <summary>Whether the docked heading shows its close button. Internal for tests.</summary>
+    internal bool ShowsClose => _closeButton.IsVisible;
 
     private void PaintButton(Border button, bool accent)
     {
