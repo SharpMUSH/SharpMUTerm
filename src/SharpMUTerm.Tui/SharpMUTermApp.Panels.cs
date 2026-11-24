@@ -57,6 +57,16 @@ internal sealed partial class SharpMUTermApp
     /// <summary>When an Esc released a composer, so the Enter of a ⌥⏎ that follows it is not sent from the bar.</summary>
     private DateTimeOffset? _composerEscapeAt;
 
+    /// <summary>The composer window that Esc released, so the Enter of a ⌥⏎ can go back into it.</summary>
+    private string? _composerEscapeWindow;
+
+    /// <summary>
+    /// The last window in front that was not a docked composer: where Esc hands the keyboard back to. Without it Esc
+    /// left the focus on the composer's own pane, whose command line is its character's main window's, not the tab the
+    /// writer was reading (Chat, say).
+    /// </summary>
+    private string? _windowBeforeComposer;
+
     partial void RegisterTerminalPanels()
     {
         Panels.Register(PanelIds.WhoHere, NewWhoHerePanel);
@@ -392,10 +402,25 @@ internal sealed partial class SharpMUTermApp
         }
 
         composer.Changed += (_, _) => KeepDockedDraft(composer);
+        composer.CloseRequested += (_, _) => CloseDockedComposer(composer);
         _dockedComposers[context.WindowId] = composer;
         var box = PanelBox(context.WindowId);
         composer.Fit(box.Width, box.Height);
         return composer.Control;
+    }
+
+    /// <summary>
+    /// The composer's close button, in either host: its window closes as ⌃W or a tab's <c>×</c> closes it, recorded as a
+    /// closed panel, and the draft is kept for the next composer or F1. A pane holding the composer alone draws no tab
+    /// strip, so this is the way to close it that does not first mean moving a tab into its pane.
+    /// </summary>
+    private void CloseDockedComposer(DockedComposer composer)
+    {
+        if (_dockedComposers.TryGetValue(composer.WindowId, out var known) && ReferenceEquals(known, composer))
+        {
+            KeepDockedDraft(composer);
+            CloseWindow(composer.WindowId);
+        }
     }
 
     /// <summary>
@@ -436,6 +461,11 @@ internal sealed partial class SharpMUTermApp
         var windowId = ActiveWindowId();
         if (!string.Equals(windowId, _composerArmWindow, StringComparison.Ordinal))
         {
+            if (_composerArmWindow is { } left && !_dockedComposers.ContainsKey(left))
+            {
+                _windowBeforeComposer = left;
+            }
+
             _composerArmWindow = windowId;
             _composerReleased = false;
         }
@@ -490,12 +520,32 @@ internal sealed partial class SharpMUTermApp
         PinFocusToArmedBar();
     }
 
-    /// <summary>Esc in the composer: the keyboard goes back to the command line; the pane stays where it is.</summary>
+    /// <summary>Hands the keyboard back to the command line; the pane stays where it is.</summary>
     private void ReleaseComposer()
     {
         _composerReleased = true;
         SyncComposerBands();
         PinFocusToArmedBar();
+    }
+
+    /// <summary>
+    /// Esc in the composer, in either host: the keyboard goes back to the window it came from — the tab that was in
+    /// front before the composer took the keyboard — so ⏎ sends from that window's command line. Where that window is
+    /// gone, shares the composer's pane, or the composer was in front from the start, the pane stays where it is.
+    /// </summary>
+    private void LeaveComposer()
+    {
+        var composerWindow = ActiveWindowId();
+        ReleaseComposer();
+        _composerEscapeWindow = composerWindow;
+        // Only from another pane: a window sharing the composer's pane would be brought in front of the composer and hide
+        // what was being written.
+        if (_windowBeforeComposer is { } back && !string.Equals(back, composerWindow, StringComparison.Ordinal)
+            && !_dockedComposers.ContainsKey(back) && _workspace.Layout.FindWindow(back) is { } pane
+            && !string.Equals(pane.Id, _workspace.Layout.FindWindow(composerWindow)?.Id, StringComparison.Ordinal))
+        {
+            Activate(back);
+        }
     }
 
     /// <summary>
@@ -603,7 +653,7 @@ internal sealed partial class SharpMUTermApp
         {
             e.Handled = true;
             _composerEscapeAt = _time.GetUtcNow();
-            ReleaseComposer();
+            LeaveComposer();
             return null;
         }
 
@@ -643,15 +693,23 @@ internal sealed partial class SharpMUTermApp
     private bool TryComposerAltEnter(KeyPressedEventArgs e)
     {
         var at = _composerEscapeAt;
+        var window = _composerEscapeWindow;
         _composerEscapeAt = null;
+        _composerEscapeWindow = null;
         if (e.KeyInfo.Key != ConsoleKey.Enter || e.KeyInfo.Modifiers != 0
             || at is not { } released || _time.GetUtcNow() - released > AltEnterWindow
-            || !_dockedComposers.TryGetValue(ActiveWindowId(), out var composer))
+            || window is null || !_dockedComposers.TryGetValue(window, out var composer))
         {
             return false;
         }
 
+        // The Esc took the keyboard back to the window before the composer; the Enter puts it in the composer again.
         e.Handled = true;
+        if (!string.Equals(ActiveWindowId(), window, StringComparison.Ordinal))
+        {
+            Activate(window);
+        }
+
         _composerReleased = false;
         SyncComposerArm();
         composer.Editor.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));

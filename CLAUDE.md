@@ -1672,13 +1672,19 @@ fallbacks) for inline images/maps.
     not been released (`_composerReleased`). While armed, `PinFocusToArmedBar` pins the framework's focus to the
     *editor* instead of the bar — so typing, paste and the caret all land there by the pin's existing rule — and
     both command lines wear the idle band. `HandleWindowKey` hands an armed composer's keys to
-    `HandleComposerKey` (macros, resize, ⌃C/⌃X, ⌃S, ⌥L, Esc, the ⌃arrows, else the editor). **Esc releases** (the
-    bar arms and ⏎ sends from it, to the same character); the ⌃↑/⌃↓ ladder releases too; **arriving** at the
+    `HandleComposerKey` (macros, resize, ⌃C/⌃X, ⌃S, ⌥L, Esc, the ⌃arrows, else the editor). **Esc releases and goes
+    back** (`LeaveComposer`, both hosts): the window in front before the composer took the keyboard (`_windowBeforeComposer`,
+    say Chat) is activated, so the bar arms there and ⏎ sends from *that* window's command line; leaving the focus on the
+    composer's pane gave the main window's bar, which read as "Esc goes to the first tab". The ⌃↑/⌃↓ ladder releases too; **arriving** at the
     composer's pane (⌃O, ⌃arrows, a tab, a click in the editor — `ArmClickedComposer` on `FocusChanged`, guarded by
     `_pinningFocus` so the pin's own focus moves never count) arms it again. `ArmBar` does **not** release: it is
     re-asserted on every layout change, and releasing there disarmed the composer the moment its pane was built.
     ⌥⏎ arrives as Esc then Enter, so an Enter within 50 ms of the releasing Esc re-arms and inserts a newline
-    (`TryComposerAltEnter`). `DockedComposerTests` covers each of these.
+    (`TryComposerAltEnter`, which activates the composer's window again first). `DockedComposerTests` covers each of these.
+  - **A lone composer pane draws no tab strip, so its heading carries a close** (`DockedComposer.CloseLink`, a `×` link only
+    its header answers, the last cell but one of the band; the window's `ComposerView` close button →
+    `ComposerSession.ClosePanel`). Both end in `CloseDockedComposer` → `CloseWindow`, which records the panel closed and keeps
+    the draft; closing any composer window re-pins the focus to the command line (it was left on the gone editor).
 - **The window can pop a native panel out into a window of its own** (map, vitals, who-here, quick bar;
   `SharpMUTermApp.Floating.cs`, Avalonia `FloatingPanels.cs`: `FloatingPanelPresenter`, `FloatingPanelWindow`,
   `PopOutButton`; Core `FloatingBounds`; Client `PanelFloatCommands`, `FloatingPanelModel`; ⌃P `panel:popout:<window>`

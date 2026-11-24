@@ -2,6 +2,7 @@ using System.Text;
 using SharpConsoleUI.Parsing;
 using SharpMUTerm.Client.Chrome;
 using SharpMUTerm.Core.Avatars;
+using SharpMUTerm.Core.Commands;
 using SharpMUTerm.Core.Text;
 using SharpMUTerm.Core.Workspaces;
 using static SharpMUTerm.Tui.MarkupText;
@@ -169,12 +170,29 @@ internal static partial class RailRenderer
     {
         var voice = ink ?? ChromeInk.Default;
         var lines = new List<string>();
-        var letters = InitialLength(rows.Where(r => r.Kind == RailRowKind.Character).Select(r => r.Label));
+        // A world's own session (no character) reads "no character" open, but its letter is the world's, as the
+        // window's folded sidebar draws it: its target is the world's name.
+        var world = string.Empty;
+        string NameOf(RailRow row, string worldName) =>
+            row.Kind == RailRowKind.Character && row.Target == CommandIds.Character(worldName) ? worldName : row.Label;
+        var named = new List<string>();
+        foreach (var row in rows)
+        {
+            world = row.Kind == RailRowKind.World ? row.Label : world;
+            if (row.Kind == RailRowKind.Character)
+            {
+                named.Add(NameOf(row, world));
+            }
+        }
+
+        var letters = InitialLength(named);
+        world = string.Empty;
         foreach (var row in rows)
         {
             switch (row.Kind)
             {
                 case RailRowKind.World:
+                    world = row.Label;
                     lines.Add(Link(row, $"[{Accent(row, voice)}]{CollapsedWorldMark}[/]"));
                     break;
                 case RailRowKind.Character:
@@ -188,7 +206,7 @@ internal static partial class RailRenderer
                         break;
                     }
 
-                    var initial = Escape(Initials(row.Label, letters));
+                    var initial = Escape(Initials(NameOf(row, world), letters));
                     var dot = row.Connected ? "●" : "○";
                     var name = row.Active ? $"[bold]{initial}[/]" : initial;
                     lines.Add(Link(row, $"[{Accent(row, voice)}]{dot}[/]{name}{UnreadField(row.Unread, voice)}"));

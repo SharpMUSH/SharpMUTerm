@@ -327,10 +327,11 @@ internal sealed partial class SharpMUTermApp
                 {
                     if (ReferenceEquals(ArmedComposer(), composer))
                     {
-                        ReleaseComposer();
+                        LeaveComposer();
                     }
                 }),
                 Arm = () => OnUiThread(() => ArmComposer(composer)),
+                ClosePanel = () => OnUiThread(() => CloseDockedComposer(composer)),
                 Proportional = ComposerFaceOf(composer.SessionKey),
                 ChooseFace = ChooseComposerFace(composer.SessionKey),
             });

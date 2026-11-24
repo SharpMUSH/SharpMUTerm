@@ -7,6 +7,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Added
+
+- The docked composer's heading has a close button (`×`), in the terminal and the window. A composer in a pane of its
+  own, as the Roleplay layout puts it, had no tab to close it by. The draft is kept, and *Dock the composer* brings it
+  back.
+
 ### Changed
 
 - The mouse wheel and PgUp/PgDn now scroll the output 10 lines at a time, in the window and the terminal alike. F7 ▸
@@ -29,11 +35,22 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 - Reading a few lines back from the newest output no longer jumps further back when a busy pane drops its oldest
   lines. A reader closer to the bottom than the lines dropped was moved up by the difference.
 
+- Esc in the docked composer goes back to the tab you came from. It used to leave the keyboard on the composer's own
+  pane, so the command line was your character's main window's even when you had been reading Chat.
+- Closing the docked composer (Ctrl+W or the new button) puts the keyboard focus straight back on the command line, so
+  a paste lands there.
+
 - A character whose name has a space, connected as `"first last"` on a MUSH, gets a session log again. The quotes
   went into the log's file name, which Windows refuses, so no log was written. World and character names are now made
   safe for Windows, Linux and macOS before they name a file: quotes and control characters are dropped, `< > : / \ | ? *`
   become `_`, and a name like `CON` is changed so Windows will take it. A name that needed none of this names the same
   file as before.
+
+- A world connected with no character (`/connect host`, a `telnet://` link, Browse worlds) can be closed again. Its tab
+  was the client's main window, which only closed once a character was deleted, so ⌃W, ⌃B x and the tab's × did
+  nothing. Closing it now ends that connection. Its world's row in the sidebar reads *no character* and opens it again,
+  and ⌃P lists it under *Switch to*; it used to say the world had no characters and offer no way back. Closing a
+  character's own window still refuses, and now says so instead of doing nothing.
 
 ## [0.3.6] - 2026-11-16
 
