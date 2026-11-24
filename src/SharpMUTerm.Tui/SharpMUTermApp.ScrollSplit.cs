@@ -170,18 +170,6 @@ internal sealed partial class SharpMUTermApp
             && live is not null;
         var wanted = eligible && !live!.AutoScroll && Scrollable(live);
 
-        // Scrolling back alone changes nothing on screen: the split opens with the first new line that arrives
-        // while the pane is off its tail (NoteLineForScrollSplit), so a reader's own gesture never moves what they
-        // are reading. Back at the tail, the next scroll back waits for new output again.
-        if (!wanted)
-        {
-            _scrollSplitDue.Remove(windowId);
-        }
-        else if (!open && !_scrollSplitDue.Contains(windowId))
-        {
-            return;
-        }
-
         // A thumb being dragged keeps the pane as it is until it is let go.
         if (string.Equals(_scrollbarHeld, windowId, StringComparison.Ordinal) && eligible)
         {
@@ -247,34 +235,9 @@ internal sealed partial class SharpMUTermApp
         return below <= tail + ScrollBandRows;
     }
 
-    /// <summary>The windows scrolled back that have had a new line since, so their split may open.</summary>
-    private readonly HashSet<string> _scrollSplitDue = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// A line is about to land in <paramref name="windowId"/>. If its pane is scrolled back and not yet split, the
-    /// split opens now, before the line is added, so the line lands in the live tail and counts as seen.
-    /// </summary>
-    private void NoteLineForScrollSplit(string windowId)
-    {
-        if (_scrollSplits.ContainsKey(windowId)
-            || _paneScrolls.GetValueOrDefault(windowId) is not { AutoScroll: false } live
-            || !Scrollable(live))
-        {
-            return;
-        }
-
-        _scrollSplitDue.Add(windowId);
-        SyncScrollSplit(windowId);
-        if (_workspace.SetScrolledBack(windowId, !live.AutoScroll && !IsScrollSplit(windowId)))
-        {
-            RefreshTabTitles();
-        }
-    }
-
     /// <summary>Forgets a window's split without rebuilding; the caller rebuilds (or is about to).</summary>
     private void CloseScrollSplit(string windowId)
     {
-        _scrollSplitDue.Remove(windowId);
         _scrollSplits.Remove(windowId);
         _scrollSplitHistoryRows.Remove(windowId);
         _scrollSplitSettled.Remove(windowId);
@@ -288,7 +251,6 @@ internal sealed partial class SharpMUTermApp
     /// <summary>Drops everything a closed window kept for its split.</summary>
     private void ForgetScrollSplit(string windowId)
     {
-        _scrollSplitDue.Remove(windowId);
         _scrollSplits.Remove(windowId);
         _scrollSplitHistoryRows.Remove(windowId);
         _scrollSplitSettled.Remove(windowId);

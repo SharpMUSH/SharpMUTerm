@@ -226,7 +226,7 @@ public partial class HostParityTests
         from host in Hosts()
         from view in new (string View, StatusMode Mode)[]
         {
-            ("scrollback-up", StatusMode.ScrolledBack),
+            ("scrollback-up", StatusMode.SplitScrollback),
             ("scrollback-split", StatusMode.SplitScrollback),
             ("freeze", StatusMode.Frozen),
             ("freeze-scrollback", StatusMode.Frozen),

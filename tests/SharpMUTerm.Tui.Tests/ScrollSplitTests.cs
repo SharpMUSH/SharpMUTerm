@@ -45,16 +45,6 @@ public class ScrollSplitTests
     private static string Line(int number) => $"line {number:0000}";
 
     /// <summary>
-    /// One new line arriving in the main window. Scrolling back alone leaves the pane whole; the split opens with
-    /// the first line that arrives while it is off its tail.
-    /// </summary>
-    private static void Arrive(SharpMUTermApp app)
-    {
-        app.LoadLongScene(Main, 1, first: SharpMUTermApp.ScrollbackSceneLines + 1);
-        Settled(app);
-    }
-
-    /// <summary>
     /// One wheel notch, delivered the way a live client gets it: to our driver handler and to the framework's own
     /// window dispatch, both of which see every mouse frame once <c>Run()</c> has started.
     /// </summary>
@@ -92,7 +82,6 @@ public class ScrollSplitTests
         var tail = new System.Drawing.Point(pane.X + 5, pane.Y + pane.Height - 2);
 
         Wheel(app, driver, up: true, history);
-        Arrive(app);
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
         var opened = app.ScrollbackOf(Main)!.Value.Offset;
         var tailAt = app.ScrollTailOf(Main)!.Value;
@@ -178,7 +167,6 @@ public class ScrollSplitTests
 
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         var frame = Settled(app);
 
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
@@ -188,32 +176,6 @@ public class ScrollSplitTests
 
         // Inside the pane: no rectangle moved, so no server is told a new size.
         await Assert.That(app.PaneOutputRects()).IsEquivalentTo(before);
-    }
-
-    /// <summary>
-    /// The choice made for the reported jump: a reader's own gesture changes nothing but where they are reading. The
-    /// pane stays whole while nothing arrives, and splits with the first new line, which lands in the tail unmissed.
-    /// </summary>
-    [Test]
-    public async Task ScrollingBackAloneLeavesThePaneWholeUntilALineArrives()
-    {
-        var app = App();
-        app.SimulateKey(Key(ConsoleKey.PageUp));
-        app.SimulateKey(Key(ConsoleKey.PageUp));
-        var frame = Settled(app);
-        var offset = app.ScrollbackOf(Main)!.Value.Offset;
-
-        await Assert.That(app.IsScrollSplit(Main)).IsFalse();
-        await Assert.That(frame).DoesNotContain("End returns");
-        await Assert.That(app.IsWindowScrolledBack(Main)).IsTrue();
-
-        Arrive(app);
-        frame = Settled(app);
-
-        await Assert.That(app.IsScrollSplit(Main)).IsTrue();
-        await Assert.That(frame).Contains(Line(SharpMUTermApp.ScrollbackSceneLines + 1));
-        await Assert.That(app.ScrollbackOf(Main)!.Value.Offset).IsEqualTo(offset);
-        await Assert.That(app.UnreadOf(Main)).IsEqualTo(0);
     }
 
     [Test]
@@ -250,7 +212,6 @@ public class ScrollSplitTests
         var app = App();
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
         var offset = app.ScrollbackOf(Main)!.Value.Offset;
 
@@ -267,7 +228,6 @@ public class ScrollSplitTests
     {
         var app = App();
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
 
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
@@ -288,7 +248,6 @@ public class ScrollSplitTests
 
         app.RenderSnapshot();
         app.SimulateScrollKey(Key(ConsoleKey.PageUp));
-        session.PrintSystem("*** the first line after scrolling back");
         Settled(app);
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
 
@@ -304,7 +263,6 @@ public class ScrollSplitTests
     {
         var app = App();
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
 
         app.SimulateKey(Key(ConsoleKey.End, ctrl: true));
@@ -320,7 +278,6 @@ public class ScrollSplitTests
     {
         var app = App();
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
 
         app.SimulateKey(Key(ConsoleKey.End));
@@ -334,7 +291,6 @@ public class ScrollSplitTests
     {
         var app = App();
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
 
         for (var i = 0; i < 10 && app.IsScrollSplit(Main); i++)
@@ -349,8 +305,7 @@ public class ScrollSplitTests
     /// <summary>
     /// The reported defect: scrolled back and then down again, the split stayed open until the history reached its very
     /// end, so the reader scrolled on through every row the tail was already showing. It closes where the history meets
-    /// the tail: a notch up, the line that opens the split, and a notch down leaves only that line's row below; the next
-    /// notch is back to following the output.
+    /// the tail: a notch up and a notch down is back to following the output.
     /// </summary>
     [Test]
     public async Task ScrollingDownToWhereTheTailBeginsClosesTheSplit()
@@ -359,11 +314,8 @@ public class ScrollSplitTests
         var at = new System.Drawing.Point(pane.X + 5, pane.Y + 2);
 
         Wheel(app, driver, up: true, at);
-        Arrive(app);
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
 
-        Wheel(app, driver, up: false, at);
-        await Assert.That(app.IsScrollSplit(Main)).IsTrue().Because("the line that opened it is one row more below");
         Wheel(app, driver, up: false, at);
         await Assert.That(app.IsScrollSplit(Main)).IsFalse();
         await Assert.That(app.ScrollbackOf(Main)!.Value.AutoScroll).IsTrue();
@@ -381,8 +333,6 @@ public class ScrollSplitTests
             Wheel(app, driver, up: true, at);
         }
 
-        Arrive(app);
-
         Wheel(app, driver, up: false, at);
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
     }
@@ -393,7 +343,6 @@ public class ScrollSplitTests
         var app = App(tail: "5");
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
 
         await Assert.That(app.IsScrollSplit(Main)).IsTrue();
@@ -417,7 +366,6 @@ public class ScrollSplitTests
     {
         var app = App();
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         Settled(app);
 
         app.SimulateKey(Key(ConsoleKey.F, alt: true));
@@ -435,7 +383,6 @@ public class ScrollSplitTests
         var unsplit = app.RenderWholeFrame();
         app.SimulateKey(Key(ConsoleKey.PageUp));
         app.SimulateKey(Key(ConsoleKey.PageUp));
-        Arrive(app);
         app.RenderWholeFrame();
         var frame = app.RenderWholeFrame();
 

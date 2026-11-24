@@ -669,17 +669,12 @@ fallbacks) for inline images/maps.
     change (`AppendWindowLine`, `RepaintPane`, `InsertImageRows`). It indexes nothing, so no chrome row, trim
     or picture has a split point to move — which is why it is not built on `_freezePoints`.
   - **Opened and closed in `SyncScrollbackState`**, where every scroll route lands: open while the window's
-    viewport is detached (`!AutoScroll`) and scrollable **and a line has arrived since it detached**
-    (`NoteLineForScrollSplit`, from `AppendWindowLine` before the line is counted as missed; `_scrollSplitDue`), closed once it re-attaches — scrolling the history down
+    viewport is detached (`!AutoScroll`) and scrollable, closed once it re-attaches — scrolling the history down
     to where the live tail begins (`MeetsTail`: the rows below the history fit under the band and the tail; waiting
     for the history's own end made the reader scroll through rows the tail already showed), ⌃End, or bare End. **Bare End is claimed only while a split is open and the command line's
     caret is already at its end** (`CaretAtEnd`), where End has nothing left to do in the editor and where a
     caret rests after typing; anywhere else End is the editor's and a second press returns. Also closed by ⌥F
     (freeze takes over and splits at its freeze point, as it always does), by a frozen pane, and with the setting off.
-  - **Scrolling back alone never splits** (Grave's choice, 2026-11-24): a reader's own gesture (wheel, page keys, a
-    thumb let go) changes only where they are reading; the band and tail appear with the first new line, so nothing on
-    screen jumps in answer to the gesture. A window scrolled back and not yet split is scrolled back for the workspace
-    (badges, `NEW`) until that line opens it, and the line itself lands in the tail unmissed.
   - **The tail is F7 ▸ `live tail when split` (`TextSettings.ScrollTail`, read by Core `ScrollTail`: rows, `6` by
     default, or a share of what the band leaves such as `25%`; `TextRule.ScrollTail` in both hosts), held to at least 3 rows with the history keeping at least 3**
     (`TailRowsFor(rows, band)`; wave 25, after both mockups, which give the arriving rows at least the history's room;
@@ -2292,7 +2287,7 @@ python3 tools/ansi_frame_to_image.py frame.ansi frame.html   # or .svg
   a report, a server that answered and publishes none, and a world nothing has dialled; all three
   reached by driving the real `i` into a real F5, and all three needed because the two empty ones are
   the pair it is easy to conflate), `web`,
-  `rail-long`, `scrollback`, `scrollback-up` (scrolled back and still whole: the split opens only when a line arrives),
+  `rail-long`, `scrollback`, `scrollback-up` (now the split opening, since split scrollback is on by default),
   `scrollback-split` (the split doing its job: scrolled back, then more output arriving in the live tail under
   the band while the history stays put), `reflow` (one room as a server wrapping at 78 sends it, then the same
   rows through `ServerWrapJoiner` — ragged short of the edge at 120 columns, wrapping twice at 80),

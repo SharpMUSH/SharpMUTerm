@@ -1700,8 +1700,8 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         // Split scrollback (F7 ▸ SCROLLBACK): the same long buffer scrolled back with real PgUp keys, and then
         // more output arriving — which lands in the live tail under the band while the history the reader
-        // scrolled to stays exactly where it was. `scrollback-up` is the pane scrolled back and still whole, since
-        // nothing has arrived; the first of these lines opens the split.
+        // scrolled to stays exactly where it was. `scrollback-up` shows the split opening; this one shows it
+        // doing its job.
         if (string.Equals(view, "scrollback-split", StringComparison.OrdinalIgnoreCase))
         {
             LoadLongScene(MainWindowId, ScrollbackSceneLines);
@@ -3932,12 +3932,6 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             // opened while they were away, which is every spawn window a busy absence creates.
             _awayPending[windowId] = 0;
             _awayBoundary[windowId] = 0;
-        }
-
-        // A pane scrolled back splits on its first new line, before the line is counted as missed.
-        if (bar is null)
-        {
-            NoteLineForScrollSplit(windowId);
         }
 
         // The moment a boundary is made: a line landing in a window the reader is not watching. Before

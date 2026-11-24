@@ -40,7 +40,7 @@ public class ScrollbarLayerTests
             });
             try
             {
-                app.RenderSnapshot("scrollback-split");
+                app.RenderSnapshot("scrollback-up");
                 app.RenderNextFrame();
                 DesktopLayerTests.Drain();
                 window.UpdateLayout();
