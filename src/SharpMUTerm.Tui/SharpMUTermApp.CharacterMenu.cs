@@ -35,7 +35,7 @@ internal sealed partial class SharpMUTermApp
                     frontConnected = character.Connected;
                 }
 
-                var name = CharacterNames.Display(world.Name, character.Name);
+                var name = CharacterNames.Display(world.Name, character.Alone ? null : character.Name);
                 var label = character.Connected ? name : $"{name}  (offline)";
                 var command = CommandIds.Character(character.SessionKey);
                 if (_contributions.Commands.Resolve(command) is not null)

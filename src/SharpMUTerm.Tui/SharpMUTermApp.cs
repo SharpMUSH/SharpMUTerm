@@ -3780,13 +3780,22 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
         var session = _sessions.Find(sessionKey);
         if (session is null)
         {
-            if (FindCharacter(sessionKey) is not { } found)
+            if (FindCharacter(sessionKey) is { } found)
+            {
+                session = OpenSession(found.World, found.Character);
+            }
+
+            // A world with no character is opened as itself (its session key is its name), the way /connect opened it.
+            else if (_config.Worlds.FirstOrDefault(w => string.Equals(w.Name, sessionKey, StringComparison.Ordinal)) is { } world)
+            {
+                session = OpenSession(world, null);
+            }
+            else
             {
                 Notice($"no character called {Snippet(DisplayName(sessionKey))} is configured — F5 adds one");
                 return;
             }
 
-            session = OpenSession(found.World, found.Character);
             BindSession(session, OpenSessionWindow(session));
         }
         else
@@ -8789,6 +8798,26 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Avatar: _avatars.Get(character.Avatar) ?? worldAvatar));
             }
 
+            // A world with no character still has a session of its own — /connect host, a link and Browse all make
+            // one — so it gets a row to open it by, under the world's own name, as every other surface names it.
+            if (world.Characters.Count == 0)
+            {
+                var key = world.Name;
+                var active = key == activeKey;
+                var windows = active ? BuildRailWindows(key, chords) : Array.Empty<RailWindow>();
+                characters.Add(new RailCharacter(
+                    world.Name,
+                    key,
+                    Connected: connected.Contains(key),
+                    Active: active,
+                    Unread: windows.Sum(w => w.Unread),
+                    windows,
+                    Chord: characterChords.GetValueOrDefault(key),
+                    InGroup: _sendGroup.Contains(key),
+                    Avatar: worldAvatar,
+                    Alone: true));
+            }
+
             worlds.Add(new RailWorld(world.Name, world.Host, world.Port, accent, characters, worldAvatar));
             index++;
         }
@@ -9068,6 +9097,18 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
                     Connected: connected.Contains(key),
                     Open: _sessions.Find(key) is not null,
                     InGroup: _sendGroup.Contains(key)));
+            }
+
+            // A world with no character is reached as itself: its session key is its name.
+            if (world.Characters.Count == 0)
+            {
+                refs.Add(new CharacterRef(
+                    world.Name,
+                    string.Empty,
+                    world.Name,
+                    Connected: connected.Contains(world.Name),
+                    Open: _sessions.Find(world.Name) is not null,
+                    InGroup: _sendGroup.Contains(world.Name)));
             }
         }
 
@@ -12535,7 +12576,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     private PrefixFacts PrefixFactsNow() => new(
         _workspace.Layout.Panes.Count,
         _workspace.Layout.FocusedPane.Tabs.Count,
-        ActiveWindowId() == MainWindowId,
+        !CanClose(ActiveWindowId()),
         _workspace.Layout.ZoomedPaneId is not null,
         _railCollapsed,
         _second.Visible);
@@ -14016,9 +14057,32 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// Whether a window may be closed: any but the main window, and the main window too once the character
     /// it belongs to has been deleted. The main window is the session, so it stays while the session has a
     /// character; with the character gone nothing else reaches it (the rail and ⌃P list configured
-    /// characters only), and refusing left a pane the player could not get rid of.
+    /// characters only), and refusing left a pane the player could not get rid of. A world connected with no
+    /// character (<c>/connect host</c>, a link, Browse) is not a character's either: its window closes, and the
+    /// session with it (<see cref="WorldAloneOwns"/>).
     /// </summary>
-    private bool CanClose(string windowId) => windowId != MainWindowId || OwnerWasDeleted(windowId);
+    private bool CanClose(string windowId) =>
+        windowId != MainWindowId || OwnerWasDeleted(windowId) || WorldAloneOwns(windowId);
+
+    /// <summary>
+    /// Whether <paramref name="windowId"/> is the own window of a world's session with no character, or a window a
+    /// resumed workspace recorded for one. Such a session is reached again from the world's <c>no character</c> row
+    /// in the sidebar or ⌃P, so closing its window ends it rather than leaving it connected out of sight.
+    /// </summary>
+    private bool WorldAloneOwns(string windowId)
+    {
+        if (SessionFor(windowId) is { } session)
+        {
+            return session.Character is null
+                && _sessionWindows.TryGetValue(session, out var own)
+                && string.Equals(own, windowId, StringComparison.Ordinal);
+        }
+
+        return _workspace.FindWindow(windowId) is { Kind: WindowKind.Main, SessionKey: { Length: > 0 } owner }
+            && _sessions.Find(owner) is null
+            && FindCharacter(owner) is null
+            && _config.Worlds.Any(w => string.Equals(w.Name, owner, StringComparison.Ordinal));
+    }
 
     /// <summary>
     /// Whether the character a window belongs to has been deleted from the configuration. With a session,
@@ -14105,14 +14169,25 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private void CloseWindow(string id)
     {
-        if (!CanClose(id) || _workspace.FindWindow(id) is not { } closing)
+        if (_workspace.FindWindow(id) is not { } closing)
         {
             return;
         }
 
+        if (!CanClose(id))
+        {
+            // Said, not swallowed: ⌃W, ⌃B x and the menu all end here, and a key that does nothing reads as broken.
+            Notice(FirstFitting(
+                NoticeRoom(),
+                $"{Snippet(closing.Title)} is its character's own window and stays open",
+                "the main window stays open"));
+            return;
+        }
+
         // A deleted character's own window: once it is closed nothing can reach the session (no rail row,
-        // no ⌃P entry), so the session is ended with it rather than left connected out of sight.
-        var orphan = SessionFor(id) is { } owner && OwnerWasDeleted(id) ? owner : null;
+        // no ⌃P entry), so the session is ended with it rather than left connected out of sight. A world's
+        // session with no character is its window, so closing that ends it too.
+        var orphan = SessionFor(id) is { } owner && (OwnerWasDeleted(id) || WorldAloneOwns(id)) ? owner : null;
 
         // A layout panel the player closes stays closed: recorded on its character, so no connect, re-fold or later
         // launch puts it back until they ask for it (ClosedPanelsOf).
@@ -14141,6 +14216,12 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
 
         if (orphan is not null)
         {
+            if (orphan.Character is null && orphan.IsConnected)
+            {
+                Notice(FirstFitting(NoticeRoom(), $"closed {Snippet(orphan.World.Name)} and disconnected", "closed and disconnected"),
+                    MessageSeverity.Info);
+            }
+
             EndDeletedSession(orphan);
         }
 

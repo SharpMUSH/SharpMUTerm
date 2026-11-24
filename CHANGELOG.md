@@ -26,6 +26,12 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
   become `_`, and a name like `CON` is changed so Windows will take it. A name that needed none of this names the same
   file as before.
 
+- A world connected with no character (`/connect host`, a `telnet://` link, Browse worlds) can be closed again. Its tab
+  was the client's main window, which only closed once a character was deleted, so ⌃W, ⌃B x and the tab's × did
+  nothing. Closing it now ends that connection. Its world's row in the sidebar reads *no character* and opens it again,
+  and ⌃P lists it under *Switch to*; it used to say the world had no characters and offer no way back. Closing a
+  character's own window still refuses, and now says so instead of doing nothing.
+
 ## [0.3.6] - 2026-11-16
 
 ### Added
