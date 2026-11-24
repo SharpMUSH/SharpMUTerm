@@ -7,6 +7,8 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-11-24
+
 ### Changed
 
 - Trigger sets are made where rules are written. On F2, F3, F4 and F6, `s` opens a trigger sets screen: make a set
