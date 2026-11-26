@@ -21,7 +21,7 @@ public static partial class BuiltInSettings
     public static IReadOnlyList<string> AreaChoices { get; } = [.. ZoomLevels.AreaSteps.Select(ZoomLevels.Label)];
 
     /// <summary>
-    /// The desktop window's text sizes: a zoom over the whole window (Ctrl+= / Ctrl+- / Ctrl+0, Ctrl+wheel), the
+    /// The desktop window's text sizes: a zoom over the whole window (Ctrl+= / Ctrl+- / Ctrl+Numpad 0, Ctrl+wheel), the
     /// output's size in points, and the composer, interface, panels and dialogs each as a percentage. Not in
     /// <see cref="All"/> and on no F-key, like <see cref="Window"/>: a host registers it only when it draws its own text
     /// (the window), so a terminal, whose font size is its emulator's, never lists a choice that does nothing there.
@@ -34,7 +34,7 @@ public static partial class BuiltInSettings
         Fields =
         [
             new ChoiceField("zoom", "zoom", ZoomChoices,
-                "everything in the window, as a browser zooms; Ctrl+= and Ctrl+- step it, Ctrl+0 resets, Ctrl+wheel too")
+                "everything in the window, as a browser zooms; Ctrl+= and Ctrl+- step it, Ctrl+Numpad 0 resets, Ctrl+wheel too")
             {
                 Group = ZoomGroup,
                 Keywords = "zoom scale magnify bigger smaller font size text size accessibility dpi",

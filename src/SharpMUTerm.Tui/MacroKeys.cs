@@ -77,6 +77,20 @@ internal static class MacroKeys
             ? key - ConsoleKey.D0
             : null;
 
+    /// <summary>
+    /// The open character a Ctrl+digit stands for where the host reports that chord whole: ⌃1–⌃9 are the first nine,
+    /// ⌃0 the tenth (<see cref="CommandIds.CharacterJumpDigits"/>); null for any other key. Not in
+    /// <see cref="AppShortcuts"/>, because that list is the same on every host and a terminal never delivers these
+    /// (<see cref="DigitBytes"/>): claiming them there would have F4 call ⌃3 taken where it is really Escape.
+    /// <see cref="Verdict"/> reports them taken only where <see cref="HostKeys.ReportsChordsWhole"/>.
+    /// </summary>
+    internal static int? CharacterJumpNumber(ConsoleKey key) => key switch
+    {
+        >= ConsoleKey.D1 and <= ConsoleKey.D9 => key - ConsoleKey.D0,
+        ConsoleKey.D0 => CommandIds.CharacterJumpDigits,
+        _ => null,
+    };
+
     /// <remarks>
     /// The fixed claims are a local rather than a field: a static field initialiser runs in declaration
     /// order, so a field read from this method would still be null when the property above calls it.
@@ -345,6 +359,13 @@ internal static class MacroKeys
         if (Claimed.TryGetValue(canonical, out var does))
         {
             return new MacroKeyVerdict(MacroKeyDelivery.Taken, $"{canonical} {does}");
+        }
+
+        // ⌃1–⌃9 and ⌃0 go to a character where the host delivers them (SharpMUTermApp.RegisterCharacterJumps).
+        if (whole && parts.Ctrl && !parts.Alt && !parts.Shift && IsDigit(parts.Key))
+        {
+            var number = parts.Key == "0" ? CommandIds.CharacterJumpDigits : parts.Key[0] - '0';
+            return new MacroKeyVerdict(MacroKeyDelivery.Taken, $"{canonical} goes to character {number}");
         }
 
         if (parts.Key.Length == 4 && parts.Key.StartsWith("Num", StringComparison.Ordinal)

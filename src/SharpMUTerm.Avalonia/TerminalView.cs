@@ -115,7 +115,7 @@ internal sealed class TerminalView : Control
             [
                 new($"Zoom in ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(SharpMUTerm.Core.Configuration.ZoomLevels.Next(zoom))})", "Ctrl+=", () => RequestZoom(1), zoom < SharpMUTerm.Core.Configuration.ZoomLevels.Maximum),
                 new($"Zoom out ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(SharpMUTerm.Core.Configuration.ZoomLevels.Previous(zoom))})", "Ctrl+-", () => RequestZoom(-1), zoom > SharpMUTerm.Core.Configuration.ZoomLevels.Minimum),
-                new($"Reset zoom ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(zoom)})", "Ctrl+0", () => RequestZoom(0), zoom != 100),
+                new($"Reset zoom ({SharpMUTerm.Core.Configuration.ZoomLevels.Label(zoom)})", "Ctrl+Num 0", () => RequestZoom(0), zoom != 100),
             ];
         }
     }
@@ -511,7 +511,7 @@ internal sealed class TerminalView : Control
         (Key.OemPlus, KeyModifiers.Control or (KeyModifiers.Control | KeyModifiers.Shift)) => 1,
         (Key.Add, KeyModifiers.Control) => 1,
         (Key.OemMinus or Key.Subtract, KeyModifiers.Control) => -1,
-        (Key.D0 or Key.NumPad0, KeyModifiers.Control) => 0,
+        (Key.NumPad0, KeyModifiers.Control) => 0, // Ctrl+0 is the tenth character (WindowHost.Zoom)
         _ => null,
     };
 
@@ -550,7 +550,7 @@ internal sealed class TerminalView : Control
             RequestZoom(zoom);
             _swallowText = e.Key switch
             {
-                Key.D0 or Key.NumPad0 => '0',
+                Key.NumPad0 => '0',
                 Key.OemMinus or Key.Subtract => '-',
                 Key.Add => '+',
                 _ => e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? '+' : '=',
@@ -588,7 +588,9 @@ internal sealed class TerminalView : Control
         {
             // An Alt chord can be followed by a TextInput for the same letter on some platforms.
             // So is a numpad digit, which KeyMapper has already sent with its digit.
+            // A Ctrl+digit (⌃1–⌃0, the character chords) can be followed by a TextInput for the digit as well.
             _swallowText = (key.Modifiers.HasFlag(ConsoleModifiers.Alt) && !key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || (key.Modifiers == ConsoleModifiers.Control && key.Key is >= ConsoleKey.D0 and <= ConsoleKey.D9)
                 || key.Key is >= ConsoleKey.NumPad0 and <= ConsoleKey.NumPad9
                 ? key.KeyChar
                 : null;

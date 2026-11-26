@@ -194,7 +194,7 @@ internal sealed record ClientHost
 
     /// <summary>
     /// Draws its own text and so can size it (<see cref="IWindowTextSize"/>): the window, which is told the Text size
-    /// page's sizes and the zoom, and asks the client to step the zoom on Ctrl+= / Ctrl+- / Ctrl+0 and Ctrl+wheel. Null in
+    /// page's sizes and the zoom, and asks the client to step the zoom on Ctrl+= / Ctrl+- / Ctrl+Numpad 0 and Ctrl+wheel. Null in
     /// the terminal (its font size is its emulator's), the snapshot, the tests and <c>--plain</c>, where the client lists
     /// none of it.
     /// </summary>

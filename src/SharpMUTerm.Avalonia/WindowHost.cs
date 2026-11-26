@@ -22,6 +22,10 @@ internal static class WindowHost
     public static ReservedChord WindowedFullScreen { get; } = new(
         new HostChord(ConsoleKey.F11, ConsoleModifiers.Shift, "Shift+F11", "Shift+F11"), "goes in and out of windowed full screen");
 
+    /// <summary>
+    /// The window's zoom chords. Ctrl+0 is not one of them: ⌃1–⌃9 and ⌃0 go to the open characters
+    /// (<c>SharpMUTermApp.JumpToCharacter</c>), so the reset is Ctrl+Numpad 0, the output's right-click menu and ⌃P.
+    /// </summary>
     public static IReadOnlyList<ReservedChord> Zoom { get; } =
     [
         new(new HostChord(ConsoleKey.OemPlus, ConsoleModifiers.Control, "Ctrl+=", "Ctrl+="), "zooms in"),
@@ -29,7 +33,6 @@ internal static class WindowHost
         new(new HostChord(ConsoleKey.Add, ConsoleModifiers.Control, "Ctrl+Add", "Ctrl+Add"), "zooms in"),
         new(new HostChord(ConsoleKey.OemMinus, ConsoleModifiers.Control, "Ctrl+-", "Ctrl+-"), "zooms out"),
         new(new HostChord(ConsoleKey.Subtract, ConsoleModifiers.Control, "Ctrl+Subtract", "Ctrl+Subtract"), "zooms out"),
-        new(new HostChord(ConsoleKey.D0, ConsoleModifiers.Control, "Ctrl+0", "Ctrl+0"), "resets terminal zoom"),
         new(new HostChord(ConsoleKey.NumPad0, ConsoleModifiers.Control, "Ctrl+NumPad0", "Ctrl+NumPad0"), "resets terminal zoom"),
     ];
 

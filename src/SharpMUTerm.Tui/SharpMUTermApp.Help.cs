@@ -91,7 +91,8 @@ internal sealed partial class SharpMUTermApp
     internal HelpModel HelpModelNow() => HelpModel.Build(
         BuildCatalog(),
         Host.Keys.Newline.Glyph,
-        Host.Keys.Reserved.Select(r => (r.Chord.Glyph, r.Action)).ToArray());
+        Host.Keys.Reserved.Select(r => (r.Chord.Glyph, r.Action)).ToArray(),
+        HasCharacterJumps);
 
     /// <summary>
     /// ⌃P ▸ Help and <c>/help</c>: opens help, <paramref name="query"/> typed into its search, or closes it. With no

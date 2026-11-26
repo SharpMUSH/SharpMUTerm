@@ -1694,7 +1694,9 @@ public class SurfaceParityTests
     [Test]
     public async Task F4TellsTheWindowsTruth()
     {
-        await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Ctrl+3").Fires).IsTrue();
+        // ⌃H is Backspace in a terminal; a window reports it as itself.
+        await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Ctrl+H").Fires).IsTrue();
+        await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Ctrl+3").Reason).Contains("goes to character 3");
         await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Ctrl+Shift+Left").Fires).IsTrue();
         await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Alt+Enter").Delivery).IsEqualTo(MacroKeyDelivery.Taken);
         await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Alt+Enter").Reason).Contains("maximises");
@@ -1705,15 +1707,15 @@ public class SurfaceParityTests
         await using var app = App(driver, config);
         app.BindWorldWithoutConnecting(config.Worlds[0]);
         var macro = config.TriggerSets.SelectMany(s => s.Macros).Single(m => m.Key == "Ctrl+F1");
-        macro.Key = "Ctrl+3";
+        macro.Key = "Ctrl+H";
 
-        var key = KeyMapper.FromKeyDown(Key.D3, KeyModifiers.Control);
+        var key = KeyMapper.FromKeyDown(Key.H, KeyModifiers.Control);
         await Assert.That(key).IsNotNull();
         await Assert.That(app.SimulateKey(key!.Value)).IsEqualTo("score");
 
         var hotkeys = string.Join('\n', KeypadScreenRenderer.HotkeysColumn(app.Host.Keys, config.TriggerSets.SelectMany(s => s.Macros).ToList()));
-        await Assert.That(hotkeys).Contains("⌃3");
-        await Assert.That(hotkeys).DoesNotContain("▲ ⌃3");
+        await Assert.That(hotkeys).Contains("⌃H");
+        await Assert.That(hotkeys).DoesNotContain("▲ ⌃H");
 
         // The numpad is a key the window delivers: F4 marks no numpad binding dead, and Num7 reaches its macro.
         await Assert.That(MacroKeys.Verdict(WindowHost.Keys, "Num7").Fires).IsTrue();

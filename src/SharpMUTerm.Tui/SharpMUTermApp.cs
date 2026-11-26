@@ -7724,6 +7724,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             }
         }
 
+        RegisterCharacterJumps();
         RegisterFocusReportTab();
     }
 
@@ -9024,6 +9025,11 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
     /// </summary>
     private Dictionary<string, string> CharacterChords()
     {
+        if (HasCharacterJumps)
+        {
+            return CharacterJumpChords();
+        }
+
         var chords = new Dictionary<string, string>(StringComparer.Ordinal);
         var cycle = CommandCatalog.CharacterCycle(BuildCharacterRefs());
         var here = cycle.FindIndex(c => c.SessionKey == _active?.SessionKey);
@@ -9157,6 +9163,7 @@ internal sealed partial class SharpMUTermApp : IAsyncDisposable
             WindowMode: CanSetWindowMode ? Host.WindowModes!.Mode : null,
             TextZoom: CanSizeText ? TextSizes.Zoom : null,
             TextSizePage: HasTextSizePage,
+            CharacterJumps: HasCharacterJumps,
             Update: UpdateCommandState(),
             ScriptFiles: !_scriptsListed || (_scriptsRoot is null && !DemoScriptsShown) ? null : ScriptFileRefs());
     }

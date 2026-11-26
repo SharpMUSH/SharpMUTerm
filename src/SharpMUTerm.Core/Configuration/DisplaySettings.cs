@@ -8,7 +8,7 @@ namespace SharpMUTerm.Core.Configuration;
 /// The output is in points, because a monospace console's size is a font size (Mudlet, Windows Terminal and kitty all
 /// say it that way). Every other area is a percentage of its designed size, because each is a ramp of sizes (a heading,
 /// a label, a caption) that has to move together. <see cref="Zoom"/> multiplies all of them, the way a browser's does,
-/// and is what Ctrl+= / Ctrl+- / Ctrl+0 and Ctrl+wheel change.
+/// and is what Ctrl+= / Ctrl+- / Ctrl+Numpad 0 and Ctrl+wheel change.
 /// </para>
 /// </summary>
 public sealed class DisplaySettings
