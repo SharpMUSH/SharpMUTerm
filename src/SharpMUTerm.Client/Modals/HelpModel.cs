@@ -129,14 +129,16 @@ public sealed record HelpModel(IReadOnlyList<HelpEntry> Entries, IReadOnlyList<H
     /// <param name="catalog">The command registry's entries for this host and state.</param>
     /// <param name="newline">The host's newline chord, in glyphs (<c>⌥⏎</c>, <c>⌃⏎</c>).</param>
     /// <param name="hostKeeps">The chords the host keeps for itself, with what each does there.</param>
+    /// <param name="characterJumps">Whether the host has ⌃1–⌃9 and ⌃0 for the open characters (the window).</param>
     public static HelpModel Build(
         IReadOnlyList<CommandItem> catalog,
         string newline,
-        IReadOnlyList<(string Chord, string Action)> hostKeeps)
+        IReadOnlyList<(string Chord, string Action)> hostKeeps,
+        bool characterJumps = false)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(hostKeeps);
-        var topics = HelpTopics.For(KeyGlyphs.Normalize(newline));
+        var topics = HelpTopics.For(KeyGlyphs.Normalize(newline), characterJumps);
         var entries = new List<HelpEntry>();
         entries.AddRange(topics.Select(t => new HelpEntry(HelpKind.Topic, TopicsSection, t.Title, string.Empty, t.Summary, t.Id)));
         entries.AddRange(SlashCommands.All.Select(c => new HelpEntry(HelpKind.Command, CommandsSection, c.Usage, string.Empty, c.Summary, c.Placed)));

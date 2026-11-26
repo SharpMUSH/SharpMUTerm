@@ -113,7 +113,7 @@ public static class BuiltInCommands
     /// <summary>Zooms the window out a step (Ctrl+- in the window).</summary>
     public const string ZoomOutCommand = "window:zoom-out";
 
-    /// <summary>Puts the window's zoom back to 100% (Ctrl+0 in the window).</summary>
+    /// <summary>Puts the window's zoom back to 100% (Ctrl+Numpad 0 in the window; Ctrl+0 is the tenth character).</summary>
     public const string ZoomResetCommand = "window:zoom-reset";
 
     /// <summary>Opens the Text size &amp; zoom page (the window only).</summary>
@@ -297,7 +297,7 @@ public static class BuiltInCommands
         Add(ZoomOutCommand, CommandGroup.Layout, "Zoom out", "⌃-", "make everything in the window smaller",
             when: c => c.State.TextZoom is { } zoom && zoom > Core.Configuration.ZoomLevels.Minimum,
             titleFor: c => "Zoom out to " + Core.Configuration.ZoomLevels.Label(Core.Configuration.ZoomLevels.Previous(c.State.TextZoom ?? 100)));
-        Add(ZoomResetCommand, CommandGroup.Layout, "Reset zoom", "⌃0", "back to 100% · sizes by area are on the Text size page",
+        Add(ZoomResetCommand, CommandGroup.Layout, "Reset zoom", "⌃Num0", "back to 100% · sizes by area are on the Text size page",
             when: c => c.State.TextZoom is { } zoom && zoom != 100,
             titleFor: c => "Reset zoom (" + Core.Configuration.ZoomLevels.Label(c.State.TextZoom ?? 100) + ")");
         Add(TextSizeCommand, CommandGroup.Settings, "Text size & zoom…", detail: "font sizes for the output, composer, panels and menus",
@@ -470,11 +470,12 @@ public static class BuiltInCommands
             new HostKeyGlyphs(context.NewlineChord)));
     }
 
-    // The two neighbours in the character cycle carry its chords. Only those two: ⌥J and ⌥K move one
-    // step, so they are the honest answer for the rows either side of you and a lie for anybody
-    // further away. There is deliberately no direct-selection chord to put on the rest — the digit
-    // row is spent on windows and panes, and every remaining digit-bearing modifier (⌥⇧, ⌃⇧) has no
-    // legacy encoding at all on this terminal, which was measured rather than assumed.
+    // In a terminal the two neighbours in the character cycle carry its chords. Only those two: ⌥J and ⌥K
+    // move one step, so they are the honest answer for the rows either side of you and a lie for anybody
+    // further away. A terminal has no direct-selection chord to put on the rest — the digit row is spent on
+    // windows and panes, and every remaining digit-bearing modifier (⌃, ⌥⇧, ⌃⇧) has no legacy encoding there,
+    // which was measured rather than assumed. A host that reports Ctrl+digit whole (the window) has one:
+    // ⌃1–⌃9 and ⌃0 name the first ten open characters, in the cycle's order, and every such row carries its own.
     private static IEnumerable<CommandItem> Characters(ICommandContext context)
     {
         var characters = context.Characters;
@@ -486,6 +487,7 @@ public static class BuiltInCommands
             ? cycle[(here - 1 + cycle.Count) % cycle.Count].SessionKey
             : null;
 
+        var jumps = context.State.CharacterJumps;
         foreach (var character in characters)
         {
             if (character.SessionKey == focusedSessionKey)
@@ -494,7 +496,10 @@ public static class BuiltInCommands
             }
 
             var state = character.Connected ? "connected" : "offline";
-            var chord = character.SessionKey == next ? "⌥J · "
+            var number = cycle.FindIndex(c => c.SessionKey == character.SessionKey) + 1;
+            var chord = jumps
+                ? number is > 0 and <= CommandIds.CharacterJumpDigits ? CommandIds.CharacterJumpChord(number) + " · " : string.Empty
+                : character.SessionKey == next ? "⌥J · "
                 : character.SessionKey == previous ? "⌥K · "
                 : string.Empty;
             yield return new CommandItem(

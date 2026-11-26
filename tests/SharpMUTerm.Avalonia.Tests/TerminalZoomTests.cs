@@ -11,7 +11,7 @@ public class TerminalZoomTests
     [Test]
     public async Task ReservedZoomChordsMatchTheirActions()
     {
-        await Assert.That(WindowHost.Zoom.Count).IsEqualTo(7);
+        await Assert.That(WindowHost.Zoom.Count).IsEqualTo(6);
         foreach (var reserved in WindowHost.Zoom)
         {
             var key = Enum.Parse<Key>(reserved.Chord.Key.ToString());
@@ -231,5 +231,37 @@ public class TerminalZoomTests
         await Assert.That(TerminalView.ZoomFor(Key.D0, KeyModifiers.Control | KeyModifiers.Alt)).IsNull();
         await Assert.That(TerminalView.ZoomFor(Key.Subtract, KeyModifiers.Control)).IsEqualTo(-1);
         await Assert.That(TerminalView.ZoomFor(Key.NumPad0, KeyModifiers.Control)).IsEqualTo(0);
+    }
+
+    /// <summary>
+    /// Ctrl+0 is the tenth character's chord, not the zoom reset, and every Ctrl+digit reaches the client as itself
+    /// once: the digit a platform may also send as text is not typed into the command line.
+    /// </summary>
+    [Test]
+    public async Task CtrlAndADigitReachTheClientAsTheChordAndTypeNothing()
+    {
+        await Assert.That(TerminalView.ZoomFor(Key.D0, KeyModifiers.Control)).IsNull();
+        await Assert.That(WindowHost.Keys.Reserved.Any(r => r.Chord.Key == ConsoleKey.D0)).IsFalse();
+
+        var sent = await TerminalViewTests.Session.Dispatch(() =>
+        {
+            using var driver = new AvaloniaConsoleDriver(80, 24);
+            var view = new TerminalView(driver, SKColors.White, SKColors.Black, 16, null);
+            var keys = new List<ConsoleKeyInfo>();
+            driver.KeyPressed += (_, key) => keys.Add(key);
+            foreach (var (key, text) in new[] { (Key.D1, "1"), (Key.D0, "0") })
+            {
+                view.HandleKeyDown(new KeyEventArgs { Key = key, KeyModifiers = KeyModifiers.Control });
+                view.HandleTextInput(new TextInputEventArgs { Text = text });
+            }
+
+            return keys;
+        }, CancellationToken.None);
+
+        await Assert.That(sent.Select(k => (k.Key, k.Modifiers)).ToArray()).IsEquivalentTo(new[]
+        {
+            (ConsoleKey.D1, ConsoleModifiers.Control),
+            (ConsoleKey.D0, ConsoleModifiers.Control),
+        });
     }
 }

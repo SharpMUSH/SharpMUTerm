@@ -157,7 +157,7 @@ public sealed class AppConfiguration
     public WindowPlacement? Window { get; set; }
 
     /// <summary>
-    /// The desktop window's text sizes and zoom (the Text size settings page, Ctrl+= / Ctrl+- / Ctrl+0). Read by the
+    /// The desktop window's text sizes and zoom (the Text size settings page, Ctrl+= / Ctrl+- / Ctrl+Numpad 0). Read by the
     /// window alone; a terminal's font size is its emulator's.
     /// </summary>
     public DisplaySettings Display { get; set; } = new();

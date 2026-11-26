@@ -234,6 +234,13 @@ internal static class ClientUsage
         usage.WriteLine("        Alt+J and Alt+K move to the next and previous character you have open — the two the");
         usage.WriteLine("        sidebar marks '⌥J' and '⌥K'. They never open one that is not; the sidebar and");
         usage.WriteLine("        Ctrl+P do that.");
+        if (keys.ReportsChordsWhole)
+        {
+            // Only where Ctrl+digit arrives as itself (the window); a terminal sends those as other keys' bytes.
+            usage.WriteLine("        Ctrl+1 to Ctrl+9 and Ctrl+0 go to the main window of the first ten characters you");
+            usage.WriteLine("        have open, in the order the sidebar lists them.");
+        }
+
         usage.WriteLine("Panes:  Ctrl+B then | - z o 1-9 x b m i < > splits, zooms, goes and moves; Esc or Ctrl+B");
         usage.WriteLine("        cancels, and pausing after Ctrl+B pops a panel naming each key. Or drag a tab");
         usage.WriteLine("        strip onto another pane — middle drops it as a tab, an edge splits there.");

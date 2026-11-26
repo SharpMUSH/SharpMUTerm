@@ -40,7 +40,7 @@ internal sealed partial class SharpMUTermApp
                 var command = CommandIds.Character(character.SessionKey);
                 if (_contributions.Commands.Resolve(command) is not null)
                 {
-                    entries.Add(new MenuEntry(Snippet(label), character.Chord is "⌥J" or "⌥K" ? character.Chord : null, command,
+                    entries.Add(new MenuEntry(Snippet(label), character.Chord is { Length: > 0 } chord ? chord : null, command,
                         Checked: character.Active, Enabled: !character.Active));
                 }
             }

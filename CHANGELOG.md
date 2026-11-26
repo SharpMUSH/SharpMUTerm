@@ -7,6 +7,19 @@ and a release's notes are its section. The procedure is in [`docs/RELEASING.md`]
 
 ## [Unreleased]
 
+### Added
+
+- In the window, Ctrl+1 to Ctrl+9 and Ctrl+0 go straight to the main window of the first ten characters you have open,
+  in the order the sidebar lists them; the sidebar, the character menu and Ctrl+P show each character's key. A key with
+  no character behind it says so and opens nothing. Terminals cannot send Ctrl with a digit (Ctrl+3 arrives as Escape,
+  Ctrl+8 as Backspace), so there Alt+J and Alt+K still move between characters, and Alt+1 to Alt+9 still go to the
+  character's own windows.
+
+### Changed
+
+- In the window, the zoom reset is Ctrl+Numpad 0 (and the output's right-click menu and Ctrl+P), since Ctrl+0 now goes
+  to the tenth character.
+
 ## [0.3.9] - 2026-11-24
 
 ### Changed

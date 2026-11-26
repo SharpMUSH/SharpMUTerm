@@ -3073,7 +3073,16 @@ markup (`[bold #rrggbb on #rrggbb]…[/]`, `[[`/`]]` escaping, `[link=url]…[/]
     took a four-window fixture to expose: with fewer, both orders agree).
     Only **placed** windows are numbered — one no pane holds is drawn `closed` and a digit for it would
     name nowhere to go — and never a layout panel (`WindowKind.Panel`), which is furniture and has no rail row.
-  - **⌃B 1–⌃B 9 go to a pane.** It was ⌥N until windows took that; it is on the prefix because that is
+  - **⌃1–⌃9 and ⌃0 go to the first ten open characters' main windows, and only in a host that reports Ctrl+digit whole**
+  (`SharpMUTermApp.CharacterJumps.cs`, `MacroKeys.CharacterJumpNumber`, `CommandIds.CharacterJumpDigits`;
+  `HostKeys.ReportsChordsWhole`, so the window). Asked for by players. Same order as the cycle
+  (`CommandCatalog.CharacterCycle`, open characters only, so a digit never dials). **Not in `MacroKeys.AppShortcuts`**:
+  that list is every host's, and a terminal writes these as a bare digit or another key's byte (`DigitBytes`), so
+  `Verdict` reports them taken only where they arrive; registered by `RegisterCharacterJumps`. Where they exist the
+  sidebar's character rows, the character menu and ⌃P's *Switch to* entries carry `⌃N` instead of ⌥J/⌥K
+  (`CommandContext.CharacterJumps`). **⌃0 is the tenth character, so the window's zoom reset is ⌃Numpad 0**, the
+  right-click menu and ⌃P (`WindowHost.Zoom`). The terminal has no digit chord for characters: ⌥J/⌥K and ⌃P.
+- **⌃B 1–⌃B 9 go to a pane.** It was ⌥N until windows took that; it is on the prefix because that is
     where the rest of the pane keymap lives, and it is kept rather than dropped because the pane
     numbering does not go away with the chord — move mode badges each pane with it, the move and drag
     prompts say `pane 2`, the ⌃P entry says `Go to pane 2`, and ⌃O counts in it. It also refuses on a

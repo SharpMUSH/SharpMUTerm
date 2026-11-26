@@ -7,7 +7,7 @@ namespace SharpMUTerm.Tui;
 /// <summary>
 /// Text size and zoom, where the host draws its own text (<see cref="ClientHost.TextSize"/>: the desktop window). The
 /// sizes are the configuration's <see cref="AppConfiguration.Display"/>: the Text size page edits them through the
-/// settings funnel like any setting, the window's Ctrl+= / Ctrl+- / Ctrl+0 and Ctrl+wheel and ⌃P's zoom entries step the
+/// settings funnel like any setting, the window's Ctrl+= / Ctrl+- / Ctrl+Numpad 0 and Ctrl+wheel and ⌃P's zoom entries step the
 /// zoom here, and the host is told the result. A terminal has none of it: its font size is its emulator's, and nothing an
 /// application writes changes it (xterm's OSC 50 picks a font, not a size, and is off in every terminal this client
 /// targets), so the client lists nothing that would do nothing and the help topic says to use the terminal's own zoom.
@@ -85,7 +85,7 @@ internal sealed partial class SharpMUTermApp
         _config.Display.Zoom = after;
         PersistConfiguration();
         SyncTextSizes();
-        Notice($"zoom {ZoomLevels.Label(after)}", MessageSeverity.Info, key: step == 0 ? "⌃0" : step > 0 ? "⌃=" : "⌃-", toast: false);
+        Notice($"zoom {ZoomLevels.Label(after)}", MessageSeverity.Info, key: step == 0 ? "⌃Num0" : step > 0 ? "⌃=" : "⌃-", toast: false);
         return true;
     }
 

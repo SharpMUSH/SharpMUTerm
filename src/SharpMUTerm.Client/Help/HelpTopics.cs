@@ -10,8 +10,11 @@ namespace SharpMUTerm.Client.Help;
 /// </summary>
 public static class HelpTopics
 {
-    /// <summary>The pages, with <paramref name="newline"/> (the host's newline chord) where a page names it.</summary>
-    public static IReadOnlyList<HelpTopic> For(string newline) =>
+    /// <summary>
+    /// The pages, with <paramref name="newline"/> (the host's newline chord) where a page names it, and the character
+    /// chords where the host has them (<paramref name="characterJumps"/>: ⌃1–⌃9 and ⌃0, the window).
+    /// </summary>
+    public static IReadOnlyList<HelpTopic> For(string newline, bool characterJumps = false) =>
     [
         new("getting-started", "Getting started", "connect to a game, and what the screen is", [
             "Connect: type /connect mud.example.org 4000 (add tls for a secure port), or open the welcome",
@@ -45,7 +48,7 @@ public static class HelpTopics
             "Copy: drag across output, then ⌃C.",
         ]),
         new("text-size", "Text size", "make the text bigger or smaller", [
-            "In the window: ⌃= zooms in, ⌃- zooms out and ⌃0 goes back to 100%, as in a browser; so does ⌃ with",
+            "In the window: ⌃= zooms in, ⌃- zooms out and ⌃ with numpad 0 goes back to 100%; so does ⌃ with",
             "the wheel, and the output's right-click menu. The zoom covers the whole window and is kept between runs.",
             "⌃P ▸ Text size & zoom sets the output's size in points, and the composer, the header and sidebar,",
             "the panels, and menus and dialogs each on their own.",
@@ -94,6 +97,7 @@ public static class HelpTopics
             "Windows: ⌥1 to ⌥9 go to a numbered window of the character you are on — the numbers are the ones",
             "the sidebar prints beside each window.",
             "Characters: ⌥J and ⌥K move to the next and previous character you have open.",
+            .. CharacterJumpLines(characterJumps),
             "Connection: ⌥R reconnects, ⌥D disconnects. Neither asks.",
             "",
             "Panes: ⌃B then a key — | split right, - split down, z zoom, o next, 1-9 go to a pane, x close,",
@@ -129,4 +133,12 @@ public static class HelpTopics
             yield return "  " + string.Concat(keys.Skip(i).Take(3).Select(k => (k.Key.PadRight(10) + k.Word).PadRight(26))).TrimEnd();
         }
     }
+
+    /// <summary>The keys page's line for ⌃1–⌃0, only where the host delivers them.</summary>
+    private static string[] CharacterJumpLines(bool characterJumps) => characterJumps
+        ? [
+            "  ⌃1 to ⌃9 and ⌃0 go straight to the main window of the first ten characters you have open, in",
+            "  the order the sidebar lists them (it prints each one's key).",
+        ]
+        : [];
 }

@@ -57,6 +57,16 @@ public static class CommandIds
     /// </summary>
     public const int WindowJumpDigits = 9;
 
+    /// <summary>
+    /// How many open characters have a chord of their own where the host delivers Ctrl+digit as itself (the window):
+    /// ⌃1–⌃9 and ⌃0 for the tenth, counting <see cref="CommandCatalog.CharacterCycle"/>. A terminal writes Ctrl+digit
+    /// as a bare digit or a byte another key already owns, so there the cycle (⌥J/⌥K) and ⌃P are the way.
+    /// </summary>
+    public const int CharacterJumpDigits = 10;
+
+    /// <summary>The chord, in glyphs, that goes to open character <paramref name="number"/> (1-based): ⌃1…⌃9, ⌃0.</summary>
+    public static string CharacterJumpChord(int number) => number == 10 ? "⌃0" : "⌃" + number;
+
     /// <summary>Prefix of a "go to this numbered pane" id; the remainder is the pane's 1-based number.</summary>
     public const string PanePrefix = "layout:pane-";
 
